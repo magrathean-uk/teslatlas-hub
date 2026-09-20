@@ -922,6 +922,8 @@ async fn import_from_postgres_with_updates_capture(
     }
     identity_registration_guard.disarm();
     let open_session = first_capture.open_session;
+    let materialised_car = first_capture.materialised_car;
+    let materialised_drives = first_capture.materialised_drives;
     store.stage_import_generation_session(run_id, &open_session)?;
     let mut direct = first_capture.packs;
     let updates_v2_2 = first_capture.updates_v2_2;
@@ -960,7 +962,7 @@ async fn import_from_postgres_with_updates_capture(
         capture.seal()?;
         let projection_state = capture.into_state();
         let bridged = store
-            .bridge_legacy_teslamate_direct_import(
+            .bridge_legacy_teslamate_direct_import_with_materialisation(
                 run_id,
                 registered_source.source_id,
                 vehicle.vehicle_id,
@@ -968,6 +970,8 @@ async fn import_from_postgres_with_updates_capture(
                 legacy_fingerprint,
                 direct.fingerprint,
                 &projection_state,
+                &materialised_car,
+                &materialised_drives,
             )
             .map_err(legacy_direct_bridge_error)?;
         run_guard.disarm();
@@ -1000,6 +1004,7 @@ async fn import_from_postgres_with_updates_capture(
             selected_car_id,
             request.imported_at_ms,
             &mut direct,
+            Some((&materialised_car, &materialised_drives)),
         )?;
         run_guard.disarm();
         if let Some((snapshot_id, head_sequence, _)) = store.v2_head(vehicle.vehicle_id)? {
@@ -1146,20 +1151,22 @@ async fn import_from_postgres_with_updates_capture(
             },
         )
         .map_err(crate::db::StoreError::Manifest)?;
-        store.finalize_import_generation_delta_successors_with_projection_state(
-            run_id,
-            registered_source.source_id,
-            vehicle.vehicle_id,
-            selected_car_id,
-            request.imported_at_ms,
-            &deltas,
-            cursor_key,
-            &terminal_cursor,
-            direct.fingerprint,
-            &direct.geofences,
-            &projection_state,
-            false,
-        )?;
+        store
+            .finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
+                run_id,
+                registered_source.source_id,
+                vehicle.vehicle_id,
+                selected_car_id,
+                request.imported_at_ms,
+                &deltas,
+                cursor_key,
+                &terminal_cursor,
+                direct.fingerprint,
+                &direct.geofences,
+                &projection_state,
+                &materialised_car,
+                &materialised_drives,
+            )?;
         delta_packs.published();
         drop(delta_packs);
         run_guard.disarm();
@@ -1227,7 +1234,7 @@ async fn import_from_postgres_with_updates_capture(
     // A pre-commit failure can leave only unreferenced candidate packs; repair
     // may remove those safely. After the transaction commits they are catalogued.
     let finalization = if let Some(prepared) = prepared_schema_22.as_ref() {
-        store.finalize_import_generation_with_projection_state_and_schema_22(
+        store.finalize_import_generation_with_projection_state_and_schema_22_and_materialisation(
             &publication_gate,
             run_id,
             registered_source.source_id,
@@ -1239,11 +1246,13 @@ async fn import_from_postgres_with_updates_capture(
             &direct.geofences,
             &binding,
             &projection_state,
+            &materialised_car,
+            &materialised_drives,
             &prepared.manifest,
             &prepared.noop,
         )
     } else {
-        store.finalize_import_generation_with_projection_state(
+        store.finalize_import_generation_with_projection_state_and_materialisation(
             run_id,
             registered_source.source_id,
             vehicle.vehicle_id,
@@ -1254,6 +1263,8 @@ async fn import_from_postgres_with_updates_capture(
             &direct.geofences,
             &binding,
             &projection_state,
+            &materialised_car,
+            &materialised_drives,
             false,
         )
     };
@@ -1472,6 +1483,7 @@ fn publish_staged_history_with_limits(
             selected_car_id,
             request.imported_at_ms,
             &mut staged,
+            None,
         )?;
         import_run.disarm();
         store.upsert_geofences(vehicle.vehicle_id, &staged.geofences)?;
@@ -2472,13 +2484,27 @@ fn promote_unchanged_direct_import(
     car_id: i64,
     updated_at_ms: i64,
     direct: &mut StagedProjectionPacks,
+    materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
 ) -> Result<crate::db::OpenSessionSeedReport, TeslaMateImportError> {
     // A full direct capture cannot become a delta. Keep the candidate from
     // removing the files on drop, then remove only packs which no catalogue
     // entry references before the no-publication generation promotion.
     direct.keep_chunks();
     discard_unpublished_chunks(store, publication_gate, &direct.chunks)?;
-    Ok(store.promote_import_generation(run_id, source_id, vehicle_id, car_id, updated_at_ms)?)
+    Ok(match materialisation {
+        Some((car, drives)) => store.promote_import_generation_with_materialisation(
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            car,
+            drives,
+        )?,
+        None => {
+            store.promote_import_generation(run_id, source_id, vehicle_id, car_id, updated_at_ms)?
+        }
+    })
 }
 
 fn transport_row_count(chunks: &[BuiltProjectionPack]) -> Result<u64, ProjectionPackError> {

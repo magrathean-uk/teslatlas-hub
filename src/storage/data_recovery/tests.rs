@@ -641,6 +641,10 @@ fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
     let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(source_data)
         .expect("source cursor key");
     let source_lineage = publish_lineage_fixture(&store, &cursor_key);
+    store
+        .retire_vehicle(source_lineage.vehicle_id, 4_000)
+        .expect("retire source vehicle before backup");
+    assert!(!store.vehicle_is_active(source_lineage.vehicle_id).unwrap());
     let source_cursor = fs::read(crate::teslamate_credentials::cursor_key_path(source_data))
         .expect("source cursor bytes");
     let owner_tokens = crate::credentials::OwnerTokens::from_secret_parts(
@@ -703,6 +707,11 @@ fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
         Some(source_lineage.clone()),
         "backup sanitation must preserve account-bound vehicle sync lineage"
     );
+    assert!(
+        !backup_store
+            .vehicle_is_active(source_lineage.vehicle_id)
+            .expect("backup retirement state")
+    );
 
     let before = tree_snapshot(&backup);
     let verified = verify_data_backup(&backup).expect("verify data backup");
@@ -747,6 +756,11 @@ fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
             .source_vehicle_key(source_lineage.vehicle_id)
             .expect("restored vehicle identity"),
         Some("recovery-vehicle".to_owned())
+    );
+    assert!(
+        !restored_store
+            .vehicle_is_active(source_lineage.vehicle_id)
+            .expect("restored retirement state")
     );
     assert_eq!(
         restored_store

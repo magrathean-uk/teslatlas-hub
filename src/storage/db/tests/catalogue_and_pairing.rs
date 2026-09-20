@@ -274,6 +274,115 @@ fn source_and_vehicle_ids_are_stable_across_re_registration() {
 }
 
 #[test]
+fn vehicle_retirement_is_scoped_idempotent_and_preserves_durable_state() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store initializes");
+    let source = store
+        .register_source(&SourceDescriptor::new("owner", "account-a"), 1_000)
+        .expect("source A");
+    let other_source = store
+        .register_source(&SourceDescriptor::new("owner", "account-b"), 1_000)
+        .expect("source B");
+    let descriptor = VehicleDescriptor::new(source.source_id, "9")
+        .with_tesla_identity(Some(9), None);
+    let vehicle = store
+        .register_vehicle_with_id(&descriptor, 2_000, Uuid::from_u128(9))
+        .expect("vehicle A");
+    let sibling = store
+        .register_vehicle_with_id(
+            &VehicleDescriptor::new(source.source_id, "10")
+                .with_tesla_identity(Some(10), None),
+            2_000,
+            Uuid::from_u128(10),
+        )
+        .expect("vehicle A sibling");
+    let other = store
+        .register_vehicle_with_id(
+            &VehicleDescriptor::new(other_source.source_id, "20")
+                .with_tesla_identity(Some(20), None),
+            2_000,
+            Uuid::from_u128(20),
+        )
+        .expect("vehicle B");
+    let mut manifest = test_manifest();
+    manifest.vehicle_id = vehicle.vehicle_id;
+    let manifest_bytes = serde_json::to_vec(&manifest).expect("manifest bytes");
+    let digest = manifest.chunks[0].sha256;
+    store.publish_manifest(&manifest).expect("publish vehicle A");
+    store
+        .append_observation(
+            &ObservationInput {
+                source_id: source.source_id,
+                vehicle_id: vehicle.vehicle_id,
+                observed_at_ms: 3_000,
+                payload: serde_json::json!({"record_type":"retirement-history"}),
+            },
+            3_000,
+        )
+        .expect("retained vehicle history");
+    let invitation = store
+        .create_pairing("retirement-test", 3_000, 30_000)
+        .expect("pairing remains independent");
+
+    assert!(store.retire_vehicle(vehicle.vehicle_id, 4_000).unwrap());
+    assert!(!store.retire_vehicle(vehicle.vehicle_id, 5_000).unwrap());
+    assert!(!store.vehicle_is_active(vehicle.vehicle_id).unwrap());
+    assert!(store.published_vehicles().unwrap().is_empty());
+    assert_eq!(
+        serde_json::to_vec(
+            &store
+                .manifest_for_vehicle(vehicle.vehicle_id)
+                .unwrap()
+                .unwrap()
+        )
+        .unwrap(),
+        manifest_bytes
+    );
+    assert!(store.pack_for_digest(digest).unwrap().is_some());
+    assert_eq!(
+        store
+            .observations_for_vehicle(vehicle.vehicle_id, ObservationQuery::from_start(10))
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        store.source_vehicle_key(vehicle.vehicle_id).unwrap().as_deref(),
+        Some("9")
+    );
+    assert_eq!(
+        store
+            .open()
+            .unwrap()
+            .query_row("SELECT COUNT(*) FROM pairing_challenges", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+
+    // Delayed observations and generic registration may refresh metadata but
+    // cannot resurrect a vehicle retired by a complete inventory.
+    store.register_vehicle(&descriptor, 6_000).unwrap();
+    assert!(!store.vehicle_is_active(vehicle.vehicle_id).unwrap());
+
+    // A complete inventory is source-scoped: it reactivates the returned UUID,
+    // retires a missing sibling, and cannot affect another provider source.
+    store
+        .reconcile_provider_inventory(source.source_id, std::slice::from_ref(&descriptor), 7_000)
+        .unwrap();
+    assert!(store.vehicle_is_active(vehicle.vehicle_id).unwrap());
+    assert!(!store.vehicle_is_active(sibling.vehicle_id).unwrap());
+    assert!(store.vehicle_is_active(other.vehicle_id).unwrap());
+    store
+        .reconcile_provider_inventory(source.source_id, std::slice::from_ref(&descriptor), 8_000)
+        .unwrap();
+    assert!(store.vehicle_is_active(vehicle.vehicle_id).unwrap());
+    assert!(!store.reactivate_vehicle(vehicle.vehicle_id).unwrap());
+    assert!(store.reactivate_vehicle(sibling.vehicle_id).unwrap());
+    assert!(!store.reactivate_vehicle(sibling.vehicle_id).unwrap());
+    store.revoke_pairing(invitation.pairing_id).unwrap();
+}
+
+#[test]
 fn accepts_a_deterministic_vehicle_id_and_allocates_snapshot_markers() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");

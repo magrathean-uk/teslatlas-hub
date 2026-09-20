@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::{
-    config::CollectorProvider,
+    config::{CollectorProvider, EdgeCollectorConfig, HubConfig, TlsListenerConfig},
     credentials::OwnerTokens,
     db::{HubStore, TeslaMateLegacyTokenStore},
     fleet_api::FleetRegion,
@@ -14,6 +14,7 @@ use crate::{
     teslamate_projection::{TeslaMateCar, TeslaMateHistory},
     teslamate_token::encrypt_legacy_owner_tokens,
 };
+use rcgen::{CertifiedKey, generate_simple_self_signed};
 
 fn seed_selected_car(data_dir: &Path) -> HubStore {
     let store = HubStore::initialize(data_dir).expect("store");
@@ -79,6 +80,118 @@ fn seed_fleet_ready_hub(data_dir: &Path) {
     .expect("Fleet credentials");
     persist_fleet_setup_credentials(&store, data_dir, &credentials, SystemTime::now())
         .expect("persist Fleet credentials");
+}
+
+fn source_run_config(temporary: &Path, data_dir: &Path) -> HubConfig {
+    HubStore::initialize(data_dir).expect("source-run store");
+    let CertifiedKey { cert, signing_key } =
+        generate_simple_self_signed(vec!["127.0.0.1".to_owned()]).expect("TLS identity");
+    let certificate_path = temporary.join("source-run-certificate.pem");
+    let private_key_path = temporary.join("source-run-private-key.pem");
+    fs::write(&certificate_path, cert.pem()).expect("write certificate");
+    fs::write(&private_key_path, signing_key.serialize_pem()).expect("write private key");
+    fs::set_permissions(&certificate_path, fs::Permissions::from_mode(0o600))
+        .expect("protect certificate");
+    fs::set_permissions(&private_key_path, fs::Permissions::from_mode(0o600))
+        .expect("protect private key");
+    let mut collector = crate::config::CollectorConfig::default();
+    collector.interval_seconds = 0;
+    HubConfig {
+        data_dir: data_dir.to_owned(),
+        bind: "127.0.0.1:21444".parse().expect("loopback bind"),
+        tls: Some(TlsListenerConfig {
+            certificate_path,
+            private_key_path,
+            public_url: "https://127.0.0.1:21444/".to_owned(),
+        }),
+        collector,
+        geocoder: Default::default(),
+        teslamate: Default::default(),
+        terrain: Default::default(),
+        http: Default::default(),
+    }
+}
+
+#[test]
+fn source_run_mode_requires_explicit_opt_in_and_known_mode() {
+    assert_eq!(development_serve_mode(None, None).unwrap(), None);
+    assert_eq!(
+        development_serve_mode(Some(OsStr::new("1")), None).unwrap(),
+        Some(DevelopmentServeMode::Fixture)
+    );
+    for (raw, expected) in [
+        ("fixture", DevelopmentServeMode::Fixture),
+        ("standalone", DevelopmentServeMode::Standalone),
+        ("edge", DevelopmentServeMode::Edge),
+    ] {
+        assert_eq!(
+            development_serve_mode(Some(OsStr::new("1")), Some(OsStr::new(raw))).unwrap(),
+            Some(expected)
+        );
+    }
+    assert!(development_serve_mode(None, Some(OsStr::new("standalone"))).is_err());
+    assert!(development_serve_mode(Some(OsStr::new("true")), None).is_err());
+    assert!(
+        development_serve_mode(Some(OsStr::new("1")), Some(OsStr::new("production"))).is_err()
+    );
+}
+
+#[test]
+fn standalone_source_run_accepts_empty_state_but_rejects_collectors_and_fixture_claims() {
+    let temporary = crate::private_tempdir().expect("temporary source-run root");
+    let data = temporary.path().join("data");
+    let mut config = source_run_config(temporary.path(), &data);
+
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone))
+        .expect("fresh empty standalone Hub");
+    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Fixture)).is_err());
+    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Edge)).is_err());
+
+    config.collector.interval_seconds = 60;
+    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
+    config.collector.interval_seconds = 0;
+    config.bind = "0.0.0.0:21444".parse().expect("public bind");
+    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
+}
+
+#[test]
+fn edge_source_run_uses_normal_binding_preflight_and_rejects_standalone_mode() {
+    let temporary = crate::private_tempdir().expect("temporary source-run root");
+    let data = temporary.path().join("data");
+    let store = seed_selected_car(&data);
+    let (vehicle_id, _, _) = store.configured_tesla_vehicles().unwrap()[0].clone();
+    let source_id: String = store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT source_id FROM vehicles WHERE vehicle_id = ?1",
+            rusqlite::params![vehicle_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("source identity");
+    let mut config = source_run_config(temporary.path(), &data);
+    config.collector.edge = Some(EdgeCollectorConfig {
+        base_url: "https://127.0.0.1:24443/".to_owned(),
+        ca_certificate_path: temporary.path().join("edge-ca.pem"),
+        client_certificate_path: temporary.path().join("edge-client.pem"),
+        client_private_key_path: temporary.path().join("edge-client-key.pem"),
+        bearer_token_path: temporary.path().join("edge-token"),
+        installation_id: "local-edge".to_owned(),
+        lineage: "local-spool".to_owned(),
+        source_id: source_id.parse().expect("source UUID"),
+        vehicle_id,
+        vin: "5YJTEST0000000001".to_owned(),
+        car_id: 1,
+        poll_milliseconds: 500,
+        timeout_seconds: 20,
+        max_backoff_seconds: 60,
+    });
+
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Edge))
+        .expect("explicit local Edge binding");
+    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
+    config.collector.edge.as_mut().unwrap().vin = "5YJTEST0000000002".to_owned();
+    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Edge)).is_err());
 }
 
 #[test]

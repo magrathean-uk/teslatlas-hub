@@ -35,10 +35,11 @@ use super::{
 };
 #[cfg(target_os = "macos")]
 use super::{
-    MAC_COMMAND_PROXY_RETRY_DELAY, MAX_MIGRATION_ENCRYPTION_KEY_BYTES,
-    MAX_MIGRATION_POSTGRES_PASSWORD_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES,
-    MAX_MIGRATION_TOKEN_BYTES, MAX_MIGRATION_TOKEN_FILE_BYTES, MacCommandProxySpec,
-    MacServeControl, MacServeWorkerStopTimeout, MigrationSecretReadError, ServiceCommand,
+    DevelopmentServeModeArgument, MAC_COMMAND_PROXY_RETRY_DELAY,
+    MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
+    MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES, MAX_MIGRATION_TOKEN_BYTES,
+    MAX_MIGRATION_TOKEN_FILE_BYTES, MacCommandProxySpec, MacServeControl,
+    MacServeWorkerStopTimeout, MigrationSecretReadError, ServiceCommand,
     clear_provider_credentials, command_requires_user_hub_admission, decode_setup_fleet_stdin,
     migration_start_requested, migration_stop_confirmed, persist_fleet_setup_and_drop_legacy,
     persist_legacy_setup_and_drop_fleet, persist_migrated_legacy_tokens,
@@ -2158,6 +2159,12 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
     assert!(!command_requires_user_hub_admission(&Command::Source));
     assert!(!command_requires_user_hub_admission(&Command::Status));
     assert!(!command_requires_user_hub_admission(&Command::Preflight));
+    #[cfg(target_os = "macos")]
+    assert!(!command_requires_user_hub_admission(
+        &Command::ServePreflight {
+            mode: DevelopmentServeModeArgument::Standalone,
+        }
+    ));
     assert!(!command_requires_user_hub_admission(&Command::Service {
         command: ServiceCommand::Status,
     }));
@@ -2165,6 +2172,34 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         vehicle_id: None,
         command: ControlCommand::Pause,
     }));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn source_run_serve_preflight_cli_requires_an_explicit_known_mode() {
+    let cli = Cli::try_parse_from([
+        "teslatlas-hub",
+        "--config",
+        "/private/tmp/source-run.toml",
+        "serve-preflight",
+        "--mode",
+        "edge",
+    ])
+    .expect("explicit Edge serve preflight");
+    assert!(matches!(
+        cli.command,
+        Command::ServePreflight {
+            mode: DevelopmentServeModeArgument::Edge,
+        }
+    ));
+    assert!(
+        Cli::try_parse_from(["teslatlas-hub", "serve-preflight"]).is_err(),
+        "mode is mandatory"
+    );
+    assert!(
+        Cli::try_parse_from(["teslatlas-hub", "serve-preflight", "--mode", "production",]).is_err(),
+        "production is not a source-run mode"
+    );
 }
 
 fn test_identity(name: &str) -> (String, zeroize::Zeroizing<String>, Vec<u8>) {

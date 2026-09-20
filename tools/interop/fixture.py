@@ -29,6 +29,7 @@ import urllib.parse
 import uuid
 
 MAX_CONFIG_BYTES = 64 * 1024
+DEVELOPMENT_SERVE_ENV = "TESLATLAS_HUB_DEVELOPMENT"
 EDGE_PRIMARY_BASE_URL = "https://127.0.0.1:18510/"
 EDGE_DOCKER_BASE_URL = "https://127.0.0.1:19443/"
 EDGE_R1_DOCKER_BASE_URL = "https://127.0.0.1:20443/"
@@ -303,6 +304,24 @@ def subprocess_failed(diagnostic):
     return diagnostic["termination"] != "exit" or diagnostic.get("exit_code") != 0
 
 
+def run_pair_command(binary, config_path, invitation_output):
+    return subprocess.run(
+        [str(binary), "--config", str(config_path), "pair", "--json", "--label",
+         "Synthetic interop fixture", "--expires-in-seconds", "900"],
+        stdin=subprocess.DEVNULL, stdout=invitation_output,
+        stderr=subprocess.PIPE, timeout=60,
+    )
+
+
+def start_owned_synthetic_serve(binary, config_path, log):
+    environment = os.environ.copy()
+    environment[DEVELOPMENT_SERVE_ENV] = "1"
+    return subprocess.Popen(
+        [str(binary), "--config", str(config_path), "serve"],
+        env=environment, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+    )
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -375,8 +394,7 @@ def run(config):
         invitation_path = root / "cli-invitation.json"
         invitation_fd = os.open(invitation_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(invitation_fd, "wb") as invitation_output:
-            paired = subprocess.run([str(binary), "--config", descriptor["config_path"], "pair", "--json", "--label", "Synthetic interop fixture", "--expires-in-seconds", "900"],
-                                    stdin=subprocess.DEVNULL, stdout=invitation_output, stderr=subprocess.PIPE, timeout=60)
+            paired = run_pair_command(binary, descriptor["config_path"], invitation_output)
         if paired.returncode:
             raise RuntimeError("supported CLI pairing failed")
         invitation = read_private_json(invitation_path)
@@ -389,8 +407,7 @@ def run(config):
                           update_request_path=str(root / "advance.request"), update_receipt_path=str(root / "advance.json"))
         log_fd = os.open(root / "serve.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(log_fd, "wb") as log:
-            process = subprocess.Popen([str(binary), "--config", descriptor["config_path"], "serve"],
-                                       stdin=subprocess.DEVNULL, stdout=log, stderr=log)
+            process = start_owned_synthetic_serve(binary, descriptor["config_path"], log)
             wait_ready(process, descriptor)
             ready = dict(descriptor, **ready_process_fields(process, root),
                          binary_sha256=binary_hash,

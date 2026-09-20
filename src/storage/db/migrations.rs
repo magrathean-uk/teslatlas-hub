@@ -2042,6 +2042,21 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 59;
     }
 
+    if version == 59 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                ALTER TABLE vehicles ADD COLUMN retired_at_ms INTEGER
+                    CHECK(retired_at_ms IS NULL OR retired_at_ms >= created_at_ms);
+                PRAGMA user_version = 60;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 60;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {

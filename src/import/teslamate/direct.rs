@@ -109,6 +109,16 @@ pub(crate) struct DirectUpdatesSourceV2_2 {
 #[derive(Debug)]
 pub(crate) struct DirectSnapshotCapture {
     pub packs: StagedProjectionPacks,
+    /// The selected car from the same exported PostgreSQL snapshot as the
+    /// immutable packs and digest state. Publication uses this exact value to
+    /// seed or repair the ordinary local read model without inventing an
+    /// observation.
+    pub materialised_car: crate::hub_pack::ProjectionCar,
+    /// Completed drives retained by the bounded direct reader. The Hub's
+    /// ordinary HTTP history surface is backed by the local materialised read
+    /// model rather than immutable sync packs, so an initial import publishes
+    /// these rows atomically with its catalogue entry.
+    pub materialised_drives: Vec<ProjectionDrive>,
     pub updates_v2_2: DirectUpdatesSourceV2_2,
     pub open_session: TeslaMateOpenSession,
     pub legacy_tokens: Option<TeslaMateLegacyTokenCiphertexts>,
@@ -1456,6 +1466,10 @@ async fn write_from_session(
                 .ok_or(TeslaMateDirectError::LegacyPhysicalFingerprintMissing)?,
         ),
     };
+    // No later phase needs the lookup map. Move its bounded values into the
+    // publication hand-off instead of cloning as many as 32,768 drive rows.
+    let mut materialised_drives = projected_drives.into_values().collect::<Vec<_>>();
+    materialised_drives.sort_by_key(|drive| drive.id);
     let (chunks, projection_state, selected_car) = sink.into_parts();
     Ok(DirectSnapshotCapture {
         packs: StagedProjectionPacks::new_with_projection_state(
@@ -1467,6 +1481,8 @@ async fn write_from_session(
             projection_state,
             selected_car,
         ),
+        materialised_car: projected_car,
+        materialised_drives,
         updates_v2_2,
         open_session,
         legacy_tokens: None,

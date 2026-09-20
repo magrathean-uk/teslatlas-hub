@@ -547,6 +547,7 @@ fn unchanged_direct_fingerprint_promotes_reconciled_live_tail_and_cleans_candida
         1,
         TAIL_TIME_MS,
         &mut direct,
+        None,
     )
     .expect("promote unchanged direct tail without publication");
     drop(direct);
@@ -618,6 +619,7 @@ fn unchanged_direct_fingerprint_promotes_reconciled_live_tail_and_cleans_candida
         1,
         TAIL_TIME_MS,
         &mut no_candidate,
+        None,
     )
     .expect("repeat unchanged tail promotion");
     assert_eq!(

@@ -47,6 +47,23 @@ One complete acceptance run consumes the invitation, rotates its bearer and appl
 
 The later observation is requested by creating the private `advance.request` marker named in the descriptor. The launcher alone invokes the staged harness's `--advance` command. Its independent scenario checks reopen the store and compare the preserved charge before writing `advance.json`; no production HTTP mutation route is added.
 
+For development-only dynamic-entity acceptance, build the harness with
+`--features interop-fixture`, then apply these commands to the exact private fixture
+root recorded in `ready.json`:
+
+```sh
+target/debug/examples/interop_fixture --expose-dynamic /private/new-fixture
+target/debug/examples/interop_fixture --retire-dynamic /private/new-fixture
+target/debug/examples/interop_fixture --restore-dynamic /private/new-fixture
+```
+
+They add one deterministic third signed synthetic vehicle, retire it from the public
+vehicle and direct UUID routes, and restore the same stable UUID. Repeating any step
+is safe. Retirement preserves history, aliases, manifests, no-op state and
+digest-addressed pack access. The harness requires the original owner-only fixture
+directory and matching `connection.json`; it does not add a production endpoint or
+CLI command.
+
 SIGINT/SIGTERM or the lifetime limit stops only the launcher's owned Hub child. Evidence, including staged binaries and `stopped.json`, is retained. Passing this synthetic native run does not establish import/migration preservation, packaged client behavior, sync ingestion correctness, Linux execution or the full platform matrix.
 
 Before reading the invitation, the acceptance adapter requires private retained

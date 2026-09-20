@@ -97,6 +97,76 @@ impl HubStore {
         projection_state: &TeslaMateProjectionState,
         retain_legacy_inventory: bool,
     ) -> Result<(), StoreError> {
+        self.finalize_import_generation_delta_successors_with_projection_state_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            deltas,
+            cursor_key,
+            terminal_cursor,
+            fingerprint,
+            geofences,
+            projection_state,
+            None,
+            retain_legacy_inventory,
+        )
+    }
+
+    /// Direct PostgreSQL successor publication also reconciles the bounded
+    /// car/drive query projection inside the same catalogue transaction.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
+        &self,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        deltas: &[LineageDelta],
+        cursor_key: &CursorKey,
+        terminal_cursor: &OpaqueCursor,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        projection_state: &TeslaMateProjectionState,
+        materialised_car: &ProjectionCar,
+        materialised_drives: &[ProjectionDrive],
+    ) -> Result<(), StoreError> {
+        self.finalize_import_generation_delta_successors_with_projection_state_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            deltas,
+            cursor_key,
+            terminal_cursor,
+            fingerprint,
+            geofences,
+            projection_state,
+            Some((materialised_car, materialised_drives)),
+            false,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finalize_import_generation_delta_successors_with_projection_state_inner(
+        &self,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        deltas: &[LineageDelta],
+        cursor_key: &CursorKey,
+        terminal_cursor: &OpaqueCursor,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        projection_state: &TeslaMateProjectionState,
+        materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
+        retain_legacy_inventory: bool,
+    ) -> Result<(), StoreError> {
         if run_id.is_nil() || source_id.is_nil() || vehicle_id.is_nil() || car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
         }
@@ -273,6 +343,17 @@ impl HubStore {
                 .map_err(StoreError::LineageCatalog)?;
             if updated != 1 {
                 return Err(StoreError::LineageCatalogConflict);
+            }
+            if let Some((car, drives)) = materialisation {
+                reconcile_imported_materialisation_in_transaction(
+                    &transaction,
+                    vehicle_id,
+                    car_id,
+                    car,
+                    drives,
+                    ImportedProjectionRows::Attached,
+                    PriorImportedDriveRows::Durable,
+                )?;
             }
             replace_teslamate_import_projection_state_from_attached_in_transaction(
                 &transaction,
@@ -902,6 +983,55 @@ impl HubStore {
         logical_fingerprint: Sha256Digest,
         projection_state: &TeslaMateProjectionState,
     ) -> Result<TeslaMateLegacyDirectBridgeResult, StoreError> {
+        self.bridge_legacy_teslamate_direct_import_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            selected_car_id,
+            legacy_fingerprint,
+            logical_fingerprint,
+            projection_state,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn bridge_legacy_teslamate_direct_import_with_materialisation(
+        &self,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        selected_car_id: i64,
+        legacy_fingerprint: Sha256Digest,
+        logical_fingerprint: Sha256Digest,
+        projection_state: &TeslaMateProjectionState,
+        materialised_car: &ProjectionCar,
+        materialised_drives: &[ProjectionDrive],
+    ) -> Result<TeslaMateLegacyDirectBridgeResult, StoreError> {
+        self.bridge_legacy_teslamate_direct_import_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            selected_car_id,
+            legacy_fingerprint,
+            logical_fingerprint,
+            projection_state,
+            Some((materialised_car, materialised_drives)),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn bridge_legacy_teslamate_direct_import_inner(
+        &self,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        selected_car_id: i64,
+        legacy_fingerprint: Sha256Digest,
+        logical_fingerprint: Sha256Digest,
+        projection_state: &TeslaMateProjectionState,
+        materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
+    ) -> Result<TeslaMateLegacyDirectBridgeResult, StoreError> {
         if run_id.is_nil() || source_id.is_nil() || vehicle_id.is_nil() || selected_car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
         }
@@ -947,6 +1077,18 @@ impl HubStore {
             .ok_or(StoreError::TeslaMateLegacyDirectRebaseRequired(vehicle_id))?;
             if candidate.legacy_fingerprint != legacy_fingerprint {
                 return Err(StoreError::TeslaMateLegacyDirectRebaseRequired(vehicle_id));
+            }
+            if let Some((car, drives)) = materialisation {
+                reconcile_imported_materialisation_in_transaction(
+                    &transaction,
+                    vehicle_id,
+                    selected_car_id,
+                    car,
+                    drives,
+                    ImportedProjectionRows::Attached,
+                    PriorImportedDriveRows::Legacy,
+                )
+                .map_err(|error| legacy_direct_bridge_state_error(vehicle_id, error))?;
             }
             replace_teslamate_import_projection_state_from_attached_in_transaction(
                 &transaction,
@@ -1432,6 +1574,73 @@ impl HubStore {
         projection_state: &TeslaMateProjectionState,
         retain_legacy_inventory: bool,
     ) -> Result<(), StoreError> {
+        self.finalize_import_generation_with_projection_state_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            manifest,
+            fingerprint,
+            geofences,
+            binding,
+            projection_state,
+            None,
+            retain_legacy_inventory,
+        )
+    }
+
+    /// As [`Self::finalize_import_generation_with_projection_state`], while
+    /// atomically seeding the selected car and completed-drive read models.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finalize_import_generation_with_projection_state_and_materialisation(
+        &self,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        manifest: &SyncManifest,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        binding: &ProjectionBinding,
+        projection_state: &TeslaMateProjectionState,
+        materialised_car: &ProjectionCar,
+        materialised_drives: &[ProjectionDrive],
+        retain_legacy_inventory: bool,
+    ) -> Result<(), StoreError> {
+        self.finalize_import_generation_with_projection_state_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            manifest,
+            fingerprint,
+            geofences,
+            binding,
+            projection_state,
+            Some((materialised_car, materialised_drives)),
+            retain_legacy_inventory,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finalize_import_generation_with_projection_state_inner(
+        &self,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        manifest: &SyncManifest,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        binding: &ProjectionBinding,
+        projection_state: &TeslaMateProjectionState,
+        materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
+        retain_legacy_inventory: bool,
+    ) -> Result<(), StoreError> {
         if run_id.is_nil()
             || source_id.is_nil()
             || vehicle_id.is_nil()
@@ -1480,6 +1689,17 @@ impl HubStore {
             let session =
                 serde_json::from_str(&encoded).map_err(|_| StoreError::InvalidLifecycleSession)?;
             publish_manifest_in_transaction(&transaction, manifest, Some(binding))?;
+            if let Some((car, drives)) = materialisation {
+                reconcile_imported_materialisation_in_transaction(
+                    &transaction,
+                    vehicle_id,
+                    car_id,
+                    car,
+                    drives,
+                    ImportedProjectionRows::Attached,
+                    PriorImportedDriveRows::None,
+                )?;
+            }
             promote_imported_open_session_in_transaction(
                 &transaction,
                 source_id,
@@ -1557,6 +1777,79 @@ impl HubStore {
         schema_22_manifest: &SyncManifest,
         schema_22_noop: &crate::updates_delivery::SignedNoOpState,
     ) -> Result<(), StoreError> {
+        self.finalize_import_generation_with_projection_state_and_schema_22_inner(
+            publication_gate,
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            manifest,
+            fingerprint,
+            geofences,
+            binding,
+            projection_state,
+            None,
+            schema_22_manifest,
+            schema_22_noop,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finalize_import_generation_with_projection_state_and_schema_22_and_materialisation(
+        &self,
+        publication_gate: &PublicationGate,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        manifest: &SyncManifest,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        binding: &ProjectionBinding,
+        projection_state: &TeslaMateProjectionState,
+        materialised_car: &ProjectionCar,
+        materialised_drives: &[ProjectionDrive],
+        schema_22_manifest: &SyncManifest,
+        schema_22_noop: &crate::updates_delivery::SignedNoOpState,
+    ) -> Result<(), StoreError> {
+        self.finalize_import_generation_with_projection_state_and_schema_22_inner(
+            publication_gate,
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            manifest,
+            fingerprint,
+            geofences,
+            binding,
+            projection_state,
+            Some((materialised_car, materialised_drives)),
+            schema_22_manifest,
+            schema_22_noop,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn finalize_import_generation_with_projection_state_and_schema_22_inner(
+        &self,
+        publication_gate: &PublicationGate,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        manifest: &SyncManifest,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        binding: &ProjectionBinding,
+        projection_state: &TeslaMateProjectionState,
+        materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
+        schema_22_manifest: &SyncManifest,
+        schema_22_noop: &crate::updates_delivery::SignedNoOpState,
+    ) -> Result<(), StoreError> {
         if run_id.is_nil()
             || source_id.is_nil()
             || vehicle_id.is_nil()
@@ -1624,6 +1917,17 @@ impl HubStore {
                 serde_json::from_str(&encoded).map_err(|_| StoreError::InvalidLifecycleSession)?;
             publish_manifest_in_transaction(&transaction, manifest, Some(binding))?;
             publish_manifest_in_transaction(&transaction, schema_22_manifest, None)?;
+            if let Some((car, drives)) = materialisation {
+                reconcile_imported_materialisation_in_transaction(
+                    &transaction,
+                    vehicle_id,
+                    car_id,
+                    car,
+                    drives,
+                    ImportedProjectionRows::Attached,
+                    PriorImportedDriveRows::None,
+                )?;
+            }
             promote_imported_open_session_in_transaction(
                 &transaction,
                 source_id,
@@ -1989,6 +2293,45 @@ impl HubStore {
         car_id: i64,
         updated_at_ms: i64,
     ) -> Result<OpenSessionSeedReport, StoreError> {
+        self.promote_import_generation_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            None,
+        )
+    }
+
+    pub(crate) fn promote_import_generation_with_materialisation(
+        &self,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        materialised_car: &ProjectionCar,
+        materialised_drives: &[ProjectionDrive],
+    ) -> Result<OpenSessionSeedReport, StoreError> {
+        self.promote_import_generation_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            Some((materialised_car, materialised_drives)),
+        )
+    }
+
+    fn promote_import_generation_inner(
+        &self,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
+    ) -> Result<OpenSessionSeedReport, StoreError> {
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -2015,6 +2358,17 @@ impl HubStore {
                 .ok_or(StoreError::ImportGenerationNotFound)?;
         let session: TeslaMateOpenSession =
             serde_json::from_str(&encoded).map_err(|_| StoreError::InvalidLifecycleSession)?;
+        if let Some((car, drives)) = materialisation {
+            reconcile_imported_materialisation_in_transaction(
+                &transaction,
+                vehicle_id,
+                car_id,
+                car,
+                drives,
+                ImportedProjectionRows::Durable,
+                PriorImportedDriveRows::Durable,
+            )?;
+        }
         let report = promote_imported_open_session_in_transaction(
             &transaction,
             source_id,
@@ -2051,4 +2405,242 @@ impl HubStore {
             .map_err(StoreError::ImportGeneration)?;
         Ok(())
     }
+}
+
+#[derive(Clone, Copy)]
+enum ImportedProjectionRows {
+    Attached,
+    Durable,
+}
+
+#[derive(Clone, Copy)]
+enum PriorImportedDriveRows {
+    None,
+    Durable,
+    Legacy,
+}
+
+/// Install the direct snapshot's bounded query projection and remove only
+/// rows which the prior import projection owned. Rows created solely by live
+/// collection are deliberately outside that prior set and survive a reimport.
+fn reconcile_imported_materialisation_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    car_id: i64,
+    car: &ProjectionCar,
+    drives: &[ProjectionDrive],
+    current_rows: ImportedProjectionRows,
+    prior_rows: PriorImportedDriveRows,
+) -> Result<(), StoreError> {
+    if vehicle_id.is_nil() || car_id <= 0 || car.id != car_id {
+        return Err(StoreError::InvalidImportGeneration);
+    }
+
+    let vehicle_key = vehicle_id.to_string();
+    let projection_rows = |entity_ordinal: u8| -> Result<Vec<(i64, i64, Vec<u8>)>, StoreError> {
+        match current_rows {
+            ImportedProjectionRows::Attached => {
+                let mut statement = transaction
+                    .prepare(
+                        "SELECT entity_id, car_id, projection_sha256
+                           FROM teslamate_projection_state_spool.current_rows
+                          WHERE entity_ordinal = ?1
+                          ORDER BY entity_id ASC",
+                    )
+                    .map_err(StoreError::LineageCatalog)?;
+                let rows = statement
+                    .query_map(params![i64::from(entity_ordinal)], |row| {
+                        Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                    })
+                    .map_err(StoreError::LineageCatalog)?;
+                rows.collect::<Result<Vec<_>, _>>()
+                    .map_err(StoreError::LineageCatalog)
+            }
+            ImportedProjectionRows::Durable => {
+                let mut statement = transaction
+                    .prepare(
+                        "SELECT entity_id, car_id, projection_sha256
+                           FROM teslamate_import_projection_state_rows
+                          WHERE vehicle_id = ?1 AND entity_ordinal = ?2
+                          ORDER BY entity_id ASC",
+                    )
+                    .map_err(StoreError::LineageCatalog)?;
+                let rows = statement
+                    .query_map(
+                        params![vehicle_key.as_str(), i64::from(entity_ordinal)],
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+                    )
+                    .map_err(StoreError::LineageCatalog)?;
+                rows.collect::<Result<Vec<_>, _>>()
+                    .map_err(StoreError::LineageCatalog)
+            }
+        }
+    };
+
+    let car_digest =
+        canonical_payload_and_digest(TeslaMateProjectionStateEntity::Car, car_id, car_id, car)
+            .map_err(StoreError::TeslaMateProjectionState)?
+            .1;
+    let car_rows = projection_rows(TeslaMateProjectionStateEntity::Car.ordinal())?;
+    if car_rows.len() != 1
+        || car_rows[0].0 != car_id
+        || car_rows[0].1 != car_id
+        || car_rows[0].2.as_slice() != car_digest.as_bytes().as_slice()
+    {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+
+    let mut previous_id = 0_i64;
+    for drive in drives {
+        if drive.id <= previous_id || drive.car_id != car_id {
+            return Err(StoreError::InvalidImportGeneration);
+        }
+        previous_id = drive.id;
+    }
+    let projected_drive_rows = projection_rows(TeslaMateProjectionStateEntity::Drive.ordinal())?;
+    if projected_drive_rows.len() != drives.len() {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+    for ((id, projected_car_id, projected_digest), drive) in projected_drive_rows.iter().zip(drives)
+    {
+        let digest = canonical_payload_and_digest(
+            TeslaMateProjectionStateEntity::Drive,
+            drive.id,
+            drive.car_id,
+            drive,
+        )
+        .map_err(StoreError::TeslaMateProjectionState)?
+        .1;
+        if *id != drive.id
+            || *projected_car_id != drive.car_id
+            || projected_digest.as_slice() != digest.as_bytes().as_slice()
+        {
+            return Err(StoreError::LineageCatalogConflict);
+        }
+    }
+
+    let prior_imported_drive_ids = match prior_rows {
+        PriorImportedDriveRows::None => Vec::new(),
+        PriorImportedDriveRows::Durable => {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT entity_id
+                       FROM teslamate_import_projection_state_rows
+                      WHERE vehicle_id = ?1 AND entity_ordinal = ?2
+                      ORDER BY entity_id ASC",
+                )
+                .map_err(StoreError::LineageCatalog)?;
+            let rows = statement
+                .query_map(
+                    params![
+                        vehicle_key.as_str(),
+                        i64::from(TeslaMateProjectionStateEntity::Drive.ordinal())
+                    ],
+                    |row| row.get(0),
+                )
+                .map_err(StoreError::LineageCatalog)?;
+            rows.collect::<Result<Vec<i64>, _>>()
+                .map_err(StoreError::LineageCatalog)?
+        }
+        PriorImportedDriveRows::Legacy => {
+            let mut statement = transaction
+                .prepare(
+                    "SELECT entity_id
+                       FROM teslamate_import_projection_rows
+                      WHERE vehicle_id = ?1 AND entity = 'drive'
+                      ORDER BY entity_id ASC",
+                )
+                .map_err(StoreError::LineageCatalog)?;
+            let rows = statement
+                .query_map(params![vehicle_key.as_str()], |row| row.get(0))
+                .map_err(StoreError::LineageCatalog)?;
+            rows.collect::<Result<Vec<i64>, _>>()
+                .map_err(StoreError::LineageCatalog)?
+        }
+    };
+    let prior_imported_drive_ids = prior_imported_drive_ids.into_iter().collect::<HashSet<_>>();
+    let current_drive_ids = drives.iter().map(|drive| drive.id).collect::<HashSet<_>>();
+
+    // A numeric TeslaMate drive ID is not a durable ownership marker. Live
+    // collection can allocate the same next ID after the preceding import.
+    // Only a row listed by the preceding imported projection is replaceable;
+    // rejecting every other collision keeps the transaction (and the live
+    // history) intact for an explicit reconciliation.
+    for drive in drives {
+        if !prior_imported_drive_ids.contains(&drive.id) {
+            let collision: bool = transaction
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM materialised_drives
+                         WHERE vehicle_id = ?1 AND drive_id = ?2
+                     )",
+                    params![vehicle_key.as_str(), drive.id],
+                    |row| row.get(0),
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+            if collision {
+                return Err(StoreError::LineageCatalogConflict);
+            }
+        }
+    }
+
+    let car_json = serde_json::to_string(car).map_err(StoreError::SerializeLifecycleRow)?;
+    transaction
+        .execute(
+            "INSERT INTO materialised_cars(vehicle_id, car_id, car_json)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(vehicle_id) DO UPDATE SET
+                car_id = excluded.car_id,
+                car_json = excluded.car_json",
+            params![vehicle_key.as_str(), car_id, car_json],
+        )
+        .map_err(StoreError::LifecycleWrite)?;
+
+    for drive in drives {
+        let drive_json = serde_json::to_string(drive).map_err(StoreError::SerializeLifecycleRow)?;
+        transaction
+            .execute(
+                "INSERT INTO materialised_drives(
+                    vehicle_id, drive_id, car_id, drive_json,
+                    inside_temp_avg, power_max, power_min,
+                    start_ideal_range_km, end_ideal_range_km, ascent, descent
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                 ON CONFLICT(vehicle_id, drive_id) DO UPDATE SET
+                    car_id = excluded.car_id,
+                    drive_json = excluded.drive_json,
+                    inside_temp_avg = excluded.inside_temp_avg,
+                    power_max = excluded.power_max,
+                    power_min = excluded.power_min,
+                    start_ideal_range_km = excluded.start_ideal_range_km,
+                    end_ideal_range_km = excluded.end_ideal_range_km,
+                    ascent = excluded.ascent,
+                    descent = excluded.descent",
+                params![
+                    vehicle_key.as_str(),
+                    drive.id,
+                    car_id,
+                    drive_json,
+                    drive.inside_temp_avg,
+                    drive.power_max,
+                    drive.power_min,
+                    drive.start_ideal_range_km,
+                    drive.end_ideal_range_km,
+                    drive.ascent,
+                    drive.descent,
+                ],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+    }
+    for drive_id in prior_imported_drive_ids {
+        if !current_drive_ids.contains(&drive_id) {
+            transaction
+                .execute(
+                    "DELETE FROM materialised_drives
+                      WHERE vehicle_id = ?1 AND drive_id = ?2",
+                    params![vehicle_key.as_str(), drive_id],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+    }
+    Ok(())
 }

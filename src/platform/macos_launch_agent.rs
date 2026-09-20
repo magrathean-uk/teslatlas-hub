@@ -3,8 +3,10 @@
 //! Small per-user LaunchAgent installer for the one Hub process.
 
 use std::{
+    ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::{self, Write},
+    net::IpAddr,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -18,6 +20,8 @@ const PLIST_NAME: &str = "com.teslatlas.hub.plist";
 const BINARY_NAME: &str = "teslatlas-hub";
 const PLIST_TEMPLATE: &str = include_str!("../../packaging/com.teslatlas.hub.plist.in");
 const SERVICE_UNLOAD_ATTEMPTS: usize = 100;
+pub const DEVELOPMENT_SERVE_ENV: &str = "TESLATLAS_HUB_DEVELOPMENT";
+pub const DEVELOPMENT_SERVE_MODE_ENV: &str = "TESLATLAS_HUB_DEVELOPMENT_MODE";
 #[cfg(not(test))]
 const SERVICE_UNLOAD_DELAY: Duration = Duration::from_millis(100);
 #[cfg(test)]
@@ -53,6 +57,15 @@ pub fn prepare_install(data_dir: &Path, config_path: &Path) -> io::Result<Instal
 /// Validate the configured collection authority, including Edge-only Fleet
 /// ingestion where no Tesla Fleet token is owned by Hub.
 pub fn preflight_hub_for_config(config: &crate::config::HubConfig) -> io::Result<()> {
+    if config.collector.interval_seconds == 0
+        && config.collector.edge.is_none()
+        && config.collector.fleet_telemetry.is_none()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "production Hub requires an enabled collector path",
+        ));
+    }
     if let Some(edge) = &config.collector.edge {
         let store = preflight_store(&config.data_dir)?;
         let selected = store
@@ -79,6 +92,202 @@ pub fn preflight_hub_for_config(config: &crate::config::HubConfig) -> io::Result
         ));
     }
     preflight_hub_for_provider(&config.data_dir, config.collector.provider)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DevelopmentServeMode {
+    Fixture,
+    Standalone,
+    Edge,
+}
+
+/// Parse the process-level source-run opt-in without consulting global state.
+/// An absent opt-in always selects production admission. The historical
+/// fixture behavior remains the default for existing explicit development
+/// launchers; standalone and Edge composition must be selected by name.
+pub fn development_serve_mode(
+    opt_in: Option<&OsStr>,
+    mode: Option<&OsStr>,
+) -> io::Result<Option<DevelopmentServeMode>> {
+    match (opt_in, mode) {
+        (None, None) => Ok(None),
+        (None, Some(_)) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{DEVELOPMENT_SERVE_MODE_ENV} requires {DEVELOPMENT_SERVE_ENV}=1"),
+        )),
+        (Some(value), _) if value != OsStr::new("1") => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{DEVELOPMENT_SERVE_ENV} must be exactly 1 when supplied"),
+        )),
+        (Some(_), None) => Ok(Some(DevelopmentServeMode::Fixture)),
+        (Some(_), Some(value)) if value == OsStr::new("fixture") => {
+            Ok(Some(DevelopmentServeMode::Fixture))
+        }
+        (Some(_), Some(value)) if value == OsStr::new("standalone") => {
+            Ok(Some(DevelopmentServeMode::Standalone))
+        }
+        (Some(_), Some(value)) if value == OsStr::new("edge") => {
+            Ok(Some(DevelopmentServeMode::Edge))
+        }
+        (Some(_), Some(_)) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "{DEVELOPMENT_SERVE_MODE_ENV} must be fixture, standalone, or edge"
+            ),
+        )),
+    }
+}
+
+/// Validate Serve without weakening production install/service preflight.
+/// Every source-run mode remains loopback-only with a verified TLS identity.
+/// Fixture mode additionally requires the historical published fixture;
+/// standalone permits empty/import-only state; Edge requires the exact local
+/// Edge binding through the normal production preflight.
+pub fn preflight_hub_for_serve(
+    config: &crate::config::HubConfig,
+    development_mode: Option<DevelopmentServeMode>,
+) -> io::Result<()> {
+    let Some(development_mode) = development_mode else {
+        return preflight_hub_for_config(config);
+    };
+    if !config.bind.ip().is_loopback() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "source-run Serve requires a loopback bind address",
+        ));
+    }
+    let tls = config.tls.as_ref().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "source-run Serve requires strict TLS",
+        )
+    })?;
+    let public_url = url::Url::parse(&tls.public_url).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "source-run Serve public URL is invalid",
+        )
+    })?;
+    let public_ip = public_url
+        .host_str()
+        .and_then(|host| host.parse::<IpAddr>().ok());
+    if public_url.scheme() != "https"
+        || !public_ip.is_some_and(|address| address.is_loopback())
+        || public_url.port_or_known_default() != Some(config.bind.port())
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "source-run Serve requires a matching literal loopback HTTPS public URL",
+        ));
+    }
+    crate::server::validate_tls_identity(tls)?;
+
+    match development_mode {
+        DevelopmentServeMode::Standalone => {
+            if config.collector.interval_seconds != 0
+                || config.collector.edge.is_some()
+                || config.collector.fleet_telemetry.is_some()
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "standalone source-run Serve requires every collector path to be disabled",
+                ));
+            }
+            crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("standalone source-run Hub data is unavailable: {error}"),
+                )
+            })?;
+            return Ok(());
+        }
+        DevelopmentServeMode::Edge => {
+            if config.collector.interval_seconds != 0
+                || config.collector.edge.is_none()
+                || config.collector.fleet_telemetry.is_some()
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Edge source-run Serve requires only collector.edge",
+                ));
+            }
+            return preflight_hub_for_config(config);
+        }
+        DevelopmentServeMode::Fixture => {}
+    }
+
+    if config.collector.interval_seconds != 0
+        || config.collector.edge.is_some()
+        || config.collector.fleet_telemetry.is_some()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "fixture source-run Serve requires every collector path to be disabled",
+        ));
+    }
+
+    let store = crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("fixture source-run Hub data is unavailable: {error}"),
+        )
+    })?;
+    let published = store.published_vehicles().map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("source-run fixture catalogue is unavailable: {error}"),
+        )
+    })?;
+    if published.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "fixture source-run Serve requires published fixture data",
+        ));
+    }
+    let key_bytes = crate::teslamate_credentials::load_existing_cursor_key_bytes(&config.data_dir)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "source-run fixture cursor key is unavailable",
+            )
+        })?;
+    let mut key = [0_u8; 32];
+    key.copy_from_slice(key_bytes.as_slice());
+    let cursor_key = crate::protocol::CursorKey::from_bytes(key);
+    for vehicle in published {
+        let (manifest_bytes, _) = crate::updates_delivery::schema_22_signed_artifacts(
+            &store,
+            vehicle.vehicle_id,
+            &cursor_key,
+        )
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.message))?;
+        let manifest: crate::protocol::SyncManifest = serde_json::from_slice(&manifest_bytes)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        for pack in manifest.chunks {
+            let stored = store
+                .pack_for_digest(pack.sha256)
+                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "source-run fixture pack is not authorized",
+                    )
+                })?;
+            let metadata = fs::symlink_metadata(&stored.path)?;
+            if !metadata.is_file()
+                || metadata.uid() != rustix::process::getuid().as_raw()
+                || metadata.mode() & 0o022 != 0
+                || metadata.len() != stored.compressed_bytes
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "source-run fixture pack is unavailable or unsafe",
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Load and request start of an already prepared LaunchAgent. The caller must

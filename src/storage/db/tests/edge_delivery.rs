@@ -334,7 +334,19 @@ fn schema_58_upgrade_preserves_old_lineage_and_enforces_new_immutable_car_identi
     let connection = rusqlite::Connection::open(database).unwrap();
     connection
         .execute_batch(
-            "CREATE TABLE edge_lineages (
+            "CREATE TABLE vehicles (
+                vehicle_id TEXT PRIMARY KEY NOT NULL,
+                source_id TEXT NOT NULL,
+                source_vehicle_key TEXT NOT NULL,
+                vin TEXT,
+                display_name TEXT,
+                created_at_ms INTEGER NOT NULL,
+                last_seen_at_ms INTEGER NOT NULL
+             ) STRICT;
+             INSERT INTO vehicles VALUES (
+                'old-vehicle', 'old-source', '9', NULL, NULL, 1, 1
+             );
+             CREATE TABLE edge_lineages (
                 installation_id TEXT NOT NULL,
                 lineage TEXT NOT NULL,
                 source_id TEXT NOT NULL,
@@ -355,7 +367,27 @@ fn schema_58_upgrade_preserves_old_lineage_and_enforces_new_immutable_car_identi
         .unwrap();
 
     migrate(&connection).unwrap();
-    assert_eq!(schema_version(&connection).unwrap(), 59);
+    assert_eq!(schema_version(&connection).unwrap(), 60);
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('vehicles') WHERE name = 'retired_at_ms'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT retired_at_ms FROM vehicles WHERE vehicle_id = 'old-vehicle'",
+                [],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .unwrap(),
+        None
+    );
     assert_eq!(
         connection
             .query_row(

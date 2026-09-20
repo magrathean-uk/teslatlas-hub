@@ -3,7 +3,7 @@
 #[path = "../tests/interop/seed.rs"]
 mod seed;
 
-const USAGE: &str = "usage: interop_fixture --output NEW_ABSOLUTE_DIRECTORY (--port PORT [--source-id UUID --vehicle-id UUID --vin VIN --car-id ID] [--scenario viewer-r1-51-drives] | --scenario empty-edge-binding --source-id UUID --vehicle-id UUID --vin VIN --car-id ID --installation-id ID --lineage ID)";
+const USAGE: &str = "usage: interop_fixture (--expose-dynamic|--retire-dynamic|--restore-dynamic|--advance) OWNED_FIXTURE_DIRECTORY | --output NEW_ABSOLUTE_DIRECTORY (--port PORT [--source-id UUID --vehicle-id UUID --vin VIN --car-id ID] [--scenario viewer-r1-51-drives] | --scenario empty-edge-binding --source-id UUID --vehicle-id UUID --vin VIN --car-id ID --installation-id ID --lineage ID)";
 
 #[derive(Clone, Copy)]
 enum Scenario {
@@ -22,6 +22,21 @@ fn run(args: &[String]) -> Result<serde_json::Value, Box<dyn std::error::Error>>
     if args.len() == 2 && args[0] == "--advance" {
         seed::advance(std::path::Path::new(&args[1]))?;
         return Ok(serde_json::json!({"status":"advanced"}));
+    }
+    if args.len() == 2 && args[0] == "--expose-dynamic" {
+        return Ok(serde_json::to_value(seed::expose_dynamic_vehicle(
+            std::path::Path::new(&args[1]),
+        )?)?);
+    }
+    if args.len() == 2 && args[0] == "--retire-dynamic" {
+        return Ok(serde_json::to_value(seed::retire_dynamic_vehicle(
+            std::path::Path::new(&args[1]),
+        )?)?);
+    }
+    if args.len() == 2 && args[0] == "--restore-dynamic" {
+        return Ok(serde_json::to_value(seed::restore_dynamic_vehicle(
+            std::path::Path::new(&args[1]),
+        )?)?);
     }
     let mut output = None;
     let mut port = None;

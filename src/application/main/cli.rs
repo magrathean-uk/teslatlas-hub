@@ -26,6 +26,33 @@ enum ServiceCommand {
     Restart,
 }
 
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum DevelopmentServeModeArgument {
+    Fixture,
+    Standalone,
+    Edge,
+}
+
+#[cfg(target_os = "macos")]
+impl DevelopmentServeModeArgument {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Fixture => "fixture",
+            Self::Standalone => "standalone",
+            Self::Edge => "edge",
+        }
+    }
+
+    fn serve_mode(self) -> teslatlas_hub::macos_launch_agent::DevelopmentServeMode {
+        match self {
+            Self::Fixture => teslatlas_hub::macos_launch_agent::DevelopmentServeMode::Fixture,
+            Self::Standalone => teslatlas_hub::macos_launch_agent::DevelopmentServeMode::Standalone,
+            Self::Edge => teslatlas_hub::macos_launch_agent::DevelopmentServeMode::Edge,
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 enum ControlCommand {
     /// List paired devices without exposing bearer material.
@@ -397,6 +424,13 @@ enum Command {
     /// Validate that one configured car and its credentials are ready to serve.
     #[cfg(unix)]
     Preflight,
+    /// Validate one explicit local source-run Serve mode without starting a listener.
+    #[cfg(target_os = "macos")]
+    #[command(name = "serve-preflight", hide = true)]
+    ServePreflight {
+        #[arg(long, value_enum)]
+        mode: DevelopmentServeModeArgument,
+    },
     /// Capture the current durable observation watermark for one source car.
     #[command(name = "observation-watermark")]
     ObservationWatermark {

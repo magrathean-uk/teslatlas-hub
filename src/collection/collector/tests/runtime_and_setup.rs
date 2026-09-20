@@ -38,6 +38,75 @@ fn owner_collection_failure_preserves_power_gate_error_classification() {
 }
 
 #[test]
+fn failed_complete_inventory_does_not_retire_known_provider_vehicles() {
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    assert!(matches!(
+        require_supervised_vehicle_lineage(&store),
+        Err(CollectorError::SelectedVehicleMissing)
+    ));
+    let source = store
+        .register_source(&provider_source(CollectorProvider::Legacy), 1_000)
+        .expect("provider source");
+    let vehicle = store
+        .register_vehicle(
+            &VehicleDescriptor::new(source.source_id, "9")
+                .with_tesla_identity(Some(9), None),
+            1_000,
+        )
+        .expect("known vehicle");
+
+    let failed = accept_complete_provider_inventory(
+        &store,
+        CollectorProvider::Legacy,
+        Err(CollectorError::OwnerApi(OwnerApiError::Transport)),
+    );
+
+    assert!(failed.is_err());
+    assert!(store.vehicle_is_active(vehicle.vehicle_id).unwrap());
+}
+
+#[tokio::test]
+async fn empty_inventory_then_return_remains_discoverable_across_supervisor_restart() {
+    const VIN: &str = "5YJ3E1EA7KF000001";
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    let key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
+    let vehicle = Vehicle::for_test(70, VIN, "online");
+    finish_collection_for_provider(
+        &store,
+        &key,
+        &ManualCollection {
+            vehicles: vec![vehicle.clone()],
+            snapshots: Vec::new(),
+            failures: Vec::new(),
+        },
+        CollectorProvider::Legacy,
+    )
+    .await
+    .expect("initial configured vehicle");
+    require_supervised_vehicle_lineage(&store).expect("configured supervisor admission");
+
+    accept_complete_provider_inventory(&store, CollectorProvider::Legacy, Ok(Vec::new()))
+        .expect("successful empty inventory");
+    assert!(store.configured_tesla_vehicles().unwrap().is_empty());
+    require_supervised_vehicle_lineage(&store).expect("retired supervisor remains admitted");
+    drop(store);
+
+    let reopened = HubStore::initialize(temporary.path()).expect("reopened supervisor store");
+    require_supervised_vehicle_lineage(&reopened)
+        .expect("restart admission retains retired configured lineage");
+    accept_complete_provider_inventory(
+        &reopened,
+        CollectorProvider::Legacy,
+        Ok(vec![vehicle]),
+    )
+    .expect("returning authoritative inventory");
+    assert_eq!(reopened.configured_tesla_vehicles().unwrap().len(), 1);
+}
+
+#[test]
 fn fleet_provider_not_found_uses_not_found_schedule() {
     let now = Instant::now();
     let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
@@ -770,7 +839,22 @@ async fn fleet_vin_match_rotates_eid_without_losing_car_settings() {
     let existing = store
         .configured_tesla_vehicles()
         .expect("configured vehicle");
-    let mut rotated = Vehicle::for_test(999, VIN, "online");
+    let rotated = Vehicle::for_test(999, VIN, "online");
+    let mut discovered = accept_complete_provider_inventory(
+        &store,
+        CollectorProvider::Fleet,
+        Ok(vec![rotated]),
+    )
+    .expect("complete inventory reconciles changed EID by VIN");
+    assert_eq!(
+        store
+            .configured_tesla_vehicles()
+            .expect("VIN-preserved active vehicle")
+            .len(),
+        1,
+        "authoritative VIN presence must not retire the durable vehicle before registration"
+    );
+    let mut rotated = discovered.pop().expect("rotated vehicle");
     rotated.settings = configured_settings_for_discovered_vehicle(&store, &existing, &rotated)
         .expect("unambiguous VIN match")
         .expect("existing settings");
@@ -808,6 +892,213 @@ async fn fleet_vin_match_rotates_eid_without_losing_car_settings() {
         configured_fleet_vehicle_for_vin(&store, VIN),
         Err(CollectorError::SelectedVehicleMissing)
     ));
+}
+
+#[derive(Clone, Copy)]
+enum LegacyRotationSetup {
+    ImplicitSingle,
+    Explicit,
+    Batch,
+}
+
+async fn loopback_legacy_inventory(
+    vehicles: serde_json::Value,
+) -> (OwnerApi, LegacyAuth, tokio::task::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("legacy inventory listener");
+    let address = listener.local_addr().expect("legacy inventory address");
+    let response = Arc::new(vehicles);
+    let router = Router::new().route(
+        "/api/1/products",
+        get(move || {
+            let response = Arc::clone(&response);
+            async move {
+                axum::Json(json!({
+                    "response": response.as_ref(),
+                    "count": response.as_array().map_or(0, Vec::len)
+                }))
+            }
+        }),
+    );
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .await
+            .expect("legacy inventory server");
+    });
+    let base = url::Url::parse(&format!("http://{address}/")).expect("legacy inventory URL");
+    let client =
+        OwnerApi::for_fake_http(base.clone(), Duration::from_secs(2)).expect("legacy client");
+    let auth = LegacyAuth::for_test(base, "setup-access", "setup-refresh");
+    (client, auth, server)
+}
+
+async fn assert_legacy_eid_rotation_preserves_identity_and_settings(mode: LegacyRotationSetup) {
+    const VIN: &str = "5YJ3E1EA7KF000001";
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
+    let mut original = Vehicle::for_test(70, VIN, "online");
+    original.settings.enabled = false;
+    original.settings.use_streaming_api = false;
+    original.settings.suspend_after_idle_min = 123;
+    original.settings.suspend_min = 456;
+    original.settings.suspend_min_resolved = false;
+    original.settings.req_not_unlocked = false;
+    original.settings.free_supercharging = true;
+    original.settings.lfp_battery = true;
+    let expected_settings = original.settings.clone();
+    finish_collection_for_provider(
+        &store,
+        &cursor_key,
+        &ManualCollection {
+            vehicles: vec![original],
+            snapshots: Vec::new(),
+            failures: Vec::new(),
+        },
+        CollectorProvider::Legacy,
+    )
+    .await
+    .expect("initial Legacy vehicle");
+    let original_hub_vehicle_id = store
+        .configured_tesla_vehicles()
+        .expect("original configured vehicle")[0]
+        .0;
+    let (client, auth, server) = loopback_legacy_inventory(json!([{
+        "vehicle_id": 1000,
+        "id": 999,
+        "vin": VIN,
+        "state": "asleep",
+        "display_name": "Rotated Legacy"
+    }]))
+    .await;
+
+    match mode {
+        LegacyRotationSetup::ImplicitSingle => {
+            let report =
+                setup_native_vehicle_with_client(&store, temporary.path(), &client, &auth, None)
+                    .await
+                    .expect("implicit rotated Legacy setup");
+            assert_eq!(report.selected_vehicle_id, 999);
+        }
+        LegacyRotationSetup::Explicit => {
+            let report = setup_native_vehicle_with_client(
+                &store,
+                temporary.path(),
+                &client,
+                &auth,
+                Some(999),
+            )
+            .await
+            .expect("explicit rotated Legacy setup");
+            assert_eq!(report.selected_vehicle_id, 999);
+        }
+        LegacyRotationSetup::Batch => {
+            let report =
+                setup_native_vehicles_with_client(&store, temporary.path(), &client, &auth)
+                    .await
+                    .expect("batch rotated Legacy setup");
+            assert_eq!(report.vehicles.len(), 1);
+            assert_eq!(report.vehicles[0].vehicle_id, 999);
+        }
+    }
+
+    let configured = store
+        .configured_tesla_vehicles()
+        .expect("rotated configured vehicle");
+    assert_eq!(configured.len(), 1);
+    assert_eq!(configured[0].0, original_hub_vehicle_id);
+    assert_eq!(configured[0].1, 999);
+    assert_eq!(configured[0].2, expected_settings);
+    assert_eq!(
+        store
+            .configured_tesla_vehicle_identity(original_hub_vehicle_id)
+            .expect("rotated durable identity"),
+        Some((999, Some(VIN.to_owned())))
+    );
+    server.abort();
+    let _ = server.await;
+}
+
+#[tokio::test]
+async fn legacy_implicit_single_setup_matches_same_vin_after_eid_rotation() {
+    assert_legacy_eid_rotation_preserves_identity_and_settings(
+        LegacyRotationSetup::ImplicitSingle,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn legacy_explicit_setup_preserves_same_vin_identity_after_eid_rotation() {
+    assert_legacy_eid_rotation_preserves_identity_and_settings(LegacyRotationSetup::Explicit)
+        .await;
+}
+
+#[tokio::test]
+async fn legacy_batch_setup_preserves_same_vin_identity_after_eid_rotation() {
+    assert_legacy_eid_rotation_preserves_identity_and_settings(LegacyRotationSetup::Batch).await;
+}
+
+#[tokio::test]
+async fn legacy_setup_rejects_ambiguous_eid_and_vin_inventory_before_reconciliation() {
+    const VIN: &str = "5YJ3E1EA7KF000001";
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
+    let mut original = Vehicle::for_test(70, VIN, "online");
+    original.settings.enabled = false;
+    original.settings.use_streaming_api = false;
+    original.settings.suspend_after_idle_min = 123;
+    let expected_settings = original.settings.clone();
+    finish_collection_for_provider(
+        &store,
+        &cursor_key,
+        &ManualCollection {
+            vehicles: vec![original],
+            snapshots: Vec::new(),
+            failures: Vec::new(),
+        },
+        CollectorProvider::Legacy,
+    )
+    .await
+    .expect("initial Legacy vehicle");
+    let original_hub_vehicle_id = store
+        .configured_tesla_vehicles()
+        .expect("original configured vehicle")[0]
+        .0;
+    let (client, auth, server) = loopback_legacy_inventory(json!([
+        {
+            "vehicle_id": 1000,
+            "id": 999,
+            "vin": VIN,
+            "state": "asleep",
+            "display_name": "VIN match"
+        },
+        {
+            "vehicle_id": 71,
+            "id": 70,
+            "vin": "5YJ3E1EA7KF000002",
+            "state": "online",
+            "display_name": "EID match"
+        }
+    ]))
+    .await;
+
+    assert!(matches!(
+        setup_native_vehicles_with_client(&store, temporary.path(), &client, &auth).await,
+        Err(CollectorError::FleetSetupInventoryMismatch)
+    ));
+    let configured = store
+        .configured_tesla_vehicles()
+        .expect("configured vehicle after rejection");
+    assert_eq!(configured.len(), 1);
+    assert_eq!(configured[0].0, original_hub_vehicle_id);
+    assert_eq!(configured[0].1, 70);
+    assert_eq!(configured[0].2, expected_settings);
+    server.abort();
+    let _ = server.await;
 }
 
 #[tokio::test]

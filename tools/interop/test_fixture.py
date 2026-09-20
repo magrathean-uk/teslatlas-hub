@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 MODULE = Path(__file__).with_name("fixture.py")
 spec = importlib.util.spec_from_file_location("interop_fixture", MODULE)
@@ -104,6 +105,42 @@ class ConfigTests(unittest.TestCase):
 
         self.assertEqual(result["termination"], "exit")
         self.assertEqual(result["exit_code"], 0)
+
+    def test_development_opt_in_is_confined_to_owned_serve_child(self):
+        parent_value = "parent-must-remain-unchanged"
+        sentinel = "preserved-parent-value"
+        with mock.patch.dict(os.environ, {
+            fixture.DEVELOPMENT_SERVE_ENV: parent_value,
+            "TESLATLAS_FIXTURE_PARENT_SENTINEL": sentinel,
+        }, clear=False):
+            child = object()
+            with mock.patch.object(fixture.subprocess, "Popen", return_value=child) as popen:
+                observed = fixture.start_owned_synthetic_serve(
+                    self.executable, self.root / "config.toml", object()
+                )
+
+            self.assertIs(observed, child)
+            command = popen.call_args.args[0]
+            options = popen.call_args.kwargs
+            self.assertEqual(command[-1], "serve")
+            self.assertEqual(options["env"][fixture.DEVELOPMENT_SERVE_ENV], "1")
+            self.assertEqual(options["env"]["TESLATLAS_FIXTURE_PARENT_SENTINEL"], sentinel)
+            self.assertIsNot(options["env"], os.environ)
+            self.assertEqual(os.environ[fixture.DEVELOPMENT_SERVE_ENV], parent_value)
+
+    def test_seed_and_pair_subprocesses_do_not_receive_development_opt_in(self):
+        completed = mock.Mock(returncode=0)
+        with mock.patch.object(fixture.subprocess, "run", return_value=completed) as run:
+            diagnostic = fixture.subprocess_diagnostic("seed", [str(self.executable)], 5)
+            self.assertEqual(diagnostic["exit_code"], 0)
+            self.assertNotIn("env", run.call_args.kwargs)
+
+        with mock.patch.object(fixture.subprocess, "run", return_value=completed) as run:
+            fixture.run_pair_command(
+                self.executable, self.root / "config.toml", object()
+            )
+            self.assertEqual(run.call_args.args[0][3], "pair")
+            self.assertNotIn("env", run.call_args.kwargs)
 
     def test_seed_failure_leaves_private_sanitized_diagnostic(self):
         self.executable.write_text("#!/bin/sh\nprintf never-persist-this >&2\nexit 7\n")

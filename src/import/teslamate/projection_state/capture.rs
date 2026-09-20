@@ -239,7 +239,7 @@ impl Drop for TeslaMateProjectionState {
     }
 }
 
-fn canonical_payload_and_digest<T: Serialize>(
+pub(crate) fn canonical_payload_and_digest<T: Serialize>(
     entity: TeslaMateProjectionStateEntity,
     id: i64,
     car_id: i64,

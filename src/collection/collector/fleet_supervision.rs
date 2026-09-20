@@ -18,9 +18,7 @@ async fn run_fleet_supervised_with_access<F>(
 where
     F: Future<Output = ()>,
 {
-    if store.configured_tesla_vehicles()?.is_empty() {
-        return Err(CollectorError::SelectedVehicleMissing);
-    }
+    require_supervised_vehicle_lineage(store)?;
     let collector_lease = store.acquire_supervised_collector_lease(current_epoch_millis()?)?;
     let (collector_state, collector_state_rx) = watch::channel(SupervisedCollectorState::Active);
     let (heartbeat_shutdown, heartbeat_stop) = oneshot::channel();
@@ -112,21 +110,23 @@ where
             loop {
                 admission.assert_sensitive_access()?;
                 let configured = store.configured_tesla_vehicles()?;
-                if configured.is_empty() {
-                    return Err(CollectorError::SelectedVehicleMissing);
-                }
                 scheduler.apply_control_settings(&configured, Instant::now());
                 let now = Instant::now();
                 if scheduler.discovery_due(now) {
-                    match fleet_list_vehicles_with_auth(&api, &auth_api, &manager, allow_refresh)
-                        .await
-                    {
+                    match accept_complete_provider_inventory(
+                        store,
+                        CollectorProvider::Fleet,
+                        fleet_list_vehicles_with_auth(&api, &auth_api, &manager, allow_refresh)
+                            .await,
+                    ) {
                         Ok(vehicles) => {
-                            let vehicles = filter_configured_vehicles_for_provider(
+                            let configured = store.configured_tesla_vehicles()?;
+                            let vehicles = filter_configured_vehicles_with_identity(
+                                store,
                                 vehicles,
                                 &configured,
                                 CollectorProvider::Fleet,
-                            );
+                            )?;
                             report_successful_owner_api_request(&collector_state, false);
                             let events = scheduler.accept_discovery(vehicles, Instant::now());
                             if !events.is_empty() {
@@ -160,11 +160,12 @@ where
                         .await
                     {
                         Ok(discovered) => {
-                            let discovered = filter_configured_vehicles_for_provider(
+                            let discovered = filter_configured_vehicles_with_identity(
+                                store,
                                 discovered,
                                 &configured,
                                 CollectorProvider::Fleet,
-                            );
+                            )?;
                             let mut events = Vec::new();
                             for vehicle_id in offline_due {
                                 if let Some(vehicle) =
@@ -529,6 +530,7 @@ fn owner_failure_for_collector_error(error: CollectorError) -> OwnerApiError {
     }
 }
 
+#[cfg(test)]
 fn filter_configured_vehicles(
     vehicles: Vec<Vehicle>,
     configured: &[(uuid::Uuid, i64, crate::hub_pack::ProjectionCarSettings)],
@@ -536,6 +538,7 @@ fn filter_configured_vehicles(
     filter_configured_vehicles_for_provider(vehicles, configured, CollectorProvider::Legacy)
 }
 
+#[cfg(test)]
 fn filter_configured_vehicles_for_provider(
     vehicles: Vec<Vehicle>,
     configured: &[(uuid::Uuid, i64, crate::hub_pack::ProjectionCarSettings)],
@@ -556,4 +559,44 @@ fn filter_configured_vehicles_for_provider(
                 })
         })
         .collect()
+}
+
+fn filter_configured_vehicles_with_identity(
+    store: &HubStore,
+    vehicles: Vec<Vehicle>,
+    configured: &[(uuid::Uuid, i64, crate::hub_pack::ProjectionCarSettings)],
+    provider: CollectorProvider,
+) -> Result<Vec<Vehicle>, CollectorError> {
+    let identities = configured
+        .iter()
+        .map(|(vehicle_id, eid, settings)| {
+            let (_, vin) = store
+                .configured_tesla_vehicle_identity(*vehicle_id)?
+                .ok_or(StoreError::LineageCatalogConflict)?;
+            Ok((*eid, vin, settings))
+        })
+        .collect::<Result<Vec<_>, CollectorError>>()?;
+    let mut filtered = Vec::new();
+    for mut vehicle in vehicles {
+        let matches = identities
+            .iter()
+            .filter(|(eid, vin, _)| {
+                vehicle.id.get() == *eid as u64
+                    || vin
+                        .as_deref()
+                        .filter(|vin| !vin.is_empty())
+                        .is_some_and(|vin| vin.eq_ignore_ascii_case(&vehicle.vin))
+            })
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [] => continue,
+            [(_, _, settings)] => vehicle.settings = (*settings).clone(),
+            _ => return Err(StoreError::LineageCatalogConflict.into()),
+        }
+        if provider == CollectorProvider::Fleet {
+            vehicle.settings.use_streaming_api = false;
+        }
+        filtered.push(vehicle);
+    }
+    Ok(filtered)
 }

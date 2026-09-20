@@ -106,6 +106,23 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    #[cfg(target_os = "macos")]
+    if let Command::ServePreflight { mode } = &cli.command {
+        let config = HubConfig::load(&config_path)?;
+        teslatlas_hub::macos_launch_agent::preflight_hub_for_serve(
+            &config,
+            Some(mode.serve_mode()),
+        )?;
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": "ready",
+                "mode": mode.as_str(),
+            })
+        );
+        return Ok(());
+    }
+
     #[cfg(target_os = "linux")]
     if let Command::Service { command } = &cli.command {
         let status = match command {
@@ -378,7 +395,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                             "disabled"
                         },
                         "paidVehicleDataPolling": config.collector.provider == CollectorProvider::Fleet
-                            && config.collector.fleet_telemetry.is_none(),
+                            && config.collector.interval_seconds > 0
+                            && config.collector.fleet_telemetry.is_none()
+                            && config.collector.edge.is_none(),
                         "deliveryPolicy": config.collector.fleet_telemetry.as_ref().map(|_| "latest"),
                     },
                 })
@@ -657,13 +676,31 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Preflight => {
             unreachable!("preflight returns before opening writable Hub state")
         }
+        #[cfg(target_os = "macos")]
+        Command::ServePreflight { .. } => {
+            unreachable!("serve preflight returns before opening writable Hub state")
+        }
         Command::Serve => {
             #[cfg(unix)]
             {
                 #[cfg(target_os = "macos")]
                 {
                     store.checkpoint_catalogue_for_immutable_read()?;
-                    teslatlas_hub::macos_launch_agent::preflight_hub_for_config(&config)?;
+                    let development_mode =
+                        teslatlas_hub::macos_launch_agent::development_serve_mode(
+                            std::env::var_os(
+                                teslatlas_hub::macos_launch_agent::DEVELOPMENT_SERVE_ENV,
+                            )
+                            .as_deref(),
+                            std::env::var_os(
+                                teslatlas_hub::macos_launch_agent::DEVELOPMENT_SERVE_MODE_ENV,
+                            )
+                            .as_deref(),
+                        )?;
+                    teslatlas_hub::macos_launch_agent::preflight_hub_for_serve(
+                        &config,
+                        development_mode,
+                    )?;
                 }
                 let admission =
                     admitted_user_hub.ok_or("Serve reached runtime without user admission")?;

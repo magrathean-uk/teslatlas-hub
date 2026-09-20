@@ -110,6 +110,426 @@ fn digest_projection_state_is_atomic_with_base_and_successor_heads() {
     assert_eq!(lookup.header().head_sequence, delta.to_sequence);
 }
 
+fn direct_materialised_base(
+    store: &HubStore,
+    drives: &[ProjectionDrive],
+) -> (
+    VehicleRecord,
+    ProjectionBinding,
+    ProjectionCar,
+    LineageManifestV2,
+) {
+    let (vehicle, binding, manifest) = v2_base_manifest(store);
+    let car = import_delta_test_car(binding.selected_car_id);
+    let run_id = store
+        .begin_import_generation(
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            2_000,
+        )
+        .expect("staging direct base");
+    store
+        .stage_import_generation_session(
+            run_id,
+            &TeslaMateOpenSession {
+                car_id: binding.selected_car_id,
+                ..Default::default()
+            },
+        )
+        .expect("stage direct base session");
+    let state = create_direct_import_projection_state(store, run_id, 32);
+    let mut capture =
+        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_initial_base(state);
+    capture.record_car(&car).expect("capture base car");
+    for drive in drives {
+        capture.record_drive(drive).expect("capture base drive");
+    }
+    capture.seal().expect("seal direct base state");
+    let state = capture.into_state();
+    store
+        .finalize_import_generation_with_projection_state_and_materialisation(
+            run_id,
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            2_000,
+            &manifest,
+            Sha256Digest::of_bytes(b"direct-materialised-base"),
+            &[],
+            &binding,
+            &state,
+            &car,
+            drives,
+            false,
+        )
+        .expect("publish direct materialised base");
+    let lineage = store
+        .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+        .expect("direct base lineage")
+        .expect("direct base exists");
+    (vehicle, binding, car, lineage)
+}
+
+#[test]
+fn unchanged_direct_import_self_heals_missing_materialisation() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let drive = import_materialised_test_drive(7, 10, 4.0);
+    let (vehicle, binding, car, _) = direct_materialised_base(&store, std::slice::from_ref(&drive));
+    store
+        .open()
+        .expect("catalogue")
+        .execute_batch("DELETE FROM materialised_cars; DELETE FROM materialised_drives;")
+        .expect("simulate pre-repair missing read model");
+    let run_id = store
+        .begin_import_generation(
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            3_000,
+        )
+        .expect("unchanged staging generation");
+    store
+        .stage_import_generation_session(
+            run_id,
+            &TeslaMateOpenSession {
+                car_id: binding.selected_car_id,
+                ..Default::default()
+            },
+        )
+        .expect("unchanged staged session");
+    store
+        .promote_import_generation_with_materialisation(
+            run_id,
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            3_000,
+            &car,
+            std::slice::from_ref(&drive),
+        )
+        .expect("unchanged direct self-heal");
+    assert_eq!(
+        store
+            .materialised_car_for_vehicle(vehicle.vehicle_id)
+            .expect("car after self-heal"),
+        Some(car)
+    );
+    assert_eq!(
+        store
+            .materialised_drive_for_vehicle(vehicle.vehicle_id, drive.id)
+            .expect("drive after self-heal"),
+        Some(drive)
+    );
+}
+
+#[test]
+fn direct_materialisation_validation_rolls_back_initial_publication() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, manifest) = v2_base_manifest(&store);
+    let car = import_delta_test_car(binding.selected_car_id);
+    let drive = import_materialised_test_drive(7, binding.selected_car_id, 4.0);
+    let run_id = store
+        .begin_import_generation(
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            2_000,
+        )
+        .expect("staging generation");
+    store
+        .stage_import_generation_session(
+            run_id,
+            &TeslaMateOpenSession {
+                car_id: binding.selected_car_id,
+                ..Default::default()
+            },
+        )
+        .expect("staged session");
+    // The materialisation claims a drive which is absent from the sealed
+    // projection state. The whole publication must remain retryable.
+    let state = direct_test_projection_state(&store, run_id, &car);
+    assert!(matches!(
+        store.finalize_import_generation_with_projection_state_and_materialisation(
+            run_id,
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            2_000,
+            &manifest,
+            Sha256Digest::of_bytes(b"invalid-materialisation"),
+            &[],
+            &binding,
+            &state,
+            &car,
+            std::slice::from_ref(&drive),
+            false,
+        ),
+        Err(StoreError::LineageCatalogConflict)
+    ));
+    assert!(
+        store
+            .manifest_for_vehicle(vehicle.vehicle_id)
+            .expect("manifest after rollback")
+            .is_none()
+    );
+    assert!(
+        store
+            .materialised_car_for_vehicle(vehicle.vehicle_id)
+            .expect("car after rollback")
+            .is_none()
+    );
+    assert!(
+        store
+            .materialised_drive_for_vehicle(vehicle.vehicle_id, drive.id)
+            .expect("drive after rollback")
+            .is_none()
+    );
+    assert!(
+        staging_generation_exists(&store, run_id),
+        "failed publication retains its staging generation"
+    );
+}
+
+#[test]
+fn direct_successor_reconciles_imported_drives_and_preserves_live_only_rows() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let first = import_materialised_test_drive(7, 10, 4.0);
+    let removed = import_materialised_test_drive(8, 10, 5.0);
+    let (vehicle, binding, mut car, base) =
+        direct_materialised_base(&store, &[first.clone(), removed.clone()]);
+    let live_only = import_materialised_test_drive(99, binding.selected_car_id, 9.0);
+    let live_json = serde_json::to_string(&live_only).expect("serialize live-only drive");
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                vehicle.vehicle_id.to_string(),
+                live_only.id,
+                live_only.car_id,
+                live_json
+            ],
+        )
+        .expect("seed live-only drive");
+
+    let run_id = store
+        .begin_import_generation(
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            3_000,
+        )
+        .expect("successor staging generation");
+    store
+        .stage_import_generation_session(
+            run_id,
+            &TeslaMateOpenSession {
+                car_id: binding.selected_car_id,
+                ..Default::default()
+            },
+        )
+        .expect("successor staged session");
+    let prior = store
+        .teslamate_import_projection_state_lookup(
+            vehicle.vehicle_id,
+            binding.account_id,
+            binding.selected_car_id,
+        )
+        .expect("prior imported state");
+    let state = create_direct_import_projection_state(&store, run_id, 32);
+    let mut capture =
+        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_successor(
+            state,
+            Box::new(prior),
+        );
+    car.firmware_version = Some("2026.20".into());
+    let updated = import_materialised_test_drive(7, binding.selected_car_id, 6.0);
+    capture.record_car(&car).expect("capture updated car");
+    capture
+        .record_drive(&updated)
+        .expect("capture updated retained drive");
+    capture.seal().expect("seal successor state");
+    let state = capture.into_state();
+    let delta = imported_typed_delta(&store, &binding, &base);
+    store
+        .finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
+            run_id,
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            3_000,
+            std::slice::from_ref(&delta),
+            &import_delta_test_cursor_key(),
+            &import_delta_test_cursor(&binding, delta.to_sequence),
+            Sha256Digest::of_bytes(b"direct-materialised-successor"),
+            &[],
+            &state,
+            &car,
+            std::slice::from_ref(&updated),
+        )
+        .expect("publish materialised successor");
+    assert_eq!(
+        store
+            .materialised_drive_for_vehicle(vehicle.vehicle_id, updated.id)
+            .expect("updated drive"),
+        Some(updated)
+    );
+    assert!(
+        store
+            .materialised_drive_for_vehicle(vehicle.vehicle_id, removed.id)
+            .expect("removed imported drive")
+            .is_none()
+    );
+    assert_eq!(
+        store
+            .materialised_drive_for_vehicle(vehicle.vehicle_id, live_only.id)
+            .expect("live-only drive"),
+        Some(live_only)
+    );
+    assert_eq!(
+        store
+            .materialised_car_for_vehicle(vehicle.vehicle_id)
+            .expect("updated car"),
+        Some(car)
+    );
+}
+
+#[test]
+fn direct_successor_rejects_a_new_import_id_owned_by_live_collection_atomically() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let retained = import_materialised_test_drive(7, 10, 4.0);
+    let removed = import_materialised_test_drive(8, 10, 5.0);
+    let (vehicle, binding, mut successor_car, base) =
+        direct_materialised_base(&store, &[retained.clone(), removed.clone()]);
+    let base_car = successor_car.clone();
+    let live_collision = import_materialised_test_drive(9, binding.selected_car_id, 9.0);
+    let live_json = serde_json::to_string(&live_collision).expect("serialize live drive");
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![
+                vehicle.vehicle_id.to_string(),
+                live_collision.id,
+                live_collision.car_id,
+                live_json
+            ],
+        )
+        .expect("seed next live-created drive");
+
+    let run_id = store
+        .begin_import_generation(
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            3_000,
+        )
+        .expect("successor staging generation");
+    store
+        .stage_import_generation_session(
+            run_id,
+            &TeslaMateOpenSession {
+                car_id: binding.selected_car_id,
+                ..Default::default()
+            },
+        )
+        .expect("successor staged session");
+    let prior = store
+        .teslamate_import_projection_state_lookup(
+            vehicle.vehicle_id,
+            binding.account_id,
+            binding.selected_car_id,
+        )
+        .expect("prior imported state");
+    let state = create_direct_import_projection_state(&store, run_id, 32);
+    let mut capture =
+        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_successor(
+            state,
+            Box::new(prior),
+        );
+    successor_car.firmware_version = Some("2026.21".into());
+    let updated = import_materialised_test_drive(7, binding.selected_car_id, 6.0);
+    let imported_collision = import_materialised_test_drive(9, binding.selected_car_id, 10.0);
+    capture
+        .record_car(&successor_car)
+        .expect("capture updated car");
+    capture
+        .record_drive(&updated)
+        .expect("capture retained imported drive");
+    capture
+        .record_drive(&imported_collision)
+        .expect("capture colliding imported drive");
+    capture.seal().expect("seal successor state");
+    let state = capture.into_state();
+    let delta = imported_typed_delta(&store, &binding, &base);
+
+    assert!(matches!(
+        store.finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
+            run_id,
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            3_000,
+            std::slice::from_ref(&delta),
+            &import_delta_test_cursor_key(),
+            &import_delta_test_cursor(&binding, delta.to_sequence),
+            Sha256Digest::of_bytes(b"direct-materialised-collision"),
+            &[],
+            &state,
+            &successor_car,
+            &[updated, imported_collision],
+        ),
+        Err(StoreError::LineageCatalogConflict)
+    ));
+
+    assert_eq!(
+        store
+            .materialised_drive_for_vehicle(vehicle.vehicle_id, live_collision.id)
+            .expect("live collision after rollback"),
+        Some(live_collision)
+    );
+    assert_eq!(
+        store
+            .materialised_drive_for_vehicle(vehicle.vehicle_id, retained.id)
+            .expect("prior retained drive after rollback"),
+        Some(retained)
+    );
+    assert_eq!(
+        store
+            .materialised_drive_for_vehicle(vehicle.vehicle_id, removed.id)
+            .expect("prior removed drive after rollback"),
+        Some(removed)
+    );
+    assert_eq!(
+        store
+            .materialised_car_for_vehicle(vehicle.vehicle_id)
+            .expect("prior car after rollback"),
+        Some(base_car)
+    );
+    assert_eq!(
+        store
+            .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+            .expect("lineage after rollback")
+            .expect("base lineage remains")
+            .base
+            .snapshot_id,
+        base.base.snapshot_id
+    );
+    assert!(
+        staging_generation_exists(&store, run_id),
+        "rejected collision leaves the staging generation retryable"
+    );
+}
+
 #[test]
 fn direct_import_successor_batch_is_atomic_and_advances_every_durable_head() {
     let temporary = crate::private_tempdir().expect("temporary store");
@@ -494,6 +914,16 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
     let legacy_fingerprint = Sha256Digest::of_bytes(b"legacy-direct-physical");
     let logical_fingerprint = Sha256Digest::of_bytes(b"logical-direct-projection");
     let (vehicle, binding, manifest) = legacy_direct_bridge_fixture(&store, legacy_fingerprint);
+    let drive = import_materialised_test_drive(7, binding.selected_car_id, 4.0);
+    store
+        .open()
+        .expect("legacy catalogue")
+        .execute(
+            "INSERT INTO teslamate_import_projection_rows(vehicle_id, entity, entity_id)
+             VALUES (?1, 'drive', ?2)",
+            params![vehicle.vehicle_id.to_string(), drive.id],
+        )
+        .expect("seed legacy imported drive ownership");
     assert!(
         store
             .legacy_teslamate_direct_bridge_is_eligible(
@@ -518,15 +948,25 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
         .optional()
         .expect("sequence before bridge");
     let run_id = legacy_direct_bridge_generation(&store, &vehicle, &binding);
-    let state = direct_projection_state_with_digest_rows(
-        &store,
-        run_id,
-        binding.selected_car_id,
-        &[(TeslaMateProjectionStateEntity::Position, 10)],
-    );
+    let car = import_delta_test_car(binding.selected_car_id);
+    let state = create_direct_import_projection_state(&store, run_id, 10);
+    let mut capture =
+        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_initial_base(state);
+    capture.record_car(&car).expect("capture bridged car");
+    capture.record_drive(&drive).expect("capture bridged drive");
+    capture
+        .record(
+            TeslaMateProjectionStateEntity::Position,
+            10,
+            binding.selected_car_id,
+            &serde_json::json!({"id": 10, "entity": "position"}),
+        )
+        .expect("capture bridged position");
+    capture.seal().expect("seal bridge state");
+    let state = capture.into_state();
 
     let bridged = store
-        .bridge_legacy_teslamate_direct_import(
+        .bridge_legacy_teslamate_direct_import_with_materialisation(
             run_id,
             binding.account_id,
             vehicle.vehicle_id,
@@ -534,6 +974,8 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
             legacy_fingerprint,
             logical_fingerprint,
             &state,
+            &car,
+            std::slice::from_ref(&drive),
         )
         .expect("unchanged legacy base bridges atomically");
     assert_eq!(bridged.snapshot_id, manifest.snapshot_id);
@@ -574,6 +1016,18 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
             )
             .expect("bridge is one-time"),
         "the persisted state/marker prevents a second bridge"
+    );
+    assert_eq!(
+        store
+            .materialised_car_for_vehicle(vehicle.vehicle_id)
+            .expect("bridged materialised car"),
+        Some(car)
+    );
+    assert_eq!(
+        store
+            .materialised_drive_for_vehicle(vehicle.vehicle_id, drive.id)
+            .expect("bridged materialised drive"),
+        Some(drive)
     );
     assert_eq!(
         store

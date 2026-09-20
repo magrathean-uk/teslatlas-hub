@@ -15,9 +15,7 @@ async fn run_supervised_with_access<F>(
 where
     F: Future<Output = ()>,
 {
-    if store.configured_tesla_vehicles()?.is_empty() {
-        return Err(CollectorError::SelectedVehicleMissing);
-    }
+    require_supervised_vehicle_lineage(store)?;
     let collector_lease = store.acquire_supervised_collector_lease(current_epoch_millis()?)?;
     let (collector_state, collector_state_rx) = watch::channel(SupervisedCollectorState::Active);
     let (heartbeat_shutdown, heartbeat_stop) = oneshot::channel();
@@ -140,9 +138,6 @@ where
                     continue;
                 }
                 let configured_vehicles = store.configured_tesla_vehicles()?;
-                if configured_vehicles.is_empty() {
-                    return Err(CollectorError::SelectedVehicleMissing);
-                }
                 for vehicle_id in
                     scheduler.apply_control_settings(&configured_vehicles, Instant::now())
                 {
@@ -180,10 +175,19 @@ where
                 }
                 let now = Instant::now();
                 if scheduler.discovery_due(now) {
-                    match list_vehicles_for_auth(&client, &auth).await {
+                    match accept_complete_provider_inventory(
+                        store,
+                        CollectorProvider::Legacy,
+                        list_vehicles_for_auth(&client, &auth).await,
+                    ) {
                         Ok(vehicles) => {
-                            let vehicles =
-                                filter_configured_vehicles(vehicles, &configured_vehicles);
+                            let configured_vehicles = store.configured_tesla_vehicles()?;
+                            let vehicles = filter_configured_vehicles_with_identity(
+                                store,
+                                vehicles,
+                                &configured_vehicles,
+                                CollectorProvider::Legacy,
+                            )?;
                             report_successful_owner_api_request(
                                 &collector_state,
                                 stream_authentication_rejected,

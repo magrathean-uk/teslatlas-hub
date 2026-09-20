@@ -11,6 +11,44 @@ fn provider_source(provider: CollectorProvider) -> SourceDescriptor {
     }
 }
 
+fn reconcile_complete_provider_inventory(
+    store: &HubStore,
+    provider: CollectorProvider,
+    vehicles: &[Vehicle],
+) -> Result<(), CollectorError> {
+    let observed_at_ms = current_epoch_millis()?;
+    let source = store.register_source(&provider_source(provider), observed_at_ms)?;
+    let inventory = vehicles
+        .iter()
+        .map(|vehicle| {
+            let mut descriptor =
+                VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string());
+            descriptor.vin = Some(vehicle.vin.clone());
+            descriptor
+        })
+        .collect::<Vec<_>>();
+    store.reconcile_provider_inventory(source.source_id, &inventory, observed_at_ms)?;
+    Ok(())
+}
+
+fn accept_complete_provider_inventory(
+    store: &HubStore,
+    provider: CollectorProvider,
+    discovery: Result<Vec<Vehicle>, CollectorError>,
+) -> Result<Vec<Vehicle>, CollectorError> {
+    let vehicles = discovery?;
+    reconcile_complete_provider_inventory(store, provider, &vehicles)?;
+    Ok(vehicles)
+}
+
+fn require_supervised_vehicle_lineage(store: &HubStore) -> Result<(), CollectorError> {
+    if store.has_configured_tesla_vehicle_lineage()? {
+        Ok(())
+    } else {
+        Err(CollectorError::SelectedVehicleMissing)
+    }
+}
+
 const fn provider_vehicle_data_record_type(provider: CollectorProvider) -> &'static str {
     match provider {
         CollectorProvider::Legacy => "owner_api_vehicle_data_v1",

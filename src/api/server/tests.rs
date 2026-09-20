@@ -2554,6 +2554,48 @@ async fn paired_schema_22_restart_keeps_exact_noop_and_wrong_key_fails_closed() 
         .await
         .expect("wrong-key no-op response");
     assert_eq!(wrong_key_response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        wrong_key_response
+            .headers()
+            .get(header::CACHE_CONTROL)
+            .expect("wrong-key cache policy"),
+        "no-store"
+    );
+    let error_signature = wrong_key_response
+        .headers()
+        .get(MANIFEST_SIGNATURE_HEADER)
+        .expect("wrong-key error signature")
+        .to_str()
+        .expect("ASCII wrong-key error signature")
+        .to_owned();
+    let error_body = wrong_key_response
+        .into_body()
+        .collect()
+        .await
+        .expect("wrong-key error body")
+        .to_bytes();
+    let error_json: serde_json::Value =
+        serde_json::from_slice(&error_body).expect("wrong-key error JSON");
+    assert_eq!(error_json["error"]["code"], "service_unavailable");
+    assert_eq!(
+        error_json["error"]["message"],
+        "schema 2.2 synchronization state is temporarily unavailable"
+    );
+    let wrong_verifying_key_bytes: [u8; 32] =
+        hex::decode(ManifestSigning::from_cursor_key(&wrong_key).verifying_key_hex())
+            .expect("wrong verifying key hex")
+            .try_into()
+            .expect("32-byte wrong verifying key");
+    let error_signature = Signature::from_slice(
+        &STANDARD
+            .decode(error_signature)
+            .expect("base64 wrong-key error signature"),
+    )
+    .expect("64-byte wrong-key error signature");
+    VerifyingKey::from_bytes(&wrong_verifying_key_bytes)
+        .expect("wrong-key error verifying key")
+        .verify_strict(&error_body, &error_signature)
+        .expect("exact wrong-key error body verifies");
 }
 
 #[tokio::test]

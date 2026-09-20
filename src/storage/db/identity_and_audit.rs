@@ -338,7 +338,8 @@ impl HubStore {
         let mut statement = connection
             .prepare(
                 "SELECT vehicle_id, display_name FROM vehicles \
-                 WHERE EXISTS (SELECT 1 FROM sync_manifests \
+                 WHERE retired_at_ms IS NULL \
+                   AND EXISTS (SELECT 1 FROM sync_manifests \
                                WHERE sync_manifests.vehicle_id = vehicles.vehicle_id) \
                  ORDER BY last_seen_at_ms DESC, vehicle_id ASC",
             )
@@ -361,6 +362,173 @@ impl HubStore {
             .map_err(StoreError::Query)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::Query)
+    }
+
+    /// Whether a stable vehicle identity is currently active. Retirement only
+    /// changes public/configured visibility; it never deletes signed objects,
+    /// history, aliases, observations, or pairing authority.
+    pub fn vehicle_is_active(&self, vehicle_id: Uuid) -> Result<bool, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open_read_only_connection()?;
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM vehicles
+                                WHERE vehicle_id = ?1 AND retired_at_ms IS NULL)",
+                params![vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)
+    }
+
+    /// Idempotently retire one exact UUID without deleting any catalogue data.
+    pub fn retire_vehicle(&self, vehicle_id: Uuid, retired_at_ms: i64) -> Result<bool, StoreError> {
+        validate_timestamp("vehicle retired_at_ms", retired_at_ms)?;
+        self.set_vehicle_retirement(vehicle_id, Some(retired_at_ms))
+    }
+
+    /// Idempotently reactivate one exact UUID. This explicit operation, and
+    /// authoritative provider reconciliation, are the only resurrection paths.
+    pub fn reactivate_vehicle(&self, vehicle_id: Uuid) -> Result<bool, StoreError> {
+        self.set_vehicle_retirement(vehicle_id, None)
+    }
+
+    fn set_vehicle_retirement(
+        &self,
+        vehicle_id: Uuid,
+        retired_at_ms: Option<i64>,
+    ) -> Result<bool, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let exists: bool = transaction
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM vehicles WHERE vehicle_id = ?1)",
+                params![vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        if !exists {
+            return Err(StoreError::UnknownVehicle(vehicle_id));
+        }
+        let changed = match retired_at_ms {
+            Some(retired_at_ms) => transaction
+                .execute(
+                    "UPDATE vehicles SET retired_at_ms = ?1
+                     WHERE vehicle_id = ?2 AND retired_at_ms IS NULL",
+                    params![retired_at_ms, vehicle_id.to_string()],
+                )
+                .map_err(StoreError::RegisterVehicle)?,
+            None => transaction
+                .execute(
+                    "UPDATE vehicles SET retired_at_ms = NULL
+                     WHERE vehicle_id = ?1 AND retired_at_ms IS NOT NULL",
+                    params![vehicle_id.to_string()],
+                )
+                .map_err(StoreError::RegisterVehicle)?,
+        };
+        transaction.commit().map_err(StoreError::RegisterVehicle)?;
+        Ok(changed == 1)
+    }
+
+    /// Reconcile one successful, complete provider inventory. Missing known
+    /// identities for this source are retired; returned known identities are
+    /// reactivated with their stable UUID. Unknown identities remain uncreated
+    /// until normal collection/setup registers them.
+    pub fn reconcile_provider_inventory(
+        &self,
+        source_id: Uuid,
+        inventory: &[VehicleDescriptor],
+        observed_at_ms: i64,
+    ) -> Result<(), StoreError> {
+        if source_id.is_nil() {
+            return Err(StoreError::NilSourceId);
+        }
+        validate_timestamp("provider inventory observed_at_ms", observed_at_ms)?;
+        let mut keys = std::collections::BTreeSet::new();
+        let mut vins = std::collections::BTreeSet::new();
+        for vehicle in inventory {
+            vehicle.validate()?;
+            if vehicle.source_id != source_id {
+                return Err(StoreError::InvalidVehicleIdentity);
+            }
+            keys.insert(vehicle.source_vehicle_key.clone());
+            if let Some(vin) = &vehicle.vin {
+                vins.insert(vin.to_ascii_uppercase());
+            }
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        ensure_source_exists(&transaction, source_id)?;
+        let mut statement = transaction
+            .prepare(
+                "SELECT vehicle.vehicle_id,
+                        COALESCE(alias.source_vehicle_key,
+                                 CASE WHEN vehicle.source_id = ?1
+                                      THEN vehicle.source_vehicle_key END),
+                        vehicle.vin,
+                        vehicle.retired_at_ms
+                   FROM vehicles AS vehicle
+                   LEFT JOIN vehicle_identity_aliases AS alias
+                     ON alias.vehicle_id = vehicle.vehicle_id
+                    AND alias.source_id = ?1
+                  WHERE vehicle.source_id = ?1 OR alias.vehicle_id IS NOT NULL
+                  ORDER BY vehicle.vehicle_id",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(params![source_id.to_string()], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                ))
+            })
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)?;
+        drop(statement);
+        let mut known = std::collections::BTreeMap::new();
+        for (vehicle_id, source_vehicle_key, vin, retired_at_ms) in rows {
+            let present = source_vehicle_key
+                .as_ref()
+                .is_some_and(|key| keys.contains(key))
+                || vin
+                    .as_ref()
+                    .is_some_and(|vin| vins.contains(&vin.to_ascii_uppercase()));
+            known
+                .entry(vehicle_id)
+                .and_modify(|(_, _, matched)| *matched |= present)
+                .or_insert((retired_at_ms, vin, present));
+        }
+        for (vehicle_id, (retired_at_ms, _, present)) in known {
+            if present {
+                if retired_at_ms.is_some() {
+                    transaction
+                        .execute(
+                            "UPDATE vehicles SET retired_at_ms = NULL WHERE vehicle_id = ?1",
+                            params![vehicle_id],
+                        )
+                        .map_err(StoreError::RegisterVehicle)?;
+                }
+            } else if retired_at_ms.is_none() {
+                transaction
+                    .execute(
+                        "UPDATE vehicles SET retired_at_ms = ?1 WHERE vehicle_id = ?2",
+                        params![observed_at_ms, vehicle_id],
+                    )
+                    .map_err(StoreError::RegisterVehicle)?;
+            }
+        }
+        transaction.commit().map_err(StoreError::RegisterVehicle)
     }
 
     /// Return the stable Hub identity for a collector source, creating it the
@@ -855,9 +1023,8 @@ impl HubStore {
                     (SELECT source_vehicle_key FROM vehicles WHERE vehicle_id = ?1)
                 )",
                 params![vehicle_id.to_string()],
-                |row| row.get(0),
+                |row| row.get::<_, Option<String>>(0),
             )
-            .optional()
             .map_err(StoreError::Query)
     }
 

@@ -312,7 +312,11 @@ pub async fn setup_fleet_vehicle(
     )?;
     let access_token = credentials.access_token()?;
     admission.assert_sensitive_access()?;
-    let vehicles = client.list_vehicles(&access_token).await?;
+    let vehicles = accept_complete_provider_inventory(
+        store,
+        CollectorProvider::Fleet,
+        client.list_vehicles(&access_token).await.map_err(Into::into),
+    )?;
     ensure_fleet_inventory_contains_configured(store, &vehicles)?;
     let mut vehicle = select_native_setup_vehicle(vehicles, requested_vehicle_id)?;
     let existing = store.configured_tesla_vehicles()?;
@@ -365,7 +369,11 @@ pub async fn setup_fleet_vehicles(
     )?;
     let access_token = credentials.access_token()?;
     admission.assert_sensitive_access()?;
-    let mut vehicles = client.list_vehicles(&access_token).await?;
+    let mut vehicles = accept_complete_provider_inventory(
+        store,
+        CollectorProvider::Fleet,
+        client.list_vehicles(&access_token).await.map_err(Into::into),
+    )?;
     ensure_fleet_inventory_contains_configured(store, &vehicles)?;
     if vehicles.is_empty() {
         return Err(CollectorError::NativeSetupNoVehicles);
@@ -436,6 +444,81 @@ fn configured_settings_for_discovered_vehicle(
         }
     }
     Ok(matched)
+}
+
+fn configured_identity_matches_discovered_vehicle(
+    store: &HubStore,
+    hub_vehicle_id: Uuid,
+    configured_eid: i64,
+    discovered: &Vehicle,
+) -> Result<bool, CollectorError> {
+    let (_, configured_vin) = store
+        .configured_tesla_vehicle_identity(hub_vehicle_id)?
+        .ok_or(StoreError::LineageCatalogConflict)?;
+    Ok(configured_eid as u64 == discovered.id.get()
+        || configured_vin
+            .as_deref()
+            .filter(|vin| !vin.is_empty())
+            .is_some_and(|vin| vin.eq_ignore_ascii_case(&discovered.vin)))
+}
+
+/// A complete provider inventory must map each existing Hub identity to at
+/// most one discovered vehicle, and each discovered vehicle to at most one
+/// Hub identity. Validate before authoritative inventory reconciliation so an
+/// ambiguous EID/VIN response cannot retire or reactivate durable identities.
+fn ensure_provider_inventory_identity_mapping_is_unambiguous(
+    store: &HubStore,
+    configured: &[(Uuid, i64, crate::hub_pack::ProjectionCarSettings)],
+    discovered: &[Vehicle],
+) -> Result<(), CollectorError> {
+    let mut matched_discovered = HashSet::new();
+    for (hub_vehicle_id, configured_eid, _) in configured {
+        let mut matches = Vec::new();
+        for (index, vehicle) in discovered.iter().enumerate() {
+            if configured_identity_matches_discovered_vehicle(
+                store,
+                *hub_vehicle_id,
+                *configured_eid,
+                vehicle,
+            )? {
+                matches.push(index);
+            }
+        }
+        if matches.len() > 1
+            || matches
+                .first()
+                .is_some_and(|index| !matched_discovered.insert(*index))
+        {
+            return Err(CollectorError::FleetSetupInventoryMismatch);
+        }
+    }
+    Ok(())
+}
+
+fn implicit_setup_vehicle_id(
+    store: &HubStore,
+    configured: &[(Uuid, i64, crate::hub_pack::ProjectionCarSettings)],
+    discovered: &[Vehicle],
+) -> Result<Option<i64>, CollectorError> {
+    let Some((hub_vehicle_id, configured_eid, _)) = configured.first() else {
+        return Ok(None);
+    };
+    if configured.len() != 1 {
+        return Ok(None);
+    }
+    for vehicle in discovered {
+        if configured_identity_matches_discovered_vehicle(
+            store,
+            *hub_vehicle_id,
+            *configured_eid,
+            vehicle,
+        )? {
+            return i64::try_from(vehicle.id.get())
+                .map(Some)
+                .map_err(|_| CollectorError::NativeSetupVehicleIdInvalid);
+        }
+    }
+    Ok(Some(*configured_eid))
 }
 
 fn ensure_fleet_inventory_contains_configured(
@@ -1084,18 +1167,41 @@ async fn setup_native_vehicle_with_client(
     auth: &LegacyAuth,
     requested_vehicle_id: Option<i64>,
 ) -> Result<NativeSetupReport, CollectorError> {
-    let existing = store.configured_tesla_vehicles()?;
-    let effective_vehicle_id =
-        requested_vehicle_id.or_else(|| (existing.len() == 1).then(|| existing[0].1));
-    let vehicles = client.list_vehicles_with_legacy_auth_once(auth).await?;
+    let existing_before_reconciliation = store.configured_tesla_vehicles()?;
+    let discovered = client
+        .list_vehicles_with_legacy_auth_once(auth)
+        .await
+        .map_err(CollectorError::from)?;
+    ensure_provider_inventory_identity_mapping_is_unambiguous(
+        store,
+        &existing_before_reconciliation,
+        &discovered,
+    )?;
+    let effective_vehicle_id = match requested_vehicle_id {
+        Some(requested) => Some(requested),
+        None => implicit_setup_vehicle_id(
+            store,
+            &existing_before_reconciliation,
+            &discovered,
+        )?,
+    };
+    let selected_before_reconciliation =
+        select_native_setup_vehicle(discovered.clone(), effective_vehicle_id)?;
+    let restored_settings = configured_settings_for_discovered_vehicle(
+        store,
+        &existing_before_reconciliation,
+        &selected_before_reconciliation,
+    )?;
+    let vehicles = accept_complete_provider_inventory(
+        store,
+        CollectorProvider::Legacy,
+        Ok(discovered),
+    )?;
     let mut vehicle = select_native_setup_vehicle(vehicles, effective_vehicle_id)?;
     let selected_vehicle_id =
         i64::try_from(vehicle.id.get()).map_err(|_| CollectorError::NativeSetupVehicleIdInvalid)?;
 
-    if let Some((_, _, settings)) = existing
-        .into_iter()
-        .find(|(_, eid, _)| *eid == selected_vehicle_id)
-    {
+    if let Some(settings) = restored_settings {
         vehicle.settings = settings;
     }
 
@@ -1129,20 +1235,28 @@ async fn setup_native_vehicles_with_client(
     auth: &LegacyAuth,
 ) -> Result<NativeSetupBatchReport, CollectorError> {
     let existing = store.configured_tesla_vehicles()?;
-    let mut vehicles = client.list_vehicles_with_legacy_auth_once(auth).await?;
+    let mut discovered = client
+        .list_vehicles_with_legacy_auth_once(auth)
+        .await
+        .map_err(CollectorError::from)?;
+    ensure_provider_inventory_identity_mapping_is_unambiguous(store, &existing, &discovered)?;
+    for vehicle in &mut discovered {
+        if let Some(settings) =
+            configured_settings_for_discovered_vehicle(store, &existing, vehicle)?
+        {
+            vehicle.settings = settings;
+        }
+    }
+    let mut vehicles = accept_complete_provider_inventory(
+        store,
+        CollectorProvider::Legacy,
+        Ok(discovered),
+    )?;
     if vehicles.is_empty() {
         return Err(CollectorError::NativeSetupNoVehicles);
     }
     vehicles.sort_by_key(|vehicle| vehicle.id);
     vehicles.dedup_by_key(|vehicle| vehicle.id);
-    for vehicle in &mut vehicles {
-        if let Some((_, _, settings)) = existing
-            .iter()
-            .find(|(_, eid, _)| *eid as u64 == vehicle.id.get())
-        {
-            vehicle.settings = settings.clone();
-        }
-    }
     let configured = vehicles
         .iter()
         .map(|vehicle| {

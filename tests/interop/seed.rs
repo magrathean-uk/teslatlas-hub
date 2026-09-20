@@ -7,21 +7,28 @@ use serde_json::json;
 use std::{
     fs,
     io::Write,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
+#[cfg(feature = "interop-fixture")]
+use teslatlas_hub::hub_pack::ProjectionCarSettings;
 use teslatlas_hub::{
     credentials::OwnerTokens,
     db::{
         HubStore, ObservationInput, SourceDescriptor, TeslaMateLegacyTokenStore, VehicleDescriptor,
     },
     hub_pack::{
-        ProjectionBinding, ProjectionCar, ProjectionCarSettings, ProjectionCharge, ProjectionDrive,
-        ProjectionPackRequest, ProjectionPackWriter, ProjectionSnapshot,
+        ProjectionBinding, ProjectionCar, ProjectionCharge, ProjectionDrive, ProjectionPackRequest,
+        ProjectionPackRequestV2_2, ProjectionPackWriter, ProjectionSnapshot,
+        ProjectionSnapshotV2_2,
     },
-    protocol::{SequenceRange, Sha256Digest},
+    protocol::{HUB_PROJECTION_SCHEMA_V3, SequenceRange, Sha256Digest},
     teslamate_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
     teslamate_token::encrypt_legacy_owner_tokens,
+    updates_delivery::{
+        publish_updates_schema_22, sign_updates_schema_22_manifest, sign_updates_schema_22_noop,
+        updates_snapshot_v2_2,
+    },
 };
 use uuid::Uuid;
 
@@ -44,8 +51,11 @@ struct FixtureVehicleIdentity<'a> {
 
 const DEFAULT_PRIMARY_VEHICLE_ID: Uuid = Uuid::from_u128(0x11111111111141118111111111111111);
 const DEFAULT_SECONDARY_VEHICLE_ID: Uuid = Uuid::from_u128(0x22222222222242228222222222222222);
+const DYNAMIC_VEHICLE_ID: Uuid = Uuid::from_u128(0x33333333333343338333333333333333);
 const DEFAULT_PRIMARY_VIN: &str = "5YJ3E1EA7KF000001";
 const DEFAULT_SECONDARY_VIN: &str = "5YJ3E1EA7KF000002";
+const DYNAMIC_VIN: &str = "5YJ3E1EA7KF000003";
+const DYNAMIC_CAR_ID: i64 = 11;
 
 #[derive(Serialize)]
 pub struct PreparedFixture {
@@ -57,6 +67,13 @@ pub struct PreparedFixture {
     pub source_id: Uuid,
     pub endpoint: String,
     pub vehicle_ids: [Uuid; 2],
+}
+
+#[cfg(feature = "interop-fixture")]
+#[derive(Serialize)]
+pub struct DynamicVehicleMutation {
+    pub status: &'static str,
+    pub vehicle_id: Uuid,
 }
 
 /// One sealed source/vehicle tuple for an empty, synthetic Edge control
@@ -406,8 +423,46 @@ fn prepare_with_vehicle_identities(
         }
         transaction.commit()?;
         drop(connection);
+        // Keep the legacy base binding as the durable configured-vehicle fact
+        // used by native serve preflight and Edge delivery. Schema 2.2 is a
+        // second, newer publication, matching the production import path; it
+        // supplements rather than replaces the binding catalogue.
+        let legacy_sequence = store.next_full_snapshot_sequence(vehicle_id)?;
+        let legacy_request = ProjectionPackRequest {
+            pack_id: Uuid::new_v4(),
+            snapshot_id: Uuid::new_v4(),
+            ordinal: 0,
+            binding: ProjectionBinding {
+                installation_id: hub_id,
+                account_id: source.source_id,
+                vehicle_id,
+                generation: source.generation,
+                selected_car_id: car_id,
+            },
+            sequence: SequenceRange {
+                from_exclusive: legacy_sequence,
+                to_inclusive: legacy_sequence,
+            },
+            snapshot: &snapshot,
+        };
+        let legacy_built = ProjectionPackWriter::new(store.packs_dir())
+            .write_full_snapshot_with_states_and_updates(&legacy_request, &[], &[])?;
+        let legacy_manifest = legacy_request.signed_manifest_with_states_and_updates(
+            &legacy_built,
+            &[],
+            &[],
+            &key,
+        )?;
+        store.finalize_import_snapshot_with_binding(
+            &legacy_manifest,
+            Sha256Digest::from_bytes([0x5A; 32]),
+            &[],
+            &legacy_request.binding,
+        )?;
+
         let sequence = store.next_full_snapshot_sequence(vehicle_id)?;
-        let request = ProjectionPackRequest {
+        let schema_22_snapshot = schema_22_snapshot(car_id, name, vin)?;
+        let request = ProjectionPackRequestV2_2 {
             pack_id: Uuid::new_v4(),
             snapshot_id: Uuid::new_v4(),
             ordinal: 0,
@@ -422,17 +477,19 @@ fn prepare_with_vehicle_identities(
                 from_exclusive: sequence,
                 to_inclusive: sequence,
             },
-            snapshot: &snapshot,
+            snapshot: &schema_22_snapshot,
         };
-        let built = ProjectionPackWriter::new(store.packs_dir())
-            .write_full_snapshot_with_states_and_updates(&request, &[], &[])?;
-        let manifest = request.signed_manifest_with_states_and_updates(&built, &[], &[], &key)?;
-        store.finalize_import_snapshot_with_binding(
-            &manifest,
-            Sha256Digest::from_bytes([0x5A; 32]),
-            &[],
+        let built =
+            ProjectionPackWriter::new(store.packs_dir()).write_full_snapshot_2_2(&request)?;
+        let manifest = sign_updates_schema_22_manifest(&request, &built, &key)?;
+        let noop = sign_updates_schema_22_noop(
             &request.binding,
+            request.snapshot_id,
+            request.sequence.to_inclusive,
+            &built.metadata.sha256.to_string(),
+            &key,
         )?;
+        publish_updates_schema_22(&store, &manifest, &noop)?;
         if index == 0 {
             store.append_observation(&ObservationInput {
                 source_id:source.source_id,vehicle_id,observed_at_ms:OBSERVED_AT_MS,
@@ -505,6 +562,240 @@ fn prepare_with_vehicle_identities(
         &serde_json::to_vec_pretty(&prepared)?,
     )?;
     Ok(prepared)
+}
+
+/// Build the minimal physical schema-2.2 snapshot for one synthetic fixture
+/// vehicle. Compatibility drive and charge JSON remains in the materialised
+/// query tables above; inventing physical TeslaMate relationships for it would
+/// make the fixture less honest, not more complete.
+fn schema_22_snapshot(car_id: i64, name: &str, vin: &str) -> Result<ProjectionSnapshotV2_2> {
+    let physical_car_id = i16::try_from(car_id)?;
+    let mut snapshot = updates_snapshot_v2_2(Vec::new());
+    let car = snapshot
+        .cars
+        .first_mut()
+        .ok_or("schema 2.2 fixture car template is missing")?;
+    car.id = physical_car_id;
+    car.eid = car_id;
+    car.vid = car_id;
+    car.vin = Some(vin.into());
+    car.name = Some(name.into());
+    car.model = Some("model3".into());
+    car.settings_id = car_id;
+    snapshot
+        .car_settings
+        .first_mut()
+        .ok_or("schema 2.2 fixture car settings template is missing")?
+        .id = car_id;
+    Ok(snapshot)
+}
+
+/// Add (once) or explicitly reactivate the deterministic third vehicle used by
+/// development-only dynamic-entity acceptance. All publication goes through
+/// normal HubStore and signed-artifact APIs.
+#[cfg(feature = "interop-fixture")]
+pub fn expose_dynamic_vehicle(root: &Path) -> Result<DynamicVehicleMutation> {
+    let (store, source_id) = open_owned_fixture(root)?;
+    let was_known = store.source_vehicle_key(DYNAMIC_VEHICLE_ID)?.is_some();
+    if let Some(source_vehicle_key) = store.source_vehicle_key(DYNAMIC_VEHICLE_ID)? {
+        if source_vehicle_key != DYNAMIC_CAR_ID.to_string() {
+            return Err("dynamic fixture vehicle identity conflict".into());
+        }
+    }
+
+    let source = store.register_source(
+        &SourceDescriptor::new("owner_api_compat", "local_installation_v1"),
+        OBSERVED_AT_MS,
+    )?;
+    if source.source_id != source_id {
+        return Err("fixture source identity mismatch".into());
+    }
+    let mut descriptor = VehicleDescriptor::new(source.source_id, DYNAMIC_CAR_ID.to_string())
+        .with_tesla_identity(Some(DYNAMIC_CAR_ID), None);
+    descriptor.vin = Some(DYNAMIC_VIN.into());
+    descriptor.display_name = Some("Interop dynamic third".into());
+    store.register_vehicle_with_id(&descriptor, OBSERVED_AT_MS, DYNAMIC_VEHICLE_ID)?;
+
+    let car: ProjectionCar = serde_json::from_value(json!({
+        "id": DYNAMIC_CAR_ID,
+        "name": "Interop dynamic third",
+        "model": "model3",
+        "vin": DYNAMIC_VIN,
+        "source_eid": DYNAMIC_CAR_ID,
+        "firmware_version": "2026.20"
+    }))?;
+    let snapshot = ProjectionSnapshot {
+        cars: vec![car],
+        drives: Vec::new(),
+        positions: Vec::new(),
+        charges: Vec::new(),
+        charge_samples: Vec::new(),
+    };
+    store.persist_materialised_car_if_absent(DYNAMIC_VEHICLE_ID, &snapshot.cars[0])?;
+    let key = load_or_create_cursor_key(&root.join("hub"))?;
+    if let Some(manifest) = store.manifest_for_vehicle(DYNAMIC_VEHICLE_ID)?
+        && manifest.schema == HUB_PROJECTION_SCHEMA_V3
+    {
+        teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+            &store,
+            DYNAMIC_VEHICLE_ID,
+            &key,
+        )?;
+        let changed = store.reactivate_vehicle(DYNAMIC_VEHICLE_ID)?;
+        store.checkpoint_catalogue_for_immutable_read()?;
+        return Ok(DynamicVehicleMutation {
+            status: if changed {
+                "restored"
+            } else {
+                "already-exposed"
+            },
+            vehicle_id: DYNAMIC_VEHICLE_ID,
+        });
+    }
+    let binding = ProjectionBinding {
+        installation_id: store.installation_id()?,
+        account_id: source.source_id,
+        vehicle_id: DYNAMIC_VEHICLE_ID,
+        generation: source.generation,
+        selected_car_id: DYNAMIC_CAR_ID,
+    };
+    if store.manifest_for_vehicle(DYNAMIC_VEHICLE_ID)?.is_none() {
+        let legacy_sequence = store.next_full_snapshot_sequence(DYNAMIC_VEHICLE_ID)?;
+        let legacy_request = ProjectionPackRequest {
+            pack_id: Uuid::new_v4(),
+            snapshot_id: Uuid::new_v4(),
+            ordinal: 0,
+            binding: binding.clone(),
+            sequence: SequenceRange {
+                from_exclusive: legacy_sequence,
+                to_inclusive: legacy_sequence,
+            },
+            snapshot: &snapshot,
+        };
+        let legacy_built = ProjectionPackWriter::new(store.packs_dir())
+            .write_full_snapshot_with_states_and_updates(&legacy_request, &[], &[])?;
+        let legacy_manifest = legacy_request.signed_manifest_with_states_and_updates(
+            &legacy_built,
+            &[],
+            &[],
+            &key,
+        )?;
+        store.finalize_import_snapshot_with_binding(
+            &legacy_manifest,
+            Sha256Digest::from_bytes([0x33; 32]),
+            &[],
+            &binding,
+        )?;
+    }
+
+    let sequence = store.next_full_snapshot_sequence(DYNAMIC_VEHICLE_ID)?;
+    let schema_22_snapshot =
+        schema_22_snapshot(DYNAMIC_CAR_ID, "Interop dynamic third", DYNAMIC_VIN)?;
+    let request = ProjectionPackRequestV2_2 {
+        pack_id: Uuid::new_v4(),
+        snapshot_id: Uuid::new_v4(),
+        ordinal: 0,
+        binding,
+        sequence: SequenceRange {
+            from_exclusive: sequence,
+            to_inclusive: sequence,
+        },
+        snapshot: &schema_22_snapshot,
+    };
+    let built = ProjectionPackWriter::new(store.packs_dir()).write_full_snapshot_2_2(&request)?;
+    let manifest = sign_updates_schema_22_manifest(&request, &built, &key)?;
+    let noop = sign_updates_schema_22_noop(
+        &request.binding,
+        request.snapshot_id,
+        request.sequence.to_inclusive,
+        &built.metadata.sha256.to_string(),
+        &key,
+    )?;
+    publish_updates_schema_22(&store, &manifest, &noop)?;
+    let changed = store.reactivate_vehicle(DYNAMIC_VEHICLE_ID)?;
+    store.checkpoint_catalogue_for_immutable_read()?;
+    Ok(DynamicVehicleMutation {
+        status: if changed {
+            "restored"
+        } else if was_known {
+            "repaired"
+        } else {
+            "exposed"
+        },
+        vehicle_id: DYNAMIC_VEHICLE_ID,
+    })
+}
+
+#[cfg(feature = "interop-fixture")]
+pub fn retire_dynamic_vehicle(root: &Path) -> Result<DynamicVehicleMutation> {
+    let (store, _) = open_owned_fixture(root)?;
+    ensure_dynamic_fixture_identity(&store)?;
+    let changed = store.retire_vehicle(DYNAMIC_VEHICLE_ID, OBSERVED_AT_MS + 120_000)?;
+    store.checkpoint_catalogue_for_immutable_read()?;
+    Ok(DynamicVehicleMutation {
+        status: if changed {
+            "retired"
+        } else {
+            "already-retired"
+        },
+        vehicle_id: DYNAMIC_VEHICLE_ID,
+    })
+}
+
+#[cfg(feature = "interop-fixture")]
+pub fn restore_dynamic_vehicle(root: &Path) -> Result<DynamicVehicleMutation> {
+    let (store, _) = open_owned_fixture(root)?;
+    ensure_dynamic_fixture_identity(&store)?;
+    let changed = store.reactivate_vehicle(DYNAMIC_VEHICLE_ID)?;
+    store.checkpoint_catalogue_for_immutable_read()?;
+    Ok(DynamicVehicleMutation {
+        status: if changed {
+            "restored"
+        } else {
+            "already-exposed"
+        },
+        vehicle_id: DYNAMIC_VEHICLE_ID,
+    })
+}
+
+#[cfg(feature = "interop-fixture")]
+fn ensure_dynamic_fixture_identity(store: &HubStore) -> Result<()> {
+    match store.source_vehicle_key(DYNAMIC_VEHICLE_ID)? {
+        Some(key) if key == DYNAMIC_CAR_ID.to_string() => Ok(()),
+        _ => Err("dynamic fixture vehicle has not been exposed".into()),
+    }
+}
+
+#[cfg(feature = "interop-fixture")]
+fn open_owned_fixture(root: &Path) -> Result<(HubStore, Uuid)> {
+    if !root.is_absolute() {
+        return Err("owned private fixture directory required".into());
+    }
+    let metadata = root.symlink_metadata()?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_dir()
+        || metadata.uid() != rustix::process::getuid().as_raw()
+        || metadata.permissions().mode() & 0o077 != 0
+    {
+        return Err("owned private fixture directory required".into());
+    }
+    let connection: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("connection.json"))?)?;
+    let expected_hub_id = Uuid::parse_str(
+        connection["hub_id"]
+            .as_str()
+            .ok_or("fixture connection hub identity required")?,
+    )?;
+    let expected_source_id = Uuid::parse_str(
+        connection["source_id"]
+            .as_str()
+            .ok_or("fixture connection source identity required")?,
+    )?;
+    let store = HubStore::initialize(root.join("hub"))?;
+    if store.installation_id()? != expected_hub_id {
+        return Err("fixture installation identity mismatch".into());
+    }
+    Ok((store, expected_source_id))
 }
 
 /// Harness-only single later observation; never exposed through product HTTP.

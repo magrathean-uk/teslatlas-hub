@@ -1123,6 +1123,25 @@ async fn vehicles(State(state): State<AppState>, headers: HeaderMap) -> Response
     }
 }
 
+fn require_active_vehicle(state: &AppState, vehicle_id: Uuid) -> Result<(), Response> {
+    match state.store.vehicle_is_active(vehicle_id) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(public_api_error(
+            StatusCode::NOT_FOUND,
+            "vehicle_not_found",
+            "vehicle was not found",
+        )),
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot check public vehicle visibility");
+            Err(public_api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service_unavailable",
+                "vehicle visibility is temporarily unavailable",
+            ))
+        }
+    }
+}
+
 async fn current_vehicle(
     State(state): State<AppState>,
     Path(vehicle_id): Path<String>,
@@ -1134,6 +1153,9 @@ async fn current_vehicle(
     let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    if let Err(response) = require_active_vehicle(&state, vehicle_id) {
+        return response;
+    }
     let observations = match state.store.current_observations_for_vehicle(vehicle_id) {
         Ok(observations) => observations,
         Err(crate::db::StoreError::UnknownVehicle(_)) => {
@@ -1244,6 +1266,9 @@ async fn drives(
             );
         }
     };
+    if let Err(response) = require_active_vehicle(&state, vehicle_id) {
+        return response;
+    }
     let fetch_limit = query
         .limit
         .checked_add(1)
@@ -1417,6 +1442,9 @@ async fn manifest(
     let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    if let Err(response) = require_active_vehicle(&state, vehicle_id) {
+        return response;
+    }
     let capability = match requested_sync_capability(&headers) {
         Ok(capability) => capability,
         Err(()) => return StatusCode::BAD_REQUEST.into_response(),
@@ -1583,18 +1611,22 @@ async fn schema_22_noop(
     let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    if let Err(response) = require_active_vehicle(&state, vehicle_id) {
+        return response;
+    }
     if negotiate_hub_projection_schema(&headers, HUB_PROJECTION_SCHEMA_V3).is_err() {
         return StatusCode::NOT_ACCEPTABLE.into_response();
     }
     let Some(cursor_key) = state.cursor_key.as_deref() else {
-        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        tracing::error!("schema 2.2 no-op serving requires the active cursor key");
+        return signed_sync_service_unavailable(state.manifest_signing.as_deref());
     };
     match crate::updates_delivery::schema_22_signed_artifacts(&state.store, vehicle_id, cursor_key)
     {
         Ok((_, noop_bytes)) => no_store_json_bytes(noop_bytes, state.manifest_signing.as_deref()),
         Err(error) => {
             tracing::error!(%error, "schema 2.2 no-op pair is unavailable");
-            StatusCode::SERVICE_UNAVAILABLE.into_response()
+            signed_sync_service_unavailable(state.manifest_signing.as_deref())
         }
     }
 }
@@ -1752,8 +1784,27 @@ fn no_store_manifest(
 }
 
 fn no_store_json_bytes(raw_json: Vec<u8>, signing: Option<&ManifestSigning>) -> Response {
+    signed_no_store_json_bytes(StatusCode::OK, raw_json, signing)
+}
+
+fn signed_sync_service_unavailable(signing: Option<&ManifestSigning>) -> Response {
+    let raw_json = serde_json::to_vec(&PublicApiErrorEnvelope {
+        error: PublicApiError {
+            code: "service_unavailable",
+            message: "schema 2.2 synchronization state is temporarily unavailable",
+        },
+    })
+    .expect("static public API error is serializable");
+    signed_no_store_json_bytes(StatusCode::SERVICE_UNAVAILABLE, raw_json, signing)
+}
+
+fn signed_no_store_json_bytes(
+    status: StatusCode,
+    raw_json: Vec<u8>,
+    signing: Option<&ManifestSigning>,
+) -> Response {
     let mut response = Response::builder()
-        .status(StatusCode::OK)
+        .status(status)
         .header(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))
         .header(
             header::CONTENT_TYPE,

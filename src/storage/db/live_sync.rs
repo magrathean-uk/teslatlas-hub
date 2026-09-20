@@ -1,6 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 impl HubStore {
+    /// Supervised discovery may run when every configured vehicle is retired,
+    /// but never without an existing durable collection lineage.
+    pub fn has_configured_tesla_vehicle_lineage(&self) -> Result<bool, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM v2_base_bindings)",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)
+    }
+
     /// All configured cars eligible for account-owned collection. V2 bindings
     /// and Tesla EIDs are durable setup/import facts; never infer targets from
     /// mutable discovery data.
@@ -17,6 +30,9 @@ impl HubStore {
                         settings.lfp_battery, settings.suspend_min_resolved,
                         car.car_json
                    FROM v2_base_bindings AS binding
+                   JOIN vehicles AS vehicle
+                     ON vehicle.vehicle_id = binding.vehicle_id
+                    AND vehicle.retired_at_ms IS NULL
                    LEFT JOIN vehicle_identity_aliases AS eid
                      ON eid.vehicle_id = binding.vehicle_id
                     AND eid.alias_kind = 'tesla_eid'
@@ -115,7 +131,7 @@ impl HubStore {
                    LEFT JOIN vehicle_identity_aliases AS eid
                      ON eid.vehicle_id = binding.vehicle_id
                     AND eid.alias_kind = 'tesla_eid'
-                  WHERE binding.vehicle_id = ?1
+                  WHERE binding.vehicle_id = ?1 AND vehicle.retired_at_ms IS NULL
                   GROUP BY binding.vehicle_id, vehicle.vin",
                 params![vehicle_id.to_string()],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),

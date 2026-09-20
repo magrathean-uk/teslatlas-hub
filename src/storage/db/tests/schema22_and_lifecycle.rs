@@ -240,6 +240,104 @@ fn initial_schema_22_finalizer_never_exposes_only_schema_21() {
 }
 
 #[test]
+fn initial_schema_22_import_atomically_seeds_public_drive_history() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, legacy_manifest) = v2_base_manifest(&store);
+    let run_id = store
+        .begin_import_generation(
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            2_000,
+        )
+        .expect("staging generation");
+    store
+        .stage_import_generation_session(
+            run_id,
+            &crate::teslamate_projection::TeslaMateOpenSession {
+                car_id: binding.selected_car_id,
+                ..Default::default()
+            },
+        )
+        .expect("staging session");
+    let car = import_delta_test_car(binding.selected_car_id);
+    let drive = ProjectionDrive {
+        id: 7,
+        car_id: binding.selected_car_id,
+        optimized_at_ms: None,
+        start_date_ms: 1_700_000_000_000,
+        end_date_ms: 1_700_000_001_000,
+        distance_km: Some(1.0),
+        duration_min: Some(1),
+        efficiency: None,
+        outside_temp_avg: None,
+        inside_temp_avg: None,
+        speed_max: Some(20),
+        power_max: None,
+        power_min: None,
+        start_ideal_range_km: None,
+        end_ideal_range_km: None,
+        start_address: None,
+        end_address: None,
+        start_geofence: None,
+        end_geofence: None,
+        start_latitude: None,
+        start_longitude: None,
+        end_latitude: None,
+        end_longitude: None,
+        start_soc: Some(80),
+        end_soc: Some(79),
+        start_rated_range_km: None,
+        end_rated_range_km: None,
+        ascent: None,
+        descent: None,
+    };
+    let state = create_direct_import_projection_state(&store, run_id, 10);
+    let mut capture =
+        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_initial_base(state);
+    capture.record_car(&car).expect("capture direct car");
+    capture
+        .record_drive(&drive)
+        .expect("capture completed drive");
+    capture.seal().expect("seal direct projection state");
+    let state = capture.into_state();
+    let (schema_22, noop) = schema_22_successor_for_binding(&binding);
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    store
+        .finalize_import_generation_with_projection_state_and_schema_22_and_materialisation(
+            &gate,
+            run_id,
+            binding.account_id,
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            2_000,
+            &legacy_manifest,
+            Sha256Digest::of_bytes(b"atomic-schema-22-public-drive"),
+            &[],
+            &binding,
+            &state,
+            &car,
+            std::slice::from_ref(&drive),
+            &schema_22,
+            &noop,
+        )
+        .expect("atomic first import with public history");
+    assert_eq!(
+        store
+            .materialised_car_for_vehicle(vehicle.vehicle_id)
+            .expect("materialised car lookup"),
+        Some(car)
+    );
+    assert_eq!(
+        store
+            .materialised_drive_for_vehicle(vehicle.vehicle_id, drive.id)
+            .expect("materialised drive lookup"),
+        Some(drive)
+    );
+}
+
+#[test]
 fn initial_schema_22_finalizer_rejects_source_and_car_binding_mismatch() {
     for mismatch_source in [true, false] {
         let temporary = crate::private_tempdir().expect("temporary store");

@@ -342,6 +342,40 @@ fn import_delta_test_car(car_id: i64) -> ProjectionCar {
     }
 }
 
+fn import_materialised_test_drive(drive_id: i64, car_id: i64, distance_km: f64) -> ProjectionDrive {
+    ProjectionDrive {
+        id: drive_id,
+        car_id,
+        optimized_at_ms: None,
+        start_date_ms: 1_700_000_000_000 + drive_id,
+        end_date_ms: 1_700_000_001_000 + drive_id,
+        distance_km: Some(distance_km),
+        duration_min: Some(1),
+        efficiency: None,
+        outside_temp_avg: None,
+        inside_temp_avg: None,
+        speed_max: Some(20),
+        power_max: None,
+        power_min: None,
+        start_ideal_range_km: None,
+        end_ideal_range_km: None,
+        start_address: None,
+        end_address: None,
+        start_geofence: None,
+        end_geofence: None,
+        start_latitude: None,
+        start_longitude: None,
+        end_latitude: None,
+        end_longitude: None,
+        start_soc: Some(80),
+        end_soc: Some(79),
+        start_rated_range_km: None,
+        end_rated_range_km: None,
+        ascent: None,
+        descent: None,
+    }
+}
+
 fn import_delta_test_cursor_key() -> CursorKey {
     CursorKey::from_bytes([61; 32])
 }

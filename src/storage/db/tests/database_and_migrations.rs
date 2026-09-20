@@ -192,6 +192,43 @@ fn initializes_a_checked_wal_database() {
 }
 
 #[test]
+fn schema_59_upgrade_adds_null_vehicle_retirement_state() {
+    let temporary = crate::private_tempdir().expect("temporary database");
+    let store = HubStore::initialize(temporary.path()).expect("current store");
+    let source = store
+        .register_source(&SourceDescriptor::new("migration", "schema-59"), 1_000)
+        .expect("source");
+    let vehicle = store
+        .register_vehicle(
+            &VehicleDescriptor::new(source.source_id, "9")
+                .with_tesla_identity(Some(9), None),
+            1_000,
+        )
+        .expect("vehicle");
+    let connection = store.open().expect("migration connection");
+    connection
+        .execute_batch(
+            "ALTER TABLE vehicles DROP COLUMN retired_at_ms;
+             PRAGMA user_version = 59;",
+        )
+        .expect("downgrade test catalogue shape");
+
+    migrate(&connection).expect("migrate schema 59");
+
+    assert_eq!(schema_version(&connection).unwrap(), 60);
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT retired_at_ms FROM vehicles WHERE vehicle_id = ?1",
+                [vehicle.vehicle_id.to_string()],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
 fn inventory_counts_physical_pack_and_staging_bytes_once() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store initializes");

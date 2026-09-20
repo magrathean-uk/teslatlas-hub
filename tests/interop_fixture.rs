@@ -6,8 +6,329 @@ mod seed;
 use axum::{body::Body, http::Request};
 use http_body_util::BodyExt;
 use serde_json::Value;
-use teslatlas_hub::{db::HubStore, server::paired_router};
+use teslatlas_hub::{
+    db::{HubStore, VehicleDescriptor},
+    server::paired_router,
+};
 use tower::ServiceExt;
+
+#[test]
+fn standard_fixtures_publish_matching_schema_22_pairs_and_keep_query_rows() {
+    for (name, viewer_r1, expected_drives) in [("b1", false, 5_i64), ("viewer-r1", true, 51_i64)] {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join(name);
+        let prepared = if viewer_r1 {
+            seed::prepare_viewer_r1(&root, 18443).unwrap()
+        } else {
+            seed::prepare(&root, 18443).unwrap()
+        };
+        let store = HubStore::initialize(root.join("hub")).unwrap();
+        let key =
+            teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub"))
+                .unwrap();
+
+        for vehicle_id in prepared.vehicle_ids {
+            let (manifest_bytes, noop_bytes) =
+                teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+                    &store, vehicle_id, &key,
+                )
+                .unwrap();
+            let manifest: teslatlas_hub::protocol::SyncManifest =
+                serde_json::from_slice(&manifest_bytes).unwrap();
+            let noop: teslatlas_hub::updates_delivery::SignedNoOpState =
+                serde_json::from_slice(&noop_bytes).unwrap();
+            assert_eq!(
+                manifest.schema,
+                teslatlas_hub::protocol::HUB_PROJECTION_SCHEMA_V3
+            );
+            assert_eq!(noop.projection_schema, "2.2");
+            assert_eq!(noop.vehicle_id, vehicle_id);
+            assert_eq!(noop.snapshot_id, manifest.snapshot_id);
+            assert_eq!(noop.head_sequence, manifest.head_sequence);
+            assert_eq!(noop.pack_sha256, manifest.chunks[0].sha256.to_string());
+            assert!(
+                store
+                    .pack_for_digest(manifest.chunks[0].sha256)
+                    .unwrap()
+                    .is_some()
+            );
+        }
+
+        let connection = store.open().unwrap();
+        let drive_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM materialised_drives", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let charge_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM materialised_charges", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(drive_count, expected_drives, "{name} query drives");
+        assert_eq!(charge_count, 1, "{name} query charges");
+    }
+}
+
+#[cfg(feature = "interop-fixture")]
+#[test]
+fn dynamic_fixture_exposure_repairs_registered_but_unpublished_vehicle() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("partial-dynamic-vehicle");
+    let prepared = seed::prepare(&root, 18443).unwrap();
+    let store = HubStore::initialize(root.join("hub")).unwrap();
+    let vehicle_id = uuid::Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
+    let mut descriptor =
+        VehicleDescriptor::new(prepared.source_id, "11").with_tesla_identity(Some(11), None);
+    descriptor.vin = Some("5YJ3E1EA7KF000003".into());
+    descriptor.display_name = Some("Interop dynamic third".into());
+    store
+        .register_vehicle_with_id(&descriptor, 1_788_566_400_000, vehicle_id)
+        .unwrap();
+    assert!(store.manifest_for_vehicle(vehicle_id).unwrap().is_none());
+    drop(store);
+
+    let repaired = seed::expose_dynamic_vehicle(&root).unwrap();
+    assert_eq!(repaired.status, "repaired");
+    assert_eq!(repaired.vehicle_id, vehicle_id);
+    let reopened = HubStore::initialize(root.join("hub")).unwrap();
+    let key =
+        teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub")).unwrap();
+    teslatlas_hub::updates_delivery::schema_22_signed_artifacts(&reopened, vehicle_id, &key)
+        .unwrap();
+    assert_eq!(reopened.published_vehicles().unwrap().len(), 3);
+    assert_eq!(
+        seed::expose_dynamic_vehicle(&root).unwrap().status,
+        "already-exposed"
+    );
+}
+
+#[cfg(feature = "interop-fixture")]
+#[tokio::test]
+async fn dynamic_fixture_vehicle_retires_and_returns_with_stable_signed_state() {
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("dynamic-vehicle");
+    let prepared = seed::prepare(&root, 18443).unwrap();
+    let exposed = seed::expose_dynamic_vehicle(&root).unwrap();
+    assert_eq!(exposed.status, "exposed");
+    assert_eq!(
+        exposed.vehicle_id.to_string(),
+        "33333333-3333-4333-8333-333333333333"
+    );
+    let key =
+        teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub")).unwrap();
+    let store = HubStore::initialize(root.join("hub")).unwrap();
+    assert_eq!(store.published_vehicles().unwrap().len(), 3);
+    let signed_before = teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+        &store,
+        exposed.vehicle_id,
+        &key,
+    )
+    .unwrap();
+    let manifest: teslatlas_hub::protocol::SyncManifest =
+        serde_json::from_slice(&signed_before.0).unwrap();
+    let digest = manifest.chunks[0].sha256;
+
+    let retired = seed::retire_dynamic_vehicle(&root).unwrap();
+    assert_eq!(retired.status, "retired");
+    assert_eq!(
+        seed::retire_dynamic_vehicle(&root).unwrap().status,
+        "already-retired"
+    );
+    let restarted = HubStore::initialize(root.join("hub")).unwrap();
+    assert!(!restarted.vehicle_is_active(exposed.vehicle_id).unwrap());
+    assert_eq!(restarted.published_vehicles().unwrap().len(), 2);
+    assert_eq!(
+        teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+            &restarted,
+            exposed.vehicle_id,
+            &key,
+        )
+        .unwrap(),
+        signed_before
+    );
+
+    let invitation: Value =
+        serde_json::from_slice(&std::fs::read(&prepared.invitation_path).unwrap()).unwrap();
+    let app = paired_router(restarted, &key);
+    let claim = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/v1/pairings/{}/claim",
+                    invitation["pairing_id"].as_str().unwrap()
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "secret": invitation["secret"],
+                        "device_name": "dynamic-fixture-test"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(claim.status(), 200);
+    let claim: Value =
+        serde_json::from_slice(&claim.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let token = claim["access_token"].as_str().unwrap();
+    assert_eq!(
+        get(&app, "/v1/vehicles", token).await["vehicles"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    for route in [
+        format!("/v1/vehicles/{}/current", exposed.vehicle_id),
+        format!("/v1/vehicles/{}/drives", exposed.vehicle_id),
+        format!("/v1/vehicles/{}/sync/manifest", exposed.vehicle_id),
+        format!("/v1/vehicles/{}/sync/noop", exposed.vehicle_id),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(route)
+                    .header("authorization", format!("Bearer {token}"))
+                    .header("x-teslatlas-supported-schemas", "2.2")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 404);
+    }
+    let pack = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/packs/sha256/{digest}.sqlite.zst"))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        pack.status(),
+        200,
+        "digest-addressed pack remains authorized"
+    );
+
+    let restored = seed::restore_dynamic_vehicle(&root).unwrap();
+    assert_eq!(restored.status, "restored");
+    assert_eq!(restored.vehicle_id, exposed.vehicle_id);
+    let restarted = HubStore::initialize(root.join("hub")).unwrap();
+    assert!(restarted.vehicle_is_active(exposed.vehicle_id).unwrap());
+    assert_eq!(restarted.published_vehicles().unwrap().len(), 3);
+    assert_eq!(
+        teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+            &restarted,
+            exposed.vehicle_id,
+            &key,
+        )
+        .unwrap(),
+        signed_before
+    );
+    assert_eq!(
+        seed::expose_dynamic_vehicle(&root).unwrap().status,
+        "already-exposed"
+    );
+    for route in [
+        format!("/v1/vehicles/{}/current", exposed.vehicle_id),
+        format!("/v1/vehicles/{}/drives", exposed.vehicle_id),
+        format!("/v1/vehicles/{}/sync/manifest", exposed.vehicle_id),
+        format!("/v1/vehicles/{}/sync/noop", exposed.vehicle_id),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(route)
+                    .header("authorization", format!("Bearer {token}"))
+                    .header("x-teslatlas-supported-schemas", "2.2")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn standard_fixture_is_admitted_for_fixture_source_run_not_production() {
+    use std::ffi::OsStr;
+    use teslatlas_hub::{
+        config::HubConfig,
+        macos_launch_agent::{self, DevelopmentServeMode},
+    };
+
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("development-serve");
+    let prepared = seed::prepare(&root, 21444).unwrap();
+    let config = HubConfig::load(&prepared.config_path).unwrap();
+
+    assert_eq!(
+        macos_launch_agent::development_serve_mode(None, None).unwrap(),
+        None
+    );
+    assert!(
+        macos_launch_agent::development_serve_mode(Some(OsStr::new("true")), None).is_err()
+    );
+    assert!(macos_launch_agent::preflight_hub_for_serve(&config, None).is_err());
+    macos_launch_agent::preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Fixture))
+        .expect("standard fixture development Serve");
+    macos_launch_agent::preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone))
+        .expect("collector-disabled fixture is also a valid standalone source-run");
+
+    let mut exposed = config.clone();
+    exposed.bind = "0.0.0.0:21444".parse().unwrap();
+    assert!(
+        macos_launch_agent::preflight_hub_for_serve(
+            &exposed,
+            Some(DevelopmentServeMode::Fixture)
+        )
+        .is_err()
+    );
+
+    let mut collecting = config.clone();
+    collecting.collector.interval_seconds = 1;
+    assert!(
+        macos_launch_agent::preflight_hub_for_serve(
+            &collecting,
+            Some(DevelopmentServeMode::Fixture)
+        )
+        .is_err()
+    );
+
+    let mut plaintext = config.clone();
+    plaintext.tls = None;
+    assert!(
+        macos_launch_agent::preflight_hub_for_serve(
+            &plaintext,
+            Some(DevelopmentServeMode::Fixture)
+        )
+        .is_err()
+    );
+
+    let empty_data = parent.path().join("empty-store");
+    drop(HubStore::initialize(&empty_data).unwrap());
+    let mut empty = config;
+    empty.data_dir = empty_data;
+    assert!(
+        macos_launch_agent::preflight_hub_for_serve(&empty, Some(DevelopmentServeMode::Fixture))
+            .is_err()
+    );
+    macos_launch_agent::preflight_hub_for_serve(&empty, Some(DevelopmentServeMode::Standalone))
+        .expect("empty standalone source-run");
+}
 
 #[tokio::test]
 async fn fixture_has_two_vehicles_and_three_exact_drive_pages() {
