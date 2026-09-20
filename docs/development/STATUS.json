@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-20T05:30:13Z",
-  "update_scope": "f1_pairing_authority_backup_restore_independent_acceptance",
+  "updated_at": "2026-09-20T05:35:42Z",
+  "update_scope": "f1_pairing_authority_backup_restore_publication_readback",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -23,12 +23,12 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F1_F6",
   "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
-    "head": "52a0e64ac7855d8741f579fd88dcec8a8e971143",
+    "head": "0537185a509a7bdbc71d8d71f37823909758a306",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
-    "checked_at": "2026-09-20T05:30:13Z"
+    "checked_at": "2026-09-20T05:35:42Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -410,8 +410,8 @@
   "current_f1_pairing_authority_backup_restore_slice": {
     "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
     "receipt": "docs/development/f1-pairing-authority-backup-restore-debian13-arm64-2026-09-20-r1.json",
-    "metadata_commit": null,
-    "publication_state": "PENDING_RECEIPT_COMMIT",
+    "metadata_commit": "0537185a509a7bdbc71d8d71f37823909758a306",
+    "publication_state": "RECEIPT_AND_STATUS_PUSHED_AND_READ_BACK",
     "package_sha256": "73aee10be8f0b4fc285e43ba341c00cf2a06d3e77146860c28b67e5cacb1159a",
     "binary_source_commit": "1b6dc00379819869f4cd8ed8897c2f1f915023a2",
     "pairing_lifecycle": "Claim 200 and replay 401; rotate preserved device identity while old bearer became 401 and new bearer remained 200; live revoke reduced active devices to zero and invalidated the current bearer.",

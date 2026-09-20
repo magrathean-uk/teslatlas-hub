@@ -141,8 +141,9 @@
     "verification": "The reviewer recomputed every retained file, manifest and bundle member, inspected the sanitized lifecycle facts and source contract, scanned for secrets, verified exact package/source identity and rechecked the stopped guest, closed SSH port, absent shared lock and unchanged retained package."
   },
   "publication": {
-    "metadata_commit": null,
-    "state": "PENDING_RECEIPT_COMMIT"
+    "metadata_commit": "0537185a509a7bdbc71d8d71f37823909758a306",
+    "read_back_from_origin_main_at": "2026-09-20T05:35:42Z",
+    "state": "RECEIPT_AND_STATUS_PUSHED_AND_READ_BACK"
   },
   "acceptance": {
     "hub_06_pairing_authority_lifecycle": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
