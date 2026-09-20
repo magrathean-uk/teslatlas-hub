@@ -146,7 +146,8 @@ same stable no-follow file reads. The exact accepted archive, independent admiss
 five-companion catalog now pass source-only input admission together. This
 contract correction is independently accepted after closing full-contract parity,
 single-read stability, directory-membership and ledger findings; publication
-readback remains pending. No Docker engine, package lifecycle or final Hub consumer ran.
+commit `21b7d316b62861f3b1f597c8f09aab376bb3d192` was pushed and read back
+exactly. No Docker engine, package lifecycle or final Hub consumer ran.
 Fresh external Node and browser imports plus removal passed, and the
 package-cleanliness harness now includes the packaged `tools/` directory and
 reproduces the same archive hash.
@@ -155,8 +156,8 @@ Independent GPT-5.6 Sol/high review accepted the exact source, toolchain,
 archive, receipt, cleanup and claim-integrity slice with no P1/P2 findings. This
 is candidate-only admission, not F3 or F6 acceptance. There is still no valid
 older predecessor, so update and rollback remain blocked. The populated Hub
-catalog/source tuple passes the independently accepted source-only input gate but
-awaits publication; Docker/VM, browser-floor, final-Hub,
+catalog/source tuple passes the independently accepted and published source-only
+input gate; Docker/VM, browser-floor, final-Hub,
 F5 and F7 evidence were not run or claimed. The exact receipt is
 [`f3-f6-candidate-package-2026-09-19-r1.json`](f3-f6-candidate-package-2026-09-19-r1.json).
 

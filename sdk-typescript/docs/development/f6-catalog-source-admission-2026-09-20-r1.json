@@ -16,7 +16,7 @@
     "base_head": "df395f1599cb911737919c7b339faea712ee0aa4",
     "local_head_matches_origin_main": true,
     "local_head_matches_live_remote_main": true,
-    "state": "independently accepted candidate pending source commit and push",
+    "state": "independently accepted and published in source commit 21b7d316b62861f3b1f597c8f09aab376bb3d192",
     "files": [
       "scripts/package-provenance.mjs",
       "scripts/package-provenance.d.mts",
@@ -74,8 +74,12 @@
     ]
   },
   "publication": {
-    "implementation_commit": null,
-    "state": "PENDING_SOURCE_COMMIT_AND_PUSH"
+    "implementation_commit": "21b7d316b62861f3b1f597c8f09aab376bb3d192",
+    "local_head_after_push": "21b7d316b62861f3b1f597c8f09aab376bb3d192",
+    "origin_main_after_push": "21b7d316b62861f3b1f597c8f09aab376bb3d192",
+    "live_remote_main_after_push": "21b7d316b62861f3b1f597c8f09aab376bb3d192",
+    "verified_at": "2026-09-20T00:17:29Z",
+    "state": "SOURCE_COMMIT_PUSHED_AND_READ_BACK"
   },
   "acceptance": {
     "source_slice": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
