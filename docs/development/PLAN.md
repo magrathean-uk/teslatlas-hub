@@ -24,7 +24,9 @@ independently accepted only within its partial scope after closing three P2 cont
 findings: a distributable build must be given one exact pushed 40-hex
 Hub commit and exposes its immutable `/tree/<commit>` source URL, while an unbound
 developer build remains useful but explicitly non-distributable. No final artifact has
-yet been rebuilt from a pushed commit.
+yet been admitted as an ordinary public production artifact. Separately accepted
+bounded slices now prove exact pushed-source Debian-package and ARM64-container image
+byte reproducibility; F6 remains open beyond those private acceptance artifacts.
 
 The active companion bootstrap model contains exactly Protocol, TypeScript SDK,
 Swift SDK, Home Assistant and Edge. Hub source identity is recorded separately, making
@@ -39,8 +41,9 @@ The accepting Sol/high delta review found no remaining issues. It verified the
 baseline-identical historical D1 manifest at SHA-256
 `37b6fc64fd804813d82053c7cf8d12e89cb9ebfc69ce569c4d1c84d645bed0aa`,
 JSON Schema/runtime parser agreement, and finalizer binding of a bound source commit to
-the tested Hub cohort head. Exact clean-export native/container artifacts and genuine
-predecessor update/rollback remain open F6 work.
+the tested Hub cohort head. Exact clean-export native and container artifact
+reproducibility are now independently accepted in later bounded slices; genuine
+predecessor update/rollback and ordinary public production admission remain open F6 work.
 
 The bounded five-companion catalog/lifecycle slice recomputed byte-complete Hub source
 manifests from immutable exports for Protocol `53b5c648`, TypeScript `56a07dd7`, Swift
@@ -249,12 +252,14 @@ evidence-run ID, and requires cleanup to match the source and complete cohort/re
 identity. This candidate is source-only. A second delta review verified those four closures but
 found one remaining generic structured-key bypass (`token`, `secret`, and camel-case
 `apiToken`); normalized nested key screening and exact regressions were then checked.
-That final narrow review returned `ACCEPT` with no
-findings for the bounded source/static correction only. The corrected source must be
-rebuilt from this publication's exact export and exercised in the ordinary sequence with
-the retained bundle. Container
-upgrade, rollback, backup/restore, failed candidate, removal, image-byte
-reproducibility, F1, F6 and F7 remain open.
+That final narrow review returned `ACCEPT` with no findings for the bounded
+source/static correction only. This earlier receipt did not itself rebuild the
+publication's exact export or exercise the ordinary retained-bundle sequence. Later
+separate receipts now accept image-byte reproducibility plus a synthetic no-credential
+pristine-first-start, TLS, scoped backup/restore, invalid-command recovery and
+data-preserving removal/recreate lifecycle. Genuine immutable update/rollback,
+credential/pairing and complete clean-host recovery, real collection,
+retention/migration, public production admission, F1, F6 and F7 remain open.
 
 The fresh exact-export rerun from published commit
 `4102dce1376d725c7959ec71ec46ffdbe47b9c6b` is now frozen for independent
@@ -282,9 +287,12 @@ defines the cleanup flag as the exact cohort image ID and tags, while the build
 cache and anonymous ancestor remain explicitly retained. Same-reviewer delta review
 returned `ACCEPT` with no findings for this bounded runtime foundation. No owned
 final runtime image/tag, listener, one-use TLS material or lock remains; the guest
-is stopped. Image-byte reproducibility, pristine first-attempt TLS startup,
-clean-host package lifecycle, upgrade/rollback, backup/restore, failed candidate,
-removal, F1, F6 and F7 remain open.
+is stopped. This earlier foundation did not itself prove image-byte reproducibility,
+pristine first-attempt TLS startup, backup/restore, failed-candidate recovery or
+removal; later separate receipts now accept those exact bounded image and synthetic
+no-credential lifecycle results. Genuine immutable update/rollback, credential/pairing
+and complete clean-host recovery, real collection, retention/migration, public
+production admission, F1, F6 and F7 remain open.
 
 The bounded HUB-08 repair-atomicity source fix is independently accepted. On base commit
 `09684337332fdd7eae9ad460a8cc3bf6b1aaafd3`, `repair_at` previously deleted
@@ -366,11 +374,43 @@ r4 evidence closed the initial review's missing fresh-clone provenance and exact
 image-ID cleanup proof; same-reviewer Sol/high review returned `ACCEPT` with no
 remaining P1/P2 findings. The exact target tag, private cohort tags, matching
 containers and image ID were removed; the guest work root is absent, the guest is
-stopped and the shared lock is released. This closes only the observed image-byte
-reproducibility and load/readback gap. TLS, Compose lifecycle, update/rollback,
-backup/restore, failed-candidate recovery, clean-host removal, complete F6 and F7
-remain open; see
+stopped and the shared lock is released. This receipt closes only the observed
+image-byte reproducibility and load/readback gap; it does not itself prove TLS,
+Compose lifecycle, update/rollback, backup/restore, failed-candidate recovery,
+clean-host removal, complete F6 or F7. A separate later lifecycle slice advances
+part of that boundary below; see
 `docs/development/f6-arm64-container-image-reproducibility-2026-09-20-r1.json`.
+
+The accepted image then passed a fresh bounded native ARM64 Docker Compose lifecycle
+without another build or pull. A fresh official source clone supplied the shipped
+Compose/configuration inputs, while the exact accepted archive was loaded once and all
+starts used `--no-build`. The r2 cohort passed idempotent volume initialization,
+pristine first service start, strict positive TLS plus wrong-name rejection, non-root
+read-only/capability-free hardening, explicit restart identity continuity, verified
+scoped data backup and separate-root restore, recovery from an invalid-command
+candidate with a byte-identical primary volume, and data-preserving Compose removal
+and recreation. The Hub installation identity remained
+`d0798d3d-0394-4092-b67c-393a1a19e6f8`. The first calibration cohort receives zero
+credit because it incorrectly used a CA certificate as the leaf; r2 used a separate
+private CA and CA:FALSE leaf before its first service start.
+
+The 69-file r2 evidence bundle is byte-identical across two deterministic packaging
+passes at SHA-256
+`8e2e6c084e684eef949281ba167c66516b0c103b483d862769168c527736da48`;
+its 68-entry payload manifest is
+`d20a01e4ab5b2000012a930915c90f1ee86d14900638734ffa79ce15d6ef01b6`.
+Independent Sol/high review recomputed every payload and archive byte, rescanned the
+retained boundary and returned `ACCEPT` with no P1/P2 findings. Cleanup removed the
+exact root, volume, containers, network, three tags, image ID and listeners; the guest
+is stopped, SSH is closed, the lock is released and the accepted host artifact is
+unchanged. This advances only the synthetic no-credential portions of HUB-01, HUB-05,
+HUB-06, HUB-08 persistence and HUB-11 data backup/restore. The scoped backup explicitly
+excludes credentials, pairing authority, keys, TLS, configuration and service state;
+the invalid-command candidate is not a genuine version predecessor. Genuine immutable
+update/rollback, credential/pairing recovery, real collection, retention/migration,
+complete clean-host recovery, ordinary public production admission, F1, F6 and F7
+remain open; see
+`docs/development/f6-arm64-container-lifecycle-2026-09-20-r1.json`.
 
 ## Start and boundaries
 
