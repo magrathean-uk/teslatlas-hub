@@ -1,0 +1,636 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 3.16kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/rust:1.98-bookworm@sha256:828077e0f5ed0401fbd9cb5b4d5dedca23bd13c7fe032f3e8b7313e7acd2a57f
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 410B done
+#4 DONE 0.0s
+
+#5 [builder  1/12] FROM docker.io/library/rust:1.98-bookworm@sha256:828077e0f5ed0401fbd9cb5b4d5dedca23bd13c7fe032f3e8b7313e7acd2a57f
+#5 DONE 0.0s
+
+#6 [runtime 1/3] FROM docker.io/library/debian:13-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
+#6 CACHED
+
+#7 [builder  2/12] WORKDIR /build
+#7 CACHED
+
+#8 [internal] load build context
+#8 transferring context: 78.80kB 0.0s done
+#8 DONE 0.0s
+
+#9 [builder  3/12] RUN --mount=type=tmpfs,target=/tmp/teslatlas-buildkit-required     case "1789874866" in         ''|*[!0-9]*) exit 64 ;;     esac
+#9 DONE 0.1s
+
+#10 [builder  4/12] COPY Cargo.toml Cargo.lock build.rs source_identity.rs ./
+#10 DONE 0.0s
+
+#11 [builder  5/12] COPY LICENSE NOTICE ./
+#11 DONE 0.0s
+
+#12 [builder  6/12] COPY src ./src
+#12 DONE 0.0s
+
+#13 [builder  7/12] COPY examples ./examples
+#13 DONE 0.0s
+
+#14 [builder  8/12] COPY tests ./tests
+#14 DONE 0.0s
+
+#15 [builder  9/12] COPY fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql ./fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql
+#15 DONE 0.0s
+
+#16 [builder 10/12] COPY packaging/com.teslatlas.hub.plist.in ./packaging/com.teslatlas.hub.plist.in
+#16 DONE 0.0s
+
+#17 [builder 11/12] COPY packaging/docker/initialize-volume.sh ./packaging/docker/initialize-volume.sh
+#17 DONE 0.0s
+
+#18 [builder 12/12] RUN TESLATLAS_HUB_SOURCE_COMMIT="e0b290e9d6d086ff75921596dcddfd497a077c7f"     SOURCE_DATE_EPOCH="1789874866"     cargo build --locked --release --bin teslatlas-hub     && install -d -m 0755         /image-root/etc/ssl/certs         /image-root/usr/local/bin         /image-root/usr/local/libexec         /image-root/usr/share/doc/teslatlas-hub     && install -d -o 10001 -g 10001 -m 0755 /image-root/var/lib/teslatlas-hub     && install -m 0644 /etc/ssl/certs/ca-certificates.crt         /image-root/etc/ssl/certs/ca-certificates.crt     && install -m 0755 /build/target/release/teslatlas-hub         /image-root/usr/local/bin/teslatlas-hub     && install -m 0755 packaging/docker/initialize-volume.sh         /image-root/usr/local/libexec/teslatlas-hub-initialize-volume     && install -m 0644 LICENSE NOTICE /image-root/usr/share/doc/teslatlas-hub/     && find /image-root -exec touch -h -d "@1789874866" {} +
+#18 0.094     Updating crates.io index
+#18 2.849  Downloading crates ...
+#18 3.087   Downloaded rand_core v0.10.1
+#18 3.089   Downloaded rend v0.4.2
+#18 3.180   Downloaded funty v2.0.0
+#18 3.182   Downloaded futures-task v0.3.34
+#18 3.218   Downloaded getrandom v0.4.3
+#18 3.225   Downloaded http-body-util v0.1.5
+#18 3.228   Downloaded fnv v1.0.7
+#18 3.228   Downloaded hyper-rustls v0.27.9
+#18 3.240   Downloaded hashlink v0.12.1
+#18 3.244   Downloaded futures-core v0.3.34
+#18 3.246   Downloaded futures-macro v0.3.34
+#18 3.249   Downloaded universal-hash v0.6.1
+#18 3.250   Downloaded futures-sink v0.3.34
+#18 3.251   Downloaded fs-err v3.3.1
+#18 3.253   Downloaded ghash v0.6.0
+#18 3.257   Downloaded rcgen v0.14.9
+#18 3.260   Downloaded rusticata-macros v4.1.0
+#18 3.262   Downloaded rustls-webpki v0.103.15
+#18 3.270   Downloaded futures-util v0.3.34
+#18 3.281   Downloaded rusqlite v0.40.2
+#18 3.287   Downloaded sha1_smol v1.0.1
+#18 3.287   Downloaded stable_deref_trait v1.2.1
+#18 3.288   Downloaded thiserror-impl v2.0.20
+#18 3.289   Downloaded time-macros v0.2.32
+#18 3.290   Downloaded tls_codec v0.4.2
+#18 3.292   Downloaded hashbrown v0.12.3
+#18 3.295   Downloaded httpdate v1.0.3
+#18 3.295   Downloaded hashbrown v0.17.1
+#18 3.299   Downloaded hmac v0.13.0
+#18 3.300   Downloaded hyper v1.11.0
+#18 3.306   Downloaded http-body v1.1.0
+#18 3.307   Downloaded hybrid-array v0.4.14
+#18 3.309   Downloaded form_urlencoded v1.2.2
+#18 3.309   Downloaded foldhash v0.2.0
+#18 3.310   Downloaded hex v0.4.3
+#18 3.311   Downloaded getrandom v0.2.17
+#18 3.313   Downloaded httparse v1.10.1
+#18 3.315   Downloaded hyper-util v0.1.20
+#18 3.319   Downloaded futures-io v0.3.34
+#18 3.319   Downloaded heck v0.5.0
+#18 3.320   Downloaded http v1.5.0
+#18 3.323   Downloaded futures-channel v0.3.34
+#18 3.331   Downloaded scopeguard v1.2.0
+#18 3.332   Downloaded adler2 v2.0.1
+#18 3.333   Downloaded rustversion v1.0.23
+#18 3.335   Downloaded semver v1.0.28
+#18 3.336   Downloaded serde_path_to_error v0.1.20
+#18 3.337   Downloaded serde_spanned v1.1.1
+#18 3.338   Downloaded simd-adler32 v0.3.10
+#18 3.339   Downloaded slab v0.4.12
+#18 3.340   Downloaded serde_derive v1.0.229
+#18 3.342   Downloaded serde v1.0.229
+#18 3.345   Downloaded sha2 v0.11.0
+#18 3.348   Downloaded smallvec v1.15.2
+#18 3.350   Downloaded strsim v0.11.1
+#18 3.351   Downloaded sync_wrapper v1.0.2
+#18 3.351   Downloaded serde_core v1.0.229
+#18 3.353   Downloaded sharded-slab v0.1.7
+#18 3.356   Downloaded time-core v0.1.9
+#18 3.357   Downloaded toml_datetime v1.1.1+spec-1.1.0
+#18 3.357   Downloaded toml_parser v1.1.3+spec-1.1.0
+#18 3.359   Downloaded tower-layer v0.3.3
+#18 3.359   Downloaded serde_json v1.0.151
+#18 3.365   Downloaded socket2 v0.6.5
+#18 3.367   Downloaded tracing-log v0.2.0
+#18 3.368   Downloaded toml_writer v1.1.2+spec-1.1.0
+#18 3.369   Downloaded tracing-attributes v0.1.31
+#18 3.370   Downloaded toml_edit v0.25.13+spec-1.1.0
+#18 3.373   Downloaded tower-service v0.3.3
+#18 3.373   Downloaded tower v0.5.3
+#18 3.380   Downloaded tracing-core v0.1.36
+#18 3.382   Downloaded unicode-ident v1.0.24
+#18 3.385   Downloaded tracing-subscriber v0.3.23
+#18 3.391   Downloaded is_terminal_polyfill v1.70.2
+#18 3.392   Downloaded jobserver v0.1.35
+#18 3.393   Downloaded lazy_static v1.5.0
+#18 3.395   Downloaded lock_api v0.4.14
+#18 3.396   Downloaded mime v0.3.17
+#18 3.397   Downloaded icu_provider v2.3.1
+#18 3.398   Downloaded syn v2.0.119
+#18 3.406   Downloaded nu-ansi-term v0.50.3
+#18 3.408   Downloaded num-conv v0.2.2
+#18 3.408   Downloaded openssl-probe v0.2.1
+#18 3.409   Downloaded miniz_oxide v0.8.9
+#18 3.411   Downloaded matchers v0.2.0
+#18 3.411   Downloaded num-integer v0.1.47
+#18 3.412   Downloaded time v0.3.55
+#18 3.423   Downloaded num-traits v0.2.19
+#18 3.425   Downloaded percent-encoding v2.3.2
+#18 3.426   Downloaded pkg-config v0.3.34
+#18 3.426   Downloaded once_cell v1.21.4
+#18 3.428   Downloaded pin-project-lite v0.2.17
+#18 3.430   Downloaded potential_utf v0.1.6
+#18 3.431   Downloaded parking_lot_core v0.9.12
+#18 3.432   Downloaded phf_shared v0.13.1
+#18 3.432   Downloaded tracing v0.1.44
+#18 3.444   Downloaded synstructure v0.13.2
+#18 3.444   Downloaded thread_local v1.1.10
+#18 3.445   Downloaded minimal-lexical v0.2.1
+#18 3.448   Downloaded idna v1.1.0
+#18 3.450   Downloaded nom v7.1.3
+#18 3.453   Downloaded num-bigint v0.4.8
+#18 3.455   Downloaded pem v3.0.6
+#18 3.456   Downloaded phf v0.13.1
+#18 3.456   Downloaded polyval v0.7.3
+#18 3.458   Downloaded powerfmt v0.2.0
+#18 3.459   Downloaded ppv-lite86 v0.2.21
+#18 3.460   Downloaded proc-macro2 v1.0.107
+#18 3.462   Downloaded quote v1.0.47
+#18 3.464   Downloaded rand_chacha v0.3.1
+#18 3.464   Downloaded reqwest v0.13.4
+#18 3.468   Downloaded rkyv v0.7.46
+#18 3.471   Downloaded rkyv_derive v0.7.46
+#18 3.472   Downloaded rust_decimal v1.42.1
+#18 3.475   Downloaded tokio-postgres-rustls v0.14.0
+#18 3.476   Downloaded tokio-util v0.7.19
+#18 3.479   Downloaded toml v1.1.4+spec-1.1.0
+#18 3.481   Downloaded tungstenite v0.30.0
+#18 3.482   Downloaded typed-path v0.12.3
+#18 3.485   Downloaded unicode-bidi v0.3.18
+#18 3.486   Downloaded utf8_iter v1.0.4
+#18 3.487   Downloaded rustc_version v0.4.1
+#18 3.487   Downloaded rustls-pki-types v1.15.1
+#18 3.488   Downloaded ryu v1.0.23
+#18 3.490   Downloaded ryu-js v0.2.2
+#18 3.491   Downloaded seahash v4.1.0
+#18 3.492   Downloaded serde_jcs v0.1.0
+#18 3.492   Downloaded serde_urlencoded v0.7.1
+#18 3.493   Downloaded sha1 v0.11.0
+#18 3.494   Downloaded shlex v2.0.1
+#18 3.494   Downloaded signal-hook-registry v1.4.8
+#18 3.495   Downloaded signature v3.0.0
+#18 3.495   Downloaded siphasher v1.0.3
+#18 3.496   Downloaded spki v0.7.3
+#18 3.496   Downloaded stringprep v0.1.5
+#18 3.497   Downloaded subtle v2.6.1
+#18 3.497   Downloaded syn v1.0.109
+#18 3.502   Downloaded tap v1.0.1
+#18 3.502   Downloaded thiserror v2.0.20
+#18 3.505   Downloaded tinyvec v1.12.0
+#18 3.506   Downloaded rand v0.10.2
+#18 3.508   Downloaded url v2.5.8
+#18 3.509   Downloaded proc-macro-crate v3.5.0
+#18 3.510   Downloaded matchit v0.8.4
+#18 3.510   Downloaded tinystr v0.8.4
+#18 3.511   Downloaded tinyvec_macros v0.1.1
+#18 3.512   Downloaded tls_codec_derive v0.4.2
+#18 3.512   Downloaded tokio-postgres v0.7.18
+#18 3.515   Downloaded tokio-rustls v0.26.4
+#18 3.516   Downloaded tokio-tungstenite v0.30.0
+#18 3.516   Downloaded tower-http v0.6.11
+#18 3.520   Downloaded tower-http v0.7.0
+#18 3.525   Downloaded try-lock v0.2.5
+#18 3.525   Downloaded unicode-normalization v0.1.25
+#18 3.527   Downloaded unicode-properties v0.1.4
+#18 3.528   Downloaded parking_lot v0.12.5
+#18 3.529   Downloaded memchr v2.8.3
+#18 3.531   Downloaded mio v1.2.2
+#18 3.534   Downloaded whoami v2.1.3
+#18 3.535   Downloaded utf8parse v0.2.2
+#18 3.535   Downloaded rand_core v0.6.4
+#18 3.536   Downloaded rustls-native-certs v0.8.4
+#18 3.536   Downloaded rustls-platform-verifier v0.7.0
+#18 3.538   Downloaded simdutf8 v0.1.5
+#18 3.539   Downloaded tokio-macros v2.7.2
+#18 3.539   Downloaded typenum v1.20.1
+#18 3.541   Downloaded cpufeatures v0.3.0
+#18 3.541   Downloaded cpubits v0.1.1
+#18 3.542   Downloaded der-parser v10.0.0
+#18 3.543   Downloaded digest v0.11.3
+#18 3.544   Downloaded displaydoc v0.2.7
+#18 3.545   Downloaded flate2 v1.1.9
+#18 3.547   Downloaded regex-automata v0.4.18
+#18 3.554   Downloaded regex-syntax v0.8.11
+#18 3.558   Downloaded rustix v1.1.4
+#18 3.569   Downloaded rustls v0.23.43
+#18 3.575   Downloaded untrusted v0.9.0
+#18 3.576   Downloaded borsh-derive v1.8.0
+#18 3.577   Downloaded bumpalo v3.20.3
+#18 3.578   Downloaded cfg_aliases v0.2.2
+#18 3.579   Downloaded vcpkg v0.2.15
+#18 3.598   Downloaded tokio v1.53.1
+#18 3.617   Downloaded syn v3.0.3
+#18 3.622   Downloaded clap_builder v4.6.6
+#18 3.624   Downloaded winnow v1.0.4
+#18 3.628   Downloaded yoke-derive v0.8.2
+#18 3.629   Downloaded ring v0.17.14
+#18 3.648   Downloaded ed25519-dalek v3.0.0
+#18 3.649   Downloaded either v1.18.0
+#18 3.650   Downloaded zeroize v1.9.0
+#18 3.650   Downloaded aead v0.6.1
+#18 3.651   Downloaded aho-corasick v1.1.5
+#18 3.653   Downloaded h2 v0.4.18
+#18 3.656   Downloaded icu_collections v2.3.0
+#18 3.658   Downloaded anstream v1.0.0
+#18 3.659   Downloaded atomic-waker v1.1.2
+#18 3.660   Downloaded yoke v0.8.3
+#18 3.660   Downloaded base64 v0.22.1
+#18 3.662   Downloaded base64 v0.23.1
+#18 3.663   Downloaded block-buffer v0.12.1
+#18 3.664   Downloaded borsh v1.8.0
+#18 3.666   Downloaded icu_properties v2.3.0
+#18 3.668   Downloaded idna_adapter v1.2.2
+#18 3.668   Downloaded inout v0.2.2
+#18 3.669   Downloaded postgres-protocol v0.6.12
+#18 3.669   Downloaded rand v0.8.7
+#18 3.671   Downloaded clap_derive v4.6.4
+#18 3.672   Downloaded icu_locale_core v2.3.0
+#18 3.674   Downloaded icu_normalizer_data v2.3.0
+#18 3.675   Downloaded icu_properties_data v2.3.0
+#18 3.679   Downloaded indexmap v2.14.0
+#18 3.681   Downloaded ipnet v2.12.1
+#18 3.682   Downloaded itoa v1.0.18
+#18 3.682   Downloaded litemap v0.8.3
+#18 3.683   Downloaded log v0.4.33
+#18 3.684   Downloaded md-5 v0.11.0
+#18 3.685   Downloaded oid-registry v0.8.1
+#18 3.685   Downloaded postgres-types v0.2.14
+#18 3.686   Downloaded ptr_meta v0.1.4
+#18 3.687   Downloaded ptr_meta_derive v0.1.4
+#18 3.687   Downloaded qrcode v0.14.1
+#18 3.688   Downloaded radium v0.7.0
+#18 3.688   Downloaded uuid v1.24.1
+#18 3.690   Downloaded der_derive v0.7.3
+#18 3.690   Downloaded want v0.3.1
+#18 3.691   Downloaded zerofrom v0.1.8
+#18 3.691   Downloaded axum v0.8.9
+#18 3.694   Downloaded writeable v0.6.4
+#18 3.695   Downloaded zerovec v0.11.8
+#18 3.698   Downloaded x509-cert v0.2.5
+#18 3.700   Downloaded yasna v0.6.0
+#18 3.701   Downloaded zerofrom-derive v0.1.7
+#18 3.701   Downloaded bitvec v1.1.1
+#18 3.707   Downloaded curve25519-dalek v5.0.0
+#18 3.712   Downloaded data-encoding v2.11.1
+#18 3.712   Downloaded ed25519 v3.0.0
+#18 3.713   Downloaded const-oid v0.10.2
+#18 3.714   Downloaded deranged v0.5.8
+#18 3.714   Downloaded arrayvec v0.7.8
+#18 3.715   Downloaded wyz v0.5.1
+#18 3.716   Downloaded chacha20 v0.10.2
+#18 3.716   Downloaded bytecheck_derive v0.6.12
+#18 3.717   Downloaded ctutils v0.4.2
+#18 3.717   Downloaded zerocopy v0.8.56
+#18 3.725   Downloaded zstd-sys v2.0.16+zstd.1.5.7
+#18 3.733   Downloaded anstyle-query v1.1.5
+#18 3.734   Downloaded asn1-rs-impl v0.2.0
+#18 3.734   Downloaded async-trait v0.1.92
+#18 3.735   Downloaded const-oid v0.9.6
+#18 3.736   Downloaded byteorder v1.5.0
+#18 3.737   Downloaded errno v0.3.14
+#18 3.737   Downloaded find-msvc-tools v0.1.11
+#18 3.738   Downloaded zmij v1.0.23
+#18 3.739   Downloaded axum-core v0.5.6
+#18 3.739   Downloaded bytes v1.12.1
+#18 3.741   Downloaded crc32fast v1.5.0
+#18 3.742   Downloaded arc-swap v1.9.2
+#18 3.743   Downloaded cfg-if v1.0.4
+#18 3.744   Downloaded version_check v0.9.5
+#18 3.744   Downloaded axum-server v0.8.0
+#18 3.745   Downloaded x509-parser v0.18.1
+#18 3.748   Downloaded zerovec-derive v0.11.6
+#18 3.748   Downloaded zopfli v0.8.3
+#18 3.749   Downloaded zstd v0.13.3
+#18 3.750   Downloaded zstd-safe v7.2.4
+#18 3.751   Downloaded asn1-rs-derive v0.6.0
+#18 3.751   Downloaded bitflags v2.13.1
+#18 3.753   Downloaded bytecheck v0.6.12
+#18 3.754   Downloaded fallible-streaming-iterator v0.1.9
+#18 3.754   Downloaded libc v0.2.189
+#18 3.771   Downloaded cc v1.4.4
+#18 3.772   Downloaded icu_normalizer v2.3.0
+#18 3.777   Downloaded linux-raw-sys v0.12.1
+#18 3.807   Downloaded clap_lex v1.1.0
+#18 3.807   Downloaded clap v4.6.6
+#18 3.811   Downloaded cmov v0.5.4
+#18 3.811   Downloaded der v0.7.10
+#18 3.813   Downloaded zerotrie v0.2.5
+#18 3.815   Downloaded crypto-common v0.2.2
+#18 3.815   Downloaded zeroize_derive v1.5.0
+#18 3.816   Downloaded zip v8.6.0
+#18 3.818   Downloaded fallible-iterator v0.2.0
+#18 3.818   Downloaded zlib-rs v0.6.7
+#18 3.821   Downloaded ahash v0.7.8
+#18 3.822   Downloaded ctr v0.10.1
+#18 3.823   Downloaded fallible-iterator v0.3.0
+#18 3.823   Downloaded aes v0.9.2
+#18 3.824   Downloaded anstyle-parse v1.0.0
+#18 3.825   Downloaded base64ct v1.8.3
+#18 3.826   Downloaded equivalent v1.0.2
+#18 3.826   Downloaded bit-vec v0.9.1
+#18 3.827   Downloaded aes-gcm v0.11.1
+#18 3.828   Downloaded asn1-rs v0.7.2
+#18 3.831   Downloaded autocfg v1.5.1
+#18 3.832   Downloaded colorchoice v1.0.5
+#18 3.832   Downloaded flagset v0.4.7
+#18 3.833   Downloaded anstyle v1.0.14
+#18 3.833   Downloaded cipher v0.5.2
+#18 3.834   Downloaded libsqlite3-sys v0.38.2
+#18 3.908    Compiling proc-macro2 v1.0.107
+#18 3.908    Compiling libc v0.2.189
+#18 3.908    Compiling unicode-ident v1.0.24
+#18 3.908    Compiling quote v1.0.47
+#18 3.935    Compiling cfg-if v1.0.4
+#18 3.952    Compiling rand_core v0.10.1
+#18 3.994    Compiling getrandom v0.4.3
+#18 4.003    Compiling shlex v2.0.1
+#18 4.078    Compiling typenum v1.20.1
+#18 4.347    Compiling syn v2.0.119
+#18 4.351    Compiling syn v3.0.3
+#18 4.376    Compiling jobserver v0.1.35
+#18 4.449    Compiling find-msvc-tools v0.1.11
+#18 4.491    Compiling hybrid-array v0.4.14
+#18 4.529    Compiling cc v1.4.4
+#18 4.688    Compiling bytes v1.12.1
+#18 5.020    Compiling crypto-common v0.2.2
+#18 5.079    Compiling pin-project-lite v0.2.17
+#18 5.101    Compiling once_cell v1.21.4
+#18 5.165    Compiling log v0.4.33
+#18 5.232    Compiling itoa v1.0.18
+#18 5.308    Compiling cmov v0.5.4
+#18 5.374    Compiling ctutils v0.4.2
+#18 5.455    Compiling synstructure v0.13.2
+#18 5.459    Compiling block-buffer v0.12.1
+#18 5.509    Compiling errno v0.3.14
+#18 5.564    Compiling futures-core v0.3.34
+#18 5.603    Compiling signal-hook-registry v1.4.8
+#18 5.656    Compiling mio v1.2.2
+#18 5.749    Compiling socket2 v0.6.5
+#18 5.906    Compiling serde_core v1.0.229
+#18 5.921    Compiling tokio-macros v2.7.2
+#18 5.986    Compiling smallvec v1.15.2
+#18 6.107    Compiling stable_deref_trait v1.2.1
+#18 6.109    Compiling zeroize_derive v1.5.0
+#18 6.132    Compiling zerofrom-derive v0.1.7
+#18 6.214    Compiling tokio v1.53.1
+#18 6.368    Compiling zeroize v1.9.0
+#18 6.421    Compiling yoke-derive v0.8.2
+#18 6.631    Compiling zerofrom v0.1.8
+#18 6.663    Compiling futures-sink v0.3.34
+#18 6.690    Compiling http v1.5.0
+#18 6.841    Compiling tracing-core v0.1.36
+#18 6.857    Compiling yoke v0.8.3
+#18 6.909    Compiling ring v0.17.14
+#18 7.089    Compiling cpufeatures v0.3.0
+#18 7.108    Compiling const-oid v0.10.2
+#18 7.197    Compiling digest v0.11.3
+#18 7.254    Compiling tracing-attributes v0.1.31
+#18 7.389    Compiling zerovec-derive v0.11.6
+#18 7.726    Compiling slab v0.4.12
+#18 7.795    Compiling zerovec v0.11.8
+#18 7.798    Compiling tracing v0.1.44
+#18 7.937    Compiling rustls-pki-types v1.15.1
+#18 7.996    Compiling displaydoc v0.2.7
+#18 8.253    Compiling getrandom v0.2.17
+#18 8.291    Compiling foldhash v0.2.0
+#18 8.317    Compiling base64 v0.22.1
+#18 8.359    Compiling untrusted v0.9.0
+#18 8.402    Compiling percent-encoding v2.3.2
+#18 8.497    Compiling hashbrown v0.17.1
+#18 8.534    Compiling tokio-util v0.7.19
+#18 8.733    Compiling futures-macro v0.3.34
+#18 8.967    Compiling futures-task v0.3.34
+#18 9.020    Compiling subtle v2.6.1
+#18 9.066    Compiling http-body v1.1.0
+#18 9.086    Compiling futures-util v0.3.34
+#18 9.118    Compiling httparse v1.10.1
+#18 9.222    Compiling memchr v2.8.3
+#18 9.518    Compiling pkg-config v0.3.34
+#18 9.658    Compiling rustls v0.23.43
+#18 9.719    Compiling tinystr v0.8.4
+#18 9.778    Compiling serde v1.0.229
+#18 9.855    Compiling writeable v0.6.4
+#18 9.885    Compiling equivalent v1.0.2
+#18 9.910    Compiling tower-service v0.3.3
+#18 9.925    Compiling litemap v0.8.3
+#18 9.944    Compiling indexmap v2.14.0
+#18 9.980    Compiling icu_locale_core v2.3.0
+#18 10.40    Compiling zerotrie v0.2.5
+#18 10.56    Compiling potential_utf v0.1.6
+#18 10.60    Compiling futures-channel v0.3.34
+#18 10.67    Compiling serde_derive v1.0.229
+#18 11.08    Compiling chacha20 v0.10.2
+#18 11.16    Compiling icu_properties_data v2.3.0
+#18 11.23    Compiling autocfg v1.5.1
+#18 11.24    Compiling tinyvec_macros v0.1.1
+#18 11.26    Compiling utf8_iter v1.0.4
+#18 11.30    Compiling icu_normalizer_data v2.3.0
+#18 11.34    Compiling icu_collections v2.3.0
+#18 11.35    Compiling tinyvec v1.12.0
+#18 11.49    Compiling rand v0.10.2
+#18 11.59    Compiling icu_provider v2.3.1
+#18 11.71    Compiling powerfmt v0.2.0
+#18 11.78    Compiling deranged v0.5.8
+#18 11.80    Compiling fnv v1.0.7
+#18 11.82    Compiling time-core v0.1.9
+#18 11.87    Compiling num-conv v0.2.2
+#18 11.90    Compiling atomic-waker v1.1.2
+#18 11.90    Compiling try-lock v0.2.5
+#18 11.92    Compiling h2 v0.4.18
+#18 11.92    Compiling want v0.3.1
+#18 12.00    Compiling unicode-normalization v0.1.25
+#18 12.10    Compiling time v0.3.55
+#18 12.19    Compiling sha2 v0.11.0
+#18 12.84    Compiling unicode-bidi v0.3.18
+#18 12.93    Compiling unicode-properties v0.1.4
+#18 13.01    Compiling tower-layer v0.3.3
+#18 13.12    Compiling httpdate v1.0.3
+#18 13.24    Compiling rustls-webpki v0.103.15
+#18 13.41    Compiling zmij v1.0.23
+#18 14.36    Compiling hyper v1.11.0
+#18 14.55    Compiling stringprep v0.1.5
+#18 15.47    Compiling tokio-rustls v0.26.4
+#18 15.56    Compiling icu_normalizer v2.3.0
+#18 15.56    Compiling icu_properties v2.3.0
+#18 16.07    Compiling zstd-sys v2.0.16+zstd.1.5.7
+#18 16.12    Compiling form_urlencoded v1.2.2
+#18 16.20    Compiling hmac v0.13.0
+#18 16.22    Compiling md-5 v0.11.0
+#18 16.25    Compiling sync_wrapper v1.0.2
+#18 16.27    Compiling inout v0.2.2
+#18 16.30    Compiling fallible-iterator v0.2.0
+#18 16.31    Compiling byteorder v1.5.0
+#18 16.39    Compiling crc32fast v1.5.0
+#18 16.41    Compiling openssl-probe v0.2.1
+#18 16.46    Compiling serde_json v1.0.151
+#18 16.49    Compiling bitflags v2.13.1
+#18 16.52    Compiling parking_lot_core v0.9.12
+#18 16.55    Compiling semver v1.0.28
+#18 16.60    Compiling ipnet v2.12.1
+#18 16.62    Compiling rustc_version v0.4.1
+#18 16.65    Compiling rustls-native-certs v0.8.4
+#18 16.71    Compiling hyper-util v0.1.20
+#18 16.95    Compiling postgres-protocol v0.6.12
+#18 17.50    Compiling idna_adapter v1.2.2
+#18 17.67    Compiling der_derive v0.7.3
+#18 17.92    Compiling const-oid v0.9.6
+#18 18.02    Compiling siphasher v1.0.3
+#18 18.07    Compiling simd-adler32 v0.3.10
+#18 18.23    Compiling cpubits v0.1.1
+#18 18.24    Compiling scopeguard v1.2.0
+#18 18.26    Compiling thiserror v2.0.20
+#18 18.35    Compiling flagset v0.4.7
+#18 18.35    Compiling utf8parse v0.2.2
+#18 18.38    Compiling vcpkg v0.2.15
+#18 18.38    Compiling rustversion v1.0.23
+#18 18.48    Compiling der v0.7.10
+#18 18.57    Compiling libsqlite3-sys v0.38.2
+#18 18.72    Compiling anstyle-parse v1.0.0
+#18 18.79    Compiling lock_api v0.4.14
+#18 18.85    Compiling phf_shared v0.13.1
+#18 19.48    Compiling idna v1.1.0
+#18 20.41    Compiling postgres-types v0.2.14
+#18 20.45    Compiling curve25519-dalek v5.0.0
+#18 20.76    Compiling cipher v0.5.2
+#18 20.85    Compiling tower v0.5.3
+#18 20.90    Compiling num-traits v0.2.19
+#18 20.96    Compiling fs-err v3.3.1
+#18 21.02    Compiling http-body-util v0.1.5
+#18 21.06    Compiling thiserror-impl v2.0.20
+#18 21.10    Compiling universal-hash v0.6.1
+#18 21.14    Compiling anstyle-query v1.1.5
+#18 21.16    Compiling colorchoice v1.0.5
+#18 21.18    Compiling is_terminal_polyfill v1.70.2
+#18 21.20    Compiling zstd-safe v7.2.4
+#18 21.25    Compiling adler2 v2.0.1
+#18 21.28    Compiling anstyle v1.0.14
+#18 21.37    Compiling regex-syntax v0.8.11
+#18 21.53    Compiling ryu v1.0.23
+#18 21.63    Compiling serde_urlencoded v0.7.1
+#18 21.73    Compiling anstream v1.0.0
+#18 21.77    Compiling miniz_oxide v0.8.9
+#18 21.91    Compiling regex-automata v0.4.18
+#18 22.46    Compiling polyval v0.7.3
+#18 22.65    Compiling parking_lot v0.12.5
+#18 23.02    Compiling url v2.5.8
+#18 24.08    Compiling phf v0.13.1
+#18 24.14    Compiling spki v0.7.3
+#18 24.39    Compiling sha1 v0.11.0
+#18 24.57    Compiling async-trait v0.1.92
+#18 24.95    Compiling whoami v2.1.3
+#18 25.30    Compiling strsim v0.11.1
+#18 25.61    Compiling bumpalo v3.20.3
+#18 25.73    Compiling rustix v1.1.4
+#18 25.76    Compiling lazy_static v1.5.0
+#18 25.80    Compiling zlib-rs v0.6.7
+#18 25.85    Compiling heck v0.5.0
+#18 25.90    Compiling signature v3.0.0
+#18 25.94    Compiling clap_lex v1.1.0
+#18 26.05    Compiling rust_decimal v1.42.1
+#18 26.14    Compiling winnow v1.0.4
+#18 26.27    Compiling mime v0.3.17
+#18 26.45    Compiling sha1_smol v1.0.1
+#18 26.55    Compiling data-encoding v2.11.1
+#18 27.45    Compiling tungstenite v0.30.0
+#18 27.65    Compiling flate2 v1.1.9
+#18 27.85    Compiling uuid v1.24.1
+#18 28.06    Compiling axum-core v0.5.6
+#18 28.98    Compiling toml_parser v1.1.3+spec-1.1.0
+#18 29.50    Compiling clap_builder v4.6.6
+#18 29.61    Compiling ed25519 v3.0.0
+#18 29.66    Compiling clap_derive v4.6.4
+#18 30.30    Compiling sharded-slab v0.1.7
+#18 30.48    Compiling zopfli v0.8.3
+#18 31.21    Compiling tokio-postgres v0.7.18
+#18 34.16    Compiling arc-swap v1.9.2
+#18 34.24    Compiling x509-cert v0.2.5
+#18 34.47    Compiling tower-http v0.6.11
+#18 36.17    Compiling matchers v0.2.0
+#18 36.22    Compiling ghash v0.6.0
+#18 36.25    Compiling aes v0.9.2
+#18 36.26    Compiling ctr v0.10.1
+#18 36.31    Compiling hyper-rustls v0.27.9
+#18 36.41    Compiling rustls-platform-verifier v0.7.0
+#18 36.42    Compiling aead v0.6.1
+#18 36.46    Compiling yasna v0.6.0
+#18 36.61    Compiling hashlink v0.12.1
+#18 36.72    Compiling pem v3.0.6
+#18 36.97    Compiling tracing-log v0.2.0
+#18 37.04    Compiling serde_spanned v1.1.1
+#18 37.08    Compiling toml_datetime v1.1.1+spec-1.1.0
+#18 37.08    Compiling serde_path_to_error v0.1.20
+#18 37.22    Compiling thread_local v1.1.10
+#18 37.22    Compiling matchit v0.8.4
+#18 37.32    Compiling toml_writer v1.1.2+spec-1.1.0
+#18 37.39    Compiling ryu-js v0.2.2
+#18 37.44    Compiling linux-raw-sys v0.12.1
+#18 37.49    Compiling fallible-iterator v0.3.0
+#18 37.54    Compiling typed-path v0.12.3
+#18 37.59    Compiling either v1.18.0
+#18 37.65    Compiling fallible-streaming-iterator v0.1.9
+#18 37.69    Compiling teslatlas-hub v2026.36.2 (/build)
+#18 37.76    Compiling nu-ansi-term v0.50.3
+#18 37.95    Compiling arrayvec v0.7.8
+#18 38.71    Compiling zip v8.6.0
+#18 39.02    Compiling tracing-subscriber v0.3.23
+#18 39.60    Compiling axum-server v0.8.0
+#18 41.47    Compiling serde_jcs v0.1.0
+#18 41.54    Compiling toml v1.1.4+spec-1.1.0
+#18 41.59    Compiling axum v0.8.9
+#18 43.40    Compiling rcgen v0.14.9
+#18 44.03    Compiling zstd v0.13.3
+#18 44.05    Compiling aes-gcm v0.11.1
+#18 44.11    Compiling reqwest v0.13.4
+#18 44.19    Compiling ed25519-dalek v3.0.0
+#18 44.31    Compiling tokio-postgres-rustls v0.14.0
+#18 44.57    Compiling clap v4.6.6
+#18 44.59    Compiling tower-http v0.7.0
+#18 44.90    Compiling tokio-tungstenite v0.30.0
+#18 45.03    Compiling base64 v0.23.1
+#18 45.04    Compiling hex v0.4.3
+#18 45.12    Compiling qrcode v0.14.1
+#18 50.53    Compiling rusqlite v0.40.2
+#18 56.16 warning: constant `UNBOUND_SOURCE_COMMIT` is never used
+#18 56.16  --> src/../source_identity.rs:3:11
+#18 56.16   |
+#18 56.16 3 | pub const UNBOUND_SOURCE_COMMIT: &str = "UNBOUND";
+#18 56.16   |           ^^^^^^^^^^^^^^^^^^^^^
+#18 56.16   |
+#18 56.16   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+#18 56.16 
+#18 73.55 warning: `teslatlas-hub` (lib) generated 1 warning
+#18 85.47     Finished `release` profile [optimized] target(s) in 1m 25s
+#18 DONE 85.6s
+
+#19 [runtime 2/3] COPY --from=builder /image-root/ /
+#19 DONE 0.0s
+
+#20 [runtime 3/3] WORKDIR /var/lib/teslatlas-hub
+#20 DONE 0.0s
+
+#21 exporting to image
+#21 exporting layers 0.0s done
+#21 writing image sha256:3967715db2cbeca0895b44326a401d30e65d9e593fb35998b702b93a8ff72704 done
+#21 naming to docker.io/library/teslatlas-hub-build-cohort:e0b290e9d6d086ff75921596dcddfd497a077c7f-6036ab05e4b6439cc2ccdcfc858e2508 done
+#21 DONE 0.0s
+{"archive_bytes":129280000,"archive_sha256":"56052b71c944922f58cf89e6a65e317e89c10e7a4cbaec23aa37c098ca3e490e","image_id":"sha256:3967715db2cbeca0895b44326a401d30e65d9e593fb35998b702b93a8ff72704","normalization":"minimal Docker archive; outer metadata normalized, requested tag rebound, config and layer blobs unchanged","platform":"linux/arm64","repository_tag":"teslatlas-hub:2026.36.2-arm64","rootfs_diff_ids":["sha256:8227a1264c7ff2f8bd125b585e62c1cec77dd2099c985c33e08d34292d06144f","sha256:5733090bba268396618569798349c028ca8b37dcaabdee97a9be5427c7389955","sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"],"schema_version":1,"source_commit":"e0b290e9d6d086ff75921596dcddfd497a077c7f","source_date_epoch":1789874866}

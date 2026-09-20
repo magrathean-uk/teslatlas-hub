@@ -1,0 +1,19 @@
+cohort=second
+intended_physical_root=/var/tmp/teslatlas-hub-f6-repro-e0b290e9/accepted-second
+root_absent_before_clone=true
+clone_source=https://github.com/magrathean-uk/teslatlas-hub.git
+clone_command=sudo git clone --no-local https://github.com/magrathean-uk/teslatlas-hub.git /var/tmp/teslatlas-hub-f6-repro-e0b290e9/accepted-second
+Cloning into '/var/tmp/teslatlas-hub-f6-repro-e0b290e9/accepted-second'...
+HEAD is now at e0b290e Support Docker 26 hybrid image archives [skip ci]
+physical_pwd=/var/tmp/teslatlas-hub-f6-repro-e0b290e9/accepted-second
+git_toplevel=/var/tmp/teslatlas-hub-f6-repro-e0b290e9/accepted-second
+head=e0b290e9d6d086ff75921596dcddfd497a077c7f
+tree=4ebe78bf712427954fdcbcd53c1a9458ee1fe657
+status_porcelain_all_empty=true
+origin=https://github.com/magrathean-uk/teslatlas-hub.git
+origin_main=e0b290e9d6d086ff75921596dcddfd497a077c7f
+build_log=/var/tmp/teslatlas-hub-f6-repro-e0b290e9/accepted-evidence/build-second.log
+report=/var/tmp/teslatlas-hub-f6-repro-e0b290e9/accepted-evidence/report-second.json
+output=/var/tmp/teslatlas-hub-f6-repro-e0b290e9/accepted-evidence/second.tar
+requested_tag=teslatlas-hub:2026.36.2-arm64
+provenance_complete=true

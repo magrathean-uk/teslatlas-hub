@@ -1,0 +1,11 @@
+claim=native Linux ARM64 Docker 26.1.5 plus Buildx 0.13.1 image-byte reproducibility and load/source/version/inspect readback
+not_claimed=TLS, Compose lifecycle, update or rollback, complete F6, or F7 acceptance
+fresh_clone_count=2
+distinct_physical_roots=true
+no_cache_builds=true
+archive_bytes_identical=true
+artifact_sha256=56052b71c944922f58cf89e6a65e317e89c10e7a4cbaec23aa37c098ca3e490e
+artifact_bytes=129280000
+both_archives_loaded=true
+source_and_version_readback=true
+exact_image_id_absent_after_cleanup=true

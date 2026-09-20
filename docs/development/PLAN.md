@@ -352,6 +352,26 @@ no remaining P1/P2 findings. Source commit
 `origin/main` and the live remote. This is a bounded package-byte/source-identity result, not
 complete HUB-03, F1 or F6 acceptance; no package lifecycle cohort was repeated.
 
+The bounded native ARM64 container image-byte reproducibility slice is independently
+accepted at published implementation commit
+`e0b290e9d6d086ff75921596dcddfd497a077c7f`. Two distinct fresh official clones,
+each proven absent before cloning and bound to exact tree
+`4ebe78bf712427954fdcbcd53c1a9458ee1fe657`, ran the Docker Buildx `--no-cache`
+path on Debian 13 ARM64 with Docker 26.1.5 and Buildx 0.13.1. Both produced the
+same 129,280,000-byte canonical image archive at SHA-256
+`56052b71c944922f58cf89e6a65e317e89c10e7a4cbaec23aa37c098ca3e490e`
+and image ID `sha256:3967715d…2704`. Both archives loaded and returned exact
+Linux/ARM64, non-root user, work directory, source and version readback. Replacement
+r4 evidence closed the initial review's missing fresh-clone provenance and exact
+image-ID cleanup proof; same-reviewer Sol/high review returned `ACCEPT` with no
+remaining P1/P2 findings. The exact target tag, private cohort tags, matching
+containers and image ID were removed; the guest work root is absent, the guest is
+stopped and the shared lock is released. This closes only the observed image-byte
+reproducibility and load/readback gap. TLS, Compose lifecycle, update/rollback,
+backup/restore, failed-candidate recovery, clean-host removal, complete F6 and F7
+remain open; see
+`docs/development/f6-arm64-container-image-reproducibility-2026-09-20-r1.json`.
+
 ## Start and boundaries
 
 The sent full-solution goal authorizes bounded implementation, tests, isolated

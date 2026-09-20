@@ -1,0 +1,71 @@
+[
+    {
+        "Id": "sha256:3967715db2cbeca0895b44326a401d30e65d9e593fb35998b702b93a8ff72704",
+        "RepoTags": [
+            "teslatlas-hub:2026.36.2-arm64"
+        ],
+        "RepoDigests": [],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-09-20T03:27:46Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "10001:10001",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt"
+            ],
+            "Cmd": [
+                "--config",
+                "/etc/teslatlas-hub/config.toml",
+                "serve"
+            ],
+            "ArgsEscaped": true,
+            "Image": "",
+            "Volumes": null,
+            "WorkingDir": "/var/lib/teslatlas-hub",
+            "Entrypoint": [
+                "/usr/local/bin/teslatlas-hub"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "org.opencontainers.image.revision": "e0b290e9d6d086ff75921596dcddfd497a077c7f",
+                "org.opencontainers.image.source": "https://github.com/magrathean-uk/teslatlas-hub",
+                "org.opencontainers.image.title": "Teslatlas Hub",
+                "org.opencontainers.image.version": "2026.36.2"
+            }
+        },
+        "Architecture": "arm64",
+        "Os": "linux",
+        "Size": 126756490,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/jnb8p2h41ytom3959io3pageg/diff:/var/lib/docker/overlay2/d91473f82345266994e5c623deb23f44ba6b0a420964a111d981e879a24ae03a/diff",
+                "MergedDir": "/var/lib/docker/overlay2/1e2auvzmivk60w8f0r534ctiy/merged",
+                "UpperDir": "/var/lib/docker/overlay2/1e2auvzmivk60w8f0r534ctiy/diff",
+                "WorkDir": "/var/lib/docker/overlay2/1e2auvzmivk60w8f0r534ctiy/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:8227a1264c7ff2f8bd125b585e62c1cec77dd2099c985c33e08d34292d06144f",
+                "sha256:5733090bba268396618569798349c028ca8b37dcaabdee97a9be5427c7389955",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        }
+    }
+]

@@ -1,0 +1,32 @@
+Linux lima-debian13-arm64 6.12.107+deb13-cloud-arm64 #1 SMP Debian 6.12.107-1 (2026-08-29) aarch64 GNU/Linux
+architecture=aarch64
+os_release=Debian GNU/Linux 13
+Client:
+ Version:           26.1.5+dfsg1
+ API version:       1.45
+ Go version:        go1.24.4
+ Git commit:        a72d7cd
+ Built:             Thu Aug 13 05:35:47 2026
+ OS/Arch:           linux/arm64
+ Context:           default
+
+Server:
+ Engine:
+  Version:          26.1.5+dfsg1
+  API version:      1.45 (minimum version 1.24)
+  Go version:       go1.24.4
+  Git commit:       411e817
+  Built:            Thu Aug 13 05:35:47 2026
+  OS/Arch:          linux/arm64
+  Experimental:     false
+ containerd:
+  Version:          1.7.24~ds1
+  GitCommit:        1.7.24~ds1-6+deb13u1
+ runc:
+  Version:          1.1.15+ds1
+  GitCommit:        1.1.15+ds1-2+b4
+ docker-init:
+  Version:          0.19.0
+  GitCommit:        
+github.com/docker/buildx 0.13.1+ds1 0.13.1+ds1-3
+server_arch=aarch64 driver=overlay2 driver_status=[["Backing Filesystem","extfs"],["Supports d_type","true"],["Using metacopy","false"],["Native Overlay Diff","true"],["userxattr","false"]]

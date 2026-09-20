@@ -1,0 +1,1 @@
+id=sha256:3967715db2cbeca0895b44326a401d30e65d9e593fb35998b702b93a8ff72704 os=linux arch=arm64 user=10001:10001 working_dir=/var/lib/teslatlas-hub source=https://github.com/magrathean-uk/teslatlas-hub revision=e0b290e9d6d086ff75921596dcddfd497a077c7f

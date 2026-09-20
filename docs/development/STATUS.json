@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-19T23:56:18Z",
-  "update_scope": "f1_f6_debian_arm64_package_reproducibility_publication_readback",
+  "updated_at": "2026-09-20T03:48:40Z",
+  "update_scope": "f6_arm64_container_image_reproducibility_acceptance",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -23,12 +23,12 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F1_F6",
   "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
-    "head": "1e6132aa826aaff83a7c4899604ee4c59e2f852e",
+    "head": "e0b290e9d6d086ff75921596dcddfd497a077c7f",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
-    "checked_at": "2026-09-19T23:56:18Z"
+    "checked_at": "2026-09-20T03:48:40Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -67,6 +67,8 @@
     "The fresh exact 4102dce export produced one native Linux ARM64 image through the retained Docker 26 legacy path with no package or Buildx installation. Generic Compose completion-ordered the sole initializer and preserved the exact root/sentinel/state modes; the same synthetic empty cohort passed source/version, TLS, health, doctor/status, security and explicit restart-continuity checks. Initial one-use TLS file ownership/mode caused ten automatic retries and was corrected without changing source or image, so no pristine first-attempt startup is claimed.",
     "The r2 evidence bundle reached READY_FOR_CLEANUP before cleanup and COMPLETE afterward. It retains 25 allowlisted files, exact source archive/manifests, image/runtime/security/TLS/restart/DB outputs and the cohort-bound cleanup receipt at aggregate SHA-256 ec3ad4ff24ea801e414eeb1f0f1f725cf09a40ffa789a858a621cd15366c382e. Two scanner-rejected preparation attempts and their doctor-detail redaction plus metadata-field rename closures are recorded.",
     "Independent review rejected two P2 claim-integrity issues only: final-image cleanup wording appeared inconsistent with the disclosed retained anonymous builder intermediate, and the unretained jq filter/raw doctor hashes made the redaction transform non-reproducible. The metadata delta scopes image removal to the named/tagged cohort and runnable final image, explicitly classifies the retained builder intermediate, and calls the doctor derivative runner-reported. Same-reviewer delta review returned ACCEPT with no findings for this bounded runtime foundation.",
+    "The bounded ARM64 container image-byte reproducibility implementation is published at e0b290e9. Two distinct fresh official clones with exact pre/post provenance ran the Docker 26.1.5 plus Buildx 0.13.1 no-cache path and produced identical 129,280,000-byte canonical archives at SHA-256 56052b71c944922f58cf89e6a65e317e89c10e7a4cbaec23aa37c098ca3e490e and image ID sha256:3967715d…2704. Both loaded and returned exact platform, source, version and runtime configuration.",
+    "Initial runtime-evidence review rejected missing fresh-clone provenance and exact image-ID cleanup proof. Replacement r4 evidence closes both findings; same-reviewer Sol/high review returned ACCEPT with no remaining P1/P2. The exact image ID, target/private tags and matching containers are absent; the guest work root is removed, the guest is stopped and the shared lock is released. This is only image-byte reproducibility plus load/readback, not TLS, Compose lifecycle, update/rollback, F6 or F7 acceptance.",
     "The bounded HUB-08 source fix moves expired retired-lineage deletion to repair_at's final fallible operation. A malformed unexpired retained manifest now fails before deletion, preserving exact eligible parent and child metadata; a same-cutoff successful retry removes both by the unchanged foreign-key cascade.",
     "Independent Sol/high implementation review rejected one P2 test gap because the first fixture lacked an expired child binding. The focused closure added that child, proved exact two-table preservation and same-cutoff cascade deletion, and returned ACCEPT with no findings. Final receipt/PLAN/STATUS metadata review also returned ACCEPT with no findings.",
     "The exact published 0d5e63f Debian ARM64 package passed a fresh installed storage cohort: schema 57-to-59 migration, failure-atomic retained-lineage repair with exact parent/child snapshot preservation, retry, runner-recorded one-hour grace and post-grace deletion, backup verification, separate cursor-key recovery, separate config/TLS/service restoration, strict TLS health, doctor, restart/persistence and data-preserving removal. Retained counts prove the row-presence transitions, but the bundle lacks expiry, cutoff and post-advance timestamps needed to reproduce the exact boundary classification.",
@@ -94,14 +96,16 @@
     "docs/development/f6-five-companion-linux-runtime-2026-09-19-r1.json",
     "docs/development/evidence/f6-five-companion-linux-runtime-2026-09-19-r1/manifest.json",
     "docs/development/f1-f6-debian13-arm64-package-reproducibility-2026-09-20-r1.json",
-    "docs/development/evidence/f1-f6-debian-arm64-package-reproducibility-2026-09-20-r1/manifest.json"
+    "docs/development/evidence/f1-f6-debian-arm64-package-reproducibility-2026-09-20-r1/manifest.json",
+    "docs/development/f6-arm64-container-image-reproducibility-2026-09-20-r1.json",
+    "docs/development/evidence/f6-arm64-container-image-reproducibility-2026-09-20-r1/evidence-manifest.sha256"
   ],
   "remaining": [
     "F0 accepted: the independently reviewed claim-by-claim ledger is docs/development/F0_ACCEPTANCE_LEDGER.md at workspace root.",
     "F1-F4: complete standalone Hub, Edge, Protocol/SDK and required Home Assistant behavior on every active documented path.",
     "F5: fresh read-only named-source export and fresh authorized passive capture evidence are mandatory input-dependent acceptance gates.",
     "HUB-08: the installed corruption/repair/retention and recovery cohort is independently accepted within its runner-recorded evidence limits; the wider F1/F6 ledger remains open.",
-    "F6: build on the independently accepted bounded local-unpublished exact-five Debian ARM64 lifecycle, establish a genuine immutable predecessor update/rollback, then finish image-byte reproducibility, backup/restore, failed candidate and ordinary public production admission without Viewer.",
+    "F6: build on the independently accepted bounded local-unpublished exact-five Debian ARM64 lifecycle and container image-byte reproducibility slice, establish a genuine immutable predecessor update/rollback, then finish TLS/Compose lifecycle, backup/restore, failed candidate, clean-host removal and ordinary public production admission without Viewer.",
     "F7: pass one combined installed end-to-end ecosystem journey from F6 artifacts."
   ],
   "next_goal_draft": {
@@ -263,6 +267,27 @@
     "independent_review": "ACCEPT by gpt-5.6-sol/high with no findings after a REJECT for two P2 claim-calibration issues and a metadata-only delta review. Cleanup SHA e7d4c3c8272820da6bd7ec4b86a9e9e6a817c8ca406a32b11b03199a6eb2a2d7, 25-file aggregate ec3ad4ff24ea801e414eeb1f0f1f725cf09a40ffa789a858a621cd15366c382e and manifest SHA 1d44e746942ee4652bb1c2310a4c9d72a252daad3e2d66dbd44e379a554fbe88 were independently recomputed.",
     "acceptance_limit": "Independently accepted bounded container runtime foundation only. Image-byte reproducibility, pristine first-attempt TLS startup, upgrade/rollback, backup/restore, failed candidate, removal, full clean-host lifecycle, F1, F6 and F7 remain open."
   },
+  "current_f6_container_image_reproducibility_slice": {
+    "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+    "receipt": "docs/development/f6-arm64-container-image-reproducibility-2026-09-20-r1.json",
+    "implementation_commit": "e0b290e9d6d086ff75921596dcddfd497a077c7f",
+    "source_tree": "4ebe78bf712427954fdcbcd53c1a9458ee1fe657",
+    "platform": "Debian GNU/Linux 13 aarch64",
+    "docker": "26.1.5+dfsg1",
+    "buildx": "0.13.1+ds1",
+    "reproduction": "Two distinct fresh official clones with pre-clone absence, exact physical roots, HEAD/tree/clean/origin/public-main bindings and post-build clean state ran the no-cache Linux ARM64 Buildx path and produced byte-identical canonical image archives.",
+    "artifact_sha256": "56052b71c944922f58cf89e6a65e317e89c10e7a4cbaec23aa37c098ca3e490e",
+    "artifact_bytes": 129280000,
+    "image_id": "sha256:3967715db2cbeca0895b44326a401d30e65d9e593fb35998b702b93a8ff72704",
+    "source_readback": "https://github.com/magrathean-uk/teslatlas-hub/tree/e0b290e9d6d086ff75921596dcddfd497a077c7f",
+    "version_readback": "teslatlas-hub 2026.36.2",
+    "evidence_directory": "docs/development/evidence/f6-arm64-container-image-reproducibility-2026-09-20-r1",
+    "evidence_bundle_sha256": "f64e659a739e2f037547bc35234126ec227f95ff526f5d6ff68caedfca6b60f5",
+    "payload_hash_manifest_sha256": "314184abeb14fd402ea2f3b405b21674c33cb35e91cd9a3449183a20bc1569fb",
+    "cleanup_complete": true,
+    "independent_review": "ACCEPT by gpt-5.6-sol/high with no remaining P1/P2 after replacement r4 evidence closed fresh-clone provenance and exact image-ID cleanup findings.",
+    "acceptance_limit": "Native Linux ARM64 Docker 26.1.5 plus Buildx 0.13.1 image-byte reproducibility and load/source/version/inspect readback only. No TLS, Compose lifecycle, update/rollback, backup/restore, failed-candidate recovery, clean-host removal, complete F6 or F7 acceptance."
+  },
   "current_hub08_repair_atomicity_slice": {
     "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_SOURCE_FIX",
     "receipt": "docs/development/hub-08-repair-atomicity-source-fix-2026-09-19-r1.json",
@@ -338,7 +363,7 @@
     "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
     "native_goal_state": "historical_not_mutated_by_archival"
   },
-  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the earlier F1/F6 Debian package cohort is purged. The afae80a attempt remains rejected unauditable. The fresh 4102dce exact-export ARM64 ordinary synthetic Compose runtime and COMPLETE retained bundle are independently accepted only as a bounded foundation. The exact 0d5e63f installed storage/recovery cohort and calibrated COMPLETE evidence are independently accepted within their bounded runner-recorded limits. The bounded four-component macOS companion lifecycle is independently accepted. The subsequent exact-five Debian ARM64 lifecycle removed its replaceable release and HA link while preserving exact data/config plus unrelated HA state; its COMPLETE bundle is independently accepted bounded partial evidence and no active companion release remains. The package reproducibility candidate retained both identical packages and a COMPLETE redacted evidence bundle on the host, then removed its guest work root. No owned package, service user, Hub process or 8443 listener remains. debian13-arm64 is stopped, SSH port 60022 is closed and the heavy-build lock is absent. Pinned container bases, the disclosed anonymous builder-stage intermediate and retained Docker cache remain outside this cohort.",
+  "runtime_state": "G6 r2 accepted and closed; G3 metadata admitted; secondary HA r1 accepted and closed; the earlier F1/F6 Debian package cohort is purged. The afae80a attempt remains rejected unauditable. The fresh 4102dce exact-export ARM64 ordinary synthetic Compose runtime and COMPLETE retained bundle are independently accepted only as a bounded foundation. The exact 0d5e63f installed storage/recovery cohort and calibrated COMPLETE evidence are independently accepted within their bounded runner-recorded limits. The bounded four-component macOS companion lifecycle is independently accepted. The subsequent exact-five Debian ARM64 lifecycle removed its replaceable release and HA link while preserving exact data/config plus unrelated HA state; its COMPLETE bundle is independently accepted bounded partial evidence and no active companion release remains. The package reproducibility candidate retained both identical packages and a COMPLETE redacted evidence bundle on the host, then removed its guest work root. The e0b290e9 container reproducibility cohort retained one exact canonical archive plus a COMPLETE hash-verified evidence bundle on the host, copied its small evidence into the repository, removed its guest work root and proved the exact image ID, target/private tags and matching containers absent. No owned package, service user, Hub process or 8443 listener remains. debian13-arm64 is stopped, SSH port 60022 is closed and the heavy-build lock is absent. Pinned container bases, the disclosed anonymous builder-stage intermediate and retained Docker cache remain outside these cohorts.",
   "acceptance_limits": [
     "G2 is source-built synthetic runtime evidence, not macOS installer/notarization/service acceptance",
     "Current macOS 27.0 was exercised; the documented macOS 13 minimum floor was not independently run",
@@ -347,7 +372,7 @@
     "G6 is current macOS 27 arm64 external-consumer evidence; declared minimum floors were not independently exercised",
     "The earlier F1/F6 package receipt plus the independently accepted bounded storage cohort cover exact current source-bound packaging, deliberate corruption/retention retry, separate credential/config/TLS/service restore and data-preserving removal. The current uncommitted candidate proves core ARM64 package-byte reproducibility and exact embedded public source identity but awaits independent review and publication of its packaging fix; Fleet sidecars and the remaining F1/F6 behavior remain open",
     "The F6 source/catalog foundation, bounded four-component macOS lifecycle and local-unpublished exact-five Debian ARM64 lifecycle are independently accepted only within their separate bounded partial scopes; genuine predecessor update/rollback and ordinary public production admission remain pending",
-    "The F6 container source/static receipt remains independently accepted and afae80a remains rejected unauditable. The 4102dce exact-export ordinary Compose runtime and retained COMPLETE bundle are independently accepted only as a bounded foundation; pristine first-attempt TLS startup, image-byte reproducibility, upgrade/rollback, backup/restore, failed candidate, removal and full lifecycle remain pending",
+    "The F6 container source/static receipt remains independently accepted and afae80a remains rejected unauditable. The 4102dce exact-export ordinary Compose runtime and retained COMPLETE bundle are independently accepted only as a bounded foundation. The later e0b290e9 native ARM64 Docker 26/Buildx image-byte reproducibility and load/readback slice is independently accepted separately; pristine first-attempt TLS startup, integrated Compose lifecycle, upgrade/rollback, backup/restore, failed candidate, clean-host removal and full F6 remain pending",
     "The HUB-08 source fix and bounded installed retained-corruption/recovery cohort are independently accepted. The retained bundle proves final COMPLETE state and row-count transitions, not prior READY ordering or the exact one-hour cutoff timing; complete F1 and F6 acceptance remain open",
     "No App integration acceptance",
     "Viewer excluded; x86/Intel paused"

@@ -1,0 +1,153 @@
+{
+  "schema": "teslatlas.hub.f6-arm64-container-image-reproducibility/v1",
+  "generated_at": "2026-09-20T03:48:40Z",
+  "receipt_id": "f6-arm64-container-image-reproducibility-2026-09-20-r1",
+  "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+  "scope": {
+    "gate": "F6",
+    "target": "native Debian GNU/Linux 13 ARM64 Docker image archive",
+    "proved": "Two distinct fresh official clones of the exact published Hub source produced byte-identical canonical Docker image archives; both archives loaded and returned the exact source, version, platform and runtime configuration.",
+    "excluded": [
+      "TLS or health behavior",
+      "Docker Compose startup or lifecycle",
+      "container update or rollback",
+      "backup or restore",
+      "failed-candidate recovery",
+      "clean-host installation or removal",
+      "complete F6 or F7 acceptance",
+      "App, Viewer, x86, Intel and Azure",
+      "CI, tag, release, binary publication, signing and production"
+    ]
+  },
+  "source": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-hub.git",
+    "branch": "main",
+    "head": "e0b290e9d6d086ff75921596dcddfd497a077c7f",
+    "tree": "4ebe78bf712427954fdcbcd53c1a9458ee1fe657",
+    "source_date_epoch": 1789874866,
+    "source_url": "https://github.com/magrathean-uk/teslatlas-hub/tree/e0b290e9d6d086ff75921596dcddfd497a077c7f",
+    "implementation_commits": [
+      "1c1613a4ec35f80b2574331e697bdb8789394ede",
+      "e0b290e9d6d086ff75921596dcddfd497a077c7f"
+    ],
+    "public_main_verified": true,
+    "publication_state": "IMPLEMENTATION_COMMITS_PUSHED_AND_READ_BACK"
+  },
+  "platform": {
+    "guest": "debian13-arm64",
+    "os": "Debian GNU/Linux 13",
+    "kernel": "6.12.107+deb13-cloud-arm64",
+    "architecture": "aarch64",
+    "docker_client": "26.1.5+dfsg1",
+    "docker_server": "26.1.5+dfsg1",
+    "docker_buildx": "0.13.1+ds1",
+    "storage_driver": "overlay2 classic image store",
+    "heavy_build_lock": "/Users/bolyki/dev/teslatlas-lab/locks/heavy-build",
+    "heavy_work_serialized": true
+  },
+  "fresh_clone_reproduction": {
+    "clone_count": 2,
+    "roots": [
+      "/var/tmp/teslatlas-hub-f6-repro-e0b290e9/accepted-first",
+      "/var/tmp/teslatlas-hub-f6-repro-e0b290e9/accepted-second"
+    ],
+    "roots_absent_before_clone": true,
+    "clone_mode": "git clone --no-local from the official HTTPS origin",
+    "distinct_physical_roots": true,
+    "head_and_tree_match": true,
+    "clean_before_and_after_build": true,
+    "origin_main_match": true,
+    "build_mode": "Docker Buildx --load --no-cache --platform linux/arm64",
+    "separate_private_cohort_tags": true,
+    "reports_byte_identical": true,
+    "report_sha256": "a7fe5aa524b65199ea0f614f71089ac800ca9958eccc45ef31cb5179ad4502da"
+  },
+  "artifact": {
+    "name": "teslatlas-hub-2026.36.2-arm64.tar",
+    "retained_host_path": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-f6-container-image-repro-20260920-r4/teslatlas-hub-2026.36.2-arm64.tar",
+    "sha256": "56052b71c944922f58cf89e6a65e317e89c10e7a4cbaec23aa37c098ca3e490e",
+    "bytes": 129280000,
+    "image_id": "sha256:3967715db2cbeca0895b44326a401d30e65d9e593fb35998b702b93a8ff72704",
+    "repository_tag": "teslatlas-hub:2026.36.2-arm64",
+    "platform": "linux/arm64",
+    "archive_comparison": "identical",
+    "member_count": 8,
+    "members": [
+      "blobs/",
+      "blobs/sha256/",
+      "blobs/sha256/3967715db2cbeca0895b44326a401d30e65d9e593fb35998b702b93a8ff72704",
+      "blobs/sha256/5733090bba268396618569798349c028ca8b37dcaabdee97a9be5427c7389955",
+      "blobs/sha256/5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+      "blobs/sha256/8227a1264c7ff2f8bd125b585e62c1cec77dd2099c985c33e08d34292d06144f",
+      "manifest.json",
+      "repositories"
+    ],
+    "rootfs_diff_ids": [
+      "sha256:8227a1264c7ff2f8bd125b585e62c1cec77dd2099c985c33e08d34292d06144f",
+      "sha256:5733090bba268396618569798349c028ca8b37dcaabdee97a9be5427c7389955",
+      "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+    ],
+    "normalization": "Validated Docker 26 classic-store hybrid input; minimal content-addressed Docker archive with canonical outer metadata, requested tag rebind and unchanged config/layer blobs."
+  },
+  "load_and_readback": {
+    "both_archives_loaded": true,
+    "image_id_match": true,
+    "os": "linux",
+    "architecture": "arm64",
+    "user": "10001:10001",
+    "working_directory": "/var/lib/teslatlas-hub",
+    "source": "https://github.com/magrathean-uk/teslatlas-hub/tree/e0b290e9d6d086ff75921596dcddfd497a077c7f",
+    "version": "teslatlas-hub 2026.36.2"
+  },
+  "evidence": {
+    "repository_directory": "docs/development/evidence/f6-arm64-container-image-reproducibility-2026-09-20-r1",
+    "retained_bundle": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-f6-container-image-repro-20260920-r4/evidence-bundle.tgz",
+    "bundle_sha256": "f64e659a739e2f037547bc35234126ec227f95ff526f5d6ff68caedfca6b60f5",
+    "bundle_bytes": 14870,
+    "bundle_member_count_including_directory": 28,
+    "evidence_file_count": 27,
+    "payload_hash_manifest_entry_count": 26,
+    "payload_hash_manifest_sha256": "314184abeb14fd402ea2f3b405b21674c33cb35e91cd9a3449183a20bc1569fb",
+    "payload_hashes_verified": true,
+    "secret_scan": "PASS"
+  },
+  "cleanup": {
+    "target_tag_absent": true,
+    "private_cohort_tags_absent": true,
+    "matching_containers_absent": true,
+    "exact_image_id_absent": true,
+    "guest_build_roots_absent": true,
+    "guest": "stopped",
+    "ssh_port_60022_closed": true,
+    "shared_heavy_build_lock": "released and absent",
+    "pinned_base_images_and_build_cache": "retained outside this cohort"
+  },
+  "independent_review": {
+    "model": "GPT-5.6 Sol / high",
+    "result": "ACCEPT",
+    "reviewed_at": "2026-09-20T03:48:40Z",
+    "p1_findings_remaining": 0,
+    "p2_findings_remaining": 0,
+    "closed_findings": [
+      "The replacement r4 evidence proves two distinct fresh official clones, including pre-clone absence, physical roots, exact HEAD/tree, clean state, origin and public main bindings before the no-cache builds.",
+      "The replacement r4 evidence proves pre-load, first-removal and final exact image-ID absence in addition to tag, private-cohort and container cleanup."
+    ],
+    "verification": "The reviewer independently checked public main and tree identity, wrapper no-cache semantics, both complete build logs, archive/report equality, all evidence hashes, the exact eight-member archive graph, both load/source/version/inspect chains and cleanup."
+  },
+  "publication": {
+    "implementation_commit": "e0b290e9d6d086ff75921596dcddfd497a077c7f",
+    "metadata_commit": null,
+    "metadata_state": "PENDING_COMMIT_AND_PUBLIC_READBACK"
+  },
+  "acceptance": {
+    "f6_container_image_reproducibility": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
+    "f6": "OPEN",
+    "f7": "OPEN",
+    "limits": [
+      "This accepts only exact native Linux ARM64 Docker 26.1.5 plus Buildx 0.13.1 image-byte reproducibility and load/source/version/inspect readback.",
+      "The retained artifact is a private acceptance artifact and was not published as a release binary.",
+      "No TLS, Compose, update/rollback, backup/restore, failed-candidate, clean-host lifecycle or removal assertion is added.",
+      "F6, F7 and the full solution remain unaccepted."
+    ]
+  }
+}
