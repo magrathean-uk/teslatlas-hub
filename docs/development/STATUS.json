@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
   "product": "Hub",
-  "updated_at": "2026-09-20T04:30:12Z",
-  "update_scope": "f6_arm64_container_lifecycle_independent_acceptance",
+  "updated_at": "2026-09-20T04:35:57Z",
+  "update_scope": "f6_arm64_container_lifecycle_publication_readback",
   "programme": "2026-09-19-full-hub-ecosystem-completion",
   "state": "G0_G1_G2_G3_G4_G5_G6_ACCEPTED",
   "source_objective_state": "ECOSYSTEM_BINDING_ACCEPTED",
@@ -23,12 +23,12 @@
   "planning_state": "FULL_PRODUCT_ACTIVE_F1_F6",
   "objective": "Complete the standalone Hub and all six active ecosystem products across documented ARM64 and Apple-silicon behavior, lifecycle, recovery, distribution, mandatory real-input parity and combined installed acceptance.",
   "source": {
-    "head": "a2ae52f8b14433ef69a16116c4ecdc2c3e87967d",
+    "head": "c3259a34fc8e17bf672ace444d82ae1cecc6a821",
     "branch": "main",
     "dirty_entries_at_goal_activation": 2,
     "tracked_dirty_entries_at_goal_activation": 0,
     "accepted_runtime_source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
-    "checked_at": "2026-09-20T04:30:12Z"
+    "checked_at": "2026-09-20T04:35:57Z"
   },
   "current_worker": null,
   "model_policy": {
@@ -296,6 +296,8 @@
   "current_f6_container_lifecycle_slice": {
     "state": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
     "receipt": "docs/development/f6-arm64-container-lifecycle-2026-09-20-r1.json",
+    "metadata_commit": "c3259a34fc8e17bf672ace444d82ae1cecc6a821",
+    "publication_state": "RECEIPT_AND_STATUS_PUSHED_AND_READ_BACK",
     "source_commit": "e0b290e9d6d086ff75921596dcddfd497a077c7f",
     "source_tree": "4ebe78bf712427954fdcbcd53c1a9458ee1fe657",
     "artifact_sha256": "56052b71c944922f58cf89e6a65e317e89c10e7a4cbaec23aa37c098ca3e490e",

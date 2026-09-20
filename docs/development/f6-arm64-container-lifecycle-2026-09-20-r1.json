@@ -185,8 +185,12 @@
   },
   "publication": {
     "source_commit": "e0b290e9d6d086ff75921596dcddfd497a077c7f",
-    "metadata_commit": null,
-    "state": "PENDING_RECEIPT_COMMIT"
+    "metadata_commit": "c3259a34fc8e17bf672ace444d82ae1cecc6a821",
+    "state": "RECEIPT_AND_STATUS_PUSHED_AND_READ_BACK",
+    "local_head_after_push": "c3259a34fc8e17bf672ace444d82ae1cecc6a821",
+    "origin_main_after_push": "c3259a34fc8e17bf672ace444d82ae1cecc6a821",
+    "live_remote_main_after_push": "c3259a34fc8e17bf672ace444d82ae1cecc6a821",
+    "verified_at": "2026-09-20T04:35:57Z"
   },
   "acceptance": {
     "hub_01_standalone_artifact_setup": "INDEPENDENTLY_ACCEPTED_BOUNDED_PARTIAL",
