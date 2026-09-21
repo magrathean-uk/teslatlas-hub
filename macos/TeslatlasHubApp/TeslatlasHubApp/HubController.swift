@@ -5,7 +5,7 @@ import Darwin
 import Foundation
 
 enum HubRelease {
-    static let fallbackVersion = "2026.36.1"
+    static let fallbackVersion = "2026.36.2"
     static let sourceRepository = "https://github.com/magrathean-uk/teslatlas-hub"
     static let licenceExpression = "AGPL-3.0-only"
     static var bundledVersion: String {
