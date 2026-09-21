@@ -158,7 +158,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !HubUIPresentation.isSilentTestHost else { return }
-        hubController = HubController()
+        do {
+            hubController = try HubController.applicationController()
+        } catch {
+            let alert = NSAlert()
+            alert.alertStyle = .critical
+            alert.messageText = "Local Hub development configuration was rejected"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "Quit")
+            _ = HubUIPresentation.response(to: alert)
+            NSApp.terminate(nil)
+            return
+        }
         if !hubController.previewMode {
             let staleImports = TeslaMateServerImporter.cleanupStaleTemporaryDirectories()
             if staleImports > 0 {

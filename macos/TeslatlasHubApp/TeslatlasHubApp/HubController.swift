@@ -1121,11 +1121,16 @@ final class HubController {
     let previewMode: Bool
     let previewScene: HubPreviewScene?
     let onboardingPreviewRoute: String?
+    let developmentConfiguration: DevelopmentHubConfiguration?
+    var allowsServiceInstallation: Bool { developmentConfiguration == nil && !previewMode }
     private let commandRunner: HubCommandRunning
     private let installedCommandRunner: HubCommandRunning
-    private let installer: HubInstalling
+    let installer: HubInstalling
     private let serviceRunner: HubServiceControlling
     private let homeDirectory: URL
+    private let configuredConfigPath: URL?
+    private let configuredDataDirectory: URL?
+    private let configuredLogDirectory: URL?
     private let serviceInstalledOverride: Bool?
     private let migrationStartupReadinessPollInterval: TimeInterval
     private let migrationStartupReadinessTimeout: TimeInterval
@@ -1162,7 +1167,8 @@ final class HubController {
                  deadline: .now() + delay,
                  execute: action
              )
-         }) {
+         },
+         developmentConfiguration: DevelopmentHubConfiguration? = nil) {
         let scene = HubPreviewScene(environmentValue: environment["TESLATLAS_HUB_PREVIEW_SCENE"])
         let isPreview = environment["TESLATLAS_HUB_UI_PREVIEW"] == "1" || scene != nil
         let previewRoute = isPreview
@@ -1171,11 +1177,19 @@ final class HubController {
         previewMode = isPreview
         previewScene = scene
         onboardingPreviewRoute = previewRoute
+        self.developmentConfiguration = developmentConfiguration
         self.commandRunner = commandRunner
         self.installedCommandRunner = installedCommandRunner
-        self.installer = installer
+        if developmentConfiguration != nil, !(installer is DevelopmentHubInstaller) {
+            self.installer = DevelopmentHubInstaller()
+        } else {
+            self.installer = installer
+        }
         self.serviceRunner = serviceRunner
         self.homeDirectory = homeDirectory
+        configuredConfigPath = developmentConfiguration?.config
+        configuredDataDirectory = developmentConfiguration?.stateDirectory
+        configuredLogDirectory = developmentConfiguration?.logDirectory
         self.serviceInstalledOverride = serviceInstalledOverride
         self.migrationStartupReadinessPollInterval = max(0, migrationStartupReadinessPollInterval)
         self.migrationStartupReadinessTimeout = max(0, migrationStartupReadinessTimeout)
@@ -1189,6 +1203,24 @@ final class HubController {
         let previewSnapshot: HubSnapshot = firstRunPreviewRoutes.contains(previewRoute ?? "")
             ? .firstRun : .previewRunning
         snapshot = initialSnapshot ?? (isPreview ? previewSnapshot : .firstRun)
+    }
+
+    static func applicationController(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) throws -> HubController {
+        guard let development = try DevelopmentHubConfiguration.from(environment: environment) else {
+            return HubController(environment: environment)
+        }
+        let runner = DevelopmentHubCommandRunner(configuration: development)
+        return HubController(
+            environment: environment,
+            commandRunner: runner,
+            installedCommandRunner: runner,
+            installer: DevelopmentHubInstaller(),
+            serviceRunner: DevelopmentLaunchctlServiceController(configuration: development),
+            serviceInstalledOverride: true,
+            developmentConfiguration: development
+        )
     }
 
     static func isBundledServiceVersionOutput(_ output: String) -> Bool {
@@ -1239,7 +1271,10 @@ final class HubController {
     }
 
     func shouldShowOnboarding(for snapshot: HubSnapshot) -> Bool {
-        onboardingPreviewRoute != nil
+        if developmentConfiguration != nil {
+            return onboardingPreviewRoute != nil || hasPendingMigrationHandover
+        }
+        return onboardingPreviewRoute != nil
             || hasPendingMigrationHandover
             || !FileManager.default.fileExists(atPath: configPath.path)
             || snapshot.health == .needsInstall
@@ -1311,6 +1346,12 @@ final class HubController {
 
     func installService(completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard developmentConfiguration == nil else {
+            completion(.failure(HubActionError.commandFailed(
+                "A source-run development Hub cannot install or update the production service."
+            )))
+            return
+        }
         let started = Date()
         HubAppLog.shared.record("install.requested", category: "service")
         let finish: (Result<String, Error>) -> Void = { [weak self] result in
@@ -1336,6 +1377,12 @@ final class HubController {
 
     func uninstallService(deleteData: Bool, completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        guard developmentConfiguration == nil else {
+            completion(.failure(HubActionError.commandFailed(
+                "A source-run development Hub cannot uninstall the production service or delete its data."
+            )))
+            return
+        }
         let started = Date()
         HubAppLog.shared.record("uninstall.requested", category: "service", fields: [
             "delete_data": deleteData ? "true" : "false"
@@ -2839,7 +2886,8 @@ final class HubController {
             return
         }
         DispatchQueue.global(qos: .utility).async {
-            let folder = self.homeDirectory.appendingPathComponent("Library/Logs/Teslatlas Hub", isDirectory: true)
+            let folder = self.configuredLogDirectory
+                ?? self.homeDirectory.appendingPathComponent("Library/Logs/Teslatlas Hub", isDirectory: true)
             let files = [
                 ("hub.out.log", folder.appendingPathComponent("hub.out.log")),
                 ("hub.err.log", folder.appendingPathComponent("hub.err.log"))
@@ -3009,7 +3057,7 @@ final class HubController {
         } else {
             availableStorage = "Unavailable"
         }
-        return [
+        var metadata = [
             "== support metadata ==",
             "Generated: \(ISO8601DateFormatter().string(from: Date()))",
             "App: \(appVersion) (\(appBuild))",
@@ -3020,7 +3068,16 @@ final class HubController {
             "macOS: \(ProcessInfo.processInfo.operatingSystemVersionString)",
             "Architecture: \(architecture)",
             "Available storage: \(availableStorage)"
-        ].joined(separator: "\n")
+        ]
+        if let developmentConfiguration {
+            metadata.insert("Runtime: explicit local development LaunchAgent", at: 5)
+            metadata.insert("Mode: \(developmentConfiguration.mode.rawValue)", at: 6)
+            metadata.insert("Binary: \(developmentConfiguration.binary.path)", at: 7)
+            metadata.insert("Configuration: \(developmentConfiguration.config.path)", at: 8)
+            metadata.insert("State: \(developmentConfiguration.stateDirectory.path)", at: 9)
+            metadata.insert("Logs: \(developmentConfiguration.logDirectory.path)", at: 10)
+        }
+        return metadata.joined(separator: "\n")
     }
 
     func showDataFolder() {
@@ -3060,12 +3117,16 @@ final class HubController {
     }
 
     private var configPath: URL {
-        homeDirectory
+        if let configuredConfigPath { return configuredConfigPath }
+        return homeDirectory
             .appendingPathComponent("Library/Application Support/Teslatlas Hub", isDirectory: true)
             .appendingPathComponent("config.toml")
     }
 
-    private var dataDirectory: URL { configPath.deletingLastPathComponent().appendingPathComponent("data", isDirectory: true) }
+    private var dataDirectory: URL {
+        configuredDataDirectory
+            ?? configPath.deletingLastPathComponent().appendingPathComponent("data", isDirectory: true)
+    }
 
     private var migrationHandoverMarker: URL {
         configPath.deletingLastPathComponent().appendingPathComponent(".teslamate-handover-pending")
@@ -3535,7 +3596,30 @@ final class HubController {
                 result.service = "Installed · version mismatch"
             }
         }
+        if let developmentConfiguration {
+            result.service = Self.developmentServiceDescription(result.service)
+            result.diagnosticLines.insert(
+                "Development runtime: \(developmentConfiguration.serviceLabel)", at: 0
+            )
+            result.diagnosticLines.insert("Mode: \(developmentConfiguration.mode.rawValue)", at: 1)
+            result.diagnosticLines.insert("Binary: \(developmentConfiguration.binary.path)", at: 2)
+            result.diagnosticLines.insert("Logs: \(developmentConfiguration.logDirectory.path)", at: 3)
+            result.diagnosticLines.insert("State: \(developmentConfiguration.stateDirectory.path)", at: 4)
+            result.diagnosticLines.insert("Configuration: \(developmentConfiguration.config.path)", at: 5)
+        }
         return result
+    }
+
+    private static func developmentServiceDescription(_ productionDescription: String) -> String {
+        switch productionDescription {
+        case "Installed and running": return "Development Hub running"
+        case "Installed but stopped": return "Development Hub stopped"
+        case "Installed · needs attention": return "Development Hub · needs attention"
+        case "Installed · service state unavailable": return "Development Hub · service state unavailable"
+        case "Installed · version mismatch": return "Development Hub · version mismatch"
+        case "Installed · status unavailable": return "Development Hub · status unavailable"
+        default: return "Development Hub · \(productionDescription)"
+        }
     }
 
     private func fallbackSnapshot(installed: Bool, loaded: HubServiceLoadState) -> HubSnapshot {
@@ -3546,6 +3630,10 @@ final class HubController {
         case .loaded: health = .degraded; service = "Installed · status unavailable"
         case .unloaded: health = .stopped; service = "Installed but stopped"
         case .unknown: health = .degraded; service = "Installed · service state unavailable"
+        }
+        if let developmentConfiguration {
+            let developmentService = Self.developmentServiceDescription(service)
+            return HubSnapshot(health: health, service: developmentService, account: "Unknown", provider: nil, vehicleName: "Vehicle", vehicle: "Unknown", controlVehicleID: nil, controlVehicles: [], database: "Unknown", activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [developmentService, "Development runtime: \(developmentConfiguration.serviceLabel)", "Mode: \(developmentConfiguration.mode.rawValue)", "Binary: \(developmentConfiguration.binary.path)", "Configuration: \(developmentConfiguration.config.path)", "State: \(developmentConfiguration.stateDirectory.path)", "Logs: \(developmentConfiguration.logDirectory.path)", "Hub status command did not return a valid report."])
         }
         return HubSnapshot(health: health, service: service, account: "Unknown", provider: nil, vehicleName: "Vehicle", vehicle: "Unknown", controlVehicleID: nil, controlVehicles: [], database: "Unknown", activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [service, "Hub status command did not return a valid report."])
     }

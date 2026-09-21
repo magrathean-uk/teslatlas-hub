@@ -307,21 +307,37 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         ))
         let service = "gui/\(getuid())/\(configuration.serviceLabel)"
         var calls: [(URL, [String])] = []
+        var launchPlanCompleted = false
         let controller = DevelopmentLaunchctlServiceController(
             configuration: configuration,
             processRunner: { executable, arguments, _, completion in
                 calls.append((executable, arguments))
-                if executable == configuration.binary {
+                if executable == configuration.binary && arguments.contains("serve-preflight") {
                     completion(.success(#"{"status":"ready","mode":"standalone"}"#))
+                } else if executable == configuration.binary {
+                    completion(.success(#"{"status":"ok","ready":false}"#))
                 } else if arguments == ["print", service] {
-                    completion(.failure(HubActionError.commandExited(
-                        113,
-                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
-                    )))
+                    if launchPlanCompleted {
+                        completion(.success(self.runningLaunchctlOutput(
+                            configuration: configuration,
+                            pid: 4102
+                        )))
+                    } else {
+                        completion(.failure(HubActionError.commandExited(
+                            113,
+                            "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                        )))
+                    }
+                } else if arguments == ["bootstrap", "gui/\(getuid())", configuration.plist.path] {
+                    launchPlanCompleted = true
+                    completion(.success(""))
                 } else {
                     completion(.success(""))
                 }
-            }
+            },
+            readinessPollInterval: 0,
+            readinessMaxAttempts: 3,
+            readinessSchedule: { _, action in action() }
         )
         let started = expectation(description: "valid source-run launch planned")
 
@@ -339,9 +355,129 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
                 "serve-preflight", "--mode", "standalone"
             ],
             ["print", service],
-            ["bootstrap", "gui/\(getuid())", configuration.plist.path]
+            ["bootstrap", "gui/\(getuid())", configuration.plist.path],
+            ["print", service],
+            ["--config", configuration.config.path, "status"],
+            ["print", service],
+            ["--config", configuration.config.path, "status"]
         ])
         XCTAssertTrue(FileManager.default.fileExists(atPath: configuration.plist.path))
+    }
+
+    func testStartRejectsCompetingHealthyListenerWhenOwnedProcessIsNotRunning() throws {
+        let fixture = try makeFixture(createConfig: true, mode: .standalone)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(
+            environment: fixture.environment
+        ))
+        let service = "gui/\(getuid())/\(configuration.serviceLabel)"
+        try Data("Address already in use (os error 48)\n".utf8)
+            .write(to: configuration.standardErrorLog)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
+                                              ofItemAtPath: configuration.standardErrorLog.path)
+        var launchPlanCompleted = false
+        var statusChecks = 0
+        let controller = DevelopmentLaunchctlServiceController(
+            configuration: configuration,
+            processRunner: { executable, arguments, _, completion in
+                if executable == configuration.binary, arguments.contains("serve-preflight") {
+                    completion(.success(#"{"status":"ready","mode":"standalone"}"#))
+                } else if executable == configuration.binary {
+                    statusChecks += 1
+                    completion(.success(#"{"status":"ok","ready":true}"#))
+                } else if arguments == ["print", service], !launchPlanCompleted {
+                    completion(.failure(HubActionError.commandExited(
+                        113,
+                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                    )))
+                } else if arguments.first == "bootstrap" {
+                    launchPlanCompleted = true
+                    completion(.success(""))
+                } else if arguments == ["print", service] {
+                    completion(.success("""
+                    \(service) = {
+                        state = waiting
+                        program = \(configuration.binary.path)
+                        pid = 0
+                    }
+                    """))
+                } else {
+                    completion(.success(""))
+                }
+            },
+            readinessPollInterval: 0,
+            readinessMaxAttempts: 1,
+            readinessSchedule: { _, action in action() }
+        )
+        let rejected = expectation(description: "competing listener rejected")
+
+        controller.run(arguments: ["service", "start"]) { result in
+            guard case let .failure(error) = result else {
+                XCTFail("a competing listener counted as the owned process")
+                rejected.fulfill()
+                return
+            }
+            XCTAssertTrue(error.localizedDescription.contains("not running the intended binary"))
+            XCTAssertTrue(error.localizedDescription.contains("Address already in use"))
+            XCTAssertTrue(error.localizedDescription.contains(configuration.logDirectory.path))
+            rejected.fulfill()
+        }
+
+        wait(for: [rejected], timeout: 1)
+        XCTAssertEqual(statusChecks, 0)
+    }
+
+    func testStartSurfacesLifetimeLockFailure() throws {
+        let fixture = try makeFixture(createConfig: true, mode: .standalone)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(
+            environment: fixture.environment
+        ))
+        let service = "gui/\(getuid())/\(configuration.serviceLabel)"
+        try Data("Hub lifetime lock is already held\n".utf8)
+            .write(to: configuration.standardErrorLog)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
+                                              ofItemAtPath: configuration.standardErrorLog.path)
+        var launchPlanCompleted = false
+        let controller = DevelopmentLaunchctlServiceController(
+            configuration: configuration,
+            processRunner: { executable, arguments, _, completion in
+                if executable == configuration.binary, arguments.contains("serve-preflight") {
+                    completion(.success(#"{"status":"ready","mode":"standalone"}"#))
+                } else if arguments == ["print", service], !launchPlanCompleted {
+                    completion(.failure(HubActionError.commandExited(
+                        113,
+                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                    )))
+                } else if arguments.first == "bootstrap" {
+                    launchPlanCompleted = true
+                    completion(.success(""))
+                } else if arguments == ["print", service] {
+                    completion(.failure(HubActionError.commandExited(
+                        113,
+                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                    )))
+                } else {
+                    completion(.success(""))
+                }
+            },
+            readinessPollInterval: 0,
+            readinessMaxAttempts: 1,
+            readinessSchedule: { _, action in action() }
+        )
+        let rejected = expectation(description: "lifetime lock surfaced")
+
+        controller.run(arguments: ["service", "start"]) { result in
+            guard case let .failure(error) = result else {
+                XCTFail("lifetime-lock failure reported success")
+                rejected.fulfill()
+                return
+            }
+            XCTAssertTrue(error.localizedDescription.contains("Hub lifetime lock is already held"))
+            rejected.fulfill()
+        }
+
+        wait(for: [rejected], timeout: 1)
     }
 
     func testDevelopmentLaunchAgentPropagatesExactServeAndTraceEnvironment() throws {
@@ -453,6 +589,23 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         let state: URL
         let logs: URL
         let environment: [String: String]
+    }
+
+    private func runningLaunchctlOutput(configuration: DevelopmentHubConfiguration,
+                                        pid: Int) -> String {
+        """
+        gui/\(getuid())/\(configuration.serviceLabel) = {
+            state = running
+            program = \(configuration.binary.path)
+            arguments = {
+                \(configuration.binary.path)
+                --config
+                \(configuration.config.path)
+                serve
+            }
+            pid = \(pid)
+        }
+        """
     }
 
     private func makeFixture(createConfig: Bool = false,

@@ -359,9 +359,17 @@ typealias DevelopmentHubProcessRunner = (
     @escaping (Result<String, Error>) -> Void
 ) -> Void
 
+typealias DevelopmentHubReadinessScheduler = (
+    TimeInterval,
+    @escaping () -> Void
+) -> Void
+
 final class DevelopmentLaunchctlServiceController: HubServiceControlling {
     private let configuration: DevelopmentHubConfiguration
     private let processRunner: DevelopmentHubProcessRunner
+    private let readinessPollInterval: TimeInterval
+    private let readinessMaxAttempts: Int
+    private let readinessSchedule: DevelopmentHubReadinessScheduler
     private var domain: String { "gui/\(configuration.ownerUID)" }
     private var service: String { "\(domain)/\(configuration.serviceLabel)" }
 
@@ -372,9 +380,20 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                                     arguments: arguments,
                                     timeout: timeout,
                                     completion: completion)
+         },
+         readinessPollInterval: TimeInterval = 0.5,
+         readinessMaxAttempts: Int = 121,
+         readinessSchedule: @escaping DevelopmentHubReadinessScheduler = { delay, action in
+             DispatchQueue.global(qos: .userInitiated).asyncAfter(
+                 deadline: .now() + delay,
+                 execute: action
+             )
          }) {
         self.configuration = configuration
         self.processRunner = processRunner
+        self.readinessPollInterval = max(0, readinessPollInterval)
+        self.readinessMaxAttempts = max(1, readinessMaxAttempts)
+        self.readinessSchedule = readinessSchedule
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
@@ -448,8 +467,18 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                                               domain: self.domain,
                                               service: self.service,
                                               plist: self.configuration.plist.path),
-                             index: 0,
-                             completion: completion)
+                             index: 0) { result in
+                switch result {
+                case .success where action == .stop:
+                    completion(.success(""))
+                case .success:
+                    self.waitUntilReady(previousReadyPID: nil,
+                                        attemptsRemaining: self.readinessMaxAttempts,
+                                        completion: completion)
+                case let .failure(error):
+                    completion(.failure(error))
+                }
+            }
         }
     }
 
@@ -598,6 +627,129 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                 }
             }
         }
+    }
+
+    private func waitUntilReady(previousReadyPID: Int?,
+                                attemptsRemaining: Int,
+                                completion: @escaping (Result<String, Error>) -> Void) {
+        runLaunchctl(["print", service]) { [weak self] launchResult in
+            guard let self else { return }
+            switch launchResult {
+            case let .success(output):
+                guard let pid = Self.runningProcessIdentifier(
+                    in: output,
+                    expectedBinary: self.configuration.binary.path,
+                    expectedConfig: self.configuration.config.path
+                ) else {
+                    self.retryReadiness(
+                        previousReadyPID: nil,
+                        attemptsRemaining: attemptsRemaining,
+                        failure: "The owned LaunchAgent is loaded but is not running the intended binary and configuration.",
+                        completion: completion
+                    )
+                    return
+                }
+                self.processRunner(
+                    self.configuration.binary,
+                    ["--config", self.configuration.config.path, "status"],
+                    30
+                ) { [weak self] statusResult in
+                    guard let self else { return }
+                    switch statusResult {
+                    case let .success(statusOutput)
+                        where Self.isUsableStatusOutput(statusOutput):
+                        if previousReadyPID == pid {
+                            completion(.success("Development Hub is running as PID \(pid)."))
+                        } else {
+                            self.retryReadiness(
+                                previousReadyPID: pid,
+                                attemptsRemaining: attemptsRemaining,
+                                failure: "The intended process has not remained stable for two readiness checks.",
+                                completion: completion
+                            )
+                        }
+                    case let .success(statusOutput):
+                        self.retryReadiness(
+                            previousReadyPID: nil,
+                            attemptsRemaining: attemptsRemaining,
+                            failure: "The intended process returned an invalid status response: \(Self.boundedDiagnostic(statusOutput))",
+                            completion: completion
+                        )
+                    case let .failure(error):
+                        self.retryReadiness(
+                            previousReadyPID: nil,
+                            attemptsRemaining: attemptsRemaining,
+                            failure: "The intended process status check failed: \(Self.boundedDiagnostic(error.localizedDescription))",
+                            completion: completion
+                        )
+                    }
+                }
+            case let .failure(error):
+                self.retryReadiness(
+                    previousReadyPID: nil,
+                    attemptsRemaining: attemptsRemaining,
+                    failure: "The owned LaunchAgent is not running: \(Self.boundedDiagnostic(error.localizedDescription))",
+                    completion: completion
+                )
+            }
+        }
+    }
+
+    private func retryReadiness(previousReadyPID: Int?,
+                                attemptsRemaining: Int,
+                                failure: String,
+                                completion: @escaping (Result<String, Error>) -> Void) {
+        guard attemptsRemaining > 1 else {
+            completion(.failure(startupFailure(lastFailure: failure)))
+            return
+        }
+        readinessSchedule(readinessPollInterval) { [weak self] in
+            self?.waitUntilReady(previousReadyPID: previousReadyPID,
+                                 attemptsRemaining: attemptsRemaining - 1,
+                                 completion: completion)
+        }
+    }
+
+    private func startupFailure(lastFailure: String) -> Error {
+        var detail = "Development Hub did not become ready under \(service). \(lastFailure)"
+        if let stderr = HubAppLog.regularFileTail(
+            of: configuration.standardErrorLog,
+            maximumBytes: 4_096
+        )?.trimmingCharacters(in: .whitespacesAndNewlines), !stderr.isEmpty {
+            detail += " Recent stderr: \(Self.boundedDiagnostic(stderr))"
+        }
+        detail += " Logs: \(configuration.logDirectory.path)"
+        return HubActionError.commandFailed(detail)
+    }
+
+    static func runningProcessIdentifier(in launchctlOutput: String,
+                                         expectedBinary: String,
+                                         expectedConfig: String) -> Int? {
+        let lines = launchctlOutput.split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespaces) }
+        guard lines.contains("state = running"),
+              lines.contains("program = \(expectedBinary)"),
+              lines.contains(expectedBinary),
+              lines.contains("--config"),
+              lines.contains(expectedConfig),
+              lines.contains("serve") else { return nil }
+        guard let pidLine = lines.first(where: { $0.hasPrefix("pid = ") }),
+              let pid = Int(pidLine.dropFirst("pid = ".count)), pid > 0 else { return nil }
+        return pid
+    }
+
+    static func isUsableStatusOutput(_ output: String) -> Bool {
+        guard let data = output.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["status"] as? String == "ok",
+              object["ready"] is Bool else { return false }
+        return true
+    }
+
+    private static func boundedDiagnostic(_ value: String) -> String {
+        let singleLine = value.replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+        return String(singleLine.prefix(1_024))
     }
 
     private func runLaunchctl(_ arguments: [String],
