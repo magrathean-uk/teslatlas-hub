@@ -915,15 +915,27 @@ final class MainWindowController: NSWindowController {
         let token = UUID()
         serviceTransitionToken = token
         serviceTransitionDeadlineWorkItem?.cancel()
+        serviceTransitionDeadlineWorkItem = nil
+        detailsWindow?.setMutationsEnabled(false)
+        applyServiceTransitionPresentation(transition)
+        return token
+    }
+
+    /// The service controller owns the command and any failure cleanup. Do not
+    /// let the UI independently expire that transaction: doing so would unlock
+    /// a second Start/Restart while the first command can still be booting out
+    /// its failed LaunchAgent. This deadline only bounds the status settlement
+    /// that begins after the controller has completed successfully.
+    private func armServiceTransitionDeadline(_ transition: HubServiceTransition, token: UUID) {
+        guard serviceTransition == transition,
+              serviceTransitionToken == token else { return }
+        serviceTransitionDeadlineWorkItem?.cancel()
         let deadline = DispatchWorkItem { [weak self] in
             self?.serviceTransitionExpired(transition, token: token)
         }
         serviceTransitionDeadlineWorkItem = deadline
         DispatchQueue.main.asyncAfter(deadline: .now() + serviceTransitionTimeout,
                                       execute: deadline)
-        detailsWindow?.setMutationsEnabled(false)
-        applyServiceTransitionPresentation(transition)
-        return token
     }
 
     private func applyServiceTransitionPresentation(_ transition: HubServiceTransition) {
@@ -976,6 +988,7 @@ final class MainWindowController: NSWindowController {
                                          token: UUID) {
         guard serviceTransition == transition,
               serviceTransitionToken == token else { return }
+        armServiceTransitionDeadline(transition, token: token)
         probeServiceTransition(transition, expectedHealth: expectedHealth, token: token)
     }
 

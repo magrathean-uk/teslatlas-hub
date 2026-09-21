@@ -364,12 +364,16 @@ typealias DevelopmentHubReadinessScheduler = (
     @escaping () -> Void
 ) -> Void
 
+typealias DevelopmentHubReadinessClock = () -> TimeInterval
+
 final class DevelopmentLaunchctlServiceController: HubServiceControlling {
     private let configuration: DevelopmentHubConfiguration
     private let processRunner: DevelopmentHubProcessRunner
     private let readinessPollInterval: TimeInterval
     private let readinessMaxAttempts: Int
+    private let readinessTimeout: TimeInterval
     private let readinessSchedule: DevelopmentHubReadinessScheduler
+    private let readinessClock: DevelopmentHubReadinessClock
     private var domain: String { "gui/\(configuration.ownerUID)" }
     private var service: String { "\(domain)/\(configuration.serviceLabel)" }
 
@@ -383,17 +387,23 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
          },
          readinessPollInterval: TimeInterval = 0.5,
          readinessMaxAttempts: Int = 121,
+         readinessTimeout: TimeInterval = 60,
          readinessSchedule: @escaping DevelopmentHubReadinessScheduler = { delay, action in
              DispatchQueue.global(qos: .userInitiated).asyncAfter(
                  deadline: .now() + delay,
                  execute: action
              )
+         },
+         readinessClock: @escaping DevelopmentHubReadinessClock = {
+             ProcessInfo.processInfo.systemUptime
          }) {
         self.configuration = configuration
         self.processRunner = processRunner
         self.readinessPollInterval = max(0, readinessPollInterval)
         self.readinessMaxAttempts = max(1, readinessMaxAttempts)
+        self.readinessTimeout = max(0.1, readinessTimeout)
         self.readinessSchedule = readinessSchedule
+        self.readinessClock = readinessClock
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
@@ -472,8 +482,10 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                 case .success where action == .stop:
                     completion(.success(""))
                 case .success:
+                    let readinessDeadline = self.readinessClock() + self.readinessTimeout
                     self.waitUntilReady(previousReadyPID: nil,
                                         attemptsRemaining: self.readinessMaxAttempts,
+                                        deadline: readinessDeadline,
                                         completion: completion)
                 case let .failure(error):
                     completion(.failure(error))
@@ -631,8 +643,15 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
 
     private func waitUntilReady(previousReadyPID: Int?,
                                 attemptsRemaining: Int,
+                                deadline: TimeInterval,
                                 completion: @escaping (Result<String, Error>) -> Void) {
-        runLaunchctl(["print", service]) { [weak self] launchResult in
+        guard let requestTimeout = readinessRequestTimeout(deadline: deadline) else {
+            failStartupAndStop(startupFailure(
+                lastFailure: "The readiness deadline expired."
+            ), completion: completion)
+            return
+        }
+        runLaunchctl(["print", service], timeout: requestTimeout) { [weak self] launchResult in
             guard let self else { return }
             switch launchResult {
             case let .success(output):
@@ -644,15 +663,22 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                     self.retryReadiness(
                         previousReadyPID: nil,
                         attemptsRemaining: attemptsRemaining,
+                        deadline: deadline,
                         failure: "The owned LaunchAgent is loaded but is not running the intended binary and configuration.",
                         completion: completion
                     )
                     return
                 }
+                guard let statusTimeout = self.readinessRequestTimeout(deadline: deadline) else {
+                    self.failStartupAndStop(self.startupFailure(
+                        lastFailure: "The readiness deadline expired before the status check."
+                    ), completion: completion)
+                    return
+                }
                 self.processRunner(
                     self.configuration.binary,
                     ["--config", self.configuration.config.path, "status"],
-                    30
+                    statusTimeout
                 ) { [weak self] statusResult in
                     guard let self else { return }
                     switch statusResult {
@@ -664,6 +690,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                             self.retryReadiness(
                                 previousReadyPID: pid,
                                 attemptsRemaining: attemptsRemaining,
+                                deadline: deadline,
                                 failure: "The intended process has not remained stable for two readiness checks.",
                                 completion: completion
                             )
@@ -672,6 +699,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                         self.retryReadiness(
                             previousReadyPID: nil,
                             attemptsRemaining: attemptsRemaining,
+                            deadline: deadline,
                             failure: "The intended process returned an invalid status response: \(Self.boundedDiagnostic(statusOutput))",
                             completion: completion
                         )
@@ -679,6 +707,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                         self.retryReadiness(
                             previousReadyPID: nil,
                             attemptsRemaining: attemptsRemaining,
+                            deadline: deadline,
                             failure: "The intended process status check failed: \(Self.boundedDiagnostic(error.localizedDescription))",
                             completion: completion
                         )
@@ -688,6 +717,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                 self.retryReadiness(
                     previousReadyPID: nil,
                     attemptsRemaining: attemptsRemaining,
+                    deadline: deadline,
                     failure: "The owned LaunchAgent is not running: \(Self.boundedDiagnostic(error.localizedDescription))",
                     completion: completion
                 )
@@ -697,17 +727,26 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
 
     private func retryReadiness(previousReadyPID: Int?,
                                 attemptsRemaining: Int,
+                                deadline: TimeInterval,
                                 failure: String,
                                 completion: @escaping (Result<String, Error>) -> Void) {
-        guard attemptsRemaining > 1 else {
+        let remaining = deadline - readinessClock()
+        guard attemptsRemaining > 1, remaining > 0 else {
             failStartupAndStop(startupFailure(lastFailure: failure), completion: completion)
             return
         }
-        readinessSchedule(readinessPollInterval) { [weak self] in
+        readinessSchedule(min(readinessPollInterval, remaining)) { [weak self] in
             self?.waitUntilReady(previousReadyPID: previousReadyPID,
                                  attemptsRemaining: attemptsRemaining - 1,
+                                 deadline: deadline,
                                  completion: completion)
         }
+    }
+
+    private func readinessRequestTimeout(deadline: TimeInterval) -> TimeInterval? {
+        let remaining = deadline - readinessClock()
+        guard remaining > 0 else { return nil }
+        return min(30, remaining)
     }
 
     private func failStartupAndStop(_ startupError: Error,
@@ -794,7 +833,8 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
     }
 
     private func runLaunchctl(_ arguments: [String],
+                              timeout: TimeInterval = 30,
                               completion: @escaping (Result<String, Error>) -> Void) {
-        processRunner(URL(fileURLWithPath: "/bin/launchctl"), arguments, 30, completion)
+        processRunner(URL(fileURLWithPath: "/bin/launchctl"), arguments, timeout, completion)
     }
 }

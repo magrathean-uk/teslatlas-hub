@@ -1229,7 +1229,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(dashboard.importButton.isEnabled)
     }
 
-    func testServiceTransitionDeadlineIncludesPendingServiceCommand() throws {
+    func testPendingServiceCommandKeepsTransitionLockedUntilControllerCleanupCompletes() throws {
         let status = """
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """
@@ -1239,12 +1239,16 @@ final class HubControllerTests: XCTestCase {
                                        serviceRunner: service,
                                        serviceInstalledOverride: true)
         let loaded = expectation(description: "stopped dashboard loaded")
-        let timedOut = expectation(description: "pending service command timed out in UI")
+        let failed = expectation(description: "controller failure presented after cleanup")
+        var errors: [Error] = []
         let dashboard = MainWindowController(
             controller: controller,
             serviceTransitionTimeout: 0.1,
             serviceTransitionPollInterval: 0.01,
-            errorPresenter: { _ in timedOut.fulfill() },
+            errorPresenter: { error in
+                errors.append(error)
+                failed.fulfill()
+            },
             onInitialRefresh: { _ in loaded.fulfill() }
         )
         wait(for: [loaded], timeout: 1)
@@ -1252,97 +1256,28 @@ final class HubControllerTests: XCTestCase {
         let start = try XCTUnwrap(buttons(in: dashboard.window?.contentView)
             .first { $0.title == "Start Hub" })
         start.performClick(nil)
-        wait(for: [timedOut], timeout: 0.5)
+        let stillLocked = expectation(description: "transition remains locked past settlement timeout")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            XCTAssertTrue(self.labels(in: dashboard.window?.contentView)
+                .contains { $0.stringValue == "Starting Hub…" })
+            XCTAssertFalse(dashboard.connectButton.isEnabled)
+            XCTAssertFalse(dashboard.importButton.isEnabled)
+            XCTAssertTrue(errors.isEmpty)
+            XCTAssertEqual(service.arguments, [["service", "start"]])
+            start.performClick(nil)
+            XCTAssertEqual(service.arguments, [["service", "start"]],
+                           "a second command must not overlap controller cleanup")
+            stillLocked.fulfill()
+        }
+        wait(for: [stillLocked], timeout: 0.5)
 
+        service.complete(.failure(HubActionError.commandFailed("persistent startup failure")))
+        wait(for: [failed], timeout: 0.5)
+        XCTAssertEqual(errors.count, 1)
+        XCTAssertTrue(errors[0].localizedDescription.contains("persistent startup failure"))
         XCTAssertFalse(labels(in: dashboard.window?.contentView)
             .contains { $0.stringValue == "Starting Hub…" })
-        XCTAssertTrue(dashboard.connectButton.isEnabled)
-        XCTAssertTrue(dashboard.importButton.isEnabled)
-    }
-
-    func testExpiredServiceCommandFailureCannotCancelNewTransition() throws {
-        let status = """
-        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
-        """
-        let runner = RecordingCommandRunner(result: .success(status))
-        let service = PendingServiceRunner(loadState: .unloaded)
-        let controller = HubController(installedCommandRunner: runner,
-                                       serviceRunner: service,
-                                       serviceInstalledOverride: true)
-        let loaded = expectation(description: "stopped dashboard loaded")
-        let firstTimeout = expectation(description: "first transition expired")
-        var errors: [Error] = []
-        let dashboard = MainWindowController(
-            controller: controller,
-            serviceTransitionTimeout: 0.08,
-            serviceTransitionPollInterval: 0.01,
-            errorPresenter: { error in
-                errors.append(error)
-                if errors.count == 1 { firstTimeout.fulfill() }
-            },
-            onInitialRefresh: { _ in loaded.fulfill() }
-        )
-        wait(for: [loaded], timeout: 1)
-
-        try XCTUnwrap(buttons(in: dashboard.window?.contentView)
-            .first { $0.title == "Start Hub" }).performClick(nil)
-        wait(for: [firstTimeout], timeout: 0.5)
-        try XCTUnwrap(buttons(in: dashboard.window?.contentView)
-            .first { $0.title == "Start Hub" }).performClick(nil)
-
-        service.complete(at: 0, .failure(HubActionError.commandFailed("expired failure")))
-        let checked = expectation(description: "late failure ignored")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-            XCTAssertTrue(self.labels(in: dashboard.window?.contentView)
-                .contains { $0.stringValue == "Starting Hub…" })
-            XCTAssertFalse(dashboard.connectButton.isEnabled)
-            XCTAssertEqual(errors.count, 1)
-            checked.fulfill()
-        }
-        wait(for: [checked], timeout: 0.2)
-    }
-
-    func testExpiredServiceCommandSuccessCannotSettleNewTransition() throws {
-        let status = """
-        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
-        """
-        let runner = RecordingCommandRunner(result: .success(status))
-        let service = PendingServiceRunner(loadState: .unloaded)
-        let controller = HubController(installedCommandRunner: runner,
-                                       serviceRunner: service,
-                                       serviceInstalledOverride: true)
-        let loaded = expectation(description: "stopped dashboard loaded")
-        let firstTimeout = expectation(description: "first transition expired")
-        var errorCount = 0
-        let dashboard = MainWindowController(
-            controller: controller,
-            serviceTransitionTimeout: 0.08,
-            serviceTransitionPollInterval: 0.01,
-            errorPresenter: { _ in
-                errorCount += 1
-                if errorCount == 1 { firstTimeout.fulfill() }
-            },
-            onInitialRefresh: { _ in loaded.fulfill() }
-        )
-        wait(for: [loaded], timeout: 1)
-
-        try XCTUnwrap(buttons(in: dashboard.window?.contentView)
-            .first { $0.title == "Start Hub" }).performClick(nil)
-        wait(for: [firstTimeout], timeout: 0.5)
-        try XCTUnwrap(buttons(in: dashboard.window?.contentView)
-            .first { $0.title == "Start Hub" }).performClick(nil)
-
-        service.loadState = .loaded
-        service.complete(at: 0, .success(""))
-        let checked = expectation(description: "late success ignored")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
-            XCTAssertTrue(self.labels(in: dashboard.window?.contentView)
-                .contains { $0.stringValue == "Starting Hub…" })
-            XCTAssertFalse(dashboard.connectButton.isEnabled)
-            XCTAssertEqual(errorCount, 1)
-            checked.fulfill()
-        }
-        wait(for: [checked], timeout: 0.2)
+        XCTAssertEqual(service.arguments, [["service", "start"]])
     }
 
     func testNewestRefreshOwnsSnapshotWhenStatusResponsesCompleteOutOfOrder() {
@@ -3146,6 +3081,7 @@ private final class RecordingCommandRunner: HubCommandRunning {
 
 private final class PendingServiceRunner: HubServiceControlling {
     var loadState: HubServiceLoadState
+    private(set) var arguments: [[String]] = []
     private var completions: [(Result<String, Error>) -> Void] = []
     private var pendingResults: [Result<String, Error>] = []
 
@@ -3154,6 +3090,7 @@ private final class PendingServiceRunner: HubServiceControlling {
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        self.arguments.append(arguments)
         if pendingResults.isEmpty {
             completions.append(completion)
         } else {

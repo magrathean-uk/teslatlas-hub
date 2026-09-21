@@ -429,6 +429,78 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         XCTAssertTrue(cleanupRequested)
     }
 
+    func testPersistentStartupFailurePastDeadlineUnloadsBeforeCompletion() throws {
+        let fixture = try makeFixture(createConfig: true, mode: .standalone)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(
+            environment: fixture.environment
+        ))
+        let service = "gui/\(getuid())/\(configuration.serviceLabel)"
+        var now: TimeInterval = 100
+        var launchPlanCompleted = false
+        var cleanupRequested = false
+        var completionObservedCleanup = false
+        var statusTimeouts: [TimeInterval] = []
+        let controller = DevelopmentLaunchctlServiceController(
+            configuration: configuration,
+            processRunner: { executable, arguments, timeout, completion in
+                if executable == configuration.binary, arguments.contains("serve-preflight") {
+                    completion(.success(#"{"status":"ready","mode":"standalone"}"#))
+                } else if executable == configuration.binary {
+                    statusTimeouts.append(timeout)
+                    now += 61
+                    completion(.success(#"{"status":"ok","ready":false}"#))
+                } else if arguments == ["print", service], !launchPlanCompleted {
+                    completion(.failure(HubActionError.commandExited(
+                        113,
+                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                    )))
+                } else if arguments.first == "bootstrap" {
+                    launchPlanCompleted = true
+                    completion(.success(""))
+                } else if arguments == ["bootout", service] {
+                    cleanupRequested = true
+                    completion(.success(""))
+                } else if arguments == ["print", service], cleanupRequested {
+                    completion(.failure(HubActionError.commandExited(
+                        113,
+                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                    )))
+                } else if arguments == ["print", service] {
+                    completion(.success(self.runningLaunchctlOutput(
+                        configuration: configuration,
+                        pid: 4104
+                    )))
+                } else {
+                    completion(.success(""))
+                }
+            },
+            readinessPollInterval: 0.5,
+            readinessMaxAttempts: 121,
+            readinessTimeout: 60,
+            readinessSchedule: { _, action in action() },
+            readinessClock: { now }
+        )
+        let rejected = expectation(description: "deadline failure completes after unload")
+
+        controller.run(arguments: ["service", "start"]) { result in
+            completionObservedCleanup = cleanupRequested
+            guard case let .failure(error) = result else {
+                XCTFail("persistent failure past the deadline reported success")
+                rejected.fulfill()
+                return
+            }
+            XCTAssertTrue(error.localizedDescription.contains("ready"))
+            rejected.fulfill()
+        }
+
+        wait(for: [rejected], timeout: 1)
+        XCTAssertEqual(statusTimeouts, [30])
+        XCTAssertTrue(cleanupRequested)
+        XCTAssertTrue(completionObservedCleanup,
+                      "the app-facing completion must not unlock until bootout has finished")
+    }
+
     func testStartRejectsCompetingHealthyListenerWhenOwnedProcessIsNotRunning() throws {
         let fixture = try makeFixture(createConfig: true, mode: .standalone)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
