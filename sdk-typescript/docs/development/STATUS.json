@@ -1,274 +1,31 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "product": "TypeScript SDK",
-  "updated_at": "2026-09-20T19:31:53.516065+00:00",
-  "update_scope": "Owner-requested post-completion review and repair planning only; no code/runtime changes or publication",
-  "programme": "2026-09-19-full-hub-ecosystem-completion",
+  "updated_at": "2026-09-21T21:34:00Z",
+  "update_scope": "MF-2 and MF-3 current-Mac acceptance closure",
   "state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-  "source_objective_state": "BOUNDED_PRIOR_RESULTS_RETAINED_REVIEW_FOLLOWUP_PENDING",
-  "current_gate_ids": [
-    "MR-2",
-    "MR-3"
-  ],
-  "completion_gate_ids": [
-    "MR-2",
-    "MR-3"
-  ],
-  "accepted_receipts_immutable": true,
-  "full_solution_state": "NOT_ACCEPTED",
-  "accepted_gate_ids": [
-    "G3",
-    "G4",
-    "MAC-3",
-    "MAC-5"
-  ],
-  "planning_state": "DRAFT_NOT_SENT",
-  "objective": "TypeScript \u2014 make sync acceptance decisive; close assigned MR-0\u2013MR-3 work on current Mac only.",
-  "source": {
-    "head": "3e9b8aa6bc4b93b87df8b0c1f9a905dc11e3e235",
-    "branch": "main",
-    "dirty_entries_at_goal_activation": 2,
-    "tracked_dirty_entries_at_goal_activation": 0,
-    "tracked_dirty_entries_at_check": 0,
-    "reviewed_ts_02_source_commit": "3cc72520c6d857b20e10129be039965f4ca1f4ab",
-    "accepted_runtime_source_head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
-    "checked_at": "2026-09-20T00:43:52Z",
-    "record_scope": "Historical accepted source/publication fields, retained unchanged; use current_source_observation for current reviewed worktree."
-  },
-  "current_worker": null,
-  "model_policy": {
-    "coordinator": "gpt-5.6-sol/high",
-    "implementation_default": "gpt-5.6-sol/medium",
-    "integration_and_review": "gpt-5.6-sol/high",
-    "exploration": "gpt-5.6-luna/medium",
-    "mechanical_extraction": "gpt-5.6-luna/low",
-    "escalation": "xhigh/max only for demonstrated difficulty or explicit request",
-    "fast_mode": false,
-    "authority": "AGENTS.md"
-  },
-  "evidence_summary": "Packed Node 26.7.0 claimed this 21444 Hub; schema 2.2-only live gate fail-closes 406/503; signed schema 2.1 manifest+pack verified. Strict-NSS Firefox CORS reads passed. Packed Node post-restart reread used the rotated credential after Swift kickstart.",
-  "evidence_paths": [
-    "docs/development/macos-browser-supervisor-orchestration-source-package-2026-09-12-r1.json",
-    "docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json",
-    "../hub/docs/development/active-macos-typescript-browser-orchestration-source-review-2026-09-18-r3.json",
-    "../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json",
-    "docs/development/f3-f6-node-tls-package-foundation-2026-09-19-r1.json",
-    "docs/development/f3-f6-platform-package-lifecycle-foundation-2026-09-19-r1.json",
-    "docs/development/f3-f6-candidate-package-2026-09-19-r1.json",
-    "docs/development/f3-f6-candidate-package-admission-2026-09-19-r1.json",
-    "docs/development/f6-catalog-source-admission-2026-09-20-r1.json",
-    "docs/development/f6-native-linux-arm64-docker-package-2026-09-20-r1.json"
-  ],
-  "mac5_synthetic_handoff": {
-    "state": "INDEPENDENTLY_ACCEPTED_SYNTHETIC_HANDOFF",
-    "authoritative_private_cross_consumer_receipt_sha256": "f6d4e7fe2bf0eb34127883fb65095b50b50d69b410184dc8a8c70807d33cfda3",
-    "superseded_retained_r1_receipt_sha256": "36bfdeccbf953a251d0309bb17e954da42d458226b8bfa753e3f8d26bb0cccc5",
-    "canonical_semantic_sha256": "20b164b499673ba207136dcb0107d8c8d74170029721125442914b99f3ae173a",
-    "node_firefox_swift_equality": "EXACT",
-    "home_assistant_binding": "HONEST_SUPPORTED_SUBSET",
-    "swift_pairing_lifecycle": "FRESH_CREATE_AND_REVOKE_RETURNED_ACTIVE_DEVICE_COUNT_3",
-    "final_binary_recovery_receipt_sha256": "c5831538536f48f82e6ef69d9772307365166bc2e93dda2c1ba83ac0fb007fa6",
-    "operator_guide": "INDEPENDENTLY_ACCEPTED_EXACT",
-    "acceptance_limit": "Synthetic comparison, recovery and handoff only; this slice did not accept MAC-5 until the later real-data acceptance recorded in mac5_real_acceptance."
-  },
-  "mac5_real_acceptance": {
-    "state": "ACCEPTED_CURRENT_MAC_READ_ONLY_REAL_DATA",
-    "owner_only_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/macos-realdata-20260920/mac5-real-acceptance.private.json",
-    "owner_only_receipt_sha256": "a98bebe3aa828ceed3bde30b381690133b6019f44552d75d7a71b3b150e699db",
-    "source_dump_sha256": "ff78fefa7396fe2aac356cda702d7a2b55b70cdc112b94cd43ab13762f12cb09",
-    "source_dump_bytes": 787728,
-    "source_rows": "cars=1 drives=4 positions=5278 states=4 charging=0",
-    "source_safety": "TESLAMATE_PAUSED_READ_ONLY_NEVER_WRITTEN_HEALTHY_WITHIN_15_SECONDS; TEMP_DATABASE_ROLE_AND_TUNNELS_REMOVED",
-    "final_hub_binary_sha256": "4749ad918414664d2a55f8bf7c07c23b2cae39ea1789a68e5034b47d752c603e",
-    "canonical_semantic_sha256": "621d88a12417871a8b28d33933083b4e1a7376a4b7e9049d9381bdcc699ba8c8",
-    "canonical_semantic_bytes": 3429,
-    "consumer_result": "NODE_FIREFOX_SWIFT_RESTORED_NODE_EXACT; VEHICLES=4; DRIVE_COUNTS=[4,0,0,0]; BOUNDARY=[3,1]",
-    "firefox_trust": "STRICT_DISPOSABLE_NSS_NO_KEYCHAIN",
-    "home_assistant_result": "2026.8.3; 52 enabled entities; primary offline plus 12 unknown; Container restart pass; exact 7-entry/3-device/17-entity removal baseline",
-    "recovery": "BACKUP_VERIFY_RESTORE_EXACT_SEMANTIC_DIGEST_AFTER_FRESH_PAIRING; TEMPORARY_RECOVERY_SECRETS_REMOVED",
-    "runtime_cleanup": "REAL_TEST_RUNTIME_STOPPED; RETAINED_SYNTHETIC_21444_ACTIVE",
-    "independent_review": "ACCEPT_NO_P1_P2_P3",
-    "acceptance_limit": "Current Apple-silicon Mac source-run product only; full-solution and cross-platform acceptance remain open."
-  },
-  "remaining": [
-    "Packed Node 26.7.0 claimed this 21444 Hub (1 vehicle, 0 drives, 304, rotation). Strict-NSS Firefox CORS reads passed with ignoreHTTPSErrors false and pairing fail-closed.",
-    "Schema 2.2-only live gate fail-closes 406/503 on this Edge catalogue; signed schema 2.1 manifest+pack verified. Unit 406/503/signature tests remain the schema-22 negatives.",
-    "Independent review of the MR-3 closeout is still required."
-  ],
+  "macos_working_product_state": "MACOS_WORKING_PRODUCT_ACCEPTED",
+  "planning_state": "COMPLETED",
+  "full_solution_state": "NOT_ACCEPTED_DEFERRED_BACKLOG",
+  "objective": "Publish exact repaired schema 2.2 sync source and prove non-empty history",
   "current_goal": null,
-  "historical_status": {
-    "path": "docs/development/archive/2026-09-18-reset/teslatlas-sdk-typescript/docs/development/STATUS.json",
-    "sha256": "383ea716d70f20cafe43d32c107433546f26622088fc08f8c5f98b8fe0a4061a",
-    "note": "Exact pre-reset STATUS with detailed receipt keys, historical goals and assertions; not live execution authority."
-  },
-  "legacy_task": {
-    "thread_id": "01a082b7-890b-70b3-8a0e-9e964636849f",
-    "state": "ARCHIVED",
-    "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
-    "native_goal_state": "historical_not_mutated_by_archival"
-  },
-  "runtime_state": {
-    "state": "NOT_RETESTED_BY_REVIEW",
-    "shared_hub": "Documented21444 LaunchAgent/listener absent at review; final prior transcript showed running at15:48:09Z; ownership/restart reconciliation pending."
-  },
-  "acceptance_limits": [
-    "Overall current-Mac acceptance is reopened for the specific post-completion findings; historical accepted slices remain bounded evidence.",
-    "The owner-authorized read-only real-data import/consumer/recovery observation remains accepted within its exact receipt; it proves neither live Tesla collection nor production or broader full-solution acceptance.",
-    "Packaging/distribution, additional platforms and older OS floors remain deferred; app/Viewer and paused architectures remain excluded.",
-    "No new remote data access, closed credentials, Keychain/Touch ID, signing or public ingress is authorized by this review.",
-    "Browser Fetch cannot enforce raw invitation certificate pinning; claim still requires a caller pin-capable transport."
-  ],
-  "reassessment_previous_planning": {
-    "state": "G3_G4_ACCEPTED",
-    "planning_state": "FULL_PRODUCT_ACTIVE_F3_F6_NATIVE_DOCKER_ACCEPTED_PREDECESSOR_AND_FINAL_RUNTIME_GAPS_OPEN",
-    "current_gate_ids": [
-      "F3",
-      "F6"
-    ],
-    "completion_gate_ids": [
-      "F0",
-      "F3",
-      "F5",
-      "F6",
-      "F7"
-    ],
-    "remaining": [
-      "F0 TS-02 SDK-owned source/test boundary is independently accepted at 3cc72520c6d857b20e10129be039965f4ca1f4ab; coordinator-owned root-ledger closeout remains separate metadata work.",
-      "F3 runtime: prove the newly admitted packed Node pin path and real-browser Web PKI/CORS/read/rotation path against the exact final F1 Hub.",
-      "F3 floors: establish evidence-backed Node, npm, browser and active operating-system floors; current machine-readable floors remain null rather than invented or silently reduced.",
-      "F5: consume mandatory fresh real-input semantic evidence.",
-      "F6 predecessor: supply an exact older reachable npm archive, frozen source export and independent accepted predecessor receipt/catalog cohort, then run install/update/rollback/removal; same-candidate reinstall is insufficient.",
-      "F6 catalog/lifecycle: the exact accepted 070906b5...e23d7 archive, 546b517f...39d2b receipt source and catalog's 284-file b6c12d42...7052b Hub bootstrap view pass source admission and native Linux ARM64 Docker package execution; exact predecessor lifecycle and final Hub retention remain pending.",
-      "F7: supply the exact final F1 Hub artifact handoff and run the fresh external Node plus real-browser combined installed journey and cleanup."
-    ],
-    "next_goal_draft": {
-      "id": "FULL_TYPESCRIPT_SDK_F0_F7",
-      "state": "ACTIVE_F3_F6",
-      "objective": "Complete all documented SDK contracts and support claims, then prove reproducible package lifecycle and final installed Node/browser consumers.",
-      "acceptance_evidence": [
-        "F0 claim ledger and exact Protocol/generated binding",
-        "F3 clean external Node and real-browser full-surface receipts",
-        "F5 real-input field/unit/null/history semantic receipt",
-        "F6 deterministic archive, docs, update/removal and Hub-catalog receipt",
-        "F7 combined installed consumer and cleanup receipt"
-      ],
-      "execution_authorized": true
-    }
-  },
-  "macos_working_product_state": "MACOS_REPAIR_RUNTIME_RETAINED_MR3_HANDOFF_PENDING",
-  "immediate_objective": "TypeScript \u2014 make sync acceptance decisive",
-  "next_ready_action": "Close MR-3 handoff after independent review: source-only commit/push of repair files; live consumer pairing remains app-owned while Serve holds the lifetime lock.",
-  "workspace_observation": {
-    "checked_at": "2026-09-20T16:07:22.852911+00:00",
-    "head": "983e8c4bbdca6158204a21d936cb4324be8621b3",
+  "current_worker": null,
+  "current_gate_ids": [],
+  "open_findings": [],
+  "source": {
+    "head": "3644ad8c0a7bf10c01e524c050026ead898d47e5",
+    "tree": "21c08bdcb598a45172135a4cfc53f7e1ecdbfb22",
     "branch": "main",
-    "dirty": true,
-    "source_snapshot": "docs/development/archive/2026-09-20-post-completion-review/review-source-snapshot.json",
-    "scope": "Current review identity only; does not retroactively bind earlier runtime receipts. No source commit or push performed by this review."
+    "remote_ref": "refs/heads/main",
+    "remote_head_at_source_publication": "3644ad8c0a7bf10c01e524c050026ead898d47e5",
+    "remote_verification": "the exact accepted source commit was published before this metadata-only successor"
   },
-  "last_recorded_runtime_state": "Corrected current-source Node, exact signed-sync and real Firefox profile-local-NSS journeys pass against the current native Hub. The disposable browser profile is absent after cleanup, receipts are owner-only, and no macOS Keychain, signing or certificate-error bypass was invoked. Final independent review found no implementation finding.",
-  "previous_mac_completion_record": {
-    "recorded_state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-    "original_goal": {
-      "id": "MACOS_FIRST_WORKING_PRODUCT",
-      "state": "COMPLETED_ACCEPTED",
-      "prompt": "../../../docs/development/archive/2026-09-20-post-completion-review/docs/development/GOAL_PROMPT.md",
-      "milestones": [
-        "MAC-3",
-        "MAC-5"
-      ],
-      "execution_authorized": true,
-      "note": "MAC-3 and MAC-5 are accepted for the current Mac source-run product; the full solution and cross-platform programme remain unaccepted.",
-      "review_disposition": "Historical native goal completed; aggregate acceptance subsequently reopened."
-    },
-    "original_gate_ids": [
-      "MAC-3",
-      "MAC-5"
-    ],
-    "original_evidence_summary": [
-      "Current MAC-3 source/package verification under pinned Node 26.7.0/npm 11.19.0 passed lint, typecheck, Protocol lock, build, 320 unit tests, 25 conformance tests, 52 Protocol cases, Node example, 88-file pack inspection and deterministic clean/stale package consumers at pack SHA-256 e22565d60e7af181ffefb3788f92520340ae9c8dd99b726edaadb732fb45371a. This is not a live Hub/browser acceptance receipt. The all-tree format command remains blocked by seven preserved pre-existing JSON formatting differences, including immutable receipts.",
-      "The exact reviewed 81-member @teslatlas/sdk@2026.36.2 archive passed a fresh Node v26.7.0 consumer against the final Mac Hub cohort: claim/replay, both vehicles, 2/2/1 drives, 304/cursor and credential rotation.",
-      "Chrome 153.0.8010.52 passed the real reviewed orchestration route with untrusted rejection, user-domain scoped trust and effective SSL verification, normal TLS, seven CORS preflights, discovery/readiness/current/drives/304/cursor/rotation and exact cleanup.",
-      "The runner CDP-target and trust-hook payload defects were repaired with focused tests; the corrections are outside the packed archive, whose hash remains unchanged.",
-      "Final Hub and task-owned Chrome processes, listeners, profiles, credentials, certificates and private runtimes are absent.",
-      "G3 final admission binds the G4 evidence to product 2026.36.2 and hub-http-v1@1.0.0 b80d940e...d926 using the accepted content-bound G2/G4 Hub fingerprint; the scoped checker and focused Protocol lock/readback pass under r2 receipt SHA-256 5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865.",
-      "TS-02 source/test boundary is independently accepted at published commit 3cc72520c6d857b20e10129be039965f4ca1f4ab: Node validates normal TLS plus the invitation DER leaf SHA-256 before claim bytes, missing or malformed pins fail before network I/O, ordinary TLS failures remain bounded transport_error values, and browser claim fails closed without a pin-capable caller transport.",
-      "Independent GPT-5.6 Sol/high review returned ACCEPT with no P1/P2 for the exact four-file TS-02 patch after exact Node 26.7.0/npm 11.19.0 build, typecheck and Protocol lock passed; three focused unit files passed 55 tests and pack:check verified 88 files. The initial ambient Node 26.8.2 Protocol rejection was a correct devEngines refusal and is not acceptance evidence.",
-      "The exact Node 26.7.0/npm 11.19.0 package gate produced a deterministic 83-member unpublished archive SHA-256 42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7; clean install/import/reinstall/removal passed.",
-      "Independent review found and the source now closes a process-wide TLS-disable bypass, binds browser example credentials to endpoint plus Hub UUID, and safely rejects null-body or out-of-range native claim statuses. The updated Chrome cross-Hub regression is added but not run while the shared heavy lane is occupied.",
-      "The independently accepted platform foundation pins the official Node OCI index sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32 and records Linux ARM64/v8 child sha256:2b028cd57303b2761d24173789c85a013558d6cf20e78f51723385f368b6e34d from a fresh registry readback.",
-      "The first independent Sol/high review rejected the candidate with two P1 and three P2 findings; the same reviewer accepted all five source/test closures with no remaining P1/P2 findings.",
-      "Candidate and predecessor admission now require separate immutable independently accepted receipts binding deterministic frozen-source manifests, exact commits, archive hashes/member counts, versions and toolchains; the historical 42348d...91f7 archive is explicitly rejected as the changed candidate.",
-      "The strict Hub-owned schema-1 catalog validator requires exact Protocol, TypeScript SDK, Swift SDK, Home Assistant and Edge identities, while the final target separately validates exact Hub source/artifact identity; empty placeholders, extra fields and mismatches fail closed.",
-      "Strict duplicate-key JSON and bounded tar admission reject duplicate members, links, special entries, unsafe paths and unsafe modes before npm or Docker; Docker cleanup always attempts image and context cleanup and aggregates failures.",
-      "The accepted reviewer reported three non-semantic Ajv strictTypes warnings in catalog allOf refinements; each now declares type object, the Ajv 2020 strict:true regression compiles both schemas with zero warnings, and the same reviewer accepted the metadata/schema delta with no findings.",
-      "Focused static/type checks and 23 non-pack unit tests pass without Docker, browser, Hub, VM or package installation. One existing npm pack --dry-run test was invoked during validation but exact devEngines rejected local Node 26.8.2 before packing; no replacement archive or dry-run report was produced.",
-      "The exact 56a07dd clean export produced the same 88-member unpublished archive twice under Node 26.7.0/npm 11.19.0: SHA-256 070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7, 283749 bytes. Its 285-file source manifest is 546b517f6ce86556252e7fbcde19bee320d7e30017e3bd4d8ad075220b939d2b.",
-      "Fresh external Node and browser imports plus removal passed against the exact candidate. The package-cleanliness harness now copies the packaged tools directory and reproduces the exact candidate hash for clean and stale builds.",
-      "Independent GPT-5.6 Sol/high review accepted the exact candidate source/toolchain/archive/receipt/cleanup/claim-integrity slice with no P1/P2 findings. This is candidate-only admission and does not satisfy predecessor, catalog, Docker, browser-floor, final-Hub, F3, F5, F6 or F7 acceptance.",
-      "The source-only F6 input candidate preserves the independently accepted 285-file receipt identity 546b517f...39d2b while reproducing Hub's fully bounded 284-file bootstrap identity b6c12d42...7052b from the same stable no-follow file reads. The exact 070906b5 package, e9625cc8 receipt and 96ada184 five-companion catalog admit together without Docker. Independent Sol/high review accepted the source slice after closing three P2 contract/stability/ledger findings; source commit 21b7d316 was pushed and read back exactly.",
-      "The exact admitted package/source/catalog tuple then passed the native Debian Linux ARM64 Docker lane with Node 26.7.0/npm 11.19.0 in the pinned official image. The runner now forces BuildKit rather than silently accepting the legacy builder; independent Sol/high review accepted the runtime slice with no P1/P2 findings. The task-owned gate tag, contexts, staging root, guest and shared lock were cleaned up; implementation commit 3e9b8aa6 was pushed and read back exactly."
-    ],
-    "original_runtime_state": "MAC-3 current-source runtime evidence now passes with exact Node 26.7.0/npm 11.19.0 and the 88-file packed SDK SHA-256 e22565d60e7af181ffefb3788f92520340ae9c8dd99b726edaadb732fb45371a. A fresh external Node consumer claims and rotates credentials, reads two vehicles and five drives over 2/2/1 pages, proves 304/cursor and typed invalid-limit behavior, and uses default fetch. Signed schema-2.2 manifest, accepted 200 no-op and pack bytes verify exactly. Real Playwright Firefox 153 uses a disposable profile-local NSS SQL trust database, enterprise roots disabled and ignoreHTTPSErrors false; CORS/default-fetch reads pass while browser pairing fails locally before network because no pin-capable transport is available. The profile is removed. No Keychain or TLS bypass is used.",
-    "archive": "docs/development/archive/2026-09-20-post-completion-review/teslatlas-sdk-typescript/docs/development/STATUS.json",
-    "scope": "Historical completion declaration, now qualified by the independent review; native goal state was not changed."
-  },
-  "completed_goal": {
-    "id": "MACOS_FIRST_WORKING_PRODUCT",
-    "state": "COMPLETED_ACCEPTED",
-    "prompt": "../../../docs/development/archive/2026-09-20-post-completion-review/docs/development/GOAL_PROMPT.md",
-    "milestones": [
-      "MAC-3",
-      "MAC-5"
-    ],
-    "execution_authorized": true,
-    "note": "MAC-3 and MAC-5 are accepted for the current Mac source-run product; the full solution and cross-platform programme remain unaccepted.",
-    "review_disposition": "Historical native goal completed; aggregate acceptance subsequently reopened."
-  },
-  "next_goal_draft": {
-    "id": "MACOS_POST_COMPLETION_REPAIR",
-    "state": "DRAFT_NOT_SENT",
-    "model": "gpt-5.6-sol",
-    "reasoning_effort": "high",
-    "prompt": "../../../docs/development/GOAL_PROMPT.md",
-    "milestones": [
-      "MR-2",
-      "MR-3"
-    ],
-    "execution_started": false
-  },
-  "historical_acceptance_limits": [
-    "No App integration acceptance",
-    "No real-data parity or production acceptance",
-    "Current macOS 27.0 Apple silicon was exercised; the documented macOS 13 minimum floor was not independently run",
-    "Ordinary browser Fetch cannot enforce the invitation raw leaf pin; browser claim fails closed unless a caller supplies a pin-capable transport",
-    "TS-02 focused coverage is synthetic and package-local; it does not prove the unpublished archive against the final F1 Hub or a real browser pairing bridge",
-    "The historical 83-member archive remains immutable prior evidence. The exact 56a07dd follow-on is independently admitted as unpublished 88-member candidate 070906b5...e23d7 and passed the native Linux ARM64 package-only Docker lane, but it has not run against the final F1 Hub or a real browser floor",
-    "No exact predecessor package was supplied, so no update or rollback claim is made; final Hub catalog retention remains pending",
-    "Viewer excluded; x86/Intel paused"
-  ],
-  "historical_remaining": [
-    "The wider F3/F5/F6/F7 package reproducibility, predecessor lifecycle, platform-floor, catalog/distribution and production-admission work remains deferred backlog."
-  ],
-  "current_source_observation": {
-    "checked_at": "2026-09-20T16:07:22.852911+00:00",
-    "head": "983e8c4bbdca6158204a21d936cb4324be8621b3",
-    "branch": "main",
-    "dirty": true,
-    "source_snapshot": "docs/development/archive/2026-09-20-post-completion-review/review-source-snapshot.json",
-    "scope": "Current review identity only; does not retroactively bind earlier runtime receipts. No source commit or push performed by this review."
-  },
-  "post_completion_review": {
-    "state": "REPAIR_DIRECTIVE_DRAFTED",
-    "report": "docs/development/POST_COMPLETION_REVIEW.md",
-    "findings": [
-      "MR-F5",
-      "MR-F7"
-    ],
-    "retained_evidence": "Packed Node and strict-NSS Firefox data/signature observations are retained. The no-op verification command has a false-positive path and needs repair before overall acceptance.",
-    "runtime_retested": false,
-    "native_goal_modified": false
-  },
-  "historical_full_programme_objective": "Complete every documented TypeScript SDK Node/browser contract, support claim, reproducible package lifecycle, mandatory real-input semantics and final installed consumer journey.",
-  "historical_source_objective_state": "PACKED_NODE_BROWSER_AND_BINDING_ACCEPTED"
+  "evidence_summary": "The exact packed SDK consumed signed schema 2.2 non-empty history, survived Hub restart, retained empty-vehicle pagination and produced semantic snapshot SHA-256 786808affcf1ba6b29537842ef7441c260a63bbfe6f05eeaae559b3b79c7d4b6, equal to Swift.",
+  "coordinated_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/mf-final-20260921-r1/evidence/coordinated-runtime-receipt.json",
+  "coordinated_receipt_sha256": "ebb97c9642893441b65228878c52d1b372f1fa1d55e08fcbd5b6ce04d4f7c405",
+  "remaining": ["Registry publication and broader platform acceptance remain deferred; this result uses the exact local packed source candidate."],
+  "review": "docs/development/GROK_COMPLETION_REVIEW.md",
+  "accepted_receipts_immutable": true,
+  "historical_status_archive": "docs/development/archive/2026-09-21-grok-completion-review/teslatlas-sdk-typescript/docs/development/STATUS.json",
+  "publication_this_review": "ACCEPTED_SOURCE_AND_RECONCILED_METADATA_PUBLISHED"
 }
