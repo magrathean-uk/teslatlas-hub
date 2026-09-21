@@ -742,7 +742,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
         guard let data = output.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               object["status"] as? String == "ok",
-              object["ready"] is Bool else { return false }
+              object["ready"] as? Bool == true else { return false }
         return true
     }
 

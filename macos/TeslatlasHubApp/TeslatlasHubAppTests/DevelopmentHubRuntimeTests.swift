@@ -315,7 +315,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
                 if executable == configuration.binary && arguments.contains("serve-preflight") {
                     completion(.success(#"{"status":"ready","mode":"standalone"}"#))
                 } else if executable == configuration.binary {
-                    completion(.success(#"{"status":"ok","ready":false}"#))
+                    completion(.success(#"{"status":"ok","ready":true}"#))
                 } else if arguments == ["print", service] {
                     if launchPlanCompleted {
                         completion(.success(self.runningLaunchctlOutput(
@@ -362,6 +362,61 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
             ["--config", configuration.config.path, "status"]
         ])
         XCTAssertTrue(FileManager.default.fileExists(atPath: configuration.plist.path))
+    }
+
+    func testStartFailsWhenIntendedProcessNeverBecomesReady() throws {
+        let fixture = try makeFixture(createConfig: true, mode: .standalone)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(
+            environment: fixture.environment
+        ))
+        let service = "gui/\(getuid())/\(configuration.serviceLabel)"
+        var launchPlanCompleted = false
+        var statusChecks = 0
+        let controller = DevelopmentLaunchctlServiceController(
+            configuration: configuration,
+            processRunner: { executable, arguments, _, completion in
+                if executable == configuration.binary, arguments.contains("serve-preflight") {
+                    completion(.success(#"{"status":"ready","mode":"standalone"}"#))
+                } else if executable == configuration.binary {
+                    statusChecks += 1
+                    completion(.success(#"{"status":"ok","ready":false,"readinessReason":"catalogue_unavailable"}"#))
+                } else if arguments == ["print", service], !launchPlanCompleted {
+                    completion(.failure(HubActionError.commandExited(
+                        113,
+                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                    )))
+                } else if arguments.first == "bootstrap" {
+                    launchPlanCompleted = true
+                    completion(.success(""))
+                } else if arguments == ["print", service] {
+                    completion(.success(self.runningLaunchctlOutput(
+                        configuration: configuration,
+                        pid: 4103
+                    )))
+                } else {
+                    completion(.success(""))
+                }
+            },
+            readinessPollInterval: 0,
+            readinessMaxAttempts: 3,
+            readinessSchedule: { _, action in action() }
+        )
+        let rejected = expectation(description: "persistent unready status rejected")
+
+        controller.run(arguments: ["service", "start"]) { result in
+            guard case let .failure(error) = result else {
+                XCTFail("persistent ready:false status reported success")
+                rejected.fulfill()
+                return
+            }
+            XCTAssertTrue(error.localizedDescription.contains("invalid status response"))
+            XCTAssertTrue(error.localizedDescription.contains(#""ready":false"#))
+            rejected.fulfill()
+        }
+
+        wait(for: [rejected], timeout: 1)
+        XCTAssertEqual(statusChecks, 3)
     }
 
     func testStartRejectsCompetingHealthyListenerWhenOwnedProcessIsNotRunning() throws {
