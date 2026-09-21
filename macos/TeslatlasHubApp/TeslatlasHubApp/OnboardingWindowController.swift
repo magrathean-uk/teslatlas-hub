@@ -22,79 +22,12 @@ private enum HubOnboardingOperation {
     case setup
 }
 
-private final class HubOnboardingChromeView: NSView {
+private final class HubOnboardingChromeView: NSVisualEffectView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        wantsLayer = true
-        updateLayer()
-    }
-
-    override func updateLayer() {
-        layer?.backgroundColor = HubPalette.chrome.cgColor
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateLayer()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-}
-
-private final class HubOnboardingHairlineView: NSView {
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        updateLayer()
-    }
-
-    override func updateLayer() {
-        layer?.backgroundColor = HubPalette.hairline.cgColor
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateLayer()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-}
-
-private final class HubOnboardingProgressMarkView: NSView {
-    enum State {
-        case complete
-        case active
-        case future
-    }
-
-    private let state: State
-
-    init(state: State) {
-        self.state = state
-        super.init(frame: .zero)
-        identifier = NSUserInterfaceItemIdentifier("onboarding.progress-mark")
-        wantsLayer = true
-        layer?.cornerRadius = 3.5
-        layer?.cornerCurve = .continuous
-        updateLayer()
-    }
-
-    override func updateLayer() {
-        switch state {
-        case .complete:
-            layer?.backgroundColor = HubPalette.accent.withAlphaComponent(0.6).cgColor
-        case .active:
-            layer?.backgroundColor = HubPalette.accent.cgColor
-        case .future:
-            layer?.backgroundColor = HubPalette.border.cgColor
-        }
-    }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        updateLayer()
+        material = .headerView
+        blendingMode = .withinWindow
+        state = .active
     }
 
     @available(*, unavailable)
@@ -171,6 +104,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     let dismissalPolicy: HubOnboardingDismissalPolicy
     private let onDismiss: () -> Void
     private let onComplete: (HubOnboardingCompletion) -> Void
+    private let closesWindowOnCancel: Bool
     private var didNotifyDismiss = false
     private var state: HubOnboardingState
     private var busy = false
@@ -194,7 +128,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var continueWidthConstraint: NSLayoutConstraint?
     private var continueHeightConstraint: NSLayoutConstraint?
     private var backWidthConstraint: NSLayoutConstraint?
-    private let footerStatus = NSTextField(labelWithString: "Select an option to continue")
     private var footerLogsButton: NSButton?
 
     private let fleetClientID = NSTextField(string: "")
@@ -241,6 +174,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
          initialRoute: HubOnboardingRoute? = nil,
          previewRoute: String? = nil,
          dismissalPolicy: HubOnboardingDismissalPolicy = .accountManagement,
+         closesWindowOnCancel: Bool = true,
          onDismiss: @escaping () -> Void = {},
          presentFilePanel: @escaping (NSOpenPanel, NSWindow, @escaping (URL?) -> Void) -> Void = { panel, window, completion in
              panel.beginSheetModal(for: window) { response in
@@ -252,6 +186,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         self.controller = controller
         self.previewRoute = effectivePreviewRoute
         self.dismissalPolicy = dismissalPolicy
+        self.closesWindowOnCancel = closesWindowOnCancel
         self.onDismiss = onDismiss
         self.onComplete = onComplete
         self.presentFilePanel = presentFilePanel
@@ -286,7 +221,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             resumeMessage = nil
         }
         let window = HubOnboardingSheetStyle.makeWindow(
-            contentSize: HubMetrics.onboardingSheetSize,
+            contentSize: HubMetrics.windowSize,
             dismissible: dismissalPolicy == .accountManagement
         )
         window.center()
@@ -305,6 +240,15 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 summary: "This account cannot access Docker.",
                 suggestions: ["Check the server account and Docker access, then try again."],
                 recoveryActions: [.openLogs])
+        } else if effectivePreviewRoute == "importing" {
+            busy = true
+            busyMessage = "Importing data…"
+            migrationProgress.isIndeterminate = false
+            migrationProgress.minValue = 0
+            migrationProgress.maxValue = 1
+            migrationProgress.doubleValue = 0.62
+        } else if effectivePreviewRoute == "verify-loading" {
+            busy = true
         } else if effectivePreviewRoute == "verify" {
             checks = HubController.previewOnboardingChecks
             verificationFinished = true
@@ -330,7 +274,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case "legacy": return HubOnboardingState(route: .legacy, provider: .legacy)
         case "migration", "migration-error": return HubOnboardingState(route: .migration, path: .migration)
         case "migration-connected": return HubOnboardingState(route: .migration, path: .migration)
-        case "verify": return HubOnboardingState(route: .verify)
+        case "importing": return HubOnboardingState(route: .migration, path: .migration)
+        case "verify", "verify-loading": return HubOnboardingState(route: .verify)
         case "finish": return HubOnboardingState(route: .finish)
         case "finish-migration": return HubOnboardingState(route: .finish, path: .migration)
         default: return nil
@@ -404,7 +349,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private func configureContainer(in window: NSWindow) {
         let header = HubOnboardingChromeView()
         header.identifier = NSUserInterfaceItemIdentifier("onboarding.header")
-        let headerLine = HubOnboardingHairlineView()
+        let headerLine = NSBox()
+        headerLine.boxType = .separator
         headerLine.translatesAutoresizingMaskIntoConstraints = false
         header.addSubview(headerLine)
         headerContentHost.translatesAutoresizingMaskIntoConstraints = false
@@ -412,23 +358,24 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
         let footer = HubOnboardingChromeView()
         footer.identifier = NSUserInterfaceItemIdentifier("onboarding.footer")
-        let footerLine = HubOnboardingHairlineView()
+        let footerLine = NSBox()
+        footerLine.boxType = .separator
         footerLine.translatesAutoresizingMaskIntoConstraints = false
         footer.addSubview(footerLine)
 
         NSLayoutConstraint.activate([
-            headerContentHost.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 28),
-            headerContentHost.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -28),
+            headerContentHost.centerXAnchor.constraint(equalTo: header.centerXAnchor),
+            headerContentHost.leadingAnchor.constraint(greaterThanOrEqualTo: header.leadingAnchor, constant: 28),
+            headerContentHost.trailingAnchor.constraint(lessThanOrEqualTo: header.trailingAnchor, constant: -28),
+            headerContentHost.widthAnchor.constraint(equalToConstant: HubMetrics.onboardingContentWidth),
             headerContentHost.topAnchor.constraint(equalTo: header.topAnchor),
             headerContentHost.bottomAnchor.constraint(equalTo: header.bottomAnchor),
             headerLine.leadingAnchor.constraint(equalTo: header.leadingAnchor),
             headerLine.trailingAnchor.constraint(equalTo: header.trailingAnchor),
             headerLine.bottomAnchor.constraint(equalTo: header.bottomAnchor),
-            headerLine.heightAnchor.constraint(equalToConstant: 1),
             footerLine.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
             footerLine.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
             footerLine.topAnchor.constraint(equalTo: footer.topAnchor),
-            footerLine.heightAnchor.constraint(equalToConstant: 1)
         ])
 
         onboardingContainer = HubOnboardingContainerView(headerView: header, footerView: footer)
@@ -459,13 +406,20 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationServer.delegate = self
         migrationUser.delegate = self
         migrationPort.delegate = self
+        fleetClientID.delegate = self
+        fleetAccessToken.delegate = self
+        fleetRefreshToken.delegate = self
+        fleetExpiry.delegate = self
         for field in [fleetClientID, fleetAccessToken, fleetRefreshToken, fleetExpiry,
                       legacyAccessToken, legacyRefreshToken,
                       migrationServer, migrationUser, migrationPort,
                       migrationIdentityFile, migrationSSHPassword] {
             field.controlSize = .regular
             field.font = HubTypography.body
+            field.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
         }
+        fleetRegion.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
+        migrationAuthentication.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
         fleetAccessToken.placeholderString = "Access token"
         fleetRefreshToken.placeholderString = "Refresh token"
         fleetClientID.placeholderString = "Tesla application client ID"
@@ -482,13 +436,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         renderedStep = state.step
         diagnosticView = nil
         let operation = focusedOperation
-        if window.isVisible && HubMotion.enabled {
-            var frame = window.frame
-            let desired = window.frameRect(forContentRect: NSRect(origin: .zero, size: currentSheetSize)).size
-            frame.origin.y += frame.height - desired.height
-            frame.size = desired
-            window.setFrame(frame, display: true, animate: true)
-        } else {
+        if previousStep == nil || !window.isVisible {
             window.setContentSize(currentSheetSize)
         }
         let previousField = (window.firstResponder as? NSTextView)?.delegate as? NSView
@@ -499,7 +447,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let stepLabel = NSTextField(labelWithString: "Step \(state.step) of 5")
         stepLabel.font = HubTypography.label
         stepLabel.textColor = HubPalette.mutedForeground
-        let headerContent = NSStackView(views: [stepLabel, spacer(), progressView()])
+        stepLabel.setAccessibilityLabel("Setup progress")
+        stepLabel.setAccessibilityValue("Step \(state.step) of 5")
+        let headerContent = NSStackView(views: [backButton, spacer(), stepLabel, progressView()])
+        headerContent.spacing = 16
         headerContent.alignment = .centerY
         headerContent.translatesAutoresizingMaskIntoConstraints = false
         headerContentHost.addSubview(headerContent)
@@ -513,27 +464,17 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         if let operation {
             content = operationBody(operation)
         } else {
-            let title = NSTextField(labelWithString: pageTitle)
-            title.font = HubTypography.heading
-            title.textColor = HubPalette.foreground
-            title.alignment = .left
-            let subtitle = NSTextField(wrappingLabelWithString: pageSubtitle)
-            subtitle.font = HubTypography.body
-            subtitle.textColor = HubPalette.mutedForeground
-            subtitle.alignment = .left
-            subtitle.maximumNumberOfLines = 2
+            let pageHeader = onboardingPageHeader()
             let body = pageBody()
-            let page = NSStackView(views: [title, subtitle, body])
+            let page = NSStackView(views: [pageHeader, body])
             page.identifier = NSUserInterfaceItemIdentifier(
                 state.route == .welcome ? "onboarding.welcome.body" : "onboarding.body"
             )
             page.orientation = .vertical
             page.alignment = .leading
-            page.spacing = 0
-            page.setCustomSpacing(4, after: title)
-            page.setCustomSpacing(state.route == .welcome ? 18 : 16, after: subtitle)
+            page.spacing = 24
             NSLayoutConstraint.activate([
-                subtitle.widthAnchor.constraint(equalTo: page.widthAnchor),
+                pageHeader.widthAnchor.constraint(equalTo: page.widthAnchor),
                 body.widthAnchor.constraint(equalTo: page.widthAnchor)
             ])
             content = page
@@ -558,26 +499,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
     }
 
-    private var currentSheetSize: NSSize {
-        let height: CGFloat
-        if let operation = focusedOperation {
-            switch operation {
-            case .setup: height = 220
-            case .importing: height = 235
-            }
-        } else {
-            switch state.route {
-            case .welcome: height = 282
-            case .choose, .provider: height = 349
-            case .fleet: height = 455
-            case .legacy: height = 390
-            case .migration: height = isPreviewConnectedMigration || migrationSession != nil ? 271 : (migrationDiagnostic == nil ? 455 : 520)
-            case .verify: height = 498
-            case .finish: height = 280
-            }
-        }
-        return NSSize(width: 485, height: height)
-    }
+    private var currentSheetSize: NSSize { HubMetrics.windowSize }
 
     private var focusedOperation: HubOnboardingOperation? {
         if busyMessage == "Importing data…" { return .importing }
@@ -611,7 +533,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     private var pageTitle: String {
         switch state.route {
-        case .welcome: return "Teslatlas Hub"
+        case .welcome: return "Welcome to Teslatlas Hub"
         case .choose: return "How would you like to start?"
         case .provider: return "Choose how Hub connects"
         case .fleet: return "Set up Fleet Telemetry"
@@ -645,6 +567,54 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
     }
 
+    private var pageSymbol: String {
+        switch state.route {
+        case .welcome: return "checkmark.shield"
+        case .choose: return "arrow.triangle.branch"
+        case .provider, .fleet: return "antenna.radiowaves.left.and.right"
+        case .legacy: return "key"
+        case .migration: return "square.and.arrow.down"
+        case .verify: return "stethoscope"
+        case .finish: return "checkmark.circle"
+        }
+    }
+
+    private func onboardingPageHeader() -> NSView {
+        let tile = HubIconTileView(symbol: pageSymbol, accessibilityDescription: pageTitle,
+                                   size: 48, symbolSize: 24, weight: .medium,
+                                   fill: .elevated,
+                                   tint: state.route == .welcome ? HubPalette.success : .labelColor,
+                                   radius: 12)
+        let title = NSTextField(labelWithString: pageTitle)
+        title.font = HubTypography.heading
+        title.textColor = HubPalette.foreground
+        title.alignment = .left
+        let subtitle = NSTextField(wrappingLabelWithString: pageSubtitle)
+        subtitle.font = .systemFont(ofSize: 14)
+        subtitle.textColor = HubPalette.mutedForeground
+        subtitle.alignment = .left
+        subtitle.maximumNumberOfLines = 2
+        let copy = NSStackView(views: [title, subtitle])
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 2
+        if [.welcome, .choose, .provider, .finish].contains(state.route) {
+            title.alignment = .center
+            subtitle.alignment = .center
+            copy.alignment = .centerX
+            let column = NSStackView(views: [tile, copy])
+            column.orientation = .vertical
+            column.alignment = .centerX
+            column.spacing = 12
+            copy.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+            return column
+        }
+        let row = NSStackView(views: [tile, copy])
+        row.spacing = 16
+        row.alignment = .centerY
+        return row
+    }
+
     private func pageBody() -> NSView {
         switch state.route {
         case .welcome: return welcomeBody()
@@ -659,48 +629,63 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func welcomeBody() -> NSView {
-        let rows = NSStackView(views: [
-            welcomeFeatureRow("Written in Rust for a small, fast, single binary"),
-            welcomeFeatureRow("No Docker required — runs as a native service"),
-            welcomeFeatureRow("First-class on macOS and Debian Linux"),
-            welcomeFeatureRow("Stores vehicle data in a local SQLite database")
+        let card = HubCardView()
+        let rows = [
+            onboardingFeatureRow(symbol: "car.side", title: "Connect your Tesla",
+                                 subtitle: "Collect vehicle data in the background."),
+            onboardingFeatureRow(symbol: "cylinder", title: "Keep your history here",
+                                 subtitle: "Store data locally on this Mac."),
+            onboardingFeatureRow(symbol: "square.and.arrow.down", title: "Bring your existing history",
+                                 subtitle: "Import from TeslaMate when you are ready.")
+        ]
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.spacing = 0
+        for (index, row) in rows.enumerated() {
+            if index > 0 { stack.addArrangedSubview(separator()) }
+            stack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: card.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: card.bottomAnchor)
         ])
-        rows.orientation = .vertical
-        rows.alignment = .leading
-        rows.spacing = 9
-        return rows
+        return card
     }
 
-    private func welcomeFeatureRow(_ title: String) -> NSView {
-        let image = NSImageView(image: symbolImage("checkmark.circle", description: title))
-        image.identifier = NSUserInterfaceItemIdentifier("onboarding.welcome.feature-icon")
-        image.image = image.image?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
-        )
-        image.contentTintColor = HubPalette.success
-        image.translatesAutoresizingMaskIntoConstraints = false
-        image.widthAnchor.constraint(equalToConstant: 16).isActive = true
-        image.heightAnchor.constraint(equalToConstant: 16).isActive = true
+    private func onboardingFeatureRow(symbol: String, title: String, subtitle: String) -> NSView {
+        let tile = HubIconTileView(symbol: symbol, accessibilityDescription: title)
+        tile.imageView.identifier = NSUserInterfaceItemIdentifier("onboarding.welcome.feature-icon")
         let label = NSTextField(labelWithString: title)
-        label.font = HubTypography.body
+        label.font = .systemFont(ofSize: 14, weight: .medium)
         label.textColor = HubPalette.foreground
-        let row = NSStackView(views: [image, label])
-        row.spacing = 9
+        let detail = NSTextField(labelWithString: subtitle)
+        detail.font = .systemFont(ofSize: 12)
+        detail.textColor = .secondaryLabelColor
+        let copy = NSStackView(views: [label, detail])
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 1
+        let row = NSStackView(views: [tile, copy, spacer()])
+        row.edgeInsets = NSEdgeInsets(top: 10, left: HubMetrics.rowHorizontalInset,
+                                     bottom: 10, right: HubMetrics.rowHorizontalInset)
+        row.spacing = 12
         row.alignment = .centerY
+        row.heightAnchor.constraint(equalToConstant: HubMetrics.rowHeight).isActive = true
         return row
     }
 
     private func chooseBody() -> NSView {
         let fresh = choiceButton(title: "New installation",
-                                 subtitle: "Connect a Tesla account and start collecting data with a clean database.",
-                                 symbol: "sparkles",
-                                 accentColor: HubPalette.accent,
+                                 subtitle: "Start with a fresh database.",
                                  selected: state.path == .newInstallation,
                                  action: #selector(selectNewInstallation))
         let migration = choiceButton(title: "Migrate from TeslaMate",
-                                     subtitle: "Import your existing vehicle history from a TeslaMate server over SSH.",
-                                     symbol: "cylinder",
-                                     accentColor: HubPalette.accent,
+                                     subtitle: "Bring your existing vehicle history.",
                                      selected: state.path == .migration,
                                      action: #selector(selectMigration))
         return verticalChoices([fresh, migration])
@@ -709,14 +694,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private func providerBody() -> NSView {
         let fleet = choiceButton(title: "Fleet Telemetry",
                                  subtitle: "Tesla's official streaming API. Enables live vehicle commands.",
-                                 symbol: "checkmark.shield",
-                                 accentColor: HubPalette.accent,
                                  selected: state.provider == .fleet,
                                  action: #selector(selectFleet))
         let legacy = choiceButton(title: "Legacy Token",
                                   subtitle: "Use an owner-API access and refresh token pair.",
-                                  symbol: "key",
-                                  accentColor: HubPalette.accent,
                                   selected: state.provider == .legacy,
                                   action: #selector(selectLegacy))
         return verticalChoices([fleet, legacy])
@@ -725,17 +706,25 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private func fleetBody() -> NSView {
         let guide = HubActionButton(title: "Create Tesla Fleet App", target: self, action: #selector(openFleetGuide))
         configureFlatButton(guide, symbol: "book")
-        let fields = NSStackView(views: [
-            guide,
-            verticalField("Region", fleetRegion),
-            verticalField("Client ID", fleetClientID),
-            verticalField("Access token", fleetAccessToken),
-            verticalField("Refresh token", fleetRefreshToken),
-            verticalField("Expires in (seconds)", fleetExpiry)
+        fleetExpiry.widthAnchor.constraint(equalToConstant: 120).isActive = true
+        let seconds = NSTextField(labelWithString: "seconds")
+        seconds.font = HubTypography.body
+        seconds.textColor = HubPalette.mutedForeground
+        let expiryControl = NSStackView(views: [fleetExpiry, seconds, spacer()])
+        expiryControl.alignment = .centerY
+        expiryControl.spacing = 12
+        let form = onboardingForm([
+            ("Region", fleetRegion),
+            ("Client ID", fleetClientID),
+            ("Access token", fleetAccessToken),
+            ("Refresh token", fleetRefreshToken),
+            ("Expires in", expiryControl)
         ])
+        let note = featureRow("Credentials are encrypted on this Mac", "lock.fill")
+        let fields = NSStackView(views: [guide, form, note])
         fields.orientation = .vertical
         fields.alignment = .leading
-        fields.spacing = 7
+        fields.spacing = 16
         for field in fields.arrangedSubviews.dropFirst() {
             field.widthAnchor.constraint(equalTo: fields.widthAnchor).isActive = true
         }
@@ -748,13 +737,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let or = NSTextField(labelWithString: "or use an existing token pair")
         or.textColor = .secondaryLabelColor
         or.alignment = .center
-        let stack = NSStackView(views: [
-            signIn,
-            or,
-            verticalField("Access token", legacyAccessToken),
-            verticalField("Refresh token", legacyRefreshToken),
-            featureRow("Tokens are encrypted on this Mac", "lock.fill")
+        let form = onboardingForm([
+            ("Access token", legacyAccessToken),
+            ("Refresh token", legacyRefreshToken)
         ])
+        let stack = NSStackView(views: [signIn, or, form,
+                                       featureRow("Tokens are encrypted on this Mac", "lock.fill")])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 14
@@ -774,20 +762,19 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         if let migrationSession {
             return connectedMigrationBody(migrationSession)
         }
-        let server = verticalField("Server", migrationServer, width: nil)
-        let port = verticalField("Port", migrationPort, width: 72)
-        let serverPort = NSStackView(views: [server, port])
+        migrationPort.widthAnchor.constraint(equalToConstant: 72).isActive = true
+        let portLabel = NSTextField(labelWithString: "Port")
+        portLabel.font = HubTypography.label
+        portLabel.textColor = HubPalette.mutedForeground
+        let serverPort = NSStackView(views: [migrationServer, portLabel, migrationPort])
         serverPort.spacing = 10
-        serverPort.alignment = .bottom
+        serverPort.alignment = .centerY
         serverPort.distribution = .fill
-        port.widthAnchor.constraint(equalToConstant: 72).isActive = true
-        server.widthAnchor.constraint(equalTo: serverPort.widthAnchor, constant: -82).isActive = true
-        server.setContentHuggingPriority(.defaultLow, for: .horizontal)
         migrationServer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        var views: [NSView] = [serverPort,
-                               verticalField("SSH user", migrationUser, width: nil),
-                               verticalField("Authentication", migrationAuthentication, width: nil)]
+        var fields: [(String, NSView)] = [("Server", serverPort),
+                                         ("SSH user", migrationUser),
+                                         ("Authentication", migrationAuthentication)]
         migrationKeyViews = [migrationServer, migrationUser, migrationPort, migrationAuthentication]
         if migrationAuthentication.indexOfSelectedItem == 0 {
             let choose = HubActionButton(title: "Choose Key…", target: self, action: #selector(chooseMigrationIdentity))
@@ -798,12 +785,13 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             keyRow.alignment = .centerY
             keyRow.spacing = 8
             migrationIdentityFile.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-            views.append(verticalField("SSH key", keyRow, width: nil))
+            fields.append(("SSH key", keyRow))
             migrationKeyViews.append(contentsOf: [migrationIdentityFile, choose])
         } else {
-            views.append(verticalField("Password", migrationSSHPassword, width: nil))
+            fields.append(("Password", migrationSSHPassword))
             migrationKeyViews.append(migrationSSHPassword)
         }
+        var views: [NSView] = [onboardingForm(fields)]
         views.append(wrappingCheckbox(
             migrationUseSudo,
             title: "This user needs sudo to read the TeslaMate database"
@@ -930,6 +918,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func migrationProgressBody() -> NSView {
+        migrationProgress.identifier = NSUserInterfaceItemIdentifier("onboarding.migration-progress")
         migrationProgress.style = .bar
         migrationProgress.isIndeterminate = false
         migrationProgress.controlSize = .regular
@@ -1164,20 +1153,18 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func progressView() -> NSView {
-        var views: [NSView] = []
-        for index in 1...5 {
-            let mark = HubOnboardingProgressMarkView(
-                state: index < state.step ? .complete : (index == state.step ? .active : .future)
-            )
-            mark.setAccessibilityLabel("Step \(index)")
-            mark.widthAnchor.constraint(equalToConstant: index == state.step ? 20 : 7).isActive = true
-            mark.heightAnchor.constraint(equalToConstant: 7).isActive = true
-            views.append(mark)
-        }
-        let stack = NSStackView(views: views)
-        stack.spacing = 7
-        stack.alignment = .centerY
-        return stack
+        let progress = NSProgressIndicator()
+        progress.identifier = NSUserInterfaceItemIdentifier("onboarding.progress")
+        progress.style = .bar
+        progress.controlSize = .small
+        progress.isIndeterminate = false
+        progress.minValue = 0
+        progress.maxValue = 5
+        progress.doubleValue = Double(state.step)
+        progress.widthAnchor.constraint(equalToConstant: 150).isActive = true
+        progress.setAccessibilityLabel("Setup progress")
+        progress.setAccessibilityValue("Step \(state.step) of 5")
+        return progress
     }
 
     private func footerView() -> NSView {
@@ -1191,42 +1178,49 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         backButton.target = self
         backButton.action = #selector(backPressed)
         configureFlatButton(backButton)
+        backButton.hubStyle = .neutral
         backButton.image = NSImage(systemSymbolName: "chevron.left", accessibilityDescription: "Back")
         backButton.imagePosition = .imageLeading
         backButton.controlSize = .regular
         backWidthConstraint?.isActive = false
-        backWidthConstraint = backButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 52)
+        backWidthConstraint = backButton.widthAnchor.constraint(equalToConstant: HubMetrics.actionMinimumWidth)
         backWidthConstraint?.isActive = true
         continueButton.target = self
         continueButton.action = #selector(continuePressed)
         configurePrimaryButton(continueButton)
         continueButton.controlSize = .regular
-        continueButton.hubFont = HubTypography.action
         continueWidthConstraint?.isActive = false
-        continueWidthConstraint = continueButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 76)
+        continueWidthConstraint = continueButton.widthAnchor.constraint(equalToConstant: 240)
         continueWidthConstraint?.isActive = true
         continueHeightConstraint?.isActive = false
-        continueHeightConstraint = continueButton.heightAnchor.constraint(equalToConstant: 24)
+        continueHeightConstraint = continueButton.heightAnchor.constraint(equalToConstant: HubMetrics.onboardingPrimaryHeight)
         continueHeightConstraint?.isActive = true
 
         footerSpinner.style = .spinning
         footerSpinner.controlSize = .small
         footerSpinner.isDisplayedWhenStopped = false
         footerSpinner.toolTip = "Hub setup is working"
-        footerStatus.font = HubTypography.label
-        footerStatus.textColor = HubPalette.mutedForeground
         let logs = HubActionButton(title: "View Logs", target: self, action: #selector(openLogs))
         configureFlatButton(logs)
         logs.controlSize = .regular
         footerLogsButton = logs
-        var footerViews: [NSView] = [cancelButton, backButton, spacer(), footerStatus, logs]
-        if focusedOperation == nil {
-            footerViews.append(footerSpinner)
+        let footer = NSView()
+        let leading = NSStackView(views: [cancelButton])
+        leading.spacing = 8
+        leading.alignment = .centerY
+        for view in [leading, continueButton, logs] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            footer.addSubview(view)
+            view.centerYAnchor.constraint(equalTo: footer.centerYAnchor).isActive = true
         }
-        footerViews.append(continueButton)
-        let footer = NSStackView(views: footerViews)
-        footer.spacing = 10
-        footer.alignment = .centerY
+        NSLayoutConstraint.activate([
+            footer.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight),
+            leading.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
+            continueButton.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
+            logs.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
+            leading.trailingAnchor.constraint(lessThanOrEqualTo: continueButton.leadingAnchor, constant: -8),
+            logs.leadingAnchor.constraint(greaterThanOrEqualTo: continueButton.trailingAnchor, constant: 8)
+        ])
         return footer
     }
 
@@ -1241,17 +1235,16 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             || (state.route == .verify && state.path == .newInstallation)
             || importing
         backButton.isEnabled = !blocked
-        footerStatus.isHidden = state.route != .choose && state.route != .provider
         footerLogsButton?.isHidden = state.route != .verify || !verificationFinished
         footerLogsButton?.isEnabled = !blocked
         continueButton.isHidden = importing
-            || state.route == .choose
-            || state.route == .provider
         // The focused operation body owns its status copy. Keep the footer's
         // control label stable so shared chrome does not repeat that status.
-        continueButton.title = busy && !focused ? (busyMessage ?? continueTitle) : continueTitle
+        continueButton.title = continueTitle
         continueButton.image = nil
         switch state.route {
+        case .fleet:
+            continueButton.isEnabled = fleetCredentialsValid && !blocked
         case .migration:
             if isPreviewConnectedMigration {
                 continueButton.isEnabled = migrationVersionAcknowledgement.state == .on && !blocked
@@ -1299,8 +1292,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             updatePrimaryAppearance(migrationConnectButton)
         }
         updatePrimaryAppearance(continueButton)
-        backWidthConstraint?.constant = max(52, ceil(backButton.intrinsicContentSize.width) + 12)
-        continueWidthConstraint?.constant = max(76, ceil(continueButton.intrinsicContentSize.width) + 20)
+        backWidthConstraint?.constant = HubMetrics.actionMinimumWidth
+        continueWidthConstraint?.constant = 240
         window?.defaultButtonCell = blocked || continueButton.isHidden || !continueButton.isEnabled
             ? nil
             : continueButton.cell as? NSButtonCell
@@ -1308,6 +1301,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     private var continueTitle: String {
         switch state.route {
+        case .welcome: return "Get Started"
         case .fleet: return "Set Up Fleet"
         case .legacy: return "Connect Tesla"
         case .migration:
@@ -1323,25 +1317,21 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     @objc private func selectNewInstallation() {
         state.path = .newInstallation
-        state.advance()
         render()
     }
 
     @objc private func selectMigration() {
         state.path = .migration
-        state.advance()
         render()
     }
 
     @objc private func selectFleet() {
         state.provider = .fleet
-        state.advance()
         render()
     }
 
     @objc private func selectLegacy() {
         state.provider = .legacy
-        state.advance()
         render()
     }
 
@@ -1358,6 +1348,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     @objc private func cancelPressed() {
         guard let window, windowShouldClose(window) else {
             authWindow?.window?.makeKeyAndOrderFront(nil)
+            return
+        }
+        if !closesWindowOnCancel {
+            resetMigrationProgress()
+            migrationSession?.close()
+            guard !didNotifyDismiss else { return }
+            didNotifyDismiss = true
+            onDismiss()
             return
         }
         close()
@@ -1691,6 +1689,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             && Int(migrationPort.stringValue).map { (1...65535).contains($0) } == true
     }
 
+    private var fleetCredentialsValid: Bool {
+        let clientID = fleetClientID.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !clientID.isEmpty
+            && !fleetAccessToken.stringValue.isEmpty
+            && !fleetRefreshToken.stringValue.isEmpty
+            && Int64(fleetExpiry.stringValue).map { $0 > 0 } == true
+    }
+
     private func runVerification() {
         checks = []
         verificationFinished = false
@@ -1743,15 +1749,20 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     @objc private func openLogs() {
-        if let logsWindow {
-            logsWindow.refresh()
-            logsWindow.showWindow(nil)
-            logsWindow.window?.makeKeyAndOrderFront(nil)
-            return
+        guard !interactionBlocked, let window else { return }
+        let logs = LogsWindowController(controller: controller, embedded: true)
+        logsWindow = logs
+        let page = logs.makeEmbeddedPage { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.contentView = self.onboardingContainer
+            self.logsWindow = nil
+            self.updateFooter()
+            window.recalculateKeyViewLoop()
+            HubMotion.transition(self.onboardingContainer, forward: false)
         }
-        logsWindow = LogsWindowController(controller: controller)
-        logsWindow?.showWindow(nil)
-        logsWindow?.window?.makeKeyAndOrderFront(nil)
+        window.contentView = page
+        window.defaultButtonCell = nil
+        HubMotion.transition(page, forward: true)
     }
 
     @objc private func chooseMigrationPassword() {
@@ -1796,10 +1807,13 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     func controlTextDidChange(_ notification: Notification) {
-        guard let field = notification.object as? NSTextField,
-              field === migrationServer || field === migrationUser || field === migrationPort else {
+        guard let field = notification.object as? NSTextField else { return }
+        if field === fleetClientID || field === fleetAccessToken
+            || field === fleetRefreshToken || field === fleetExpiry {
+            updateFooter()
             return
         }
+        guard field === migrationServer || field === migrationUser || field === migrationPort else { return }
         updateFooter()
     }
 
@@ -1863,7 +1877,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func updateWindowCloseAvailability() {
-        window?.standardWindowButton(.closeButton)?.isEnabled = !closeBlocked
+        window?.standardWindowButton(.closeButton)?.isEnabled = canCancel
     }
 
     private var interactionBlocked: Bool { busy || authWindow != nil }
@@ -1893,84 +1907,62 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private func verticalChoices(_ choices: [NSView]) -> NSView {
         let stack = NSStackView(views: choices)
         stack.orientation = .vertical
-        stack.spacing = 10
-        stack.distribution = .fill
+        stack.spacing = 8
         stack.alignment = .leading
         for choice in choices {
             choice.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-            choice.heightAnchor.constraint(equalToConstant: 77).isActive = true
         }
         return stack
     }
 
     private func choiceButton(title: String,
                               subtitle: String,
-                              symbol: String,
-                              accentColor: NSColor,
                               selected: Bool,
                               action: Selector) -> NSView {
         let card = HubCardView()
-
-        let icon = NSImageView(image: symbolImage(symbol, description: title))
-        icon.image = icon.image?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
-        )
-        icon.contentTintColor = accentColor
-        icon.imageScaling = .scaleProportionallyDown
-        let iconTile = NSView()
-        iconTile.wantsLayer = true
-        iconTile.layer?.backgroundColor = HubPalette.elevated.cgColor
-        iconTile.layer?.cornerRadius = 9
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        iconTile.addSubview(icon)
-        NSLayoutConstraint.activate([
-            iconTile.widthAnchor.constraint(equalToConstant: 35),
-            iconTile.heightAnchor.constraint(equalToConstant: 35),
-            icon.widthAnchor.constraint(equalToConstant: 16),
-            icon.heightAnchor.constraint(equalToConstant: 16),
-            icon.centerXAnchor.constraint(equalTo: iconTile.centerXAnchor),
-            icon.centerYAnchor.constraint(equalTo: iconTile.centerYAnchor)
-        ])
-
-        let heading = NSTextField(labelWithString: title)
-        heading.font = HubTypography.emphasis
-        heading.alignment = .left
+        card.isSelected = selected
+        let symbol: String
+        switch action {
+        case #selector(selectNewInstallation): symbol = "cylinder"
+        case #selector(selectMigration): symbol = "square.and.arrow.down"
+        case #selector(selectFleet): symbol = "antenna.radiowaves.left.and.right"
+        default: symbol = "key"
+        }
+        let icon = HubIconTileView(symbol: symbol, accessibilityDescription: nil)
+        let label = NSTextField(labelWithString: title)
+        label.font = HubTypography.emphasis
         let detail = NSTextField(wrappingLabelWithString: subtitle)
-        detail.font = HubTypography.body
-        detail.textColor = HubPalette.mutedForeground
-        detail.alignment = .left
+        detail.font = HubTypography.caption
+        detail.textColor = .secondaryLabelColor
         detail.maximumNumberOfLines = 2
-
-        let copy = NSStackView(views: [heading, detail])
+        let copy = NSStackView(views: [label, detail])
         copy.orientation = .vertical
         copy.alignment = .leading
         copy.spacing = 3
-        detail.widthAnchor.constraint(equalTo: copy.widthAnchor).isActive = true
-        let content = NSStackView(views: [iconTile, copy])
-        content.orientation = .horizontal
-        content.alignment = .centerY
-        content.spacing = 12
-        content.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(content)
-        copy.widthAnchor.constraint(equalTo: card.widthAnchor, constant: -75).isActive = true
-
-        let button = NSButton(title: title, target: self, action: action)
-        button.isBordered = false
-        button.isTransparent = true
-        button.toolTip = subtitle
-        button.setAccessibilityLabel(title)
-        button.setAccessibilityValue(selected ? "Selected" : "Not selected")
-        button.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(button)
-
+        let indicator = HubIconTileView(symbol: selected ? "largecircle.fill.circle" : "circle",
+                                        accessibilityDescription: nil, size: 18, symbolSize: 14,
+                                        tint: selected ? HubPalette.accent : .secondaryLabelColor)
+        let row = NSStackView(views: [icon, copy, spacer(), indicator])
+        row.alignment = .centerY
+        row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(row)
+        let radio = NSButton(radioButtonWithTitle: title, target: self, action: action)
+        radio.state = selected ? .on : .off
+        radio.isTransparent = true
+        radio.setAccessibilityHelp(subtitle)
+        radio.setAccessibilityValue(selected ? "Selected" : "Not selected")
+        radio.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(radio)
         NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            content.trailingAnchor.constraint(lessThanOrEqualTo: card.trailingAnchor, constant: -14),
-            content.centerYAnchor.constraint(equalTo: card.centerYAnchor),
-            button.leadingAnchor.constraint(equalTo: card.leadingAnchor),
-            button.trailingAnchor.constraint(equalTo: card.trailingAnchor),
-            button.topAnchor.constraint(equalTo: card.topAnchor),
-            button.bottomAnchor.constraint(equalTo: card.bottomAnchor)
+            card.heightAnchor.constraint(equalToConstant: 64),
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 16),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -16),
+            row.centerYAnchor.constraint(equalTo: card.centerYAnchor),
+            radio.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            radio.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            radio.topAnchor.constraint(equalTo: card.topAnchor),
+            radio.bottomAnchor.constraint(equalTo: card.bottomAnchor)
         ])
         return card
     }
@@ -2015,8 +2007,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             NSImage.SymbolConfiguration(pointSize: 24, weight: .medium)
         )
         image.contentTintColor = color
-        image.widthAnchor.constraint(equalToConstant: 30).isActive = true
-        image.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        image.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        image.heightAnchor.constraint(equalToConstant: 18).isActive = true
         let label = NSTextField(wrappingLabelWithString: title)
         label.font = HubTypography.body
         label.maximumNumberOfLines = 2
@@ -2048,12 +2040,50 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private func formRow(_ title: String, _ field: NSView) -> NSView {
         let label = NSTextField(labelWithString: title)
         label.font = HubTypography.body
-        label.widthAnchor.constraint(equalToConstant: 120).isActive = true
-        field.widthAnchor.constraint(greaterThanOrEqualToConstant: 348).isActive = true
+        label.textColor = HubPalette.foreground
+        label.widthAnchor.constraint(equalToConstant: HubMetrics.formLabelWidth).isActive = true
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.widthAnchor.constraint(equalToConstant:
+            HubMetrics.onboardingContentWidth
+                - (HubMetrics.rowHorizontalInset * 2)
+                - HubMetrics.formLabelWidth
+                - 16
+        ).isActive = true
         let row = NSStackView(views: [label, field])
-        row.spacing = 12
+        row.spacing = 16
         row.alignment = .centerY
+        row.distribution = .fill
+        row.edgeInsets = NSEdgeInsets(top: 10, left: HubMetrics.rowHorizontalInset,
+                                     bottom: 10, right: HubMetrics.rowHorizontalInset)
+        row.heightAnchor.constraint(equalToConstant: HubMetrics.rowHeight).isActive = true
         return row
+    }
+
+    private func onboardingForm(_ fields: [(String, NSView)]) -> NSView {
+        let card = HubCardView()
+        let rows = NSStackView()
+        rows.orientation = .vertical
+        rows.spacing = 0
+        rows.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(rows)
+        for (index, item) in fields.enumerated() {
+            if index > 0 {
+                let line = HubOnboardingHairlineView()
+                rows.addArrangedSubview(line)
+                line.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
+            }
+            let row = formRow(item.0, item.1)
+            rows.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
+        }
+        NSLayoutConstraint.activate([
+            rows.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            rows.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            rows.topAnchor.constraint(equalTo: card.topAnchor),
+            rows.bottomAnchor.constraint(equalTo: card.bottomAnchor)
+        ])
+        return card
     }
 
     private func fieldWithButton(_ field: NSTextField,

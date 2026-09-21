@@ -90,14 +90,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
+        let fileItem = NSMenuItem()
+        let fileMenu = NSMenu(title: "File")
+        fileItem.submenu = fileMenu
+        mainMenu.addItem(fileItem)
+        let importData = fileMenu.addItem(withTitle: "Import TeslaMate Data…",
+                                          action: #selector(importData(_:)),
+                                          keyEquivalent: "i")
+        importData.target = actionTarget
+
         let viewItem = NSMenuItem()
         let viewMenu = NSMenu(title: "View")
         viewItem.submenu = viewMenu
         mainMenu.addItem(viewItem)
-        let logs = viewMenu.addItem(withTitle: "Hub Logs",
+        let overview = viewMenu.addItem(withTitle: "Overview",
+                                        action: #selector(showOverview(_:)),
+                                        keyEquivalent: "1")
+        overview.target = actionTarget
+        let vehicles = viewMenu.addItem(withTitle: "Vehicles",
+                                        action: #selector(showVehicles(_:)),
+                                        keyEquivalent: "2")
+        vehicles.target = actionTarget
+        let activity = viewMenu.addItem(withTitle: "Activity",
+                                        action: #selector(showActivity(_:)),
+                                        keyEquivalent: "3")
+        activity.target = actionTarget
+        let settings = viewMenu.addItem(withTitle: "Settings",
+                                        action: #selector(showSettings(_:)),
+                                        keyEquivalent: "4")
+        settings.target = actionTarget
+        viewMenu.addItem(.separator())
+        let diagnostics = viewMenu.addItem(withTitle: "Diagnostics",
+                                           action: #selector(showDiagnostics(_:)),
+                                           keyEquivalent: "d")
+        diagnostics.keyEquivalentModifierMask = [.command, .shift]
+        diagnostics.target = actionTarget
+        let logs = viewMenu.addItem(withTitle: "Activity & Logs",
                                     action: #selector(showLogs(_:)),
                                     keyEquivalent: "l")
         logs.target = actionTarget
+        let service = viewMenu.addItem(withTitle: "Service Details",
+                                       action: #selector(showServiceDetails(_:)),
+                                       keyEquivalent: "i")
+        service.keyEquivalentModifierMask = [.command, .option]
+        service.target = actionTarget
 
         let windowItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
@@ -110,6 +146,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         close.target = actionTarget
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+
+        let helpItem = NSMenuItem()
+        let helpMenu = NSMenu(title: "Help")
+        helpItem.submenu = helpMenu
+        mainMenu.addItem(helpItem)
+        let help = helpMenu.addItem(withTitle: "Teslatlas Hub Help",
+                                    action: #selector(showHelp(_:)),
+                                    keyEquivalent: "?")
+        help.target = actionTarget
 
         return mainMenu
     }
@@ -124,6 +169,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(importData(_:)) {
+            return mainWindowController?.canImportTeslaMate == true
+        }
+        let navigationActions: [Selector] = [#selector(showOverview(_:)), #selector(showVehicles(_:)),
+            #selector(showActivity(_:)), #selector(showSettings(_:)), #selector(showDiagnostics(_:)),
+            #selector(showLogs(_:)), #selector(showServiceDetails(_:))]
+        if let action = menuItem.action, navigationActions.contains(action) {
+            return mainWindowController?.navigationAvailable == true
+        }
         guard menuItem.action == #selector(closeKeyWindow(_:)) else { return true }
         guard let window = keyWindow() else { return false }
         if let onboarding = window.windowController as? OnboardingWindowController {
@@ -200,10 +254,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc func showLogs(_ sender: Any?) {
-        guard let hubController else { return }
+        guard hubController != nil else { return }
         HubAppLog.shared.record("window.opened", category: "logs", fields: ["source": "keyboard_or_menu"])
         showDashboard()
-        _ = mainWindowController?.showLogs()
+        mainWindowController?.showEmbeddedLogs()
+    }
+
+    @objc func showOverview(_ sender: Any?) {
+        guard hubController != nil else { return }
+        showDashboard()
+        mainWindowController?.selectMainSection(.dashboard)
+    }
+
+    @objc func showVehicles(_ sender: Any?) {
+        guard hubController != nil else { return }
+        showDashboard()
+        mainWindowController?.selectMainSection(.vehicles)
+    }
+
+    @objc func showActivity(_ sender: Any?) {
+        guard hubController != nil else { return }
+        showDashboard()
+        mainWindowController?.selectMainSection(.activity)
+    }
+
+    @objc func showSettings(_ sender: Any?) {
+        guard hubController != nil else { return }
+        showDashboard()
+        mainWindowController?.selectMainSection(.settings)
+    }
+
+    @objc func showDiagnostics(_ sender: Any?) {
+        guard hubController != nil else { return }
+        showDashboard()
+        mainWindowController?.showEmbeddedDiagnostics()
+    }
+
+    @objc func showServiceDetails(_ sender: Any?) {
+        guard hubController != nil else { return }
+        showDashboard()
+        mainWindowController?.showEmbeddedServiceDetails()
+    }
+
+    @objc func importData(_ sender: Any?) {
+        guard hubController != nil else { return }
+        showDashboard()
+        mainWindowController?.showImport()
+    }
+
+    @objc func toggleSidebar(_ sender: Any?) {
+        guard hubController != nil else { return }
+        showDashboard()
+        mainWindowController?.toggleSidebar()
+    }
+
+    @objc func showHelp(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "Teslatlas Hub Help"
+        alert.informativeText = "Overview shows Hub health at a glance. Vehicles contains status and commands. Activity keeps recent events together, and Settings contains connections, diagnostics, imports and service details."
+        alert.addButton(withTitle: "OK")
+        HubUIPresentation.presentInformation(alert)
     }
 
     @objc func openCorrespondingSource(_ sender: Any?) {

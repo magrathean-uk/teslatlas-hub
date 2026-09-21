@@ -3,26 +3,32 @@
 import AppKit
 
 enum HubTypography {
-    static let heading = NSFont.systemFont(ofSize: 18, weight: .bold)
-    static let body = NSFont.systemFont(ofSize: 13)
+    static let heading = NSFont.systemFont(ofSize: 22, weight: .semibold)
+    static let body = NSFont.systemFont(ofSize: 14)
     static let label = NSFont.systemFont(ofSize: 12, weight: .medium)
     static let action = NSFont.systemFont(ofSize: 13, weight: .medium)
-    static let emphasis = NSFont.systemFont(ofSize: 13, weight: .semibold)
+    static let emphasis = NSFont.systemFont(ofSize: 14, weight: .medium)
+    static let caption = NSFont.systemFont(ofSize: 12)
 }
 
 enum HubMotion {
+    static var reduceMotion: Bool {
+        ProcessInfo.processInfo.environment["TESLATLAS_HUB_REDUCE_MOTION"] == "1"
+            || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
     static var enabled: Bool {
-        !HubUIPresentation.isSilentTestHost && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        !HubUIPresentation.isSilentTestHost
     }
 
     static func transition(_ view: NSView, forward: Bool? = nil) {
         guard enabled, view.window?.isVisible == true else { return }
         view.wantsLayer = true
+        let reduceMotion = self.reduceMotion
         let animation = CATransition()
-        animation.type = forward == nil ? .fade : .push
-        animation.subtype = forward == false ? .fromLeft : .fromRight
-        animation.duration = 0.18
-        animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        animation.type = reduceMotion || forward == nil ? .fade : .push
+        if !reduceMotion { animation.subtype = forward == false ? .fromLeft : .fromRight }
+        animation.duration = reduceMotion ? 0.10 : (forward == nil ? 0.16 : 0.22)
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
         view.layer?.add(animation, forKey: "hub.content-transition")
     }
 
@@ -31,31 +37,69 @@ enum HubMotion {
         let animation = CABasicAnimation(keyPath: "opacity")
         animation.fromValue = 0.55
         animation.toValue = 1
-        animation.duration = 0.15
+        animation.duration = 0.12
         animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
         view.layer?.add(animation, forKey: "hub.click")
+    }
+
+    /// Animate from the currently displayed value so rapid interactions never
+    /// queue effects or jump back to an earlier state.
+    static func color(_ layer: CALayer, to color: CGColor) {
+        let previous = layer.presentation()?.backgroundColor ?? layer.backgroundColor
+        guard previous != color else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.backgroundColor = color
+        CATransaction.commit()
+        guard enabled, let previous else { return }
+        let animation = CABasicAnimation(keyPath: "backgroundColor")
+        animation.fromValue = previous
+        animation.toValue = color
+        animation.duration = reduceMotion ? 0.08 : 0.14
+        animation.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(animation, forKey: "hub.color")
+    }
+
+    static func layout(_ view: NSView, changes: () -> Void) {
+        view.layoutSubtreeIfNeeded()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = enabled && view.window?.isVisible == true && !reduceMotion ? 0.22 : 0
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            context.allowsImplicitAnimation = true
+            changes()
+            view.layoutSubtreeIfNeeded()
+        }
     }
 }
 
 enum HubMetrics {
-    static let windowSize = NSSize(width: 900, height: 630)
-    static let referenceScale: CGFloat = 900.0 / 1040.0
+    static let windowSize = NSSize(width: 960, height: 730)
+    static let referenceScale: CGFloat = 1
     static let titlebarHeight: CGFloat = 38
     static let navigationHeight: CGFloat = 46
     static let cardRadius: CGFloat = 12
     static let controlRadius: CGFloat = 8
     static let sheetRadius: CGFloat = 14
-    static let onboardingSheetSize = NSSize(width: 485, height: 350)
-    static let welcomeSheetSize = NSSize(width: 485, height: 282)
-    static let diagnosticsSheetSize = NSSize(width: 485, height: 422)
-    static let logsSheetSize = NSSize(width: 640, height: 360)
-    static let serviceDetailsSheetSize = NSSize(width: 450, height: 410)
+    static let onboardingSheetSize = NSSize(width: 620, height: 350)
+    static let welcomeSheetSize = NSSize(width: 620, height: 282)
+    static let diagnosticsSheetSize = NSSize(width: 680, height: 520)
+    static let logsSheetSize = NSSize(width: 760, height: 500)
+    static let serviceDetailsSheetSize = NSSize(width: 580, height: 500)
     static let modalHeaderHeight: CGFloat = 38
     static let modalFooterHeight: CGFloat = 48
-    static let contentWidth: CGFloat = 588
-    static let pageInset: CGFloat = 21
-    static let sectionSpacing: CGFloat = 12
-    static let compactControlHeight: CGFloat = 28
+    static let contentWidth: CGFloat = 744
+    static let pageInset: CGFloat = 28
+    static let pageTopInset: CGFloat = 32
+    static let sectionSpacing: CGFloat = 16
+    static let compactControlHeight: CGFloat = 32
+    static let actionMinimumWidth: CGFloat = 96
+    static let rowHeight: CGFloat = 52
+    static let rowHorizontalInset: CGFloat = 16
+    static let rowIconWell: CGFloat = 24
+    static let rowSymbol: CGFloat = 18
+    static let onboardingContentWidth: CGFloat = 640
+    static let formLabelWidth: CGFloat = 144
+    static let onboardingPrimaryHeight: CGFloat = compactControlHeight
 }
 
 enum HubPalette {
@@ -142,9 +186,38 @@ enum HubButtonStyle: Equatable {
     case flatAccent
     case flatDanger
     case destructive
+    case navigationSelected
 }
 
 final class HubActionButton: NSButton {
+    private var hoverTrackingArea: NSTrackingArea?
+    private var hovered = false
+    private let feedbackLayer = CALayer()
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+        let area = NSTrackingArea(rect: .zero,
+                                 options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                                 owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) { hovered = true; updateFeedback() }
+    override func mouseExited(with event: NSEvent) { hovered = false; updateFeedback() }
+    override func highlight(_ flag: Bool) { super.highlight(flag); updateFeedback() }
+
+    private func updateFeedback() {
+        let opacity: CGFloat = !isEnabled ? 0 : (isHighlighted ? 0.12 : (hovered ? 0.06 : 0))
+        HubMotion.color(feedbackLayer, to: NSColor.labelColor.withAlphaComponent(opacity).cgColor)
+    }
+
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds, xRadius: HubMetrics.controlRadius,
+                     yRadius: HubMetrics.controlRadius).fill()
+    }
     override func sendAction(_ action: Selector?, to target: Any?) -> Bool {
         guard isEnabled else { return false }
         HubMotion.click(self)
@@ -174,6 +247,9 @@ final class HubActionButton: NSButton {
     private func installContent() {
         guard !installedContent else { return }
         installedContent = true
+        wantsLayer = true
+        feedbackLayer.cornerRadius = HubMetrics.controlRadius
+        layer?.addSublayer(feedbackLayer)
         hubImageView.imageScaling = .scaleProportionallyDown
         hubTitleLabel.alignment = .center
         hubTitleLabel.lineBreakMode = .byClipping
@@ -199,25 +275,24 @@ final class HubActionButton: NSButton {
     override func draw(_ dirtyRect: NSRect) {
         // The layer paints the surface; the two child views paint the contents.
         // Do not ask NSButtonCell to draw a second image/title pair.
-        if isHighlighted {
-            NSColor.labelColor.withAlphaComponent(0.07).setFill()
-            NSBezierPath(roundedRect: bounds, xRadius: HubMetrics.controlRadius,
-                         yRadius: HubMetrics.controlRadius).fill()
-        }
     }
 
     override func layout() {
         super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        feedbackLayer.frame = bounds
+        CATransaction.commit()
         let showsImage = image != nil && imagePosition != .noImage
         let showsTitle = !title.isEmpty && imagePosition != .imageOnly
         hubImageView.isHidden = !showsImage
         hubTitleLabel.isHidden = !showsTitle
         let textSize = (title as NSString).size(withAttributes: [.font: hubFont])
         let labelHeight = ceil(textSize.height)
-        // NSTextFieldCell reserves two points on each side of its text rect.
-        let labelWidth = showsImage
-            ? min(ceil(textSize.width) + 4, max(0, bounds.width - horizontalInset * 2))
-            : bounds.width
+        // Use the cell's measured width, including its native text insets.
+        let labelWidth = min(ceil(hubTitleLabel.cell?.cellSize.width ?? textSize.width),
+                             max(0, bounds.width - horizontalInset * 2
+                                 - (showsImage ? iconBoxSize + 6 : 0)))
         let icon = iconBoxSize
         if imagePosition == .imageAbove || imagePosition == .imageBelow {
             let groupHeight = icon + (showsTitle ? 4 + labelHeight : 0)
@@ -225,21 +300,28 @@ final class HubActionButton: NSButton {
             let imageFirst = imagePosition == .imageAbove
             let imageY = isFlipped == imageFirst ? bottom : bottom + (showsTitle ? labelHeight + 4 : 0)
             let titleY = isFlipped == imageFirst ? bottom + icon + 4 : bottom
-            hubTitleLabel.frame = NSRect(x: (bounds.width - labelWidth) / 2, y: titleY,
-                                        width: labelWidth, height: labelHeight)
-            hubImageView.frame = NSRect(x: (bounds.width - icon) / 2,
-                                       y: imageY,
-                                       width: icon, height: icon)
+            hubTitleLabel.frame = showsTitle
+                ? NSRect(x: (bounds.width - labelWidth) / 2, y: titleY,
+                         width: labelWidth, height: labelHeight)
+                : .zero
+            hubImageView.frame = showsImage
+                ? NSRect(x: (bounds.width - icon) / 2, y: imageY,
+                         width: icon, height: icon)
+                : .zero
         } else {
             let gap: CGFloat = showsImage && showsTitle ? 6 : 0
             let groupWidth = (showsImage ? icon : 0) + gap + (showsTitle ? labelWidth : 0)
             let left = (bounds.width - groupWidth) / 2
             let trailingImage = imagePosition == .imageTrailing || imagePosition == .imageRight
-            hubImageView.frame = NSRect(x: trailingImage ? left + labelWidth + gap : left,
-                                       y: (bounds.height - icon) / 2, width: icon, height: icon)
-            hubTitleLabel.frame = NSRect(x: left + (showsImage && !trailingImage ? icon + gap : 0),
-                                        y: (bounds.height - labelHeight) / 2,
-                                        width: labelWidth, height: labelHeight)
+            hubImageView.frame = showsImage
+                ? NSRect(x: trailingImage ? left + labelWidth + gap : left,
+                         y: (bounds.height - icon) / 2, width: icon, height: icon)
+                : .zero
+            hubTitleLabel.frame = showsTitle
+                ? NSRect(x: left + (showsImage && !trailingImage ? icon + gap : 0),
+                         y: (bounds.height - labelHeight) / 2,
+                         width: labelWidth, height: labelHeight)
+                : .zero
         }
     }
     var hubFont = NSFont.systemFont(ofSize: 13, weight: .medium) {
@@ -251,13 +333,19 @@ final class HubActionButton: NSButton {
 
     var hubStyle: HubButtonStyle = .neutral {
         didSet {
+            guard hubStyle != oldValue else { return }
+            let previousColor = layer?.presentation()?.backgroundColor ?? layer?.backgroundColor
             invalidateIntrinsicContentSize()
             updateHubAppearance()
+            if window?.isVisible == true, let layer, let previousColor, let color = layer.backgroundColor {
+                layer.backgroundColor = previousColor
+                HubMotion.color(layer, to: color)
+            }
         }
     }
 
     override var isEnabled: Bool {
-        didSet { updateHubAppearance() }
+        didSet { updateHubAppearance(); updateFeedback() }
     }
 
     override var title: String {
@@ -272,13 +360,16 @@ final class HubActionButton: NSButton {
     }
 
     override var intrinsicContentSize: NSSize {
-        let textWidth = imagePosition == .imageOnly ? 0 : ceil((title as NSString).size(withAttributes: [.font: hubFont]).width) + 4
+        let textWidth = imagePosition == .imageOnly ? 0 : ceil(hubTitleLabel.cell?.cellSize.width ?? (title as NSString).size(withAttributes: [.font: hubFont]).width)
         let hasIcon = image != nil && imagePosition != .noImage
-        if imagePosition == .imageOnly { return NSSize(width: 28, height: 28) }
+        if imagePosition == .imageOnly {
+            return NSSize(width: HubMetrics.compactControlHeight, height: HubMetrics.compactControlHeight)
+        }
         if imagePosition == .imageAbove || imagePosition == .imageBelow {
             return NSSize(width: max(textWidth, iconBoxSize) + horizontalInset * 2, height: 51)
         }
-        return NSSize(width: textWidth + (hasIcon ? iconBoxSize + 6 : 0) + horizontalInset * 2,
+        return NSSize(width: max(HubMetrics.actionMinimumWidth,
+                                textWidth + (hasIcon ? iconBoxSize + 6 : 0) + horizontalInset * 2),
                       height: HubMetrics.compactControlHeight)
     }
 
@@ -288,6 +379,12 @@ final class HubActionButton: NSButton {
     }
 
     func updateHubAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance { [self] in
+            updateResolvedHubAppearance()
+        }
+    }
+
+    private func updateResolvedHubAppearance() {
         guard installedContent else { return }
         wantsLayer = true
         isBordered = false
@@ -321,6 +418,9 @@ final class HubActionButton: NSButton {
         case .flatDanger:
             layer?.backgroundColor = NSColor.clear.cgColor
             foreground = isEnabled ? HubPalette.danger : .disabledControlTextColor
+        case .navigationSelected:
+            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.12).cgColor
+            foreground = isEnabled ? HubPalette.foreground : .disabledControlTextColor
         }
 
         contentTintColor = foreground
@@ -343,7 +443,47 @@ final class HubActionButton: NSButton {
     }
 }
 
+/// A single icon geometry for headers and grouped rows. Every SF Symbol gets
+/// an explicit square drawing area, so symbols with different intrinsic widths
+/// cannot move the text column or appear to hang outside their background.
+final class HubIconTileView: HubSurfaceView {
+    let imageView: NSImageView
+
+    init(symbol: String,
+         accessibilityDescription: String?,
+         size: CGFloat = HubMetrics.rowIconWell,
+         symbolSize: CGFloat = HubMetrics.rowSymbol,
+         weight: NSFont.Weight = .regular,
+         fill: HubSurfaceFill = .clear,
+         tint: NSColor = .labelColor,
+         radius: CGFloat = 9) {
+        imageView = NSImageView(image: NSImage(systemSymbolName: symbol,
+                                                accessibilityDescription: accessibilityDescription) ?? NSImage())
+        super.init(fill: fill)
+        wantsLayer = true
+        layer?.cornerRadius = radius
+        layer?.cornerCurve = .continuous
+        imageView.imageScaling = .scaleProportionallyDown
+        imageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: symbolSize, weight: weight)
+        imageView.contentTintColor = tint
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(imageView)
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(equalToConstant: size),
+            heightAnchor.constraint(equalToConstant: size),
+            imageView.widthAnchor.constraint(equalToConstant: symbolSize),
+            imageView.heightAnchor.constraint(equalToConstant: symbolSize),
+            imageView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            imageView.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
 enum HubSurfaceFill {
+    case clear
     case background
     case card
     case elevated
@@ -352,6 +492,7 @@ enum HubSurfaceFill {
 
     var color: NSColor {
         switch self {
+        case .clear: return .clear
         case .background: return HubPalette.background
         case .card: return HubPalette.card
         case .elevated: return HubPalette.elevated
@@ -374,7 +515,9 @@ class HubSurfaceView: NSView {
     }
 
     override func updateLayer() {
-        layer?.backgroundColor = fill.color.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance { [self] in
+            layer?.backgroundColor = fill.color.cgColor
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -393,6 +536,7 @@ final class HubFlippedSurfaceView: HubSurfaceView {
 }
 
 final class HubCardView: NSView {
+    var isSelected = false { didSet { updateLayer() } }
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
@@ -407,8 +551,40 @@ final class HubCardView: NSView {
     }
 
     override func updateLayer() {
-        layer?.backgroundColor = HubPalette.card.cgColor
-        layer?.borderColor = HubPalette.hairline.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance { [self] in
+            layer?.backgroundColor = HubPalette.card.cgColor
+            layer?.borderWidth = isSelected ? 1.5 : 0.5
+            layer?.borderColor = (isSelected ? HubPalette.accent : HubPalette.hairline).cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateLayer()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+final class HubOnboardingHairlineView: NSView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        translatesAutoresizingMaskIntoConstraints = false
+        setContentHuggingPriority(.required, for: .vertical)
+        setContentCompressionResistancePriority(.required, for: .vertical)
+        updateLayer()
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: 1)
+    }
+
+    override func updateLayer() {
+        effectiveAppearance.performAsCurrentDrawingAppearance { [self] in
+            layer?.backgroundColor = HubPalette.hairline.cgColor
+        }
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -436,8 +612,9 @@ enum HubStatusTone {
     }
 }
 
-final class HubStatusRowView: NSView {
+class HubStatusRowView: NSView {
     private let valueLabel = NSTextField(labelWithString: "")
+    private let detailLabel = NSTextField(labelWithString: "")
     private let statusDot = NSView()
 
     var value: String {
@@ -449,20 +626,35 @@ final class HubStatusRowView: NSView {
         didSet { updateStatusDot() }
     }
 
-    init(symbol: String, title: String) {
+    var detail: String {
+        get { detailLabel.stringValue }
+        set {
+            detailLabel.stringValue = newValue
+            detailLabel.isHidden = newValue.isEmpty
+        }
+    }
+
+    init(symbol: String, title: String, detail: String = "", showsChevron: Bool = false) {
         super.init(frame: .zero)
-        let icon = NSImageView(image: NSImage(systemSymbolName: symbol,
-                                              accessibilityDescription: nil) ?? NSImage())
+        self.detail = detail
+        let tile = HubIconTileView(symbol: symbol, accessibilityDescription: title)
         let titleLabel = NSTextField(labelWithString: title)
-        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-        icon.contentTintColor = HubPalette.mutedForeground
-        icon.widthAnchor.constraint(equalToConstant: 17).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 17).isActive = true
-        titleLabel.font = .systemFont(ofSize: 11.5, weight: .medium)
+        titleLabel.font = .systemFont(ofSize: 14, weight: .medium)
         titleLabel.textColor = HubPalette.foreground
-        valueLabel.font = .systemFont(ofSize: 11.5)
-        valueLabel.textColor = HubPalette.mutedForeground
+        detailLabel.font = .systemFont(ofSize: 12)
+        detailLabel.textColor = HubPalette.mutedForeground
+        detailLabel.lineBreakMode = .byTruncatingTail
+        detailLabel.isHidden = detail.isEmpty
+        let copy = NSStackView(views: [titleLabel, detailLabel])
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 2
+        valueLabel.font = .systemFont(ofSize: 13)
+        valueLabel.textColor = HubPalette.foreground
         valueLabel.lineBreakMode = .byTruncatingMiddle
+        valueLabel.alignment = .right
+        valueLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 300).isActive = true
+        valueLabel.setContentHuggingPriority(.required, for: .horizontal)
         statusDot.wantsLayer = true
         statusDot.layer?.cornerRadius = 4
         statusDot.layer?.cornerCurve = .continuous
@@ -470,15 +662,26 @@ final class HubStatusRowView: NSView {
         statusDot.widthAnchor.constraint(equalToConstant: 8).isActive = true
         statusDot.heightAnchor.constraint(equalToConstant: 8).isActive = true
 
-        let stack = NSStackView(views: [icon, titleLabel, NSView(), statusDot, valueLabel])
+        let chevron = NSImageView(image: NSImage(systemSymbolName: "chevron.right",
+                                                  accessibilityDescription: nil) ?? NSImage())
+        chevron.contentTintColor = .tertiaryLabelColor
+        chevron.isHidden = !showsChevron
+        chevron.translatesAutoresizingMaskIntoConstraints = false
+        let status = NSStackView(views: [statusDot, valueLabel])
+        status.spacing = 6
+        status.alignment = .centerY
+        let stack = NSStackView(views: [tile, copy, NSView(), status, chevron])
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.alignment = .centerY
+        stack.spacing = 12
         addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 9),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9)
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: HubMetrics.rowHorizontalInset),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -HubMetrics.rowHorizontalInset),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            chevron.widthAnchor.constraint(equalToConstant: 10),
+            chevron.heightAnchor.constraint(equalToConstant: 16),
+            heightAnchor.constraint(equalToConstant: HubMetrics.rowHeight)
         ])
     }
 

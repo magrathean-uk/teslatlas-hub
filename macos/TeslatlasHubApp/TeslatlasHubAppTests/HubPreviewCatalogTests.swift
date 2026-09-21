@@ -10,7 +10,8 @@ final class HubPreviewCatalogTests: XCTestCase {
             "r01-welcome", "r02-choose", "r03-migration",
             "r04-migration-connected", "r05-verify", "r06-finish-migration",
             "r07-dashboard", "r08-vehicles", "r09-diagnostics", "r10-logs",
-            "r11-service-details", "r12-manage-menu"
+            "r11-service-details", "r12-manage-menu", "r13-provider", "r14-fleet",
+            "r15-legacy", "r16-activity", "r17-settings", "r18-finish", "r19-importing"
         ]
         let actual = HubPreviewScene.allCases.map(\.rawValue)
 

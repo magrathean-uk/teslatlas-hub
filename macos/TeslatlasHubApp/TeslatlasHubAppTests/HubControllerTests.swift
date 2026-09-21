@@ -56,8 +56,10 @@ final class HubControllerTests: XCTestCase {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let windowController = MainWindowController(controller: controller)
         XCTAssertEqual(windowController.window?.title, "Teslatlas Hub")
-        XCTAssertEqual(windowController.window?.contentRect(forFrameRect: windowController.window!.frame).size,
-                       NSSize(width: 900, height: 630))
+        XCTAssertEqual(windowController.window?.contentLayoutRect.size,
+                       NSSize(width: HubMetrics.windowSize.width,
+                              height: HubMetrics.windowSize.height + 32))
+        XCTAssertEqual(windowController.window?.contentMinSize, NSSize(width: 820, height: 590))
     }
 
     func testOnboardingPreviewRoutesUseFirstRunBackgroundOnlyInPreviewMode() {
@@ -834,9 +836,7 @@ final class HubControllerTests: XCTestCase {
         let dashboard = MainWindowController(controller: controller) { _ in loaded.fulfill() }
         wait(for: [loaded], timeout: 1)
 
-        let command = try XCTUnwrap(buttons(in: dashboard.window?.contentView)
-            .first { $0.title == "Wake" })
-        command.performClick(nil)
+        dashboard.vehicleCommand(.wake, vehicleID: firstID)
         let confirmation = try XCTUnwrap(dashboard.window?.attachedSheet)
         try XCTUnwrap(buttons(in: confirmation.contentView)
             .first { $0.title == "Wake Vehicle" }).performClick(nil)
@@ -1045,19 +1045,13 @@ final class HubControllerTests: XCTestCase {
         DispatchQueue.main.async {
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Aurora" })
-            XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
-                .contains { $0.title == "Vehicle Controls…" })
-            for title in ["Start Climate", "Stop Climate", "Wake", "Lock",
-                          "Unlock", "Flash Lights", "Honk"] {
+            for title in ["Climate", "Access", "More"] {
                 let button = self.buttons(in: windowController.window?.contentView)
                     .first { $0.title == title }
                 XCTAssertNotNil(button, "missing \(title)")
                 XCTAssertFalse(button?.isHidden ?? true, "hidden \(title)")
                 XCTAssertTrue(button?.isEnabled ?? false, "preview disabled \(title)")
             }
-            XCTAssertFalse(windowController.connectButton.isHidden)
-            XCTAssertEqual(windowController.connectButton.title, "Manage Tesla")
-            XCTAssertFalse(windowController.connectButton.isBordered)
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Connected · Fleet API" })
             XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
@@ -1065,9 +1059,9 @@ final class HubControllerTests: XCTestCase {
                 .allSatisfy { !$0.isBordered })
             XCTAssertNil(windowController.window?.defaultButtonCell)
             XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
-                .contains { $0.title == "Stop Hub…" && !$0.isHidden })
+                .contains { $0.title == "Stop Hub…" && $0.isHidden })
             XCTAssertTrue(self.buttons(in: windowController.window?.contentView)
-                .contains { $0.title == "Restart Hub" && !$0.isHidden })
+                .contains { $0.title == "Restart Hub" && $0.isHidden })
             XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
                 .contains { $0.keyEquivalent == "\r" })
             XCTAssertFalse(self.buttons(in: windowController.window?.contentView)
@@ -1226,7 +1220,8 @@ final class HubControllerTests: XCTestCase {
         XCTAssertFalse(visibleText.contains("Starting Hub…"))
         XCTAssertTrue(visibleText.contains("Hub is running"))
         XCTAssertTrue(dashboard.connectButton.isEnabled)
-        XCTAssertTrue(dashboard.importButton.isEnabled)
+        XCTAssertFalse(dashboard.importButton.isEnabled)
+        XCTAssertTrue(dashboard.importButton.isHidden)
     }
 
     func testPendingServiceCommandKeepsTransitionLockedUntilControllerCleanupCompletes() throws {
@@ -1337,14 +1332,14 @@ final class HubControllerTests: XCTestCase {
         let settled = expectation(description: "legacy dashboard settled")
 
         DispatchQueue.main.async {
-            for title in ["Start Climate", "Stop Climate", "Wake", "Lock",
-                          "Unlock", "Flash Lights", "Honk"] {
+            for title in ["Climate", "Access", "More"] {
                 let button = self.buttons(in: windowController.window?.contentView)
                     .first { $0.title == title }
                 XCTAssertNotNil(button, "missing \(title)")
-                XCTAssertTrue(button?.isHidden ?? false, "visible \(title)")
                 XCTAssertFalse(button?.isEnabled ?? true, "enabled \(title)")
             }
+            XCTAssertTrue(self.labels(in: windowController.window?.contentView)
+                .contains { $0.stringValue.contains("Vehicle commands are available") })
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Connected · Legacy token" })
             settled.fulfill()
@@ -1439,12 +1434,14 @@ final class HubControllerTests: XCTestCase {
         let second = HubControlVehicle(id: UUID(), displayName: "Comet", status: "No observations yet")
         var snapshot = HubSnapshot.previewRunning
         snapshot.controlVehicles = [first, second]
+        snapshot.controlVehicleID = first.id
         let view = HubVehiclesView(actions: .noOp)
         view.apply(snapshot: snapshot, enabled: true)
 
         let text = labels(in: view).map(\.stringValue).joined(separator: " ")
+        let selector = popups(in: view).first { $0.itemTitles == ["Aurora", "Comet"] }
         XCTAssertTrue(text.contains("Aurora"))
-        XCTAssertTrue(text.contains("Comet"))
+        XCTAssertNotNil(selector)
         XCTAssertFalse(text.contains("Model Y"))
     }
 
@@ -1462,8 +1459,7 @@ final class HubControllerTests: XCTestCase {
         let windowController = MainWindowController(controller: controller) { _ in loaded.fulfill() }
         wait(for: [loaded], timeout: 1)
 
-        try XCTUnwrap(buttons(in: windowController.window?.contentView)
-            .first { $0.title == "Wake" }).performClick(nil)
+        windowController.vehicleCommand(.wake, vehicleID: firstID)
         let confirmation = try XCTUnwrap(windowController.window?.attachedSheet)
         let selector = try XCTUnwrap(popups(in: windowController.window?.contentView)
             .first { $0.itemTitles == ["Aurora", "Comet"] })
@@ -1498,17 +1494,16 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(staleRunner.calls, 0)
     }
 
-    func testFleetProviderWithoutConnectionShowsConnectTesla() throws {
+    func testFleetProviderWithoutConnectionShowsAccountNeedsConfiguration() throws {
         var snapshot = HubSnapshot.previewRunning
         snapshot.account = "Not configured"
         snapshot.provider = .fleet
-        let navigation = HubNavigationBar(actions: .noOp)
-
-        navigation.apply(snapshot: snapshot, enabled: true)
-
-        let account = try XCTUnwrap(buttons(in: navigation)
-            .first { $0.identifier?.rawValue == "hub.nav.account" })
-        XCTAssertEqual(account.title, "Connect Tesla")
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+                                       initialSnapshot: snapshot)
+        let windowController = MainWindowController(controller: controller)
+        windowController.selectMainSection(.settings)
+        XCTAssertTrue(labels(in: windowController.settingsPage)
+            .contains { $0.stringValue == "Not configured" })
     }
 
     func testVehiclePagesShareAcceptedSnapshotEligibility() {
@@ -3032,7 +3027,7 @@ private extension HubVehicleCardActions {
 private extension HubNavigationActions {
     static let noOp = HubNavigationActions(select: { _ in }, diagnostics: {}, logs: {},
                                            serviceDetails: {}, importTeslaMate: {}, connectTesla: {},
-                                           manageTesla: { _ in })
+                                           accountMenu: { NSMenu() }, appearance: {})
 }
 
 private final class CountingRunner: HubCommandRunning {

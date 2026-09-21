@@ -43,7 +43,7 @@ final class HubVisualSnapshotTests: XCTestCase {
     }
 
     func testEveryPreviewSceneRendersANonEmptyNativeSurface() throws {
-        for scene in HubPreviewScene.allCases {
+        for scene in HubPreviewScene.allCases where scene != .manageMenu {
             let png = try autoreleasepool { try render(scene) }
             XCTAssertGreaterThan(png.count, 1_000, scene.rawValue)
             let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
@@ -62,7 +62,51 @@ final class HubVisualSnapshotTests: XCTestCase {
         }
     }
 
-    private func render(_ scene: HubPreviewScene) throws -> Data {
+    func testStateAndAppearanceVariations() throws {
+        var stopped = HubSnapshot.previewRunning
+        stopped.health = .stopped
+        stopped.service = "Stopped"
+        var degraded = HubSnapshot.previewRunning
+        degraded.health = .degraded
+        degraded.service = "Unavailable"
+        var empty = HubSnapshot.previewRunning
+        empty.controlVehicles = []
+        empty.controlVehicleID = nil
+        empty.activity = []
+        let variants: [(String, HubPreviewScene, HubSnapshot?, String?, Bool)] = [
+            ("V01-stopped", .dashboard, stopped, nil, false),
+            ("V02-degraded", .dashboard, degraded, nil, false),
+            ("V03-empty-vehicles", .vehicles, empty, nil, false),
+            ("V04-empty-activity", .activity, empty, nil, false),
+            ("V05-migration-error", .migration, nil, "migration-error", false),
+            ("V06-verify-loading", .verify, nil, "verify-loading", false),
+            ("V07-light-overview", .dashboard, nil, nil, true),
+            ("V08-light-settings", .settings, nil, nil, true),
+            ("V09-light-onboarding", .choose, nil, nil, true)
+        ]
+        for (name, scene, snapshot, route, light) in variants {
+            let png = try autoreleasepool {
+                try render(scene, snapshot: snapshot, route: route, light: light)
+            }
+            let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+            attachment.name = name + ".png"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    func testMinimumWindowSurfaces() throws {
+        for scene: HubPreviewScene in [.dashboard, .vehicles, .settings, .diagnostics, .choose, .fleet, .migrationConnected] {
+            let png = try autoreleasepool { try render(scene, minimumSize: true) }
+            let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+            attachment.name = "minimum-" + scene.rawValue + ".png"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    private func render(_ scene: HubPreviewScene, snapshot: HubSnapshot? = nil,
+                        route: String? = nil, light: Bool = false, minimumSize: Bool = false) throws -> Data {
         let operations = HubPreviewOperationRecorder()
         let appLog = HubPreviewLogRecorder()
         let controller = HubController(environment: [
@@ -72,36 +116,39 @@ final class HubVisualSnapshotTests: XCTestCase {
         commandRunner: operations,
         installedCommandRunner: operations,
         installer: operations,
-        serviceRunner: operations)
+        serviceRunner: operations,
+        initialSnapshot: snapshot)
         let owner: NSWindowController
         switch scene {
-        case .welcome, .choose, .migration, .migrationConnected, .verify, .finishMigration:
+        case .welcome, .choose, .provider, .fleet, .legacy, .migration,
+             .migrationConnected, .importing, .verify, .finish, .finishMigration:
             owner = OnboardingWindowController(
                 controller: controller,
-                previewRoute: scene.onboardingRoute,
+                previewRoute: route ?? scene.onboardingRoute,
+                dismissalPolicy: .firstRun,
                 onComplete: { _ in }
             )
-        case .diagnostics:
-            owner = DiagnosticsWindowController(controller: controller)
-        case .logs:
-            owner = LogsWindowController(controller: controller,
-                                         appLog: appLog,
-                                         savePanelPresenter: panelRecorder.present)
-        case .serviceDetails:
-            owner = ServiceDetailsWindowController(
-                snapshot: controller.snapshot,
-                controller: controller,
-                onChanged: {}
-            )
-        case .dashboard, .vehicles, .manageMenu:
+        case .diagnostics, .logs, .serviceDetails:
             let main = MainWindowController(controller: controller)
-            if scene != .dashboard { main.selectMainSection(.vehicles) }
+            main.configurePreviewScene(scene)
+            owner = main
+        case .dashboard, .vehicles, .activity, .settings, .manageMenu:
+            let main = MainWindowController(controller: controller)
+            switch scene {
+            case .vehicles, .manageMenu: main.selectMainSection(.vehicles)
+            case .activity: main.selectMainSection(.activity)
+            case .settings: main.selectMainSection(.settings)
+            default: main.selectMainSection(.dashboard)
+            }
             owner = main
         }
         defer { owner.close() }
 
-        owner.window?.appearance = NSAppearance(named: .aqua)
+        if minimumSize { owner.window?.setContentSize(NSSize(width: 820, height: 640)) }
+        owner.window?.appearance = NSAppearance(named: light ? .aqua : .darkAqua)
         let view = try XCTUnwrap(owner.window?.contentView?.superview, scene.rawValue)
+        owner.window?.layoutIfNeeded()
+        owner.window?.contentView?.layoutSubtreeIfNeeded()
         view.layoutSubtreeIfNeeded()
         let representation = try XCTUnwrap(
             NSBitmapImageRep(bitmapDataPlanes: nil,

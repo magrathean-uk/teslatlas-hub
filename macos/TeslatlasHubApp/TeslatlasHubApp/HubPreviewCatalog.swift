@@ -17,6 +17,13 @@ enum HubPreviewScene: String, CaseIterable {
     case logs = "r10-logs"
     case serviceDetails = "r11-service-details"
     case manageMenu = "r12-manage-menu"
+    case provider = "r13-provider"
+    case fleet = "r14-fleet"
+    case legacy = "r15-legacy"
+    case activity = "r16-activity"
+    case settings = "r17-settings"
+    case finish = "r18-finish"
+    case importing = "r19-importing"
 
     init?(environmentValue: String?) {
         guard let value = environmentValue?.lowercased() else { return nil }
@@ -33,7 +40,14 @@ enum HubPreviewScene: String, CaseIterable {
             "r09": .diagnostics, "diagnostics": .diagnostics,
             "r10": .logs, "logs": .logs,
             "r11": .serviceDetails, "service-details": .serviceDetails,
-            "r12": .manageMenu, "manage-menu": .manageMenu
+            "r12": .manageMenu, "manage-menu": .manageMenu,
+            "r13": .provider, "provider": .provider,
+            "r14": .fleet, "fleet": .fleet,
+            "r15": .legacy, "legacy": .legacy,
+            "r16": .activity, "activity": .activity,
+            "r17": .settings, "settings": .settings,
+            "r18": .finish, "finish-new": .finish,
+            "r19": .importing, "importing": .importing
         ]
         if let scene = aliases[value] {
             self = scene
@@ -50,7 +64,13 @@ enum HubPreviewScene: String, CaseIterable {
         case .migrationConnected: return "migration-connected"
         case .verify: return "verify"
         case .finishMigration: return "finish-migration"
-        case .dashboard, .vehicles, .diagnostics, .logs, .serviceDetails, .manageMenu:
+        case .provider: return "provider"
+        case .fleet: return "fleet"
+        case .legacy: return "legacy"
+        case .finish: return "finish"
+        case .importing: return "importing"
+        case .dashboard, .vehicles, .activity, .settings,
+             .diagnostics, .logs, .serviceDetails, .manageMenu:
             return nil
         }
     }

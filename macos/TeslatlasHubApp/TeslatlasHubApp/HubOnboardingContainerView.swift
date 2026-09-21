@@ -23,8 +23,6 @@ final class HubOnboardingContainerView: NSView {
 
         identifier = NSUserInterfaceItemIdentifier("onboarding.container")
         wantsLayer = true
-        layer?.cornerRadius = HubMetrics.sheetRadius
-        layer?.cornerCurve = .continuous
         layer?.masksToBounds = true
 
         for view in [headerView, bodyScrollView, footerView] {
@@ -58,7 +56,7 @@ final class HubOnboardingContainerView: NSView {
             footerView.leadingAnchor.constraint(equalTo: leadingAnchor),
             footerView.trailingAnchor.constraint(equalTo: trailingAnchor),
             footerView.bottomAnchor.constraint(equalTo: bottomAnchor),
-            footerView.heightAnchor.constraint(equalToConstant: 48),
+            footerView.heightAnchor.constraint(equalToConstant: 64),
 
             bodyDocumentView.leadingAnchor.constraint(equalTo: bodyScrollView.contentView.leadingAnchor),
             bodyDocumentView.trailingAnchor.constraint(equalTo: bodyScrollView.contentView.trailingAnchor),
@@ -66,8 +64,10 @@ final class HubOnboardingContainerView: NSView {
             bodyDocumentView.widthAnchor.constraint(equalTo: bodyScrollView.contentView.widthAnchor),
             bodyDocumentView.heightAnchor.constraint(greaterThanOrEqualTo: bodyScrollView.contentView.heightAnchor),
 
-            footerContentHost.leadingAnchor.constraint(equalTo: footerView.leadingAnchor, constant: 28),
-            footerContentHost.trailingAnchor.constraint(equalTo: footerView.trailingAnchor, constant: -28),
+            footerContentHost.centerXAnchor.constraint(equalTo: footerView.centerXAnchor),
+            footerContentHost.leadingAnchor.constraint(greaterThanOrEqualTo: footerView.leadingAnchor, constant: 28),
+            footerContentHost.trailingAnchor.constraint(lessThanOrEqualTo: footerView.trailingAnchor, constant: -28),
+            footerContentHost.widthAnchor.constraint(equalToConstant: HubMetrics.onboardingContentWidth),
             footerContentHost.topAnchor.constraint(equalTo: footerView.topAnchor),
             footerContentHost.bottomAnchor.constraint(equalTo: footerView.bottomAnchor)
         ])
@@ -79,10 +79,12 @@ final class HubOnboardingContainerView: NSView {
         body.translatesAutoresizingMaskIntoConstraints = false
         bodyDocumentView.addSubview(body)
         NSLayoutConstraint.activate([
-            body.leadingAnchor.constraint(equalTo: bodyDocumentView.leadingAnchor, constant: 28),
-            body.trailingAnchor.constraint(equalTo: bodyDocumentView.trailingAnchor, constant: -28),
-            body.topAnchor.constraint(equalTo: bodyDocumentView.topAnchor, constant: 24),
-            body.bottomAnchor.constraint(equalTo: bodyDocumentView.bottomAnchor, constant: -16)
+            body.centerXAnchor.constraint(equalTo: bodyDocumentView.centerXAnchor),
+            body.leadingAnchor.constraint(greaterThanOrEqualTo: bodyDocumentView.leadingAnchor, constant: 28),
+            body.trailingAnchor.constraint(lessThanOrEqualTo: bodyDocumentView.trailingAnchor, constant: -28),
+            body.widthAnchor.constraint(equalToConstant: HubMetrics.onboardingContentWidth),
+            body.topAnchor.constraint(equalTo: bodyDocumentView.topAnchor, constant: 32),
+            body.bottomAnchor.constraint(lessThanOrEqualTo: bodyDocumentView.bottomAnchor, constant: -24)
         ])
         scrollBodyToTop()
     }

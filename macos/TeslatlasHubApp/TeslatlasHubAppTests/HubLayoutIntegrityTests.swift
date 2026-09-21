@@ -5,36 +5,47 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class HubLayoutIntegrityTests: XCTestCase {
-    func testAllSevenCommandLabelsAndIconsFitEqualTiles() throws {
+    func testThreeCommandGroupsFitAlignedDesktopRows() throws {
         let model = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let card = HubVehicleCardView(actions: HubVehicleCardActions(select: { _ in }, command: { _, _ in }))
         card.apply(vehicle: model.snapshot.controlVehicles.first,
                    allVehicles: model.snapshot.controlVehicles,
                    provider: .fleet, enabled: true)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 588, height: 131),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 744, height: 540),
                               styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
         window.contentView = card
         card.layoutSubtreeIfNeeded()
         let commands = descendants(card).compactMap { $0 as? HubActionButton }
-        XCTAssertEqual(commands.count, 7)
-        let first = try XCTUnwrap(commands.first)
+        XCTAssertEqual(commands.count, 3)
         for button in commands {
             button.layoutSubtreeIfNeeded()
-            XCTAssertEqual(button.frame.width, first.frame.width, accuracy: 0.5)
-            XCTAssertEqual(button.frame.height, 51, accuracy: 0.5)
+            XCTAssertEqual(button.frame.height, 32, accuracy: 0.5)
             assertContained(button)
-            XCTAssertGreaterThanOrEqual(button.hubImageView.frame.minY, 4)
-            XCTAssertLessThanOrEqual(button.hubImageView.frame.maxY, button.bounds.height - 4)
-            XCTAssertTrue(button.isFlipped
-                          ? button.hubImageView.frame.maxY < button.hubTitleLabel.frame.minY
-                          : button.hubImageView.frame.minY > button.hubTitleLabel.frame.maxY)
+            XCTAssertFalse(button.hubTitleLabel.frame.intersects(button.hubImageView.frame))
+        }
+    }
+
+    func testNavigationSymbolsStayInsideSelectedPills() {
+        let actions = HubNavigationActions(select: { _ in }, diagnostics: {}, logs: {},
+                                           serviceDetails: {}, importTeslaMate: {}, connectTesla: {},
+                                           accountMenu: { NSMenu() }, appearance: {})
+        let navigation = HubNavigationBar(actions: actions)
+        navigation.frame = NSRect(x: 0, y: 0, width: 492, height: 36)
+        navigation.layoutSubtreeIfNeeded()
+        let buttons = descendants(navigation).compactMap { $0 as? HubActionButton }
+        XCTAssertEqual(buttons.count, 4)
+        for button in buttons {
+            button.layoutSubtreeIfNeeded()
+            assertContained(button)
+            XCTAssertGreaterThanOrEqual(button.hubImageView.frame.minX, 16)
+            XCTAssertGreaterThanOrEqual(button.bounds.maxX - button.hubTitleLabel.frame.maxX, 16)
         }
     }
 
     func testNavigationAndHorizontalActionsContainTheirContent() {
-        for title in ["Dashboard", "Vehicles", "Diagnostics", "Logs", "Service Details", "Run Again", "Copy", "Save…"] {
+        for title in ["Overview", "Vehicles", "Diagnostics", "Activity & Logs", "Service Details", "Run Again", "Copy", "Save…"] {
             let button = HubActionButton(title: title, target: nil, action: nil)
             button.image = NSImage(systemSymbolName: "car", accessibilityDescription: nil)
             button.imagePosition = .imageLeading

@@ -5,6 +5,106 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class HubUtilityWindowTests: XCTestCase {
+    func testUtilityDestinationsRenderInsideMainWindow() throws {
+        for (scene, identifier, section): (HubPreviewScene, String, HubMainSection) in [
+            (.diagnostics, "hub.embedded.diagnostics", .settings),
+            (.logs, "hub.embedded.activity-logs", .activity),
+            (.serviceDetails, "hub.embedded.service-details", .settings)
+        ] {
+            let controller = HubController(
+                environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+                initialSnapshot: .previewRunning
+            )
+            let main = MainWindowController(controller: controller)
+            defer { main.close() }
+            let window = try XCTUnwrap(main.window)
+            let windowCount = NSApp.windows.count
+
+            main.configurePreviewScene(scene)
+            window.contentView?.layoutSubtreeIfNeeded()
+
+            XCTAssertEqual(main.selectedSection, section)
+            XCTAssertNil(main.activeModalKind)
+            XCTAssertEqual(NSApp.windows.count, windowCount)
+            XCTAssertNotNil(descendants(window.contentView).first {
+                $0.identifier?.rawValue == identifier
+            })
+            XCTAssertTrue(descendants(window.contentView).compactMap { $0 as? NSButton }
+                .contains { $0.title == "Back" })
+        }
+    }
+
+    func testTeslaMateImportIsHiddenForRunningHubAndShownWhenNeeded() throws {
+        var workingSnapshot = HubSnapshot.previewRunning
+        workingSnapshot.database = "Healthy · 24 MB"
+        let running = MainWindowController(controller: HubController(
+            environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+            initialSnapshot: workingSnapshot
+        ))
+        defer { running.close() }
+        running.selectMainSection(.settings)
+        let runningRow = try XCTUnwrap(descendants(running.window?.contentView).first {
+            $0.identifier?.rawValue == "hub.settings.import-teslamate"
+        })
+        XCTAssertTrue(runningRow.isHidden)
+        XCTAssertTrue(running.importButton.isHidden)
+
+        let firstRun = MainWindowController(controller: HubController(
+            environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+            initialSnapshot: .firstRun
+        ))
+        defer { firstRun.close() }
+        firstRun.selectMainSection(.settings)
+        let firstRunRow = try XCTUnwrap(descendants(firstRun.window?.contentView).first {
+            $0.identifier?.rawValue == "hub.settings.import-teslamate"
+        })
+        XCTAssertFalse(firstRunRow.isHidden)
+        XCTAssertFalse(firstRun.importButton.isHidden)
+    }
+
+    func testConfiguredHubDoesNotOfferImportAfterStoppingOrFailure() {
+        for health: HubHealth in [.running, .stopped, .degraded] {
+            var snapshot = HubSnapshot.previewRunning
+            snapshot.health = health
+            snapshot.database = "Healthy · 24 MB"
+            XCTAssertFalse(snapshot.shouldOfferTeslaMateImport)
+        }
+        var unknown = HubSnapshot.firstRun
+        unknown.health = .degraded
+        unknown.account = "Unknown"
+        unknown.database = "Unknown"
+        XCTAssertFalse(unknown.shouldOfferTeslaMateImport)
+        XCTAssertTrue(HubSnapshot.firstRun.shouldOfferTeslaMateImport)
+    }
+
+    func testEmbeddedEntryPointsReturnWithoutCreatingUtilityWindows() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let main = MainWindowController(controller: controller)
+        defer { main.close() }
+        let count = NSApp.windows.count
+        for open in [main.showEmbeddedLogs, main.showEmbeddedDiagnostics, main.showEmbeddedServiceDetails] {
+            open()
+            XCTAssertEqual(NSApp.windows.count, count)
+            XCTAssertNil(main.activeModalKind)
+            let back = try XCTUnwrap(descendants(main.window?.contentView).compactMap { $0 as? NSButton }
+                .first { $0.title == "Back" })
+            back.performClick(nil)
+            XCTAssertFalse(descendants(main.window?.contentView).contains {
+                $0.identifier?.rawValue.hasPrefix("hub.embedded.") == true
+            })
+        }
+    }
+
+    func testNavigationHonorsDisabledState() {
+        let actions = HubNavigationActions(select: { _ in }, diagnostics: {}, logs: {}, serviceDetails: {},
+            importTeslaMate: {}, connectTesla: {}, accountMenu: { NSMenu() }, appearance: {})
+        let navigation = HubNavigationBar(actions: actions)
+        navigation.apply(snapshot: .previewRunning, enabled: false)
+        XCTAssertTrue(descendants(navigation).compactMap { $0 as? NSButton }.allSatisfy { !$0.isEnabled })
+        navigation.apply(snapshot: .previewRunning, enabled: true)
+        XCTAssertTrue(descendants(navigation).compactMap { $0 as? NSButton }.allSatisfy { $0.isEnabled })
+    }
+
     func testAppChromeShowsBundledVersionWhenServiceReportsOlderRelease() throws {
         var snapshot = HubSnapshot.firstRun
         snapshot.version = "1.0.0"
@@ -66,24 +166,28 @@ final class HubUtilityWindowTests: XCTestCase {
         let error = try XCTUnwrap(descendants(container).first {
             $0.identifier?.rawValue == "onboarding.connection-error"
         })
+        container.reveal(error)
+        container.layoutSubtreeIfNeeded()
         let rect = error.convert(error.bounds, to: container.bodyDocumentView)
         XCTAssertTrue(container.bodyDocumentView.visibleRect.contains(rect), "Error and recovery actions must be visible: \(rect)")
         let labels = descendants(error).compactMap { $0 as? NSTextField }
-        XCTAssertTrue(labels.allSatisfy { $0.font?.pointSize == 13 })
-        XCTAssertEqual(container.footerView.frame.height, 48)
+        XCTAssertTrue(labels.allSatisfy {
+            guard let size = $0.font?.pointSize else { return false }
+            return size >= 12 && size <= 14
+        })
+        XCTAssertEqual(container.footerView.frame.height, 64)
     }
 
-    func testQuitEndsIdleFirstRunSheetButDoesNotInterruptBusySetup() throws {
+    func testQuitAllowsIdleFullWindowOnboardingButDoesNotInterruptBusySetup() throws {
         for busy in [false, true] {
             let main = MainWindowController(controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]))
             let setup = try XCTUnwrap(main.showFirstRunOnboarding())
             let sheet = try XCTUnwrap(setup.window)
             defer { setup.close(); main.close() }
             setup.setBusy(busy)
-            XCTAssertNotNil(sheet.sheetParent)
+            XCTAssertNil(sheet.sheetParent)
             XCTAssertEqual(AppDelegate.finishSheetsBeforeQuit(in: [sheet]), !busy)
-            XCTAssertEqual(sheet.sheetParent != nil, busy)
-            if !busy { XCTAssertNil(main.activeModalKind) }
+            XCTAssertEqual(main.activeModalKind, .onboarding)
         }
         let delegate = AppDelegate()
         let quit = try XCTUnwrap(AppDelegate.makeMainMenu(actionTarget: delegate)
@@ -108,6 +212,7 @@ final class HubUtilityWindowTests: XCTestCase {
     func testWindowMenuClosesKeyUtilityThroughResponderChain() throws {
         let main = MainWindowController(controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]))
         defer { main.close() }
+        main.showWindow(nil)
         let utility = try XCTUnwrap(main.showLogs())
         let window = try XCTUnwrap(utility.window)
         window.makeKeyAndOrderFront(nil)

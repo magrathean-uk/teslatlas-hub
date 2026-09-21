@@ -353,6 +353,11 @@ struct HubSnapshot {
         return "\(account) · \(provider.displayName)"
     }
 
+    var shouldOfferTeslaMateImport: Bool {
+        health != .running && account == "Not configured"
+            && database == "Waiting for setup or import"
+    }
+
     static let previewRunning = HubSnapshot(
         health: .running,
         service: "Active",
@@ -1198,7 +1203,7 @@ final class HubController {
         self.migrationStartupReadinessSchedule = migrationStartupReadinessSchedule
         let firstRunPreviewRoutes = [
             "welcome", "choose", "choose-migration", "provider", "fleet", "legacy",
-            "migration", "migration-connected", "verify", "finish", "finish-migration"
+            "migration", "migration-connected", "importing", "verify", "finish", "finish-migration"
         ]
         let previewSnapshot: HubSnapshot = firstRunPreviewRoutes.contains(previewRoute ?? "")
             ? .firstRun : .previewRunning

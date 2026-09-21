@@ -17,22 +17,52 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     private let copyButton = HubActionButton(title: "Copy Report", target: nil, action: nil)
     private let saveButton = HubActionButton(title: "Save Report…", target: nil, action: nil)
     private var latestReport: String?
+    private weak var embeddedPage: NSView?
+    private var embeddedBody: NSView?
 
-    init(controller: HubController, onDismiss: @escaping () -> Void = {}) {
+    init(controller: HubController, onDismiss: @escaping () -> Void = {}, embedded: Bool = false) {
         self.controller = controller
         self.onDismiss = onDismiss
-        super.init(window: HubUtilityWindowStyle.makeWindow(title: "Diagnostics", size: HubMetrics.diagnosticsSheetSize,
-                                                           minimum: NSSize(width: 485, height: 360)))
-        window?.contentView = contentView()
+        super.init(window: embedded ? nil : HubUtilityWindowStyle.makeWindow(
+            title: "Diagnostics", size: HubMetrics.diagnosticsSheetSize,
+            minimum: NSSize(width: 485, height: 360)
+        ))
+        let body = contentView()
+        window?.contentView = body
+        embeddedBody = embedded ? body : nil
         window?.delegate = self
-        utilityToolbar = HubUtilityToolbar(identifier: "hub.diagnostics.toolbar", buttons: [runButton])
-        window?.toolbar = utilityToolbar?.toolbar
-        window?.toolbarStyle = .expanded
+        if !embedded {
+            utilityToolbar = HubUtilityToolbar(identifier: "hub.diagnostics.toolbar", buttons: [runButton])
+            window?.toolbar = utilityToolbar?.toolbar
+            window?.toolbarStyle = .expanded
+        }
         showInitialSummary()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func makeEmbeddedPage(onBack: @escaping () -> Void) -> NSView {
+        let body = window?.contentView ?? embeddedBody ?? NSView()
+        embeddedBody = nil
+        if let hostWindow = window {
+            hostWindow.delegate = nil
+            hostWindow.toolbar = nil
+            hostWindow.contentView = NSView()
+            hostWindow.close()
+            window = nil
+        }
+        let page = HubEmbeddedUtilityPage(
+            symbol: "stethoscope",
+            title: "Diagnostics",
+            subtitle: "Check the Hub, its database, and its connections.",
+            body: body,
+            actions: [runButton],
+            onBack: onBack
+        )
+        embeddedPage = page
+        return page
+    }
 
     private func contentView() -> NSView {
         let root = HubSurfaceView(fill: .background)
@@ -119,10 +149,12 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
             view.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
         }
         NSLayoutConstraint.activate([
-            body.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
-            body.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
-            body.topAnchor.constraint(equalTo: root.topAnchor, constant: 14),
-            body.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -14),
+            body.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            body.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            body.widthAnchor.constraint(lessThanOrEqualToConstant: 760),
+            body.topAnchor.constraint(equalTo: root.topAnchor, constant: 0),
+            body.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: 0),
             rowsScroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 100)
         ])
         return root
@@ -181,6 +213,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func render(rows: [HubDiagnosticRow]) {
+        HubMotion.transition(rowsContainer)
         rowsStack.arrangedSubviews.forEach {
             rowsStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -218,13 +251,13 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
         icon.imageScaling = .scaleProportionallyDown
         icon.contentTintColor = row.outcome == .failed ? HubPalette.danger : HubPalette.success
-        icon.widthAnchor.constraint(equalToConstant: 17).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 17).isActive = true
+        icon.widthAnchor.constraint(equalToConstant: HubMetrics.rowIconWell).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: HubMetrics.rowIconWell).isActive = true
         let title = NSTextField(labelWithString: row.title)
-        title.font = .systemFont(ofSize: 12.5, weight: .medium)
+        title.font = HubTypography.emphasis
         title.textColor = HubPalette.foreground
         let detail = NSTextField(labelWithString: row.detail.isEmpty ? "No additional detail." : row.detail)
-        detail.font = .systemFont(ofSize: 11.5)
+        detail.font = HubTypography.caption
         detail.textColor = HubPalette.mutedForeground
         detail.lineBreakMode = .byTruncatingTail
         let labels = NSStackView(views: [title, detail])
@@ -233,12 +266,12 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         labels.spacing = 2
         let stack = NSStackView(views: [icon, labels])
         stack.alignment = .centerY
-        stack.spacing = 11
+        stack.spacing = 12
         stack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(stack)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: HubMetrics.rowHorizontalInset),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -HubMetrics.rowHorizontalInset),
             stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 9),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -9),
             view.heightAnchor.constraint(equalToConstant: 52)
@@ -248,9 +281,11 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func toggleRawReport() {
         let visible = rawScroll.isHidden
-        rawScroll.isHidden = !visible
+        HubMotion.layout(embeddedPage ?? window?.contentView ?? rawScroll) {
+            rawScroll.isHidden = !visible
+        }
         rawDisclosure.title = visible ? "Hide raw redacted report" : "Show raw redacted report"
-        window?.contentView?.layoutSubtreeIfNeeded()
+        (embeddedPage ?? window?.contentView)?.layoutSubtreeIfNeeded()
         rawTextView.fitDocument()
     }
 
@@ -264,11 +299,12 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func savePressed() {
         guard !controller.previewMode else { return }
-        guard let latestReport, let window else { return }
+        guard let latestReport,
+              let presentationWindow = embeddedPage?.window ?? window else { return }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "teslatlas-hub-diagnostics.txt"
         panel.canCreateDirectories = true
-        panel.beginSheetModal(for: window) { [weak self] response in
+        panel.beginSheetModal(for: presentationWindow) { [weak self] response in
             guard response == .OK, let destination = panel.url else { return }
             do {
                 try HubAppLog.writePrivateReport(latestReport, to: destination)
@@ -288,10 +324,10 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         button.target = self
         button.action = action
         button.hubStyle = style
-        button.hubFont = .systemFont(ofSize: 12, weight: .medium)
+        button.hubFont = HubTypography.action
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
         button.imagePosition = .imageLeading
-        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        button.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
     }
 
     private static let previewRows: [HubDiagnosticRow] = [

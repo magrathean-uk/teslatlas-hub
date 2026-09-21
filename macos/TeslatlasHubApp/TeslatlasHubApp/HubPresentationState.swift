@@ -5,6 +5,8 @@ import AppKit
 enum HubMainSection: Equatable {
     case dashboard
     case vehicles
+    case activity
+    case settings
 }
 
 enum HubModalKind: Equatable {

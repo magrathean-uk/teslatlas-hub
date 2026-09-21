@@ -23,6 +23,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     private let deleteDataButton = HubActionButton(title: "Delete Hub and Data…", target: nil, action: nil)
     private var mutationsEnabled = true
     private var mutationPending = false
+    private var embeddedBody: NSView?
 
     init(snapshot: HubSnapshot,
          controller: HubController,
@@ -30,6 +31,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
          onMutationStateChanged: @escaping (Bool) -> Void = { _ in },
          onChanged: @escaping () -> Void,
          onDismiss: @escaping () -> Void = {},
+         embedded: Bool = false,
          errorPresenter: @escaping (Error) -> Void = HubUIPresentation.presentError,
          confirmationPresenter: @escaping ConfirmationPresenter = { alert, silentResponse in
              HubUIPresentation.response(to: alert, silentResponse: silentResponse)
@@ -41,16 +43,38 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         self.onDismiss = onDismiss
         self.errorPresenter = errorPresenter
         self.confirmationPresenter = confirmationPresenter
-        super.init(window: HubUtilityWindowStyle.makeWindow(title: "Service Details", size: HubMetrics.serviceDetailsSheetSize,
-                                                           minimum: NSSize(width: 450, height: 380)))
+        super.init(window: embedded ? nil : HubUtilityWindowStyle.makeWindow(
+            title: "Service Details", size: HubMetrics.serviceDetailsSheetSize,
+            minimum: NSSize(width: 450, height: 380)
+        ))
         window?.title = "Service Details"
         window?.delegate = self
-        window?.contentView = contentView()
+        let body = contentView()
+        window?.contentView = body
+        embeddedBody = embedded ? body : nil
         update(snapshot: snapshot)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func makeEmbeddedPage(onBack: @escaping () -> Void) -> NSView {
+        let body = window?.contentView ?? embeddedBody ?? NSView()
+        embeddedBody = nil
+        if let hostWindow = window {
+            hostWindow.delegate = nil
+            hostWindow.contentView = NSView()
+            hostWindow.close()
+            window = nil
+        }
+        return HubEmbeddedUtilityPage(
+            symbol: "slider.horizontal.3",
+            title: "Service details",
+            subtitle: "Inspect and manage the local Hub service.",
+            body: body,
+            onBack: onBack
+        )
+    }
 
     static func details(for snapshot: HubSnapshot) -> [HubServiceDetail] {
         [
@@ -128,8 +152,8 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         dangerCard.identifier = NSUserInterfaceItemIdentifier("hub.service.danger")
         dangerCard.addSubview(dangerContents)
         NSLayoutConstraint.activate([
-            dangerContents.leadingAnchor.constraint(equalTo: dangerCard.leadingAnchor, constant: 14),
-            dangerContents.trailingAnchor.constraint(equalTo: dangerCard.trailingAnchor, constant: -14),
+            dangerContents.leadingAnchor.constraint(equalTo: dangerCard.leadingAnchor, constant: HubMetrics.rowHorizontalInset),
+            dangerContents.trailingAnchor.constraint(equalTo: dangerCard.trailingAnchor, constant: -HubMetrics.rowHorizontalInset),
             dangerContents.topAnchor.constraint(equalTo: dangerCard.topAnchor, constant: 12),
             dangerContents.bottomAnchor.constraint(equalTo: dangerCard.bottomAnchor, constant: -12)
         ])
@@ -144,7 +168,8 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         maintenance.orientation = .vertical
         maintenance.alignment = .leading
         maintenance.spacing = 4
-        maintenance.isHidden = controller.previewMode
+        dangerCard.isHidden = !controller.allowsServiceInstallation
+        maintenance.isHidden = !controller.allowsServiceInstallation
         let body = NSStackView(views: [detailsCard, dangerCard, maintenance])
         body.orientation = .vertical
         body.alignment = .leading
@@ -170,10 +195,11 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
             scroll.topAnchor.constraint(equalTo: root.topAnchor),
             scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor),
             document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
-            body.leadingAnchor.constraint(equalTo: document.leadingAnchor, constant: 14),
-            body.trailingAnchor.constraint(equalTo: document.trailingAnchor, constant: -14),
-            body.topAnchor.constraint(equalTo: document.topAnchor, constant: 14),
-            body.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -14)
+            body.leadingAnchor.constraint(equalTo: document.leadingAnchor),
+            body.trailingAnchor.constraint(equalTo: document.trailingAnchor),
+            body.centerXAnchor.constraint(equalTo: document.centerXAnchor),
+            body.topAnchor.constraint(equalTo: document.topAnchor, constant: 0),
+            body.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: 0)
         ])
         return root
     }
@@ -185,10 +211,10 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         button.target = self
         button.action = action
         button.hubStyle = style
-        button.hubFont = .systemFont(ofSize: 12, weight: .medium)
+        button.hubFont = HubTypography.action
         button.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: button.title) }
         button.imagePosition = symbol == nil ? .noImage : .imageLeading
-        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        button.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -292,10 +318,10 @@ private final class ServiceDetailRowView: NSView {
     init(detail: HubServiceDetail) {
         super.init(frame: .zero)
         let label = NSTextField(labelWithString: detail.label)
-        label.font = .systemFont(ofSize: 12.5, weight: .medium)
+        label.font = HubTypography.emphasis
         label.textColor = HubPalette.foreground
         let value = NSTextField(labelWithString: detail.value)
-        value.font = .systemFont(ofSize: 12)
+        value.font = HubTypography.action
         value.textColor = HubPalette.mutedForeground
         value.lineBreakMode = .byTruncatingMiddle
         value.alignment = .right
@@ -307,11 +333,11 @@ private final class ServiceDetailRowView: NSView {
         NSLayoutConstraint.activate([
             label.widthAnchor.constraint(equalToConstant: 104),
             value.widthAnchor.constraint(lessThanOrEqualToConstant: 286),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -14),
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: HubMetrics.rowHorizontalInset),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -HubMetrics.rowHorizontalInset),
             stack.topAnchor.constraint(equalTo: topAnchor, constant: 9),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -9),
-            heightAnchor.constraint(equalToConstant: 37)
+            heightAnchor.constraint(equalToConstant: HubMetrics.rowHeight)
         ])
     }
 

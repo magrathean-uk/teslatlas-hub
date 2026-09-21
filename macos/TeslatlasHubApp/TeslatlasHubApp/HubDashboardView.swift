@@ -90,11 +90,17 @@ final class HubDashboardView: HubSurfaceView {
     private let setupButton = HubActionButton(title: "Set Up Hub", target: nil, action: nil)
     private let diagnosticsButton = HubActionButton(title: "Run Diagnostics", target: nil, action: nil)
     private let vehicleCard: HubVehicleCardView
-    private let serviceRow = HubStatusRowView(symbol: "sun.max", title: "Service")
-    private let accountRow = HubStatusRowView(symbol: "person", title: "Tesla account")
-    private let databaseRow = HubStatusRowView(symbol: "cylinder", title: "Database")
+    private let serviceRow = HubStatusRowView(symbol: "gearshape", title: "Hub service",
+                                              detail: "")
+    private let accountRow = HubStatusRowView(symbol: "person.crop.circle", title: "Tesla account",
+                                              detail: "")
+    private let databaseRow = HubStatusRowView(symbol: "cylinder", title: "Local database",
+                                               detail: "")
+    private let vehicleSummaryStack = NSStackView()
     private let activityStack = NSStackView()
     private let versionLabel = NSTextField(labelWithString: "")
+    private var renderedVehicles: [HubControlVehicle]?
+    private var renderedActivity: [String]?
     private var selectedVehicleID: UUID?
     private var interactionsEnabled = true
     private var vehicleControlsEnabled = true
@@ -116,6 +122,7 @@ final class HubDashboardView: HubSurfaceView {
         statusCard.identifier = NSUserInterfaceItemIdentifier("hub.dashboard.status-card")
         let statusStack = NSStackView(views: [serviceRow, separator(), accountRow, separator(), databaseRow])
         statusStack.orientation = .vertical
+        statusStack.spacing = 0
         statusStack.translatesAutoresizingMaskIntoConstraints = false
         statusCard.addSubview(statusStack)
         NSLayoutConstraint.activate([
@@ -125,14 +132,33 @@ final class HubDashboardView: HubSurfaceView {
             statusStack.bottomAnchor.constraint(equalTo: statusCard.bottomAnchor)
         ])
 
+        let vehiclesHeading = NSTextField(labelWithString: "Vehicles")
+        vehiclesHeading.font = .systemFont(ofSize: 14, weight: .medium)
+        vehiclesHeading.textColor = .secondaryLabelColor
+        let vehiclesCard = HubCardView()
+        vehicleSummaryStack.orientation = .vertical
+        vehicleSummaryStack.spacing = 0
+        vehicleSummaryStack.translatesAutoresizingMaskIntoConstraints = false
+        vehiclesCard.addSubview(vehicleSummaryStack)
+        NSLayoutConstraint.activate([
+            vehicleSummaryStack.leadingAnchor.constraint(equalTo: vehiclesCard.leadingAnchor),
+            vehicleSummaryStack.trailingAnchor.constraint(equalTo: vehiclesCard.trailingAnchor),
+            vehicleSummaryStack.topAnchor.constraint(equalTo: vehiclesCard.topAnchor),
+            vehicleSummaryStack.bottomAnchor.constraint(equalTo: vehiclesCard.bottomAnchor)
+        ])
+        let vehiclesSection = NSStackView(views: [vehiclesHeading, vehiclesCard])
+        vehiclesSection.orientation = .vertical
+        vehiclesSection.alignment = .leading
+        vehiclesSection.spacing = 7
+
         let activityHeadingIcon = NSImageView(image: NSImage(systemSymbolName: "waveform.path.ecg",
                                                               accessibilityDescription: nil) ?? NSImage())
         activityHeadingIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 10, weight: .regular)
         activityHeadingIcon.contentTintColor = HubPalette.mutedForeground
-        let activityTitle = NSTextField(labelWithString: "LATEST ACTIVITY")
-        activityTitle.font = .systemFont(ofSize: 10.5, weight: .semibold)
+        let activityTitle = NSTextField(labelWithString: "Recent activity")
+        activityTitle.font = HubTypography.emphasis
         activityTitle.textColor = HubPalette.mutedForeground
-        let activityHeading = NSStackView(views: [activityHeadingIcon, activityTitle])
+        let activityHeading = NSStackView(views: [activityTitle])
         activityHeading.alignment = .centerY
         activityHeading.spacing = 6
 
@@ -159,28 +185,42 @@ final class HubDashboardView: HubSurfaceView {
                                 action: #selector(dataFolderPressed))
         versionLabel.font = .systemFont(ofSize: 11.5)
         versionLabel.textColor = HubPalette.mutedForeground
+        let privacyIcon = NSImageView(image: NSImage(systemSymbolName: "lock",
+                                                      accessibilityDescription: nil) ?? NSImage())
+        privacyIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+        privacyIcon.contentTintColor = HubPalette.mutedForeground
+        privacyIcon.widthAnchor.constraint(equalToConstant: 16).isActive = true
+        let privacy = NSTextField(labelWithString: "Your data stays on this Mac.")
+        privacy.font = .systemFont(ofSize: 11.5)
+        privacy.textColor = HubPalette.mutedForeground
         let footerLine = separator()
-        let footerRow = NSStackView(views: [versionLabel, NSView(), details, folder])
+        let footerRow = NSStackView(views: [privacyIcon, privacy, NSView(), details, folder, versionLabel])
         footerRow.alignment = .centerY
-        footerRow.spacing = 4
+        footerRow.spacing = 8
         let footer = NSStackView(views: [footerLine, footerRow])
         footer.orientation = .vertical
         footer.spacing = 10
 
-        let content = NSStackView(views: [hero, vehicleCard, statusCard, activitySection, footer])
+        let content = NSStackView(views: [hero, statusCard, vehiclesSection, activitySection,
+                                          NSView(), footer])
         content.orientation = .vertical
         content.alignment = .leading
         content.spacing = HubMetrics.sectionSpacing
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         NSLayoutConstraint.activate([
-            content.widthAnchor.constraint(equalToConstant: HubMetrics.contentWidth),
             content.centerXAnchor.constraint(equalTo: centerXAnchor),
-            content.topAnchor.constraint(equalTo: topAnchor, constant: HubMetrics.pageInset),
-            content.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -HubMetrics.pageInset),
+            content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor,
+                                             constant: HubMetrics.pageInset),
+            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor,
+                                              constant: -HubMetrics.pageInset),
+            content.widthAnchor.constraint(equalToConstant: HubMetrics.contentWidth),
+            content.topAnchor.constraint(equalTo: topAnchor, constant: HubMetrics.pageTopInset),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -HubMetrics.pageInset),
             hero.widthAnchor.constraint(equalTo: content.widthAnchor),
-            vehicleCard.widthAnchor.constraint(equalTo: content.widthAnchor),
             statusCard.widthAnchor.constraint(equalTo: content.widthAnchor),
+            vehiclesSection.widthAnchor.constraint(equalTo: content.widthAnchor),
+            vehiclesCard.widthAnchor.constraint(equalTo: vehiclesSection.widthAnchor),
             activitySection.widthAnchor.constraint(equalTo: content.widthAnchor),
             activityCard.widthAnchor.constraint(equalTo: activitySection.widthAnchor),
             footer.widthAnchor.constraint(equalTo: content.widthAnchor),
@@ -192,7 +232,9 @@ final class HubDashboardView: HubSurfaceView {
     func apply(snapshot: HubSnapshot,
                transition: HubServiceTransition?,
                activity: [HubActivity]) {
-        heroTitle.stringValue = transition?.title ?? snapshot.health.title
+        let title = transition?.title ?? snapshot.health.title
+        if !heroTitle.stringValue.isEmpty, heroTitle.stringValue != title { HubMotion.transition(hero) }
+        heroTitle.stringValue = title
         heroSubtitle.stringValue = transition?.subtitle ?? subtitle(for: snapshot.health)
         heroSymbol.image = NSImage(systemSymbolName: transition?.symbol ?? symbol(for: snapshot.health),
                                    accessibilityDescription: heroTitle.stringValue)
@@ -225,7 +267,7 @@ final class HubDashboardView: HubSurfaceView {
                           enabled: controlsEnabled,
                           emptyTitle: snapshot.vehicleName,
                           emptyStatus: snapshot.vehicle)
-        vehicleCard.isHidden = snapshot.controlVehicles.isEmpty
+        renderVehicles(snapshot.controlVehicles)
         updateHeroActions(snapshot: snapshot, transition: transition)
         render(activity: activity.isEmpty ? snapshot.activity : activity)
     }
@@ -258,7 +300,7 @@ final class HubDashboardView: HubSurfaceView {
             heroProgress.centerYAnchor.constraint(equalTo: heroTile.centerYAnchor)
         ])
 
-        heroTitle.font = .systemFont(ofSize: 19, weight: .bold)
+        heroTitle.font = HubTypography.heading
         heroTitle.textColor = HubPalette.foreground
         heroSubtitle.font = .systemFont(ofSize: 13)
         heroSubtitle.textColor = HubPalette.mutedForeground
@@ -277,8 +319,8 @@ final class HubDashboardView: HubSurfaceView {
         diagnosticsButton.target = self
         diagnosticsButton.action = #selector(diagnosticsPressed)
         [startStopButton, restartButton, setupButton, diagnosticsButton].forEach {
-            $0.hubFont = .systemFont(ofSize: 12, weight: .medium)
-            $0.heightAnchor.constraint(equalToConstant: 28).isActive = true
+            $0.hubFont = HubTypography.action
+            $0.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
         }
         let controls = NSStackView(views: [startStopButton, restartButton,
                                            diagnosticsButton, setupButton])
@@ -293,8 +335,8 @@ final class HubDashboardView: HubSurfaceView {
 
     private func updateHeroActions(snapshot: HubSnapshot, transition: HubServiceTransition?) {
         let enabled = interactionsEnabled && transition == nil
-        startStopButton.isHidden = snapshot.health == .needsInstall
-        restartButton.isHidden = snapshot.health == .needsInstall
+        startStopButton.isHidden = snapshot.health == .running || snapshot.health == .needsInstall
+        restartButton.isHidden = snapshot.health == .running || snapshot.health == .needsInstall
         diagnosticsButton.isHidden = snapshot.health == .running || snapshot.health == .needsInstall
         setupButton.isHidden = snapshot.health != .needsInstall
         [startStopButton, restartButton, diagnosticsButton, setupButton].forEach { $0.isEnabled = enabled }
@@ -316,6 +358,10 @@ final class HubDashboardView: HubSurfaceView {
     }
 
     private func render(activity: [HubActivity]) {
+        let signature = activity.map { $0.message + "|" + $0.age }
+        guard renderedActivity != signature else { return }
+        if renderedActivity != nil { HubMotion.transition(activityStack) }
+        renderedActivity = signature
         activityStack.arrangedSubviews.forEach {
             activityStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -343,13 +389,86 @@ final class HubDashboardView: HubSurfaceView {
         }
     }
 
+    private func renderVehicles(_ vehicles: [HubControlVehicle]) {
+        guard renderedVehicles != vehicles else { return }
+        if renderedVehicles != nil { HubMotion.transition(vehicleSummaryStack) }
+        renderedVehicles = vehicles
+        vehicleSummaryStack.arrangedSubviews.forEach {
+            vehicleSummaryStack.removeArrangedSubview($0)
+            $0.removeFromSuperview()
+        }
+        let entries = vehicles.isEmpty
+            ? [HubControlVehicle(id: UUID(), displayName: "No vehicles yet",
+                                 status: "Connect a Tesla account to see vehicles here.")]
+            : vehicles
+        for (index, vehicle) in entries.enumerated() {
+            if index > 0 {
+                let line = separator()
+                vehicleSummaryStack.addArrangedSubview(line)
+                line.widthAnchor.constraint(equalTo: vehicleSummaryStack.widthAnchor).isActive = true
+            }
+            let iconTile = HubIconTileView(symbol: "car.side",
+                                           accessibilityDescription: vehicle.displayName)
+            let name = NSTextField(labelWithString: vehicle.displayName)
+            name.font = .systemFont(ofSize: 14, weight: .medium)
+            let status = NSTextField(labelWithString: vehicle.status)
+            status.font = .systemFont(ofSize: 12)
+            status.textColor = .secondaryLabelColor
+            status.lineBreakMode = .byTruncatingTail
+            let copy = NSStackView(views: [name, status])
+            copy.orientation = .vertical
+            copy.alignment = .leading
+            copy.spacing = 1
+            let chevron = NSImageView(image: NSImage(systemSymbolName: "chevron.right",
+                                                      accessibilityDescription: nil) ?? NSImage())
+            chevron.contentTintColor = .tertiaryLabelColor
+            let row = NSStackView(views: [iconTile, copy, NSView(), chevron])
+            row.alignment = .centerY
+            row.spacing = 12
+            row.edgeInsets = NSEdgeInsets(top: 10, left: HubMetrics.rowHorizontalInset,
+                                         bottom: 10, right: HubMetrics.rowHorizontalInset)
+            row.heightAnchor.constraint(equalToConstant: HubMetrics.rowHeight).isActive = true
+            let holder = NSView()
+            row.translatesAutoresizingMaskIntoConstraints = false
+            holder.addSubview(row)
+            NSLayoutConstraint.activate([
+                row.leadingAnchor.constraint(equalTo: holder.leadingAnchor),
+                row.trailingAnchor.constraint(equalTo: holder.trailingAnchor),
+                row.topAnchor.constraint(equalTo: holder.topAnchor),
+                row.bottomAnchor.constraint(equalTo: holder.bottomAnchor)
+            ])
+            if !vehicles.isEmpty {
+                let button = HubActionButton(title: "", target: self, action: #selector(openVehicle(_:)))
+                button.hubStyle = .flat
+                button.tag = index
+                button.setAccessibilityLabel(vehicle.displayName)
+                button.setAccessibilityHelp(vehicle.status)
+                button.translatesAutoresizingMaskIntoConstraints = false
+                holder.addSubview(button)
+                NSLayoutConstraint.activate([
+                    button.leadingAnchor.constraint(equalTo: holder.leadingAnchor),
+                    button.trailingAnchor.constraint(equalTo: holder.trailingAnchor),
+                    button.topAnchor.constraint(equalTo: holder.topAnchor),
+                    button.bottomAnchor.constraint(equalTo: holder.bottomAnchor)
+                ])
+            } else { chevron.isHidden = true }
+            vehicleSummaryStack.addArrangedSubview(holder)
+            holder.widthAnchor.constraint(equalTo: vehicleSummaryStack.widthAnchor).isActive = true
+        }
+    }
+
+    @objc private func openVehicle(_ sender: NSButton) {
+        guard interactionsEnabled, let vehicles = renderedVehicles, vehicles.indices.contains(sender.tag) else { return }
+        actions.vehicle.select(vehicles[sender.tag].id)
+    }
+
     private func flatButton(title: String, symbol: String?, action: Selector) -> HubActionButton {
         let button = HubActionButton(title: title, target: self, action: action)
         button.hubStyle = .flat
-        button.hubFont = .systemFont(ofSize: 12, weight: .medium)
+        button.hubFont = HubTypography.action
         button.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: title) }
         button.imagePosition = symbol == nil ? .noImage : .imageLeading
-        button.heightAnchor.constraint(equalToConstant: 27).isActive = true
+        button.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
         return button
     }
 

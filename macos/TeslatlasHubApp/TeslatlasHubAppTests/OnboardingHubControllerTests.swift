@@ -243,6 +243,33 @@ final class OnboardingHubControllerTests: XCTestCase {
         XCTAssertTrue(controller.shouldShowOnboarding(for: .firstRun))
     }
 
+    func testSourceRunControlModesDoNotBlockEmptyHubBehindAccountOnboarding() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        for mode in [DevelopmentHubMode.standalone, .edge] {
+            let configuration = DevelopmentHubConfiguration(
+                binary: home.appendingPathComponent("teslatlas-hub"),
+                config: home.appendingPathComponent("config.toml"),
+                stateDirectory: home.appendingPathComponent("state", isDirectory: true),
+                logDirectory: home.appendingPathComponent("logs", isDirectory: true),
+                ownerUID: 0,
+                mode: mode
+            )
+            let controller = HubController(
+                commandRunner: OnboardingRunner(),
+                installedCommandRunner: OnboardingRunner(),
+                installer: OnboardingInstaller(),
+                serviceRunner: OnboardingService(),
+                homeDirectory: home,
+                serviceInstalledOverride: true,
+                developmentConfiguration: configuration
+            )
+
+            XCTAssertFalse(controller.shouldShowOnboarding(for: .firstRun), "mode=\(mode)")
+        }
+    }
+
     func testOnlineMigrationStaysStoppedUntilHandoverAcknowledgement() throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }

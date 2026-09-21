@@ -23,19 +23,28 @@ final class LogsWindowController: NSWindowController {
     private let saveButton = HubActionButton(title: "Save…", target: nil, action: nil)
     private var latestText = ""
     private var operationInProgress = false
+    private weak var embeddedPage: NSView?
+    private var embeddedBody: NSView?
 
     init(controller: HubController,
          appLog: HubAppLogging = HubAppLog.shared,
-         savePanelPresenter: @escaping SavePanelPresenter = LogsWindowController.presentSavePanel) {
+         savePanelPresenter: @escaping SavePanelPresenter = LogsWindowController.presentSavePanel,
+         embedded: Bool = false) {
         self.controller = controller
         self.appLog = appLog
         self.savePanelPresenter = savePanelPresenter
-        super.init(window: HubUtilityWindowStyle.makeWindow(title: "Logs", size: HubMetrics.logsSheetSize,
-                                                           minimum: NSSize(width: 554, height: 300)))
-        window?.contentView = contentView()
-        utilityToolbar = HubUtilityToolbar(identifier: "hub.logs.toolbar", buttons: [copyButton, saveButton, moreButton])
-        window?.toolbar = utilityToolbar?.toolbar
-        window?.toolbarStyle = .expanded
+        super.init(window: embedded ? nil : HubUtilityWindowStyle.makeWindow(
+            title: "Activity & Logs", size: HubMetrics.logsSheetSize,
+            minimum: NSSize(width: 554, height: 300)
+        ))
+        let body = contentView()
+        window?.contentView = body
+        embeddedBody = embedded ? body : nil
+        if !embedded {
+            utilityToolbar = HubUtilityToolbar(identifier: "hub.logs.toolbar", buttons: [copyButton, saveButton, moreButton])
+            window?.toolbar = utilityToolbar?.toolbar
+            window?.toolbarStyle = .expanded
+        }
         if controller.previewMode {
             renderLogs(Self.previewLogText, status: "Preview fixture")
         } else {
@@ -45,6 +54,27 @@ final class LogsWindowController: NSWindowController {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func makeEmbeddedPage(onBack: @escaping () -> Void) -> NSView {
+        let body = window?.contentView ?? embeddedBody ?? NSView()
+        embeddedBody = nil
+        if let hostWindow = window {
+            hostWindow.toolbar = nil
+            hostWindow.contentView = NSView()
+            hostWindow.close()
+            window = nil
+        }
+        let page = HubEmbeddedUtilityPage(
+            symbol: "doc.text.magnifyingglass",
+            title: "Activity & Logs",
+            subtitle: "Review redacted Hub and application logs.",
+            body: body,
+            actions: [copyButton, saveButton, moreButton],
+            onBack: onBack
+        )
+        embeddedPage = page
+        return page
+    }
 
     private func contentView() -> NSView {
         let root = HubSurfaceView(fill: .elevated)
@@ -150,7 +180,7 @@ final class LogsWindowController: NSWindowController {
         let combined = Self.shareableText(redactedText)
         latestText = combined
         textView.string = Self.numberedPresentation(combined)
-        window?.contentView?.layoutSubtreeIfNeeded()
+        (embeddedPage ?? window?.contentView)?.layoutSubtreeIfNeeded()
         textView.fitDocument()
         textView.scrollToBeginningOfDocument(nil)
         statusLabel.stringValue = status
@@ -197,12 +227,13 @@ final class LogsWindowController: NSWindowController {
 
     @objc private func savePressed() {
         guard !controller.previewMode else { return }
-        guard !latestText.isEmpty, let window else { return }
+        guard !latestText.isEmpty,
+              let presentationWindow = embeddedPage?.window ?? window else { return }
         let report = Self.shareableText(latestText)
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "teslatlas-hub-logs.txt"
         panel.canCreateDirectories = true
-        savePanelPresenter(panel, window) { [weak self] response in
+        savePanelPresenter(panel, presentationWindow) { [weak self] response in
             guard response == .OK, let destination = panel.url else { return }
             do {
                 try HubAppLog.writePrivateReport(report, to: destination)
@@ -252,10 +283,10 @@ final class LogsWindowController: NSWindowController {
         button.target = self
         button.action = action
         button.hubStyle = style
-        button.hubFont = .systemFont(ofSize: 12, weight: .medium)
+        button.hubFont = HubTypography.action
         button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: button.title)
         button.imagePosition = .imageLeading
-        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        button.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
     }
 
     private static let previewLogText = """

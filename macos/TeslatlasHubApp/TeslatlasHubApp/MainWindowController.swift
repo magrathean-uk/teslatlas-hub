@@ -19,7 +19,6 @@ final class MainWindowController: NSWindowController {
     private let activityStack = NSStackView()
     private let versionLabel = NSTextField(labelWithString: "")
     private let titlebarTitle = NSTextField(labelWithString: "Teslatlas Hub")
-    private let appearanceButton = HubActionButton(title: "", target: nil, action: nil)
     private let stopButton = HubActionButton(title: "Stop Hub", target: nil, action: nil)
     private let restartButton = HubActionButton(title: "Restart", target: nil, action: nil)
     private let installButton = HubActionButton(title: "Set Up Hub", target: nil, action: nil)
@@ -37,7 +36,7 @@ final class MainWindowController: NSWindowController {
     private var vehicleControlOutcomeUnknown = false
     private(set) var accountWorkflowActive = false
     private var serviceDetailsMutationPending = false
-    private var titlebarAccessory: NSTitlebarAccessoryViewController?
+    private var mainToolbar: HubMainToolbar?
     private(set) var detailsWindow: ServiceDetailsWindowController?
     private var modalState = HubModalState()
     private var activeModalController: NSWindowController?
@@ -55,9 +54,15 @@ final class MainWindowController: NSWindowController {
     private let serviceTransitionPollInterval: TimeInterval
     private let errorPresenter: (Error) -> Void
     private var navigationBar: HubNavigationBar!
+    private let pageContainer = NSView()
     private(set) var dashboardView: HubDashboardView!
     private(set) var vehiclesView: HubVehiclesView!
+    private(set) var activityPage: HubActivityView!
+    private(set) var settingsPage: HubSettingsView!
     private(set) var selectedSection: HubMainSection = .dashboard
+    private var embeddedDetailController: NSWindowController?
+    private var embeddedDetailView: NSView?
+    private var embeddedParentSection: HubMainSection?
     private var appearancePreference = HubAppearancePreference()
     private var sessionActivity = HubSessionActivityStore(limit: 3, now: Date.init)
     private var lastPresentedSnapshot: HubSnapshot
@@ -90,9 +95,8 @@ final class MainWindowController: NSWindowController {
         window.title = "Teslatlas Hub"
         window.backgroundColor = HubPalette.background
         window.isOpaque = true
-        window.minSize = NSSize(width: 760, height: 610)
+        window.minSize = NSSize(width: 820, height: 640)
         super.init(window: window)
-        configureTitlebar(window)
         detailsButton.target = self
         detailsButton.action = #selector(detailsPressed)
         connectButton.target = self
@@ -104,8 +108,12 @@ final class MainWindowController: NSWindowController {
         dashboardView = HubDashboardView(actions: makeDashboardActions())
         vehiclesView = HubVehiclesView(actions: makeVehicleActions())
         navigationBar = HubNavigationBar(actions: makeNavigationActions())
+        activityPage = HubActivityView(actions: makeNavigationActions())
+        settingsPage = HubSettingsView(actions: makeNavigationActions())
+        mainToolbar = HubMainToolbar(navigationBar: navigationBar)
+        configureTitlebar(window)
         window.contentView = makeContentView()
-        window.contentMinSize = NSSize(width: max(900, navigationBar.fittingSize.width + 24), height: 590)
+        window.contentMinSize = NSSize(width: 820, height: 590)
         appearancePreference.apply(to: window)
         window.center()
         update()
@@ -132,58 +140,22 @@ final class MainWindowController: NSWindowController {
 
     private func configureTitlebar(_ window: NSWindow) {
         window.titleVisibility = .visible
-        appearanceButton.target = self
-        appearanceButton.action = #selector(appearancePressed)
-        appearanceButton.image = NSImage(systemSymbolName: "moon",
-                                         accessibilityDescription: "Appearance")
-        appearanceButton.imagePosition = .imageOnly
-        appearanceButton.setAccessibilityLabel("Appearance")
-        appearanceButton.toolTip = "Appearance"
-        appearanceButton.hubStyle = .flat
-        appearanceButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        appearanceButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
-        let wrapper = NSView(frame: NSRect(x: 0, y: 0, width: 44, height: 38))
-        appearanceButton.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(appearanceButton)
-        NSLayoutConstraint.activate([
-            appearanceButton.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
-            appearanceButton.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -8)
-        ])
-        let accessory = NSTitlebarAccessoryViewController()
-        accessory.view = wrapper
-        accessory.layoutAttribute = .right
-        window.addTitlebarAccessoryViewController(accessory)
-        titlebarAccessory = accessory
+        window.toolbar = mainToolbar?.toolbar
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .automatic
     }
 
     private func makeContentView() -> NSView {
-        let root = HubSurfaceView(fill: .background)
-        let separator = NSBox()
-        separator.boxType = .separator
-        let pageContainer = NSView()
-        let stack = NSStackView(views: [navigationBar, separator, pageContainer])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 0
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        navigationBar.translatesAutoresizingMaskIntoConstraints = false
-        separator.translatesAutoresizingMaskIntoConstraints = false
-        pageContainer.translatesAutoresizingMaskIntoConstraints = false
-        root.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: root.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            navigationBar.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            separator.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            separator.heightAnchor.constraint(equalToConstant: 1),
-            pageContainer.widthAnchor.constraint(equalTo: stack.widthAnchor)
-        ])
+        pageContainer.translatesAutoresizingMaskIntoConstraints = true
+        pageContainer.autoresizingMask = [.width, .height]
         dashboardView.translatesAutoresizingMaskIntoConstraints = false
         vehiclesView.translatesAutoresizingMaskIntoConstraints = false
+        activityPage.translatesAutoresizingMaskIntoConstraints = false
+        settingsPage.translatesAutoresizingMaskIntoConstraints = false
         pageContainer.addSubview(dashboardView)
         pageContainer.addSubview(vehiclesView)
+        pageContainer.addSubview(activityPage)
+        pageContainer.addSubview(settingsPage)
         NSLayoutConstraint.activate([
             dashboardView.leadingAnchor.constraint(equalTo: pageContainer.leadingAnchor),
             dashboardView.trailingAnchor.constraint(equalTo: pageContainer.trailingAnchor),
@@ -192,10 +164,18 @@ final class MainWindowController: NSWindowController {
             vehiclesView.leadingAnchor.constraint(equalTo: pageContainer.leadingAnchor),
             vehiclesView.trailingAnchor.constraint(equalTo: pageContainer.trailingAnchor),
             vehiclesView.topAnchor.constraint(equalTo: pageContainer.topAnchor),
-            vehiclesView.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor)
+            vehiclesView.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor),
+            activityPage.leadingAnchor.constraint(equalTo: pageContainer.leadingAnchor),
+            activityPage.trailingAnchor.constraint(equalTo: pageContainer.trailingAnchor),
+            activityPage.topAnchor.constraint(equalTo: pageContainer.topAnchor),
+            activityPage.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor),
+            settingsPage.leadingAnchor.constraint(equalTo: pageContainer.leadingAnchor),
+            settingsPage.trailingAnchor.constraint(equalTo: pageContainer.trailingAnchor),
+            settingsPage.topAnchor.constraint(equalTo: pageContainer.topAnchor),
+            settingsPage.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor)
         ])
         selectMainSection(.dashboard)
-        return root
+        return pageContainer
     }
 
     private func makeDashboardActions() -> HubDashboardActions {
@@ -206,10 +186,13 @@ final class MainWindowController: NSWindowController {
             setup: { [weak self] in self?.connectTeslaPressed() },
             diagnostics: { [weak self] in self?.diagnosticsPressed() },
             vehicle: HubVehicleCardActions(
-                select: { [weak self] id in self?.selectVehicle(id) },
+                select: { [weak self] id in
+                    self?.selectVehicle(id)
+                    self?.selectMainSection(.vehicles)
+                },
                 command: { [weak self] command, id in self?.vehicleCommand(command, vehicleID: id) }
             ),
-            serviceDetails: { [weak self] in self?.detailsPressed() },
+            serviceDetails: { [weak self] in self?.showEmbeddedServiceDetails() },
             dataFolder: { [weak self] in self?.folderPressed() }
         )
     }
@@ -224,25 +207,45 @@ final class MainWindowController: NSWindowController {
     private func makeNavigationActions() -> HubNavigationActions {
         HubNavigationActions(
             select: { [weak self] section in self?.selectMainSection(section) },
-            diagnostics: { [weak self] in _ = self?.showDiagnostics() },
-            logs: { [weak self] in self?.logsPressed() },
-            serviceDetails: { [weak self] in self?.detailsPressed() },
+            diagnostics: { [weak self] in self?.showEmbeddedDiagnostics() },
+            logs: { [weak self] in self?.showEmbeddedLogs() },
+            serviceDetails: { [weak self] in self?.showEmbeddedServiceDetails() },
             importTeslaMate: { [weak self] in self?.importPressed() },
             connectTesla: { [weak self] in self?.connectTeslaPressed() },
-            manageTesla: { [weak self] sender in self?.manageTeslaPressed(sender) }
+            accountMenu: { [weak self] in self?.teslaAccountMenu() ?? NSMenu() },
+            appearance: { [weak self] in self?.appearancePressed() }
         )
     }
 
+    var navigationAvailable: Bool {
+        serviceTransition == nil && !vehicleControlPending
+            && !accountWorkflowActive && !serviceDetailsMutationPending
+    }
+
+    var canImportTeslaMate: Bool { navigationAvailable && lastPresentedSnapshot.shouldOfferTeslaMateImport }
+
     func selectMainSection(_ section: HubMainSection) {
+        guard navigationAvailable else { return }
+        if selectedSection != section || embeddedDetailView != nil {
+            HubMotion.transition(pageContainer, forward: embeddedDetailView == nil ? nil : false)
+        }
+        clearEmbeddedDetail()
         let changed = selectedSection != section
         selectedSection = section
         dashboardView?.isHidden = section != .dashboard
         vehiclesView?.isHidden = section != .vehicles
+        activityPage?.isHidden = section != .activity
+        settingsPage?.isHidden = section != .settings
         navigationBar?.select(section)
         updateDefaultButton()
-        if changed, let page = section == .dashboard ? dashboardView as NSView? : vehiclesView as NSView? {
-            HubMotion.transition(page)
+        let selectedView: NSView?
+        switch section {
+        case .dashboard: selectedView = dashboardView
+        case .vehicles: selectedView = vehiclesView
+        case .activity: selectedView = activityPage
+        case .settings: selectedView = settingsPage
         }
+        if changed { selectedView?.layoutSubtreeIfNeeded() }
     }
 
     private func updateDefaultButton() {
@@ -253,25 +256,30 @@ final class MainWindowController: NSWindowController {
     func configurePreviewScene(_ scene: HubPreviewScene) {
         guard controller.previewMode else { return }
         switch scene {
-        case .welcome, .choose, .migration, .migrationConnected, .verify, .finishMigration:
+        case .welcome, .choose, .provider, .fleet, .legacy, .migration,
+             .migrationConnected, .importing, .verify, .finish, .finishMigration:
             _ = showFirstRunOnboarding()
         case .dashboard:
             selectMainSection(.dashboard)
         case .vehicles:
             selectMainSection(.vehicles)
+        case .activity:
+            selectMainSection(.activity)
+        case .settings:
+            selectMainSection(.settings)
         case .diagnostics:
             selectMainSection(.vehicles)
-            _ = showDiagnostics()
+            showEmbeddedDiagnostics()
         case .logs:
-            selectMainSection(.vehicles)
-            _ = showLogs()
+            selectMainSection(.activity)
+            showEmbeddedLogs()
         case .serviceDetails:
-            selectMainSection(.vehicles)
-            _ = showServiceDetails()
+            selectMainSection(.settings)
+            showEmbeddedServiceDetails()
         case .manageMenu:
             selectMainSection(.vehicles)
             DispatchQueue.main.async { [weak self] in
-                self?.navigationBar.showAccountMenuForPreview()
+                self?.mainToolbar?.showAccountMenuForPreview()
             }
         }
     }
@@ -575,6 +583,8 @@ final class MainWindowController: NSWindowController {
         let vehicleControlsEnabled = acceptedVehicleControlsEnabled(for: snapshot)
         dashboardView.setVehicleControlsEnabled(vehicleControlsEnabled)
         dashboardView.apply(snapshot: snapshot, transition: nil, activity: sessionActivity.activities)
+        activityPage.apply(snapshot: snapshot, activity: sessionActivity.activities)
+        settingsPage.apply(snapshot: snapshot)
         heroDot.image = NSApplication.shared.applicationIconImage
         heroDot.isHidden = false
         heroProgress.stopAnimation(nil)
@@ -629,9 +639,10 @@ final class MainWindowController: NSWindowController {
         restartButton.isEnabled = mutableActionsAvailable
         heroDiagnosticsButton.isEnabled = mutableActionsAvailable
         connectButton.isEnabled = accountActionsAvailable
-        importButton.isEnabled = accountActionsAvailable
+        importButton.isEnabled = accountActionsAvailable && snapshot.shouldOfferTeslaMateImport
         detailsButton.isEnabled = !accountWorkflowActive
         connectButton.isHidden = false
+        importButton.isHidden = !snapshot.shouldOfferTeslaMateImport
         if snapshot.account == "Connected" {
             connectButton.title = "Manage Tesla"
             connectButton.image = NSImage(systemSymbolName: "person.crop.circle.badge.checkmark",
@@ -644,6 +655,7 @@ final class MainWindowController: NSWindowController {
             connectButton.action = #selector(connectTeslaPressed)
         }
         navigationBar.apply(snapshot: snapshot, enabled: accountActionsAvailable)
+        mainToolbar?.apply(snapshot: snapshot, enabled: accountActionsAvailable)
         let controlsAvailable = !controller.previewMode
             && snapshot.health == .running
             && snapshot.account == "Connected"
@@ -844,7 +856,7 @@ final class MainWindowController: NSWindowController {
         dashboardView.selectVehicle(id: vehicleID)
     }
 
-    private func vehicleCommand(_ action: HubVehicleControl, vehicleID: UUID) {
+    func vehicleCommand(_ action: HubVehicleControl, vehicleID: UUID) {
         guard serviceTransition == nil, !accountWorkflowActive,
               !serviceDetailsMutationPending,
               let vehicle = controlVehicles.first(where: { $0.id == vehicleID }) else { return }
@@ -967,6 +979,7 @@ final class MainWindowController: NSWindowController {
         connectButton.isEnabled = false
         importButton.isEnabled = false
         navigationBar.apply(snapshot: lastPresentedSnapshot, enabled: false)
+        mainToolbar?.apply(snapshot: lastPresentedSnapshot, enabled: false)
         vehiclesView.apply(snapshot: lastPresentedSnapshot, enabled: false)
         detailsButton.isEnabled = false
         vehicleActionButtons.forEach { $0.isEnabled = false }
@@ -1048,9 +1061,10 @@ final class MainWindowController: NSWindowController {
     func settleStartedHubFromOnboarding() {
         guard serviceTransition == nil else { return }
         guard let token = beginServiceTransition(.starting) else { return }
+        armServiceTransitionDeadline(.starting, token: token)
         DispatchQueue.main.asyncAfter(deadline: .now() + serviceTransitionPollInterval) {
             [weak self] in
-            self?.settleServiceTransition(.starting, expectedHealth: .running, token: token)
+            self?.probeServiceTransition(.starting, expectedHealth: .running, token: token)
         }
     }
 
@@ -1105,6 +1119,7 @@ final class MainWindowController: NSWindowController {
         connectButton.isEnabled = false
         importButton.isEnabled = false
         navigationBar.apply(snapshot: lastPresentedSnapshot, enabled: false)
+        mainToolbar?.apply(snapshot: lastPresentedSnapshot, enabled: false)
         vehiclesView.apply(snapshot: lastPresentedSnapshot, enabled: false)
         vehicleActionButtons.forEach { $0.isEnabled = false }
         controller.performVehicleControl(action, vehicleID: vehicleID) { [weak self] result in
@@ -1133,23 +1148,102 @@ final class MainWindowController: NSWindowController {
     }
 
     @objc private func importPressed() {
+        guard lastPresentedSnapshot.shouldOfferTeslaMateImport else { return }
         showOnboarding(route: .migration)
     }
+
+    func showImport() { importPressed() }
+
+    func toggleSidebar() {}
 
     @objc private func appearancePressed() {
         let isDark = window?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         _ = appearancePreference.toggle(currentIsDark: isDark)
         if let window {
+            if let content = window.contentView { HubMotion.transition(content) }
             appearancePreference.apply(to: window)
-            appearanceButton.image = NSImage(
-                systemSymbolName: isDark ? "moon" : "sun.max",
-                accessibilityDescription: isDark ? "Switch to dark appearance" : "Switch to light appearance"
-            )
         }
     }
 
     @objc private func logsPressed() {
-        _ = showLogs()
+        showEmbeddedLogs()
+    }
+
+    func showEmbeddedLogs() {
+        guard canPresentEmbeddedDetail else { NSSound.beep(); return }
+        let logs = LogsWindowController(controller: controller, embedded: true)
+        let page = logs.makeEmbeddedPage { [weak self] in self?.dismissEmbeddedDetail() }
+        presentEmbeddedDetail(logs, page: page, from: .activity)
+    }
+
+    func showEmbeddedDiagnostics() {
+        guard canPresentEmbeddedDetail else { NSSound.beep(); return }
+        let diagnostics = DiagnosticsWindowController(controller: controller, embedded: true)
+        let page = diagnostics.makeEmbeddedPage { [weak self] in self?.dismissEmbeddedDetail() }
+        presentEmbeddedDetail(diagnostics, page: page, from: .settings)
+    }
+
+    func showEmbeddedServiceDetails() {
+        guard canPresentEmbeddedDetail else { NSSound.beep(); return }
+        let details = ServiceDetailsWindowController(
+            snapshot: controller.snapshot,
+            controller: controller,
+            mutationAllowed: { [weak self] in
+                guard let self else { return false }
+                return !self.accountWorkflowActive && !self.serviceDetailsMutationPending
+            },
+            onMutationStateChanged: { [weak self] in
+                self?.setServiceDetailsMutationPending($0)
+            },
+            onChanged: { [weak self] in self?.update() },
+            onDismiss: { [weak self] in self?.dismissEmbeddedDetail() },
+            embedded: true
+        )
+        details.setMutationsEnabled(!accountWorkflowActive && !serviceDetailsMutationPending)
+        detailsWindow = details
+        let page = details.makeEmbeddedPage { [weak self] in self?.dismissEmbeddedDetail() }
+        presentEmbeddedDetail(details, page: page, from: .settings)
+    }
+
+    private var canPresentEmbeddedDetail: Bool {
+        navigationAvailable && activeModalKind == nil
+    }
+
+    private func presentEmbeddedDetail(_ controller: NSWindowController,
+                                       page: NSView,
+                                       from section: HubMainSection) {
+        HubMotion.transition(pageContainer, forward: true)
+        clearEmbeddedDetail()
+        selectedSection = section
+        embeddedParentSection = section
+        embeddedDetailController = controller
+        embeddedDetailView = page
+        [dashboardView, vehiclesView, activityPage, settingsPage].forEach { $0?.isHidden = true }
+        page.translatesAutoresizingMaskIntoConstraints = false
+        pageContainer.addSubview(page)
+        NSLayoutConstraint.activate([
+            page.leadingAnchor.constraint(equalTo: pageContainer.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: pageContainer.trailingAnchor),
+            page.topAnchor.constraint(equalTo: pageContainer.topAnchor),
+            page.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor)
+        ])
+        navigationBar.select(section)
+        window?.defaultButtonCell = nil
+        page.layoutSubtreeIfNeeded()
+    }
+
+    private func dismissEmbeddedDetail() {
+        guard navigationAvailable else { return }
+        let section = embeddedParentSection ?? selectedSection
+        selectMainSection(section)
+    }
+
+    private func clearEmbeddedDetail() {
+        embeddedDetailView?.removeFromSuperview()
+        if detailsWindow === embeddedDetailController { detailsWindow = nil }
+        embeddedDetailView = nil
+        embeddedDetailController = nil
+        embeddedParentSection = nil
     }
 
     @discardableResult
@@ -1180,13 +1274,23 @@ final class MainWindowController: NSWindowController {
     }
 
     @objc private func manageTeslaPressed(_ sender: NSButton) {
-        let menu = NSMenu(title: "Tesla account")
-        menu.addItem(menuItem("Use Fleet API", action: #selector(useFleetPressed)))
-        menu.addItem(menuItem("Use Legacy token", action: #selector(useLegacyPressed)))
-        menu.addItem(menuItem("Migrate from TeslaMate…", action: #selector(migrateTeslaMatePressed)))
-        menu.addItem(.separator())
-        menu.addItem(menuItem("Disconnect Tesla…", action: #selector(disconnectTeslaPressed)))
+        let menu = teslaAccountMenu()
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
+    }
+
+    private func teslaAccountMenu() -> NSMenu {
+        let menu = NSMenu(title: "Tesla account")
+        if lastPresentedSnapshot.account == "Connected" {
+            menu.addItem(menuItem("Use Fleet API", action: #selector(useFleetPressed)))
+            menu.addItem(menuItem("Use Legacy token", action: #selector(useLegacyPressed)))
+            menu.addItem(menuItem("Migrate from TeslaMate…", action: #selector(migrateTeslaMatePressed)))
+            menu.addItem(.separator())
+            menu.addItem(menuItem("Disconnect Tesla…", action: #selector(disconnectTeslaPressed)))
+        } else {
+            menu.addItem(menuItem("Connect Tesla Account…", action: #selector(connectTeslaPressed)))
+            menu.addItem(menuItem("Migrate from TeslaMate…", action: #selector(migrateTeslaMatePressed)))
+        }
+        return menu
     }
 
     private func menuItem(_ title: String, action: Selector) -> NSMenuItem {
@@ -1248,6 +1352,7 @@ final class MainWindowController: NSWindowController {
                 initialRoute: route,
                 previewRoute: previewRoute,
                 dismissalPolicy: dismissalPolicy,
+                closesWindowOnCancel: !HubUIPresentation.isSilentTestHost,
                 onDismiss: { [weak self] in
                     self?.handleOnboardingDismissal(identifier: identifier)
                 }
@@ -1308,7 +1413,11 @@ final class MainWindowController: NSWindowController {
         guard let sheet = controller.window else { return nil }
         activeModalController = controller
         if kind == .onboarding {
-            parent.beginSheet(sheet)
+            sheet.appearance = parent.appearance
+            sheet.setFrame(parent.frame, display: false)
+            parent.orderOut(nil)
+            if !HubUIPresentation.isSilentTestHost { controller.showWindow(nil) }
+            sheet.makeKeyAndOrderFront(nil)
         } else {
             sheet.appearance = parent.appearance
             let origin = NSPoint(x: parent.frame.midX - sheet.frame.width / 2,
@@ -1356,7 +1465,12 @@ final class MainWindowController: NSWindowController {
         modalState.dismiss(kind)
         if let sheet, let parent = window {
             if sheet.sheetParent === parent { parent.endSheet(sheet) }
-            sheet.orderOut(nil)
+            if kind != .onboarding || !HubUIPresentation.isSilentTestHost {
+                sheet.orderOut(nil)
+            }
+            if kind == .onboarding, !HubUIPresentation.isSilentTestHost {
+                parent.makeKeyAndOrderFront(nil)
+            }
         }
     }
 
@@ -1376,8 +1490,11 @@ final class MainWindowController: NSWindowController {
         heroDiagnosticsButton.isEnabled = mutableActionsAvailable
         connectButton.isEnabled = mutableActionsAvailable
         importButton.isEnabled = mutableActionsAvailable
+            && lastPresentedSnapshot.shouldOfferTeslaMateImport
         navigationBar.apply(snapshot: lastPresentedSnapshot,
                             enabled: mutableActionsAvailable && !vehicleControlPending)
+        mainToolbar?.apply(snapshot: lastPresentedSnapshot,
+                           enabled: mutableActionsAvailable && !vehicleControlPending)
         let vehicleControlsEnabled = acceptedVehicleControlsEnabled(for: lastPresentedSnapshot)
         vehiclesView.apply(snapshot: lastPresentedSnapshot,
                            enabled: vehicleControlsEnabled)
@@ -1397,6 +1514,7 @@ final class MainWindowController: NSWindowController {
 
     private func setServiceDetailsMutationPending(_ pending: Bool) {
         serviceDetailsMutationPending = pending
+        (embeddedDetailView as? HubEmbeddedUtilityPage)?.setNavigationEnabled(!pending)
         let mutableActionsAvailable = serviceTransition == nil
             && !pending && !accountWorkflowActive
         stopButton.isEnabled = mutableActionsAvailable
@@ -1405,8 +1523,11 @@ final class MainWindowController: NSWindowController {
         heroDiagnosticsButton.isEnabled = mutableActionsAvailable
         connectButton.isEnabled = mutableActionsAvailable && !vehicleControlPending
         importButton.isEnabled = mutableActionsAvailable && !vehicleControlPending
+            && lastPresentedSnapshot.shouldOfferTeslaMateImport
         navigationBar.apply(snapshot: lastPresentedSnapshot,
                             enabled: mutableActionsAvailable && !vehicleControlPending)
+        mainToolbar?.apply(snapshot: lastPresentedSnapshot,
+                           enabled: mutableActionsAvailable && !vehicleControlPending)
         let vehicleControlsEnabled = acceptedVehicleControlsEnabled(for: lastPresentedSnapshot)
         vehiclesView.apply(snapshot: lastPresentedSnapshot,
                            enabled: vehicleControlsEnabled)
@@ -1498,7 +1619,7 @@ final class MainWindowController: NSWindowController {
     }
 
     @objc private func detailsPressed() {
-        _ = showServiceDetails()
+        showEmbeddedServiceDetails()
     }
 
     @discardableResult
@@ -1553,7 +1674,7 @@ final class MainWindowController: NSWindowController {
         } as? DiagnosticsWindowController
     }
 
-    @objc private func diagnosticsPressed() { _ = showDiagnostics() }
+    @objc private func diagnosticsPressed() { showEmbeddedDiagnostics() }
 
     @objc private func folderPressed() { controller.showDataFolder() }
 }
