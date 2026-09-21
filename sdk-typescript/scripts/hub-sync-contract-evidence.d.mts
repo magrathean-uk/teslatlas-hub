@@ -21,3 +21,5 @@ export function requestSignedSyncJson(options: {
   readonly signatureVerified: true;
   readonly status: 200;
 }>;
+
+export function validateSchema22Noop(manifest: unknown, noop: unknown): void;
