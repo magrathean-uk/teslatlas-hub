@@ -201,6 +201,20 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
             return "wrong_hub"
         return None
 
+    @staticmethod
+    def _has_saved_origin_binding(
+        entry_data: Mapping[str, Any], endpoint: HubEndpoint
+    ) -> bool:
+        """Require the candidate TLS channel to present the saved leaf pin."""
+        saved_pin = entry_data.get(CONF_TLS_PIN)
+        return (
+            entry_data[CONF_USE_TLS] is True
+            and isinstance(saved_pin, str)
+            and bool(saved_pin)
+            and endpoint.use_tls
+            and endpoint.tls_pin == saved_pin
+        )
+
     @override
     async def async_step_user(
         self,
@@ -451,26 +465,29 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                     self._abort_if_unique_id_mismatch(reason="wrong_hub")
                 finally:
                     await client.async_close()
-                error = await self._async_validate_access(
-                    endpoint,
-                    hub_id=entry.data[CONF_HUB_ID],
-                    access_token=entry.data[CONF_ACCESS_TOKEN],
-                    expires_at_ms=entry.data.get(CONF_TOKEN_EXPIRES_AT_MS),
-                )
-                if error == "wrong_hub":
-                    return self.async_abort(reason="wrong_hub")
-                if error is not None:
-                    errors["base"] = error
+                if not self._has_saved_origin_binding(entry.data, endpoint):
+                    errors["base"] = "invalid_contract"
                 else:
-                    return self.async_update_reload_and_abort(
-                        entry,
-                        data_updates={
-                            CONF_HOST: endpoint.host,
-                            CONF_PORT: endpoint.port,
-                            CONF_USE_TLS: endpoint.use_tls,
-                            CONF_TLS_PIN: endpoint.tls_pin,
-                        },
+                    error = await self._async_validate_access(
+                        endpoint,
+                        hub_id=entry.data[CONF_HUB_ID],
+                        access_token=entry.data[CONF_ACCESS_TOKEN],
+                        expires_at_ms=entry.data.get(CONF_TOKEN_EXPIRES_AT_MS),
                     )
+                    if error == "wrong_hub":
+                        return self.async_abort(reason="wrong_hub")
+                    if error is not None:
+                        errors["base"] = error
+                    else:
+                        return self.async_update_reload_and_abort(
+                            entry,
+                            data_updates={
+                                CONF_HOST: endpoint.host,
+                                CONF_PORT: endpoint.port,
+                                CONF_USE_TLS: endpoint.use_tls,
+                                CONF_TLS_PIN: endpoint.tls_pin,
+                            },
+                        )
 
         return self.async_show_form(
             step_id="reconfigure_confirm",

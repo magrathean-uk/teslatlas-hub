@@ -442,7 +442,7 @@ async def test_cancelled_reconfigure_closes_probed_client(
     assert fixture_client.closed is True
 
 
-async def test_reconfigure_probes_without_saved_bearer_before_endpoint_update(
+async def test_reconfigure_same_pinned_origin_authenticates_before_atomic_update(
     hass: HomeAssistant,
     client_factory,
 ) -> None:
@@ -458,7 +458,7 @@ async def test_reconfigure_probes_without_saved_bearer_before_endpoint_update(
             CONF_HOST: "new-hub.local",
             CONF_PORT: 8443,
             CONF_USE_TLS: True,
-            CONF_TLS_PIN: "d" * 64,
+            CONF_TLS_PIN: "c" * 64,
         },
     )
     assert result["reason"] == "reconfigure_successful"
@@ -466,6 +466,35 @@ async def test_reconfigure_probes_without_saved_bearer_before_endpoint_update(
     assert entry.data[CONF_ACCESS_TOKEN] == "old-device-bearer"
     assert client_factory.call_args.kwargs["bearer_token"] == "old-device-bearer"
     assert client_factory.call_count == 2
+
+
+async def test_reconfigure_lookalike_hub_id_never_receives_saved_bearer(
+    hass: HomeAssistant,
+    client_factory,
+) -> None:
+    """A matching public Hub ID cannot substitute for the saved TLS binding."""
+    entry = _entry(hass)
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_HOST: "lookalike-hub.local",
+            CONF_PORT: 8443,
+            CONF_USE_TLS: True,
+            CONF_TLS_PIN: "d" * 64,
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_contract"}
+    assert entry.data[CONF_HOST] == "old-hub.local"
+    assert entry.data[CONF_TLS_PIN] == "c" * 64
+    assert client_factory.call_count == 1
+    assert client_factory.call_args.kwargs["bearer_token"] is None
 
 
 async def test_reconfigure_keeps_old_endpoint_when_saved_bearer_cannot_read_new_one(
@@ -487,7 +516,7 @@ async def test_reconfigure_keeps_old_endpoint_when_saved_bearer_cannot_read_new_
             CONF_HOST: "new-hub.local",
             CONF_PORT: 8443,
             CONF_USE_TLS: True,
-            CONF_TLS_PIN: "d" * 64,
+            CONF_TLS_PIN: "c" * 64,
         },
     )
 
