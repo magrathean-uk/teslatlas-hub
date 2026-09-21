@@ -792,7 +792,7 @@ final class OnboardingHubControllerTests: XCTestCase {
             collector = "null"
         }
         return """
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":\(ready),"readinessReason":\(ready ? "null" : "\"collector_absent\""),"provider":"legacy","vehicle":{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000},"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000}],"credentials":{"present":true},"legacyCredentials":{"present":true,"expiresAt":null,"nextRefreshAt":null},"fleetCredentials":{"present":false,"expiresAt":null,"nextRefreshAt":null,"scopes":null,"scopeStatus":null},"fleetTelemetry":{"enabled":false,"configured":false,"mode":"disabled","operationalState":"disabled","paidVehicleDataPolling":false,"deliveryPolicy":null},"collector":\(collector)}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":\(ready),"readinessReason":\(ready ? "null" : "\"collector_absent\""),"provider":"legacy","vehicle":{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000},"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000}],"credentials":{"present":true},"legacyCredentials":{"present":true,"expiresAt":null,"nextRefreshAt":null},"fleetCredentials":{"present":false,"expiresAt":null,"nextRefreshAt":null,"scopes":null,"scopeStatus":null},"fleetTelemetry":{"enabled":false,"configured":false,"mode":"disabled","operationalState":"disabled","paidVehicleDataPolling":false,"deliveryPolicy":null},"collector":\(collector)}
         """
     }
 }
@@ -862,7 +862,7 @@ private final class OnboardingRunner: HubCommandRunning {
             events?.append("status")
             if statusResults.isEmpty {
                 completion(.success("""
-                {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena"}],"credentials":{"present":true}}
+                {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena"}],"credentials":{"present":true}}
                 """))
             } else {
                 completion(statusResults.removeFirst())

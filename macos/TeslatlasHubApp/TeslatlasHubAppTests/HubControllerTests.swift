@@ -15,7 +15,7 @@ final class HubControllerTests: XCTestCase {
             try Data("started\n".utf8).write(to: folder.appendingPathComponent("hub.out.log"))
             let runner = CommandMapRunner(responses: [
                 "status": .success("""
-                {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1024},"ready":\(ready),"provider":"legacy","vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Example"}],"credentials":{"present":true}}
+                {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1024},"ready":\(ready),"provider":"legacy","vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Example"}],"credentials":{"present":true}}
                 """),
                 "doctor": .failure(HubActionError.commandFailed("hub catalogue changed during the immutable diagnostic check"))
             ])
@@ -448,7 +448,7 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(text.contains("TeslaMate is not written"))
             XCTAssertTrue(text.contains("tokens are not deleted") || text.contains("Tokens are not deleted") || text.contains("Owner and Fleet tokens"))
             XCTAssertTrue(text.contains("== support metadata =="))
-            XCTAssertTrue(text.contains("Expected Hub: 2026.36.1"))
+            XCTAssertTrue(text.contains("Expected Hub: \(HubRelease.bundledVersion)"))
             XCTAssertTrue(text.contains("Service: not installed"))
             XCTAssertTrue(text.contains("Provider: Not configured"))
             XCTAssertTrue(text.contains("macOS:"))
@@ -740,7 +740,7 @@ final class HubControllerTests: XCTestCase {
 
     func testStoppedDashboardSaysStoppedWithoutRequestingSetup() {
         let installed = RecordingCommandRunner(result: .success("""
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """))
         let controller = HubController(installedCommandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .unloaded),
@@ -770,7 +770,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let installed = RecordingCommandRunner(result: .success("""
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicle":null,"vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true},"legacyCredentials":{"present":false},"fleetCredentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicle":null,"vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true},"legacyCredentials":{"present":false},"fleetCredentials":{"present":true}}
         """))
         let controller = HubController(installedCommandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
@@ -795,7 +795,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let status = """
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
         let controller = HubController(installedCommandRunner: installed,
@@ -825,7 +825,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let runner = PendingVehicleControlRunner(status: """
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
         """)
         let controller = HubController(installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
@@ -863,7 +863,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let status = """
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
         let controller = HubController(installedCommandRunner: installed,
@@ -904,7 +904,7 @@ final class HubControllerTests: XCTestCase {
         let installed = CommandMapRunner(responses: [
             "sign-out": .success("{\"status\":\"signed_out\"}"),
             "status": .success("""
-            {"status":"ok","version":"2026.36.1","ready":false,"provider":"fleet","credentials":{"present":false}}
+            {"status":"ok","version":"\(HubRelease.bundledVersion)","ready":false,"provider":"fleet","credentials":{"present":false}}
             """)
         ])
         let controller = HubController(commandRunner: embedded,
@@ -969,7 +969,7 @@ final class HubControllerTests: XCTestCase {
         let installed = CommandMapRunner(responses: [
             "sign-out": .failure(HubActionError.commandFailed("checkpoint failed")),
             "status": .success("""
-            {"status":"ok","version":"2026.36.1","ready":false,"provider":"fleet","credentials":{"present":false},"legacyCredentials":{"present":true},"fleetCredentials":{"present":false}}
+            {"status":"ok","version":"\(HubRelease.bundledVersion)","ready":false,"provider":"fleet","credentials":{"present":false},"legacyCredentials":{"present":true},"fleetCredentials":{"present":false}}
             """)
         ])
         let controller = HubController(installedCommandRunner: installed,
@@ -997,7 +997,7 @@ final class HubControllerTests: XCTestCase {
     func testSingleVehicleControlsUseInstalledBinaryExactlyOnce() {
         let vehicleID = UUID(uuidString: "7A5D69AB-8EA8-4056-8B2F-42C41C28AE36")!
         let status = """
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(vehicleID.uuidString)","displayName":"One"}],"credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(vehicleID.uuidString)","displayName":"One"}],"credentials":{"present":true}}
         """
         let embedded = RecordingCommandRunner(result: .failure(HubActionError.commandFailed("unused")))
         let installed = RecordingCommandRunner(result: .success(status))
@@ -1086,7 +1086,7 @@ final class HubControllerTests: XCTestCase {
         try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let status = """
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
         let service = PendingServiceRunner(loadState: .unloaded)
@@ -1154,7 +1154,7 @@ final class HubControllerTests: XCTestCase {
         )
         XCTAssertEqual(runner.arguments.count, 1)
         runner.complete(.success("""
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """))
         wait(for: [initialRefresh], timeout: 1)
 
@@ -1186,7 +1186,7 @@ final class HubControllerTests: XCTestCase {
 
         dashboard.settleStartedHubFromOnboarding()
         runner.complete(.success("""
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":false,"provider":"legacy","credentials":{"present":true}}
         """))
 
         wait(for: [refreshed], timeout: 1)
@@ -1231,7 +1231,7 @@ final class HubControllerTests: XCTestCase {
 
     func testServiceTransitionDeadlineIncludesPendingServiceCommand() throws {
         let status = """
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """
         let runner = RecordingCommandRunner(result: .success(status))
         let service = PendingServiceRunner(loadState: .unloaded)
@@ -1262,7 +1262,7 @@ final class HubControllerTests: XCTestCase {
 
     func testExpiredServiceCommandFailureCannotCancelNewTransition() throws {
         let status = """
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """
         let runner = RecordingCommandRunner(result: .success(status))
         let service = PendingServiceRunner(loadState: .unloaded)
@@ -1304,7 +1304,7 @@ final class HubControllerTests: XCTestCase {
 
     func testExpiredServiceCommandSuccessCannotSettleNewTransition() throws {
         let status = """
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """
         let runner = RecordingCommandRunner(result: .success(status))
         let service = PendingServiceRunner(loadState: .unloaded)
@@ -1363,10 +1363,10 @@ final class HubControllerTests: XCTestCase {
             newer.fulfill()
         }
         runner.complete(at: 1, with: .success("""
-        {"status":"ok","version":"2026.36.1","ready":true,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","ready":true,"provider":"legacy","credentials":{"present":true}}
         """))
         runner.complete(at: 0, with: .success("""
-        {"status":"ok","version":"2026.36.1","ready":false,"provider":"legacy","credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","ready":false,"provider":"legacy","credentials":{"present":true}}
         """))
 
         wait(for: [newer, older], timeout: 1)
@@ -1517,7 +1517,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let status = """
-        {"status":"ok","version":"2026.36.1","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"Aurora"},{"vehicleId":"\(secondID.uuidString)","displayName":"Comet"}],"credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"Aurora"},{"vehicleId":"\(secondID.uuidString)","displayName":"Comet"}],"credentials":{"present":true}}
         """
         let runner = PendingVehicleControlRunner(status: status)
         let controller = HubController(installedCommandRunner: runner,
@@ -2263,7 +2263,7 @@ final class HubControllerTests: XCTestCase {
         let events = EventRecorder()
         let embedded = VersionAwareRunner(
             events: events,
-            versionResult: .success("teslatlas-hub 2026.36.1\n"),
+            versionResult: .success("teslatlas-hub \(HubRelease.bundledVersion)\n"),
             commandResult: .success("ok")
         )
         let installed = VersionAwareRunner(
@@ -2397,12 +2397,12 @@ final class HubControllerTests: XCTestCase {
         let events = EventRecorder()
         let embedded = VersionAwareRunner(
             events: events,
-            versionResult: .success("teslatlas-hub 2026.36.1\n"),
+            versionResult: .success("teslatlas-hub \(HubRelease.bundledVersion)\n"),
             commandResult: .success("configured")
         )
         let installed = VersionAwareRunner(
             events: events,
-            versionResult: .success("teslatlas-hub 2026.36.1\n")
+            versionResult: .success("teslatlas-hub \(HubRelease.bundledVersion)\n")
         )
         let installer = RecordingInstaller()
         let home = try temporaryHome()
@@ -2442,7 +2442,7 @@ final class HubControllerTests: XCTestCase {
     private func assertConnectedAccountReusesService(provider: String) throws {
         let events = EventRecorder()
         let runner = VersionAwareRunner(events: events,
-            versionResult: .success("teslatlas-hub 2026.36.1\n"))
+            versionResult: .success("teslatlas-hub \(HubRelease.bundledVersion)\n"))
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "legacy")
@@ -2487,7 +2487,7 @@ final class HubControllerTests: XCTestCase {
         for provider in ["legacy", "fleet"] {
             let events = EventRecorder()
             let embedded = VersionAwareRunner(events: events,
-                versionResult: .success("teslatlas-hub 2026.36.1"))
+                versionResult: .success("teslatlas-hub \(HubRelease.bundledVersion)"))
             let installed = VersionAwareRunner(events: events, versionResult: installedVersion)
             let home = try temporaryHome()
             defer { try? FileManager.default.removeItem(at: home) }
@@ -2519,16 +2519,16 @@ final class HubControllerTests: XCTestCase {
 
     func testBundledServiceVersionMatchIsExact() {
         XCTAssertTrue(HubController.isBundledServiceVersionOutput(
-            "teslatlas-hub 2026.36.1\n"
+            "teslatlas-hub \(HubRelease.bundledVersion)\n"
         ))
         XCTAssertFalse(HubController.isBundledServiceVersionOutput(
             "teslatlas-hub 1.0.0-alpha.0"
         ))
         XCTAssertFalse(HubController.isBundledServiceVersionOutput(
-            "prefix teslatlas-hub 2026.36.1"
+            "prefix teslatlas-hub \(HubRelease.bundledVersion)"
         ))
         XCTAssertFalse(HubController.isBundledServiceVersionOutput(
-            "teslatlas-hub 2026.36.1\nextra"
+            "teslatlas-hub \(HubRelease.bundledVersion)\nextra"
         ))
     }
 
