@@ -1,271 +1,32 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "product": "Home Assistant",
-  "updated_at": "2026-09-20T16:07:22.852911+00:00",
-  "update_scope": "Owner-requested post-completion review and repair planning only; no code/runtime changes or publication",
-  "programme": "2026-09-19-full-hub-ecosystem-completion",
+  "updated_at": "2026-09-21T21:34:00Z",
+  "update_scope": "MF-0, MF-2 and MF-3 current-Mac acceptance closure",
   "state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-  "source_objective_state": "BOUNDED_PRIOR_RESULTS_RETAINED_REVIEW_FOLLOWUP_PENDING",
-  "current_gate_ids": [
-    "MR-3"
-  ],
-  "completion_gate_ids": [
-    "MR-3"
-  ],
-  "accepted_receipts_immutable": true,
-  "full_solution_state": "NOT_ACCEPTED",
-  "accepted_gate_ids": [
-    "MAC-4",
-    "MAC-5"
-  ],
-  "planning_state": "DRAFT_NOT_SENT",
-  "objective": "Home Assistant \u2014 retain accepted lifecycle and reconnect final Hub; close assigned MR-0\u2013MR-3 work on current Mac only.",
-  "source": {
-    "head": "dfb2b05067a88ba02e6dbfbd6db614f8a99b12f4",
-    "branch": "main",
-    "dirty_entries_at_goal_activation": 6,
-    "tracked_dirty_entries_at_goal_activation": 0,
-    "accepted_runtime_source_head": "f650331a1af0cf33cec271bc7eefc0f1201ebd4e",
-    "git_tree": "43de76c71bba607f5d37226b4fa7a28c7b0887ee",
-    "source_archive_sha256": "e9cb7aadfa1694018f583628db92f9482520734226ea8f7dd9fc15476e7ae067",
-    "complete_source_manifest_sha256": "565c4defa7c64832cc48213bf8e4be699c1da722929c3faff6fbc4568a80ae3d",
-    "complete_source_file_count": 102,
-    "hub_catalog_source_sha256": "4af006321a29e0e9039458ef41c9421afe2537a72c7ec41dc89890b01dd41ec0",
-    "hub_catalog_source_file_count": 101,
-    "component_payload_manifest_sha256": "ebf7d09f88e2ce8f80ea71b8b2ae0fb7569ae3521dea038b643b6cfe626439ca",
-    "component_payload_manifest": "docs/development/ha-component-payload-manifest-2026-09-19-r2.txt",
-    "catalog_selection_receipt": "docs/development/f6-current-source-payload-handoff-2026-09-19-r1.json",
-    "catalog_selection_receipt_sha256": "99fdac66526bdec84d2429100f419eebedec588b0d32060c8f0f0a19bf43f2b3",
-    "independent_reviewed_candidate_receipt_sha256": "c228aa6a6df37e6a3fb0e2e61a432cec8b29e6178118fbdcfd7eb0b13a1c0613",
-    "checked_at": "2026-09-19T20:41:55Z",
-    "record_scope": "Historical accepted source/publication fields, retained unchanged; use current_source_observation for current reviewed worktree."
-  },
-  "current_worker": null,
-  "model_policy": {
-    "coordinator": "gpt-5.6-sol/high",
-    "implementation_default": "gpt-5.6-sol/medium",
-    "integration_and_review": "gpt-5.6-sol/high",
-    "exploration": "gpt-5.6-luna/medium",
-    "mechanical_extraction": "gpt-5.6-luna/low",
-    "escalation": "xhigh/max only for demonstrated difficulty or explicit request",
-    "fast_mode": false,
-    "authority": "AGENTS.md"
-  },
-  "evidence_summary": "No concrete new HA functional defect was found. The current headed lifecycle receipt hash was checked; bounded registry/reauth/restart/removal and real-data projection results remain valid. Final aggregate integration and handoff still depend on the Hub repairs.",
-  "evidence_paths": [
-    "docs/development/ha-debian-arm64-container-lifecycle-acceptance-2026-09-19-r1.json",
-    "docs/development/ha-component-payload-manifest-2026-09-19-r1.txt",
-    "docs/development/f6-current-source-payload-handoff-2026-09-19-r1.json",
-    "docs/development/ha-component-payload-manifest-2026-09-19-r2.txt",
-    "compatibility/hub.json",
-    "../hub/docs/development/ha-debian-arm64-container-hub-handoff-2026-09-19-r1.json"
-  ],
-  "last_acceptance": {
-    "state": "MAC4_ACCEPTED",
-    "accepted_at": "2026-09-20T13:35:15+00:00",
-    "receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/macos-working-product-20260920-current-source-r1/mac4-ha-runtime-evidence.json",
-    "receipt_sha256": "127bcb3497c9d5f3ee0fc4c5134043d7877d07aa4709f528b0674aed1dd3af88",
-    "platform": "Debian GNU/Linux 13.6 aarch64 hosted on the current Apple-silicon Mac",
-    "runtime": "official Home Assistant Container 2026.8.3, image digest sha256:14931c6b13756317849f46da1d01b45937a1150db66c081cfe529d48215943fe",
-    "hub_binary_sha256": "d74ff712d16ae0bd9c1f989b82389819d9d0faed20696443af1726a62cce96a7",
-    "independent_review": "ACCEPT_NO_FINDINGS",
-    "cleanup_complete": true
-  },
-  "mac5_synthetic_handoff": {
-    "state": "INDEPENDENTLY_ACCEPTED_SYNTHETIC_HANDOFF",
-    "authoritative_private_cross_consumer_receipt_sha256": "f6d4e7fe2bf0eb34127883fb65095b50b50d69b410184dc8a8c70807d33cfda3",
-    "superseded_retained_r1_receipt_sha256": "36bfdeccbf953a251d0309bb17e954da42d458226b8bfa753e3f8d26bb0cccc5",
-    "canonical_semantic_sha256": "20b164b499673ba207136dcb0107d8c8d74170029721125442914b99f3ae173a",
-    "node_firefox_swift_equality": "EXACT",
-    "home_assistant_binding": "HONEST_SUPPORTED_SUBSET",
-    "swift_pairing_lifecycle": "FRESH_CREATE_AND_REVOKE_RETURNED_ACTIVE_DEVICE_COUNT_3",
-    "final_binary_recovery_receipt_sha256": "c5831538536f48f82e6ef69d9772307365166bc2e93dda2c1ba83ac0fb007fa6",
-    "operator_guide": "INDEPENDENTLY_ACCEPTED_EXACT",
-    "acceptance_limit": "Synthetic comparison, recovery and handoff only; this slice did not accept MAC-5 until the later real-data acceptance recorded in mac5_real_acceptance."
-  },
-  "mac5_real_acceptance": {
-    "state": "ACCEPTED_CURRENT_MAC_READ_ONLY_REAL_DATA",
-    "owner_only_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/macos-realdata-20260920/mac5-real-acceptance.private.json",
-    "owner_only_receipt_sha256": "a98bebe3aa828ceed3bde30b381690133b6019f44552d75d7a71b3b150e699db",
-    "source_dump_sha256": "ff78fefa7396fe2aac356cda702d7a2b55b70cdc112b94cd43ab13762f12cb09",
-    "source_dump_bytes": 787728,
-    "source_rows": "cars=1 drives=4 positions=5278 states=4 charging=0",
-    "source_safety": "TESLAMATE_PAUSED_READ_ONLY_NEVER_WRITTEN_HEALTHY_WITHIN_15_SECONDS; TEMP_DATABASE_ROLE_AND_TUNNELS_REMOVED",
-    "final_hub_binary_sha256": "4749ad918414664d2a55f8bf7c07c23b2cae39ea1789a68e5034b47d752c603e",
-    "canonical_semantic_sha256": "621d88a12417871a8b28d33933083b4e1a7376a4b7e9049d9381bdcc699ba8c8",
-    "canonical_semantic_bytes": 3429,
-    "consumer_result": "NODE_FIREFOX_SWIFT_RESTORED_NODE_EXACT; VEHICLES=4; DRIVE_COUNTS=[4,0,0,0]; BOUNDARY=[3,1]",
-    "home_assistant_result": "2026.8.3; 52 enabled entities; primary offline plus 12 unknown; Container restart pass; exact 7-entry/3-device/17-entity removal baseline",
-    "recovery": "BACKUP_VERIFY_RESTORE_EXACT_SEMANTIC_DIGEST_AFTER_FRESH_PAIRING; TEMPORARY_RECOVERY_SECRETS_REMOVED",
-    "runtime_cleanup": "REAL_TEST_RUNTIME_STOPPED; RETAINED_SYNTHETIC_21444_ACTIVE",
-    "independent_review": "ACCEPT_NO_P1_P2_P3",
-    "acceptance_limit": "Current Apple-silicon Mac source-run product only; full-solution and cross-platform acceptance remain open."
-  },
-  "remaining": [
-    "Existing debian13-arm64 guest started; guest 18443→Mac 21444 strict TLS; Teslatlas Hub config entry loaded with 13 sensors; invitation replay HTTP 401; container restart kept the entry loaded.",
-    "This is a 1-vehicle current-only subset, not a repeat of the headed MAC-4 39-entity journey.",
-    "Independent review of the MR-3 closeout is still required."
-  ],
+  "macos_working_product_state": "MACOS_WORKING_PRODUCT_ACCEPTED",
+  "planning_state": "COMPLETED",
+  "full_solution_state": "NOT_ACCEPTED_DEFERRED_BACKLOG",
+  "objective": "Publish accepted component source and bind the existing guest integration",
   "current_goal": null,
-  "historical_status": {
-    "path": "docs/development/archive/2026-09-18-reset/teslatlas-home-assistant/docs/development/STATUS.json",
-    "sha256": "bf05e2f773d22d5c9c68bdecc68e5ddffb6b1502ccc0938def10b8c5c7c92013",
-    "note": "Exact pre-reset STATUS with detailed receipt keys and historical assertions; not live execution authority."
-  },
-  "legacy_task": {
-    "thread_id": "01a082b7-9372-7da2-b84b-dc47b626ad83",
-    "state": "ARCHIVED",
-    "archive_confirmed_via": "codex archive returned exit 0 on 2026-09-18",
-    "native_goal_state": "historical_not_mutated_by_archival"
-  },
-  "runtime_state": {
-    "state": "NOT_RETESTED_BY_REVIEW",
-    "shared_hub": "Documented21444 LaunchAgent/listener absent at review; final prior transcript showed running at15:48:09Z; ownership/restart reconciliation pending."
-  },
-  "acceptance_limits": [
-    "Overall current-Mac acceptance is reopened for the specific post-completion findings; historical accepted slices remain bounded evidence.",
-    "The owner-authorized read-only real-data import/consumer/recovery observation remains accepted within its exact receipt; it proves neither live Tesla collection nor production or broader full-solution acceptance.",
-    "Packaging/distribution, additional platforms and older OS floors remain deferred; app/Viewer and paused architectures remain excluded.",
-    "No new remote data access, closed credentials, Keychain/Touch ID, signing or public ingress is authorized by this review."
-  ],
-  "reassessment_previous_planning": {
-    "state": "DEBIAN_ARM64_CONTAINER_ACCEPTED",
-    "planning_state": "FULL_PRODUCT_F6_SOURCE_PAYLOAD_ACCEPTED_METADATA_DELTA_PENDING_AND_WAITING_FOR_F1_F3",
-    "current_gate_ids": [
-      "F6"
-    ],
-    "completion_gate_ids": [
-      "F0",
-      "F4",
-      "F5",
-      "F6",
-      "F7"
-    ],
-    "remaining": [
-      "F0 accepted: the independently reviewed workspace ledger maps every config, entity, lifecycle, runtime-floor and distribution claim.",
-      "F4: prove required headed user and API journeys, replacement/image lifecycle, recovery and registry preservation on supported selected runtimes.",
-      "F5: mandatory fresh named-source and passive Hub evidence must validate entity semantics.",
-      "F6 source/catalog: same-reviewer confirmation of the metadata-only selection-receipt delta and explicit Hub catalog admission remain; manual/Container install, update, status, rollback and removal remain unproved.",
-      "F7: prove the final combined installed ecosystem."
-    ],
-    "next_goal_draft": {
-      "id": "FULL_HOME_ASSISTANT_F0_F7",
-      "state": "READY_F6_WAITING_FOR_F1_F3",
-      "objective": "Complete Home Assistant as a required ecosystem product across supported user behavior, runtime lifecycle, real-input semantics, distribution and final installed acceptance.",
-      "prerequisites": [
-        "F0 support ledger and exact component, HA image, Hub and profile identities",
-        "Accepted F1/F3 Hub and a fresh Hub-owned handoff",
-        "Fresh F5 input-derived Hub evidence; no reuse of closed private inputs"
-      ],
-      "acceptance_evidence": [
-        "F0 integration/runtime/distribution ledger",
-        "F4 headed config/reauth/polling/lifecycle/recovery and registry receipt",
-        "F5 real-input entity semantic receipt",
-        "F6 deterministic manual/Container/component/catalog lifecycle receipt",
-        "F7 combined installed ecosystem and cleanup receipt"
-      ],
-      "execution_authorized": true
-    }
-  },
-  "macos_working_product_state": "MACOS_REVIEW_REOPENED",
-  "immediate_objective": "Home Assistant \u2014 retain accepted lifecycle and reconnect final Hub",
-  "next_ready_action": "Preserve the accepted headed MAC4/real-data subset and unrelated HA baseline; no broad rerun or new guest is needed.",
-  "workspace_observation": {
-    "checked_at": "2026-09-20T16:07:22.852911+00:00",
-    "head": "b8747341d8d9384ee0925851de96388c5a30ea63",
+  "current_worker": null,
+  "current_gate_ids": [],
+  "open_findings": [],
+  "source": {
+    "head": "78186795dfe2575258d4e3c2b138f263f8df21b5",
+    "tree": "14edf01ac7fa13b4cad4aa9bc7ae9b8cbfea9046",
     "branch": "main",
-    "dirty": true,
-    "source_snapshot": "docs/development/archive/2026-09-20-post-completion-review/review-source-snapshot.json",
-    "scope": "Current review identity only; does not retroactively bind earlier runtime receipts. No source commit or push performed by this review."
+    "remote_ref": "refs/heads/main",
+    "remote_head_at_source_publication": "78186795dfe2575258d4e3c2b138f263f8df21b5",
+    "remote_verification": "the exact accepted source commit was published before this metadata-only successor"
   },
-  "last_recorded_runtime_state": "The existing debian13-arm64 guest and pinned HA 2026.8.3 Container are healthy on primary strict-TLS guest port 18443. The completed Teslatlas entry was removed after all headed lifecycle checks, restoring the exact unrelated pre-pair 7-entry/3-device/17-entity baseline. No post-unload Hub requests occurred over 45 seconds; both HA bearers are revoked and three Node/Swift consumers remain active. No real data, global trust or Keychain operation exists in this execution.",
-  "previous_mac_completion_record": {
-    "recorded_state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-    "original_goal": {
-      "id": "MACOS_FIRST_WORKING_PRODUCT",
-      "state": "COMPLETED_ACCEPTED",
-      "prompt": "../../../docs/development/archive/2026-09-20-post-completion-review/docs/development/GOAL_PROMPT.md",
-      "milestones": [
-        "MAC-4",
-        "MAC-5"
-      ],
-      "execution_authorized": true,
-      "note": "MAC-4 and MAC-5 are accepted for the current Mac source-run product; the full solution and cross-platform programme remain unaccepted.",
-      "review_disposition": "Historical native goal completed; aggregate acceptance subsequently reopened."
-    },
-    "original_gate_ids": [
-      "MAC-4",
-      "MAC-5"
-    ],
-    "original_evidence_summary": [
-      "A fresh source-built synthetic Hub and official Home Assistant 2026.8.3 Container completed the selected Debian 13.6 ARM64 minimum lifecycle lane.",
-      "The authenticated user config-flow API, one-use pairing/replay rejection, exact discovery/profile/product/capabilities, system-trust rejection and private-CA trust all passed.",
-      "One entry exposes three devices and 39 current-source entities; numeric zero, sparse unknown/unavailable semantics, automatic scheduled refresh, Hub outage/restart recovery, dynamic third-vehicle retirement/return and non-overlapping source behavior pass.",
-      "Bearer revocation opened reauthentication; one fresh invitation restored reads on the same entry. Reload, same-identity 18443-to-18444-to-18443 reconfigure, disable/re-enable, Container restart and full stop/start retain the 1/3/39 surface and identical registry hashes without duplication.",
-      "Live diagnostics contained none of the known endpoint, Hub, bearer/device, pairing or vehicle values and no location, coordinate, cursor or raw-record structure.",
-      "The component compatibility record now binds product 2026.36.2, exact profile hash, exact Hub source fingerprint and the two accepted receipts.",
-      "A clean export of current source dfb2b050 is frozen with a deterministic archive, complete 102-file manifest, Hub-compatible 101-file source record, exact profile and independently reproduced 31-file component payload for local-unpublished catalog review; no runtime acceptance is transferred.",
-      "Independent Sol/high review accepted the c228aa6 candidate receipt with no blocking findings, recomputed every source, profile and payload identity, and confirmed that AGENTS.md is the sole intentional difference between the 102-file Git export and 101-file Hub source record; the metadata-only receipt delta is pending same-reviewer confirmation.",
-      "The previous bounded Debian acceptance lane cleaned up its Container, Hub and private guest root; that historical cleanup does not describe the new MAC-4 runtime.",
-      "For MAC-4, the supported HA 2026.8.3 Container runs in the existing Mac-hosted ARM64 guest. Every headed lifecycle check through confirmed final removal passed, and independent Sol/high review accepted MAC-4 with no findings. The unrelated pre-pair 7-entry/3-device/17-entity baseline is exact, no post-unload Hub requests occurred, both HA bearers are revoked and the three Node/Swift consumer devices remain active."
-    ],
-    "original_runtime_state": "MAC-4 and MAC-5 are accepted for the current Mac source-run scope. The synthetic headed lifecycle passed independently, and the owner-authorized read-only real-data journey loaded 52 enabled Home Assistant 2026.8.3 entities across Container restart; the primary vehicle was offline with 12 unknown entities. Final removal restored the exact unrelated 7-entry/3-device/17-entity baseline. The real-data runtime and temporary resources were removed, and independent Sol/high final review returned ACCEPT_NO_P1_P2_P3.",
-    "archive": "docs/development/archive/2026-09-20-post-completion-review/teslatlas-home-assistant/docs/development/STATUS.json",
-    "scope": "Historical completion declaration, now qualified by the independent review; native goal state was not changed."
-  },
-  "completed_goal": {
-    "id": "MACOS_FIRST_WORKING_PRODUCT",
-    "state": "COMPLETED_ACCEPTED",
-    "prompt": "../../../docs/development/archive/2026-09-20-post-completion-review/docs/development/GOAL_PROMPT.md",
-    "milestones": [
-      "MAC-4",
-      "MAC-5"
-    ],
-    "execution_authorized": true,
-    "note": "MAC-4 and MAC-5 are accepted for the current Mac source-run product; the full solution and cross-platform programme remain unaccepted.",
-    "review_disposition": "Historical native goal completed; aggregate acceptance subsequently reopened."
-  },
-  "next_goal_draft": {
-    "id": "MACOS_POST_COMPLETION_REPAIR",
-    "state": "DRAFT_NOT_SENT",
-    "model": "gpt-5.6-sol",
-    "reasoning_effort": "high",
-    "prompt": "../../../docs/development/GOAL_PROMPT.md",
-    "milestones": [
-      "MR-3"
-    ],
-    "execution_started": false
-  },
-  "historical_acceptance_limits": [
-    "Source-built synthetic Hub and official Home Assistant Container evidence only",
-    "Headed browser acceptance covers owner creation, strict-TLS pairing, replay rejection, three-device/39-entity discovery, scheduled polling, units/value semantics, dynamic retirement/return, restart, stop/start, reload, disable/enable, same-entry reconfiguration, same-entry reauthentication, healthy/outage diagnostics and confirmed final removal; independent review accepted MAC-4 with no findings",
-    "The isolated fixture-only CA environment did not accept unrelated Home Assistant outbound HTTPS integration connectivity",
-    "No HA OS, Supervisor, add-on, HACS, installer, publication or replacement-upgrade acceptance",
-    "Current dfb2b050 source and payload are accepted only as a bounded local-unpublished catalog input; the metadata delta remains under review and no Hub catalog mutation or runtime rerun occurred",
-    "No real-data, production, complete parity or full platform matrix acceptance",
-    "No App or Viewer acceptance; x86/Intel/Azure paused"
-  ],
-  "historical_remaining": [
-    "HACS distribution, HA OS matrices, package replacement/rollback and new payload-reproducibility work remain deferred."
-  ],
-  "current_source_observation": {
-    "checked_at": "2026-09-20T16:07:22.852911+00:00",
-    "head": "b8747341d8d9384ee0925851de96388c5a30ea63",
-    "branch": "main",
-    "dirty": true,
-    "source_snapshot": "docs/development/archive/2026-09-20-post-completion-review/review-source-snapshot.json",
-    "scope": "Current review identity only; does not retroactively bind earlier runtime receipts. No source commit or push performed by this review."
-  },
-  "post_completion_review": {
-    "state": "REPAIR_DIRECTIVE_DRAFTED",
-    "report": "docs/development/POST_COMPLETION_REVIEW.md",
-    "findings": [
-      "MR-F7"
-    ],
-    "retained_evidence": "No concrete new HA functional defect was found. The current headed lifecycle receipt hash was checked; bounded registry/reauth/restart/removal and real-data projection results remain valid. Final aggregate integration and handoff still depend on the Hub repairs.",
-    "runtime_retested": false,
-    "native_goal_modified": false
-  },
-  "historical_full_programme_objective": "Complete Home Assistant as a required ecosystem product across documented install, UI, lifecycle, recovery, real-input semantics, distribution and final installed acceptance.",
-  "historical_source_objective_state": "SECONDARY_RUNTIME_ACCEPTED_SCOPED"
+  "evidence_summary": "The exact committed 31-file component is mounted read-only in the existing Debian arm64 Home Assistant 2026.8.3 guest. The preserved entry validates strict renewed TLS, the direct integration diagnostic returned ok with one vehicle, and all 13 Teslatlas entities are loaded with zero unavailable.",
+  "coordinated_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/mf-final-20260921-r1/evidence/coordinated-runtime-receipt.json",
+  "coordinated_receipt_sha256": "ebb97c9642893441b65228878c52d1b372f1fa1d55e08fcbd5b6ce04d4f7c405",
+  "retained_runtime": "Home Assistant container teslatlas-mac4-20260920-r1-homeassistant-1 remains running against guest loopback 18443 forwarded to Mac 21444.",
+  "remaining": ["HACS/store distribution, production credentials, real Tesla access and broader platform acceptance remain deferred or separately gated."],
+  "review": "docs/development/GROK_COMPLETION_REVIEW.md",
+  "accepted_receipts_immutable": true,
+  "historical_status_archive": "docs/development/archive/2026-09-21-grok-completion-review/teslatlas-home-assistant/docs/development/STATUS.json",
+  "publication_this_review": "ACCEPTED_SOURCE_AND_RECONCILED_METADATA_PUBLISHED"
 }
