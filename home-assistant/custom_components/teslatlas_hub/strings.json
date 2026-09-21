@@ -26,6 +26,10 @@
           "device_name": "Device name"
         }
       },
+      "pair_validate": {
+        "title": "Verify Teslatlas Hub access",
+        "description": "The invitation was claimed. Retry the authenticated check without creating another device credential."
+      },
       "reauth_confirm": {
         "title": "Repair Teslatlas Hub authentication",
         "description": "Enter a fresh private invitation from the same Hub.",
@@ -34,6 +38,10 @@
           "pairing_secret": "Pairing secret",
           "device_name": "Device name"
         }
+      },
+      "reauth_validate": {
+        "title": "Verify repaired Teslatlas Hub access",
+        "description": "The fresh invitation was claimed. Retry the authenticated check without creating another device credential."
       },
       "reconfigure_confirm": {
         "title": "Change Teslatlas Hub endpoint",

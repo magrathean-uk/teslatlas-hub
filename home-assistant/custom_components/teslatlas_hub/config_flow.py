@@ -44,7 +44,7 @@ from .const import (
     DEFAULT_PORT,
     DOMAIN,
 )
-from .models import HubEndpoint, HubInfo
+from .models import HubEndpoint, HubInfo, PairingResult
 
 
 def _endpoint_schema(defaults: dict[str, Any] | None = None) -> vol.Schema:
@@ -91,6 +91,7 @@ PAIRING_SCHEMA = vol.Schema(
         ),
     }
 )
+VALIDATE_SCHEMA = vol.Schema({})
 
 
 class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -103,6 +104,7 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         """Initialize transient flow state."""
         self._endpoint: HubEndpoint | None = None
         self._info: HubInfo | None = None
+        self._pending_pairing_result: PairingResult | None = None
 
     async def _async_probe(
         self,
@@ -161,6 +163,43 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         finally:
             await client.async_close()
         return await self.async_step_pair()
+
+    async def _async_validate_access(
+        self,
+        endpoint: HubEndpoint,
+        *,
+        hub_id: str,
+        access_token: str,
+        expires_at_ms: int | None,
+    ) -> str | None:
+        """Prove a candidate bearer can read the expected Hub before storing it."""
+        try:
+            client = create_client(
+                endpoint,
+                bearer_token=access_token,
+                expected_hub_id=hub_id,
+                bearer_expires_at_ms=expires_at_ms,
+                hass=self.hass,
+            )
+        except HubContractError:
+            return "invalid_contract"
+        try:
+            snapshot = await client.async_snapshot()
+        except HubIdentityError:
+            return "wrong_hub"
+        except HubConnectionError:
+            return "cannot_connect"
+        except HubAuthenticationError:
+            return "invalid_auth"
+        except ProtocolContractUnavailable:
+            return "protocol_not_ready"
+        except HubContractError:
+            return "invalid_contract"
+        finally:
+            await client.async_close()
+        if snapshot.info.hub_id != hub_id:
+            return "wrong_hub"
+        return None
 
     @override
     async def async_step_user(
@@ -222,6 +261,40 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 if result.info.hub_id != self._info.hub_id:
                     return self.async_abort(reason="wrong_hub")
+                self._pending_pairing_result = result
+                return await self.async_step_pair_validate({})
+            finally:
+                await client.async_close()
+
+        return self.async_show_form(
+            step_id="pair",
+            data_schema=PAIRING_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_pair_validate(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Retry validation of one already-issued bearer without another claim."""
+        assert self._endpoint is not None
+        assert self._pending_pairing_result is not None
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            result = self._pending_pairing_result
+            error = await self._async_validate_access(
+                self._endpoint,
+                hub_id=result.info.hub_id,
+                access_token=result.access_token,
+                expires_at_ms=result.expires_at_ms,
+            )
+            if error == "wrong_hub":
+                self._pending_pairing_result = None
+                return self.async_abort(reason="wrong_hub")
+            if error is not None:
+                errors["base"] = error
+            else:
+                self._pending_pairing_result = None
                 return self.async_create_entry(
                     title=result.info.name,
                     data={
@@ -235,12 +308,10 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_TOKEN_EXPIRES_AT_MS: result.expires_at_ms,
                     },
                 )
-            finally:
-                await client.async_close()
 
         return self.async_show_form(
-            step_id="pair",
-            data_schema=PAIRING_SCHEMA,
+            step_id="pair_validate",
+            data_schema=VALIDATE_SCHEMA,
             errors=errors,
         )
 
@@ -292,6 +363,46 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
             else:
                 await self.async_set_unique_id(result.info.hub_id)
                 self._abort_if_unique_id_mismatch(reason="wrong_hub")
+                self._pending_pairing_result = result
+                return await self.async_step_reauth_validate({})
+            finally:
+                await client.async_close()
+
+        return self.async_show_form(
+            step_id="reauth_confirm",
+            data_schema=PAIRING_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_reauth_validate(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Retry validation of a replacement bearer without another claim."""
+        entry = self._get_reauth_entry()
+        result = self._pending_pairing_result
+        assert result is not None
+        endpoint = HubEndpoint(
+            host=entry.data[CONF_HOST],
+            port=entry.data[CONF_PORT],
+            use_tls=entry.data[CONF_USE_TLS],
+            tls_pin=entry.data.get(CONF_TLS_PIN),
+        )
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            error = await self._async_validate_access(
+                endpoint,
+                hub_id=entry.data[CONF_HUB_ID],
+                access_token=result.access_token,
+                expires_at_ms=result.expires_at_ms,
+            )
+            if error == "wrong_hub":
+                self._pending_pairing_result = None
+                return self.async_abort(reason="wrong_hub")
+            if error is not None:
+                errors["base"] = error
+            else:
+                self._pending_pairing_result = None
                 return self.async_update_reload_and_abort(
                     entry,
                     data_updates={
@@ -300,12 +411,10 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                         CONF_TOKEN_EXPIRES_AT_MS: result.expires_at_ms,
                     },
                 )
-            finally:
-                await client.async_close()
 
         return self.async_show_form(
-            step_id="reauth_confirm",
-            data_schema=PAIRING_SCHEMA,
+            step_id="reauth_validate",
+            data_schema=VALIDATE_SCHEMA,
             errors=errors,
         )
 
@@ -340,6 +449,19 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 try:
                     await self.async_set_unique_id(info.hub_id)
                     self._abort_if_unique_id_mismatch(reason="wrong_hub")
+                finally:
+                    await client.async_close()
+                error = await self._async_validate_access(
+                    endpoint,
+                    hub_id=entry.data[CONF_HUB_ID],
+                    access_token=entry.data[CONF_ACCESS_TOKEN],
+                    expires_at_ms=entry.data.get(CONF_TOKEN_EXPIRES_AT_MS),
+                )
+                if error == "wrong_hub":
+                    return self.async_abort(reason="wrong_hub")
+                if error is not None:
+                    errors["base"] = error
+                else:
                     return self.async_update_reload_and_abort(
                         entry,
                         data_updates={
@@ -349,8 +471,6 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_TLS_PIN: endpoint.tls_pin,
                         },
                     )
-                finally:
-                    await client.async_close()
 
         return self.async_show_form(
             step_id="reconfigure_confirm",

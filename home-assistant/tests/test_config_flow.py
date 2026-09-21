@@ -15,6 +15,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.teslatlas_hub.client import (
+    HubAuthenticationError,
     HubConnectionError,
     HubIdentityError,
     HubPairingError,
@@ -131,7 +132,14 @@ async def test_user_flow_claims_full_invitation_without_storing_it(
     assert fixture_client.device_names == ["Home Assistant"]
     assert CONF_PAIRING_ID not in result["data"]
     assert CONF_PAIRING_SECRET not in result["data"]
-    assert client_factory.call_args.kwargs["expected_hub_id"] == "hub-fixture"
+    assert client_factory.call_count == 3
+    assert client_factory.call_args.kwargs == {
+        "bearer_token": "fixture-device-bearer",
+        "expected_hub_id": "hub-fixture",
+        "bearer_expires_at_ms": 1_788_567_300_000,
+        "hass": hass,
+    }
+    assert fixture_client.snapshot_calls == 1
 
 
 async def test_pairing_failure_remains_repairable(
@@ -146,6 +154,56 @@ async def test_pairing_failure_remains_repairable(
     )
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "invalid_pairing_secret"}
+
+
+async def test_user_flow_retries_issued_bearer_without_duplicate_claim(
+    hass: HomeAssistant,
+    fixture_client: FixtureHubClient,
+    client_factory,
+) -> None:
+    """A transient validation failure retains one claim only in flow memory."""
+    fixture_client.snapshot_error = HubConnectionError("offline")
+    result = await _start_pair(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], PAIRING_INPUT
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "pair_validate"
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert hass.config_entries.async_entries(DOMAIN) == []
+    assert client_factory.call_args.kwargs["bearer_token"] == "fixture-device-bearer"
+    assert fixture_client.pairing_ids == [PAIRING_INPUT[CONF_PAIRING_ID]]
+
+    fixture_client.snapshot_error = None
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["data"][CONF_ACCESS_TOKEN] == "fixture-device-bearer"
+    assert fixture_client.pairing_ids == [PAIRING_INPUT[CONF_PAIRING_ID]]
+    assert fixture_client.snapshot_calls == 2
+
+
+async def test_user_flow_validation_identity_change_aborts_without_entry(
+    hass: HomeAssistant,
+    fixture_client: FixtureHubClient,
+    client_factory,
+) -> None:
+    """Never persist a claimed bearer after authenticated identity divergence."""
+    del client_factory
+    fixture_client.snapshot = replace(
+        fixture_client.snapshot,
+        info=replace(fixture_client.snapshot.info, hub_id="other-hub"),
+    )
+    result = await _start_pair(hass)
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], PAIRING_INPUT
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "wrong_hub"
+    assert hass.config_entries.async_entries(DOMAIN) == []
+    assert fixture_client.pairing_ids == [PAIRING_INPUT[CONF_PAIRING_ID]]
 
 
 async def test_probe_failure_stays_on_manual_endpoint_form(
@@ -186,6 +244,71 @@ async def test_reauth_replaces_only_device_credential_metadata(
     assert entry.data[CONF_HOST] == "old-hub.local"
     assert client_factory.call_args.kwargs["expected_hub_id"] == "hub-fixture"
     assert fixture_client.closed is True
+    assert fixture_client.snapshot_calls == 1
+
+
+async def test_reauth_retries_issued_bearer_without_duplicate_claim(
+    hass: HomeAssistant,
+    fixture_client: FixtureHubClient,
+    client_factory,
+) -> None:
+    """Keep the old entry and retry one issued replacement entirely in memory."""
+    entry = _entry(hass)
+    fixture_client.snapshot_error = HubConnectionError("offline")
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_REAUTH, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], PAIRING_INPUT
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "reauth_validate"
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert entry.data[CONF_ACCESS_TOKEN] == "old-device-bearer"
+    assert entry.data[CONF_DEVICE_ID] == "old-device"
+    assert client_factory.call_args.kwargs["bearer_token"] == "fixture-device-bearer"
+    assert fixture_client.pairing_ids == [PAIRING_INPUT[CONF_PAIRING_ID]]
+
+    fixture_client.snapshot_error = None
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "reauth_successful"
+    assert entry.data[CONF_ACCESS_TOKEN] == "fixture-device-bearer"
+    assert entry.data[CONF_DEVICE_ID] == "device-fixture"
+    assert fixture_client.pairing_ids == [PAIRING_INPUT[CONF_PAIRING_ID]]
+    assert fixture_client.snapshot_calls == 2
+
+
+async def test_reauth_validation_identity_change_keeps_old_entry(
+    hass: HomeAssistant,
+    fixture_client: FixtureHubClient,
+    client_factory,
+) -> None:
+    """Authenticated identity divergence cannot update a reauth entry."""
+    del client_factory
+    entry = _entry(hass)
+    fixture_client.snapshot = replace(
+        fixture_client.snapshot,
+        info=replace(fixture_client.snapshot.info, hub_id="other-hub"),
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_REAUTH, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], PAIRING_INPUT
+    )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "wrong_hub"
+    assert entry.data[CONF_ACCESS_TOKEN] == "old-device-bearer"
+    assert entry.data[CONF_DEVICE_ID] == "old-device"
+    assert fixture_client.pairing_ids == [PAIRING_INPUT[CONF_PAIRING_ID]]
 
 
 async def test_reauth_rejects_a_different_hub(
@@ -341,7 +464,38 @@ async def test_reconfigure_probes_without_saved_bearer_before_endpoint_update(
     assert result["reason"] == "reconfigure_successful"
     assert entry.data[CONF_HOST] == "new-hub.local"
     assert entry.data[CONF_ACCESS_TOKEN] == "old-device-bearer"
-    assert client_factory.call_args.kwargs.get("bearer_token") is None
+    assert client_factory.call_args.kwargs["bearer_token"] == "old-device-bearer"
+    assert client_factory.call_count == 2
+
+
+async def test_reconfigure_keeps_old_endpoint_when_saved_bearer_cannot_read_new_one(
+    hass: HomeAssistant,
+    fixture_client: FixtureHubClient,
+    client_factory,
+) -> None:
+    """Identity discovery alone must not strand an entry on an unusable endpoint."""
+    entry = _entry(hass)
+    fixture_client.snapshot_error = HubAuthenticationError("not admitted")
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_RECONFIGURE, "entry_id": entry.entry_id},
+        data=entry.data,
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {
+            CONF_HOST: "new-hub.local",
+            CONF_PORT: 8443,
+            CONF_USE_TLS: True,
+            CONF_TLS_PIN: "d" * 64,
+        },
+    )
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "invalid_auth"}
+    assert entry.data[CONF_HOST] == "old-hub.local"
+    assert entry.data[CONF_TLS_PIN] == "c" * 64
+    assert client_factory.call_args.kwargs["bearer_token"] == "old-device-bearer"
 
 
 async def test_user_flow_changed_hub_never_receives_pairing_secret(
