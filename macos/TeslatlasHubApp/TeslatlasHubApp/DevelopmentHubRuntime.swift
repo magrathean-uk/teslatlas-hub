@@ -700,7 +700,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                                 failure: String,
                                 completion: @escaping (Result<String, Error>) -> Void) {
         guard attemptsRemaining > 1 else {
-            completion(.failure(startupFailure(lastFailure: failure)))
+            failStartupAndStop(startupFailure(lastFailure: failure), completion: completion)
             return
         }
         readinessSchedule(readinessPollInterval) { [weak self] in
@@ -708,6 +708,47 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                                  attemptsRemaining: attemptsRemaining - 1,
                                  completion: completion)
         }
+    }
+
+    private func failStartupAndStop(_ startupError: Error,
+                                    completion: @escaping (Result<String, Error>) -> Void) {
+        runLaunchctl(["bootout", service]) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                self.waitUntilUnloaded(service: self.service, attemptsRemaining: 100) { result in
+                    switch result {
+                    case .success:
+                        completion(.failure(startupError))
+                    case let .failure(cleanupError):
+                        completion(.failure(self.startupCleanupFailure(
+                            startupError: startupError,
+                            cleanupError: cleanupError
+                        )))
+                    }
+                }
+            case let .failure(cleanupError):
+                if case let HubActionError.commandExited(status, output) = cleanupError,
+                   LaunchctlServiceController.isKnownUnloadedPrintFailure(
+                       status: status,
+                       output: output,
+                       service: self.service
+                   ) {
+                    completion(.failure(startupError))
+                } else {
+                    completion(.failure(self.startupCleanupFailure(
+                        startupError: startupError,
+                        cleanupError: cleanupError
+                    )))
+                }
+            }
+        }
+    }
+
+    private func startupCleanupFailure(startupError: Error, cleanupError: Error) -> Error {
+        HubActionError.commandFailed(
+            "\(startupError.localizedDescription) The failed development LaunchAgent could not be unloaded: \(Self.boundedDiagnostic(cleanupError.localizedDescription))"
+        )
     }
 
     private func startupFailure(lastFailure: String) -> Error {

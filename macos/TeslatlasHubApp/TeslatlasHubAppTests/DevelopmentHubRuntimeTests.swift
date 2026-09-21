@@ -372,6 +372,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         ))
         let service = "gui/\(getuid())/\(configuration.serviceLabel)"
         var launchPlanCompleted = false
+        var cleanupRequested = false
         var statusChecks = 0
         let controller = DevelopmentLaunchctlServiceController(
             configuration: configuration,
@@ -389,6 +390,14 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
                 } else if arguments.first == "bootstrap" {
                     launchPlanCompleted = true
                     completion(.success(""))
+                } else if arguments == ["bootout", service] {
+                    cleanupRequested = true
+                    completion(.success(""))
+                } else if arguments == ["print", service], cleanupRequested {
+                    completion(.failure(HubActionError.commandExited(
+                        113,
+                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                    )))
                 } else if arguments == ["print", service] {
                     completion(.success(self.runningLaunchctlOutput(
                         configuration: configuration,
@@ -417,6 +426,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
 
         wait(for: [rejected], timeout: 1)
         XCTAssertEqual(statusChecks, 3)
+        XCTAssertTrue(cleanupRequested)
     }
 
     func testStartRejectsCompetingHealthyListenerWhenOwnedProcessIsNotRunning() throws {
@@ -431,6 +441,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
                                               ofItemAtPath: configuration.standardErrorLog.path)
         var launchPlanCompleted = false
+        var cleanupRequested = false
         var statusChecks = 0
         let controller = DevelopmentLaunchctlServiceController(
             configuration: configuration,
@@ -448,6 +459,14 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
                 } else if arguments.first == "bootstrap" {
                     launchPlanCompleted = true
                     completion(.success(""))
+                } else if arguments == ["bootout", service] {
+                    cleanupRequested = true
+                    completion(.success(""))
+                } else if arguments == ["print", service], cleanupRequested {
+                    completion(.failure(HubActionError.commandExited(
+                        113,
+                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                    )))
                 } else if arguments == ["print", service] {
                     completion(.success("""
                     \(service) = {
@@ -480,6 +499,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
 
         wait(for: [rejected], timeout: 1)
         XCTAssertEqual(statusChecks, 0)
+        XCTAssertTrue(cleanupRequested)
     }
 
     func testStartSurfacesLifetimeLockFailure() throws {
@@ -494,6 +514,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
                                               ofItemAtPath: configuration.standardErrorLog.path)
         var launchPlanCompleted = false
+        var cleanupRequested = false
         let controller = DevelopmentLaunchctlServiceController(
             configuration: configuration,
             processRunner: { executable, arguments, _, completion in
@@ -507,6 +528,14 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
                 } else if arguments.first == "bootstrap" {
                     launchPlanCompleted = true
                     completion(.success(""))
+                } else if arguments == ["bootout", service] {
+                    cleanupRequested = true
+                    completion(.success(""))
+                } else if arguments == ["print", service], cleanupRequested {
+                    completion(.failure(HubActionError.commandExited(
+                        113,
+                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                    )))
                 } else if arguments == ["print", service] {
                     completion(.failure(HubActionError.commandExited(
                         113,
@@ -533,6 +562,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         }
 
         wait(for: [rejected], timeout: 1)
+        XCTAssertTrue(cleanupRequested)
     }
 
     func testDevelopmentLaunchAgentPropagatesExactServeAndTraceEnvironment() throws {
