@@ -2,7 +2,7 @@
 
 import AppKit
 
-final class MainWindowController: NSWindowController {
+final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let controller: HubController
     private let heroDot = NSImageView()
     private let heroTitle = NSTextField(labelWithString: "")
@@ -98,6 +98,7 @@ final class MainWindowController: NSWindowController {
         window.isOpaque = true
         window.minSize = NSSize(width: 820, height: 640)
         super.init(window: window)
+        window.delegate = self
         detailsButton.target = self
         detailsButton.action = #selector(detailsPressed)
         connectButton.target = self
@@ -236,6 +237,11 @@ final class MainWindowController: NSWindowController {
     var operationPreventsQuit: Bool {
         serviceTransition != nil || vehicleControlPending
             || serviceDetailsMutationPending || diagnosticsOperationPending
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !operationPreventsQuit else { NSSound.beep(); return false }
+        return true
     }
 
     var canImportTeslaMate: Bool { navigationAvailable && lastPresentedSnapshot.shouldOfferTeslaMateImport }

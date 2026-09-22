@@ -142,6 +142,7 @@ final class HubControllerTests: XCTestCase {
             initialSnapshot: .previewRunning
         )
         let dashboard = MainWindowController(controller: controller)
+        dashboard.showWindow(nil)
         let details = try XCTUnwrap(dashboard.showServiceDetails())
         let update = try XCTUnwrap(buttons(in: details.window?.contentView)
             .first { $0.title == "Update Service…" })
@@ -155,6 +156,8 @@ final class HubControllerTests: XCTestCase {
         XCTAssertNil(dashboard.showDiagnostics())
         XCTAssertTrue(dashboard.operationPreventsQuit)
         XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: [try XCTUnwrap(dashboard.window)]))
+        dashboard.window?.performClose(nil)
+        XCTAssertTrue(dashboard.window?.isVisible == true)
 
         installer.completeInstall(.success(""))
         let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in close.isEnabled }, object: nil)
@@ -571,6 +574,7 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: false,
                                        initialSnapshot: .previewRunning)
         let dashboard = MainWindowController(controller: controller)
+        dashboard.showWindow(nil)
         runner.complete(.success("""
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[],"credentials":{"present":true}}
         """))
@@ -589,11 +593,11 @@ final class HubControllerTests: XCTestCase {
         XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: [try XCTUnwrap(dashboard.window)]))
 
         let mainWindow = try XCTUnwrap(dashboard.window)
-        mainWindow.close()
-        XCTAssertFalse(mainWindow.isVisible)
-        XCTAssertTrue(NSApp.windows.contains { $0 === mainWindow })
-        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: NSApp.windows))
-        dashboard.showWindow(nil)
+        let appDelegate = AppDelegate(keyWindow: { mainWindow })
+        let closeItem = NSMenuItem()
+        closeItem.action = #selector(AppDelegate.closeKeyWindow(_:))
+        XCTAssertFalse(appDelegate.validateMenuItem(closeItem))
+        appDelegate.closeKeyWindow(nil)
         XCTAssertTrue(mainWindow.isVisible)
 
         service.complete(.success(""))
@@ -615,9 +619,12 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(back.isEnabled)
         XCTAssertTrue(overview.isEnabled)
         XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: [try XCTUnwrap(dashboard.window)]))
+        XCTAssertTrue(appDelegate.validateMenuItem(closeItem))
         XCTAssertTrue(descendantViews(in: root).compactMap { $0 as? NSTextView }.contains {
             $0.string.contains("Hub collection resumed.")
         })
+        mainWindow.performClose(nil)
+        XCTAssertFalse(mainWindow.isVisible)
     }
 
     func testDiagnosticsRowsHaveNonzeroDocumentAndRowFramesAfterRendering() throws {

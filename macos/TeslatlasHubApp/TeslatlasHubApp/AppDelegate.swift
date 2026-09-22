@@ -183,6 +183,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if let onboarding = window.windowController as? OnboardingWindowController {
             return onboarding.canCancel
         }
+        if let main = window.windowController as? MainWindowController,
+           main.operationPreventsQuit {
+            return false
+        }
         return window.styleMask.contains(.closable) && window.attachedSheet == nil
     }
 
