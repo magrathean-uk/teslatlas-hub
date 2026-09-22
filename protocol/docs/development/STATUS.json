@@ -1,31 +1,28 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "product": "Protocol",
-  "updated_at": "2026-09-21T21:34:00Z",
-  "update_scope": "MF-2 and MF-3 current-Mac acceptance closure",
-  "state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-  "macos_working_product_state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-  "planning_state": "COMPLETED",
-  "full_solution_state": "NOT_ACCEPTED_DEFERRED_BACKLOG",
-  "objective": "Retain exact contracts and validate affected projection boundaries",
+  "updated_at": "2026-09-22T10:00:00Z",
+  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
+  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
+  "planning_state": "COMPLETE",
   "current_goal": null,
   "current_worker": null,
-  "current_gate_ids": [],
-  "open_findings": [],
   "source": {
-    "head": "788cfa2fec520896e9dc4accfc9202325327a135",
-    "tree": "b647802a8ece672e50a9fbb9b565edd7ff69c8c3",
+    "accepted_implementation_lineage": "788cfa2fec520896e9dc4accfc9202325327a135",
+    "main_before_cleanup_metadata": "c3ee94f2e12e22d0be7402b1ad185058aa9f0752",
     "branch": "main",
     "remote_ref": "refs/heads/main",
-    "remote_head_at_source_publication": "788cfa2fec520896e9dc4accfc9202325327a135",
-    "remote_verification": "the exact accepted source commit was published before this metadata-only successor"
+    "publication": "SOURCE_PUBLISHED"
   },
-  "evidence_summary": "The existing schema 2.2 manifest, no-op, signature and opaque-cursor contracts were retained. Node and Swift produced the same non-empty-history semantic snapshot SHA-256, and Firefox proved strict normal TLS, browser CORS, ETag 304 and cursor continuation.",
-  "coordinated_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/mf-final-20260921-r1/evidence/coordinated-runtime-receipt.json",
-  "coordinated_receipt_sha256": "ebb97c9642893441b65228878c52d1b372f1fa1d55e08fcbd5b6ce04d4f7c405",
-  "remaining": ["Full-solution, cross-platform and deferred profile work remains backlog; no protocol expansion is accepted here."],
-  "review": "docs/development/GROK_COMPLETION_REVIEW.md",
-  "accepted_receipts_immutable": true,
-  "historical_status_archive": "docs/development/archive/2026-09-21-grok-completion-review/teslatlas-protocol/docs/development/STATUS.json",
-  "publication_this_review": "ACCEPTED_SOURCE_AND_RECONCILED_METADATA_PUBLISHED"
+  "local_state": {
+    "build_outputs": "REMOVED",
+    "candidate_artifacts": "REMOVED",
+    "external_receipts": "REMOVED",
+    "runtime": "NONE"
+  },
+  "evidence_summary": "Historical: Node, Swift and strict-browser consumers passed the recorded schema 2.2 and cursor checks.",
+  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
+  "remaining": [
+    "No local receipt or runtime remains; new integration claims require a fresh coordinated run."
+  ]
 }

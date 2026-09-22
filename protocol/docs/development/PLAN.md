@@ -1,16 +1,21 @@
-# Protocol — accepted current-Mac contract boundary
+# Protocol — source-published post-cleanup state
 
-Revision 2026-09-21. **COMPLETED** for the affected MF-2/MF-3 contract work.
+Revision 2026-09-22. The accepted current-Mac implementation is published on `main`.
+The owner then requested removal of all local builds, artifacts, runtimes and VMs.
 
-## Accepted result
+## Published result
 
-Exact source `788cfa2fec520896e9dc4accfc9202325327a135` remains published on
-`main`. The accepted run retained the distinct reference, current-Hub,
-compatibility and Edge profiles. Schema 2.2 manifest/no-op signatures and opaque
-cursors passed through the Node, Swift and normal Firefox consumers.
+- Accepted implementation lineage: `788cfa2fec520896e9dc4accfc9202325327a135`
+- Published `main` before this cleanup metadata update: `c3ee94f2e12e22d0be7402b1ad185058aa9f0752`
+- The published contracts retain the distinct reference, current-Hub, compatibility and Edge profiles, including schema 2.2 signatures and opaque cursors.
 
-## Boundary
+## Evidence boundary
 
-No new protocol profile or cross-platform claim is made. The acceptance is limited
-to the source-run product on the current Apple-silicon Mac; broader work remains
-deferred backlog.
+Historical: Node, Swift and strict-browser consumers passed the recorded schema 2.2 and cursor checks. The corresponding external candidates, receipts and runtime fixtures
+were deliberately deleted. Those results remain historical provenance and do not
+claim that a runnable local installation exists now.
+
+## Current state
+
+Source and Git history are retained. Regenerable builds and dependencies are removed.
+No local receipt or runtime remains; new integration claims require a fresh coordinated run.
