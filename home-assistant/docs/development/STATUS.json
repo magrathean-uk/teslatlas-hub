@@ -1,32 +1,28 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "product": "Home Assistant",
-  "updated_at": "2026-09-21T21:34:00Z",
-  "update_scope": "MF-0, MF-2 and MF-3 current-Mac acceptance closure",
-  "state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-  "macos_working_product_state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-  "planning_state": "COMPLETED",
-  "full_solution_state": "NOT_ACCEPTED_DEFERRED_BACKLOG",
-  "objective": "Publish accepted component source and bind the existing guest integration",
+  "updated_at": "2026-09-22T10:00:00Z",
+  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
+  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
+  "planning_state": "COMPLETE",
   "current_goal": null,
   "current_worker": null,
-  "current_gate_ids": [],
-  "open_findings": [],
   "source": {
-    "head": "78186795dfe2575258d4e3c2b138f263f8df21b5",
-    "tree": "14edf01ac7fa13b4cad4aa9bc7ae9b8cbfea9046",
+    "accepted_implementation_lineage": "78186795dfe2575258d4e3c2b138f263f8df21b5",
+    "main_before_cleanup_metadata": "656c1db2891b4bf01929736f89d718af4d27208e",
     "branch": "main",
     "remote_ref": "refs/heads/main",
-    "remote_head_at_source_publication": "78186795dfe2575258d4e3c2b138f263f8df21b5",
-    "remote_verification": "the exact accepted source commit was published before this metadata-only successor"
+    "publication": "SOURCE_PUBLISHED"
   },
-  "evidence_summary": "The exact committed 31-file component is mounted read-only in the existing Debian arm64 Home Assistant 2026.8.3 guest. The preserved entry validates strict renewed TLS, the direct integration diagnostic returned ok with one vehicle, and all 13 Teslatlas entities are loaded with zero unavailable.",
-  "coordinated_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/mf-final-20260921-r1/evidence/coordinated-runtime-receipt.json",
-  "coordinated_receipt_sha256": "ebb97c9642893441b65228878c52d1b372f1fa1d55e08fcbd5b6ce04d4f7c405",
-  "retained_runtime": "Home Assistant container teslatlas-mac4-20260920-r1-homeassistant-1 remains running against guest loopback 18443 forwarded to Mac 21444.",
-  "remaining": ["HACS/store distribution, production credentials, real Tesla access and broader platform acceptance remain deferred or separately gated."],
-  "review": "docs/development/GROK_COMPLETION_REVIEW.md",
-  "accepted_receipts_immutable": true,
-  "historical_status_archive": "docs/development/archive/2026-09-21-grok-completion-review/teslatlas-home-assistant/docs/development/STATUS.json",
-  "publication_this_review": "ACCEPTED_SOURCE_AND_RECONCILED_METADATA_PUBLISHED"
+  "local_state": {
+    "build_outputs": "REMOVED",
+    "candidate_artifacts": "REMOVED",
+    "external_receipts": "REMOVED",
+    "runtime": "NONE"
+  },
+  "evidence_summary": "Current source validation before publication: 134 passed, 2 skipped; formatting and matrix-contract checks passed. Historical guest evidence recorded one vehicle and 13 available entities.",
+  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
+  "remaining": [
+    "The Lima guest and Home Assistant container were removed; HACS/store distribution and real credentials remain deferred."
+  ]
 }
