@@ -1,31 +1,28 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "product": "Swift SDK",
-  "updated_at": "2026-09-21T21:34:00Z",
-  "update_scope": "MF-3 current-Mac acceptance closure",
-  "state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-  "macos_working_product_state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-  "planning_state": "COMPLETED",
-  "full_solution_state": "NOT_ACCEPTED_DEFERRED_BACKLOG",
-  "objective": "Retain fresh restart validation and prove final semantic equality",
+  "updated_at": "2026-09-22T10:00:00Z",
+  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
+  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
+  "planning_state": "COMPLETE",
   "current_goal": null,
   "current_worker": null,
-  "current_gate_ids": [],
-  "open_findings": [],
   "source": {
-    "head": "df1410cba8770d7bdcd8838aede1dcebd177b56c",
-    "tree": "7591488df2fd8040e5f451b79048e379b49daaa2",
+    "accepted_implementation_lineage": "df1410cba8770d7bdcd8838aede1dcebd177b56c",
+    "main_before_cleanup_metadata": "7c34e8dfffecc5e1a4a3df677dee7e4693f9b662",
     "branch": "main",
     "remote_ref": "refs/heads/main",
-    "remote_head_at_source_publication": "df1410cba8770d7bdcd8838aede1dcebd177b56c",
-    "remote_verification": "the exact accepted source commit was published before this metadata-only successor"
+    "publication": "SOURCE_PUBLISHED"
   },
-  "evidence_summary": "Clean-archive tests passed (21 tests), claim replay rotation and restart continuity passed, and fresh signed schema 2.2 non-empty-history data produced semantic snapshot SHA-256 786808affcf1ba6b29537842ef7441c260a63bbfe6f05eeaae559b3b79c7d4b6, equal to TypeScript.",
-  "coordinated_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/mf-final-20260921-r1/evidence/coordinated-runtime-receipt.json",
-  "coordinated_receipt_sha256": "ebb97c9642893441b65228878c52d1b372f1fa1d55e08fcbd5b6ce04d4f7c405",
-  "remaining": ["Distribution and broader platform acceptance remain deferred; this result uses the exact local source archive candidate."],
-  "review": "docs/development/GROK_COMPLETION_REVIEW.md",
-  "accepted_receipts_immutable": true,
-  "historical_status_archive": "docs/development/archive/2026-09-21-grok-completion-review/teslatlas-sdk-swift/docs/development/STATUS.json",
-  "publication_this_review": "ACCEPTED_SOURCE_AND_RECONCILED_METADATA_PUBLISHED"
+  "local_state": {
+    "build_outputs": "REMOVED",
+    "candidate_artifacts": "REMOVED",
+    "external_receipts": "REMOVED",
+    "runtime": "NONE"
+  },
+  "evidence_summary": "Historical: clean-archive tests and non-empty-history semantic equality with TypeScript passed.",
+  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
+  "remaining": [
+    "No build archive remains; distribution and broader platform work remain deferred."
+  ]
 }
