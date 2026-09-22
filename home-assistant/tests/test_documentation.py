@@ -51,5 +51,30 @@ def test_container_candidate_and_manual_install_boundaries_stay_explicit() -> No
     )
     assert "selected Debian 13 ARM64 lane" in docker
     assert "not a general support" in docker
+    assert "SSL_CERT_FILE" in docker
+    assert "REQUESTS_CA_BUNDLE" in docker
     assert "copy only" in readme
     assert "not a Supervisor add-on or a HACS" in readme
+
+
+def test_mac4_handoff_pins_private_route_tls_and_headed_lifecycle() -> None:
+    """Keep the prepared Mac-hosted ordinary-user journey concrete and scoped."""
+    handoff = _read("docs/development/MAC4_RUNTIME_HANDOFF.md")
+    normalized = " ".join(handoff.split())
+
+    assert "https://127.0.0.1:18443" in handoff
+    assert "subjectAltName = IP:127.0.0.1" in handoff
+    assert "tools/mac-hub-forward" in handoff
+    assert "SSL_CERT_FILE" in handoff
+    assert "REQUESTS_CA_BUNDLE" in handoff
+    assert "Devices & services -> Add integration" in normalized
+    for behavior in (
+        "scheduled 30-second refreshes",
+        "numeric zero",
+        "same config entry and registry IDs",
+        "Reload, Disable, Enable",
+        "Download diagnostics",
+        "remove it through the UI",
+    ):
+        assert behavior in handoff
+    assert "No wildcard listener, LAN bind, public ingress" in handoff

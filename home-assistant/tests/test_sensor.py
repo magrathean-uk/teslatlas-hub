@@ -222,6 +222,98 @@ async def test_removed_vehicle_keeps_registry_ids_and_recovers(
     assert await hass.config_entries.async_unload(entry.entry_id) is True
 
 
+async def test_dynamic_vehicle_survives_restart_while_absent_without_duplicates(
+    hass: HomeAssistant,
+) -> None:
+    """Retain exact device and entity identities through an absent restart."""
+    dynamic_vehicle_id = "66666666-6666-4666-8666-666666666666"
+    first_client = FixtureHubClient()
+    entry = await _setup(hass, first_client)
+    base_snapshot = entry.runtime_data.data
+    dynamic_vehicle = replace(
+        vehicle_update().vehicle,
+        vehicle_id=dynamic_vehicle_id,
+        name="Fixture Gamma",
+    )
+    with_dynamic = HubSnapshot.create(
+        info=base_snapshot.info,
+        status=base_snapshot.status,
+        vehicles=[*base_snapshot.vehicles.values(), dynamic_vehicle],
+        received_at=base_snapshot.received_at,
+    )
+    without_dynamic = HubSnapshot.create(
+        info=base_snapshot.info,
+        status=base_snapshot.status,
+        vehicles=base_snapshot.vehicles.values(),
+        received_at=base_snapshot.received_at,
+    )
+
+    entry.runtime_data.async_set_updated_data(with_dynamic)
+    await hass.async_block_till_done()
+
+    device_registry = dr.async_get(hass)
+    entity_registry = er.async_get(hass)
+    device_identifier = (DOMAIN, f"hub-fixture:{dynamic_vehicle_id}")
+    dynamic_device = device_registry.async_get_device(identifiers={device_identifier})
+    assert dynamic_device is not None
+    original_device_registry_id = dynamic_device.id
+    original_entities = {
+        item.unique_id: (item.id, item.entity_id)
+        for item in er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+        if item.unique_id.startswith(f"hub-fixture_{dynamic_vehicle_id}_")
+    }
+    assert len(original_entities) == len(VEHICLE_SENSOR_DESCRIPTIONS)
+
+    entry.runtime_data.async_set_updated_data(without_dynamic)
+    await hass.async_block_till_done()
+    assert all(
+        hass.states.get(item[1]).state == STATE_UNAVAILABLE
+        for item in original_entities.values()
+    )
+
+    assert await hass.config_entries.async_unload(entry.entry_id) is True
+    restart_client = FixtureHubClient()
+    restart_client.snapshot = without_dynamic
+    with patch(
+        "custom_components.teslatlas_hub.create_client",
+        return_value=restart_client,
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id) is True
+    await hass.async_block_till_done()
+
+    restarted_device = device_registry.async_get_device(identifiers={device_identifier})
+    assert restarted_device is not None
+    assert restarted_device.id == original_device_registry_id
+    restarted_entities = {
+        item.unique_id: (item.id, item.entity_id)
+        for item in er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+        if item.unique_id.startswith(f"hub-fixture_{dynamic_vehicle_id}_")
+    }
+    assert restarted_entities == original_entities
+    assert all(
+        hass.states.get(item[1]).state == STATE_UNAVAILABLE
+        for item in restarted_entities.values()
+    )
+
+    entry.runtime_data.async_set_updated_data(with_dynamic)
+    await hass.async_block_till_done()
+    returned_device = device_registry.async_get_device(identifiers={device_identifier})
+    assert returned_device is not None
+    assert returned_device.id == original_device_registry_id
+    returned_entities = {
+        item.unique_id: (item.id, item.entity_id)
+        for item in er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+        if item.unique_id.startswith(f"hub-fixture_{dynamic_vehicle_id}_")
+    }
+    assert returned_entities == original_entities
+    assert all(
+        hass.states.get(item[1]).state != STATE_UNAVAILABLE
+        for item in returned_entities.values()
+    )
+
+    assert await hass.config_entries.async_unload(entry.entry_id) is True
+
+
 async def test_retired_registry_entries_are_scoped_to_their_config_entry(
     hass: HomeAssistant,
 ) -> None:

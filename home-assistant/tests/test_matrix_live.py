@@ -770,6 +770,10 @@ OPERATION_REQUESTS = {
         _request("setup-5", "GET", "/v1/vehicles", 200),
         _request("setup-6", "GET", "/v1/vehicles/{vehicle_id}/current", 200),
         _request("setup-7", "GET", "/v1/vehicles/{vehicle_id}/current", 200),
+        _request("setup-8", "GET", "/.well-known/teslatlas-hub", 200),
+        _request("setup-9", "GET", "/v1/vehicles", 200),
+        _request("setup-10", "GET", "/v1/vehicles/{vehicle_id}/current", 200),
+        _request("setup-11", "GET", "/v1/vehicles/{vehicle_id}/current", 200),
     ],
     "unknown_current": [
         _request("unknown-1", "GET", "/v1/vehicles/{vehicle_id}/current", 404)
@@ -793,6 +797,10 @@ OPERATION_REQUESTS = {
         _request("reauth-3", "GET", "/v1/vehicles", 200),
         _request("reauth-4", "GET", "/v1/vehicles/{vehicle_id}/current", 200),
         _request("reauth-5", "GET", "/v1/vehicles/{vehicle_id}/current", 200),
+        _request("reauth-6", "GET", "/.well-known/teslatlas-hub", 200),
+        _request("reauth-7", "GET", "/v1/vehicles", 200),
+        _request("reauth-8", "GET", "/v1/vehicles/{vehicle_id}/current", 200),
+        _request("reauth-9", "GET", "/v1/vehicles/{vehicle_id}/current", 200),
     ],
     "endpoint_restart_poll": [
         _request("restart-0", "GET", "/.well-known/teslatlas-hub", 200),
@@ -921,8 +929,8 @@ OPERATION_FACTS = {
     },
     "unload": {
         **CASE_FACTS["polling_transport_zero_sse"],
-        "attempted_requests": 35,
-        "completed_requests": 35,
+        "attempted_requests": 43,
+        "completed_requests": 43,
         "failed_requests": 0,
         "cancelled_requests": 0,
         "pending_requests": 0,

@@ -36,6 +36,7 @@ from custom_components.teslatlas_hub.models import HubEndpoint
 HUB_ID = "11111111-1111-4111-8111-111111111111"
 OTHER_HUB_ID = "22222222-2222-4222-8222-222222222222"
 VEHICLE_ID = "33333333-3333-4333-8333-333333333333"
+DYNAMIC_VEHICLE_ID = "66666666-6666-4666-8666-666666666666"
 PAIRING_ID = "44444444-4444-4444-8444-444444444444"
 TOKEN = "a" * 64
 
@@ -293,6 +294,74 @@ async def test_snapshot_maps_current_fields_preserving_zero_null_and_no_sse(
         f"/v1/vehicles/{VEHICLE_ID}/current",
     ]
     assert all("event" not in path for path in paths)
+
+
+async def test_snapshot_tracks_vehicle_add_remove_and_return_from_public_list(
+    hass: HomeAssistant,
+    aiohttp_server,
+) -> None:
+    """Use each current vehicle list without caching or inventing mutation APIs."""
+    stable_vehicle_ids = (
+        VEHICLE_ID,
+        "55555555-5555-4555-8555-555555555555",
+        DYNAMIC_VEHICLE_ID,
+    )
+    listed_vehicle_ids = [
+        stable_vehicle_ids,
+        stable_vehicle_ids[:2],
+        stable_vehicle_ids,
+    ]
+    list_requests = 0
+    current_requests: list[str] = []
+
+    async def discovery(_request: web.Request) -> web.Response:
+        return web.json_response(_discovery())
+
+    async def vehicles(_request: web.Request) -> web.Response:
+        nonlocal list_requests
+        vehicle_ids = listed_vehicle_ids[list_requests]
+        list_requests += 1
+        return web.json_response(
+            {
+                "vehicles": [
+                    {"vehicle_id": vehicle_id, "display_name": f"Vehicle {index}"}
+                    for index, vehicle_id in enumerate(vehicle_ids, start=1)
+                ]
+            }
+        )
+
+    async def current(request: web.Request) -> web.Response:
+        vehicle_id = request.match_info["vehicle_id"]
+        current_requests.append(vehicle_id)
+        payload = _current(observed_at_ms=None)
+        payload["vehicle_id"] = vehicle_id
+        return web.json_response(payload)
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", discovery)
+    app.router.add_get("/v1/vehicles", vehicles)
+    app.router.add_get("/v1/vehicles/{vehicle_id}/current", current)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+
+    added = await client.async_snapshot()
+    omitted = await client.async_snapshot()
+    returned = await client.async_snapshot()
+
+    assert tuple(added.vehicles) == stable_vehicle_ids
+    assert tuple(omitted.vehicles) == stable_vehicle_ids[:2]
+    assert tuple(returned.vehicles) == stable_vehicle_ids
+    assert returned.vehicles[DYNAMIC_VEHICLE_ID].name == "Vehicle 3"
+    assert current_requests == [
+        *stable_vehicle_ids,
+        *stable_vehicle_ids[:2],
+        *stable_vehicle_ids,
+    ]
 
 
 async def test_snapshot_rejects_non_finite_numeric_telemetry(
