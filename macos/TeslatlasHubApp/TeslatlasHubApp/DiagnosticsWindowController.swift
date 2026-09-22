@@ -3,9 +3,13 @@
 import AppKit
 
 final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
+    typealias SavePanelPresenter = (NSSavePanel, NSWindow,
+                                    @escaping (URL?) -> Void) -> Void
+
     private let controller: HubController
     private let onDismiss: () -> Void
     private let onOperationStateChanged: (Bool) -> Void
+    private let savePanelPresenter: SavePanelPresenter
     private let statusDetail = NSTextField(labelWithString: "")
     private let rowsStack = NSStackView()
     private let rowsContainer = HubFlippedSurfaceView(fill: .card)
@@ -25,10 +29,12 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     init(controller: HubController,
          onDismiss: @escaping () -> Void = {},
          embedded: Bool = false,
-         onOperationStateChanged: @escaping (Bool) -> Void = { _ in }) {
+         onOperationStateChanged: @escaping (Bool) -> Void = { _ in },
+         savePanelPresenter: @escaping SavePanelPresenter = DiagnosticsWindowController.presentSavePanel) {
         self.controller = controller
         self.onDismiss = onDismiss
         self.onOperationStateChanged = onOperationStateChanged
+        self.savePanelPresenter = savePanelPresenter
         super.init(window: embedded ? nil : HubUtilityWindowStyle.makeWindow(
             title: "Diagnostics", size: HubMetrics.diagnosticsSheetSize,
             minimum: NSSize(width: 485, height: 360)
@@ -322,14 +328,22 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "teslatlas-hub-diagnostics.txt"
         panel.canCreateDirectories = true
-        panel.beginSheetModal(for: presentationWindow) { [weak self] response in
-            guard response == .OK, let destination = panel.url else { return }
+        savePanelPresenter(panel, presentationWindow) { [weak self] destination in
+            guard let destination else { return }
             do {
                 try HubAppLog.writePrivateReport(latestReport, to: destination)
                 self?.statusDetail.stringValue = "Redacted report saved."
             } catch {
                 HubUIPresentation.presentError(error)
             }
+        }
+    }
+
+    private static func presentSavePanel(_ panel: NSSavePanel,
+                                         for window: NSWindow,
+                                         completion: @escaping (URL?) -> Void) {
+        panel.beginSheetModal(for: window) { response in
+            completion(response == .OK ? panel.url : nil)
         }
     }
 

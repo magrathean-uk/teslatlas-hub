@@ -373,7 +373,7 @@ private final class HubVehicleTableView: NSTableView {
 final class HubVehiclesView: HubSurfaceView {
     private let actions: HubVehicleCardActions
     private let selector = NSPopUpButton()
-    private let countLabel = NSTextField(labelWithString: "No connected vehicles")
+    private let countLabel = NSTextField(labelWithString: "No configured vehicles")
     private var detailCard: HubVehicleCardView!
     private var vehicles: [HubControlVehicle] = []
     private var provider: HubAccountProvider?
@@ -465,8 +465,8 @@ final class HubVehiclesView: HubSurfaceView {
             selectedVehicleID = snapshot.controlVehicleID ?? vehicles.first?.id
         }
         countLabel.stringValue = vehicles.isEmpty
-            ? "No connected vehicles"
-            : "Your connected vehicles."
+            ? "No configured vehicles"
+            : "Your configured vehicles."
         selector.removeAllItems()
         selector.addItems(withTitles: vehicles.map(\.displayName))
         if let selectedVehicleID, let index = vehicles.firstIndex(where: { $0.id == selectedVehicleID }) {

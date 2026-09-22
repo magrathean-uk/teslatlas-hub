@@ -1079,6 +1079,26 @@ final class OnboardingWindowControllerTests: XCTestCase {
         }
     }
 
+    func testEmbeddedLogsFocusesBackThenRestoresOnboardingResponder() throws {
+        let onboarding = OnboardingWindowController(
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
+            previewRoute: "verify",
+            onComplete: { _ in }
+        )
+        defer { onboarding.close() }
+        let window = try XCTUnwrap(onboarding.window)
+        let logs = try XCTUnwrap(buttons(in: window.contentView).first { $0.title == "View Logs" })
+        XCTAssertTrue(window.makeFirstResponder(logs))
+
+        logs.performClick(nil)
+        let back = try XCTUnwrap(buttons(in: window.contentView).first { $0.title == "Back" })
+        XCTAssertTrue(window.firstResponder === back)
+
+        back.performClick(nil)
+        XCTAssertTrue(window.firstResponder === logs)
+        XCTAssertTrue(logs.window === window)
+    }
+
     func testMigrationFormLocksWhileConnecting() throws {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller,

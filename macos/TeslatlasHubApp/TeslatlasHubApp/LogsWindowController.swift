@@ -4,7 +4,7 @@ import AppKit
 
 final class LogsWindowController: NSWindowController {
     typealias SavePanelPresenter = (NSSavePanel, NSWindow,
-                                    @escaping (NSApplication.ModalResponse) -> Void) -> Void
+                                    @escaping (URL?) -> Void) -> Void
 
     private let controller: HubController
     private let appLog: HubAppLogging
@@ -243,8 +243,8 @@ final class LogsWindowController: NSWindowController {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "teslatlas-hub-logs.txt"
         panel.canCreateDirectories = true
-        savePanelPresenter(panel, presentationWindow) { [weak self] response in
-            guard response == .OK, let destination = panel.url else { return }
+        savePanelPresenter(panel, presentationWindow) { [weak self] destination in
+            guard let destination else { return }
             do {
                 try HubAppLog.writePrivateReport(report, to: destination)
                 self?.statusLabel.stringValue = "Redacted logs saved"
@@ -256,8 +256,10 @@ final class LogsWindowController: NSWindowController {
 
     private static func presentSavePanel(_ panel: NSSavePanel,
                                          for window: NSWindow,
-                                         completion: @escaping (NSApplication.ModalResponse) -> Void) {
-        panel.beginSheetModal(for: window, completionHandler: completion)
+                                         completion: @escaping (URL?) -> Void) {
+        panel.beginSheetModal(for: window) { response in
+            completion(response == .OK ? panel.url : nil)
+        }
     }
 
     private func setActionsEnabled(_ enabled: Bool) {

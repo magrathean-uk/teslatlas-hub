@@ -260,8 +260,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     func selectMainSection(_ section: HubMainSection) {
         guard navigationAvailable else { return }
-        if selectedSection != section || embeddedDetailView != nil {
-            HubMotion.transition(pageContainer, forward: embeddedDetailView == nil ? nil : false)
+        let clearedEmbeddedDetail = embeddedDetailView != nil
+        if selectedSection != section || clearedEmbeddedDetail {
+            HubMotion.transition(pageContainer, forward: clearedEmbeddedDetail ? false : nil)
         }
         clearEmbeddedDetail()
         let changed = selectedSection != section
@@ -280,7 +281,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .settings: selectedView = settingsPage
         }
         if changed { selectedView?.layoutSubtreeIfNeeded() }
-        if changed { navigationBar?.focus(section, in: window) }
+        if changed || clearedEmbeddedDetail { navigationBar?.focus(section, in: window) }
     }
 
     private func updateDefaultButton() {

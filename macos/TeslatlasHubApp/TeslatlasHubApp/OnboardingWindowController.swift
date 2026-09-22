@@ -163,6 +163,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var handoverAcknowledged = false
     private var authWindow: TeslaAuthWindowController?
     private var logsWindow: LogsWindowController?
+    private weak var logsReturnResponder: NSView?
 
     private let continueButton = HubActionButton(title: "Continue", target: nil, action: nil)
     private let backButton = HubActionButton(title: "Back", target: nil, action: nil)
@@ -1811,6 +1812,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     @objc private func openLogs() {
         guard !interactionBlocked, let window else { return }
+        logsReturnResponder = normalizedResponderView()
         let logs = LogsWindowController(controller: controller, embedded: true)
         logsWindow = logs
         let page = logs.makeEmbeddedPage { [weak self] in
@@ -1819,11 +1821,22 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             self.logsWindow = nil
             self.updateFooter()
             window.recalculateKeyViewLoop()
+            self.configureKeyViewLoop(previousField: self.logsReturnResponder)
+            self.logsReturnResponder = nil
             HubMotion.transition(self.onboardingContainer, forward: false)
         }
         window.contentView = page
         window.defaultButtonCell = nil
+        (page as? HubEmbeddedUtilityPage)?.focusInitialResponder(in: window)
         HubMotion.transition(page, forward: true)
+    }
+
+    private func normalizedResponderView() -> NSView? {
+        if let editor = window?.firstResponder as? NSTextView,
+           let delegate = editor.delegate as? NSView {
+            return delegate
+        }
+        return window?.firstResponder as? NSView
     }
 
     @objc private func chooseMigrationPassword() {
@@ -2112,6 +2125,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         if !cancelButton.isHidden && cancelButton.isEnabled { keyViews.append(cancelButton) }
         if !backButton.isHidden && backButton.isEnabled { keyViews.append(backButton) }
         if !continueButton.isHidden && continueButton.isEnabled { keyViews.append(continueButton) }
+        if let footerLogsButton, !footerLogsButton.isHidden, footerLogsButton.isEnabled {
+            keyViews.append(footerLogsButton)
+        }
         guard !keyViews.isEmpty else { return }
         for index in keyViews.indices {
             keyViews[index].nextKeyView = keyViews[(index + 1) % keyViews.count]

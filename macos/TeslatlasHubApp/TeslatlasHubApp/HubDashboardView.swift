@@ -264,7 +264,7 @@ final class HubDashboardView: HubSurfaceView {
         heroTitle.stringValue = title
         heroSubtitle.stringValue = transition?.subtitle ?? subtitle(for: snapshot.health)
         heroSymbol.image = NSImage(systemSymbolName: transition?.symbol ?? symbol(for: snapshot.health),
-                                   accessibilityDescription: heroTitle.stringValue)
+                                   accessibilityDescription: nil)
         let tone = tone(for: snapshot.health)
         heroTile.tone = tone
         heroSymbol.contentTintColor = tone.color
@@ -313,6 +313,8 @@ final class HubDashboardView: HubSurfaceView {
         heroTile.widthAnchor.constraint(equalToConstant: 48).isActive = true
         heroTile.heightAnchor.constraint(equalToConstant: 48).isActive = true
         heroSymbol.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 22, weight: .medium)
+        heroSymbol.identifier = NSUserInterfaceItemIdentifier("hub.dashboard.hero-symbol")
+        heroSymbol.setAccessibilityElement(false)
         heroSymbol.translatesAutoresizingMaskIntoConstraints = false
         heroProgress.style = .spinning
         heroProgress.controlSize = .small

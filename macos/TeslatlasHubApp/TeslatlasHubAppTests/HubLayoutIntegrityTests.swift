@@ -58,6 +58,21 @@ final class HubLayoutIntegrityTests: XCTestCase {
         }
     }
 
+    func testDashboardHeroSymbolIsDecorativeBesideItsVisibleTitle() throws {
+        let dashboard = HubDashboardView(actions: HubDashboardActions(
+            start: {}, stop: {}, restart: {}, setup: {}, diagnostics: {},
+            vehicle: HubVehicleCardActions(select: { _ in }, command: { _, _ in }),
+            serviceDetails: {}, dataFolder: {}
+        ))
+        dashboard.apply(snapshot: .previewRunning, transition: nil, activity: [])
+        let symbol = try XCTUnwrap(descendants(dashboard).compactMap { $0 as? NSImageView }.first {
+            $0.identifier?.rawValue == "hub.dashboard.hero-symbol"
+        })
+        XCTAssertFalse(symbol.isAccessibilityElement())
+        XCTAssertTrue(descendants(dashboard).compactMap { $0 as? NSTextField }
+            .contains { $0.stringValue == "Hub is running" })
+    }
+
     func testTextOnlyButtonHasRoomForItsCellAndHitTestingUsesSuperviewCoordinates() {
         let parent = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 100))
         let button = HubActionButton(title: "Cancel", target: nil, action: nil)

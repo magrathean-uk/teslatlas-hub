@@ -114,6 +114,28 @@ final class HubUtilityWindowTests: XCTestCase {
         XCTAssertTrue(main.window?.firstResponder === invokingControl)
     }
 
+    func testSameSectionSelectionClearsEmbeddedPageAndReplacesItsResponder() throws {
+        let main = MainWindowController(controller: HubController(
+            environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"], initialSnapshot: .previewRunning
+        ))
+        defer { main.close() }
+        main.selectMainSection(.activity)
+        main.showEmbeddedLogs()
+        let back = try XCTUnwrap(descendants(main.window?.contentView).compactMap { $0 as? NSButton }
+            .first { $0.title == "Back" })
+        XCTAssertTrue(main.window?.firstResponder === back)
+
+        main.selectMainSection(.activity)
+
+        XCTAssertFalse(descendants(main.window?.contentView).contains {
+            $0.identifier?.rawValue == "hub.embedded.activity-logs"
+        })
+        XCTAssertFalse(main.window?.firstResponder === back)
+        let destination = try XCTUnwrap(main.window?.firstResponder as? NSButton)
+        XCTAssertEqual(destination.title, "Activity")
+        XCTAssertTrue(destination.window === main.window)
+    }
+
     func testNavigationHonorsDisabledState() {
         let actions = HubNavigationActions(select: { _ in }, diagnostics: {}, logs: {}, serviceDetails: {},
             importTeslaMate: {}, connectTesla: {}, accountMenu: { NSMenu() }, appearance: {})
