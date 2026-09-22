@@ -28,6 +28,7 @@ use teslatlas_hub::{
     config::{CollectorProvider, HubConfig},
     credential_recovery::{RECOVERY_ENCRYPTION_KEY_BYTES, export_credentials, restore_credentials},
     credentials::{OwnerTokens, TeslaMatePostgresPassword},
+    current_state::build_current_vehicle_summary,
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
     db::{HubStore, ObservationVerificationError, StoreError, TeslaMateLegacyTokenStore},
     diagnostics::{inspect_hub, log_runtime_inventory},

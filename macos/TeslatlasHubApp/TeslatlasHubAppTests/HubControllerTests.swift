@@ -896,6 +896,50 @@ final class HubControllerTests: XCTestCase {
         wait(for: [finished], timeout: 2)
     }
 
+    func testCLIStatusTelemetryRendersTypedFieldsForTheSelectedVehicle() throws {
+        let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
+        let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
+        let installed = RecordingCommandRunner(result: .success("""
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"Aurora","latestObservedAtMs":2000,"activityState":"online","batteryLevel":81,"locationName":"Home","connectionAvailable":true},{"vehicleId":"\(secondID.uuidString)","displayName":"Comet","activityState":"asleep","batteryLevel":null,"locationName":null,"connectionAvailable":false}],"credentials":{"present":true}}
+        """))
+        let controller = HubController(installedCommandRunner: installed,
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       serviceInstalledOverride: true)
+        let finished = expectation(description: "typed vehicle status loaded")
+        var loaded: HubSnapshot?
+        controller.refresh { snapshot in
+            loaded = snapshot
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+
+        let snapshot = try XCTUnwrap(loaded)
+        XCTAssertEqual(snapshot.controlVehicles[0].activityState, "online")
+        XCTAssertEqual(snapshot.controlVehicles[0].batteryLevel, 81)
+        XCTAssertEqual(snapshot.controlVehicles[0].locationName, "Home")
+        XCTAssertTrue(snapshot.controlVehicles[0].connectionAvailable)
+        XCTAssertEqual(snapshot.controlVehicles[1].activityState, "asleep")
+        XCTAssertNil(snapshot.controlVehicles[1].batteryLevel)
+        XCTAssertNil(snapshot.controlVehicles[1].locationName)
+        XCTAssertFalse(snapshot.controlVehicles[1].connectionAvailable)
+
+        let view = HubVehiclesView(actions: .noOp)
+        view.apply(snapshot: snapshot, selectedVehicleID: secondID, enabled: true)
+        var values = labels(in: view).map(\.stringValue)
+        XCTAssertTrue(values.contains("Comet"))
+        XCTAssertTrue(values.contains("Asleep"))
+        XCTAssertFalse(values.contains("Online"))
+        XCTAssertGreaterThanOrEqual(values.filter { $0 == "Unavailable" }.count, 3)
+
+        view.apply(snapshot: snapshot, selectedVehicleID: firstID, enabled: true)
+        values = labels(in: view).map(\.stringValue)
+        XCTAssertTrue(values.contains("Aurora"))
+        XCTAssertTrue(values.contains("Online"))
+        XCTAssertTrue(values.contains("81%"))
+        XCTAssertTrue(values.contains("Home"))
+        XCTAssertTrue(values.contains("Available"))
+    }
+
     func testMultipleVehicleControlUsesExplicitSelectedVehicle() {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!

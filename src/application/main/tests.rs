@@ -27,8 +27,9 @@ use sha2::Digest;
 use sha2::Sha256;
 
 use super::{
-    Cli, Command, CompanionCommand, CompanionMode, ControlCommand, MAX_TLS_CERTIFICATE_CHAIN_BYTES,
-    MAX_TLS_PRIVATE_KEY_BYTES, PairingCommandError, PairingCommandInput, execute_pairing_at,
+    Cli, Command, CompanionCommand, CompanionMode, ControlCommand, CurrentVehicleStatusFields,
+    MAX_TLS_CERTIFICATE_CHAIN_BYTES, MAX_TLS_PRIVATE_KEY_BYTES, PairingCommandError,
+    PairingCommandInput, current_vehicle_status_fields, execute_pairing_at,
     leaf_certificate_sha256, leaf_certificate_sha256_after_open, pairing_uri,
     persist_and_present_pairing, read_tls_identity_file, render_pairing_qr, run,
     run_immutable_diagnostic_with,
@@ -49,7 +50,7 @@ use super::{
     teslamate_check_failure_details, teslamate_version_confirmation,
     validate_legacy_setup_provider, validate_streaming_setting, write_migration_progress_event,
 };
-use teslatlas_hub::db::HubStore;
+use teslatlas_hub::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
 #[cfg(target_os = "macos")]
 use teslatlas_hub::protocol::{
     CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor, PROTOCOL_V1,
@@ -61,6 +62,80 @@ use teslatlas_hub::{
     teslamate_reader::TeslaMateReaderError, teslamate_schema::SchemaCompatibilityError,
 };
 use uuid::Uuid;
+
+#[test]
+fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
+    let temporary = tempfile::tempdir().expect("temporary Hub");
+    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700))
+        .expect("private data directory");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let source = store
+        .register_source(
+            &SourceDescriptor::new("tesla_owner_api", "status-test"),
+            1_000,
+        )
+        .expect("source");
+    let observed = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "observed"), 1_001)
+        .expect("observed vehicle");
+    let missing = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "missing"), 1_002)
+        .expect("missing vehicle");
+    store
+        .upsert_geofences(
+            observed.vehicle_id,
+            &[teslatlas_hub::teslamate_projection::TeslaMateGeofence {
+                id: 1,
+                name: "Home".into(),
+                latitude: Some(51.0),
+                longitude: Some(-0.1),
+                radius_m: Some(150.0),
+                billing_type: Some(teslatlas_hub::hub_pack::GeofenceBillingType::PerKwh),
+                cost_per_unit: None,
+                session_fee: None,
+            }],
+        )
+        .expect("geofence");
+    store
+        .accept_owner_observation_and_lifecycle(
+            &ObservationInput {
+                source_id: source.source_id,
+                vehicle_id: observed.vehicle_id,
+                observed_at_ms: 2_000,
+                payload: serde_json::json!({
+                    "record_type": "owner_api_vehicle_data_v1",
+                    "source_vehicle_state": "online",
+                    "vehicle_data": {
+                        "drive_state": {"latitude": 51.0, "longitude": -0.1},
+                        "charge_state": {"battery_level": 81}
+                    }
+                }),
+            },
+            2_001,
+            1,
+        )
+        .expect("current observation");
+
+    let read_only = HubStore::open_read_only(temporary.path()).expect("read-only store");
+    assert_eq!(
+        current_vehicle_status_fields(&read_only, observed.vehicle_id).expect("observed status"),
+        CurrentVehicleStatusFields {
+            activity_state: Some("online".into()),
+            battery_level: Some(81),
+            location_name: Some("Home".into()),
+            connection_available: true,
+        }
+    );
+    assert_eq!(
+        current_vehicle_status_fields(&read_only, missing.vehicle_id).expect("missing status"),
+        CurrentVehicleStatusFields {
+            activity_state: None,
+            battery_level: None,
+            location_name: None,
+            connection_available: false,
+        }
+    );
+}
 
 #[test]
 fn legal_aliases_and_source_command_parse_without_configuration() {

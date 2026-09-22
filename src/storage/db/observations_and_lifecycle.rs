@@ -1038,7 +1038,7 @@ impl HubStore {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
-        let connection = self.open()?;
+        let connection = self.open_read_only_connection()?;
         let fences = load_geofence_fences(&connection, vehicle_id)?;
         Ok(crate::lifecycle::match_geofence_name(
             latitude, longitude, &fences,
@@ -1053,7 +1053,7 @@ impl HubStore {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
-        let connection = self.open()?;
+        let connection = self.open_read_only_connection()?;
         connection
             .query_row(
                 "SELECT vehicle_id, car_id, last_observation_id, open_session_json, \

@@ -1,5 +1,39 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#[derive(Debug, PartialEq, Eq)]
+struct CurrentVehicleStatusFields {
+    activity_state: Option<String>,
+    battery_level: Option<i64>,
+    location_name: Option<String>,
+    connection_available: bool,
+}
+
+fn current_vehicle_status_fields(
+    store: &HubStore,
+    vehicle_id: uuid::Uuid,
+) -> Result<CurrentVehicleStatusFields, StoreError> {
+    let observations = store.current_observations_for_vehicle(vehicle_id)?;
+    let lifecycle = store.load_lifecycle_state(vehicle_id)?;
+    let mut summary = build_current_vehicle_summary(
+        vehicle_id,
+        &observations,
+        None,
+        lifecycle.as_ref(),
+        None,
+    );
+    if let (Some(latitude), Some(longitude)) = (summary.latitude, summary.longitude) {
+        summary.geofence = store.geofence_name_at(vehicle_id, latitude, longitude)?;
+    }
+    Ok(CurrentVehicleStatusFields {
+        activity_state: summary
+            .state
+            .filter(|state| !state.eq_ignore_ascii_case("unavailable")),
+        battery_level: summary.battery_level,
+        location_name: summary.geofence,
+        connection_available: summary.observed_at_ms.is_some(),
+    })
+}
+
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
 
@@ -290,6 +324,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let binding = store.v2_projection_binding(vehicle.vehicle_id)?;
                 let latest =
                     store.latest_current_observation_metadata_for_vehicle(vehicle.vehicle_id)?;
+                let current = current_vehicle_status_fields(&store, vehicle.vehicle_id)?;
                 let tesla_eid = configured.iter().find_map(|(vehicle_id, eid, _)| {
                     (*vehicle_id == vehicle.vehicle_id).then_some(*eid)
                 });
@@ -301,6 +336,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "latestObservationId": latest.as_ref().map_or(0, |observation| observation.observation_id),
                     "latestObservedAtMs": latest.as_ref().map(|observation| observation.observed_at_ms),
                     "latestReceivedAtMs": latest.as_ref().map(|observation| observation.received_at_ms),
+                    "activityState": current.activity_state,
+                    "batteryLevel": current.battery_level,
+                    "locationName": current.location_name,
+                    "connectionAvailable": current.connection_available,
                 }));
             }
             let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());

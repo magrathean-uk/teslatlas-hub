@@ -199,18 +199,22 @@ final class HubVehicleCardView: NSView {
         selector.isEnabled = enabled && allVehicles.count > 1
         nameLabel.stringValue = vehicle?.displayName ?? emptyTitle
         statusLabel.stringValue = vehicle?.status.components(separatedBy: " · ").first ?? emptyStatus
-        let components = vehicle?.status.components(separatedBy: " · ") ?? []
-        stateRow.value = components.dropFirst().first(where: { !$0.contains("%") }) ?? "Unavailable"
-        batteryRow.value = components.first(where: { $0.contains("%") }) ?? "Unavailable"
-        locationRow.value = components.count > 3 ? (components.last ?? "Unavailable") : "Unavailable"
-        connectionRow.value = vehicle == nil ? "Unavailable" : "Available"
-        connectionRow.statusTone = vehicle == nil ? .warning : .success
+        stateRow.value = vehicle?.activityState.map(Self.displayState) ?? "Unavailable"
+        batteryRow.value = vehicle?.batteryLevel.map { "\($0)%" } ?? "Unavailable"
+        locationRow.value = vehicle?.locationName ?? "Unavailable"
+        connectionRow.value = vehicle?.connectionAvailable == true ? "Available" : "Unavailable"
+        connectionRow.statusTone = vehicle?.connectionAvailable == true ? .success : .warning
 
         let fleet = provider == .fleet
         commandStack.superview?.superview?.isHidden = !fleet
         legacySurface.isHidden = fleet
         commandGroupButtons.forEach { $0.isEnabled = enabled && fleet && vehicle != nil }
         setAccessibilityLabel(vehicle.map { "\($0.displayName), \($0.status)" } ?? emptyTitle)
+    }
+
+    private static func displayState(_ state: String) -> String {
+        guard let first = state.first else { return state }
+        return first.uppercased() + state.dropFirst()
     }
 
     @objc private func selectionChanged() {

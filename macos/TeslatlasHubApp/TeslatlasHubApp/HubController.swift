@@ -331,6 +331,22 @@ struct HubControlVehicle: Equatable {
     let id: UUID
     let displayName: String
     let status: String
+    let activityState: String?
+    let batteryLevel: Int?
+    let locationName: String?
+    let connectionAvailable: Bool
+
+    init(id: UUID, displayName: String, status: String,
+         activityState: String? = nil, batteryLevel: Int? = nil,
+         locationName: String? = nil, connectionAvailable: Bool = false) {
+        self.id = id
+        self.displayName = displayName
+        self.status = status
+        self.activityState = activityState
+        self.batteryLevel = batteryLevel
+        self.locationName = locationName
+        self.connectionAvailable = connectionAvailable
+    }
 }
 
 struct HubSnapshot {
@@ -370,12 +386,19 @@ struct HubSnapshot {
             HubControlVehicle(
                 id: UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!,
                 displayName: "Aurora",
-                status: "Model 3 Long Range · Parked · 78% · Home"
+                status: "Model 3 Long Range · Parked · 78% · Home",
+                activityState: "parked",
+                batteryLevel: 78,
+                locationName: "Home",
+                connectionAvailable: true
             ),
             HubControlVehicle(
                 id: UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!,
                 displayName: "Comet",
-                status: "Model Y Performance · Asleep · 54%"
+                status: "Model Y Performance · Asleep · 54%",
+                activityState: "asleep",
+                batteryLevel: 54,
+                connectionAvailable: true
             )
         ],
         database: "teslatlas.sqlite · 3.51 GB (imported)",
@@ -3524,7 +3547,20 @@ final class HubController {
             } else {
                 status = "No observations yet"
             }
-            return HubControlVehicle(id: id, displayName: displayName, status: status)
+            let state = (vehicle["activityState"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let location = (vehicle["locationName"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let battery = (vehicle["batteryLevel"] as? NSNumber)?.intValue
+            return HubControlVehicle(
+                id: id,
+                displayName: displayName,
+                status: status,
+                activityState: state.flatMap { $0.isEmpty ? nil : $0 },
+                batteryLevel: battery.flatMap { (0...100).contains($0) ? $0 : nil },
+                locationName: location.flatMap { $0.isEmpty ? nil : $0 },
+                connectionAvailable: vehicle["connectionAvailable"] as? Bool ?? false
+            )
         }
         let dbBytes = database?["bytes"] as? NSNumber
         let dbText = dbBytes.map { "Healthy · \($0.int64Value / 1_048_576) MB" } ?? "Waiting for setup or import"
