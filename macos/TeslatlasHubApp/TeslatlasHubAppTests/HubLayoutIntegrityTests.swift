@@ -70,6 +70,50 @@ final class HubLayoutIntegrityTests: XCTestCase {
         XCTAssertNil(button.hitTest(NSPoint(x: 5, y: 5)))
     }
 
+    func testDashboardAtActualMinimumKeepsAllVehiclesAndFooterReachableByScrolling() throws {
+        var snapshot = HubSnapshot.previewRunning
+        snapshot.activity = [
+            HubActivity(message: "Imported TeslaMate history", age: "just now", color: .systemGreen),
+            HubActivity(message: "Vehicle went offline", age: "2 min", color: .systemOrange),
+            HubActivity(message: "Position stored", age: "4 min", color: .systemBlue)
+        ]
+        let actions = HubDashboardActions(
+            start: {}, stop: {}, restart: {}, setup: {}, diagnostics: {},
+            vehicle: HubVehicleCardActions(select: { _ in }, command: { _, _ in }),
+            serviceDetails: {}, dataFolder: {}
+        )
+        let dashboard = HubDashboardView(actions: actions)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 590),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = dashboard
+        dashboard.apply(snapshot: snapshot, transition: nil, activity: snapshot.activity)
+        dashboard.layoutSubtreeIfNeeded()
+
+        let scroll = try XCTUnwrap(descendants(dashboard).compactMap { $0 as? NSScrollView }.first {
+            $0.identifier?.rawValue == "hub.dashboard.scroll"
+        })
+        let document = try XCTUnwrap(scroll.documentView)
+        document.layoutSubtreeIfNeeded()
+        XCTAssertEqual(dashboard.frame.size, NSSize(width: 820, height: 590))
+        XCTAssertGreaterThan(document.bounds.height, scroll.contentView.bounds.height)
+        let text = descendants(dashboard).compactMap { $0 as? NSTextField }
+            .map(\.stringValue).joined(separator: " ")
+        for expected in ["Aurora", "Comet", "Imported TeslaMate history",
+                         "Vehicle went offline", "Position stored"] {
+            XCTAssertTrue(text.contains(expected), "missing \(expected)")
+        }
+
+        let folder = try XCTUnwrap(descendants(dashboard).compactMap { $0 as? NSButton }
+            .first { $0.title == "Data Folder" })
+        let bottom = max(0, document.bounds.maxY - scroll.contentView.bounds.height)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: bottom))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        let folderFrame = folder.convert(folder.bounds, to: document)
+        XCTAssertTrue(scroll.documentVisibleRect.intersects(folderFrame))
+    }
+
     private func assertContained(_ button: HubActionButton, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(button.bounds.contains(button.hubImageView.frame), button.title, file: file, line: line)
         XCTAssertTrue(button.bounds.contains(button.hubTitleLabel.frame), button.title, file: file, line: line)

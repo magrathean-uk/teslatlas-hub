@@ -29,10 +29,11 @@ enum HubDiagnosticsPresentation {
         let title = isFailed ? String(rawTitle.dropLast(failedMarker.count)) : rawTitle
         guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
 
-        let detail = lines.dropFirst().first { line in
+        let detailLines = lines.dropFirst().compactMap { line -> String? in
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            return !trimmed.isEmpty && !isDurationLine(trimmed)
-        }?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty || isDurationLine(trimmed) ? nil : trimmed
+        }
+        let detail = summarizedDetail(from: detailLines)
 
         return HubDiagnosticRow(title: displayTitle(for: title), detail: detail,
                                 outcome: isFailed ? .failed : .passed)
@@ -40,6 +41,33 @@ enum HubDiagnosticsPresentation {
 
     private static func isDurationLine(_ line: String) -> Bool {
         line.hasPrefix("Duration:") || line.hasPrefix("Read duration:")
+    }
+
+    private static func summarizedDetail(from lines: [String]) -> String {
+        guard let first = lines.first else { return "" }
+        guard first.hasPrefix("{") || first.hasPrefix("[") else { return first }
+        let data = Data(lines.joined(separator: "\n").utf8)
+        guard let value = try? JSONSerialization.jsonObject(with: data) else {
+            return first.hasPrefix("{") ? "Structured report available in raw details." : first
+        }
+        if let object = value as? [String: Any] {
+            var fields: [String] = []
+            for (key, label) in [("status", "Status"), ("message", "Message"),
+                                 ("provider", "Provider"), ("version", "Version")] {
+                if let value = object[key] as? String, !value.isEmpty {
+                    fields.append("\(label): \(value)")
+                }
+            }
+            for (key, label) in [("ready", "Ready"), ("compatible", "Compatible")] {
+                if let value = object[key] as? Bool {
+                    fields.append("\(label): \(value ? "yes" : "no")")
+                }
+            }
+            if !fields.isEmpty { return fields.prefix(3).joined(separator: " · ") }
+        } else if let values = value as? [Any] {
+            return "\(values.count) structured result\(values.count == 1 ? "" : "s")."
+        }
+        return "Structured report available in raw details."
     }
 
     private static func displayTitle(for rawTitle: String) -> String {

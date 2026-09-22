@@ -22,7 +22,27 @@ final class HubDiagnosticsPresentationTests: XCTestCase {
 
         XCTAssertEqual(rows.map(\.title), ["Environment doctor", "Preflight", "Future check"])
         XCTAssertEqual(rows.map(\.outcome), [.passed, .failed, .passed])
+        XCTAssertEqual(rows[0].detail, "Status: ok")
         XCTAssertEqual(rows[1].detail, "missing credentials")
+    }
+
+    func testPrettyPrintedJSONUsesBoundedExistingStatusFieldsInsteadOfOpeningBrace() {
+        let report = """
+        == doctor — Hub database, tokens, TLS, collector ==
+        Duration: 20 ms
+        {
+          "status": "ok",
+          "provider": "fleet",
+          "ready": true,
+          "catalogue": {"journalMode": "wal"}
+        }
+        """
+
+        XCTAssertEqual(HubDiagnosticsPresentation.rows(from: report), [
+            HubDiagnosticRow(title: "Environment doctor",
+                             detail: "Status: ok · Provider: fleet · Ready: yes",
+                             outcome: .passed)
+        ])
     }
 
     func testEmptyReportProducesNoSyntheticRows() {

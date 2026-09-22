@@ -7,10 +7,17 @@ struct HubServiceDetail: Equatable {
     let value: String
 }
 
+struct HubServiceLifecycleActions {
+    let start: () -> Void
+    let stop: () -> Void
+    let restart: () -> Void
+}
+
 final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate {
     typealias ConfirmationPresenter = (NSAlert, NSApplication.ModalResponse) -> NSApplication.ModalResponse
 
     private let controller: HubController
+    private let lifecycleActions: HubServiceLifecycleActions?
     private let mutationAllowed: () -> Bool
     private let onMutationStateChanged: (Bool) -> Void
     private let onChanged: () -> Void
@@ -18,15 +25,21 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     private let errorPresenter: (Error) -> Void
     private let confirmationPresenter: ConfirmationPresenter
     private let rowsStack = NSStackView()
+    private let lifecycleCard = HubCardView()
+    private let lifecycleDetail = NSTextField(wrappingLabelWithString: "")
+    private let startStopButton = HubActionButton(title: "Stop Hub…", target: nil, action: nil)
+    private let restartButton = HubActionButton(title: "Restart Hub", target: nil, action: nil)
     private let updateButton = HubActionButton(title: "Update Service…", target: nil, action: nil)
     private let uninstallButton = HubActionButton(title: "Uninstall Hub…", target: nil, action: nil)
     private let deleteDataButton = HubActionButton(title: "Delete Hub and Data…", target: nil, action: nil)
     private var mutationsEnabled = true
     private var mutationPending = false
     private var embeddedBody: NSView?
+    private var serviceHealth: HubHealth
 
     init(snapshot: HubSnapshot,
          controller: HubController,
+         lifecycleActions: HubServiceLifecycleActions? = nil,
          mutationAllowed: @escaping () -> Bool = { true },
          onMutationStateChanged: @escaping (Bool) -> Void = { _ in },
          onChanged: @escaping () -> Void,
@@ -37,12 +50,14 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
              HubUIPresentation.response(to: alert, silentResponse: silentResponse)
          }) {
         self.controller = controller
+        self.lifecycleActions = lifecycleActions
         self.mutationAllowed = mutationAllowed
         self.onMutationStateChanged = onMutationStateChanged
         self.onChanged = onChanged
         self.onDismiss = onDismiss
         self.errorPresenter = errorPresenter
         self.confirmationPresenter = confirmationPresenter
+        self.serviceHealth = snapshot.health
         super.init(window: embedded ? nil : HubUtilityWindowStyle.makeWindow(
             title: "Service Details", size: HubMetrics.serviceDetailsSheetSize,
             minimum: NSSize(width: 450, height: 380)
@@ -91,6 +106,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     }
 
     func update(snapshot: HubSnapshot) {
+        serviceHealth = snapshot.health
         rowsStack.arrangedSubviews.forEach {
             rowsStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
@@ -105,6 +121,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
             rowsStack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
         }
+        updateLifecycleButtons()
     }
 
     func setMutationsEnabled(_ enabled: Bool) {
@@ -129,6 +146,39 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
             rowsStack.trailingAnchor.constraint(equalTo: detailsCard.trailingAnchor),
             rowsStack.topAnchor.constraint(equalTo: detailsCard.topAnchor),
             rowsStack.bottomAnchor.constraint(equalTo: detailsCard.bottomAnchor)
+        ])
+
+        let lifecycleTitle = NSTextField(labelWithString: "Service controls")
+        lifecycleTitle.font = HubTypography.emphasis
+        lifecycleTitle.textColor = HubPalette.foreground
+        lifecycleDetail.font = HubTypography.body
+        lifecycleDetail.textColor = HubPalette.mutedForeground
+        lifecycleDetail.maximumNumberOfLines = 0
+        configureButton(startStopButton, symbol: "stop.fill", style: .flatDanger,
+                        action: #selector(startStopPressed))
+        startStopButton.identifier = NSUserInterfaceItemIdentifier("hub.service.start-stop")
+        configureButton(restartButton, symbol: "arrow.clockwise", style: .neutral,
+                        action: #selector(restartPressed))
+        restartButton.identifier = NSUserInterfaceItemIdentifier("hub.service.restart")
+        let lifecycleButtons = NSStackView(views: [startStopButton, restartButton])
+        lifecycleButtons.alignment = .centerY
+        lifecycleButtons.spacing = 8
+        let lifecycleContents = NSStackView(views: [lifecycleTitle, lifecycleDetail, lifecycleButtons])
+        lifecycleContents.orientation = .vertical
+        lifecycleContents.alignment = .leading
+        lifecycleContents.spacing = 0
+        lifecycleContents.setCustomSpacing(4, after: lifecycleTitle)
+        lifecycleContents.setCustomSpacing(12, after: lifecycleDetail)
+        lifecycleContents.translatesAutoresizingMaskIntoConstraints = false
+        lifecycleCard.identifier = NSUserInterfaceItemIdentifier("hub.service.lifecycle")
+        lifecycleCard.addSubview(lifecycleContents)
+        NSLayoutConstraint.activate([
+            lifecycleContents.leadingAnchor.constraint(equalTo: lifecycleCard.leadingAnchor,
+                                                       constant: HubMetrics.rowHorizontalInset),
+            lifecycleContents.trailingAnchor.constraint(equalTo: lifecycleCard.trailingAnchor,
+                                                        constant: -HubMetrics.rowHorizontalInset),
+            lifecycleContents.topAnchor.constraint(equalTo: lifecycleCard.topAnchor, constant: 14),
+            lifecycleContents.bottomAnchor.constraint(equalTo: lifecycleCard.bottomAnchor, constant: -14)
         ])
 
         configureButton(uninstallButton, symbol: nil, style: .destructive,
@@ -170,7 +220,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         maintenance.spacing = 4
         dangerCard.isHidden = !controller.allowsServiceInstallation
         maintenance.isHidden = !controller.allowsServiceInstallation
-        let body = NSStackView(views: [detailsCard, dangerCard, maintenance])
+        let body = NSStackView(views: [detailsCard, lifecycleCard, dangerCard, maintenance])
         body.orientation = .vertical
         body.alignment = .leading
         body.spacing = 16
@@ -186,7 +236,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         document.addSubview(body)
         scroll.documentView = document
         root.addSubview(scroll)
-        for view in [detailsCard, dangerCard] {
+        for view in [detailsCard, lifecycleCard, dangerCard] {
             view.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
         }
         NSLayoutConstraint.activate([
@@ -201,6 +251,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
             body.topAnchor.constraint(equalTo: document.topAnchor, constant: 0),
             body.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: 0)
         ])
+        updateLifecycleButtons()
         return root
     }
 
@@ -224,6 +275,22 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
 
     func windowWillClose(_ notification: Notification) {
         onDismiss()
+    }
+
+    @objc private func startStopPressed() {
+        guard mutationsEnabled, !mutationPending, mutationAllowed(), let lifecycleActions else {
+            NSSound.beep()
+            return
+        }
+        serviceHealth == .stopped ? lifecycleActions.start() : lifecycleActions.stop()
+    }
+
+    @objc private func restartPressed() {
+        guard mutationsEnabled, !mutationPending, mutationAllowed(), let lifecycleActions else {
+            NSSound.beep()
+            return
+        }
+        lifecycleActions.restart()
     }
 
     @objc private func updateServicePressed() {
@@ -298,7 +365,45 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         updateButton.isEnabled = enabled
         uninstallButton.isEnabled = enabled
         deleteDataButton.isEnabled = enabled
+        startStopButton.isEnabled = enabled && lifecycleActions != nil
+        restartButton.isEnabled = enabled && lifecycleActions != nil
         window?.standardWindowButton(.closeButton)?.isEnabled = !mutationPending
+    }
+
+    private func updateLifecycleButtons() {
+        let available = lifecycleActions != nil && serviceHealth != .needsInstall
+        lifecycleCard.isHidden = !available
+        switch serviceHealth {
+        case .stopped:
+            lifecycleDetail.stringValue = "The background collector is stopped. Start it to resume collection."
+            startStopButton.title = "Start Hub"
+            startStopButton.image = NSImage(systemSymbolName: "play.fill",
+                                            accessibilityDescription: "Start Hub")
+            startStopButton.hubStyle = .primary
+            restartButton.isHidden = true
+        case .running:
+            lifecycleDetail.stringValue = "The background collector is running on this Mac."
+            startStopButton.title = "Stop Hub…"
+            startStopButton.image = NSImage(systemSymbolName: "stop.fill",
+                                            accessibilityDescription: "Stop Hub")
+            startStopButton.hubStyle = .flatDanger
+            restartButton.hubStyle = .neutral
+            restartButton.isHidden = false
+        case .degraded:
+            lifecycleDetail.stringValue = "Hub needs attention. Restart it after reviewing diagnostics."
+            startStopButton.title = "Stop Hub…"
+            startStopButton.image = NSImage(systemSymbolName: "stop.fill",
+                                            accessibilityDescription: "Stop Hub")
+            startStopButton.hubStyle = .flatDanger
+            restartButton.hubStyle = .primary
+            restartButton.isHidden = false
+        case .needsInstall:
+            lifecycleDetail.stringValue = "Set up Hub before using service controls."
+            restartButton.isHidden = true
+        }
+        startStopButton.setAccessibilityHelp(lifecycleDetail.stringValue)
+        restartButton.setAccessibilityHelp("Restart the background Hub service.")
+        updateMutationButtons()
     }
 
     static func deleteDataConfirmation() -> NSAlert {

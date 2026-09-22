@@ -10,7 +10,7 @@ final class HubApplication: NSApplication {
             activate(ignoringOtherApps: true)
             let alert = NSAlert()
             alert.messageText = "Hub is finishing an operation"
-            alert.informativeText = "Wait for the current setup or import operation to finish, then quit. Quitting the app does not stop the background Hub service."
+            alert.informativeText = "Wait for the current setup, service, vehicle, or diagnostics operation to finish, then quit. Quitting the app does not stop the background Hub service."
             alert.addButton(withTitle: "OK")
             _ = HubUIPresentation.response(to: alert)
             return
@@ -191,10 +191,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     /// NSApplication's standard termination can be suppressed by an attached
-    /// setup sheet. End idle sheets explicitly; don't interrupt an active import.
+    /// sheet. End idle sheets explicitly; don't interrupt an owned operation.
     static func finishSheetsBeforeQuit(in windows: [NSWindow]) -> Bool {
         guard !windows.contains(where: {
             ($0.delegate as? OnboardingWindowController)?.operationPreventsQuit == true
+                || ($0.windowController as? MainWindowController)?.operationPreventsQuit == true
+                || ($0.windowController as? DiagnosticsWindowController)?.operationInProgress == true
+                || ($0.windowController as? ServiceDetailsWindowController)?.mutationInProgress == true
         }) else { return false }
         func depth(_ window: NSWindow) -> Int {
             var count = 0

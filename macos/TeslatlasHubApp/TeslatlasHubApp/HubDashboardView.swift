@@ -207,16 +207,35 @@ final class HubDashboardView: HubSurfaceView {
         content.alignment = .leading
         content.spacing = HubMetrics.sectionSpacing
         content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
+
+        let document = HubFlippedSurfaceView(fill: .background)
+        document.translatesAutoresizingMaskIntoConstraints = false
+        document.addSubview(content)
+        let scroll = NSScrollView()
+        scroll.identifier = NSUserInterfaceItemIdentifier("hub.dashboard.scroll")
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.documentView = document
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(scroll)
         NSLayoutConstraint.activate([
-            content.centerXAnchor.constraint(equalTo: centerXAnchor),
-            content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor,
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+            document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            document.heightAnchor.constraint(greaterThanOrEqualTo: scroll.contentView.heightAnchor),
+            content.centerXAnchor.constraint(equalTo: document.centerXAnchor),
+            content.leadingAnchor.constraint(greaterThanOrEqualTo: document.leadingAnchor,
                                              constant: HubMetrics.pageInset),
-            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor,
+            content.trailingAnchor.constraint(lessThanOrEqualTo: document.trailingAnchor,
                                               constant: -HubMetrics.pageInset),
             content.widthAnchor.constraint(equalToConstant: HubMetrics.contentWidth),
-            content.topAnchor.constraint(equalTo: topAnchor, constant: HubMetrics.pageTopInset),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -HubMetrics.pageInset),
+            content.topAnchor.constraint(equalTo: document.topAnchor, constant: HubMetrics.pageTopInset),
+            content.bottomAnchor.constraint(equalTo: document.bottomAnchor,
+                                              constant: -HubMetrics.pageInset),
             hero.widthAnchor.constraint(equalTo: content.widthAnchor),
             statusCard.widthAnchor.constraint(equalTo: content.widthAnchor),
             vehiclesSection.widthAnchor.constraint(equalTo: content.widthAnchor),

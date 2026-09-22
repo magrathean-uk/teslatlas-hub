@@ -36,6 +36,7 @@ final class MainWindowController: NSWindowController {
     private var vehicleControlOutcomeUnknown = false
     private(set) var accountWorkflowActive = false
     private var serviceDetailsMutationPending = false
+    private var diagnosticsOperationPending = false
     private var mainToolbar: HubMainToolbar?
     private(set) var detailsWindow: ServiceDetailsWindowController?
     private var modalState = HubModalState()
@@ -123,7 +124,8 @@ final class MainWindowController: NSWindowController {
                   self.window?.isVisible == true,
                   self.serviceTransition == nil,
                   !self.accountWorkflowActive,
-                  !self.serviceDetailsMutationPending else { return }
+                  !self.serviceDetailsMutationPending,
+                  !self.diagnosticsOperationPending else { return }
             self.update()
         }
         RunLoop.main.add(refreshTimer, forMode: .common)
@@ -204,6 +206,14 @@ final class MainWindowController: NSWindowController {
         )
     }
 
+    private func makeServiceLifecycleActions() -> HubServiceLifecycleActions {
+        HubServiceLifecycleActions(
+            start: { [weak self] in self?.startPressed() },
+            stop: { [weak self] in self?.stopPressed() },
+            restart: { [weak self] in self?.restartPressed() }
+        )
+    }
+
     private func makeNavigationActions() -> HubNavigationActions {
         HubNavigationActions(
             select: { [weak self] section in self?.selectMainSection(section) },
@@ -220,6 +230,12 @@ final class MainWindowController: NSWindowController {
     var navigationAvailable: Bool {
         serviceTransition == nil && !vehicleControlPending
             && !accountWorkflowActive && !serviceDetailsMutationPending
+            && !diagnosticsOperationPending
+    }
+
+    var operationPreventsQuit: Bool {
+        serviceTransition != nil || vehicleControlPending
+            || serviceDetailsMutationPending || diagnosticsOperationPending
     }
 
     var canImportTeslaMate: Bool { navigationAvailable && lastPresentedSnapshot.shouldOfferTeslaMateImport }
@@ -617,10 +633,12 @@ final class MainWindowController: NSWindowController {
         accountValue.stringValue = snapshot.accountDisplay
         updateVehicleSelection(snapshot)
         vehiclesView.apply(snapshot: snapshot,
+                           selectedVehicleID: selectedControlVehicleID,
                            enabled: vehicleControlsEnabled
                                && serviceTransition == nil
                                && !accountWorkflowActive
-                               && !serviceDetailsMutationPending)
+                               && !serviceDetailsMutationPending
+                               && !diagnosticsOperationPending)
         databaseValue.stringValue = snapshot.database
         versionLabel.stringValue = HubRelease.bundledVersion
         serviceDot.contentTintColor = snapshot.health.color
@@ -632,6 +650,9 @@ final class MainWindowController: NSWindowController {
         let mutableActionsAvailable = serviceTransition == nil
             && !accountWorkflowActive
             && !serviceDetailsMutationPending
+            && !diagnosticsOperationPending
+        detailsWindow?.update(snapshot: snapshot)
+        detailsWindow?.setMutationsEnabled(mutableActionsAvailable)
         let accountActionsAvailable = mutableActionsAvailable
             && !vehicleControlPending
         stopButton.isEnabled = mutableActionsAvailable
@@ -664,6 +685,7 @@ final class MainWindowController: NSWindowController {
             && !vehicleControlOutcomeUnknown
             && !accountWorkflowActive
             && !serviceDetailsMutationPending
+            && !diagnosticsOperationPending
         let controlsVisible = snapshot.provider == .fleet
         if controlsVisible {
             NSLayoutConstraint.activate(vehicleControlSectionHeightConstraints)
@@ -854,11 +876,12 @@ final class MainWindowController: NSWindowController {
         guard controlVehicles.contains(where: { $0.id == vehicleID }) else { return }
         selectedControlVehicleID = vehicleID
         dashboardView.selectVehicle(id: vehicleID)
+        vehiclesView.selectVehicle(id: vehicleID)
     }
 
     func vehicleCommand(_ action: HubVehicleControl, vehicleID: UUID) {
         guard serviceTransition == nil, !accountWorkflowActive,
-              !serviceDetailsMutationPending,
+              !serviceDetailsMutationPending, !diagnosticsOperationPending,
               let vehicle = controlVehicles.first(where: { $0.id == vehicleID }) else { return }
         selectVehicle(vehicleID)
         confirmVehicleControl(action, vehicle: vehicle)
@@ -872,7 +895,7 @@ final class MainWindowController: NSWindowController {
             serviceDetailsMutationPending: serviceDetailsMutationPending,
             vehicleControlPending: vehicleControlPending,
             vehicleControlOutcomeUnknown: vehicleControlOutcomeUnknown
-        )
+        ) && !diagnosticsOperationPending
     }
 
     static func acceptedVehicleControlsEnabled(
@@ -929,6 +952,7 @@ final class MainWindowController: NSWindowController {
         serviceTransitionDeadlineWorkItem?.cancel()
         serviceTransitionDeadlineWorkItem = nil
         detailsWindow?.setMutationsEnabled(false)
+        (embeddedDetailView as? HubEmbeddedUtilityPage)?.setNavigationEnabled(false)
         applyServiceTransitionPresentation(transition)
         return token
     }
@@ -980,7 +1004,9 @@ final class MainWindowController: NSWindowController {
         importButton.isEnabled = false
         navigationBar.apply(snapshot: lastPresentedSnapshot, enabled: false)
         mainToolbar?.apply(snapshot: lastPresentedSnapshot, enabled: false)
-        vehiclesView.apply(snapshot: lastPresentedSnapshot, enabled: false)
+        vehiclesView.apply(snapshot: lastPresentedSnapshot,
+                           selectedVehicleID: selectedControlVehicleID,
+                           enabled: false)
         detailsButton.isEnabled = false
         vehicleActionButtons.forEach { $0.isEnabled = false }
     }
@@ -1055,6 +1081,9 @@ final class MainWindowController: NSWindowController {
         refreshPending = false
         detailsWindow?.setMutationsEnabled(!accountWorkflowActive
                                            && !serviceDetailsMutationPending)
+        (embeddedDetailView as? HubEmbeddedUtilityPage)?.setNavigationEnabled(
+            !accountWorkflowActive && !serviceDetailsMutationPending
+        )
         applySnapshotPresentation(snapshot)
     }
 
@@ -1120,7 +1149,9 @@ final class MainWindowController: NSWindowController {
         importButton.isEnabled = false
         navigationBar.apply(snapshot: lastPresentedSnapshot, enabled: false)
         mainToolbar?.apply(snapshot: lastPresentedSnapshot, enabled: false)
-        vehiclesView.apply(snapshot: lastPresentedSnapshot, enabled: false)
+        vehiclesView.apply(snapshot: lastPresentedSnapshot,
+                           selectedVehicleID: selectedControlVehicleID,
+                           enabled: false)
         vehicleActionButtons.forEach { $0.isEnabled = false }
         controller.performVehicleControl(action, vehicleID: vehicleID) { [weak self] result in
             guard let self else { return }
@@ -1178,9 +1209,21 @@ final class MainWindowController: NSWindowController {
 
     func showEmbeddedDiagnostics() {
         guard canPresentEmbeddedDetail else { NSSound.beep(); return }
-        let diagnostics = DiagnosticsWindowController(controller: controller, embedded: true)
+        let diagnostics = DiagnosticsWindowController(
+            controller: controller,
+            embedded: true,
+            onOperationStateChanged: { [weak self] pending in
+                self?.setDiagnosticsOperationPending(pending)
+            }
+        )
         let page = diagnostics.makeEmbeddedPage { [weak self] in self?.dismissEmbeddedDetail() }
         presentEmbeddedDetail(diagnostics, page: page, from: .settings)
+    }
+
+    private func setDiagnosticsOperationPending(_ pending: Bool) {
+        diagnosticsOperationPending = pending
+        applySnapshotPresentation(lastPresentedSnapshot)
+        (embeddedDetailView as? HubEmbeddedUtilityPage)?.setNavigationEnabled(!pending)
     }
 
     func showEmbeddedServiceDetails() {
@@ -1188,9 +1231,12 @@ final class MainWindowController: NSWindowController {
         let details = ServiceDetailsWindowController(
             snapshot: controller.snapshot,
             controller: controller,
+            lifecycleActions: makeServiceLifecycleActions(),
             mutationAllowed: { [weak self] in
                 guard let self else { return false }
-                return !self.accountWorkflowActive && !self.serviceDetailsMutationPending
+                return self.serviceTransition == nil
+                    && !self.accountWorkflowActive && !self.serviceDetailsMutationPending
+                    && !self.diagnosticsOperationPending
             },
             onMutationStateChanged: { [weak self] in
                 self?.setServiceDetailsMutationPending($0)
@@ -1199,7 +1245,9 @@ final class MainWindowController: NSWindowController {
             onDismiss: { [weak self] in self?.dismissEmbeddedDetail() },
             embedded: true
         )
-        details.setMutationsEnabled(!accountWorkflowActive && !serviceDetailsMutationPending)
+        details.setMutationsEnabled(serviceTransition == nil
+                                    && !accountWorkflowActive && !serviceDetailsMutationPending
+                                    && !diagnosticsOperationPending)
         detailsWindow = details
         let page = details.makeEmbeddedPage { [weak self] in self?.dismissEmbeddedDetail() }
         presentEmbeddedDetail(details, page: page, from: .settings)
@@ -1497,6 +1545,7 @@ final class MainWindowController: NSWindowController {
                            enabled: mutableActionsAvailable && !vehicleControlPending)
         let vehicleControlsEnabled = acceptedVehicleControlsEnabled(for: lastPresentedSnapshot)
         vehiclesView.apply(snapshot: lastPresentedSnapshot,
+                           selectedVehicleID: selectedControlVehicleID,
                            enabled: vehicleControlsEnabled)
         detailsButton.isEnabled = !active
         detailsWindow?.setMutationsEnabled(!active)
@@ -1530,6 +1579,7 @@ final class MainWindowController: NSWindowController {
                            enabled: mutableActionsAvailable && !vehicleControlPending)
         let vehicleControlsEnabled = acceptedVehicleControlsEnabled(for: lastPresentedSnapshot)
         vehiclesView.apply(snapshot: lastPresentedSnapshot,
+                           selectedVehicleID: selectedControlVehicleID,
                            enabled: vehicleControlsEnabled)
         dashboardView.setInteractionsEnabled(mutableActionsAvailable)
         dashboardView.setVehicleControlsEnabled(vehicleControlsEnabled)
@@ -1557,7 +1607,7 @@ final class MainWindowController: NSWindowController {
 
     @objc private func startPressed() {
         guard serviceTransition == nil, !accountWorkflowActive,
-              !serviceDetailsMutationPending else { return }
+              !serviceDetailsMutationPending, !diagnosticsOperationPending else { return }
         guard let token = beginServiceTransition(.starting) else { return }
         controller.startHub { [weak self] result in
             switch result {
@@ -1572,7 +1622,7 @@ final class MainWindowController: NSWindowController {
 
     @objc private func stopPressed() {
         guard serviceTransition == nil, !accountWorkflowActive,
-              !serviceDetailsMutationPending, let window else { return }
+              !serviceDetailsMutationPending, !diagnosticsOperationPending, let window else { return }
         let alert = Self.stopHubConfirmation()
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertSecondButtonReturn else { return }
@@ -1596,7 +1646,7 @@ final class MainWindowController: NSWindowController {
 
     @objc private func restartPressed() {
         guard serviceTransition == nil, !accountWorkflowActive,
-              !serviceDetailsMutationPending else { return }
+              !serviceDetailsMutationPending, !diagnosticsOperationPending else { return }
         guard let token = beginServiceTransition(.restarting) else { return }
         controller.restartHub { [weak self] result in
             switch result {
@@ -1611,7 +1661,7 @@ final class MainWindowController: NSWindowController {
 
     @objc private func vehicleCardButtonPressed(_ sender: NSButton) {
         guard serviceTransition == nil, !accountWorkflowActive,
-              !serviceDetailsMutationPending else { return }
+              !serviceDetailsMutationPending, !diagnosticsOperationPending else { return }
         guard let rawValue = sender.identifier?.rawValue,
               let action = HubVehicleControl(rawValue: rawValue) else { return }
         guard let selectedControlVehicleID else { return }
@@ -1624,14 +1674,15 @@ final class MainWindowController: NSWindowController {
 
     @discardableResult
     func showServiceDetails() -> ServiceDetailsWindowController? {
-        guard serviceTransition == nil, !vehicleControlPending else {
+        guard serviceTransition == nil, !vehicleControlPending, !diagnosticsOperationPending else {
             NSSound.beep()
             return nil
         }
         if let detailsWindow = activeModalController as? ServiceDetailsWindowController,
            modalState.active == .serviceDetails {
             detailsWindow.update(snapshot: controller.snapshot)
-            detailsWindow.setMutationsEnabled(!accountWorkflowActive && !serviceDetailsMutationPending)
+            detailsWindow.setMutationsEnabled(!accountWorkflowActive && !serviceDetailsMutationPending
+                                              && !diagnosticsOperationPending)
             detailsWindow.window?.makeKeyAndOrderFront(nil)
             return detailsWindow
         }
@@ -1639,9 +1690,12 @@ final class MainWindowController: NSWindowController {
             ServiceDetailsWindowController(
                 snapshot: self.controller.snapshot,
                 controller: self.controller,
+                lifecycleActions: self.makeServiceLifecycleActions(),
                 mutationAllowed: { [weak self] in
                     guard let self else { return false }
-                    return !self.accountWorkflowActive && !self.serviceDetailsMutationPending
+                    return self.serviceTransition == nil
+                        && !self.accountWorkflowActive && !self.serviceDetailsMutationPending
+                        && !self.diagnosticsOperationPending
                 },
                 onMutationStateChanged: { [weak self] in
                     self?.setServiceDetailsMutationPending($0)

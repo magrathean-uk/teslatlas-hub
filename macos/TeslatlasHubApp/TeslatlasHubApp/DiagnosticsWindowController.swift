@@ -5,6 +5,7 @@ import AppKit
 final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     private let controller: HubController
     private let onDismiss: () -> Void
+    private let onOperationStateChanged: (Bool) -> Void
     private let statusDetail = NSTextField(labelWithString: "")
     private let rowsStack = NSStackView()
     private let rowsContainer = HubFlippedSurfaceView(fill: .card)
@@ -19,10 +20,15 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     private var latestReport: String?
     private weak var embeddedPage: NSView?
     private var embeddedBody: NSView?
+    private(set) var operationInProgress = false
 
-    init(controller: HubController, onDismiss: @escaping () -> Void = {}, embedded: Bool = false) {
+    init(controller: HubController,
+         onDismiss: @escaping () -> Void = {},
+         embedded: Bool = false,
+         onOperationStateChanged: @escaping (Bool) -> Void = { _ in }) {
         self.controller = controller
         self.onDismiss = onDismiss
+        self.onOperationStateChanged = onOperationStateChanged
         super.init(window: embedded ? nil : HubUtilityWindowStyle.makeWindow(
             title: "Diagnostics", size: HubMetrics.diagnosticsSheetSize,
             minimum: NSSize(width: 485, height: 360)
@@ -183,7 +189,10 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func runPressed() {
-        guard !controller.previewMode else { return }
+        guard !controller.previewMode, !operationInProgress else { return }
+        operationInProgress = true
+        onOperationStateChanged(true)
+        window?.standardWindowButton(.closeButton)?.isEnabled = false
         runButton.isEnabled = false
         copyButton.isEnabled = false
         saveButton.isEnabled = false
@@ -196,6 +205,9 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         controller.runFullDiagnostics { [weak self] report in
             guard let self else { return }
             DispatchQueue.main.async {
+                self.operationInProgress = false
+                self.onOperationStateChanged(false)
+                self.window?.standardWindowButton(.closeButton)?.isEnabled = true
                 let safeReport = HubShareRedactor.redact(report)
                 self.latestReport = safeReport
                 self.rawTextView.string = safeReport
@@ -313,6 +325,11 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
                 HubUIPresentation.presentError(error)
             }
         }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard !operationInProgress else { NSSound.beep(); return false }
+        return true
     }
 
     func windowWillClose(_ notification: Notification) { onDismiss() }

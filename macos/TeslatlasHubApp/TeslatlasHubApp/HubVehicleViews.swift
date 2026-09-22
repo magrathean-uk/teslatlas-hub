@@ -430,12 +430,18 @@ final class HubVehiclesView: HubSurfaceView {
         ])
     }
 
-    func apply(snapshot: HubSnapshot, enabled: Bool) {
+    func apply(snapshot: HubSnapshot,
+               selectedVehicleID preferredVehicleID: UUID? = nil,
+               enabled: Bool) {
         vehicles = snapshot.controlVehicles
         provider = snapshot.provider
         commandsEnabled = enabled
         let validIDs = Set(vehicles.map(\.id))
-        if let selectedVehicleID, !validIDs.contains(selectedVehicleID) { self.selectedVehicleID = nil }
+        if let preferredVehicleID, validIDs.contains(preferredVehicleID) {
+            selectedVehicleID = preferredVehicleID
+        } else if let selectedVehicleID, !validIDs.contains(selectedVehicleID) {
+            self.selectedVehicleID = nil
+        }
         if selectedVehicleID == nil {
             selectedVehicleID = snapshot.controlVehicleID ?? vehicles.first?.id
         }
@@ -449,6 +455,13 @@ final class HubVehiclesView: HubSurfaceView {
         }
         selector.isHidden = vehicles.count < 2
         selector.isEnabled = enabled && vehicles.count > 1
+        updateDetail()
+    }
+
+    func selectVehicle(id: UUID) {
+        guard let index = vehicles.firstIndex(where: { $0.id == id }) else { return }
+        selectedVehicleID = id
+        selector.selectItem(at: index)
         updateDetail()
     }
 
