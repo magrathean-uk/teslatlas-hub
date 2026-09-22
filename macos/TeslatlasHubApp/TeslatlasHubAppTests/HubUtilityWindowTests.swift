@@ -88,11 +88,30 @@ final class HubUtilityWindowTests: XCTestCase {
             XCTAssertNil(main.activeModalKind)
             let back = try XCTUnwrap(descendants(main.window?.contentView).compactMap { $0 as? NSButton }
                 .first { $0.title == "Back" })
+            XCTAssertTrue(main.window?.firstResponder === back)
             back.performClick(nil)
             XCTAssertFalse(descendants(main.window?.contentView).contains {
                 $0.identifier?.rawValue.hasPrefix("hub.embedded.") == true
             })
         }
+    }
+
+    func testEmbeddedBackRestoresTheInvokingControl() throws {
+        let main = MainWindowController(controller: HubController(
+            environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"], initialSnapshot: .previewRunning
+        ))
+        defer { main.close() }
+        main.selectMainSection(.activity)
+        let invokingControl = try XCTUnwrap(descendants(main.activityPage).compactMap { $0 as? NSButton }.first)
+        XCTAssertTrue(main.window?.makeFirstResponder(invokingControl) == true)
+
+        main.showEmbeddedLogs()
+        let back = try XCTUnwrap(descendants(main.window?.contentView).compactMap { $0 as? NSButton }
+            .first { $0.title == "Back" })
+        XCTAssertTrue(main.window?.firstResponder === back)
+        back.performClick(nil)
+
+        XCTAssertTrue(main.window?.firstResponder === invokingControl)
     }
 
     func testNavigationHonorsDisabledState() {

@@ -31,6 +31,14 @@ enum HubServiceTransition: Equatable {
         }
     }
 
+    var completionAnnouncement: String {
+        switch self {
+        case .starting: return "Hub started."
+        case .stopping: return "Hub stopped."
+        case .restarting: return "Hub restarted."
+        }
+    }
+
     var symbol: String {
         switch self {
         case .starting: return "play.circle"

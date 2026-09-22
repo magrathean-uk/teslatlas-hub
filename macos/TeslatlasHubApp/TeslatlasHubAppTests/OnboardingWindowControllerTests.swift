@@ -1056,6 +1056,29 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(authentication.nextKeyView === password)
     }
 
+    func testEveryOnboardingRouteChoosesAVisibleEnabledFirstResponder() throws {
+        for route in ["welcome", "choose", "provider", "fleet", "legacy", "migration",
+                      "verify", "finish"] {
+            let onboarding = OnboardingWindowController(
+                controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
+                previewRoute: route,
+                onComplete: { _ in }
+            )
+            defer { onboarding.close() }
+            let window = try XCTUnwrap(onboarding.window, route)
+            let responder: NSView? = {
+                if let editor = window.firstResponder as? NSTextView {
+                    return editor.delegate as? NSView
+                }
+                return window.firstResponder as? NSView
+            }()
+            let view = try XCTUnwrap(responder, route)
+            XCTAssertTrue(view.window === window, route)
+            XCTAssertFalse(view.isHidden, route)
+            XCTAssertNotEqual((view as? NSControl)?.isEnabled, false, route)
+        }
+    }
+
     func testMigrationFormLocksWhileConnecting() throws {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let onboarding = OnboardingWindowController(controller: controller,

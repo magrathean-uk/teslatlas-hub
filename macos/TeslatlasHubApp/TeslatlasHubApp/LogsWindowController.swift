@@ -118,6 +118,7 @@ final class LogsWindowController: NSWindowController {
         }
         statusLabel.font = .systemFont(ofSize: 11)
         statusLabel.textColor = HubPalette.mutedForeground
+        statusLabel.setAccessibilityLabel("Logs status")
         let privacy = NSTextField(wrappingLabelWithString:
             "Displayed, copied, and saved logs redact credentials and private identifiers. Review before sharing.")
         privacy.font = .systemFont(ofSize: 10.5)
@@ -157,6 +158,8 @@ final class LogsWindowController: NSWindowController {
         appLog.record("refresh.requested", category: "logs", level: "INFO", fields: [:])
         setActionsEnabled(false)
         statusLabel.stringValue = "Loading logs…"
+        statusLabel.setAccessibilityValue("Loading logs")
+        HubAccessibility.announce("Loading logs.", from: embeddedPage ?? statusLabel)
 
         controller.logs { [weak self] text in
             self?.finishRefresh(serviceText: text, started: started)
@@ -184,8 +187,10 @@ final class LogsWindowController: NSWindowController {
         textView.fitDocument()
         textView.scrollToBeginningOfDocument(nil)
         statusLabel.stringValue = status
+        statusLabel.setAccessibilityValue(status)
         setActionsEnabled(!combined.isEmpty)
         operationInProgress = false
+        HubAccessibility.announce(status, from: embeddedPage ?? statusLabel)
     }
 
     @objc private func refreshPressed() { refresh() }
@@ -201,6 +206,8 @@ final class LogsWindowController: NSWindowController {
         operationInProgress = true
         setActionsEnabled(false)
         statusLabel.stringValue = "Running diagnostics…"
+        statusLabel.setAccessibilityValue("Running diagnostics")
+        HubAccessibility.announce("Log diagnostics started.", from: embeddedPage ?? statusLabel)
         textView.string = "Running database, credential, connection, and service checks…"
         controller.runFullDiagnostics { [weak self] report in
             guard let self else { return }
@@ -212,8 +219,11 @@ final class LogsWindowController: NSWindowController {
             self.textView.string = Self.numberedPresentation(combined)
             self.textView.fitDocument()
             self.statusLabel.stringValue = Self.diagnosticsStatus(for: report)
+            self.statusLabel.setAccessibilityValue(self.statusLabel.stringValue)
             self.setActionsEnabled(true)
             self.operationInProgress = false
+            HubAccessibility.announce(self.statusLabel.stringValue,
+                                      from: self.embeddedPage ?? self.statusLabel)
         }
     }
 

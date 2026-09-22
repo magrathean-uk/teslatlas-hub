@@ -151,6 +151,12 @@ final class HubControllerTests: XCTestCase {
         update.performClick(nil)
 
         XCTAssertEqual(installer.installCalls, 1)
+        let pending = try XCTUnwrap(descendantViews(in: try XCTUnwrap(details.window?.contentView)).first {
+            $0.identifier?.rawValue == "hub.service.pending"
+        })
+        XCTAssertFalse(pending.isHidden)
+        XCTAssertTrue(labels(in: pending).contains { $0.stringValue == "Updating Hub…" })
+        XCTAssertEqual(pending.accessibilityLabel(), "Updating Hub…")
         XCTAssertFalse(close.isEnabled)
         XCTAssertFalse(details.windowShouldClose(try XCTUnwrap(details.window)))
         XCTAssertNil(dashboard.showDiagnostics())
@@ -162,11 +168,33 @@ final class HubControllerTests: XCTestCase {
         installer.completeInstall(.success(""))
         let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in close.isEnabled }, object: nil)
         wait(for: [restored], timeout: 2)
+        XCTAssertTrue(pending.isHidden)
         XCTAssertFalse(dashboard.operationPreventsQuit)
         XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: [try XCTUnwrap(dashboard.window)]))
         let diagnostics = dashboard.showDiagnostics()
         XCTAssertNotNil(diagnostics)
         diagnostics?.window?.performClose(nil)
+    }
+
+    func testServiceDetailsShowsLifecycleTransitionFeedbackForEveryCommand() throws {
+        let details = ServiceDetailsWindowController(
+            snapshot: .previewRunning,
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
+            lifecycleActions: .init(start: {}, stop: {}, restart: {}),
+            onChanged: {}
+        )
+        let pending = try XCTUnwrap(descendantViews(in: try XCTUnwrap(details.window?.contentView)).first {
+            $0.identifier?.rawValue == "hub.service.pending"
+        })
+
+        for transition: HubServiceTransition in [.starting, .stopping, .restarting] {
+            details.setServiceTransition(transition)
+            XCTAssertFalse(pending.isHidden)
+            XCTAssertEqual(pending.accessibilityLabel(), transition.title)
+            XCTAssertTrue(labels(in: pending).contains { $0.stringValue == transition.title })
+        }
+        details.setServiceTransition(nil)
+        XCTAssertTrue(pending.isHidden)
     }
 
     func testConfirmedDeleteDataActionUsesDeleteDataAndDismissesAfterUnlocking() throws {
@@ -715,6 +743,8 @@ final class HubControllerTests: XCTestCase {
         vehicle=5YJ3E1EA7KF317000
         display_name="Athena Road Trip"
         {"vehicleName":"Athena JSON"}
+        locationName="Home driveway"
+        {"location_name":"Office Garage","geofence":"Secret Place","geofenceName":"School Run"}
         vehicle_id=477a04f6-b726-50e3-86e0-a5a9143b3239
         sourceCarId=17 teslaEid=12345678901234567 selected_car_id=42 car_id=5 vehicle_id=99
         latitude=51.5074 longitude=-0.1278 url=https://example.test/?lat=51.5&lon=-0.1
@@ -739,6 +769,10 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(redacted.contains("vehicle=[redacted-vin]"))
         XCTAssertTrue(redacted.contains("display_name=[redacted-name]"))
         XCTAssertTrue(redacted.contains("\"vehicleName\":\"[redacted-name]\""))
+        XCTAssertTrue(redacted.contains("locationName=[redacted-location]"))
+        XCTAssertTrue(redacted.contains("\"location_name\":\"[redacted-location]\""))
+        XCTAssertTrue(redacted.contains("\"geofence\":\"[redacted-location]\""))
+        XCTAssertTrue(redacted.contains("\"geofenceName\":\"[redacted-location]\""))
         XCTAssertTrue(redacted.contains("vehicle_id=[redacted-id]"))
         XCTAssertTrue(redacted.contains("sourceCarId=[redacted-id]"))
         XCTAssertTrue(redacted.contains("teslaEid=[redacted-id]"))
@@ -761,6 +795,7 @@ final class HubControllerTests: XCTestCase {
                        "ingest-secret-value", "private-secret-value",
                        "EU_secret_code", "public-state", "database-secret", "eyJheader.payload.signature",
                        "5YJ3E1EA7KF317000", "Athena Road Trip", "Athena JSON",
+                       "Home driveway", "Office Garage", "Secret Place", "School Run",
                        "477a04f6-b726-50e3-86e0-a5a9143b3239", "a04f6-b726",
                        "12345678901234567", "sourceCarId=17", "selected_car_id=42",
                        "car_id=5", "vehicle_id=99",
@@ -771,6 +806,45 @@ final class HubControllerTests: XCTestCase {
                        "fe80::42%en0", "\u{001B}"] {
             XCTAssertFalse(redacted.contains(secret), "leaked \(secret)")
         }
+    }
+
+    func testDiagnosticsAndLogsShareRoutesRedactLocationNamesAndGeofences() throws {
+        let runner = CommandMapRunner(responses: [
+            "doctor": .success("{\"locationName\":\"My House\"}"),
+            "preflight": .success("geofence=Private Yard"),
+            "status": .success("{\"geofenceName\":\"School Run\"}")
+        ])
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       serviceInstalledOverride: false)
+        let diagnostics = DiagnosticsWindowController(controller: controller)
+        let root = try XCTUnwrap(diagnostics.window?.contentView)
+        try XCTUnwrap(buttons(in: root).first { $0.title == "Run Again" }).performClick(nil)
+        wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.descendantViews(in: root).compactMap { $0 as? NSTextView }.contains {
+                $0.identifier?.rawValue == "hub.diagnostics.raw-report"
+                    && $0.string.contains("[redacted-location]")
+            }
+        }, object: nil)], timeout: 3)
+        let raw = try XCTUnwrap(descendantViews(in: root).compactMap { $0 as? NSTextView }.first {
+            $0.identifier?.rawValue == "hub.diagnostics.raw-report"
+        })
+        for secret in ["My House", "Private Yard", "School Run"] {
+            XCTAssertFalse(raw.string.contains(secret))
+        }
+
+        let logs = LogsWindowController(controller: controller)
+        logs.renderLogs("locationName=My House geofence=Private Yard")
+        XCTAssertTrue(logs.textViewForTesting.string.contains("[redacted-location]"))
+        XCTAssertFalse(logs.textViewForTesting.string.contains("My House"))
+        XCTAssertFalse(logs.textViewForTesting.string.contains("Private Yard"))
+        try XCTUnwrap(buttons(in: logs.window?.contentView).first { $0.title == "Copy" })
+            .performClick(nil)
+        let copied = try XCTUnwrap(NSPasteboard.general.string(forType: .string))
+        XCTAssertTrue(copied.contains("[redacted-location]"))
+        XCTAssertFalse(copied.contains("My House"))
+        XCTAssertFalse(copied.contains("Private Yard"))
     }
 
     func testLogsNameStandardOutputAndErrorStreams() throws {
@@ -900,7 +974,7 @@ final class HubControllerTests: XCTestCase {
         let firstID = UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5")!
         let secondID = UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!
         let installed = RecordingCommandRunner(result: .success("""
-        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"Aurora","latestObservedAtMs":2000,"activityState":"online","batteryLevel":81,"locationName":"Home","connectionAvailable":true},{"vehicleId":"\(secondID.uuidString)","displayName":"Comet","activityState":"asleep","batteryLevel":null,"locationName":null,"connectionAvailable":false}],"credentials":{"present":true}}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":false,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"Aurora","latestObservedAtMs":2000,"activityState":"online","batteryLevel":81,"locationName":"Home","telemetryStatus":"cached"},{"vehicleId":"\(secondID.uuidString)","displayName":"Comet","activityState":"asleep","batteryLevel":null,"locationName":null,"telemetryStatus":"unknown"}],"credentials":{"present":true}}
         """))
         let controller = HubController(installedCommandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
@@ -917,11 +991,11 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(snapshot.controlVehicles[0].activityState, "online")
         XCTAssertEqual(snapshot.controlVehicles[0].batteryLevel, 81)
         XCTAssertEqual(snapshot.controlVehicles[0].locationName, "Home")
-        XCTAssertTrue(snapshot.controlVehicles[0].connectionAvailable)
+        XCTAssertEqual(snapshot.controlVehicles[0].telemetryStatus, .cached)
         XCTAssertEqual(snapshot.controlVehicles[1].activityState, "asleep")
         XCTAssertNil(snapshot.controlVehicles[1].batteryLevel)
         XCTAssertNil(snapshot.controlVehicles[1].locationName)
-        XCTAssertFalse(snapshot.controlVehicles[1].connectionAvailable)
+        XCTAssertEqual(snapshot.controlVehicles[1].telemetryStatus, .unknown)
 
         let view = HubVehiclesView(actions: .noOp)
         view.apply(snapshot: snapshot, selectedVehicleID: secondID, enabled: true)
@@ -929,7 +1003,8 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(values.contains("Comet"))
         XCTAssertTrue(values.contains("Asleep"))
         XCTAssertFalse(values.contains("Online"))
-        XCTAssertGreaterThanOrEqual(values.filter { $0 == "Unavailable" }.count, 3)
+        XCTAssertGreaterThanOrEqual(values.filter { $0 == "Unavailable" }.count, 2)
+        XCTAssertTrue(values.contains("Unknown"))
 
         view.apply(snapshot: snapshot, selectedVehicleID: firstID, enabled: true)
         values = labels(in: view).map(\.stringValue)
@@ -937,7 +1012,8 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(values.contains("Online"))
         XCTAssertTrue(values.contains("81%"))
         XCTAssertTrue(values.contains("Home"))
-        XCTAssertTrue(values.contains("Available"))
+        XCTAssertTrue(values.contains("Cached"))
+        XCTAssertFalse(values.contains("Available"))
     }
 
     func testMultipleVehicleControlUsesExplicitSelectedVehicle() {

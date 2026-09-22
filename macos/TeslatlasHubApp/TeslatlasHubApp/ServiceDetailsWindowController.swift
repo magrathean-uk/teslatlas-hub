@@ -27,6 +27,10 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     private let rowsStack = NSStackView()
     private let lifecycleCard = HubCardView()
     private let lifecycleDetail = NSTextField(wrappingLabelWithString: "")
+    private let pendingSurface = HubSurfaceView(fill: .elevated)
+    private let pendingProgress = NSProgressIndicator()
+    private let pendingTitle = NSTextField(labelWithString: "")
+    private let pendingDetail = NSTextField(wrappingLabelWithString: "")
     private let startStopButton = HubActionButton(title: "Stop Hub…", target: nil, action: nil)
     private let restartButton = HubActionButton(title: "Restart Hub", target: nil, action: nil)
     private let updateButton = HubActionButton(title: "Update Service…", target: nil, action: nil)
@@ -36,6 +40,19 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     private var mutationPending = false
     private var embeddedBody: NSView?
     private var serviceHealth: HubHealth
+
+    private enum MutationKind {
+        case update
+        case uninstall
+
+        var title: String { self == .update ? "Updating Hub…" : "Uninstalling Hub…" }
+        var detail: String {
+            self == .update
+                ? "Installing the current bundled service on this Mac."
+                : "Stopping and removing the local Hub service."
+        }
+        var completion: String { self == .update ? "Hub update completed." : "Hub uninstall completed." }
+    }
 
     init(snapshot: HubSnapshot,
          controller: HubController,
@@ -131,6 +148,15 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
 
     var mutationInProgress: Bool { mutationPending }
 
+    func setServiceTransition(_ transition: HubServiceTransition?) {
+        guard let transition else {
+            pendingProgress.stopAnimation(nil)
+            pendingSurface.isHidden = true
+            return
+        }
+        showPending(title: transition.title, detail: transition.subtitle)
+    }
+
     private func contentView() -> NSView {
         let root = HubSurfaceView(fill: .background)
 
@@ -181,6 +207,33 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
             lifecycleContents.bottomAnchor.constraint(equalTo: lifecycleCard.bottomAnchor, constant: -14)
         ])
 
+        pendingSurface.identifier = NSUserInterfaceItemIdentifier("hub.service.pending")
+        pendingSurface.layer?.cornerRadius = HubMetrics.controlRadius
+        pendingProgress.style = .spinning
+        pendingProgress.controlSize = .small
+        pendingProgress.setAccessibilityLabel("Service operation progress")
+        pendingTitle.font = HubTypography.emphasis
+        pendingTitle.textColor = HubPalette.foreground
+        pendingDetail.font = HubTypography.caption
+        pendingDetail.textColor = HubPalette.mutedForeground
+        pendingDetail.maximumNumberOfLines = 0
+        let pendingCopy = NSStackView(views: [pendingTitle, pendingDetail])
+        pendingCopy.orientation = .vertical
+        pendingCopy.alignment = .leading
+        pendingCopy.spacing = 2
+        let pendingContents = NSStackView(views: [pendingProgress, pendingCopy])
+        pendingContents.alignment = .centerY
+        pendingContents.spacing = 10
+        pendingContents.translatesAutoresizingMaskIntoConstraints = false
+        pendingSurface.addSubview(pendingContents)
+        NSLayoutConstraint.activate([
+            pendingContents.leadingAnchor.constraint(equalTo: pendingSurface.leadingAnchor, constant: 12),
+            pendingContents.trailingAnchor.constraint(equalTo: pendingSurface.trailingAnchor, constant: -12),
+            pendingContents.topAnchor.constraint(equalTo: pendingSurface.topAnchor, constant: 10),
+            pendingContents.bottomAnchor.constraint(equalTo: pendingSurface.bottomAnchor, constant: -10)
+        ])
+        pendingSurface.isHidden = true
+
         configureButton(uninstallButton, symbol: nil, style: .destructive,
                         action: #selector(uninstallPressed))
         let dangerTitle = NSTextField(labelWithString: "Uninstall Hub")
@@ -220,7 +273,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         maintenance.spacing = 4
         dangerCard.isHidden = !controller.allowsServiceInstallation
         maintenance.isHidden = !controller.allowsServiceInstallation
-        let body = NSStackView(views: [detailsCard, lifecycleCard, dangerCard, maintenance])
+        let body = NSStackView(views: [detailsCard, pendingSurface, lifecycleCard, dangerCard, maintenance])
         body.orientation = .vertical
         body.alignment = .leading
         body.spacing = 16
@@ -236,7 +289,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         document.addSubview(body)
         scroll.documentView = document
         root.addSubview(scroll)
-        for view in [detailsCard, lifecycleCard, dangerCard] {
+        for view in [detailsCard, pendingSurface, lifecycleCard, dangerCard] {
             view.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
         }
         NSLayoutConstraint.activate([
@@ -294,12 +347,15 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     }
 
     @objc private func updateServicePressed() {
-        guard beginMutation() else { return }
+        guard beginMutation(.update) else { return }
         controller.installService { [self] result in
-            endMutation()
             switch result {
-            case .success: onChanged()
-            case let .failure(error): errorPresenter(error)
+            case .success:
+                endMutation(.update, error: nil)
+                onChanged()
+            case let .failure(error):
+                endMutation(.update, error: error)
+                errorPresenter(error)
             }
         }
     }
@@ -330,34 +386,56 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     }
 
     private func uninstall(deleteData: Bool) {
-        guard beginMutation() else { return }
+        guard beginMutation(.uninstall) else { return }
         controller.uninstallService(deleteData: deleteData) { [self] result in
-            endMutation()
             switch result {
             case .success:
+                endMutation(.uninstall, error: nil)
                 onChanged()
                 onDismiss()
-            case let .failure(error): errorPresenter(error)
+            case let .failure(error):
+                endMutation(.uninstall, error: error)
+                errorPresenter(error)
             }
         }
     }
 
-    private func beginMutation() -> Bool {
+    private func beginMutation(_ kind: MutationKind) -> Bool {
         guard mutationsEnabled, !mutationPending, mutationAllowed() else {
             NSSound.beep()
             return false
         }
         mutationPending = true
+        showPending(title: kind.title, detail: kind.detail)
+        HubAccessibility.announce(kind.title, from: pendingSurface)
         updateMutationButtons()
         onMutationStateChanged(true)
         return true
     }
 
-    private func endMutation() {
+    private func endMutation(_ kind: MutationKind, error: Error?) {
         guard mutationPending else { return }
         mutationPending = false
+        let operation = kind.title.replacingOccurrences(of: "…", with: "")
+        let announcement = error.map { "\(operation) failed: \($0.localizedDescription)" }
+            ?? kind.completion
+        HubAccessibility.announce(announcement, from: pendingSurface)
+        pendingProgress.stopAnimation(nil)
+        pendingSurface.isHidden = true
         onMutationStateChanged(false)
         updateMutationButtons()
+    }
+
+    private func showPending(title: String, detail: String) {
+        pendingTitle.stringValue = title
+        pendingDetail.stringValue = detail
+        pendingProgress.setAccessibilityValue(title)
+        pendingSurface.setAccessibilityElement(true)
+        pendingSurface.setAccessibilityRole(.group)
+        pendingSurface.setAccessibilityLabel(title)
+        pendingSurface.setAccessibilityValue(detail)
+        pendingSurface.isHidden = false
+        pendingProgress.startAnimation(nil)
     }
 
     private func updateMutationButtons() {

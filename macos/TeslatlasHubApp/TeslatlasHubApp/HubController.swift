@@ -51,6 +51,8 @@ enum HubShareRedactor {
         (#"(?i)((?:postgres(?:ql)?|https?)://[^/\s:@]+:)[^@/\s]+(@)"#, "$1[redacted]$2"),
         (#"(?i)(\"(?:display_?name|vehicle_?name)\"\s*:\s*)\"[^\"]*\""#, "$1\"[redacted-name]\""),
         (#"(?i)(\b(?:display_?name|vehicle_?name)\b\s*=\s*)(?:\"[^\"]*\"|[^\s,;]+)"#, "$1[redacted-name]"),
+        (#"(?i)(\"(?:location_?name|geofence_?name|geofence)\"\s*:\s*)\"[^\"]*\""#, "$1\"[redacted-location]\""),
+        (#"(?i)(\b(?:location_?name|geofence_?name|geofence)\b\s*=\s*)(?:\"[^\"]*\"|[^\s,;]+)"#, "$1[redacted-location]"),
         (#"(?i)(\b(?:vehicle_?id|source_?car_?id|selected_?car_?id|car_?id|tesla_?eid)\b\s*[\"']?\s*[:=]\s*[\"']?)-?\d+(?![a-z0-9-])"#, "$1[redacted-id]"),
         (#"(?i)(\b(?:latitude|longitude|lat|lon)\b\s*[\"']?\s*[:=]\s*[\"']?)-?\d+(?:\.\d+)?"#, "$1[redacted-location]"),
         (#"\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"#, "[redacted-jwt]"),
@@ -327,6 +329,20 @@ enum HubVehicleControl: String, CaseIterable, Equatable {
     }
 }
 
+enum HubVehicleTelemetryStatus: String, Equatable {
+    case current
+    case cached
+    case unknown
+
+    var displayName: String {
+        switch self {
+        case .current: return "Current"
+        case .cached: return "Cached"
+        case .unknown: return "Unknown"
+        }
+    }
+}
+
 struct HubControlVehicle: Equatable {
     let id: UUID
     let displayName: String
@@ -334,18 +350,19 @@ struct HubControlVehicle: Equatable {
     let activityState: String?
     let batteryLevel: Int?
     let locationName: String?
-    let connectionAvailable: Bool
+    let telemetryStatus: HubVehicleTelemetryStatus
 
     init(id: UUID, displayName: String, status: String,
          activityState: String? = nil, batteryLevel: Int? = nil,
-         locationName: String? = nil, connectionAvailable: Bool = false) {
+         locationName: String? = nil,
+         telemetryStatus: HubVehicleTelemetryStatus = .unknown) {
         self.id = id
         self.displayName = displayName
         self.status = status
         self.activityState = activityState
         self.batteryLevel = batteryLevel
         self.locationName = locationName
-        self.connectionAvailable = connectionAvailable
+        self.telemetryStatus = telemetryStatus
     }
 }
 
@@ -390,7 +407,7 @@ struct HubSnapshot {
                 activityState: "parked",
                 batteryLevel: 78,
                 locationName: "Home",
-                connectionAvailable: true
+                telemetryStatus: .cached
             ),
             HubControlVehicle(
                 id: UUID(uuidString: "FB25AA4A-A719-4575-8BB1-02D4524F2571")!,
@@ -398,7 +415,7 @@ struct HubSnapshot {
                 status: "Model Y Performance · Asleep · 54%",
                 activityState: "asleep",
                 batteryLevel: 54,
-                connectionAvailable: true
+                telemetryStatus: .cached
             )
         ],
         database: "teslatlas.sqlite · 3.51 GB (imported)",
@@ -3559,7 +3576,8 @@ final class HubController {
                 activityState: state.flatMap { $0.isEmpty ? nil : $0 },
                 batteryLevel: battery.flatMap { (0...100).contains($0) ? $0 : nil },
                 locationName: location.flatMap { $0.isEmpty ? nil : $0 },
-                connectionAvailable: vehicle["connectionAvailable"] as? Bool ?? false
+                telemetryStatus: (vehicle["telemetryStatus"] as? String)
+                    .flatMap(HubVehicleTelemetryStatus.init(rawValue:)) ?? .unknown
             )
         }
         let dbBytes = database?["bytes"] as? NSNumber

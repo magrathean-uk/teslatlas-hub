@@ -81,6 +81,12 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
     let missing = store
         .register_vehicle(&VehicleDescriptor::new(source.source_id, "missing"), 1_002)
         .expect("missing vehicle");
+    let offline = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "offline"), 1_003)
+        .expect("offline vehicle");
+    let asleep = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "asleep"), 1_004)
+        .expect("asleep vehicle");
     store
         .upsert_geofences(
             observed.vehicle_id,
@@ -115,6 +121,25 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
             1,
         )
         .expect("current observation");
+    for (vehicle_id, state, observed_at_ms) in [
+        (offline.vehicle_id, "offline", 10),
+        (asleep.vehicle_id, "asleep", 20),
+    ] {
+        store
+            .append_observation(
+                &ObservationInput {
+                    source_id: source.source_id,
+                    vehicle_id,
+                    observed_at_ms,
+                    payload: serde_json::json!({
+                        "record_type": "owner_api_discovery_v1",
+                        "source_vehicle_state": state,
+                    }),
+                },
+                observed_at_ms + 1,
+            )
+            .expect("discovery observation");
+    }
 
     let read_only = HubStore::open_read_only(temporary.path()).expect("read-only store");
     assert_eq!(
@@ -123,7 +148,7 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
             activity_state: Some("online".into()),
             battery_level: Some(81),
             location_name: Some("Home".into()),
-            connection_available: true,
+            telemetry_status: "cached",
         }
     );
     assert_eq!(
@@ -132,9 +157,23 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
             activity_state: None,
             battery_level: None,
             location_name: None,
-            connection_available: false,
+            telemetry_status: "unknown",
         }
     );
+    for (vehicle_id, state) in [
+        (offline.vehicle_id, "offline"),
+        (asleep.vehicle_id, "asleep"),
+    ] {
+        assert_eq!(
+            current_vehicle_status_fields(&read_only, vehicle_id).expect("discovery status"),
+            CurrentVehicleStatusFields {
+                activity_state: Some(state.into()),
+                battery_level: None,
+                location_name: None,
+                telemetry_status: "cached",
+            }
+        );
+    }
 }
 
 #[test]

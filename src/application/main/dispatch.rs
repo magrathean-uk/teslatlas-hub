@@ -5,7 +5,7 @@ struct CurrentVehicleStatusFields {
     activity_state: Option<String>,
     battery_level: Option<i64>,
     location_name: Option<String>,
-    connection_available: bool,
+    telemetry_status: &'static str,
 }
 
 fn current_vehicle_status_fields(
@@ -14,13 +14,8 @@ fn current_vehicle_status_fields(
 ) -> Result<CurrentVehicleStatusFields, StoreError> {
     let observations = store.current_observations_for_vehicle(vehicle_id)?;
     let lifecycle = store.load_lifecycle_state(vehicle_id)?;
-    let mut summary = build_current_vehicle_summary(
-        vehicle_id,
-        &observations,
-        None,
-        lifecycle.as_ref(),
-        None,
-    );
+    let mut summary =
+        build_current_vehicle_summary(vehicle_id, &observations, None, lifecycle.as_ref(), None);
     if let (Some(latitude), Some(longitude)) = (summary.latitude, summary.longitude) {
         summary.geofence = store.geofence_name_at(vehicle_id, latitude, longitude)?;
     }
@@ -30,7 +25,13 @@ fn current_vehicle_status_fields(
             .filter(|state| !state.eq_ignore_ascii_case("unavailable")),
         battery_level: summary.battery_level,
         location_name: summary.geofence,
-        connection_available: summary.observed_at_ms.is_some(),
+        // Current observations are durable history. They prove cached telemetry,
+        // not a live vehicle or provider connection.
+        telemetry_status: if summary.observed_at_ms.is_some() {
+            "cached"
+        } else {
+            "unknown"
+        },
     })
 }
 
@@ -339,7 +340,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     "activityState": current.activity_state,
                     "batteryLevel": current.battery_level,
                     "locationName": current.location_name,
-                    "connectionAvailable": current.connection_available,
+                    "telemetryStatus": current.telemetry_status,
                 }));
             }
             let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());

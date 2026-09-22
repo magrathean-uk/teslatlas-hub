@@ -64,6 +64,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var embeddedDetailController: NSWindowController?
     private var embeddedDetailView: NSView?
     private var embeddedParentSection: HubMainSection?
+    private weak var embeddedReturnResponder: NSView?
+    private var displayOptionsObserver: NSObjectProtocol?
     private var appearancePreference = HubAppearancePreference()
     private var sessionActivity = HubSessionActivityStore(limit: 3, now: Date.init)
     private var lastPresentedSnapshot: HubSnapshot
@@ -117,6 +119,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         window.contentView = makeContentView()
         window.contentMinSize = NSSize(width: 820, height: 590)
         appearancePreference.apply(to: window)
+        displayOptionsObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            HubAccessibility.refreshDisplayOptions()
+        }
         window.center()
         update()
         let refreshTimer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
@@ -136,6 +145,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     deinit {
         refreshTimer?.invalidate()
         serviceTransitionDeadlineWorkItem?.cancel()
+        if let displayOptionsObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(displayOptionsObserver)
+        }
     }
 
     @available(*, unavailable)
@@ -268,6 +280,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case .settings: selectedView = settingsPage
         }
         if changed { selectedView?.layoutSubtreeIfNeeded() }
+        if changed { navigationBar?.focus(section, in: window) }
     }
 
     private func updateDefaultButton() {
@@ -960,6 +973,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         detailsWindow?.setMutationsEnabled(false)
         (embeddedDetailView as? HubEmbeddedUtilityPage)?.setNavigationEnabled(false)
         applyServiceTransitionPresentation(transition)
+        detailsWindow?.setServiceTransition(transition)
+        HubAccessibility.announce(transition.title, from: embeddedDetailView ?? pageContainer)
         return token
     }
 
@@ -990,6 +1005,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         heroStateIcon.isHidden = true
         heroProgress.isHidden = false
         heroProgress.setAccessibilityLabel(transition.title)
+        heroProgress.setAccessibilityValue(transition.subtitle)
         heroProgress.startAnimation(nil)
         heroTitle.stringValue = transition.title
         heroStateIcon.image = NSImage(systemSymbolName: transition.symbol,
@@ -1024,7 +1040,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
               serviceTransitionToken == token else { return }
         finishServiceTransition(with: controller.snapshot,
                                 transition: transition,
-                                token: token)
+                                token: token,
+                                announceCompletion: false)
+        HubAccessibility.announce(
+            "\(transition.title.replacingOccurrences(of: "…", with: "")) failed: \(error.localizedDescription)",
+            from: embeddedDetailView ?? pageContainer
+        )
         showError(error)
     }
 
@@ -1067,16 +1088,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
               serviceTransitionToken == token else { return }
         finishServiceTransition(with: controller.snapshot,
                                 transition: transition,
-                                token: token)
+                                token: token,
+                                announceCompletion: false)
         let action = transition == .stopping ? "stop" : "start"
-        showError(HubActionError.commandFailed(
+        let error = HubActionError.commandFailed(
             "Hub did not finish the \(action) operation. Its current status is shown; open diagnostics for details."
-        ))
+        )
+        HubAccessibility.announce(error.localizedDescription, from: embeddedDetailView ?? pageContainer)
+        showError(error)
     }
 
     private func finishServiceTransition(with snapshot: HubSnapshot,
                                          transition: HubServiceTransition,
-                                         token: UUID) {
+                                         token: UUID,
+                                         announceCompletion: Bool = true) {
         guard serviceTransition == transition,
               serviceTransitionToken == token else { return }
         serviceTransitionDeadlineWorkItem?.cancel()
@@ -1087,10 +1112,15 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         refreshPending = false
         detailsWindow?.setMutationsEnabled(!accountWorkflowActive
                                            && !serviceDetailsMutationPending)
+        detailsWindow?.setServiceTransition(nil)
         (embeddedDetailView as? HubEmbeddedUtilityPage)?.setNavigationEnabled(
             !accountWorkflowActive && !serviceDetailsMutationPending
         )
         applySnapshotPresentation(snapshot)
+        if announceCompletion {
+            HubAccessibility.announce(transition.completionAnnouncement,
+                                      from: embeddedDetailView ?? pageContainer)
+        }
     }
 
     func settleStartedHubFromOnboarding() {
@@ -1159,6 +1189,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                            selectedVehicleID: selectedControlVehicleID,
                            enabled: false)
         vehicleActionButtons.forEach { $0.isEnabled = false }
+        HubAccessibility.announce("\(action.title) for \(vehicleName) is pending.",
+                                  from: selectedSection == .vehicles ? vehiclesView : dashboardView)
         controller.performVehicleControl(action, vehicleID: vehicleID) { [weak self] result in
             guard let self else { return }
             self.vehicleControlPending = false
@@ -1167,6 +1199,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 self.sessionActivity.record(.vehicleCommandAccepted(action,
                                                                     vehicle: vehicleName))
                 self.update()
+                HubAccessibility.announce("\(action.title) accepted for \(vehicleName).",
+                                          from: self.selectedSection == .vehicles
+                                              ? self.vehiclesView : self.dashboardView)
                 let accepted = NSAlert()
                 accepted.messageText = "Command accepted"
                 accepted.informativeText = action.acceptedMessage
@@ -1175,10 +1210,17 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 if Self.vehicleControlOutcomeIsUnknown(error) {
                     self.vehicleControlOutcomeUnknown = true
                     self.update()
+                    HubAccessibility.announce(
+                        "\(action.title) outcome is unknown. Check \(vehicleName) before trying again.",
+                        from: self.selectedSection == .vehicles ? self.vehiclesView : self.dashboardView
+                    )
                     HubUIPresentation.presentInformation(Self.unknownVehicleControlOutcomeAlert())
                     return
                 }
                 self.update()
+                HubAccessibility.announce("\(action.title) failed: \(error.localizedDescription)",
+                                          from: self.selectedSection == .vehicles
+                                              ? self.vehiclesView : self.dashboardView)
                 self.showError(error)
             }
         }
@@ -1267,6 +1309,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                                        page: NSView,
                                        from section: HubMainSection) {
         HubMotion.transition(pageContainer, forward: true)
+        embeddedReturnResponder = normalizedResponderView()
         clearEmbeddedDetail()
         selectedSection = section
         embeddedParentSection = section
@@ -1284,12 +1327,29 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         navigationBar.select(section)
         window?.defaultButtonCell = nil
         page.layoutSubtreeIfNeeded()
+        (page as? HubEmbeddedUtilityPage)?.focusInitialResponder(in: window)
     }
 
     private func dismissEmbeddedDetail() {
         guard navigationAvailable else { return }
         let section = embeddedParentSection ?? selectedSection
+        let returnResponder = embeddedReturnResponder
         selectMainSection(section)
+        embeddedReturnResponder = nil
+        if let returnResponder, returnResponder.window === window,
+           window?.makeFirstResponder(returnResponder) == true {
+            window?.initialFirstResponder = returnResponder
+        } else {
+            navigationBar.focus(section, in: window)
+        }
+    }
+
+    private func normalizedResponderView() -> NSView? {
+        if let editor = window?.firstResponder as? NSTextView,
+           let delegate = editor.delegate as? NSView {
+            return delegate
+        }
+        return window?.firstResponder as? NSView
     }
 
     private func clearEmbeddedDetail() {

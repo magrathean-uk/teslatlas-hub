@@ -202,6 +202,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     )
     private var migrationConnectButton: NSButton?
     private var migrationKeyViews: [NSView] = []
+    private var pageKeyViews: [NSView] = []
     private let migrationSource = NSTextField(string: "")
     private let migrationCarID = NSTextField(string: "")
     private let migrationPasswordFile = NSTextField(string: "")
@@ -492,10 +493,15 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         if previousStep == nil || !window.isVisible {
             window.setContentSize(currentSheetSize)
         }
-        let previousField = (window.firstResponder as? NSTextView)?.delegate as? NSView
+        let previousField: NSView? = {
+            if let editor = window.firstResponder as? NSTextView,
+               let delegate = editor.delegate as? NSView { return delegate }
+            return window.firstResponder as? NSView
+        }()
         window.initialFirstResponder = nil
         window.makeFirstResponder(nil)
         migrationKeyViews = []
+        pageKeyViews = []
         headerContentHost.subviews.forEach { $0.removeFromSuperview() }
         let stepLabel = NSTextField(labelWithString: "Step \(state.step) of 5")
         stepLabel.font = HubTypography.label
@@ -539,9 +545,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         onboardingContainer.replaceFooterContent(footerContent)
         updateFooter()
         window.recalculateKeyViewLoop()
-        if operation == nil {
-            configureMigrationKeyViewLoop(previousField: previousField)
-        }
+        configureKeyViewLoop(previousField: previousField)
         onboardingContainer.alphaValue = 1
         if let diagnosticView {
             onboardingContainer.reveal(diagnosticView)
@@ -939,7 +943,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func migrationSuccessCard(host: String) -> NSView {
-        let icon = NSImageView(image: symbolImage("checkmark.circle", description: "Connected"))
+        let icon = NSImageView(image: symbolImage("checkmark.circle", description: nil))
+        icon.setAccessibilityElement(false)
         icon.image = icon.image?.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
         )
@@ -1008,6 +1013,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationProgress.doubleValue = previousTotal == total
             ? min(max(previousCompleted, completed), total)
             : completed
+        migrationProgress.setAccessibilityLabel("Import progress")
+        migrationProgress.setAccessibilityValue("\(Int(completed)) of \(Int(total)) rows")
     }
 
     private func resetMigrationProgress() {
@@ -1161,7 +1168,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         medallion.wantsLayer = true
         medallion.layer?.backgroundColor = HubPalette.success.withAlphaComponent(0.12).cgColor
         medallion.layer?.cornerRadius = 27
-        let icon = NSImageView(image: symbolImage("checkmark.circle", description: "Complete"))
+        let icon = NSImageView(image: symbolImage("checkmark.circle", description: nil))
+        icon.setAccessibilityElement(false)
         icon.image = icon.image?.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: 27, weight: .medium)
         )
@@ -1919,6 +1927,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     func setBusy(_ value: Bool, message: String? = nil) {
         let wasFocused = focusedOperation != nil
+        let wasBusy = busy
+        let previousMessage = busyMessage
         busy = value
         busyMessage = value ? message : nil
         updateWindowCloseAvailability()
@@ -1926,6 +1936,13 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             render()
         } else {
             updateFooter()
+        }
+        let announcementSource: Any = onboardingContainer.map { $0 as Any } ?? self
+        if value, !wasBusy {
+            HubAccessibility.announce(message ?? "Setup operation started.", from: announcementSource)
+        } else if !value, wasBusy {
+            HubAccessibility.announce("\(previousMessage ?? "Setup operation") finished.",
+                                      from: announcementSource)
         }
     }
 
@@ -1941,6 +1958,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         setBusy(false)
         errorMessage = message
         render()
+        let announcementSource: Any = onboardingContainer.map { $0 as Any } ?? self
+        HubAccessibility.announce("Setup failed: \(message)", from: announcementSource)
     }
 
     private func withError(_ view: NSView) -> NSView {
@@ -2006,6 +2025,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         radio.setAccessibilityHelp(subtitle)
         radio.setAccessibilityValue(selected ? "Selected" : "Not selected")
         radio.translatesAutoresizingMaskIntoConstraints = false
+        pageKeyViews.append(radio)
         card.addSubview(radio)
         NSLayoutConstraint.activate([
             card.heightAnchor.constraint(equalToConstant: 64),
@@ -2055,7 +2075,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private func featureRow(_ title: String,
                             _ symbol: String,
                             color: NSColor = .secondaryLabelColor) -> NSView {
-        let image = NSImageView(image: symbolImage(symbol, description: title))
+        let image = NSImageView(image: symbolImage(symbol, description: nil))
+        image.setAccessibilityElement(false)
         image.image = image.image?.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: 24, weight: .medium)
         )
@@ -2071,14 +2092,26 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         return row
     }
 
-    private func configureMigrationKeyViewLoop(previousField: NSView?) {
-        guard state.route == .migration, let window else { return }
-        var keyViews = migrationKeyViews.filter { view in
+    private func configureKeyViewLoop(previousField: NSView?) {
+        guard let window else { return }
+        var candidates = pageKeyViews
+        switch state.route {
+        case .fleet:
+            candidates.append(contentsOf: [fleetClientID, fleetAccessToken, fleetRefreshToken,
+                                           fleetExpiry, fleetRegion])
+        case .legacy:
+            candidates.append(contentsOf: [legacyAccessToken, legacyRefreshToken])
+        case .migration:
+            candidates.append(contentsOf: migrationKeyViews)
+        case .welcome, .choose, .provider, .verify, .finish:
+            break
+        }
+        var keyViews = candidates.filter { view in
             !view.isHidden && (view as? NSControl)?.isEnabled != false
         }
         if !cancelButton.isHidden && cancelButton.isEnabled { keyViews.append(cancelButton) }
         if !backButton.isHidden && backButton.isEnabled { keyViews.append(backButton) }
-        if !continueButton.isHidden { keyViews.append(continueButton) }
+        if !continueButton.isHidden && continueButton.isEnabled { keyViews.append(continueButton) }
         guard !keyViews.isEmpty else { return }
         for index in keyViews.indices {
             keyViews[index].nextKeyView = keyViews[(index + 1) % keyViews.count]

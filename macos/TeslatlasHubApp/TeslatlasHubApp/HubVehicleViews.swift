@@ -24,8 +24,8 @@ final class HubVehicleCardView: NSView {
                                               detail: "")
     private let locationRow = HubStatusRowView(symbol: "location", title: "Location",
                                                detail: "")
-    private let connectionRow = HubStatusRowView(symbol: "wifi", title: "Connection",
-                                                 detail: "")
+    private let connectionRow = HubStatusRowView(symbol: "clock.arrow.circlepath", title: "Telemetry",
+                                                 detail: "Whether stored telemetry is current, cached, or unknown")
     private let legacySurface = HubSurfaceView(fill: .elevated)
     private let legacyMessage = NSTextField(wrappingLabelWithString:
         "Vehicle commands are available when Hub connects through Fleet Telemetry.")
@@ -202,8 +202,8 @@ final class HubVehicleCardView: NSView {
         stateRow.value = vehicle?.activityState.map(Self.displayState) ?? "Unavailable"
         batteryRow.value = vehicle?.batteryLevel.map { "\($0)%" } ?? "Unavailable"
         locationRow.value = vehicle?.locationName ?? "Unavailable"
-        connectionRow.value = vehicle?.connectionAvailable == true ? "Available" : "Unavailable"
-        connectionRow.statusTone = vehicle?.connectionAvailable == true ? .success : .warning
+        connectionRow.value = vehicle?.telemetryStatus.displayName ?? "Unknown"
+        connectionRow.statusTone = vehicle?.telemetryStatus == .current ? .success : .neutral
 
         let fleet = provider == .fleet
         commandStack.superview?.superview?.isHidden = !fleet
@@ -415,19 +415,34 @@ final class HubVehiclesView: HubSurfaceView {
         footer.alignment = .centerY
         footer.spacing = 8
 
-        let content = NSStackView(views: [header, detailCard, NSView(), footer])
+        let content = NSStackView(views: [header, detailCard, footer])
         content.orientation = .vertical
         content.alignment = .leading
         content.spacing = 24
         content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
+        let document = HubFlippedSurfaceView(fill: .background)
+        document.translatesAutoresizingMaskIntoConstraints = false
+        document.addSubview(content)
+        let scroll = NSScrollView()
+        scroll.identifier = NSUserInterfaceItemIdentifier("hub.vehicles.scroll")
+        scroll.drawsBackground = false
+        scroll.hasVerticalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.documentView = document
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(scroll)
         NSLayoutConstraint.activate([
-            content.centerXAnchor.constraint(equalTo: centerXAnchor),
-            content.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: HubMetrics.pageInset),
-            content.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -HubMetrics.pageInset),
+            scroll.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: bottomAnchor),
+            document.widthAnchor.constraint(equalTo: scroll.contentView.widthAnchor),
+            content.centerXAnchor.constraint(equalTo: document.centerXAnchor),
+            content.leadingAnchor.constraint(greaterThanOrEqualTo: document.leadingAnchor, constant: HubMetrics.pageInset),
+            content.trailingAnchor.constraint(lessThanOrEqualTo: document.trailingAnchor, constant: -HubMetrics.pageInset),
             content.widthAnchor.constraint(equalToConstant: HubMetrics.contentWidth),
-            content.topAnchor.constraint(equalTo: topAnchor, constant: HubMetrics.pageTopInset),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -HubMetrics.pageInset),
+            content.topAnchor.constraint(equalTo: document.topAnchor, constant: HubMetrics.pageTopInset),
+            content.bottomAnchor.constraint(equalTo: document.bottomAnchor, constant: -HubMetrics.pageInset),
             header.widthAnchor.constraint(equalTo: content.widthAnchor),
             detailCard.widthAnchor.constraint(equalTo: content.widthAnchor),
             footer.widthAnchor.constraint(equalTo: content.widthAnchor)

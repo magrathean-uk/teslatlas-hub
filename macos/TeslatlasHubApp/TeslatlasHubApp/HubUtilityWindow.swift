@@ -67,6 +67,14 @@ final class HubEmbeddedUtilityPage: HubSurfaceView {
 
     func setNavigationEnabled(_ enabled: Bool) { backButton?.isEnabled = enabled }
 
+    func focusInitialResponder(in window: NSWindow?) {
+        guard let backButton, backButton.isEnabled else { return }
+        window?.initialFirstResponder = backButton
+        window?.makeFirstResponder(backButton)
+    }
+
+    var backButtonForTesting: NSButton? { backButton }
+
     @objc private func backPressed() { onBack() }
 
     @available(*, unavailable)

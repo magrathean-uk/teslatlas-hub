@@ -103,6 +103,7 @@ enum HubMetrics {
 }
 
 enum HubPalette {
+    static var increaseContrastOverride: Bool?
     private static func color(_ hex: UInt32, alpha: CGFloat = 1) -> NSColor {
         NSColor(
             srgbRed: CGFloat((hex >> 16) & 0xFF) / 255,
@@ -118,6 +119,21 @@ enum HubPalette {
         })
     }
 
+    private static func contrastAware(light: NSColor,
+                                      dark: NSColor,
+                                      highContrast: NSColor) -> NSColor {
+        NSColor(name: nil, dynamicProvider: { appearance in
+            if increaseContrast { return highContrast }
+            return appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        })
+    }
+
+    static var increaseContrast: Bool {
+        if let increaseContrastOverride { return increaseContrastOverride }
+        return ProcessInfo.processInfo.environment["TESLATLAS_HUB_INCREASE_CONTRAST"] == "1"
+            || NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+    }
+
     static var foreground: NSColor {
         dynamic(light: color(0x1D1D1F), dark: color(0xF5F5F7))
     }
@@ -127,7 +143,8 @@ enum HubPalette {
     }
 
     static var mutedForeground: NSColor {
-        dynamic(light: color(0x86868B), dark: color(0x98989D))
+        contrastAware(light: color(0x86868B), dark: color(0x98989D),
+                      highContrast: .secondaryLabelColor)
     }
 
     static var card: NSColor {
@@ -144,22 +161,26 @@ enum HubPalette {
     }
 
     static var chromeForeground: NSColor {
-        dynamic(light: color(0x3A3A3C), dark: color(0xD1D1D6))
+        contrastAware(light: color(0x3A3A3C), dark: color(0xD1D1D6),
+                      highContrast: .labelColor)
     }
 
     static var navigationGroup: NSColor {
-        dynamic(light: color(0x000000, alpha: 0.04),
-                dark: color(0xFFFFFF, alpha: 0.06))
+        contrastAware(light: color(0x000000, alpha: 0.04),
+                      dark: color(0xFFFFFF, alpha: 0.06),
+                      highContrast: .controlBackgroundColor)
     }
 
     static var hairline: NSColor {
-        dynamic(light: color(0x000000, alpha: 0.08),
-                dark: color(0xFFFFFF, alpha: 0.09))
+        contrastAware(light: color(0x000000, alpha: 0.08),
+                      dark: color(0xFFFFFF, alpha: 0.09),
+                      highContrast: .separatorColor)
     }
 
     static var border: NSColor {
-        dynamic(light: color(0x000000, alpha: 0.12),
-                dark: color(0xFFFFFF, alpha: 0.14))
+        contrastAware(light: color(0x000000, alpha: 0.12),
+                      dark: color(0xFFFFFF, alpha: 0.14),
+                      highContrast: .gridColor)
     }
 
     static var accent: NSColor {
@@ -176,6 +197,39 @@ enum HubPalette {
 
     static var warning: NSColor {
         dynamic(light: color(0xFF9500), dark: color(0xFF9F0A))
+    }
+}
+
+enum HubAccessibility {
+    static var announcementObserver: ((String) -> Void)?
+
+    static func announce(_ message: String, from element: Any) {
+        announcementObserver?(message)
+        guard !HubUIPresentation.isSilentTestHost else { return }
+        NSAccessibility.post(
+            element: element,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: message,
+                .priority: NSAccessibilityPriorityLevel.medium.rawValue
+            ]
+        )
+    }
+
+    static func refreshDisplayOptions() {
+        for window in NSApp.windows {
+            refresh(window.contentView)
+            window.toolbar?.validateVisibleItems()
+        }
+    }
+
+    private static func refresh(_ view: NSView?) {
+        guard let view else { return }
+        view.needsDisplay = true
+        if view.wantsLayer { view.updateLayer() }
+        (view as? HubActionButton)?.updateHubAppearance()
+        (view as? HubStatusRowView)?.refreshAccessibilityDisplayOptions()
+        view.subviews.forEach(refresh)
     }
 }
 
@@ -254,6 +308,8 @@ final class HubActionButton: NSButton {
         hubTitleLabel.alignment = .center
         hubTitleLabel.lineBreakMode = .byClipping
         hubTitleLabel.maximumNumberOfLines = 1
+        hubImageView.setAccessibilityElement(false)
+        hubTitleLabel.setAccessibilityElement(false)
         addSubview(hubImageView)
         addSubview(hubTitleLabel)
         updateHubAppearance()
@@ -458,7 +514,7 @@ final class HubIconTileView: HubSurfaceView {
          tint: NSColor = .labelColor,
          radius: CGFloat = 9) {
         imageView = NSImageView(image: NSImage(systemSymbolName: symbol,
-                                                accessibilityDescription: accessibilityDescription) ?? NSImage())
+                                                accessibilityDescription: nil) ?? NSImage())
         super.init(fill: fill)
         wantsLayer = true
         layer?.cornerRadius = radius
@@ -466,6 +522,8 @@ final class HubIconTileView: HubSurfaceView {
         imageView.imageScaling = .scaleProportionallyDown
         imageView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: symbolSize, weight: weight)
         imageView.contentTintColor = tint
+        setAccessibilityElement(false)
+        imageView.setAccessibilityElement(false)
         imageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(imageView)
         NSLayoutConstraint.activate([
@@ -613,13 +671,17 @@ enum HubStatusTone {
 }
 
 class HubStatusRowView: NSView {
+    private let accessibilityTitle: String
     private let valueLabel = NSTextField(labelWithString: "")
     private let detailLabel = NSTextField(labelWithString: "")
     private let statusDot = NSView()
 
     var value: String {
         get { valueLabel.stringValue }
-        set { valueLabel.stringValue = newValue }
+        set {
+            valueLabel.stringValue = newValue
+            setAccessibilityValue(newValue)
+        }
     }
 
     var statusTone: HubStatusTone? {
@@ -631,10 +693,12 @@ class HubStatusRowView: NSView {
         set {
             detailLabel.stringValue = newValue
             detailLabel.isHidden = newValue.isEmpty
+            setAccessibilityHelp(newValue.isEmpty ? nil : newValue)
         }
     }
 
     init(symbol: String, title: String, detail: String = "", showsChevron: Bool = false) {
+        accessibilityTitle = title
         super.init(frame: .zero)
         self.detail = detail
         let tile = HubIconTileView(symbol: symbol, accessibilityDescription: title)
@@ -667,6 +731,11 @@ class HubStatusRowView: NSView {
         chevron.contentTintColor = .tertiaryLabelColor
         chevron.isHidden = !showsChevron
         chevron.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.setAccessibilityElement(false)
+        detailLabel.setAccessibilityElement(false)
+        valueLabel.setAccessibilityElement(false)
+        statusDot.setAccessibilityElement(false)
+        chevron.setAccessibilityElement(false)
         let status = NSStackView(views: [statusDot, valueLabel])
         status.spacing = 6
         status.alignment = .centerY
@@ -683,6 +752,11 @@ class HubStatusRowView: NSView {
             chevron.heightAnchor.constraint(equalToConstant: 16),
             heightAnchor.constraint(equalToConstant: HubMetrics.rowHeight)
         ])
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
+        setAccessibilityLabel(accessibilityTitle)
+        setAccessibilityValue(valueLabel.stringValue)
+        setAccessibilityHelp(detail.isEmpty ? nil : detail)
     }
 
     @available(*, unavailable)
@@ -692,6 +766,8 @@ class HubStatusRowView: NSView {
         statusDot.isHidden = statusTone == nil
         statusDot.layer?.backgroundColor = statusTone?.color.cgColor
     }
+
+    func refreshAccessibilityDisplayOptions() { updateStatusDot() }
 }
 
 enum HubSheetStyle {

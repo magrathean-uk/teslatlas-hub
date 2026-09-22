@@ -77,6 +77,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
 
         statusDetail.font = .systemFont(ofSize: 12.5)
         statusDetail.textColor = HubPalette.mutedForeground
+        statusDetail.setAccessibilityLabel("Diagnostics status")
 
         rowsStack.orientation = .vertical
         rowsStack.alignment = .leading
@@ -201,6 +202,8 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         rawDisclosure.title = "Show raw redacted report"
         rawScroll.isHidden = true
         statusDetail.stringValue = "Running checks…"
+        statusDetail.setAccessibilityValue("Running checks")
+        HubAccessibility.announce("Diagnostics started.", from: embeddedPage ?? statusDetail)
         render(rows: [])
         controller.runFullDiagnostics { [weak self] report in
             guard let self else { return }
@@ -217,6 +220,9 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
                 self.statusDetail.stringValue = rows.isEmpty
                     ? "No structured checks were returned."
                     : "\(passed) of \(rows.count) checks passed."
+                self.statusDetail.setAccessibilityValue(self.statusDetail.stringValue)
+                HubAccessibility.announce(self.statusDetail.stringValue,
+                                          from: self.embeddedPage ?? self.statusDetail)
                 self.runButton.isEnabled = true
                 self.copyButton.isEnabled = !safeReport.isEmpty
                 self.saveButton.isEnabled = !safeReport.isEmpty

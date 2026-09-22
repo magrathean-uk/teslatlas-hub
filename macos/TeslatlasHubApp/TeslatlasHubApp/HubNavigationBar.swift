@@ -86,6 +86,13 @@ final class HubNavigationBar: NSView {
         }
     }
 
+    func focus(_ section: HubMainSection, in window: NSWindow?) {
+        guard let index = items.firstIndex(where: { $0.section == section }),
+              buttons[index].isEnabled else { return }
+        window?.initialFirstResponder = buttons[index]
+        window?.makeFirstResponder(buttons[index])
+    }
+
     @objc private func selectionChanged(_ sender: HubActionButton) {
         guard items.indices.contains(sender.tag) else { return }
         select(items[sender.tag].section)

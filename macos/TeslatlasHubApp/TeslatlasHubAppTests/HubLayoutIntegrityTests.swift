@@ -114,6 +114,36 @@ final class HubLayoutIntegrityTests: XCTestCase {
         XCTAssertTrue(scroll.documentVisibleRect.intersects(folderFrame))
     }
 
+    func testVehiclesAtActualMinimumKeepsFleetCardAndFooterReachableByScrolling() throws {
+        let vehicles = HubVehiclesView(actions: .init(select: { _ in }, command: { _, _ in }))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 590),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = vehicles
+        vehicles.apply(snapshot: .previewRunning, enabled: true)
+        vehicles.layoutSubtreeIfNeeded()
+
+        let scroll = try XCTUnwrap(descendants(vehicles).compactMap { $0 as? NSScrollView }.first {
+            $0.identifier?.rawValue == "hub.vehicles.scroll"
+        })
+        let document = try XCTUnwrap(scroll.documentView)
+        document.layoutSubtreeIfNeeded()
+        XCTAssertEqual(vehicles.frame.size, NSSize(width: 820, height: 590))
+        XCTAssertGreaterThan(document.bounds.height, scroll.contentView.bounds.height)
+        XCTAssertTrue(descendants(vehicles).compactMap { $0 as? NSTextField }
+            .contains { $0.stringValue == "Aurora" })
+
+        let footer = try XCTUnwrap(descendants(vehicles).compactMap { $0 as? NSTextField }.first {
+            $0.stringValue == "Teslatlas Hub \(HubRelease.bundledVersion)"
+        })
+        let bottom = max(0, document.bounds.maxY - scroll.contentView.bounds.height)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: bottom))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        let footerFrame = footer.convert(footer.bounds, to: document)
+        XCTAssertTrue(scroll.documentVisibleRect.intersects(footerFrame))
+    }
+
     private func assertContained(_ button: HubActionButton, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(button.bounds.contains(button.hubImageView.frame), button.title, file: file, line: line)
         XCTAssertTrue(button.bounds.contains(button.hubTitleLabel.frame), button.title, file: file, line: line)

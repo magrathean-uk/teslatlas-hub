@@ -91,6 +91,40 @@ final class HubDesignSystemTests: XCTestCase {
         try assertColor(HubPalette.hairline, equalsHex: 0xFFFFFF, alpha: 0.09, in: dark)
     }
 
+    func testStatusRowsExposeOneLabelValueElementAndDecorativeIconsStayHidden() {
+        let row = HubStatusRowView(symbol: "battery.75percent", title: "Battery",
+                                   detail: "Most recently stored value")
+        row.value = "81%"
+        let tile = HubIconTileView(symbol: "battery.75percent",
+                                   accessibilityDescription: "Battery")
+        let command = HubActionButton(title: "Restart Hub", target: nil, action: nil)
+        command.image = NSImage(systemSymbolName: "arrow.clockwise",
+                                accessibilityDescription: "Restart Hub")
+
+        XCTAssertTrue(row.isAccessibilityElement())
+        XCTAssertEqual(row.accessibilityRole(), .staticText)
+        XCTAssertEqual(row.accessibilityLabel(), "Battery")
+        XCTAssertEqual(row.accessibilityValue() as? String, "81%")
+        XCTAssertEqual(row.accessibilityHelp(), "Most recently stored value")
+        XCTAssertFalse(tile.isAccessibilityElement())
+        XCTAssertFalse(tile.imageView.isAccessibilityElement())
+        XCTAssertFalse(command.hubImageView.isAccessibilityElement())
+        XCTAssertFalse(command.hubTitleLabel.isAccessibilityElement())
+    }
+
+    func testIncreaseContrastUsesSemanticVariantsWithoutChangingNormalPalette() throws {
+        defer { HubPalette.increaseContrastOverride = nil }
+        let light = try XCTUnwrap(NSAppearance(named: .aqua))
+        HubPalette.increaseContrastOverride = false
+        try assertColor(HubPalette.mutedForeground, equalsHex: 0x86868B, alpha: 1, in: light)
+        try assertColor(HubPalette.hairline, equalsHex: 0x000000, alpha: 0.08, in: light)
+
+        HubPalette.increaseContrastOverride = true
+        try assertSameColor(HubPalette.mutedForeground, .secondaryLabelColor, in: light)
+        try assertSameColor(HubPalette.hairline, .separatorColor, in: light)
+        try assertSameColor(HubPalette.border, .gridColor, in: light)
+    }
+
     private func assertColor(_ color: NSColor,
                              equalsHex hex: UInt32,
                              alpha: CGFloat,
@@ -129,5 +163,24 @@ final class HubDesignSystemTests: XCTestCase {
         let appKitColor = try XCTUnwrap(NSColor(cgColor: color), file: file, line: line)
         try assertColor(appKitColor, equalsHex: hex, alpha: 1, in: appearance,
                         file: file, line: line)
+    }
+
+    private func assertSameColor(_ actual: NSColor,
+                                 _ expected: NSColor,
+                                 in appearance: NSAppearance,
+                                 file: StaticString = #filePath,
+                                 line: UInt = #line) throws {
+        var actualRGB: NSColor?
+        var expectedRGB: NSColor?
+        appearance.performAsCurrentDrawingAppearance {
+            actualRGB = actual.usingColorSpace(.sRGB)
+            expectedRGB = expected.usingColorSpace(.sRGB)
+        }
+        let lhs = try XCTUnwrap(actualRGB, file: file, line: line)
+        let rhs = try XCTUnwrap(expectedRGB, file: file, line: line)
+        XCTAssertEqual(lhs.redComponent, rhs.redComponent, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(lhs.greenComponent, rhs.greenComponent, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(lhs.blueComponent, rhs.blueComponent, accuracy: 0.001, file: file, line: line)
+        XCTAssertEqual(lhs.alphaComponent, rhs.alphaComponent, accuracy: 0.001, file: file, line: line)
     }
 }
