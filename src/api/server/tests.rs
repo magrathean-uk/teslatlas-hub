@@ -1690,6 +1690,39 @@ fn public_query_router(store: HubStore, key_byte: u8) -> Router {
     )
 }
 
+#[tokio::test]
+async fn public_current_profile_errors_have_empty_bodies() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let app = public_query_router(store, 46);
+
+    for (vehicle_id, expected_status) in [
+        (Uuid::new_v4(), StatusCode::NOT_FOUND),
+        (Uuid::nil(), StatusCode::SERVICE_UNAVAILABLE),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/vehicles/{vehicle_id}/current"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("current profile error response");
+        assert_eq!(response.status(), expected_status);
+        assert!(
+            response
+                .into_body()
+                .collect()
+                .await
+                .expect("current profile error body")
+                .to_bytes()
+                .is_empty()
+        );
+    }
+}
+
 fn seed_public_drive(store: &HubStore, vehicle_id: Uuid, drive: &ProjectionDrive) {
     store
         .open()

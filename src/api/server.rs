@@ -1154,7 +1154,9 @@ async fn current_vehicle(
         return StatusCode::NOT_FOUND.into_response();
     };
     if let Err(response) = require_active_vehicle(&state, vehicle_id) {
-        return response;
+        // hub-http-v1 deliberately keeps current-read 404/503 responses empty,
+        // while endpoints such as drives expose the structured public error.
+        return response.status().into_response();
     }
     let observations = match state.store.current_observations_for_vehicle(vehicle_id) {
         Ok(observations) => observations,
