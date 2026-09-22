@@ -1,32 +1,28 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "product": "Edge",
-  "updated_at": "2026-09-21T21:34:00Z",
-  "update_scope": "MF-1 and MF-3 current-Mac acceptance closure",
-  "state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-  "macos_working_product_state": "MACOS_WORKING_PRODUCT_ACCEPTED",
-  "planning_state": "COMPLETED",
-  "full_solution_state": "NOT_ACCEPTED_DEFERRED_BACKLOG",
-  "objective": "Retain transport repairs and bind the retained Edge route to native app control",
+  "updated_at": "2026-09-22T10:00:00Z",
+  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
+  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
+  "planning_state": "COMPLETE",
   "current_goal": null,
   "current_worker": null,
-  "current_gate_ids": [],
-  "open_findings": [],
   "source": {
-    "head": "94bb86996254ed67ba90208573d5c6e0ad20c0bd",
-    "tree": "eee0dfef45c7dc8e1bda7a83cd0536231fbc71c3",
+    "accepted_implementation_lineage": "94bb86996254ed67ba90208573d5c6e0ad20c0bd",
+    "main_before_cleanup_metadata": "d360044d18e5d540a54e156a1fdfb16e30aa1ce6",
     "branch": "main",
     "remote_ref": "refs/heads/main",
-    "remote_head_at_source_publication": "94bb86996254ed67ba90208573d5c6e0ad20c0bd",
-    "remote_verification": "the exact accepted source commit was published before this metadata-only successor"
+    "publication": "SOURCE_PUBLISHED"
   },
-  "evidence_summary": "The existing fail-closed loopback opt-in, pinned receiver, durable ACK, quota, rotation, spool and recovery evidence was retained. The ordinary Hub UI now owns the retained Edge-mode LaunchAgent and completed restart against the exact accepted Hub candidate.",
-  "coordinated_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/mf-final-20260921-r1/evidence/coordinated-runtime-receipt.json",
-  "coordinated_receipt_sha256": "ebb97c9642893441b65228878c52d1b372f1fa1d55e08fcbd5b6ce04d4f7c405",
-  "retained_runtime": "The accepted Hub candidate serves the retained Edge current-state route on Mac loopback 21444 under LaunchAgent com.teslatlas.hub.development.f7bb592cfd8e9ab9.",
-  "remaining": ["Public ingress, production collection, live vehicles and broader platform work remain separately gated."],
-  "review": "docs/development/GROK_COMPLETION_REVIEW.md",
-  "accepted_receipts_immutable": true,
-  "historical_status_archive": "docs/development/archive/2026-09-21-grok-completion-review/teslatlas-edge/docs/development/STATUS.json",
-  "publication_this_review": "ACCEPTED_SOURCE_AND_RECONCILED_METADATA_PUBLISHED"
+  "local_state": {
+    "build_outputs": "REMOVED",
+    "candidate_artifacts": "REMOVED",
+    "external_receipts": "REMOVED",
+    "runtime": "NONE"
+  },
+  "evidence_summary": "Historical: the accepted Edge profile and ordinary Hub lifecycle route passed for the former runtime.",
+  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
+  "remaining": [
+    "No Edge or Hub listener is running; public ingress and production collection remain separately gated."
+  ]
 }
