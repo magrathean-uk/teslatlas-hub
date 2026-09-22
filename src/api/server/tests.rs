@@ -790,6 +790,7 @@ fn inject_schema_22_catalogue(store: &HubStore, cursor_key: &CursorKey) -> (Uuid
     let installation_id = store.installation_id().expect("installation");
     let account_id = Uuid::new_v4();
     let vehicle_id = Uuid::new_v4();
+    seed_active_vehicle_identity(store, account_id, vehicle_id);
     let snapshot_id = Uuid::new_v4();
     let pack_bytes = b"schema-22-not-published";
     let digest = Sha256Digest::of_bytes(pack_bytes);
@@ -1690,6 +1691,36 @@ fn public_query_router(store: HubStore, key_byte: u8) -> Router {
     )
 }
 
+fn seed_active_vehicle_identity(store: &HubStore, source_id: Uuid, vehicle_id: Uuid) {
+    let connection = store.open().expect("open store for active vehicle fixture");
+    connection
+        .execute(
+            "INSERT INTO sources (source_id, source_kind, generation, created_at_ms)
+             VALUES (?1, 'server_test', 1, 1000)",
+            rusqlite::params![source_id.to_string()],
+        )
+        .expect("active vehicle source fixture");
+    connection
+        .execute(
+            "INSERT INTO source_identities (source_id, source_kind, source_key)
+             VALUES (?1, 'server_test', ?2)",
+            rusqlite::params![source_id.to_string(), format!("fixture-{source_id}")],
+        )
+        .expect("active vehicle source identity fixture");
+    connection
+        .execute(
+            "INSERT INTO vehicles
+                 (vehicle_id, source_id, source_vehicle_key, created_at_ms, last_seen_at_ms)
+             VALUES (?1, ?2, ?3, 1000, 1000)",
+            rusqlite::params![
+                vehicle_id.to_string(),
+                source_id.to_string(),
+                format!("fixture-{vehicle_id}")
+            ],
+        )
+        .expect("active vehicle fixture");
+}
+
 #[tokio::test]
 async fn public_current_profile_errors_have_empty_bodies() {
     let temp = crate::private_tempdir().expect("temp directory");
@@ -2202,6 +2233,7 @@ async fn serves_catalogued_manifest_and_immutable_pack_stream() {
     let installation_id = Uuid::new_v4();
     let account_id = Uuid::new_v4();
     let vehicle_id = Uuid::new_v4();
+    seed_active_vehicle_identity(&store, account_id, vehicle_id);
     let snapshot_id = Uuid::new_v4();
     let rows = vec![TransportRow {
         table: MirrorTable::Position,
@@ -2443,6 +2475,11 @@ async fn trusted_local_schema_22_uses_the_active_cursor_key() {
         &cursor_key,
     )
     .expect("schema 2.2 no-op");
+    seed_active_vehicle_identity(
+        &store,
+        request.binding.account_id,
+        request.binding.vehicle_id,
+    );
     publish_updates_schema_22(&store, &manifest, &noop).expect("publish pair");
 
     let app = trusted_local_router(store, false, Some(cursor_key), None);
@@ -2488,6 +2525,11 @@ async fn paired_schema_22_restart_keeps_exact_noop_and_wrong_key_fails_closed() 
         &cursor_key,
     )
     .expect("schema 2.2 no-op");
+    seed_active_vehicle_identity(
+        &store,
+        request.binding.account_id,
+        request.binding.vehicle_id,
+    );
     publish_updates_schema_22(&store, &manifest, &noop).expect("publish pair");
 
     let now_ms = current_epoch_ms().expect("pairing clock");
@@ -2981,6 +3023,7 @@ async fn delta_v2_rejects_unknown_unavailable_and_corrupt_requests_without_v1_fa
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store");
     let unknown = Uuid::new_v4();
+    seed_active_vehicle_identity(&store, Uuid::new_v4(), unknown);
     let app = router(store);
     let unknown_capability = app
         .clone()
