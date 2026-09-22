@@ -1,51 +1,28 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "product": "Hub",
-  "updated_at": "2026-09-22T09:40:00Z",
-  "update_scope": "Accepted native redesign and onboarding-shell correction on the current Mac",
-  "state": "ACCEPTED",
-  "macos_working_product_state": "REDESIGN_ACCEPTED_478A913",
+  "updated_at": "2026-09-22T10:00:00Z",
+  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
+  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
   "planning_state": "COMPLETE",
-  "full_solution_state": "CURRENT_MAC_COMPLETE_DEFERRED_SCOPE_EXCLUDED",
-  "objective": "Deliver and independently accept the native Hub redesign through the ordinary current-Mac source-run route",
-  "current_goal": "COMPLETE",
+  "current_goal": null,
   "current_worker": null,
-  "current_gate_ids": [],
-  "open_findings": [],
   "source": {
-    "code_candidate_commit": "478a9139bfe11385bf2c9a3faad947f4419510f6",
-    "code_candidate_tree": "306511db848c28f8f3c9e06db6b840826e0d241c",
-    "branch": "codex/hub-macos-sidebar-redesign",
-    "remote_ref": "refs/heads/codex/hub-macos-sidebar-redesign",
-    "code_commit_remote_verified": true,
-    "publication_status": "SOURCE_AND_METADATA_REMOTE_VERIFIED"
+    "accepted_implementation_lineage": "478a9139bfe11385bf2c9a3faad947f4419510f6",
+    "main_before_cleanup_metadata": "b86bdf17998ea34cf231fbc12089494f8dbff478",
+    "branch": "main",
+    "remote_ref": "refs/heads/main",
+    "publication": "SOURCE_PUBLISHED"
   },
-  "candidate": {
-    "kind": "Source-bound arm64 current-Mac review candidate",
-    "receipt": "/Users/bolyki/dev/teslatlas-lab/candidates/hub-redesign-478a913-r1/build-receipt.json",
-    "receipt_sha256": "fafcb28f9ddd882a11eaac30a02abdd4ba7c8de8d18541571e28916ffc4c931e",
-    "app_main_executable_sha256": "c5d80683e802f86ff09a8f81f8372f5c304513440371e9db2018fe8c28a47984",
-    "backend_source_commit": "5a201fbb57c96635398578d2e83d62e1e38b8c93",
-    "backend_sha256": "203eef628ad14f00721f0dac3f32c54cc56c9ed242de7458f31daa4da3b794df",
-    "backend_rebuilt_for_onboarding_fix": false,
-    "activation": "RUNNING_HEALTHY"
+  "local_state": {
+    "build_outputs": "REMOVED",
+    "candidate_artifacts": "REMOVED",
+    "external_receipts": "REMOVED",
+    "runtime": "NONE"
   },
-  "evidence": {
-    "independent_source_review": "PASS_NO_P1_P2_P3",
-    "native_target": "PASS",
-    "visual_snapshots": "PASS_34_NATIVE_CAPTURES",
-    "onboarding_live_preview": "PASS_WELCOME_CHOOSE_COMPLETION_TO_OVERVIEW",
-    "exact_runtime_restart": "PASS_HOST_RUNTIME_WITH_RECORDED_GUEST_FRESHNESS_LIMIT",
-    "runtime_receipt": "/Users/bolyki/dev/teslatlas-lab/reviews/hub-redesign-20260922/final-478a913-r1/evidence/exact-runtime-restart.json",
-    "runtime_receipt_sha256": "f03f6819bcaf6731e35f5d1a8b2f822452869a4d5fb5ad79a175cb08c5bc709f"
-  },
-  "evidence_summary": "The final onboarding shell keeps ready-state title geometry, hides ready destinations and generic wizard progress, and lands on Overview. Full native and visual targets pass, exact candidate preview passes, and the exact launcher/runtime passed native Restart plus strict scoped-CA host health while preserving comparison Hub 21443.",
-  "recorded_limits": [
-    "The existing Lima guest resets SSH connections, so no fresh Home Assistant guest poll or restart-continuity claim is made for this UI-only successor. Earlier same-entry 13/13 strict-TLS continuity remains historical evidence."
-  ],
-  "review": "docs/development/assessments/hub-redesign-independent-review-2026-09-22.md",
-  "accepted_receipts_immutable": true,
+  "evidence_summary": "Historical: complete native target, 34 visual captures, exact onboarding preview and source-bound runtime review passed for the recorded candidate.",
+  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
   "remaining": [
-    "Packaging, distribution, notarization, release binaries, real Tesla access, vehicle actions, public ingress, Intel, Azure, other platforms, Viewer and app/ remain deferred or separately gated."
+    "A fresh build and complete affected acceptance are required before the Hub is run or called currently accepted."
   ]
 }
