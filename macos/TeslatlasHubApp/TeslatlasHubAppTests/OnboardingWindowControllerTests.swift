@@ -826,7 +826,13 @@ final class OnboardingWindowControllerTests: XCTestCase {
             $0.accessibilityLabel() == "This user needs sudo to read the TeslaMate database"
         })
         XCTAssertEqual(popups(in: root).first?.itemTitles, ["SSH key", "Password"])
-        XCTAssertTrue(popups(in: root).allSatisfy { $0.controlSize != .large })
+        let authentication = try XCTUnwrap(popups(in: root).first)
+        XCTAssertEqual(authentication.identifier?.rawValue, "onboarding.migration-authentication")
+        XCTAssertTrue(authentication is HubFormPopUpButton)
+        XCTAssertFalse(authentication.isBordered)
+        XCTAssertEqual(authentication.controlSize, .regular)
+        XCTAssertEqual(authentication.frame.height, HubMetrics.compactControlHeight, accuracy: 0.5)
+        XCTAssertEqual(authentication.font, HubTypography.body)
         let inputFields = labels(in: root).filter { $0.isEditable }
         XCTAssertTrue(inputFields.allSatisfy { $0.controlSize != .large })
         let heading = try XCTUnwrap(labels(in: root).first { $0.stringValue == "Migrate from TeslaMate" })
@@ -847,6 +853,30 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(connect.isEnabled)
         XCTAssertTrue(view(in: root, identifier: "onboarding.footer")?.isDescendant(of: connect) == false)
         XCTAssertTrue(connect.isDescendant(of: try XCTUnwrap(view(in: root, identifier: "onboarding.footer"))))
+    }
+
+    func testFleetPopupUsesSharedNativeFormTreatment() throws {
+        let onboarding = OnboardingWindowController(
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
+            previewRoute: "fleet",
+            onComplete: { _ in }
+        )
+        let root = try XCTUnwrap(onboarding.window?.contentView)
+        root.layoutSubtreeIfNeeded()
+
+        let region = try XCTUnwrap(popups(in: root).first)
+        XCTAssertTrue(region is HubFormPopUpButton)
+        XCTAssertFalse(region.isBordered)
+        XCTAssertEqual(region.identifier?.rawValue, "onboarding.fleet-region")
+        XCTAssertEqual(region.controlSize, .regular)
+        XCTAssertEqual(region.frame.height, HubMetrics.compactControlHeight, accuracy: 0.5)
+        XCTAssertEqual(region.font, HubTypography.body)
+        XCTAssertLessThan(HubFormPopUpButton.surfaceCornerRadius, region.frame.height / 2)
+        XCTAssertEqual(region.itemTitles, [
+            "Europe, Middle East and Africa",
+            "North America and Asia Pacific",
+            "China"
+        ])
     }
 
     func testPreviewFixturesRenderConnectedVerifyAndMigrationFinishSourceStatesWithoutSecrets() throws {

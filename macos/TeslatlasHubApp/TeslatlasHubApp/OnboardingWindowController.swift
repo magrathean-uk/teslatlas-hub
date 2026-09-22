@@ -34,6 +34,52 @@ private final class HubOnboardingChromeView: NSVisualEffectView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 
+final class HubFormPopUpButton: NSPopUpButton {
+    static let surfaceCornerRadius: CGFloat = 6
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect, pullsDown: false)
+        configureSurface()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        configureSurface()
+    }
+
+    private func configureSurface() {
+        isBordered = false
+        controlSize = .regular
+        font = HubTypography.body
+        contentTintColor = HubPalette.foreground
+        focusRingType = .default
+    }
+
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsetsZero }
+    override var focusRingMaskBounds: NSRect { bounds }
+
+    override func drawFocusRingMask() {
+        NSBezierPath(roundedRect: bounds,
+                     xRadius: Self.surfaceCornerRadius,
+                     yRadius: Self.surfaceCornerRadius).fill()
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            let surface = bounds.insetBy(dx: 0.5, dy: 0.5)
+            let path = NSBezierPath(roundedRect: surface,
+                                    xRadius: Self.surfaceCornerRadius,
+                                    yRadius: Self.surfaceCornerRadius)
+            NSColor.textBackgroundColor.setFill()
+            path.fill()
+            HubPalette.border.setStroke()
+            path.lineWidth = 1
+            path.stroke()
+        }
+        super.draw(dirtyRect)
+    }
+}
+
 enum HubOnboardingRoute: Equatable {
     case welcome
     case choose
@@ -134,14 +180,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private let fleetAccessToken = NSSecureTextField(string: "")
     private let fleetRefreshToken = NSSecureTextField(string: "")
     private let fleetExpiry = NSTextField(string: "3600")
-    private let fleetRegion = NSPopUpButton()
+    private let fleetRegion = HubFormPopUpButton(frame: .zero)
     private let legacyAccessToken = NSSecureTextField(string: "")
     private let legacyRefreshToken = NSSecureTextField(string: "")
 
     private let migrationServer = NSTextField(string: "")
     private let migrationUser = NSTextField(string: "user")
     private let migrationPort = NSTextField(string: "22")
-    private let migrationAuthentication = NSPopUpButton()
+    private let migrationAuthentication = HubFormPopUpButton(frame: .zero)
     private let migrationIdentityFile = NSTextField(string: "")
     private let migrationSSHPassword = NSSecureTextField(string: "")
     private let migrationUseSudo = NSButton(
@@ -383,6 +429,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func configureFields() {
+        configureFormPopup(fleetRegion, identifier: "onboarding.fleet-region")
+        configureFormPopup(migrationAuthentication, identifier: "onboarding.migration-authentication")
         fleetRegion.addItems(withTitles: [
             "Europe, Middle East and Africa",
             "North America and Asia Pacific",
@@ -391,7 +439,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationAuthentication.addItems(withTitles: ["SSH key", "Password"])
         migrationAuthentication.target = self
         migrationAuthentication.action = #selector(migrationAuthenticationChanged)
-        migrationAuthentication.controlSize = .regular
         migrationUseSudo.state = .off
         migrationUseSudo.title = ""
         migrationUseSudo.setAccessibilityLabel("This user needs sudo to read the TeslaMate database")
@@ -418,8 +465,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             field.font = HubTypography.body
             field.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
         }
-        fleetRegion.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
-        migrationAuthentication.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
         fleetAccessToken.placeholderString = "Access token"
         fleetRefreshToken.placeholderString = "Refresh token"
         fleetClientID.placeholderString = "Tesla application client ID"
@@ -428,6 +473,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationServer.placeholderString = "teslamate.local"
         migrationIdentityFile.placeholderString = "Optional — uses SSH agent or default keys"
         migrationSSHPassword.placeholderString = "SSH password"
+    }
+
+    private func configureFormPopup(_ popup: NSPopUpButton, identifier: String) {
+        popup.identifier = NSUserInterfaceItemIdentifier(identifier)
+        // The stock bezel is shorter than its constrained frame. These remain
+        // native pop-up controls; HubFormPopUpButton only paints the same
+        // full-height form surface used by the adjacent text fields.
+        popup.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
     }
 
     private func render() {
