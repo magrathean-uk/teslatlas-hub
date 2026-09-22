@@ -1,15 +1,21 @@
-# TypeScript SDK — accepted schema 2.2 consumer
+# TypeScript SDK — source-published post-cleanup state
 
-Revision 2026-09-21. **COMPLETED** for MF-2/MF-3.
+Revision 2026-09-22. The accepted current-Mac implementation is published on `main`.
+The owner then requested removal of all local builds, artifacts, runtimes and VMs.
 
-## Accepted result
+## Published result
 
-Exact source `3644ad8c0a7bf10c01e524c050026ead898d47e5` is published on `main`.
-The exact packed candidate consumed signed schema 2.2 non-empty history across a
-Hub restart, retained empty-vehicle pagination, and matched Swift's semantic
-snapshot SHA-256 `786808affcf1ba6b29537842ef7441c260a63bbfe6f05eeaae559b3b79c7d4b6`.
+- Accepted implementation lineage: `3644ad8c0a7bf10c01e524c050026ead898d47e5`
+- Published `main` before this cleanup metadata update: `71340531eeacfca475ca5216cd76a9b5986050a5`
+- The published SDK source contains the accepted signed schema 2.2 history and pagination behavior.
 
-## Boundary
+## Evidence boundary
 
-This is local exact-package acceptance for the current Mac product. Registry
-publication and broader platform acceptance remain deferred.
+Historical: the exact packed candidate consumed non-empty history across restart and matched Swift semantic output. The corresponding external candidates, receipts and runtime fixtures
+were deliberately deleted. Those results remain historical provenance and do not
+claim that a runnable local installation exists now.
+
+## Current state
+
+Source and Git history are retained. Regenerable builds and dependencies are removed.
+No packed candidate or dependency tree remains; registry publication remains deferred.
