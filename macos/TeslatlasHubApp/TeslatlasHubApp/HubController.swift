@@ -1315,6 +1315,18 @@ final class HubController {
         previewMode ? nil : migrationHandoverState?.phase
     }
 
+    /// Reasons that are safe to decide synchronously before the first status refresh.
+    /// Keeping the main window hidden for these paths prevents ready-app chrome from
+    /// flashing before onboarding takes over.
+    var shouldShowOnboardingBeforeInitialRefresh: Bool {
+        if developmentConfiguration != nil {
+            return onboardingPreviewRoute != nil || hasPendingMigrationHandover
+        }
+        return onboardingPreviewRoute != nil
+            || hasPendingMigrationHandover
+            || !FileManager.default.fileExists(atPath: configPath.path)
+    }
+
     func shouldShowOnboarding(for snapshot: HubSnapshot) -> Bool {
         if developmentConfiguration != nil {
             return onboardingPreviewRoute != nil || hasPendingMigrationHandover

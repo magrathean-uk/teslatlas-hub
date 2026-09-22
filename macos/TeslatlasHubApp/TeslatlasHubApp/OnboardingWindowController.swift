@@ -211,7 +211,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private var migrationSession: TeslaMateServerImportSession?
     private var connectedMigrationIdentity: String?
     private var onboardingContainer: HubOnboardingContainerView!
-    private let headerContentHost = NSView()
+    private var onboardingToolbar: HubOnboardingToolbar?
     private var renderedStep: Int?
     private var diagnosticView: NSView?
     private var filePanelOpen = false
@@ -274,6 +274,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         )
         window.center()
         super.init(window: window)
+        let onboardingToolbar = HubOnboardingToolbar()
+        self.onboardingToolbar = onboardingToolbar
+        window.toolbar = onboardingToolbar.toolbar
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .automatic
         if effectivePreviewRoute == "migration-connected" {
             migrationServer.stringValue = "teslamate.local"
             compatibility = HubTeslaMateCompatibility(
@@ -395,14 +400,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func configureContainer(in window: NSWindow) {
-        let header = HubOnboardingChromeView()
+        let header = NSView()
         header.identifier = NSUserInterfaceItemIdentifier("onboarding.header")
-        let headerLine = NSBox()
-        headerLine.boxType = .separator
-        headerLine.translatesAutoresizingMaskIntoConstraints = false
-        header.addSubview(headerLine)
-        headerContentHost.translatesAutoresizingMaskIntoConstraints = false
-        header.addSubview(headerContentHost)
 
         let footer = HubOnboardingChromeView()
         footer.identifier = NSUserInterfaceItemIdentifier("onboarding.footer")
@@ -412,21 +411,16 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         footer.addSubview(footerLine)
 
         NSLayoutConstraint.activate([
-            headerContentHost.centerXAnchor.constraint(equalTo: header.centerXAnchor),
-            headerContentHost.leadingAnchor.constraint(greaterThanOrEqualTo: header.leadingAnchor, constant: 28),
-            headerContentHost.trailingAnchor.constraint(lessThanOrEqualTo: header.trailingAnchor, constant: -28),
-            headerContentHost.widthAnchor.constraint(equalToConstant: HubMetrics.onboardingContentWidth),
-            headerContentHost.topAnchor.constraint(equalTo: header.topAnchor),
-            headerContentHost.bottomAnchor.constraint(equalTo: header.bottomAnchor),
-            headerLine.leadingAnchor.constraint(equalTo: header.leadingAnchor),
-            headerLine.trailingAnchor.constraint(equalTo: header.trailingAnchor),
-            headerLine.bottomAnchor.constraint(equalTo: header.bottomAnchor),
             footerLine.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
             footerLine.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
             footerLine.topAnchor.constraint(equalTo: footer.topAnchor),
         ])
 
-        onboardingContainer = HubOnboardingContainerView(headerView: header, footerView: footer)
+        onboardingContainer = HubOnboardingContainerView(
+            headerView: header,
+            headerHeight: 0,
+            footerView: footer
+        )
         window.contentView = onboardingContainer
     }
 
@@ -503,22 +497,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         window.makeFirstResponder(nil)
         migrationKeyViews = []
         pageKeyViews = []
-        headerContentHost.subviews.forEach { $0.removeFromSuperview() }
-        let stepLabel = NSTextField(labelWithString: "Step \(state.step) of 5")
-        stepLabel.font = HubTypography.label
-        stepLabel.textColor = HubPalette.mutedForeground
-        stepLabel.setAccessibilityLabel("Setup progress")
-        stepLabel.setAccessibilityValue("Step \(state.step) of 5")
-        let headerContent = NSStackView(views: [backButton, spacer(), stepLabel, progressView()])
-        headerContent.spacing = 16
-        headerContent.alignment = .centerY
-        headerContent.translatesAutoresizingMaskIntoConstraints = false
-        headerContentHost.addSubview(headerContent)
-        NSLayoutConstraint.activate([
-            headerContent.leadingAnchor.constraint(equalTo: headerContentHost.leadingAnchor),
-            headerContent.trailingAnchor.constraint(equalTo: headerContentHost.trailingAnchor),
-            headerContent.centerYAnchor.constraint(equalTo: headerContentHost.centerYAnchor)
-        ])
 
         let content: NSView
         if let operation {
@@ -1214,21 +1192,6 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         return withError(stack)
     }
 
-    private func progressView() -> NSView {
-        let progress = NSProgressIndicator()
-        progress.identifier = NSUserInterfaceItemIdentifier("onboarding.progress")
-        progress.style = .bar
-        progress.controlSize = .small
-        progress.isIndeterminate = false
-        progress.minValue = 0
-        progress.maxValue = 5
-        progress.doubleValue = Double(state.step)
-        progress.widthAnchor.constraint(equalToConstant: 150).isActive = true
-        progress.setAccessibilityLabel("Setup progress")
-        progress.setAccessibilityValue("Step \(state.step) of 5")
-        return progress
-    }
-
     private func footerView() -> NSView {
         cancelButton.target = self
         cancelButton.action = #selector(cancelPressed)
@@ -1267,7 +1230,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         logs.controlSize = .regular
         footerLogsButton = logs
         let footer = NSView()
-        let leading = NSStackView(views: [cancelButton])
+        let leading = NSStackView(views: [backButton, cancelButton])
         leading.spacing = 8
         leading.alignment = .centerY
         for view in [leading, continueButton, logs] {
@@ -2122,8 +2085,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         var keyViews = candidates.filter { view in
             !view.isHidden && (view as? NSControl)?.isEnabled != false
         }
-        if !cancelButton.isHidden && cancelButton.isEnabled { keyViews.append(cancelButton) }
         if !backButton.isHidden && backButton.isEnabled { keyViews.append(backButton) }
+        if !cancelButton.isHidden && cancelButton.isEnabled { keyViews.append(cancelButton) }
         if !continueButton.isHidden && continueButton.isEnabled { keyViews.append(continueButton) }
         if let footerLogsButton, !footerLogsButton.isHidden, footerLogsButton.isEnabled {
             keyViews.append(footerLogsButton)

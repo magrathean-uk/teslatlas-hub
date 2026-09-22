@@ -159,6 +159,44 @@ final class HubMainToolbar: NSObject, NSToolbarDelegate {
     }
 }
 
+/// Keeps onboarding in the same native titlebar geometry as the ready app while
+/// reserving the navigation area without exposing destinations before setup.
+final class HubOnboardingToolbar: NSObject, NSToolbarDelegate {
+    private enum Item { static let placeholder = NSToolbarItem.Identifier("hub.toolbar.onboarding") }
+    private let placeholder = NSView()
+    let toolbar = NSToolbar(identifier: "hub.onboarding.toolbar")
+
+    override init() {
+        super.init()
+        placeholder.setAccessibilityElement(false)
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        toolbar.centeredItemIdentifier = Item.placeholder
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.flexibleSpace, Item.placeholder]
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.flexibleSpace, Item.placeholder, .flexibleSpace]
+    }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier,
+                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        guard identifier == Item.placeholder else { return nil }
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = "Setup"
+        item.view = placeholder
+        item.isBordered = false
+        placeholder.widthAnchor.constraint(equalToConstant: 492).isActive = true
+        placeholder.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        return item
+    }
+}
+
 final class HubPageHeaderView: NSView {
     init(symbol: String, title: String, subtitle: String) {
         super.init(frame: .zero)

@@ -1450,7 +1450,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         if let onboarding = activeModalController as? OnboardingWindowController,
            modalState.active == .onboarding {
-            if onboarding.dismissalPolicy == .firstRun || onboarding.dismissalPolicy == dismissalPolicy {
+            if onboarding.dismissalPolicy == .firstRun {
+                setAccountWorkflowActive(true)
+                onboarding.window?.makeKey()
+                return onboarding
+            }
+            if onboarding.dismissalPolicy == dismissalPolicy {
                 setAccountWorkflowActive(true)
                 if previewRoute == nil { onboarding.navigate(to: route) }
                 onboarding.window?.makeKey()
@@ -1494,8 +1499,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func completeOnboarding(identifier: UUID, completion: HubOnboardingCompletion) {
         guard terminateOnboarding(identifier: identifier,
                                  closeWindow: true,
-                                 refreshAfterDeactivation: completion != .hubStarted) else { return }
+                                 refreshAfterDeactivation: completion != .hubStarted,
+                                 landingSection: .dashboard) else { return }
         applySnapshotPresentation(controller.snapshot)
+        navigationBar.focus(.dashboard, in: window)
         if completion == .hubStarted {
             settleStartedHubFromOnboarding()
         }
@@ -1504,12 +1511,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @discardableResult
     private func terminateOnboarding(identifier: UUID,
                                     closeWindow: Bool,
-                                    refreshAfterDeactivation: Bool = true) -> Bool {
+                                    refreshAfterDeactivation: Bool = true,
+                                    landingSection: HubMainSection? = nil) -> Bool {
         guard activeOnboardingIdentifier == identifier,
               modalState.active == .onboarding else { return false }
         let sheet = activeModalController?.window
         activeOnboardingIdentifier = nil
         setAccountWorkflowActive(false, refreshOnDeactivation: refreshAfterDeactivation)
+        if let landingSection { selectMainSection(landingSection) }
         dismissPrimaryModal(kind: .onboarding)
         if closeWindow { sheet?.close() }
         return true

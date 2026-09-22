@@ -16,7 +16,9 @@ final class HubOnboardingContainerView: NSView {
     private var body: NSView?
     private var footerContent: NSView?
 
-    init(headerView: NSView = NSView(), footerView: NSView = NSView()) {
+    init(headerView: NSView = NSView(),
+         headerHeight: CGFloat = 38,
+         footerView: NSView = NSView()) {
         self.headerView = headerView
         self.footerView = footerView
         super.init(frame: .zero)
@@ -46,7 +48,7 @@ final class HubOnboardingContainerView: NSView {
             headerView.leadingAnchor.constraint(equalTo: leadingAnchor),
             headerView.trailingAnchor.constraint(equalTo: trailingAnchor),
             headerView.topAnchor.constraint(equalTo: topAnchor),
-            headerView.heightAnchor.constraint(equalToConstant: 38),
+            headerView.heightAnchor.constraint(equalToConstant: headerHeight),
 
             bodyScrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
             bodyScrollView.trailingAnchor.constraint(equalTo: trailingAnchor),

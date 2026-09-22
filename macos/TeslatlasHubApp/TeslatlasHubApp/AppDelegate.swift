@@ -246,13 +246,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             "app_build": appBuild,
             "app_version": appVersion
         ])
-        showDashboard { [weak self] snapshot in
+        let showOnboardingImmediately = hubController.shouldShowOnboardingBeforeInitialRefresh
+        showDashboard(makeVisible: false) { [weak self] snapshot in
             guard let self else { return }
             if let scene = self.hubController.previewScene {
                 self.mainWindowController?.configurePreviewScene(scene)
+                if self.mainWindowController?.activeModalKind != .onboarding {
+                    self.showDashboard()
+                }
             } else if self.hubController.shouldShowOnboarding(for: snapshot) {
-                self.mainWindowController?.showFirstRunOnboarding()
+                if self.mainWindowController?.activeModalKind != .onboarding {
+                    self.mainWindowController?.showFirstRunOnboarding()
+                }
+            } else if self.mainWindowController?.activeModalKind != .onboarding {
+                self.showDashboard()
             }
+        }
+        if showOnboardingImmediately {
+            mainWindowController?.showFirstRunOnboarding()
         }
     }
 
@@ -367,11 +378,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         """
     }
 
-    private func showDashboard(onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
+    private func showDashboard(makeVisible: Bool = true,
+                               onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
         if mainWindowController == nil {
             mainWindowController = MainWindowController(controller: hubController,
                                                         onInitialRefresh: onInitialRefresh)
         }
+        guard makeVisible else { return }
         mainWindowController?.showWindow(nil)
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

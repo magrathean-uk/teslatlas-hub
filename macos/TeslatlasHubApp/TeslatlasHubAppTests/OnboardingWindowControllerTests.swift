@@ -84,6 +84,23 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(cancel.isHidden)
         XCTAssertTrue(cancel.isEnabled)
         XCTAssertEqual(cancel.title, "Cancel")
+        let back = try XCTUnwrap(buttons(in: root).first { $0.title == "Back" })
+        let `continue` = try XCTUnwrap(buttons(in: root).first { $0.title == "Continue" })
+        XCTAssertTrue(back.nextKeyView === cancel)
+        XCTAssertTrue(cancel.nextKeyView === `continue`)
+    }
+
+    func testRepeatedFirstRunPresentationPreservesTheCurrentPage() throws {
+        let dashboard = MainWindowController(
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        )
+        let onboarding = try XCTUnwrap(dashboard.showFirstRunOnboarding())
+        onboarding.navigate(to: .provider)
+
+        let repeated = try XCTUnwrap(dashboard.showFirstRunOnboarding())
+
+        XCTAssertTrue(repeated === onboarding)
+        XCTAssertEqual(repeated.currentRoute, .provider)
     }
 
     func testStaleSSHSecretCleanupAdmitsOnlyOwnedUUIDDirectories() throws {
@@ -225,6 +242,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let dashboard = MainWindowController(
             controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         )
+        dashboard.selectMainSection(.settings)
         _ = try XCTUnwrap(dashboard.showOnboarding(route: .provider))
         let identifier = try XCTUnwrap(dashboard.activeOnboardingIdentifier)
 
@@ -233,6 +251,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
 
         XCTAssertNil(dashboard.activeModalKind)
         XCTAssertFalse(dashboard.accountWorkflowActive)
+        XCTAssertEqual(dashboard.selectedSection, .settings)
     }
 
     func testClosingLastWindowTerminatesOnlyTheGUI() {
@@ -696,7 +715,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(continueButton.frame.width, titleWidth + 24)
     }
 
-    func testWelcomeHeaderAndFooterUseTranslatedChromeGeometry() throws {
+    func testWelcomeUsesReadyAppTitlebarAndNoProgressChrome() throws {
         let onboarding = OnboardingWindowController(
             controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
             previewRoute: "welcome",
@@ -708,16 +727,17 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let header = try XCTUnwrap(view(in: root, identifier: "onboarding.header"))
         let body = try XCTUnwrap(view(in: root, identifier: "onboarding.welcome.body"))
         let footer = try XCTUnwrap(view(in: root, identifier: "onboarding.footer"))
-        let progress = try XCTUnwrap(progressIndicators(in: root).first {
-            $0.identifier?.rawValue == "onboarding.progress"
-        })
 
-        XCTAssertEqual(header.frame.height, 38, accuracy: 0.5)
+        XCTAssertEqual(header.frame.height, 0, accuracy: 0.5)
         XCTAssertEqual(body.frame.minX, (HubMetrics.windowSize.width - HubMetrics.onboardingContentWidth) / 2, accuracy: 0.5)
         XCTAssertEqual(body.frame.width, HubMetrics.onboardingContentWidth, accuracy: 0.5)
         XCTAssertEqual(footer.frame.height, 64, accuracy: 0.5)
-        XCTAssertEqual(progress.frame.width, 150, accuracy: 0.5)
-        XCTAssertEqual(progress.doubleValue, 1)
+        XCTAssertEqual(onboarding.window?.toolbarStyle, .unified)
+        XCTAssertNotNil(onboarding.window?.toolbar)
+        XCTAssertFalse(progressIndicators(in: root).contains {
+            $0.identifier?.rawValue == "onboarding.progress"
+        })
+        XCTAssertFalse(labels(in: root).contains { $0.stringValue.hasPrefix("Step ") })
     }
 
     func testOnboardingPagesShareFullWindowChromeAndContentWidth() throws {
@@ -737,7 +757,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             XCTAssertEqual(root.bounds.height, HubMetrics.windowSize.height, accuracy: 0.5, route)
             XCTAssertEqual(
                 try XCTUnwrap(view(in: root, identifier: "onboarding.header")).frame.height,
-                38,
+                0,
                 accuracy: 0.5,
                 route
             )
@@ -750,7 +770,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             let body = try XCTUnwrap(view(in: root, identifier: route == "welcome"
                 ? "onboarding.welcome.body" : "onboarding.body"))
             XCTAssertEqual(body.frame.width, HubMetrics.onboardingContentWidth, accuracy: 0.5, route)
-            XCTAssertNotNil(progressIndicators(in: root).first {
+            XCTAssertNil(progressIndicators(in: root).first {
                 $0.identifier?.rawValue == "onboarding.progress"
             }, route)
         }
@@ -777,7 +797,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(text.contains(
             "Bring your existing vehicle history."
         ))
-        XCTAssertTrue(text.contains("Step 2 of 5"))
+        XCTAssertFalse(text.contains { $0.hasPrefix("Step ") })
 
         let fresh = try XCTUnwrap(buttons(in: root).first { $0.title == "New installation" })
         let migration = try XCTUnwrap(buttons(in: root).first { $0.title == "Migrate from TeslaMate" })
@@ -973,14 +993,14 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let text = labels(in: view).map(\.stringValue)
         XCTAssertEqual(text.filter { $0 == "Importing data…" }.count, 1)
         XCTAssertFalse(text.contains("Import from TeslaMate"))
-        XCTAssertTrue(text.contains { $0.hasPrefix("Step ") })
+        XCTAssertFalse(text.contains { $0.hasPrefix("Step ") })
         XCTAssertFalse(text.contains {
             $0.localizedCaseInsensitiveContains("Enter your TeslaMate")
                 || $0.localizedCaseInsensitiveContains("Elapsed")
                 || $0.localizedCaseInsensitiveContains("Hub stays stopped")
         })
         let bars = progressIndicators(in: view).filter { $0.style == .bar }
-        XCTAssertEqual(bars.count, 2)
+        XCTAssertEqual(bars.count, 1)
         let progressBar = try XCTUnwrap(bars.first {
             $0.identifier?.rawValue == "onboarding.migration-progress"
         })
@@ -1024,7 +1044,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(text.filter { $0 == "Setting up Hub…" }.count, 1)
         XCTAssertFalse(text.contains("Connect with a Legacy Token"))
         XCTAssertFalse(text.contains("Access token"))
-        XCTAssertTrue(text.contains { $0.hasPrefix("Step ") })
+        XCTAssertFalse(text.contains { $0.hasPrefix("Step ") })
         XCTAssertEqual(progressIndicators(in: view).filter { $0.style == .spinning }.count, 1)
         XCTAssertGreaterThanOrEqual(buttons(in: view).count, 2,
                                       "Focused setup retains the shared footer controls")

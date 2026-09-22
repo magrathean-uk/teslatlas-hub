@@ -231,6 +231,7 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
 
+        XCTAssertTrue(controller.shouldShowOnboardingBeforeInitialRefresh)
         XCTAssertTrue(controller.shouldShowOnboarding(for: .previewRunning))
         let configuration = home
             .appendingPathComponent("Library/Application Support/Teslatlas Hub", isDirectory: true)
@@ -239,6 +240,7 @@ final class OnboardingHubControllerTests: XCTestCase {
                                                 withIntermediateDirectories: true)
         try "data_dir = \"/tmp/hub\"\n".write(to: configuration, atomically: true, encoding: .utf8)
 
+        XCTAssertFalse(controller.shouldShowOnboardingBeforeInitialRefresh)
         XCTAssertFalse(controller.shouldShowOnboarding(for: .previewRunning))
         XCTAssertTrue(controller.shouldShowOnboarding(for: .firstRun))
     }
@@ -266,6 +268,7 @@ final class OnboardingHubControllerTests: XCTestCase {
                 developmentConfiguration: configuration
             )
 
+            XCTAssertFalse(controller.shouldShowOnboardingBeforeInitialRefresh, "mode=\(mode)")
             XCTAssertFalse(controller.shouldShowOnboarding(for: .firstRun), "mode=\(mode)")
         }
     }

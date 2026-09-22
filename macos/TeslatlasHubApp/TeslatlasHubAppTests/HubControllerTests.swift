@@ -1436,6 +1436,28 @@ final class HubControllerTests: XCTestCase {
         withExtendedLifetime(dashboard) {}
     }
 
+    func testSuccessfulOnboardingAlwaysLandsOnOverview() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+
+        let firstRunDashboard = MainWindowController(controller: controller)
+        firstRunDashboard.selectMainSection(.settings)
+        _ = try XCTUnwrap(firstRunDashboard.showFirstRunOnboarding())
+        firstRunDashboard.completeOnboarding(
+            identifier: try XCTUnwrap(firstRunDashboard.activeOnboardingIdentifier),
+            completion: .configured
+        )
+        XCTAssertEqual(firstRunDashboard.selectedSection, .dashboard)
+
+        let accountDashboard = MainWindowController(controller: controller)
+        accountDashboard.selectMainSection(.settings)
+        _ = try XCTUnwrap(accountDashboard.showOnboarding(route: .provider))
+        accountDashboard.completeOnboarding(
+            identifier: try XCTUnwrap(accountDashboard.activeOnboardingIdentifier),
+            completion: .configured
+        )
+        XCTAssertEqual(accountDashboard.selectedSection, .dashboard)
+    }
+
     func testInFlightRefreshDoesNotRepaintDashboardDuringServiceTransition() {
         let runner = PendingCommandRunner()
         let controller = HubController(installedCommandRunner: runner,
