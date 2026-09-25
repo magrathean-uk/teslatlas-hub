@@ -2,10 +2,13 @@
 
 This repository owns the public Swift client boundary.
 
-Follow `../AGENTS.md`, `../WORKSPACE_AUTHORITY.md` and
-`../docs/development/COORDINATION.md`, then this product's `docs/development/PLAN.md`
-and `STATUS.json`. Sol is the default implementation/review model; use the shared
-role-based effort policy. Work only on the assigned scope; App and Viewer are excluded.
+Follow `../AGENTS.md` and `../docs/development/COORDINATION.md`, then this
+product's `docs/development/PLAN.md` and `STATUS.json`. Model and effort defaults
+are in `../AGENTS.md`. Work only on the assigned scope. App v7 (`../app`) consumes
+this product; change the App only as App work. Viewer is excluded.
+
+Run commands through `../scripts/dev/run.sh teslatlas-sdk-swift COMMAND...` so build output and
+caches stay out of this tree (SwiftPM output is not routed by clean-development; pass `--scratch-path` outside the checkout).
 
 - Follow Swift API Design Guidelines. Use the ecosystem calendar product version;
   keep SwiftPM/wire semantic versions separate.
