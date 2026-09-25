@@ -1,0 +1,28 @@
+{
+  "schema_version": 4,
+  "product": "Hub",
+  "updated_at": "2026-09-22T10:00:00Z",
+  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
+  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
+  "planning_state": "COMPLETE",
+  "current_goal": null,
+  "current_worker": null,
+  "source": {
+    "accepted_implementation_lineage": "478a9139bfe11385bf2c9a3faad947f4419510f6",
+    "main_before_cleanup_metadata": "b86bdf17998ea34cf231fbc12089494f8dbff478",
+    "branch": "main",
+    "remote_ref": "refs/heads/main",
+    "publication": "SOURCE_PUBLISHED"
+  },
+  "local_state": {
+    "build_outputs": "REMOVED",
+    "candidate_artifacts": "REMOVED",
+    "external_receipts": "REMOVED",
+    "runtime": "NONE"
+  },
+  "evidence_summary": "Historical: complete native target, 34 visual captures, exact onboarding preview and source-bound runtime review passed for the recorded candidate.",
+  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
+  "remaining": [
+    "A fresh build and complete affected acceptance are required before the Hub is run or called currently accepted."
+  ]
+}

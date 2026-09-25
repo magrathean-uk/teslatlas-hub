@@ -1,28 +1,26 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "product": "Hub",
-  "updated_at": "2026-09-22T10:00:00Z",
-  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
-  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
-  "planning_state": "COMPLETE",
-  "current_goal": null,
+  "updated_at": "2026-09-25T13:00:00Z",
+  "plan": "../../../docs/development/MASTER_PLAN.md",
+  "state": "SOURCE_PUBLISHED_AWAITING_PHASE_2",
+  "current_phase": null,
   "current_worker": null,
   "source": {
-    "accepted_implementation_lineage": "478a9139bfe11385bf2c9a3faad947f4419510f6",
-    "main_before_cleanup_metadata": "b86bdf17998ea34cf231fbc12089494f8dbff478",
     "branch": "main",
-    "remote_ref": "refs/heads/main",
-    "publication": "SOURCE_PUBLISHED"
+    "last_accepted_lineage": "478a9139bfe11385bf2c9a3faad947f4419510f6",
+    "note": "The 2026-09-21/22 current-Mac acceptance covered the source-run product only; installer, LaunchAgent lifecycle, macOS 13 and real-car collection are open (Phase 2 and 3)."
   },
   "local_state": {
-    "build_outputs": "REMOVED",
-    "candidate_artifacts": "REMOVED",
-    "external_receipts": "REMOVED",
+    "build_outputs": "ROUTED_BY_CLEAN_DEVELOPMENT",
+    "lab_binary": "~/dev/lab/teslatlas-v7/bin (built with the removed Homebrew toolchain; rebuild through run.sh before use)",
     "runtime": "NONE"
   },
-  "evidence_summary": "Historical: complete native target, 34 visual captures, exact onboarding preview and source-bound runtime review passed for the recorded candidate.",
-  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
+  "evidence_boundary": "All receipts under docs/development/archive/ are provenance only. Fresh receipts are required for every Phase 2+ claim.",
   "remaining": [
-    "A fresh build and complete affected acceptance are required before the Hub is run or called currently accepted."
+    "Phase 2: fully working on the current Mac with installer, service lifecycle, real collection and the P1 fixes.",
+    "Phase 3: macOS 13 VM receipt.",
+    "Phase 4: v7 transport and shared compute.",
+    "Phases 6-7: Debian 13 arm64, then x86_64."
   ]
 }

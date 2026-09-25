@@ -1,21 +1,18 @@
-# Hub — source-published post-cleanup state
+# Hub plan pointer
 
-Revision 2026-09-22. The accepted current-Mac implementation is published on `main`.
-The owner then requested removal of all local builds, artifacts, runtimes and VMs.
+The Hub's plan is the workspace programme plan, `docs/development/MASTER_PLAN.md` at
+the workspace root (`/Users/bolyki/dev/source/teslatlas-service`), written 2026-09-25.
+The Hub's phases there:
 
-## Published result
+- Phase 2: fully working on the current Mac, installer and LaunchAgent lifecycle
+  included, collecting from the owner's car through the VPS owner token and the Fleet
+  API, with the P1 fixes (efficiency units, loopback Host check, streaming backoff,
+  sliding bearers with rotation grace, permanent no-op status, HA rotation) and
+  terminal pairing for headless hosts.
+- Phase 3: the same receipt inside the `macos13-lab` VM (cross-built, macOS 13 floor kept).
+- Phase 4: v7 transport (snapshot by schema, changes-since, multi-chunk 2.2, larger
+  packs) and shared compute through the `teslatlas-compute` crate.
+- Phases 6 and 7: Debian 13 arm64, then x86_64 (the VPS).
 
-- Accepted implementation lineage: `478a9139bfe11385bf2c9a3faad947f4419510f6`
-- Published `main` before this cleanup metadata update: `b86bdf17998ea34cf231fbc12089494f8dbff478`
-- The accepted redesign source includes the unified title placement, hides ready-state navigation and service chrome during onboarding, removes generic wizard progress, and routes successful completion to Overview.
-
-## Evidence boundary
-
-Historical: complete native target, 34 visual captures, exact onboarding preview and source-bound runtime review passed for the recorded candidate. The corresponding external candidates, receipts and runtime fixtures
-were deliberately deleted. Those results remain historical provenance and do not
-claim that a runnable local installation exists now.
-
-## Current state
-
-Source and Git history are retained. Regenerable builds and dependencies are removed.
-A fresh build and complete affected acceptance are required before the Hub is run or called currently accepted.
+`STATUS.json` records the current state. Everything under `archive/` is background
+only; every VM receipt there predates the guests' deletion on 2026-09-22.
