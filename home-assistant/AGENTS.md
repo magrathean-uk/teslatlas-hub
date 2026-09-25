@@ -1,9 +1,12 @@
 # Teslatlas Home Assistant integration
 
-Follow `../AGENTS.md`, `../WORKSPACE_AUTHORITY.md` and
-`../docs/development/COORDINATION.md`, then this product's `docs/development/PLAN.md`
-and `STATUS.json`. Sol is the default implementation/review model; use the shared
-role-based effort policy. Work only on the assigned scope; App and Viewer are excluded.
+Follow `../AGENTS.md` and `../docs/development/COORDINATION.md`, then this
+product's `docs/development/PLAN.md` and `STATUS.json`. Model and effort defaults
+are in `../AGENTS.md`. Work only on the assigned scope. App v7 (`../app`) consumes
+this product; change the App only as App work. Viewer is excluded.
+
+Run commands through `../scripts/dev/run.sh teslatlas-home-assistant COMMAND...` so build output and
+caches stay out of this tree (clean-development routes the `uv` cache; see `.clean-development.json`).
 
 This repository owns the public-protocol Home Assistant bridge.
 
