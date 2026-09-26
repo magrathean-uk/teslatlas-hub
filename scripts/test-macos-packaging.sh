@@ -423,8 +423,8 @@ fi
     || fail "proxy build is not arm64-only"
 /usr/bin/grep -Fq 'MACOSX_DEPLOYMENT_TARGET=13.0' "$PROXY_BUILD" \
     || fail "proxy build has no macOS 13 deployment target"
-/usr/bin/grep -Fq 'target/upstream-cache' "$FLEET_TELEMETRY_BUILD" \
-    || fail "Fleet Telemetry source archive is not cached inside the normal Hub target"
+/usr/bin/grep -Fq 'cache_directory="$TESLATLAS_LAB/build/hub/upstream-cache"' "$FLEET_TELEMETRY_BUILD" \
+    || fail "Fleet Telemetry source archive is not cached in the managed lab"
 /usr/bin/grep -Fq 'cached upstream archive checksum mismatch' "$FLEET_TELEMETRY_BUILD" \
     || fail "Fleet Telemetry cached source is not revalidated before use"
 /usr/bin/grep -Fq 'cache_installing=$(/usr/bin/mktemp' "$FLEET_TELEMETRY_BUILD" \
