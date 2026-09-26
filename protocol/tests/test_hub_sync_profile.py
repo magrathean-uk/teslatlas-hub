@@ -7,11 +7,13 @@ import subprocess
 import sys
 import unittest
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
 from openapi_spec_validator import validate as validate_openapi
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = ROOT / "profiles/hub-sync-v1/1.3.0"
+VEHICLE_ID = "11111111-1111-4111-8111-111111111111"
+OTHER_VEHICLE_ID = "22222222-2222-4222-8222-222222222222"
 
 
 class HubSyncProfileTests(unittest.TestCase):
@@ -33,7 +35,8 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(profile["authentication"], "paired bearer")
         self.assertEqual(profile["previous_profile"], "hub-sync-v1@1.2.0")
         self.assertEqual(profile["limits"]["max_changed_set_packs"], 1)
-        self.assertEqual(profile["limits"]["max_manifest_chunks"], 4096)
+        self.assertEqual(profile["limits"]["max_manifest_chunks"], 1771)
+        self.assertEqual(profile["limits"]["max_prepared_routes"], 497)
         self.assertEqual(profile["limits"]["max_request_bytes"], 8192)
         self.assertEqual(profile["limits"]["min_pack_compressed_bytes"], 1)
         self.assertEqual(profile["limits"]["target_pack_compressed_bytes"], 8 * 1024 * 1024)
@@ -58,26 +61,27 @@ class HubSyncProfileTests(unittest.TestCase):
         unavailable = self.fixture("sync-noop-unavailable")["response"]
         prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
         status_tables = json.loads((PROFILE / "status-tables.json").read_text())
+        vehicle_id = request_fixture["vehicle_id"]
         self.assertEqual(self.fixture("changes-since-request")["fixture_id"], "changes-since-request-v1")
         self.assertEqual(self.fixture("changes-since-changed-set")["fixture_id"], "changes-since-changed-set-v1")
         self.assertEqual(self.fixture("changes-since-rebase-after-compaction")["fixture_id"], "changes-since-rebase-after-compaction-v1")
         self.assertEqual(self.sync.validate_request(request), [])
-        self.assertEqual(self.sync.validate_response(200, changed), [])
-        self.assertEqual(self.sync.validate_response(409, rebase), [])
+        self.assertEqual(self.sync.validate_response(200, changed, vehicle_id), [])
+        self.assertEqual(self.sync.validate_response(409, rebase, vehicle_id), [])
         self.assertEqual(self.fixture("schema-2-1-single-pack-manifest")["fixture_id"], "schema-2-1-single-pack-manifest-v1")
         self.assertEqual(self.fixture("schema-2-2-multi-chunk-manifest")["fixture_id"], "schema-2-2-multi-chunk-manifest-v1")
-        self.assertEqual(self.sync.validate_manifest(manifest_2_1), [])
-        self.assertEqual(self.sync.validate_manifest(manifest), [])
-        self.assertEqual(self.sync.validate_manifest(small_manifest), [])
+        self.assertEqual(self.sync.validate_manifest(manifest_2_1, vehicle_id), [])
+        self.assertEqual(self.sync.validate_manifest(manifest, vehicle_id), [])
+        self.assertEqual(self.sync.validate_manifest(small_manifest, vehicle_id), [])
         self.assertEqual(manifest["chunks"][-1]["pack"]["compressed_bytes"], 4096)
         self.assertEqual(small_manifest["chunks"][0]["pack"]["compressed_bytes"], 4096)
         self.assertEqual(manifest_2_1["receipt_id"], request["base_receipt_id"])
         self.assertEqual(manifest_2_1["schema_version"], request["base_manifest_schema"])
-        self.assertEqual(self.sync.validate_response(200, no_change), [])
-        self.assertEqual(self.sync.validate_noop(200, noop), [])
+        self.assertEqual(self.sync.validate_response(200, no_change, vehicle_id), [])
+        self.assertEqual(self.sync.validate_noop(200, noop, vehicle_id), [])
         self.assertEqual(self.fixture("prepared-artefact-map-months-routes")["fixture_id"], "prepared-artefact-map-months-routes-v1")
-        self.assertEqual(self.sync.validate_prepared_artefact(prepared), [])
-        self.assertEqual(self.sync.validate_noop(unavailable["status"], {}, {"Cache-Control": unavailable["headers"]["cache_control"]}, b""), [])
+        self.assertEqual(self.sync.validate_prepared_artefact(prepared, vehicle_id), [])
+        self.assertEqual(self.sync.validate_noop(unavailable["status"], {}, vehicle_id, {"Cache-Control": unavailable["headers"]["cache_control"]}, b""), [])
         self.assertEqual(self.sync.validate_status_tables(status_tables), [])
         self.assertEqual(rebase["reason"], "compacted")
         self.assertEqual(rebase["retry_request"]["base_receipt_id"], rebase["replacement"]["receipt_id"])
@@ -103,45 +107,49 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(self.sync.validate_request(request), ["base manifest schema is outside accepted range"])
         changed = self.fixture("changes-since-changed-set")["receipt"]
         changed["to_sequence"] = changed["from_sequence"]
-        self.assertEqual(self.sync.validate_response(200, changed), ["changed-set receipt does not advance"])
+        self.assertEqual(self.sync.validate_response(200, changed, VEHICLE_ID), ["changed-set receipt does not advance"])
         changed = self.fixture("changes-since-changed-set")["receipt"]
         changed["manifest_schema"] = "2.2"
-        self.assertEqual(self.sync.validate_response(200, changed), ["changed-set schema differs from base"])
+        self.assertEqual(self.sync.validate_response(200, changed, VEHICLE_ID), ["changed-set schema differs from base"])
         rebase = self.fixture("changes-since-rebase-after-compaction")["response"]
         rebase["retry_request"]["from_sequence"] += 1
-        self.assertEqual(self.sync.validate_response(409, rebase), ["rebase retry does not bind replacement"])
-        self.assertEqual(self.sync.validate_response(503, {}), ["status is not specified by profile"])
+        self.assertEqual(self.sync.validate_response(409, rebase, VEHICLE_ID), ["rebase retry does not bind replacement"])
+        self.assertEqual(self.sync.validate_response(503, {}, VEHICLE_ID), ["status is not specified by profile"])
         manifest = self.fixture("schema-2-2-multi-chunk-manifest")["manifest"]
         manifest["chunks"][1]["chunk_index"] = 2
-        self.assertEqual(self.sync.validate_manifest(manifest), ["manifest chunks are not contiguous"])
+        self.assertEqual(self.sync.validate_manifest(manifest, VEHICLE_ID), ["manifest chunks are not contiguous"])
         noop = self.fixture("sync-noop-signed")["receipt"]
         noop["signature"]["signed_payload_sha256"] = "0" * 64
-        self.assertEqual(self.sync.validate_noop(200, noop), ["signature digest is reserved"])
-        self.assertEqual(self.sync.validate_noop(406, {}, {"Cache-Control": "private"}, b""), ["no-op unavailable must be empty no-store"])
+        self.assertEqual(self.sync.validate_noop(200, noop, VEHICLE_ID), ["signature digest is reserved"])
+        self.assertEqual(self.sync.validate_noop(406, {}, VEHICLE_ID, {"Cache-Control": "private"}, b""), ["no-op unavailable must be empty no-store"])
         prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
         prepared["dirty_spans"]["routes"][0]["to_ms"] = prepared["window"]["to_ms"] + 1
-        self.assertEqual(self.sync.validate_prepared_artefact(prepared), ["prepared-artefact dirty span is outside window"])
+        self.assertEqual(self.sync.validate_prepared_artefact(prepared, VEHICLE_ID), ["prepared-artefact dirty span is outside window"])
         prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
         prepared["dirty_spans"] = {"map_months": [], "routes": []}
-        self.assertEqual(self.sync.validate_prepared_artefact(prepared), ["prepared-artefact receipt violates schema"])
+        self.assertEqual(self.sync.validate_prepared_artefact(prepared, VEHICLE_ID), ["prepared-artefact receipt violates schema"])
         status_tables = json.loads((PROFILE / "status-tables.json").read_text())
         status_tables["tables"][3]["responses"].pop()
         self.assertEqual(self.sync.validate_status_tables(status_tables), ["status tables are incomplete"])
 
     def test_changes_since_status_fixtures_and_key_discovery_route_are_explicit(self):
-        expected = {
-            400: "invalid_json",
-            404: "vehicle_not_found",
-            406: "schema_range_unsupported",
-            413: "request_too_large",
-            422: "invalid_schema_range",
-        }
-        for status, code in expected.items():
-            with self.subTest(status=status):
+        expected = (
+            (400, "invalid_json"),
+            (404, "vehicle_not_found"),
+            (406, "schema_range_unsupported"),
+            (413, "request_too_large"),
+            (422, "invalid_schema_range"),
+            (422, "invalid_request"),
+        )
+        for status, code in expected:
+            with self.subTest(status=status, code=code):
                 fixture = self.fixture("changes-since-error-" + code.replace("_", "-"))["response"]
                 self.assertEqual(fixture["status"], status)
                 self.assertEqual(fixture["body"]["code"], code)
-                self.assertEqual(self.sync.validate_http_error(status, fixture["body"]), [])
+                headers = {"Cache-Control": value for key, value in fixture.get("headers", {}).items() if key == "cache_control"}
+                self.assertEqual(self.sync.validate_http_error(status, fixture["body"], headers), [])
+                if status == 406:
+                    self.assertEqual(self.sync.validate_http_error(status, fixture["body"], {}), ["schema range unavailable must be no-store"])
 
         spec = json.loads((PROFILE / "openapi.json").read_text())
         changes = spec["paths"]["/v1/vehicles/{vehicle_id}/sync/changes-since"]["post"]
@@ -155,6 +163,139 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(self.sync.validate_request_body(at_limit["body"].encode()), [])
         self.assertEqual(len(over_limit["body"].encode()), 8193)
         self.assertEqual(self.sync.validate_request_body(over_limit["body"].encode()), ["request body exceeds 8192 bytes"])
+
+        for name in ("missing-field", "extra-field", "wrong-type"):
+            invalid = self.fixture("changes-since-request-invalid-" + name)["request"]
+            self.assertEqual(self.sync.validate_request(invalid), ["request violates changes-since schema"])
+        unsupported = self.fixture("changes-since-request-unsupported-range")["request"]
+        self.assertEqual(self.sync.validate_request(unsupported), ["schema version range is unsupported"])
+
+    def test_signed_responses_and_key_selection_match_route_vehicle(self):
+        changed = self.fixture("changes-since-changed-set")["receipt"]
+        rebase = self.fixture("changes-since-rebase-after-compaction")["response"]
+        manifest = self.fixture("schema-2-2-multi-chunk-manifest")["manifest"]
+        noop = self.fixture("sync-noop-signed")["receipt"]
+        prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
+        for validate, value in (
+            (lambda item: self.sync.validate_response(200, item, OTHER_VEHICLE_ID), changed),
+            (lambda item: self.sync.validate_response(409, item, OTHER_VEHICLE_ID), rebase),
+            (lambda item: self.sync.validate_manifest(item, OTHER_VEHICLE_ID), manifest),
+            (lambda item: self.sync.validate_noop(200, item, OTHER_VEHICLE_ID), noop),
+            (lambda item: self.sync.validate_prepared_artefact(item, OTHER_VEHICLE_ID), prepared),
+        ):
+            with self.subTest(kind=value.get("kind", value.get("artifact_type", value.get("schema_version")))):
+                self.assertEqual(validate(value), ["signed response vehicle does not match route"])
+
+        cross_vehicle = self.fixture("changes-since-changed-set-cross-vehicle")["receipt"]
+        self.assertEqual(self.sync.verify_signature(cross_vehicle, self.sync.load_signing_keys()), [])
+        self.assertEqual(self.sync.validate_response(200, cross_vehicle, VEHICLE_ID), ["signed response vehicle does not match route"])
+        self.assertEqual(self.sync.validate_response(200, cross_vehicle, OTHER_VEHICLE_ID), ["signing keys are bound to another vehicle"])
+
+        key_fixture = self.fixture("signing-keys-vehicle-bound")["response"]
+        headers = {"Cache-Control": key_fixture["headers"]["cache_control"]}
+        self.assertEqual(self.sync.validate_signing_keys_response(key_fixture["status"], key_fixture["body"], VEHICLE_ID, headers), [])
+        self.assertEqual(self.sync.validate_signing_keys_response(key_fixture["status"], key_fixture["body"], VEHICLE_ID, {}), ["signing keys response must be no-store"])
+
+    def test_response_body_limit_is_executable_at_exact_boundary(self):
+        at_limit = self.fixture("sync-manifest-response-2097152-bytes")
+        over_limit = self.fixture("sync-manifest-response-2097153-bytes")
+        raw = self.sync.materialize_body_fixture(at_limit)
+        self.assertEqual(len(raw), 2 * 1024 * 1024)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), at_limit["body_sha256"])
+        self.assertEqual(self.sync.validate_manifest_body(raw, at_limit["vehicle_id"]), [])
+        raw = self.sync.materialize_body_fixture(over_limit)
+        self.assertEqual(len(raw), 2 * 1024 * 1024 + 1)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), over_limit["body_sha256"])
+        self.assertEqual(self.sync.validate_manifest_body(raw, over_limit["vehicle_id"]), ["response body exceeds 2097152 bytes"])
+
+    def test_schema_maxima_keep_compact_control_responses_within_two_mib(self):
+        opaque = "a" * 4096
+        pack = {"object_name": "a" * 1024, "sha256": "a" * 64, "compressed_bytes": 16 * 1024 * 1024}
+        signature = {
+            "algorithm": "ed25519",
+            "key_id": "a" * 128,
+            "signed_payload_sha256": "a" * 64,
+            "signature": "A" * 86 + "==",
+        }
+
+        def compact_size(value):
+            return len(json.dumps(value, sort_keys=True, separators=(",", ":")).encode())
+
+        def validator(name, definition):
+            schema = json.loads((PROFILE / name).read_text())
+            return Draft202012Validator({**schema, "$ref": "#/$defs/" + definition}, format_checker=FormatChecker())
+
+        chunks = [{"chunk_index": index, "pack": pack} for index in range(1771)]
+        manifest = {
+            "manifest_id": opaque,
+            "receipt_id": opaque,
+            "vehicle_id": VEHICLE_ID,
+            "kind": "snapshot",
+            "schema_version": "2.2",
+            "sequence": 2**63 - 1,
+            "chunks": chunks,
+            "signature": signature,
+        }
+        manifest_validator = validator("sync-manifest.schema.json", "manifest")
+        self.assertTrue(manifest_validator.is_valid(manifest))
+        self.assertLessEqual(compact_size(manifest), 2 * 1024 * 1024)
+
+        rebase = {
+            "kind": "rebase_required",
+            "vehicle_id": VEHICLE_ID,
+            "requested_base_receipt_id": opaque,
+            "requested_base_manifest_schema": "2.2",
+            "requested_from_sequence": 2**63 - 1,
+            "reason": "compacted",
+            "replacement": {
+                "manifest_id": opaque,
+                "receipt_id": opaque,
+                "sequence": 2**63 - 1,
+                "manifest_schema": "2.2",
+                "chunks": chunks,
+            },
+            "retry_request": {
+                "base_receipt_id": opaque,
+                "base_manifest_schema": "2.2",
+                "from_sequence": 2**63 - 1,
+                "schema_version_range": {"minimum": "0.0", "maximum": "999.999"},
+            },
+            "signature": signature,
+        }
+        rebase_validator = validator("rebase-hint.schema.json", "hint")
+        self.assertTrue(rebase_validator.is_valid(rebase))
+        self.assertLessEqual(compact_size(rebase), 2 * 1024 * 1024)
+        rebase["replacement"]["chunks"] = chunks + [{"chunk_index": 1771, "pack": pack}]
+        self.assertFalse(rebase_validator.is_valid(rebase))
+        self.assertGreater(compact_size(rebase), 2 * 1024 * 1024)
+
+        routes = [
+            {"route_id": "a" * (4096 - len(str(index))) + str(index), "from_ms": 0, "to_ms": 2**63 - 1, "reason": "changed"}
+            for index in range(498)
+        ]
+        months = [
+            {"month": f"{2000 + index // 12:04d}-{index % 12 + 1:02d}", "from_ms": 0, "to_ms": 2**63 - 1, "reason": "changed"}
+            for index in range(120)
+        ]
+        prepared = {
+            "artifact_id": opaque,
+            "artifact_type": "map_months_and_routes",
+            "vehicle_id": VEHICLE_ID,
+            "source": {"kind": "hub_compute", "input_manifest_id": opaque, "input_sequence": 2**63 - 1},
+            "window": {"from_ms": 0, "to_ms": 2**63 - 1},
+            "generation": {"generation_id": opaque, "generated_at_ms": 2**63 - 1},
+            "units": {"distance": "km", "time": "ms", "coordinates": "wgs84_degrees"},
+            "algorithm_version": "1.1.1+" + "a" * 122,
+            "dirty_spans": {"map_months": months, "routes": routes[:497]},
+            "pack": pack,
+            "signature": signature,
+        }
+        prepared_validator = validator("prepared-artefact.schema.json", "receipt")
+        self.assertTrue(prepared_validator.is_valid(prepared))
+        self.assertLessEqual(compact_size(prepared), 2 * 1024 * 1024)
+        prepared["dirty_spans"]["routes"] = routes
+        self.assertFalse(prepared_validator.is_valid(prepared))
+        self.assertGreater(compact_size(prepared), 2 * 1024 * 1024)
 
     def test_fixture_signatures_reject_tampering_and_wrong_keys(self):
         changed = self.fixture("changes-since-changed-set")["receipt"]
@@ -199,14 +340,14 @@ class HubSyncProfileTests(unittest.TestCase):
             corrupted["signature"]["signed_payload_sha256"],
         )
         self.assertEqual(changed["signature"]["key_id"], corrupted["signature"]["key_id"])
-        self.assertEqual(self.sync.validate_response(200, corrupted), ["signature verification failed"])
+        self.assertEqual(self.sync.validate_response(200, corrupted, VEHICLE_ID), ["signature verification failed"])
 
         fixtures = (
-            (self.fixture("changes-since-rebase-after-compaction")["response"], lambda value: self.sync.validate_response(409, value)),
-            (self.fixture("schema-2-1-single-pack-manifest")["manifest"], self.sync.validate_manifest),
-            (self.fixture("schema-2-2-multi-chunk-manifest")["manifest"], self.sync.validate_manifest),
-            (self.fixture("sync-noop-signed")["receipt"], lambda value: self.sync.validate_noop(200, value)),
-            (self.fixture("prepared-artefact-map-months-routes")["receipt"], self.sync.validate_prepared_artefact),
+            (self.fixture("changes-since-rebase-after-compaction")["response"], lambda value: self.sync.validate_response(409, value, VEHICLE_ID)),
+            (self.fixture("schema-2-1-single-pack-manifest")["manifest"], lambda value: self.sync.validate_manifest(value, VEHICLE_ID)),
+            (self.fixture("schema-2-2-multi-chunk-manifest")["manifest"], lambda value: self.sync.validate_manifest(value, VEHICLE_ID)),
+            (self.fixture("sync-noop-signed")["receipt"], lambda value: self.sync.validate_noop(200, value, VEHICLE_ID)),
+            (self.fixture("prepared-artefact-map-months-routes")["receipt"], lambda value: self.sync.validate_prepared_artefact(value, VEHICLE_ID)),
         )
         for value, validate in fixtures:
             with self.subTest(fixture_id=value.get("fixture_id", "embedded")):
@@ -215,7 +356,7 @@ class HubSyncProfileTests(unittest.TestCase):
 
     def test_registered_fixture_cases_cover_positive_and_negative_vectors(self):
         results = self.sync.run_fixture_cases()
-        self.assertEqual(len(results), 21)
+        self.assertEqual(len(results), 27)
         self.assertTrue(all(result["passed"] for result in results))
         by_case = {result["case_id"]: result for result in results}
         self.assertEqual(
@@ -233,6 +374,10 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(
             by_case["changes-since-changed-set-cross-schema"]["expected_errors"],
             ["changed-set schema differs from base"],
+        )
+        self.assertEqual(
+            by_case["changes-since-changed-set-cross-vehicle"]["expected_errors"],
+            ["signed response vehicle does not match route"],
         )
 
 

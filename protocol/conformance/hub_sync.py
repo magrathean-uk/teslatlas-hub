@@ -88,14 +88,24 @@ def load_fixtures(root=PROFILE):
     return fixtures
 
 
+def _version(value):
+    return tuple(int(part) for part in value.split("."))
+
+
 def validate_request(value, root=PROFILE):
     errors = list(Draft202012Validator(_schema(root, "changes-since-request.schema.json", "request"), format_checker=FormatChecker()).iter_errors(value))
     if errors:
         return ["request violates changes-since schema"]
     versions = value["schema_version_range"]
-    if float(versions["minimum"]) > float(versions["maximum"]):
+    minimum = _version(versions["minimum"])
+    maximum = _version(versions["maximum"])
+    base = _version(value["base_manifest_schema"])
+    if minimum > maximum:
         return ["schema version range is reversed"]
-    if not float(versions["minimum"]) <= float(value["base_manifest_schema"]) <= float(versions["maximum"]):
+    supported = [_version(version) for version in load_profile(root)["schema_version_range"].values()]
+    if maximum < min(supported) or minimum > max(supported):
+        return ["schema version range is unsupported"]
+    if not minimum <= base <= maximum:
         return ["base manifest schema is outside accepted range"]
     return []
 
@@ -129,8 +139,10 @@ def verify_signature(value, key_set):
     return []
 
 
-def _validate_signature(value, root):
-    return verify_signature(value, load_signing_keys(root))
+def _validate_signature(value, vehicle_id, root):
+    key_set = load_signing_keys(root)
+    key_errors = validate_signing_keys(key_set, vehicle_id, root)
+    return key_errors or verify_signature(value, key_set)
 
 
 def validate_signing_keys(value, vehicle_id, root=PROFILE):
@@ -152,42 +164,61 @@ def validate_signing_keys(value, vehicle_id, root=PROFILE):
     return []
 
 
-def validate_http_error(status, value, root=PROFILE):
-    expected = {400: "invalid_json", 404: "vehicle_not_found", 406: "schema_range_unsupported", 413: "request_too_large", 422: "invalid_schema_range"}
+def validate_signing_keys_response(status, value, vehicle_id, headers=None, root=PROFILE):
+    if status != 200:
+        return ["status is not specified by profile"]
+    headers = {key.lower(): item for key, item in (headers or {}).items()}
+    if headers.get("cache-control") != "no-store":
+        return ["signing keys response must be no-store"]
+    return validate_signing_keys(value, vehicle_id, root)
+
+
+def validate_http_error(status, value, headers=None, root=PROFILE):
+    expected = {400: {"invalid_json"}, 404: {"vehicle_not_found"}, 406: {"schema_range_unsupported"}, 413: {"request_too_large"}, 422: {"invalid_request", "invalid_schema_range"}}
     if status not in expected:
         return ["status does not carry a sync error"]
     errors = list(Draft202012Validator(_schema(root, "sync-error.schema.json", "error")).iter_errors(value))
     if errors:
         return ["sync error violates schema"]
-    if value["code"] != expected[status]:
+    if value["code"] not in expected[status]:
         return ["sync error code does not match status"]
+    headers = {key.lower(): item for key, item in (headers or {}).items()}
+    if status == 406 and headers.get("cache-control") != "no-store":
+        return ["schema range unavailable must be no-store"]
     return []
 
 
-def validate_response(status, value, root=PROFILE):
+def validate_response(status, value, vehicle_id, headers=None, root=PROFILE):
     if status == 200:
         if isinstance(value, dict) and value.get("kind") == "no_op":
-            return validate_noop(status, value, root=root)
+            return validate_noop(status, value, vehicle_id, root=root)
         errors = list(Draft202012Validator(_schema(root, "changed-set-receipt.schema.json", "receipt"), format_checker=FormatChecker()).iter_errors(value))
         if errors:
             return ["changed-set receipt violates schema"]
+        if value["vehicle_id"] != vehicle_id:
+            return ["signed response vehicle does not match route"]
         if value["to_sequence"] <= value["from_sequence"]:
             return ["changed-set receipt does not advance"]
         if value["manifest_schema"] != value["base_manifest_schema"]:
             return ["changed-set schema differs from base"]
         pack_errors = _validate_pack_limits([value["pack"]], root)
-        return pack_errors or _validate_signature(value, root)
+        return pack_errors or _validate_signature(value, vehicle_id, root)
     if status == 409:
         errors = list(Draft202012Validator(_schema(root, "rebase-hint.schema.json", "hint"), format_checker=FormatChecker()).iter_errors(value))
         if errors:
             return ["rebase hint violates schema"]
+        if value["vehicle_id"] != vehicle_id:
+            return ["signed response vehicle does not match route"]
         replacement = value["replacement"]
         retry = value["retry_request"]
         if retry["base_receipt_id"] != replacement["receipt_id"] or retry["from_sequence"] != replacement["sequence"] or retry["base_manifest_schema"] != replacement["manifest_schema"]:
             return ["rebase retry does not bind replacement"]
-        if float(retry["schema_version_range"]["minimum"]) > float(retry["schema_version_range"]["maximum"]):
+        minimum = _version(retry["schema_version_range"]["minimum"])
+        maximum = _version(retry["schema_version_range"]["maximum"])
+        replacement_schema = _version(replacement["manifest_schema"])
+        if minimum > maximum:
             return ["schema version range is reversed"]
-        if not float(retry["schema_version_range"]["minimum"]) <= float(replacement["manifest_schema"]) <= float(retry["schema_version_range"]["maximum"]):
+        if not minimum <= replacement_schema <= maximum:
             return ["rebase replacement schema is outside accepted range"]
         if replacement["manifest_schema"] == "2.1":
             packs = [replacement["pack"]]
@@ -197,9 +228,9 @@ def validate_response(status, value, root=PROFILE):
                 return ["rebase chunks are not contiguous"]
             packs = [item["pack"] for item in chunks]
         pack_errors = _validate_pack_limits(packs, root)
-        return pack_errors or _validate_signature(value, root)
+        return pack_errors or _validate_signature(value, vehicle_id, root)
     if status in {400, 404, 406, 413, 422}:
-        return validate_http_error(status, value, root)
+        return validate_http_error(status, value, headers, root)
     return ["status is not specified by profile"]
 
 
@@ -210,27 +241,50 @@ def _validate_pack_limits(packs, root):
     return []
 
 
-def validate_manifest(value, root=PROFILE):
+def validate_manifest(value, vehicle_id, root=PROFILE):
     errors = list(Draft202012Validator(_schema(root, "sync-manifest.schema.json", "manifest"), format_checker=FormatChecker()).iter_errors(value))
     if errors:
         return ["sync manifest violates schema"]
+    if value["vehicle_id"] != vehicle_id:
+        return ["signed response vehicle does not match route"]
     if value["schema_version"] == "2.1":
-        return _validate_pack_limits([value["pack"]], root) + _validate_signature(value, root)
+        return _validate_pack_limits([value["pack"]], root) + _validate_signature(value, vehicle_id, root)
     chunks = value["chunks"]
     if [item["chunk_index"] for item in chunks] != list(range(len(chunks))):
         return ["manifest chunks are not contiguous"]
     pack_errors = _validate_pack_limits([item["pack"] for item in chunks], root)
-    return pack_errors or _validate_signature(value, root)
+    return pack_errors or _validate_signature(value, vehicle_id, root)
 
 
-def validate_noop(status, value, headers=None, raw=b"", root=PROFILE):
+def materialize_body_fixture(value):
+    compact = json.dumps(value["document"], ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    raw = compact + b" " * value["padding_bytes"]
+    if len(raw) != value["body_bytes"] or hashlib.sha256(raw).hexdigest() != value["body_sha256"]:
+        raise ContractError("body fixture binding is invalid")
+    return raw
+
+
+def validate_manifest_body(raw, vehicle_id, root=PROFILE):
+    limit = load_profile(root)["limits"]["max_response_bytes"]
+    if len(raw) > limit:
+        return [f"response body exceeds {limit} bytes"]
+    try:
+        value = strict_json(raw)
+    except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+        return ["response body is not valid JSON"]
+    return validate_manifest(value, vehicle_id, root)
+
+
+def validate_noop(status, value, vehicle_id, headers=None, raw=b"", root=PROFILE):
     if status == 200:
         errors = list(Draft202012Validator(_schema(root, "noop.schema.json", "receipt"), format_checker=FormatChecker()).iter_errors(value))
         if errors:
             return ["no-op receipt violates schema"]
+        if value["vehicle_id"] != vehicle_id:
+            return ["signed response vehicle does not match route"]
         if value["manifest_schema"] != value["base_manifest_schema"]:
             return ["no-op schema differs from base"]
-        return _validate_signature(value, root)
+        return _validate_signature(value, vehicle_id, root)
     if status == 406:
         headers = {key.lower(): item for key, item in (headers or {}).items()}
         if raw or headers.get("cache-control") != "no-store":
@@ -257,10 +311,12 @@ def validate_status_tables(value, root=PROFILE):
     return []
 
 
-def validate_prepared_artefact(value, root=PROFILE):
+def validate_prepared_artefact(value, vehicle_id, root=PROFILE):
     errors = list(Draft202012Validator(_schema(root, "prepared-artefact.schema.json", "receipt"), format_checker=FormatChecker()).iter_errors(value))
     if errors:
         return ["prepared-artefact receipt violates schema"]
+    if value["vehicle_id"] != vehicle_id:
+        return ["signed response vehicle does not match route"]
     window = value["window"]
     if window["from_ms"] >= window["to_ms"]:
         return ["prepared-artefact window is invalid"]
@@ -277,34 +333,50 @@ def validate_prepared_artefact(value, root=PROFILE):
     if value["generation"]["generated_at_ms"] < window["to_ms"]:
         return ["prepared-artefact generation predates window"]
     pack_errors = _validate_pack_limits([value["pack"]], root)
-    return pack_errors or _validate_signature(value, root)
+    return pack_errors or _validate_signature(value, vehicle_id, root)
 
 
 def _case_errors(case, fixtures, root):
     if not isinstance(case, dict):
         return ["case is not an object"]
     validator = case.get("validator")
-    if validator not in {"changes_since", "manifest", "noop", "prepared_artefact", "signing_keys"}:
+    if validator not in {"changes_since", "changes_since_request_error", "manifest", "manifest_body", "noop", "prepared_artefact", "signing_keys"}:
         return ["case has an unknown validator"]
     status = case.get("status")
     if type(status) is not int:
         return ["case status is invalid"]
 
+    vehicle_id = case.get("vehicle_id")
     request_value = None
+    request_errors = []
     request_id = case.get("request_fixture")
     if request_id is not None:
         request = fixtures.get(request_id)
-        if not isinstance(request, dict) or "request" not in request:
+        if not isinstance(request, dict) or "request" not in request or not isinstance(request.get("vehicle_id"), str):
             return ["request fixture is missing"]
+        if vehicle_id is None:
+            vehicle_id = request["vehicle_id"]
+        elif vehicle_id != request["vehicle_id"]:
+            return ["case route vehicle does not match request fixture"]
         request_value = copy.deepcopy(request["request"])
-        errors = validate_request(request_value, root)
-        if errors:
-            return errors
+        request_errors = validate_request(request_value, root)
+        if request_errors and validator == "changes_since" and status != 406:
+            return request_errors
+    if not isinstance(vehicle_id, str):
+        return ["case route vehicle is missing"]
 
     response_id = case.get("response_fixture")
     response = fixtures.get(response_id)
     if not isinstance(response, dict):
         return ["response fixture is missing"]
+    if validator == "changes_since_request_error":
+        if request_errors != ["request violates changes-since schema"]:
+            return ["request fixture is not schema-invalid"]
+        value = response.get("response")
+        if not isinstance(value, dict) or value.get("status") != status:
+            return ["sync error fixture status does not match case"]
+        headers = {"Cache-Control": item for key, item in value.get("headers", {}).items() if key == "cache_control"}
+        return validate_http_error(status, copy.deepcopy(value.get("body")), headers, root)
     if validator == "changes_since":
         if status == 200:
             value = response.get("receipt")
@@ -316,27 +388,40 @@ def _case_errors(case, fixtures, root):
                 expected = (request_value["base_receipt_id"], request_value["from_sequence"], request_value["base_manifest_schema"])
                 if bound != expected:
                     return ["changes-since response does not bind request"]
-            return validate_response(status, copy.deepcopy(value), root)
+            return validate_response(status, copy.deepcopy(value), vehicle_id, root=root)
         if status in {400, 404, 406, 413, 422}:
             value = response.get("response")
             if not isinstance(value, dict) or value.get("status") != status:
                 return ["sync error fixture status does not match case"]
-            return validate_response(status, copy.deepcopy(value.get("body")), root)
+            if status == 406 and request_errors != ["schema version range is unsupported"]:
+                return ["unsupported-range response lacks an unsupported request"]
+            headers = {"Cache-Control": item for key, item in value.get("headers", {}).items() if key == "cache_control"}
+            return validate_response(status, copy.deepcopy(value.get("body")), vehicle_id, headers, root)
         value = response.get("response")
         if status == 409 and request_value is not None:
             bound = (value.get("requested_base_receipt_id"), value.get("requested_from_sequence"), value.get("requested_base_manifest_schema"))
             expected = (request_value["base_receipt_id"], request_value["from_sequence"], request_value["base_manifest_schema"])
             if bound != expected or value.get("retry_request", {}).get("schema_version_range") != request_value["schema_version_range"]:
                 return ["rebase response does not bind request"]
-        return validate_response(status, copy.deepcopy(value), root)
+        return validate_response(status, copy.deepcopy(value), vehicle_id, root=root)
     if validator == "manifest":
-        return validate_manifest(copy.deepcopy(response.get("manifest")), root)
+        return validate_manifest(copy.deepcopy(response.get("manifest")), vehicle_id, root)
+    if validator == "manifest_body":
+        try:
+            raw = materialize_body_fixture(response)
+        except ContractError as error:
+            return [str(error)]
+        return validate_manifest_body(raw, vehicle_id, root)
     if validator == "prepared_artefact":
-        return validate_prepared_artefact(copy.deepcopy(response.get("receipt")), root)
+        return validate_prepared_artefact(copy.deepcopy(response.get("receipt")), vehicle_id, root)
     if validator == "signing_keys":
-        return validate_signing_keys(copy.deepcopy(response.get("document")), case.get("vehicle_id"), root)
+        value = response.get("response")
+        if not isinstance(value, dict) or value.get("status") != status:
+            return ["signing keys fixture status does not match case"]
+        headers = {"Cache-Control": item for key, item in value.get("headers", {}).items() if key == "cache_control"}
+        return validate_signing_keys_response(status, copy.deepcopy(value.get("body")), vehicle_id, headers, root)
     if status == 200:
-        return validate_noop(status, copy.deepcopy(response.get("receipt")), root=root)
+        return validate_noop(status, copy.deepcopy(response.get("receipt")), vehicle_id, root=root)
     unavailable = response.get("response")
     if not isinstance(unavailable, dict):
         return ["no-op fixture is invalid"]
@@ -348,7 +433,7 @@ def _case_errors(case, fixtures, root):
         if key == "cache_control"
     }
     raw = b"x" * unavailable.get("body_bytes", 0)
-    return validate_noop(status, {}, headers, raw, root)
+    return validate_noop(status, {}, vehicle_id, headers, raw, root)
 
 
 def run_fixture_cases(root=PROFILE):

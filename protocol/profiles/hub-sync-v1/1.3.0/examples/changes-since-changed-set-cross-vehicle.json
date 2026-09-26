@@ -1,0 +1,24 @@
+{
+  "fixture_id": "changes-since-changed-set-cross-vehicle-v1",
+  "receipt": {
+    "base_manifest_schema": "2.1",
+    "base_receipt_id": "receipt_demo_000042",
+    "changed_set_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "from_sequence": 42,
+    "manifest_schema": "2.1",
+    "pack": {
+      "compressed_bytes": 4096,
+      "object_name": "packs/demo-changed-set-000045.sqlite.zst",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "receipt_id": "receipt_demo_000045",
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "AMFBCFFEHZXXzJM7anntnocUdwUFNjrnRzFUhvjHSneO2YHlkQk2ztN3KiEqieIUNO/j9PUNt6rWZiVx9LwrAQ==",
+      "signed_payload_sha256": "4bb541508be342d56edf2c13d964af876df64f6c3345f05ad076ead68f9975e6"
+    },
+    "to_sequence": 45,
+    "vehicle_id": "22222222-2222-4222-8222-222222222222"
+  }
+}

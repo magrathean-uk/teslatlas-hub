@@ -15,7 +15,9 @@ receipt. A changed set advances the sequence and contains exactly one pack
 reference in this slice. A no-op preserves the base receipt and sequence. The
 client verifies the Ed25519 signature over the canonical receipt before
 trusting either result, then persists a new changed-set checkpoint only after
-applying its pack.
+applying its pack. Every signed response `vehicle_id` and the selected signing
+key set `vehicle_id` must equal the route `vehicle_id`; a valid signature for a
+different vehicle is rejected.
 
 The base and delta schemas are continuous. A changed-set or no-op receipt MUST
 use the request's `base_manifest_schema`; in particular, a schema 2.2 base
@@ -35,8 +37,9 @@ canonical payloads. Production clients retrieve the vehicle-bound key set from
 authenticated `GET /v1/vehicles/{vehicle_id}/sync/signing-keys` over the paired
 Hub channel. The returned `vehicle_id` MUST match the route. Every stable
 `key_id` is `ed25519-sha256-` followed by lowercase SHA-256 hex of the raw
-32-byte public key. Key rotation publishes a key before first use and retains
-retired keys while old signed objects remain valid.
+32-byte public key. The successful key response carries the
+`Cache-Control: no-store` header. Key rotation publishes a key before first
+use and retains retired keys while old signed objects remain valid.
 
 [`fixture-signing-keys.json`](../profiles/hub-sync-v1/1.3.0/fixture-signing-keys.json)
 uses the same binding and identifier rules for the public test key. It is a
@@ -51,11 +54,21 @@ chunk. A complete small history, final chunk, changed set, or prepared artefact
 may be smaller, and a schema 2.2 manifest may therefore contain one chunk. The
 outer manifest has the only signature.
 
+Every JSON control response is limited to 2 MiB (2,097,152 encoded bytes)
+before parsing. Pack byte responses use the separate 16 MiB compressed pack
+limit. A schema 2.2 manifest or rebase may contain at most 1,771 chunks, and a
+prepared artefact may contain at most 497 route spans in addition to 120 map
+months. These maxima keep their largest compact JSON forms inside 2 MiB.
+
 Changes-since returns stable JSON error bodies for invalid JSON (`400`), an
 unknown vehicle (`404`), an unsupported schema range (`406`), an oversized
-body (`413`), and a reversed range or one that excludes the base schema
-(`422`). Authentication failure remains the unsigned empty `401`; compaction
-remains the signed `409` rebase flow.
+body (`413`), and a schema-invalid body, reversed range, or range that excludes
+the base schema (`422`). Schema-invalid bodies use `invalid_request`; the two
+range validation failures use `invalid_schema_range`. A syntactically valid
+range with no overlap with schemas 2.1 through 2.2 returns
+`406 schema_range_unsupported` with `Cache-Control: no-store`. Authentication
+failure remains the unsigned empty `401`; compaction remains the signed `409`
+rebase flow.
 
 `1.2.0` adds the `map_months_and_routes` prepared-artefact pack receipt. It
 binds source manifest and sequence, the input window, generation identity and

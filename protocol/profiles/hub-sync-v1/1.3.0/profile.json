@@ -6,8 +6,9 @@
   "fixture_signing_keys": "fixture-signing-keys.json",
   "limits": {
     "max_changed_set_packs": 1,
-    "max_manifest_chunks": 4096,
+    "max_manifest_chunks": 1771,
     "max_pack_compressed_bytes": 16777216,
+    "max_prepared_routes": 497,
     "max_request_bytes": 8192,
     "max_response_bytes": 2097152,
     "min_pack_compressed_bytes": 1,
@@ -18,6 +19,7 @@
   "previous_profile": "hub-sync-v1@1.2.0",
   "product_version_binding": "none; this protocol profile has no exact Hub product-version pin",
   "profile_id": "hub-sync-v1@1.3.0",
+  "response_size_rule": "Every JSON control response MUST be at most 2097152 encoded bytes before parsing. Pack byte responses use max_pack_compressed_bytes instead. The schema maxima also keep a compact encoding of every admitted control response within this bound.",
   "route": {
     "compacted_status": 409,
     "method": "POST",
@@ -30,7 +32,7 @@
     "minimum": "2.1"
   },
   "scope": "One changed pack per changed-set receipt; schema 2.2 snapshot and rebase manifests may contain one or more chunks under one signature; prepared artefacts contain only changed map-month and route spans. No other prepared-compute artefact type is defined.",
-  "signature_rule": "Each receipt or rebase hint MUST carry an Ed25519 detached signature over RFC 8785 canonical JSON of the object with its signature member omitted. signed_payload_sha256 is the SHA-256 of those canonical bytes. Production clients obtain vehicle-bound keys from the authenticated signing-keys route. key_id MUST equal ed25519-sha256- plus lowercase SHA-256 hex of the raw 32-byte public key. Fixtures carry deterministic Ed25519 signatures using only the published fixture public key; they are test vectors, not production trust anchors.",
+  "signature_rule": "Each receipt or rebase hint MUST carry an Ed25519 detached signature over RFC 8785 canonical JSON of the object with its signature member omitted. signed_payload_sha256 is the SHA-256 of those canonical bytes. The signed object's vehicle_id and the selected signing key set's vehicle_id MUST both equal the route vehicle_id. Production clients obtain vehicle-bound keys from the authenticated no-store signing-keys route. key_id MUST equal ed25519-sha256- plus lowercase SHA-256 hex of the raw 32-byte public key. Fixtures carry deterministic Ed25519 signatures using only the published fixture public key; they are test vectors, not production trust anchors.",
   "status": "candidate",
   "status_tables": "status-tables.json"
 }

@@ -40,7 +40,7 @@
           "status": 413
         },
         {
-          "body": "invalid_schema_range error",
+          "body": "invalid_request or invalid_schema_range error",
           "signature": "absent",
           "status": 422
         }

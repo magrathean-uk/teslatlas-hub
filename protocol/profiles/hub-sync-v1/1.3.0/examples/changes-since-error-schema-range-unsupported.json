@@ -5,6 +5,9 @@
       "code": "schema_range_unsupported",
       "message": "Requested schema range has no supported version."
     },
+    "headers": {
+      "cache_control": "no-store"
+    },
     "status": 406
   }
 }

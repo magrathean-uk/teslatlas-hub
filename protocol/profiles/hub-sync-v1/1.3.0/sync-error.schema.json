@@ -6,6 +6,7 @@
         "code": {
           "enum": [
             "invalid_json",
+            "invalid_request",
             "invalid_schema_range",
             "vehicle_not_found",
             "schema_range_unsupported",

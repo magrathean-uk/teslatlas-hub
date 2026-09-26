@@ -110,7 +110,8 @@
                 }
               }
             },
-            "description": "signed changed-set or no-op receipt"
+            "description": "signed changed-set or no-op receipt",
+            "x-max-body-bytes": 2097152
           },
           "400": {
             "content": {
@@ -120,7 +121,8 @@
                 }
               }
             },
-            "description": "invalid JSON request body"
+            "description": "invalid JSON request body",
+            "x-max-body-bytes": 2097152
           },
           "401": {
             "content": {},
@@ -134,7 +136,8 @@
                 }
               }
             },
-            "description": "vehicle is not available to this pairing"
+            "description": "vehicle is not available to this pairing",
+            "x-max-body-bytes": 2097152
           },
           "406": {
             "content": {
@@ -144,7 +147,16 @@
                 }
               }
             },
-            "description": "schema range has no supported version; Cache-Control: no-store"
+            "description": "schema range has no supported version; Cache-Control: no-store",
+            "headers": {
+              "Cache-Control": {
+                "description": "Required cache prohibition.",
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "x-max-body-bytes": 2097152
           },
           "409": {
             "content": {
@@ -154,7 +166,8 @@
                 }
               }
             },
-            "description": "signed rebase hint after compaction"
+            "description": "signed rebase hint after compaction",
+            "x-max-body-bytes": 2097152
           },
           "413": {
             "content": {
@@ -164,7 +177,8 @@
                 }
               }
             },
-            "description": "request body exceeds 8192 bytes"
+            "description": "request body exceeds 8192 bytes",
+            "x-max-body-bytes": 2097152
           },
           "422": {
             "content": {
@@ -174,7 +188,8 @@
                 }
               }
             },
-            "description": "schema range is reversed or excludes the base schema"
+            "description": "request violates the schema, reverses the range, or excludes the base schema",
+            "x-max-body-bytes": 2097152
           }
         },
         "security": [
@@ -217,7 +232,8 @@
                 }
               }
             },
-            "description": "signed manifest"
+            "description": "signed manifest",
+            "x-max-body-bytes": 2097152
           },
           "401": {
             "content": {},
@@ -225,7 +241,15 @@
           },
           "406": {
             "content": {},
-            "description": "empty unavailable response with Cache-Control: no-store"
+            "description": "empty unavailable response with Cache-Control: no-store",
+            "headers": {
+              "Cache-Control": {
+                "description": "Required cache prohibition.",
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -259,7 +283,8 @@
                 }
               }
             },
-            "description": "signed no-op receipt"
+            "description": "signed no-op receipt",
+            "x-max-body-bytes": 2097152
           },
           "401": {
             "content": {},
@@ -267,7 +292,15 @@
           },
           "406": {
             "content": {},
-            "description": "empty unavailable response with Cache-Control: no-store"
+            "description": "empty unavailable response with Cache-Control: no-store",
+            "headers": {
+              "Cache-Control": {
+                "description": "Required cache prohibition.",
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -312,7 +345,8 @@
                 }
               }
             },
-            "description": "signed prepared-artefact receipt"
+            "description": "signed prepared-artefact receipt",
+            "x-max-body-bytes": 2097152
           },
           "401": {
             "content": {},
@@ -354,7 +388,16 @@
                 }
               }
             },
-            "description": "vehicle-bound signing keys over the authenticated paired channel; Cache-Control: no-store"
+            "description": "vehicle-bound signing keys over the authenticated paired channel; Cache-Control: no-store",
+            "headers": {
+              "Cache-Control": {
+                "description": "Required cache prohibition.",
+                "schema": {
+                  "const": "no-store"
+                }
+              }
+            },
+            "x-max-body-bytes": 2097152
           },
           "401": {
             "content": {},

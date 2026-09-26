@@ -1,0 +1,10 @@
+{
+  "fixture_id": "changes-since-error-invalid-request-v1",
+  "response": {
+    "body": {
+      "code": "invalid_request",
+      "message": "Request body does not match the changes-since schema."
+    },
+    "status": 422
+  }
+}

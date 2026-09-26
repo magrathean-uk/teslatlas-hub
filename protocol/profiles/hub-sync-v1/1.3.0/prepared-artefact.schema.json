@@ -76,7 +76,7 @@
               "items": {
                 "$ref": "#/$defs/route"
               },
-              "maxItems": 10000,
+              "maxItems": 497,
               "type": "array"
             }
           },
