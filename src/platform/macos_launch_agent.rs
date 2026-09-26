@@ -728,13 +728,24 @@ fn installed_service_is_ready(
         }
         Err(error) => return Err(io::Error::other(error)),
     }
-    if *ready_pid == Some(pid) {
-        return Ok(true);
-    }
-    match TcpStream::connect_timeout(&readiness_address(config.bind), READINESS_CONNECT_TIMEOUT) {
+    readiness_observation(ready_pid, pid, &mut || listener_is_reachable(config.bind))
+}
+
+fn readiness_observation(
+    ready_pid: &mut Option<u32>,
+    pid: u32,
+    listener_probe: &mut impl FnMut() -> io::Result<bool>,
+) -> io::Result<bool> {
+    let listener_ready = listener_probe()?;
+    let same_pid = ready_pid.is_none_or(|ready_pid| ready_pid == pid);
+    *ready_pid = Some(pid);
+    Ok(same_pid && listener_ready)
+}
+
+fn listener_is_reachable(configured: SocketAddr) -> io::Result<bool> {
+    match TcpStream::connect_timeout(&readiness_address(configured), READINESS_CONNECT_TIMEOUT) {
         Ok(stream) => {
             drop(stream);
-            *ready_pid = Some(pid);
             Ok(true)
         }
         Err(error)

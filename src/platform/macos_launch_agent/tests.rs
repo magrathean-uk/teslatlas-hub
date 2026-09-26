@@ -755,6 +755,32 @@ fn stable_replacement_commits_only_after_consecutive_readiness() {
 }
 
 #[test]
+fn readiness_rechecks_listener_when_same_pid_stays_running() {
+    let mut ready_pid = None;
+    let mut listener_states = std::collections::VecDeque::from(
+        std::iter::repeat_n(true, SERVICE_READY_STABLE_OBSERVATIONS - 1)
+            .chain(std::iter::once(false))
+            .chain(std::iter::repeat_n(true, SERVICE_READY_STABLE_OBSERVATIONS))
+            .collect::<Vec<_>>(),
+    );
+    let mut listener_probes = 0;
+
+    wait_for_service_ready_with_probe(&mut || {
+        readiness_observation(&mut ready_pid, 42, &mut || {
+            listener_probes += 1;
+            listener_states
+                .pop_front()
+                .ok_or_else(|| io::Error::other("unexpected listener probe"))
+        })
+    })
+    .expect("listener recovery under the same process should become stable");
+
+    assert_eq!(listener_probes, SERVICE_READY_STABLE_OBSERVATIONS * 2);
+    assert!(listener_states.is_empty());
+    assert_eq!(ready_pid, Some(42));
+}
+
+#[test]
 fn service_stop_fails_after_bounded_unload_poll() {
     let mut responses =
         std::iter::once(true).chain(std::iter::repeat_n(true, SERVICE_UNLOAD_ATTEMPTS));

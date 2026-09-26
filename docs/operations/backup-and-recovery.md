@@ -58,9 +58,10 @@ sudo journalctl -u teslatlas-hub.service -n 50 --no-pager
 
 ## Restore
 
-Restore data into a new empty directory:
+Stop the packaged service, then restore data into a new empty directory:
 
 ```sh
+sudo systemctl stop teslatlas-hub.service
 sudo install -d -o teslatlas -g teslatlas -m 0700 \
   /srv/teslatlas-hub-restore
 sudo -u teslatlas -- /usr/bin/teslatlas-hub restore-data \
@@ -68,22 +69,73 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub restore-data \
   --destination /srv/teslatlas-hub-restore/hub-data
 ```
 
-Create a separate mode-0600 configuration owned by `teslatlas` whose
-`data_dir` is `/srv/teslatlas-hub-restore/hub-data`. While the service is
-stopped, restore credentials with that configuration and the raw key retrieved
-from its separate security domain:
+Copy the packaged configuration to a separate recovery file. The shell's
+no-clobber option makes this fail if the recovery file already exists; the
+installed configuration remains unchanged. Edit only the recovery copy and set
+its `data_dir` to `/srv/teslatlas-hub-restore/hub-data`:
+
+```sh
+sudo sh -c '
+  set -euC
+  umask 027
+  cat /etc/teslatlas-hub/config.toml \
+    > /etc/teslatlas-hub/recovery-config.toml
+  chown root:teslatlas /etc/teslatlas-hub/recovery-config.toml
+'
+sudoedit /etc/teslatlas-hub/recovery-config.toml
+```
+
+While the service is stopped, restore credentials with that configuration and
+the raw key retrieved from its separate security domain:
 
 ```sh
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
-  --config /srv/teslatlas-hub-restore/config.toml \
+  --config /etc/teslatlas-hub/recovery-config.toml \
   restore-recovery-credentials \
   --source /srv/teslatlas-hub-recovery/teslatlas-credentials.tthcr \
   --recovery-key-file /media/teslatlas-recovery-key/teslatlas-recovery.key
 ```
 
 Credential restore requires the matching installation ID and refuses to
-overwrite an existing `secrets` directory. Run `doctor`, pair devices again,
-and prove a fresh observation before declaring recovery complete.
+overwrite an existing `secrets` directory.
+
+The packaged unit reads `/etc/teslatlas-hub/config.toml` and can write only
+under `/var/lib/teslatlas-hub`. Add a separate no-clobber systemd drop-in that
+starts the Hub with the recovery configuration and grants write access to the
+restored data directory. This leaves the packaged unit and original data path
+unchanged:
+
+```sh
+sudo install -d -o root -g root -m 0755 \
+  /etc/systemd/system/teslatlas-hub.service.d
+sudo sh -c '
+  set -euC
+  umask 022
+  cat > /etc/systemd/system/teslatlas-hub.service.d/90-recovery.conf
+' <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/teslatlas-hub --config /etc/teslatlas-hub/recovery-config.toml serve
+ReadWritePaths=/srv/teslatlas-hub-restore/hub-data
+EOF
+sudo systemctl daemon-reload
+sudo systemctl cat teslatlas-hub.service
+```
+
+Confirm that `systemctl cat` shows both recovery overrides, then start the
+service and check its state, recent log, and Hub readiness. The final command
+must report `"ready": true` before recovery is treated as complete:
+
+```sh
+sudo systemctl start teslatlas-hub.service
+sudo systemctl is-active --quiet teslatlas-hub.service
+sudo journalctl -u teslatlas-hub.service -n 50 --no-pager
+sudo -u teslatlas -- /usr/bin/teslatlas-hub \
+  --config /etc/teslatlas-hub/recovery-config.toml status
+```
+
+Pair devices again and prove a fresh observation before declaring recovery
+complete.
 
 On macOS, stop the per-user service with the Mac app or the packaged CLI before
 running backup and recovery commands. Run those commands as the signed-in user
