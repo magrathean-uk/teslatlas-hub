@@ -1,22 +1,13 @@
 # Public protocol binding
 
-The production adapter is bound to `hub-http-v1@1.0.0`. Its checked profile
-bundle is embedded in the integration and identified by SHA-256
-`b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`. This is
-the canonical current-Hub working-tree profile selected by Protocol and
-contains the bounded 4096-byte claim request/error contract. The TypeScript SDK
-vendored snapshot now matches this canonical profile and its current validator
-bindings pass their source gate; the sibling status is recorded in the
-[HA-to-Hub admission handoff](hub-admission-handoff-2026-09-08.json).
+The HTTP adapter uses the embedded `hub-http-v1@1.0.0` profile. Its [SHA256SUMS file](../custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS) has SHA-256:
 
-This profile supports public discovery, invitation claim, credential rotation,
-vehicles, current state, and bounded drive queries. Home Assistant currently
-uses discovery, claim, rotation, vehicles, and current state. It deliberately
-does not invent SSE, command, charge, collector-health, cost, backup, or data
-quality routes.
+```text
+b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926
+```
 
-The integration remains unpublished. `compatibility/hub.json` is accepted only
-for the exact product `2026.36.2`, profile hash, Hub source fingerprint and
-Debian 13 ARM64 Container receipt named there. This bounded source-built
-synthetic result does not establish HACS, HA OS, production, real-data,
-replacement-upgrade or full-platform acceptance.
+The bundle defines discovery, invitation claim, credential rotation, vehicle listing, current state and bounded drive queries, including the 4096-byte claim request/error contract. This integration uses discovery, claim, rotation, vehicles and current state. It does not query drives or invent event, command, charge, collector-health, cost, backup or data-quality endpoints.
+
+The [compatibility record](../compatibility/hub.json) has an accepted status for the exact product, profile, Hub source fingerprint and historical Debian 13 ARM64 Container lane named there. That status is narrower than general protocol or product readiness. The integration has not been published through HACS, and the former runtime was removed according to [the development record](development/STATUS.json).
+
+Changes to the Hub or profile need explicit compatibility work and new evidence. A sibling SDK's old handoff does not establish current compatibility for this checkout.

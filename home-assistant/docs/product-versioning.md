@@ -1,13 +1,15 @@
 # Product versioning
 
-The Python project, `uv.lock`, and Home Assistant integration manifest carry
-the shared ecosystem product version `2026.36.2`. The Home Assistant manifest
-is the runtime-visible integration version.
+The Python project, lockfile and Home Assistant manifest identify this integration as `2026.36.2`. The manifest supplies Home Assistant's displayed integration version.
 
-This calendar product number does not replace protocol identities or prove a
-working Hub connection in general. `compatibility/hub.json` accepts
-`hub-http-v1@1.0.0` only with embedded profile hash
-`b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`, the exact
-tested Hub source fingerprint and the named Debian 13 ARM64 Container receipts.
-That source-built synthetic lane does not widen support to HA OS, HACS,
-production, real data, replacement upgrades or an untested platform.
+Keep three version identities distinct:
+
+| Identity | Recorded value | Meaning |
+| --- | --- | --- |
+| Integration | `2026.36.2` | Candidate component version |
+| Home Assistant | `2026.8.3` | Pinned development and Compose baseline |
+| Hub HTTP profile | `hub-http-v1@1.0.0` | Embedded protocol contract |
+
+[compatibility/hub.json](../compatibility/hub.json) accepts only the exact profile hash, tested Hub source fingerprint and named synthetic Debian 13 ARM64 Container receipts. A matching calendar version alone does not establish compatibility.
+
+The [development status record](development/STATUS.json) describes historical validation and removal of its runtime. It is not evidence that the latest source has passed installed testing. No HACS, production, real-data, replacement-upgrade or general platform-support claim follows from the version number.

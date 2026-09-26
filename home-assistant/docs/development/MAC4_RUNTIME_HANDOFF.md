@@ -1,11 +1,6 @@
 # MAC-4 runtime handoff
 
-This is the prepared ordinary-user journey for the existing
-`teslatlas-debian13-arm64` guest and a native Mac Hub. During the current
-coordinated MAC-4 execution the runtime owner has started that existing guest and
-established the private forward described below. This handoff does not authorize
-another guest, public ingress, real Tesla access, Keychain trust changes, signing,
-or changes outside the named synthetic runtimes.
+Historical handoff. The later [status record](STATUS.json) records removal of the former runtime and external artifacts. The route, fingerprints and journey below describe that earlier synthetic environment. They are retained for provenance and do not identify a running guest or authorize runtime work. Revalidate every runtime input before any separately authorized reuse.
 
 ## Fixed private route and TLS identity
 
@@ -59,11 +54,11 @@ guest trust store or set an insecure SSL option. The runtime handoff must record
 the exact Container image ID, component tree hash, bundle hash, and permissions
 without recording private paths.
 
-The retained current execution uses Home Assistant `2026.8.3` at exact arm64
+The recorded historical execution used Home Assistant `2026.8.3` at exact arm64
 digest `sha256:14931c6b13756317849f46da1d01b45937a1150db66c081cfe529d48215943fe`.
-The current 31-file component is mounted read-only with manifest SHA-256
+The recorded 31-file component was mounted read-only with manifest SHA-256
 `e3ce825c87b4cab40372fe381aa3a39bbc7e7e0b86ede7dc168899b9b052d56f`.
-Strict TLS health already passes from both guest and Container; this is runtime
+Strict TLS health passed in that environment from both guest and Container; this is runtime
 preparation, not headed acceptance.
 
 ## Headed UI journey

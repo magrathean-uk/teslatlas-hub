@@ -1,5 +1,7 @@
 # Azure Debian v1 evidence contract
 
+Historical contract dated 2026-09-08. The packet identities and proposed sequence below are retained as provenance. They do not establish a current runtime, current platform priority or permission to provision infrastructure. Follow the current task and applicable workspace plan for active work.
+
 **Status:** prepared final-bootstrap source contract; not an Azure provisioning request, installation record, or release authorization. Azure is used only after all other development/integration is complete and the existing Mac plus VPS verification has completed at minimum. Hub then coordinates execution after the owner supplies two fresh disposable Azure Debian virtual machines: one ARM64 and one x86_64. It does not defer, replace, or substitute for Mac or VPS tests.
 
 ## Identity lock
