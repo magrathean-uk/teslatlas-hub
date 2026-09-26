@@ -792,6 +792,118 @@ fn seed_v2_lineage(
     (vehicle.vehicle_id, digest, pack_path)
 }
 
+fn append_v2_delta_fixture(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    vehicle_id: Uuid,
+    pack_bytes: &[u8],
+) -> LineageDelta {
+    let before = store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage lookup")
+        .expect("published lineage");
+    let digest = Sha256Digest::of_bytes(pack_bytes);
+    let pack = TransportPack {
+        pack_id: Uuid::new_v4(),
+        snapshot_id: before.base.snapshot_id,
+        ordinal: u32::try_from(before.base.packs.len() + before.deltas.len())
+            .expect("fixture ordinal"),
+        schema: HUB_PROJECTION_SCHEMA_V2,
+        format: PackFormat::HubProjectionSqlite,
+        compression: PackCompression::Zstd,
+        relative_path: TransportPack::canonical_relative_path(digest),
+        sha256: digest,
+        compressed_bytes: u64::try_from(pack_bytes.len()).expect("fixture pack size"),
+        uncompressed_bytes: 100,
+        row_count: 1,
+        sequence: SequenceRange {
+            from_exclusive: before.head_sequence,
+            to_inclusive: before.head_sequence + 1,
+        },
+        tables: vec![MirrorTable::Car],
+    };
+    fs::write(
+        store
+            .packs_dir()
+            .join("sha256")
+            .join(format!("{digest}.sqlite.zst")),
+        pack_bytes,
+    )
+    .expect("delta pack");
+    let delta = LineageDelta {
+        from_sequence: before.head_sequence,
+        to_sequence: before.head_sequence + 1,
+        parent_chain_digest: before.head_digest,
+        chain_digest: canonical_delta_chain_digest(before.head_digest, digest),
+        pack_digest: digest,
+        pack,
+    };
+    let binding = store
+        .v2_projection_binding(vehicle_id)
+        .expect("projection binding");
+    let cursor = OpaqueCursor::issue(
+        cursor_key,
+        CursorClaims {
+            protocol: ProtocolVersion { major: 1, minor: 0 },
+            schema: HUB_PROJECTION_SCHEMA_V2,
+            installation_id: binding.installation_id,
+            account_id: binding.account_id,
+            vehicle_id,
+            generation: binding.generation,
+            sequence: delta.to_sequence,
+        },
+    )
+    .expect("delta cursor");
+    let connection = store.open().expect("delta catalogue");
+    connection
+        .execute(
+            "INSERT INTO sync_deltas(
+                vehicle_id, from_sequence, to_sequence, parent_chain_digest,
+                chain_digest, pack_digest, pack_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![
+                vehicle_id.to_string(),
+                delta.from_sequence as i64,
+                delta.to_sequence as i64,
+                delta.parent_chain_digest.to_string(),
+                delta.chain_digest.to_string(),
+                delta.pack_digest.to_string(),
+                serde_json::to_vec(&delta).expect("delta JSON")
+            ],
+        )
+        .expect("delta catalog");
+    connection
+        .execute(
+            "INSERT INTO sync_packs(
+                sha256, snapshot_id, ordinal, relative_path,
+                compressed_bytes, uncompressed_bytes
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                delta.pack.sha256.to_string(),
+                delta.pack.snapshot_id.to_string(),
+                i64::from(delta.pack.ordinal),
+                delta.pack.relative_path,
+                delta.pack.compressed_bytes as i64,
+                delta.pack.uncompressed_bytes as i64,
+            ],
+        )
+        .expect("delta pack catalog");
+    connection
+        .execute(
+            "UPDATE sync_heads
+                SET head_sequence = ?1, head_digest = ?2, terminal_cursor = ?3
+              WHERE vehicle_id = ?4",
+            rusqlite::params![
+                delta.to_sequence as i64,
+                delta.chain_digest.to_string(),
+                serde_json::to_string(&cursor).expect("cursor JSON"),
+                vehicle_id.to_string(),
+            ],
+        )
+        .expect("delta head");
+    delta
+}
+
 fn inject_schema_22_catalogue(store: &HubStore, cursor_key: &CursorKey) -> (Uuid, Sha256Digest) {
     let installation_id = store.installation_id().expect("installation");
     let account_id = Uuid::new_v4();
@@ -1571,6 +1683,508 @@ async fn signing_keys_authenticates_before_empty_not_found() {
                 .is_empty()
         );
     }
+}
+
+#[tokio::test]
+async fn changes_since_authenticates_and_binds_vehicle_before_reading_body() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([84; 32]);
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("changes since auth", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store, &cursor_key);
+    let oversized = vec![b'x'; 8_193];
+
+    let unauthenticated = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/vehicles/not-a-uuid/sync/changes-since")
+                .body(Body::from(oversized.clone()))
+                .unwrap(),
+        )
+        .await
+        .expect("unauthenticated response");
+    assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        unauthenticated
+            .into_body()
+            .collect()
+            .await
+            .expect("unauthenticated body")
+            .to_bytes()
+            .is_empty()
+    );
+
+    let expected: serde_json::Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/changes-since-error-vehicle-not-found.json"
+    )))
+    .expect("vehicle-not-found fixture");
+    for vehicle_id in ["not-a-uuid".to_owned(), Uuid::new_v4().to_string()] {
+        let not_found = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/vehicles/{vehicle_id}/sync/changes-since"))
+                    .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                    .body(Body::from(oversized.clone()))
+                    .unwrap(),
+            )
+            .await
+            .expect("not-found response");
+        assert_eq!(not_found.status(), StatusCode::NOT_FOUND);
+        let actual: serde_json::Value = serde_json::from_slice(
+            &not_found
+                .into_body()
+                .collect()
+                .await
+                .expect("not-found body")
+                .to_bytes(),
+        )
+        .expect("not-found JSON");
+        assert_eq!(actual, expected["response"]["body"]);
+    }
+}
+
+#[tokio::test]
+async fn changes_since_request_errors_match_protocol_fixtures() {
+    fn protocol_fixture(name: &str) -> serde_json::Value {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples")
+            .join(name);
+        serde_json::from_slice(&fs::read(path).expect("read Protocol fixture"))
+            .expect("parse Protocol fixture")
+    }
+
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let source_id = Uuid::new_v4();
+    let vehicle_id = Uuid::new_v4();
+    seed_active_vehicle_identity(&store, source_id, vehicle_id);
+    let cursor_key = CursorKey::from_bytes([85; 32]);
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("changes since errors", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store, &cursor_key);
+
+    for (request_fixture, error_fixture, status, raw_body) in [
+        (
+            "changes-since-request-invalid-missing-field.json",
+            "changes-since-error-invalid-request.json",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            None,
+        ),
+        (
+            "changes-since-request-invalid-extra-field.json",
+            "changes-since-error-invalid-request.json",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            None,
+        ),
+        (
+            "changes-since-request-invalid-wrong-type.json",
+            "changes-since-error-invalid-request.json",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            None,
+        ),
+        (
+            "changes-since-request-reversed-range.json",
+            "changes-since-error-invalid-schema-range.json",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            None,
+        ),
+        (
+            "changes-since-request-base-excluded.json",
+            "changes-since-error-invalid-schema-range.json",
+            StatusCode::UNPROCESSABLE_ENTITY,
+            None,
+        ),
+        (
+            "changes-since-request-unsupported-range.json",
+            "changes-since-error-schema-range-unsupported.json",
+            StatusCode::NOT_ACCEPTABLE,
+            None,
+        ),
+        (
+            "changes-since-request.json",
+            "changes-since-error-invalid-json.json",
+            StatusCode::BAD_REQUEST,
+            Some(&b"{"[..]),
+        ),
+        (
+            "changes-since-request-8193-bytes.json",
+            "changes-since-error-request-too-large.json",
+            StatusCode::PAYLOAD_TOO_LARGE,
+            None,
+        ),
+    ] {
+        let request_fixture = protocol_fixture(request_fixture);
+        let body = raw_body.map_or_else(
+            || {
+                request_fixture
+                    .get("body")
+                    .and_then(serde_json::Value::as_str)
+                    .map_or_else(
+                        || serde_json::to_vec(&request_fixture["request"]).expect("request JSON"),
+                        |body| body.as_bytes().to_vec(),
+                    )
+            },
+            <[u8]>::to_vec,
+        );
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/vehicles/{vehicle_id}/sync/changes-since"))
+                    .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .expect("changes-since error response");
+        assert_eq!(response.status(), status, "{error_fixture}");
+        if status == StatusCode::NOT_ACCEPTABLE {
+            assert_eq!(
+                response.headers().get(header::CACHE_CONTROL).unwrap(),
+                "no-store"
+            );
+        } else {
+            assert!(response.headers().get(header::CACHE_CONTROL).is_none());
+        }
+        let actual: serde_json::Value = serde_json::from_slice(
+            &response
+                .into_body()
+                .collect()
+                .await
+                .expect("error body")
+                .to_bytes(),
+        )
+        .expect("error JSON");
+        let error_fixture = protocol_fixture(error_fixture);
+        assert_eq!(actual, error_fixture["response"]["body"]);
+    }
+
+    let at_limit = protocol_fixture("changes-since-request-8192-bytes.json");
+    let at_limit_body = at_limit["body"].as_str().expect("at-limit body");
+    assert_eq!(at_limit_body.len(), 8_192);
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/changes-since"))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(at_limit_body.to_owned()))
+                .unwrap(),
+        )
+        .await
+        .expect("at-limit request response");
+    assert_ne!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
+fn assert_hub_sync_signature(value: &serde_json::Value, cursor_key: &CursorKey) {
+    let signature = value["signature"].as_object().expect("signature object");
+    let mut payload = value.clone();
+    payload
+        .as_object_mut()
+        .expect("signed document")
+        .remove("signature");
+    let canonical = serde_jcs::to_vec(&payload).expect("canonical signed payload");
+    assert_eq!(
+        signature["signed_payload_sha256"],
+        Sha256Digest::of_bytes(&canonical).to_string()
+    );
+    let expected = ManifestSigning::from_cursor_key(cursor_key);
+    assert_eq!(signature["key_id"], expected.key_id());
+    let verifying_key_bytes: [u8; 32] = hex::decode(expected.verifying_key_hex())
+        .expect("verifying key hex")
+        .try_into()
+        .expect("32-byte verifying key");
+    let verifying_key = VerifyingKey::from_bytes(&verifying_key_bytes).expect("verifying key");
+    let signature_bytes = STANDARD
+        .decode(signature["signature"].as_str().expect("signature base64"))
+        .expect("decode signature");
+    let signature = Signature::from_slice(&signature_bytes).expect("64-byte signature");
+    verifying_key
+        .verify_strict(&canonical, &signature)
+        .expect("hub-sync JCS signature");
+}
+
+#[tokio::test]
+async fn changes_since_serves_one_changed_pack_then_a_signed_noop() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([86; 32]);
+    let (vehicle_id, base_digest, _) = seed_v2_lineage(&store, &cursor_key);
+    let delta =
+        append_v2_delta_fixture(&store, &cursor_key, vehicle_id, b"changes-since-delta-pack");
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("changes since ledger", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store, &cursor_key);
+    let request = |receipt: String, sequence: u64| {
+        Request::builder()
+            .method("POST")
+            .uri(format!("/v1/vehicles/{vehicle_id}/sync/changes-since"))
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "base_receipt_id": receipt,
+                    "base_manifest_schema": "2.1",
+                    "from_sequence": sequence,
+                    "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+                }))
+                .expect("request JSON"),
+            ))
+            .unwrap()
+    };
+
+    let changed = app
+        .clone()
+        .oneshot(request(base_digest.to_string(), delta.from_sequence))
+        .await
+        .expect("changed-set response");
+    assert_eq!(changed.status(), StatusCode::OK);
+    assert!(changed.headers().get(header::CACHE_CONTROL).is_none());
+    let changed = response_json(changed).await;
+    assert_eq!(changed["vehicle_id"], vehicle_id.to_string());
+    assert_eq!(changed["base_receipt_id"], base_digest.to_string());
+    assert_eq!(changed["base_manifest_schema"], "2.1");
+    assert_eq!(changed["from_sequence"], delta.from_sequence);
+    assert_eq!(changed["to_sequence"], delta.to_sequence);
+    assert_eq!(changed["manifest_schema"], "2.1");
+    assert_eq!(changed["receipt_id"], delta.chain_digest.to_string());
+    assert_eq!(
+        changed["changed_set_sha256"],
+        delta.chain_digest.to_string()
+    );
+    assert_eq!(changed["pack"]["sha256"], delta.pack.sha256.to_string());
+    assert_eq!(
+        changed["pack"]["object_name"],
+        format!("{}.sqlite.zst", delta.pack.sha256)
+    );
+    assert_eq!(
+        changed["pack"]["compressed_bytes"],
+        delta.pack.compressed_bytes
+    );
+    assert_hub_sync_signature(&changed, &cursor_key);
+
+    let noop = app
+        .oneshot(request(delta.chain_digest.to_string(), delta.to_sequence))
+        .await
+        .expect("no-op response");
+    assert_eq!(noop.status(), StatusCode::OK);
+    let noop = response_json(noop).await;
+    assert_eq!(noop["kind"], "no_op");
+    assert_eq!(noop["vehicle_id"], vehicle_id.to_string());
+    assert_eq!(noop["base_receipt_id"], delta.chain_digest.to_string());
+    assert_eq!(noop["base_manifest_schema"], "2.1");
+    assert_eq!(noop["sequence"], delta.to_sequence);
+    assert_eq!(noop["manifest_schema"], "2.1");
+    assert_hub_sync_signature(&noop, &cursor_key);
+}
+
+#[tokio::test]
+async fn changes_since_rebases_retained_checkpoint_and_rejects_unknown_receipt() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([87; 32]);
+    let (vehicle_id, base_digest, _) = seed_v2_lineage(&store, &cursor_key);
+    let base = store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("base lineage lookup")
+        .expect("base lineage");
+    let current = append_v2_delta_fixture(
+        &store,
+        &cursor_key,
+        vehicle_id,
+        b"current-compacted-delta-pack",
+    );
+
+    let retired_bytes = b"retired-pre-compaction-delta-pack";
+    let retired_digest = Sha256Digest::of_bytes(retired_bytes);
+    let retired_pack = TransportPack {
+        pack_id: Uuid::new_v4(),
+        snapshot_id: base.base.snapshot_id,
+        ordinal: 1,
+        schema: HUB_PROJECTION_SCHEMA_V2,
+        format: PackFormat::HubProjectionSqlite,
+        compression: PackCompression::Zstd,
+        relative_path: TransportPack::canonical_relative_path(retired_digest),
+        sha256: retired_digest,
+        compressed_bytes: u64::try_from(retired_bytes.len()).expect("retired pack size"),
+        uncompressed_bytes: 100,
+        row_count: 1,
+        sequence: SequenceRange {
+            from_exclusive: base.head_sequence,
+            to_inclusive: base.head_sequence + 1,
+        },
+        tables: vec![MirrorTable::Car],
+    };
+    let retired_delta = LineageDelta {
+        from_sequence: base.head_sequence,
+        to_sequence: base.head_sequence + 1,
+        parent_chain_digest: base.head_digest,
+        chain_digest: canonical_delta_chain_digest(base.head_digest, retired_digest),
+        pack_digest: retired_digest,
+        pack: retired_pack,
+    };
+    let mut retired = base.clone();
+    retired.deltas.push(retired_delta.clone());
+    retired.head_sequence = retired_delta.to_sequence;
+    retired.head_digest = retired_delta.chain_digest;
+    let binding = store
+        .v2_projection_binding(vehicle_id)
+        .expect("projection binding");
+    retired.terminal_cursor = OpaqueCursor::issue(
+        &cursor_key,
+        CursorClaims {
+            protocol: ProtocolVersion { major: 1, minor: 0 },
+            schema: HUB_PROJECTION_SCHEMA_V2,
+            installation_id: binding.installation_id,
+            account_id: binding.account_id,
+            vehicle_id,
+            generation: binding.generation,
+            sequence: retired.head_sequence,
+        },
+    )
+    .expect("retired cursor");
+    retired.validate().expect("retired lineage");
+    let retired_at_ms = current_epoch_ms().expect("retirement clock");
+    store
+        .open()
+        .expect("retired catalogue")
+        .execute(
+            "INSERT INTO sync_retired_lineages(
+                vehicle_id, head_digest, manifest_json, retired_at_ms, expires_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                vehicle_id.to_string(),
+                retired.head_digest.to_string(),
+                serde_json::to_vec(&retired).expect("retired lineage JSON"),
+                retired_at_ms,
+                retired_at_ms + 60_000,
+            ],
+        )
+        .expect("retired lineage catalogue");
+    let invitation = store
+        .create_pairing("changes since compaction", retired_at_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            retired_at_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store, &cursor_key);
+    let request = |receipt: &str, sequence: u64| {
+        Request::builder()
+            .method("POST")
+            .uri(format!("/v1/vehicles/{vehicle_id}/sync/changes-since"))
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "base_receipt_id": receipt,
+                    "base_manifest_schema": "2.1",
+                    "from_sequence": sequence,
+                    "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+                }))
+                .expect("request JSON"),
+            ))
+            .unwrap()
+    };
+
+    let rebase = app
+        .clone()
+        .oneshot(request(
+            &retired_delta.chain_digest.to_string(),
+            retired_delta.to_sequence,
+        ))
+        .await
+        .expect("rebase response");
+    assert_eq!(rebase.status(), StatusCode::CONFLICT);
+    let rebase = response_json(rebase).await;
+    assert_eq!(rebase["kind"], "rebase_required");
+    assert_eq!(rebase["reason"], "compacted");
+    assert_eq!(rebase["vehicle_id"], vehicle_id.to_string());
+    assert_eq!(
+        rebase["requested_base_receipt_id"],
+        retired_delta.chain_digest.to_string()
+    );
+    assert_eq!(rebase["requested_from_sequence"], retired_delta.to_sequence);
+    assert_eq!(rebase["replacement"]["receipt_id"], base_digest.to_string());
+    assert_eq!(rebase["replacement"]["sequence"], base.base.sequence);
+    assert_eq!(rebase["replacement"]["manifest_schema"], "2.1");
+    assert_eq!(
+        rebase["replacement"]["manifest_id"],
+        base.base.snapshot_id.to_string()
+    );
+    assert_eq!(
+        rebase["retry_request"]["base_receipt_id"],
+        base_digest.to_string()
+    );
+    assert_eq!(rebase["retry_request"]["from_sequence"], base.base.sequence);
+    assert_eq!(
+        rebase["retry_request"]["schema_version_range"],
+        serde_json::json!({"minimum": "2.1", "maximum": "2.2"})
+    );
+    assert_hub_sync_signature(&rebase, &cursor_key);
+
+    let unknown = app
+        .oneshot(request("receipt_unknown_999999", 42))
+        .await
+        .expect("unknown receipt response");
+    assert_eq!(unknown.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(unknown.headers().get(header::CACHE_CONTROL).is_none());
+    let unknown = response_json(unknown).await;
+    let expected: serde_json::Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/changes-since-error-unknown-base-receipt.json"
+    )))
+    .expect("unknown-receipt fixture");
+    assert_eq!(unknown, expected["response"]["body"]);
+
+    assert_ne!(current.chain_digest, retired_delta.chain_digest);
 }
 
 #[tokio::test]

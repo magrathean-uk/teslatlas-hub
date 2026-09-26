@@ -1,0 +1,701 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! Runtime adapter for the source-neutral hub-sync-v1 control plane.
+
+use axum::body::to_bytes;
+
+use super::*;
+
+const MAX_CHANGES_SINCE_REQUEST_BYTES: usize = 8_192;
+const MAX_PROFILE_PACK_BYTES: u64 = 16 * 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ChangesSinceRequest {
+    base_receipt_id: String,
+    base_manifest_schema: String,
+    from_sequence: u64,
+    schema_version_range: SchemaVersionRange,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SchemaVersionRange {
+    minimum: String,
+    maximum: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct WireSchemaVersion {
+    major: u16,
+    minor: u16,
+}
+
+impl WireSchemaVersion {
+    const MINIMUM_SUPPORTED: Self = Self { major: 2, minor: 1 };
+    const MAXIMUM_SUPPORTED: Self = Self { major: 2, minor: 2 };
+
+    fn parse(value: &str) -> Option<Self> {
+        let (major, minor) = value.split_once('.')?;
+        if major.is_empty()
+            || minor.is_empty()
+            || major.contains('.')
+            || minor.contains('.')
+            || (major.len() > 1 && major.starts_with('0'))
+            || (minor.len() > 1 && minor.starts_with('0'))
+            || major.len() > 3
+            || minor.len() > 3
+            || !major.bytes().all(|byte| byte.is_ascii_digit())
+            || !minor.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return None;
+        }
+        Some(Self {
+            major: major.parse().ok()?,
+            minor: minor.parse().ok()?,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RequestValidationError {
+    InvalidJson,
+    InvalidRequest,
+    InvalidSchemaRange,
+    UnsupportedSchemaRange,
+}
+
+#[derive(Serialize)]
+struct SyncError<'a> {
+    code: &'a str,
+    message: &'a str,
+}
+
+#[derive(Serialize)]
+struct ChangedSetPayload {
+    receipt_id: String,
+    vehicle_id: Uuid,
+    base_receipt_id: String,
+    base_manifest_schema: &'static str,
+    from_sequence: u64,
+    to_sequence: u64,
+    manifest_schema: &'static str,
+    changed_set_sha256: String,
+    pack: WirePack,
+}
+
+#[derive(Serialize)]
+struct NoOpPayload {
+    kind: &'static str,
+    vehicle_id: Uuid,
+    base_receipt_id: String,
+    base_manifest_schema: &'static str,
+    sequence: u64,
+    manifest_schema: &'static str,
+}
+
+#[derive(Serialize)]
+struct RebasePayload {
+    kind: &'static str,
+    vehicle_id: Uuid,
+    requested_base_receipt_id: String,
+    requested_base_manifest_schema: &'static str,
+    requested_from_sequence: u64,
+    reason: &'static str,
+    replacement: Replacement21,
+    retry_request: RetryRequest,
+}
+
+#[derive(Serialize)]
+struct Replacement21 {
+    manifest_id: String,
+    receipt_id: String,
+    sequence: u64,
+    manifest_schema: &'static str,
+    pack: WirePack,
+}
+
+#[derive(Serialize)]
+struct RetryRequest {
+    base_receipt_id: String,
+    base_manifest_schema: &'static str,
+    from_sequence: u64,
+    schema_version_range: SchemaVersionRange,
+}
+
+#[derive(Serialize)]
+struct WirePack {
+    object_name: String,
+    sha256: String,
+    compressed_bytes: u64,
+}
+
+#[derive(Serialize)]
+struct WireSignature {
+    algorithm: &'static str,
+    key_id: String,
+    signed_payload_sha256: String,
+    signature: String,
+}
+
+enum CurrentCheckpoint<'a> {
+    Changed(&'a crate::protocol::LineageDelta),
+    Head,
+}
+
+pub(super) async fn changes_since(
+    State(state): State<AppState>,
+    Path(vehicle_id): Path<String>,
+    request: Request<Body>,
+) -> Response {
+    if let Err(status) = require_authorized_device(&state, request.headers()) {
+        return device_auth_reject(status);
+    }
+    let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
+        return sync_error_response(
+            StatusCode::NOT_FOUND,
+            "vehicle_not_found",
+            "Vehicle is not available to this pairing.",
+            false,
+        );
+    };
+    match state.store.vehicle_is_active(vehicle_id) {
+        Ok(true) => {}
+        Ok(false) => {
+            return sync_error_response(
+                StatusCode::NOT_FOUND,
+                "vehicle_not_found",
+                "Vehicle is not available to this pairing.",
+                false,
+            );
+        }
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot check changes-since vehicle binding");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    }
+
+    let raw = match to_bytes(request.into_body(), MAX_CHANGES_SINCE_REQUEST_BYTES + 1).await {
+        Ok(raw) if raw.len() <= MAX_CHANGES_SINCE_REQUEST_BYTES => raw,
+        Ok(_) | Err(_) => {
+            return sync_error_response(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "request_too_large",
+                "Request body exceeds 8192 bytes.",
+                false,
+            );
+        }
+    };
+    let request = match parse_changes_since_request(&raw) {
+        Ok(request) => request,
+        Err(RequestValidationError::InvalidJson) => {
+            return sync_error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid_json",
+                "Request body is not valid JSON.",
+                false,
+            );
+        }
+        Err(RequestValidationError::InvalidRequest) => {
+            return sync_error_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid_request",
+                "Request body does not match the changes-since schema.",
+                false,
+            );
+        }
+        Err(RequestValidationError::InvalidSchemaRange) => {
+            return sync_error_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "invalid_schema_range",
+                "Schema range is reversed or excludes the base schema.",
+                false,
+            );
+        }
+        Err(RequestValidationError::UnsupportedSchemaRange) => {
+            return sync_error_response(
+                StatusCode::NOT_ACCEPTABLE,
+                "schema_range_unsupported",
+                "Requested schema range has no supported version.",
+                true,
+            );
+        }
+    };
+
+    serve_changes_since(&state, vehicle_id, request)
+}
+
+fn parse_changes_since_request(raw: &[u8]) -> Result<ChangesSinceRequest, RequestValidationError> {
+    let request = serde_json::from_slice::<ChangesSinceRequest>(raw).map_err(|error| {
+        if error.is_data() {
+            RequestValidationError::InvalidRequest
+        } else {
+            RequestValidationError::InvalidJson
+        }
+    })?;
+    if request.base_receipt_id.is_empty()
+        || request.base_receipt_id.len() > 4_096
+        || !request.base_receipt_id.bytes().all(is_receipt_token_byte)
+        || request.from_sequence > i64::MAX as u64
+        || !matches!(request.base_manifest_schema.as_str(), "2.1" | "2.2")
+    {
+        return Err(RequestValidationError::InvalidRequest);
+    }
+    let Some(minimum) = WireSchemaVersion::parse(&request.schema_version_range.minimum) else {
+        return Err(RequestValidationError::InvalidRequest);
+    };
+    let Some(maximum) = WireSchemaVersion::parse(&request.schema_version_range.maximum) else {
+        return Err(RequestValidationError::InvalidRequest);
+    };
+    let base = WireSchemaVersion::parse(&request.base_manifest_schema)
+        .ok_or(RequestValidationError::InvalidRequest)?;
+    if minimum > maximum {
+        return Err(RequestValidationError::InvalidSchemaRange);
+    }
+    if maximum < WireSchemaVersion::MINIMUM_SUPPORTED
+        || minimum > WireSchemaVersion::MAXIMUM_SUPPORTED
+    {
+        return Err(RequestValidationError::UnsupportedSchemaRange);
+    }
+    if !(minimum..=maximum).contains(&base) {
+        return Err(RequestValidationError::InvalidSchemaRange);
+    }
+    Ok(request)
+}
+
+fn is_receipt_token_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'~' | b'-')
+}
+
+fn sync_error_response(
+    status: StatusCode,
+    code: &'static str,
+    message: &'static str,
+    no_store: bool,
+) -> Response {
+    bounded_control_json(status, &SyncError { code, message }, no_store).unwrap_or_else(|error| {
+        tracing::error!(%error, %status, %code, "cannot serialize bounded sync error response");
+        StatusCode::SERVICE_UNAVAILABLE.into_response()
+    })
+}
+
+fn bounded_control_json(
+    status: StatusCode,
+    value: &impl Serialize,
+    no_store: bool,
+) -> Result<Response, BoundedJsonError> {
+    let raw_json = serde_json::to_vec(value).map_err(BoundedJsonError::Serialize)?;
+    bounded_control_json_bytes(status, raw_json, no_store)
+}
+
+fn bounded_control_json_bytes(
+    status: StatusCode,
+    raw_json: Vec<u8>,
+    no_store: bool,
+) -> Result<Response, BoundedJsonError> {
+    if raw_json.len() > MAX_SYNC_CONTROL_RESPONSE_BYTES {
+        return Err(BoundedJsonError::ResponseTooLarge);
+    }
+    let mut response = Response::builder().status(status).header(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    if no_store {
+        response = response.header(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    }
+    Ok(response
+        .body(Body::from(raw_json))
+        .expect("static JSON response headers are valid"))
+}
+
+fn serve_changes_since(
+    state: &AppState,
+    vehicle_id: Uuid,
+    request: ChangesSinceRequest,
+) -> Response {
+    let Some(signing) = state.manifest_signing.as_deref() else {
+        tracing::error!(%vehicle_id, "manifest signing key is unavailable");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    if request.base_manifest_schema != "2.1" {
+        return schema_range_unsupported();
+    }
+    let lineage = match state.store.lineage_manifest_for_vehicle(vehicle_id) {
+        Ok(Some(lineage)) => lineage,
+        Ok(None) => return schema_range_unsupported(),
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot load changes-since lineage");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let Some(base_pack) = admitted_schema_21_base(&lineage) else {
+        return schema_range_unsupported();
+    };
+
+    if let Some(checkpoint) = resolve_current_checkpoint(&lineage, &request) {
+        return match checkpoint {
+            CurrentCheckpoint::Changed(delta) => {
+                if !pack_is_admitted(&delta.pack) {
+                    return schema_range_unsupported();
+                }
+                let chain_digest = delta.chain_digest.to_string();
+                signed_control_response(
+                    StatusCode::OK,
+                    &ChangedSetPayload {
+                        receipt_id: chain_digest.clone(),
+                        vehicle_id,
+                        base_receipt_id: request.base_receipt_id,
+                        base_manifest_schema: "2.1",
+                        from_sequence: request.from_sequence,
+                        to_sequence: delta.to_sequence,
+                        manifest_schema: "2.1",
+                        changed_set_sha256: chain_digest,
+                        pack: wire_pack(&delta.pack),
+                    },
+                    signing,
+                )
+            }
+            CurrentCheckpoint::Head => signed_control_response(
+                StatusCode::OK,
+                &NoOpPayload {
+                    kind: "no_op",
+                    vehicle_id,
+                    base_receipt_id: request.base_receipt_id,
+                    base_manifest_schema: "2.1",
+                    sequence: request.from_sequence,
+                    manifest_schema: "2.1",
+                },
+                signing,
+            ),
+        };
+    }
+
+    let receipt = match request.base_receipt_id.parse::<Sha256Digest>() {
+        Ok(receipt) => receipt,
+        Err(_) => return unknown_base_receipt(),
+    };
+    match state.store.retired_lineage_contains_checkpoint(
+        vehicle_id,
+        request.from_sequence,
+        receipt,
+    ) {
+        Ok(true) => {
+            let replacement_receipt = lineage.base.digest.to_string();
+            signed_control_response(
+                StatusCode::CONFLICT,
+                &RebasePayload {
+                    kind: "rebase_required",
+                    vehicle_id,
+                    requested_base_receipt_id: request.base_receipt_id,
+                    requested_base_manifest_schema: "2.1",
+                    requested_from_sequence: request.from_sequence,
+                    reason: "compacted",
+                    replacement: Replacement21 {
+                        manifest_id: lineage.base.snapshot_id.to_string(),
+                        receipt_id: replacement_receipt.clone(),
+                        sequence: lineage.base.sequence,
+                        manifest_schema: "2.1",
+                        pack: wire_pack(base_pack),
+                    },
+                    retry_request: RetryRequest {
+                        base_receipt_id: replacement_receipt,
+                        base_manifest_schema: "2.1",
+                        from_sequence: lineage.base.sequence,
+                        schema_version_range: request.schema_version_range,
+                    },
+                },
+                signing,
+            )
+        }
+        Ok(false) => unknown_base_receipt(),
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot resolve retained changes-since checkpoint");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+fn admitted_schema_21_base(lineage: &LineageManifestV2) -> Option<&crate::protocol::TransportPack> {
+    if lineage.schema != HUB_PROJECTION_SCHEMA_V2
+        || lineage.base.sequence == 0
+        || lineage.base.sequence > i64::MAX as u64
+        || lineage.base.packs.len() != 1
+    {
+        return None;
+    }
+    let pack = &lineage.base.packs[0];
+    pack_is_admitted(pack).then_some(pack)
+}
+
+fn pack_is_admitted(pack: &crate::protocol::TransportPack) -> bool {
+    pack_size_is_admitted(pack.compressed_bytes)
+}
+
+fn pack_size_is_admitted(compressed_bytes: u64) -> bool {
+    (1..=MAX_PROFILE_PACK_BYTES).contains(&compressed_bytes)
+}
+
+fn resolve_current_checkpoint<'a>(
+    lineage: &'a LineageManifestV2,
+    request: &ChangesSinceRequest,
+) -> Option<CurrentCheckpoint<'a>> {
+    if request.from_sequence == lineage.base.sequence
+        && request.base_receipt_id == lineage.base.digest.to_string()
+    {
+        return Some(
+            lineage
+                .deltas
+                .first()
+                .map_or(CurrentCheckpoint::Head, CurrentCheckpoint::Changed),
+        );
+    }
+    for (index, delta) in lineage.deltas.iter().enumerate() {
+        if request.from_sequence == delta.to_sequence
+            && request.base_receipt_id == delta.chain_digest.to_string()
+        {
+            return Some(
+                lineage
+                    .deltas
+                    .get(index + 1)
+                    .map_or(CurrentCheckpoint::Head, CurrentCheckpoint::Changed),
+            );
+        }
+    }
+    None
+}
+
+fn wire_pack(pack: &crate::protocol::TransportPack) -> WirePack {
+    WirePack {
+        object_name: format!("{}.sqlite.zst", pack.sha256),
+        sha256: pack.sha256.to_string(),
+        compressed_bytes: pack.compressed_bytes,
+    }
+}
+
+fn signed_control_response(
+    status: StatusCode,
+    payload: &impl Serialize,
+    signing: &ManifestSigning,
+) -> Response {
+    let response = (|| {
+        let canonical = serde_jcs::to_vec(payload).map_err(BoundedJsonError::Serialize)?;
+        let signature = WireSignature {
+            algorithm: "ed25519",
+            key_id: signing.key_id(),
+            signed_payload_sha256: Sha256Digest::of_bytes(&canonical).to_string(),
+            signature: signing.sign_base64(&canonical),
+        };
+        let mut document = serde_json::to_value(payload).map_err(BoundedJsonError::Serialize)?;
+        document
+            .as_object_mut()
+            .expect("signed control payload serializes as an object")
+            .insert(
+                "signature".to_owned(),
+                serde_json::to_value(signature).map_err(BoundedJsonError::Serialize)?,
+            );
+        bounded_control_json(status, &document, false)
+    })();
+    response.unwrap_or_else(|error| {
+        tracing::error!(%error, %status, "cannot serialize bounded signed sync response");
+        StatusCode::SERVICE_UNAVAILABLE.into_response()
+    })
+}
+
+fn schema_range_unsupported() -> Response {
+    sync_error_response(
+        StatusCode::NOT_ACCEPTABLE,
+        "schema_range_unsupported",
+        "Requested schema range has no supported version.",
+        true,
+    )
+}
+
+fn unknown_base_receipt() -> Response {
+    sync_error_response(
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "unknown_base_receipt",
+        "Base receipt is not known for this vehicle.",
+        false,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use http_body_util::BodyExt;
+
+    use super::*;
+
+    fn fixture(name: &str) -> serde_json::Value {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples")
+            .join(name);
+        serde_json::from_slice(&std::fs::read(path).expect("read Protocol fixture"))
+            .expect("parse Protocol fixture")
+    }
+
+    #[test]
+    fn changes_since_request_validation_matches_protocol_fixtures() {
+        let valid = fixture("changes-since-request.json");
+        assert!(
+            parse_changes_since_request(
+                &serde_json::to_vec(&valid["request"]).expect("serialize request")
+            )
+            .is_ok()
+        );
+
+        for (name, expected) in [
+            (
+                "changes-since-request-invalid-missing-field.json",
+                RequestValidationError::InvalidRequest,
+            ),
+            (
+                "changes-since-request-invalid-extra-field.json",
+                RequestValidationError::InvalidRequest,
+            ),
+            (
+                "changes-since-request-invalid-wrong-type.json",
+                RequestValidationError::InvalidRequest,
+            ),
+            (
+                "changes-since-request-reversed-range.json",
+                RequestValidationError::InvalidSchemaRange,
+            ),
+            (
+                "changes-since-request-base-excluded.json",
+                RequestValidationError::InvalidSchemaRange,
+            ),
+            (
+                "changes-since-request-unsupported-range.json",
+                RequestValidationError::UnsupportedSchemaRange,
+            ),
+        ] {
+            let value = fixture(name);
+            assert_eq!(
+                parse_changes_since_request(
+                    &serde_json::to_vec(&value["request"]).expect("serialize request")
+                ),
+                Err(expected),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            parse_changes_since_request(br#"{"#),
+            Err(RequestValidationError::InvalidJson)
+        );
+    }
+
+    #[test]
+    fn changes_since_request_accepts_exact_raw_limit() {
+        let at_limit = fixture("changes-since-request-8192-bytes.json");
+        let raw = at_limit["body"].as_str().expect("fixture body").as_bytes();
+        assert_eq!(raw.len(), MAX_CHANGES_SINCE_REQUEST_BYTES);
+        assert!(parse_changes_since_request(raw).is_ok());
+
+        let over_limit = fixture("changes-since-request-8193-bytes.json");
+        assert_eq!(
+            over_limit["body"]
+                .as_str()
+                .expect("fixture body")
+                .as_bytes()
+                .len(),
+            MAX_CHANGES_SINCE_REQUEST_BYTES + 1
+        );
+    }
+
+    #[test]
+    fn profile_pack_admission_is_inclusive_and_rejects_internal_64_mib_capacity() {
+        assert!(!pack_size_is_admitted(0));
+        assert!(pack_size_is_admitted(1));
+        assert!(pack_size_is_admitted(MAX_PROFILE_PACK_BYTES));
+        assert!(!pack_size_is_admitted(MAX_PROFILE_PACK_BYTES + 1));
+        assert!(!pack_size_is_admitted(64 * 1024 * 1024));
+    }
+
+    #[tokio::test]
+    async fn every_changes_since_json_response_is_raw_byte_bounded() {
+        fn materialize(name: &str, document_key: &str) -> Vec<u8> {
+            let value = fixture(name);
+            let mut raw = serde_json::to_vec(&value[document_key]).expect("fixture document");
+            let padding = value["padding_bytes"]
+                .as_u64()
+                .and_then(|value| usize::try_from(value).ok())
+                .expect("fixture padding");
+            raw.resize(raw.len() + padding, b' ');
+            assert_eq!(
+                raw.len(),
+                value["body_bytes"]
+                    .as_u64()
+                    .and_then(|value| usize::try_from(value).ok())
+                    .expect("fixture body bytes")
+            );
+            assert_eq!(
+                Sha256Digest::of_bytes(&raw).to_string(),
+                value["body_sha256"].as_str().expect("fixture digest")
+            );
+            raw
+        }
+
+        for (at_limit, over_limit, document_key, status) in [
+            (
+                "changes-since-changed-set-response-2097152-bytes.json",
+                "changes-since-changed-set-response-2097153-bytes.json",
+                "document",
+                StatusCode::OK,
+            ),
+            (
+                "changes-since-rebase-response-2097152-bytes.json",
+                "changes-since-rebase-response-2097153-bytes.json",
+                "document",
+                StatusCode::CONFLICT,
+            ),
+            (
+                "changes-since-error-response-2097152-bytes.json",
+                "changes-since-error-response-2097153-bytes.json",
+                "document",
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+        ] {
+            let accepted = materialize(at_limit, document_key);
+            let response = bounded_control_json_bytes(status, accepted.clone(), false)
+                .expect("at-limit response");
+            assert_eq!(response.status(), status);
+            assert_eq!(
+                response
+                    .into_body()
+                    .collect()
+                    .await
+                    .expect("response body")
+                    .to_bytes()
+                    .as_ref(),
+                accepted.as_slice()
+            );
+
+            let rejected = materialize(over_limit, document_key);
+            assert!(matches!(
+                bounded_control_json_bytes(status, rejected, false),
+                Err(BoundedJsonError::ResponseTooLarge)
+            ));
+        }
+    }
+
+    #[tokio::test]
+    async fn unsupported_range_error_is_the_only_error_that_requires_no_store() {
+        let unsupported = sync_error_response(
+            StatusCode::NOT_ACCEPTABLE,
+            "schema_range_unsupported",
+            "Requested schema range has no supported version.",
+            true,
+        );
+        assert_eq!(
+            unsupported.headers().get(header::CACHE_CONTROL).unwrap(),
+            "no-store"
+        );
+        let invalid = sync_error_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_request",
+            "Request body does not match the changes-since schema.",
+            false,
+        );
+        assert!(invalid.headers().get(header::CACHE_CONTROL).is_none());
+    }
+}

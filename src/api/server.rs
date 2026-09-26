@@ -41,6 +41,9 @@ use super::public_query::{DriveQuery, DriveQueryError, DriveQueryParameters, Pub
 mod browser_cors;
 use browser_cors::CorsPolicy;
 
+#[path = "server/hub_sync_v1.rs"]
+mod hub_sync_v1;
+
 #[cfg(unix)]
 use crate::config::HubConfig;
 use crate::{
@@ -710,6 +713,10 @@ fn router_with_access_telemetry_and_http(
         .route(
             "/v1/vehicles/{vehicle_id}/sync/signing-keys",
             get(signing_keys),
+        )
+        .route(
+            "/v1/vehicles/{vehicle_id}/sync/changes-since",
+            post(hub_sync_v1::changes_since),
         )
         .route("/v1/vehicles/{vehicle_id}/sync/manifest", get(manifest))
         .route("/v1/vehicles/{vehicle_id}/sync/noop", get(schema_22_noop))

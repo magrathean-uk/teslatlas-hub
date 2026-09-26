@@ -1181,6 +1181,51 @@ impl HubStore {
         )
     }
 
+    /// Whether an exact client checkpoint exists in an unexpired lineage that
+    /// compaction retired. Receipt identity is the base digest or a delta's
+    /// chain digest, always paired with its sequence and route vehicle.
+    pub fn retired_lineage_contains_checkpoint(
+        &self,
+        vehicle_id: Uuid,
+        sequence: u64,
+        receipt: Sha256Digest,
+    ) -> Result<bool, StoreError> {
+        let now_ms = retired_lineage_clock_ms()?;
+        let connection = self.open_read_only_connection()?;
+        let mut statement = connection
+            .prepare(
+                "SELECT head_digest, manifest_json
+                   FROM sync_retired_lineages
+                  WHERE vehicle_id = ?1 AND expires_at_ms > ?2
+                  ORDER BY expires_at_ms DESC, head_digest",
+            )
+            .map_err(StoreError::LineageCatalog)?;
+        let rows = statement
+            .query_map(params![vehicle_id.to_string(), now_ms], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(StoreError::LineageCatalog)?;
+        for row in rows {
+            let (head_digest, manifest_json) = row.map_err(StoreError::LineageCatalog)?;
+            let manifest: LineageManifestV2 = serde_json::from_slice(&manifest_json)
+                .map_err(StoreError::DeserializeManifest)?;
+            manifest.validate().map_err(StoreError::Manifest)?;
+            if manifest.vehicle_id != vehicle_id
+                || manifest.head_digest.to_string() != head_digest
+            {
+                return Err(StoreError::LineageCatalogConflict);
+            }
+            if (manifest.base.sequence == sequence && manifest.base.digest == receipt)
+                || manifest.deltas.iter().any(|delta| {
+                    delta.to_sequence == sequence && delta.chain_digest == receipt
+                })
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     fn lineage_manifest_for_vehicle_with_verification(
         &self,
         vehicle_id: Uuid,
