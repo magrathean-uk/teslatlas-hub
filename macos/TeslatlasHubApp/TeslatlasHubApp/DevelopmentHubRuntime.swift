@@ -535,7 +535,11 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                             plist: String) -> [[String]] {
         switch action {
         case .stop: return loaded ? [["bootout", service]] : []
-        case .start: return loaded ? [["kickstart", service]] : [["bootstrap", domain, plist]]
+        // launchd keeps the loaded job's environment after a plist rewrite.
+        case .start:
+            return loaded
+                ? [["bootout", service], ["bootstrap", domain, plist]]
+                : [["bootstrap", domain, plist]]
         case .restart:
             return loaded
                 ? [["bootout", service], ["bootstrap", domain, plist]]

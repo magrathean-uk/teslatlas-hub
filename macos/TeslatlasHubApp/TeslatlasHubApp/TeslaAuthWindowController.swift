@@ -283,7 +283,8 @@ final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKN
     private var finished = false
     private var callbackConsumed = false
 
-    init(completion: @escaping (Result<TeslaAuthTokens, Error>) -> Void) throws {
+    init(loadAuthorizationURL: Bool = true,
+         completion: @escaping (Result<TeslaAuthTokens, Error>) -> Void) throws {
         flow = try TeslaOAuthFlow()
         self.completion = completion
         let configuration = WKWebViewConfiguration()
@@ -299,9 +300,11 @@ final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKN
         webView.navigationDelegate = self
         window.contentView = webView
         window.center()
-        webView.load(URLRequest(url: flow.authorizationURL,
-                                cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
-                                timeoutInterval: 30))
+        if loadAuthorizationURL {
+            webView.load(URLRequest(url: flow.authorizationURL,
+                                    cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
+                                    timeoutInterval: 30))
+        }
     }
 
     @available(*, unavailable)
@@ -336,7 +339,14 @@ final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKN
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!,
                  withError error: Error) {
         guard !callbackConsumed else { return }
+        guard !Self.isBenignNavigationInterruption(error) else { return }
         finish(.failure(error))
+    }
+
+    static func isBenignNavigationInterruption(_ error: Error) -> Bool {
+        let error = error as NSError
+        return (error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled)
+            || (error.domain == "WebKitErrorDomain" && error.code == 102)
     }
 
     func windowWillClose(_ notification: Notification) {

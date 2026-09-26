@@ -2,10 +2,47 @@
 
 import AppKit
 import Darwin
+import WebKit
 import XCTest
 @testable import Teslatlas_Hub
 
 final class OnboardingWindowControllerTests: XCTestCase {
+    func testTeslaLoginKeepsWindowOpenForInterruptedNavigation() throws {
+        for error in [
+            NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled),
+            NSError(domain: "WebKitErrorDomain", code: 102)
+        ] {
+            var completions = 0
+            let controller = try TeslaAuthWindowController(loadAuthorizationURL: false) { _ in
+                completions += 1
+            }
+            controller.showWindow(nil)
+            let window = try XCTUnwrap(controller.window)
+            XCTAssertTrue(window.isVisible)
+
+            controller.webView(WKWebView(frame: .zero), didFailProvisionalNavigation: nil,
+                               withError: error)
+            XCTAssertTrue(window.isVisible)
+            XCTAssertEqual(completions, 0)
+            window.close()
+        }
+    }
+
+    func testTeslaLoginClosesForGenuineNavigationFailure() throws {
+        var completions = 0
+        let controller = try TeslaAuthWindowController(loadAuthorizationURL: false) { _ in
+            completions += 1
+        }
+        controller.showWindow(nil)
+        let window = try XCTUnwrap(controller.window)
+
+        controller.webView(WKWebView(frame: .zero), didFailProvisionalNavigation: nil,
+                           withError: NSError(domain: NSURLErrorDomain,
+                                              code: NSURLErrorCannotConnectToHost))
+        XCTAssertFalse(window.isVisible)
+        XCTAssertEqual(completions, 1)
+    }
+
     func testOnboardingContainerPinsDocumentWidthAndKeepsChromeFixedWhileBodyScrolls() throws {
         let header = NSView()
         let footer = NSView()

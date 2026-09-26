@@ -247,7 +247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             "app_version": appVersion
         ])
         let showOnboardingImmediately = hubController.shouldShowOnboardingBeforeInitialRefresh
-        showDashboard(makeVisible: false) { [weak self] snapshot in
+        showDashboard(makeVisible: !showOnboardingImmediately) { [weak self] snapshot in
             guard let self else { return }
             if let scene = self.hubController.previewScene {
                 self.mainWindowController?.configurePreviewScene(scene)

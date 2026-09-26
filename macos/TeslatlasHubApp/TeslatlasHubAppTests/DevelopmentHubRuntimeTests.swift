@@ -250,7 +250,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         ), [["bootstrap", domain, plist]])
         XCTAssertEqual(DevelopmentLaunchctlServiceController.commandPlan(
             action: .start, loaded: true, domain: domain, service: service, plist: plist
-        ), [["kickstart", service]])
+        ), [["bootout", service], ["bootstrap", domain, plist]])
         XCTAssertEqual(DevelopmentLaunchctlServiceController.commandPlan(
             action: .stop, loaded: true, domain: domain, service: service, plist: plist
         ), [["bootout", service]])
