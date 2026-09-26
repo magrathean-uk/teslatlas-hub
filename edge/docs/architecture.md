@@ -11,7 +11,7 @@ flowchart LR
     V[Tesla vehicle] -->|Tesla mTLS WebSocket| R[Pinned Tesla receiver sidecar]
     R -->|Bearer + strict JSON on 127.0.0.1| A[Edge durable admission]
     A -->|XChaCha20-Poly1305 files| S[Bounded spool]
-    H[Home Hub] -->|Outbound mTLS + scoped bearer| D[Edge pull and ack API]
+    H[Home Hub] -->|Outbound mTLS + whole-queue bearer| D[Edge pull and ack API]
     S --> D
     D -->|Versioned batches| H
 ```

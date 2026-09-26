@@ -6,9 +6,11 @@ Fleet Telemetry bridge in a separate filesystem and PID namespace while sharing
 Edge's network namespace. This is a Linux container workflow. Docker Desktop
 on macOS is a Linux VM and does not establish native macOS service acceptance.
 
-The image is built locally from the pinned Rust 1.98 and Go 1.27.0 toolchains.
+The Dockerfile selects Rust 1.98 and Go 1.27.0. Its base images use tags,
+not immutable image digests.
 The bridge build verifies the upstream archive and dispatcher patch checksums.
-No credentials, certificates or tokens are part of the build context or image.
+Keep credentials, certificates and tokens outside the checkout and build
+context; the supplied recipe does not intentionally copy runtime secrets.
 The runtime user is fixed at UID/GID `10001:10001`; the receiver bearer must be
 an owner-only regular file owned by that identity.
 
@@ -71,7 +73,8 @@ The receiver environment points to
 `/run/teslatlas-edge-vehicle-tls/vehicle-tls.crt` and `.key`, and listens on
 8444 inside the shared network namespace. Host raw TCP 443 is mapped directly
 to that port; Edge Hub TLS is published on the selected private or tunnel
-address at 8443 by default. Set `EDGE_HUB_PORT` and
+address at 8443. The host binding defaults to loopback; set `EDGE_HUB_BIND`
+to the intended private or tunnel address for a remote Hub. Set `EDGE_HUB_PORT` and
 `EDGE_RECEIVER_PORT` for a disposable isolated run; the defaults preserve
 8443 and 443. Port 8080 remains loopback-only and is never published.
 
@@ -155,7 +158,5 @@ replacement, full stop/start, bearer rotation, pending delivery during Hub
 outage, old ACK replay and successful drain with actual Hub output.
 
 The Docker files are source-level packaging in this checkout. A green YAML
-parse or image build is not installed Edge/Hub acceptance, and no Docker daemon
-was available during this execution if the commands above are reported as
-untested. Linux amd64/arm64, filesystem headroom, certificate expiry, raw TCP
+parse or image build is not installed Edge/Hub acceptance, and this guide does not claim a completed installed acceptance run. Linux amd64/arm64, filesystem headroom, certificate expiry, raw TCP
 routing and the single-writer boundary remain separate evidence items.

@@ -8,11 +8,18 @@ the Hub API should be restricted to the home Hub's IP or private tunnel.
 > copy Tesla account tokens, refresh tokens, OAuth client secrets, or command
 > keys onto this host.
 
-Supported source-build targets are macOS 13+ on Apple silicon and current
-Debian/Ubuntu on amd64 or arm64. Rust 1.98 and Go 1.27.0 are exact build
-requirements.
+Package recipes target macOS 13+ on Apple silicon and Debian-family Linux
+on amd64 or arm64. This is recipe coverage, not a supported-release guarantee.
+Cargo requires Rust 1.98 or newer; the receiver builder requires Go 1.27.0
+exactly. Follow the maintained workspace toolchain policy when it applies.
 
 ## Build package candidates
+
+First follow [the build requirements](../../CONTRIBUTING.md#build-requirements).
+For the commands below, set `EDGE_BINARY` and `EDGE_RECEIVER_BINARY` to absolute
+paths of matching target binaries and `EDGE_PACKAGE_DIR` to an existing output
+directory outside the checkout. Shell variables are caller inputs, not paths
+the builders discover. Use a new output filename for each candidate.
 
 The repository contains source-only package recipes. They stage caller-supplied
 target binaries and refuse to overwrite an existing output; a successful
@@ -23,11 +30,11 @@ select the target architecture explicitly:
 
 ```bash
 scripts/build-deb.sh \
-  --binary target/release/teslatlas-edge \
-  --receiver-binary target/release/teslatlas-fleet-telemetry \
+  --binary "$EDGE_BINARY" \
+  --receiver-binary "$EDGE_RECEIVER_BINARY" \
   --version 2026.36.2 \
   --architecture arm64 \
-  --output dist/teslatlas-edge_2026.36.2_arm64.deb
+  --output "$EDGE_PACKAGE_DIR/teslatlas-edge_2026.36.2_arm64.deb"
 ```
 
 For macOS, the product builder creates visible, independently selectable core
@@ -36,10 +43,10 @@ development-only LaunchAgent warning shown during installation:
 
 ```bash
 scripts/build-macos-pkg.sh \
-  --binary target/release/teslatlas-edge \
-  --receiver-binary target/release/teslatlas-fleet-telemetry \
+  --binary "$EDGE_BINARY" \
+  --receiver-binary "$EDGE_RECEIVER_BINARY" \
   --version 2026.36.2 \
-  --output dist/TeslatlasEdge-2026.36.2.pkg
+  --output "$EDGE_PACKAGE_DIR/TeslatlasEdge-2026.36.2.pkg"
 ```
 
 The macOS package does not start either LaunchAgent automatically. Use the
@@ -52,11 +59,12 @@ after providing the fixed state/config/TLS paths. The uninstaller preserves
 ```bash
 git clone https://github.com/magrathean-uk/teslatlas-edge.git
 cd teslatlas-edge
+# Configure an external Cargo target directory as described in CONTRIBUTING.md.
 cargo build --locked --release
 scripts/test-fleet-telemetry-bridge.sh
 scripts/build-fleet-telemetry-bridge.sh \
   --target darwin-arm64 \
-  --output "$PWD/target/release/teslatlas-fleet-telemetry"
+  --output "$EDGE_RECEIVER_BINARY"
 ```
 
 For Linux, replace `darwin-arm64` with `linux-amd64` or `linux-arm64`. The
@@ -77,8 +85,8 @@ sudo useradd --system --home /var/lib/teslatlas-edge --shell /usr/sbin/nologin t
 sudo install -d -o root -g teslatlas-edge -m 0750 /etc/teslatlas-edge
 sudo install -d -o teslatlas-edge -g teslatlas-edge -m 0700 /var/lib/teslatlas-edge
 sudo install -d -o root -g root -m 0755 /usr/lib/teslatlas-edge
-sudo install -o root -g root -m 0755 target/release/teslatlas-edge /usr/bin/teslatlas-edge
-sudo install -o root -g root -m 0755 target/release/teslatlas-fleet-telemetry /usr/lib/teslatlas-edge/fleet-telemetry
+sudo install -o root -g root -m 0755 "$EDGE_BINARY" /usr/bin/teslatlas-edge
+sudo install -o root -g root -m 0755 "$EDGE_RECEIVER_BINARY" /usr/lib/teslatlas-edge/fleet-telemetry
 sudo install -o root -g root -m 0755 scripts/run-with-spool-format-guard.sh /usr/lib/teslatlas-edge/
 sudo install -o root -g teslatlas-edge -m 0640 packaging/config.toml.example /etc/teslatlas-edge/config.toml
 sudo install -o root -g teslatlas-edge -m 0640 packaging/fleet-telemetry.json.example /etc/teslatlas-edge/fleet-telemetry.json
@@ -93,7 +101,9 @@ Install three Hub-link TLS files and three vehicle-receiver TLS files:
 - `vehicle-tls.key`: matching Tesla receiver private key, mode 0600.
 - `vehicle-client-ca.crt`: dedicated Tesla client CA for receiver mTLS, mode 0644.
 
-Use certificates from your chosen private PKI. `hub-client-ca.crt` must be a
+Use your private PKI for the Hub link. Vehicle-facing certificates and trust
+roots must satisfy Tesla Fleet Telemetry enrollment requirements; a private
+Hub CA is not a substitute for the vehicle trust chain. `hub-client-ca.crt` must be a
 dedicated CA for this one Hub installation; do not reuse a broad organizational
 client CA. Do not reuse the vehicle key as the Hub listener key. Then initialize
 Edge-owned secrets:
@@ -132,8 +142,8 @@ the copied config paths accordingly. Install binaries and launch agents:
 
 ```bash
 sudo install -d -m 0755 /usr/local/libexec/teslatlas-edge
-sudo install -m 0755 target/release/teslatlas-edge /usr/local/libexec/teslatlas-edge/
-sudo install -m 0755 target/release/teslatlas-fleet-telemetry /usr/local/libexec/teslatlas-edge/
+sudo install -m 0755 "$EDGE_BINARY" /usr/local/libexec/teslatlas-edge/
+sudo install -m 0755 "$EDGE_RECEIVER_BINARY" /usr/local/libexec/teslatlas-edge/
 sudo install -m 0755 scripts/run-with-spool-format-guard.sh /usr/local/libexec/teslatlas-edge/
 sudo install -m 0755 packaging/macos/scripts/teslatlas-edge-service.sh /usr/local/libexec/teslatlas-edge/
 sudo install -m 0755 packaging/macos/scripts/uninstall-teslatlas-edge.sh /usr/local/libexec/teslatlas-edge/
@@ -225,7 +235,8 @@ curl --fail http://127.0.0.1:8080/metrics
 ss -ltnp
 ```
 
-Only the Tesla receiver and mTLS Hub ports should be public. Receiver admission,
+Only the Tesla receiver needs public reachability. Restrict the mTLS Hub port
+to the intended Hub or private tunnel. Receiver admission,
 health, readiness, and metrics must appear only on loopback. Health output and
 logs must contain no VIN, coordinates, bearer, or payload.
 

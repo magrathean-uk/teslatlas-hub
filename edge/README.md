@@ -1,64 +1,59 @@
 # Teslatlas Edge
 
-Optional user-operated Tesla Fleet Telemetry ingress for a Teslatlas home Hub.
+Teslatlas Edge is an optional, user-operated Fleet Telemetry ingress for a Teslatlas home Hub. A pinned Tesla receiver sidecar sends decoded envelopes to Edge over a loopback bearer-protected endpoint. Edge admits them to an encrypted, bounded spool. The home Hub connects outbound to Edge over mTLS, pulls batches, commits them with deduplication, and acknowledges them. Delivery is at least once.
 
-The current release-cohort product version and its compatibility status are
-described in [product versioning](docs/product-versioning.md).
+Edge does not store Tesla account credentials, expose vehicle-command paths, or act as a hosted relay. The receiver, admission, Hub delivery, credential, health, metrics, and spool boundaries are described in [the architecture](docs/architecture.md).
 
-> **Beta:** Wire version 1 remains compatible. The current on-disk v3 spool
-> format is a guarded forward-only upgrade from v2. Wire version 2 adds stable
-> retry identity, monotonic spool sequence, and durable loss notices. A v2
-> spool with acknowledgement receipts cannot be migrated automatically because
-> those receipts do not identify the original admission; Edge refuses it while
-> preserving the spool for lineage reconciliation. A receipt-free v2 spool can
-> migrate, but its old v1 receipt history is treated as unknown and v1 ACKs
-> require the v2 endpoint after migration. G5 accepted one bounded product
-> `2026.36.2` source-built synthetic Edge-to-Hub journey on Debian 13.6 ARM64:
-> one guarded
-> record survived Hub outage and Edge restart, retained stable retry identity,
-> committed before occurrence-bound ACK, projected once, and remained durable
-> through Hub restart. This is not installed/package/service-manager or live
-> vehicle proof. Edge is not a hosted relay and stores no Tesla account or
-> vehicle-command credentials.
+## Current source status
 
-V1 acknowledgement replay is bounded by the 1,024 retained receipt files. If
-v1 receipt history is pruned, Edge fails subsequent v1 acknowledgements closed
-and requires the v2 endpoint for sequence-bound receipt identity.
+The Cargo package version is `2026.36.2`. [Cargo.toml](Cargo.toml) declares
+Rust 1.98 as the minimum compiler version and `AGPL-3.0-only` as the license.
+Wire versions 1 and 2 are implemented; the spool format is 3. Read the
+[upgrade guide](docs/operations/upgrade-backup-recovery.md) before opening an
+older spool with this version.
 
-## Build and inspect
+Historical G5 evidence covers a bounded source-built synthetic journey on
+Debian 13.6 ARM64. The 2026-09-22 cleanup record reports removed runtime
+artifacts. Neither record establishes today's installation, listener state,
+package, service-manager lifecycle, live vehicle or production acceptance.
+See [product versioning](docs/product-versioning.md) for the evidence boundary.
 
-```bash
-cargo build --locked --release
-cargo run -- --help
-scripts/test-fleet-telemetry-bridge.sh
-```
+## Development
 
-The service accepts decoded receiver envelopes on loopback, durably writes an
-encrypted bounded spool, and exposes batches to a home Hub over mTLS plus a
-rotating bearer. Delivery is at-least-once. The Hub must deduplicate and commit
-records and gap evidence before acknowledging them.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, build commands and
+focused checks. The bridge check downloads and builds a pinned receiver and
+requires Go 1.27.0 exactly. In the maintained workspace, use its existing
+execution wrapper and toolchain policy; independent clones need an external
+Cargo target directory. Package recipes consume matching target binaries.
 
-## Documentation
+## Configuration and operation
 
-- [Architecture](docs/architecture.md)
-- [Hub delivery contract](docs/hub-delivery-contract.md)
-- Public contract: `edge-delivery-v2@2.0.0` under the sibling
-  `teslatlas-protocol/profiles/edge-delivery-v2/2.0.0` repository path
-- [Installed matrix coordinator and Edge contract](tools/interop/client_lanes/README.md)
-- [Native installation](docs/operations/native-installation.md)
-- [Docker installation](docs/operations/docker.md)
-- [Upgrade, backup, and recovery](docs/operations/upgrade-backup-recovery.md)
-- [Third-party notices](docs/legal/third-party-notices.md)
+The checked-in examples are [packaging/config.toml.example](packaging/config.toml.example), [packaging/docker/config.toml.example](packaging/docker/config.toml.example), and the matching Fleet Telemetry JSON examples. Native service installation, TLS boundaries, credential enrolment, rotation, and local health checks are in [native installation](docs/operations/native-installation.md). Compose mounts and lifecycle commands are in [Docker installation](docs/operations/docker.md). Preserve the spool key and complete spool during backups and upgrades; [upgrade, backup, and recovery](docs/operations/upgrade-backup-recovery.md) documents the format-3 migration and recovery rules.
 
-## Scope
+The public delivery contract is `edge-delivery-v2@2.0.0` in the sibling
+`teslatlas-protocol/profiles/edge-delivery-v2/2.0.0` tree. The request and acknowledgement rules are in [the Hub delivery contract](docs/hub-delivery-contract.md). The installed matrix coordinator and source-only handoff helpers are documented in [tools/interop/client_lanes](tools/interop/client_lanes/README.md); the coordinator can drive lifecycle operations through the shared runner,
+while the handoff helper only prepares validated inputs. Their presence does
+not demonstrate an installed matrix result.
 
-Included: Tesla receiver sidecar, loopback durable admission, encrypted spool,
-Hub pull/ack API, credential lifecycle, health, and aggregate metrics.
+## Scope and boundaries
 
-Excluded: Tesla account tokens, vehicle commands, consumer APIs, mandatory
-hosted relays, managed VPS deployment, and hosted GitHub automation.
+Included: the Tesla receiver sidecar integration, loopback durable admission, encrypted bounded spool, Hub pull and acknowledgement API, credential lifecycle, health, readiness, and aggregate metrics.
 
-## Licence
+Excluded: Tesla account tokens, vehicle commands, consumer APIs, a mandatory hosted relay, managed VPS deployment, and hosted GitHub automation. Keep receiver admission and health endpoints on loopback. Restrict the Hub mTLS listener to the intended private address or tunnel, and forward receiver traffic as raw TCP when a router is used.
 
-AGPL-3.0-only. The optional Tesla receiver sidecar retains its upstream
-Apache-2.0 terms and modification notices.
+## Contributing and support
+
+- [Contributing](CONTRIBUTING.md): requirements, checks and review expectations.
+- [Troubleshooting](SUPPORT.md): operational guides and safe report contents.
+- [Security](SECURITY.md): trust boundaries and private reporting limitations.
+- [Agent guidance](AGENTS.md): project-specific working rules.
+
+GitHub is source storage for this project. No hosted CI, build/test automation
+or release publishing is part of the development workflow.
+
+## License
+
+The main project declares [AGPL-3.0-only](LICENSE). The optional Tesla receiver
+sidecar retains its upstream Apache-2.0 terms and modification notices. See
+[licensing](docs/licensing.md), [third-party notices](docs/legal/third-party-notices.md)
+and the bundled [Apache License 2.0](docs/legal/Apache-2.0-fleet-telemetry.txt).
