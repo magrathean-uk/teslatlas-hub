@@ -5,7 +5,9 @@ record for this repository's current-Hub HTTP claim. G3 r2 accepted the record
 for product `2026.36.2`, profile `hub-http-v1@1.0.0`, and manifest SHA-256
 `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
 The tested versions, content-bound Hub source fingerprints, and six G4/G5/G6
-receipt paths are populated from accepted bounded evidence.
+receipt paths are populated from accepted bounded evidence. The active
+`hub-http-v1@1.1.0` successor has a separate manifest and remains a candidate;
+G3 r2 does not admit it.
 
 The record's identities have separate meanings:
 

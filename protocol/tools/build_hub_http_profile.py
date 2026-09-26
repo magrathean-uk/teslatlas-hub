@@ -10,8 +10,8 @@ import json
 import urllib.parse
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1] / 'profiles/hub-http-v1/1.0.0'
-ID = 'hub-http-v1@1.0.0'
+ROOT = Path(__file__).resolve().parents[1] / 'profiles/hub-http-v1/1.1.0'
+ID = 'hub-http-v1@1.1.0'
 DRAFT = 'https://json-schema.org/draft/2020-12/schema'
 INT = {'type':'integer','minimum':-(2**63),'maximum':2**63-1}
 STR = {'type':'string','maxLength':65536}
@@ -26,7 +26,7 @@ def obj(fields, required=None):
     return {'type':'object','properties':fields,'required':list(fields) if required is None else required,'additionalProperties':False}
 
 def schema(name, content):
-    return {'$schema':DRAFT,'$id':'urn:teslatlas:hub-http-v1:1.0.0:'+name,**content}
+    return {'$schema':DRAFT,'$id':'urn:teslatlas:hub-http-v1:1.1.0:'+name,**content}
 
 CURRENT_GROUPS = {
 'integer':'observed_at_ms since battery_level usable_battery_level speed scheduled_charging_start_time charge_limit_soc charger_phases charge_current_request charge_current_request_max center_display_state sun_roof_percent_open download_perc install_perc',
@@ -85,7 +85,7 @@ def bundle():
         ('drives','GET','/v1/vehicles/{vehicle_id}/drives',True,[200,304,400,401,404,503]),
         ('claim','POST','/v1/pairings/{pairing_id}/claim',False,[200,400,401,404,415,422,503]),
         ('rotate','POST','/v1/device/rotate',True,[200,401,404,503])]
-    profile={'profile_id':ID,'status':'candidate','contract_version':'1.0.0','product_version_binding':'independent; see ecosystem compatibility manifests',
+    profile={'profile_id':ID,'status':'candidate','contract_version':'1.1.0','previous_profile':'hub-http-v1@1.0.0','product_version_binding':'independent; see ecosystem compatibility manifests',
         'license':'Apache-2.0','schema_dialect':DRAFT,'max_response_bytes':1048576,'max_claim_request_bytes':4096,
         'capabilities':['query.vehicles','query.current','query.drives','sync.packs'],
         'unsupported':{'rich_protocol_versions':'1.0/1.1/1.2 rich profiles are separate contracts','commands':'no public vehicle command route','sse':'no public event stream or epoch','metadata':'no public metadata CRUD','revisions':'no public current or drive snapshot revision','charges':'no public charge query; retained in sync packs','protocol_version_header':'not emitted or required'},
@@ -188,6 +188,6 @@ def main():
     else:
         for name,data in files.items():
             (ROOT/name).parent.mkdir(parents=True,exist_ok=True);(ROOT/name).write_bytes(data)
-    print('hub-http-v1@1.0.0 sha256='+hashlib.sha256(files['SHA256SUMS']).hexdigest())
+    print('hub-http-v1@1.1.0 sha256='+hashlib.sha256(files['SHA256SUMS']).hexdigest())
 
 if __name__=='__main__':main()

@@ -319,6 +319,6 @@
   "phases": [],
   "validator": {
     "path": "matrix_contract.py",
-    "sha256": "c1f9801e3aad72145a720b67bdd4dd779ec5f1b036e17931d55f22cc540af425"
+    "sha256": "2b3532d892961f155efd7552cc3ef419b7ae3028698410ba50d4980174626d3d"
   }
 }

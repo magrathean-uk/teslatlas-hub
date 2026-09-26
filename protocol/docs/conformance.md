@@ -35,13 +35,13 @@ The current gate executes 31 profile/case runs: nine for `1.0.0`, ten for
 
 ## Current-Hub acceptance
 
-`hub-http-v1@1.0.0` is a separate current-Hub profile. Run it by itself with
+`hub-http-v1@1.1.0` is a separate current-Hub profile. Run it by itself with
 the actual-Hub adapter and a private descriptor supplied by the Hub owner:
 
 ```sh
 TESLATLAS_HUB_HTTP_CONFIG=/absolute/private/ready-or-matrix.json
 ./conformance/run \
-  --profile hub-http-v1@1.0.0 \
+  --profile hub-http-v1@1.1.0 \
   --adapter "$PWD/conformance/adapters/actual-hub" \
   --config "$TESLATLAS_HUB_HTTP_CONFIG" \
   --json

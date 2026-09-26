@@ -812,8 +812,8 @@ def run() -> int:
     if args.timeout_seconds <= 0:
         raise ConformanceError("timeout-seconds must be positive")
 
-    if args.profile and "hub-http-v1@1.0.0" in args.profile:
-        if args.profile != ["hub-http-v1@1.0.0"]:
+    if args.profile and "hub-http-v1@1.1.0" in args.profile:
+        if args.profile != ["hub-http-v1@1.1.0"]:
             raise ConformanceError("actual-Hub acceptance must run separately from rich profiles")
         actual = ROOT / "conformance/adapters/actual-hub"
         if args.adapter is None or Path(args.adapter).resolve() != actual.resolve():

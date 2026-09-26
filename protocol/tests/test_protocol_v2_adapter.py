@@ -16,7 +16,7 @@ from conformance import hub_matrix
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "profiles" / "hub-http-v1" / "1.0.0"
+PROFILE = ROOT / "profiles" / "hub-http-v1" / "1.1.0"
 CONTRACT = ROOT / "tools" / "matrix-contract.json"
 SESSION_ID = "11111111-1111-4111-8111-111111111111"
 HUB_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -73,7 +73,7 @@ class ProtocolV2Tests(unittest.TestCase):
         return cert, digest(__import__("ssl").PEM_cert_to_DER_cert(cert.read_text()))
 
     def _config_and_session(self) -> tuple[dict, Path]:
-        profile_dir = self.private / "profile" / "hub-http-v1" / "1.0.0"
+        profile_dir = self.private / "profile" / "hub-http-v1" / "1.1.0"
         shutil.copytree(PROFILE, profile_dir)
         for path in profile_dir.rglob("*"):
             if path.is_file():
@@ -107,7 +107,7 @@ class ProtocolV2Tests(unittest.TestCase):
             "cell_id": "protocol_actual_hub__macos_arm64",
             "product_version": "2026.36.2",
             "profile_id": "hub-http-v1",
-            "profile_revision": "1.0.0",
+            "profile_revision": "1.1.0",
             "profile_sha256": digest((profile_dir / "SHA256SUMS").read_bytes()),
             "source_identities": [
                 {"role": "hub_source", "repo": "/workspace/hub", "head": "a" * 40, "dirty_patch_sha256": "b" * 64, "untracked_source_manifest_sha256": "c" * 64},
@@ -189,7 +189,7 @@ class ProtocolV2Tests(unittest.TestCase):
             "adapter": "protocol_actual_hub",
             "cell_id": header_value["cell_id"],
             "product_version": "2026.36.2",
-            "profile": {"id": "hub-http-v1", "revision": "1.0.0", "path": str(PROFILE), "sha256": profile_sha256(PROFILE)},
+            "profile": {"id": "hub-http-v1", "revision": "1.1.0", "path": str(PROFILE), "sha256": profile_sha256(PROFILE)},
             "source_identities": header_value["source_identities"],
             "artifacts": header_value["artifacts"],
             "runtime": header_value["runtime"],

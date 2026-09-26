@@ -4,7 +4,7 @@ This flow is sufficient to build an unaffiliated client for the rich semantic
 profile `1.2.0` from public artifacts. It intentionally demonstrates version
 negotiation, SSE, commands, and metadata. It is not the current-Hub HTTP flow;
 choose [`docs/current-hub.md`](current-hub.md) for
-`hub-http-v1@1.0.0`, which has no version header or those routes.
+`hub-http-v1@1.1.0`, which has no version header or those routes.
 
 The rich OpenAPI document is self-contained. The current-Hub OpenAPI document
 is a separate 3.1.0 artifact whose adjacent schema files must travel with it.

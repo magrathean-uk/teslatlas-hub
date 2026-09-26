@@ -53,7 +53,7 @@ REQUIRED_PATHS = (
     "events/teslatlas-v1.sse.json",
     "fixtures/manifest.json",
     "compatibility/manifest.json",
-    "profiles/hub-http-v1/1.0.0/SHA256SUMS",
+    "profiles/hub-http-v1/1.1.0/SHA256SUMS",
     "profiles/edge-delivery-v2/2.0.0/SHA256SUMS",
     "conformance/run",
     "tools/check",
@@ -76,7 +76,7 @@ MANIFEST_KEYS = {
 }
 CONTRACTS = {
     "rich_profiles": ["1.0.0", "1.1.0", "1.2.0"],
-    "current_hub": "hub-http-v1@1.0.0",
+    "current_hub": "hub-http-v1@1.1.0",
     "edge_delivery": "edge-delivery-v2@2.0.0",
 }
 

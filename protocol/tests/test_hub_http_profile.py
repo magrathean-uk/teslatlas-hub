@@ -1,5 +1,6 @@
 """Independent current-Hub contract tests; no Hub implementation imports."""
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -11,7 +12,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 from openapi_spec_validator import validate as validate_openapi
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / 'profiles/hub-http-v1/1.0.0'
+PROFILE = ROOT / 'profiles/hub-http-v1/1.1.0'
 
 class HubHttpTests(unittest.TestCase):
     @classmethod
@@ -32,7 +33,11 @@ class HubHttpTests(unittest.TestCase):
     def test_bundle_is_deterministic_and_intact(self):
         result = subprocess.run([sys.executable, str(ROOT / 'tools/build_hub_http_profile.py'), '--check'], capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
-        self.assertEqual(self.module.load_profile(PROFILE)['profile_id'], 'hub-http-v1@1.0.0')
+        profile = self.module.load_profile(PROFILE)
+        self.assertEqual(profile['profile_id'], 'hub-http-v1@1.1.0')
+        self.assertEqual(profile['previous_profile'], 'hub-http-v1@1.0.0')
+        frozen = ROOT / 'profiles/hub-http-v1/1.0.0/SHA256SUMS'
+        self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(), 'b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926')
 
     def test_current_hub_openapi_describes_claim_extractor_errors_and_body_limit(self):
         profile = self.module.load_profile(PROFILE)
@@ -151,7 +156,7 @@ class HubHttpTests(unittest.TestCase):
         self.assertEqual(unavailable['response'],{'status':406,'headers':{'cache_control':'no-store'},'body_bytes':0,'manifest_signature':'absent'})
 
     def test_private_network_config_rejects_missing_prerequisites(self):
-        for config in ({}, {'endpoint':'https://127.0.0.1:1','profile_id':'hub-http-v1@1.0.0'}):
+        for config in ({}, {'endpoint':'https://127.0.0.1:1','profile_id':'hub-http-v1@1.1.0'}):
             with self.assertRaises(self.module.AcceptanceError):
                 self.module.run_network(config)
 
@@ -205,7 +210,7 @@ class HubHttpTests(unittest.TestCase):
                 {'content-type':'application/json','etag':'"page"','cache-control':'no-store'},raw),[])
 
     def test_explicit_acceptance_without_private_prerequisites_fails(self):
-        result=subprocess.run([sys.executable,str(ROOT/'conformance/runner.py'),'--profile','hub-http-v1@1.0.0','--adapter',str(ROOT/'conformance/adapters/actual-hub'),'--json'],capture_output=True,env={'PATH':'/usr/bin:/bin'})
+        result=subprocess.run([sys.executable,str(ROOT/'conformance/runner.py'),'--profile','hub-http-v1@1.1.0','--adapter',str(ROOT/'conformance/adapters/actual-hub'),'--json'],capture_output=True,env={'PATH':'/usr/bin:/bin'})
         self.assertNotEqual(result.returncode,0)
         self.assertNotIn(b'passed":1',result.stdout)
 
@@ -288,7 +293,7 @@ class NativeEvidenceTests(unittest.TestCase):
 
     def test_failed_native_preflight_does_not_read_invitation(self):
         from unittest.mock import patch
-        self.config.update(profile_id='hub-http-v1@1.0.0',profile_path=str(PROFILE),profile_sha256='0'*64,
+        self.config.update(profile_id='hub-http-v1@1.1.0',profile_path=str(PROFILE),profile_sha256='0'*64,
             invitation_path=str(self.root/'never-read-secret.json'),certificate_path='unused',scenario_path='unused',scenario_sha256='0'*64,
             update_request_path='unused',update_receipt_path='unused')
         self.config['binary_sha256']=None

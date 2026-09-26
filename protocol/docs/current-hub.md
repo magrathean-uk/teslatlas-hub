@@ -3,8 +3,8 @@
 This guide covers the public HTTP surface implemented by a current Teslatlas
 Hub. Run the shell blocks in one session, in order, with the private directory
 and validated endpoint produced by the earlier blocks. The wire contract is
-`hub-http-v1@1.0.0` in
-[`profiles/hub-http-v1/1.0.0/`](../profiles/hub-http-v1/1.0.0/). Copy the whole
+`hub-http-v1@1.1.0` in
+[`profiles/hub-http-v1/1.1.0/`](../profiles/hub-http-v1/1.1.0/). Copy the whole
 directory when distributing the contract: its OpenAPI 3.1.0 document resolves
 schemas from the adjacent profile files.
 
@@ -18,12 +18,14 @@ separate from the richer semantic profiles (`1.0.0`, `1.1.0`, and
 request header, SSE stream, vehicle command route, metadata CRUD, or public
 charge-query route.
 
-The profile is admitted for the bounded product `2026.36.2` compatibility
-record. G3 r2 binds the exact profile manifest digest to the accepted G4, G5,
-and G6 source-built synthetic runtime receipts. This admission does not claim
-an installed service, release artifact, real Tesla data, or a complete platform
-matrix. See [`docs/compatibility.md`](compatibility.md) and
-[`docs/verification.md`](verification.md) for the exact evidence boundary.
+`hub-http-v1@1.1.0` is a candidate successor to the frozen
+`hub-http-v1@1.0.0` profile. It defines the paired-bearer grace and schema 2.2
+no-op-unavailable behavior in this guide. G3 r2 admits only the exact frozen
+`1.0.0` manifest and its G4, G5, and G6 synthetic runtime receipts; it does not
+admit this distinct `1.1.0` manifest. Fresh Hub evidence is required before
+claiming runtime acceptance for `1.1.0`. See
+[`docs/compatibility.md`](compatibility.md) and
+[`docs/verification.md`](verification.md) for the accepted `1.0.0` boundary.
 
 ## Choose the profile
 
@@ -36,7 +38,7 @@ Require `query.drives` before attempting the drives route. `sync.packs` is a
 delivery capability; it does not add a query endpoint.
 
 The `version` field is the Hub product version (for example `2026.36.2`),
-not a wire revision. The profile identity remains `hub-http-v1@1.0.0`.
+not a wire revision. The profile identity remains `hub-http-v1@1.1.0`.
 
 ## Routes
 
@@ -87,7 +89,7 @@ curl --silent --show-error --config /dev/null \
   "$hub_endpoint/.well-known/teslatlas-hub"
 TESLATLAS_DISCOVERY="$private_dir/discovery.json" \
 TESLATLAS_DISCOVERY_HEADERS="$private_dir/discovery.headers" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.0.0" \
+TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" \
 python3 - <<'PY'
 import json
 import os
@@ -112,7 +114,7 @@ value = json.loads(raw)
 schema = json.loads((profile / "discovery.schema.json").read_bytes())
 errors = list(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(value))
 if errors:
-    raise SystemExit("discovery does not match hub-http-v1@1.0.0")
+    raise SystemExit("discovery does not match hub-http-v1@1.1.0")
 if "query.vehicles" not in value["capabilities"] or "query.current" not in value["capabilities"]:
     raise SystemExit("Hub does not advertise the required query capabilities")
 PY
@@ -162,7 +164,7 @@ certificate.
 TESLATLAS_HUB_CA="$private_dir/ca.pem" \
 TESLATLAS_INVITATION="$private_dir/invitation.json" \
 TESLATLAS_CLAIM_RESPONSE="$private_dir/claim.json" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.0.0" \
+TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" \
 TESLATLAS_DEVICE_NAME="My current-Hub client" \
 python3 - <<'PY'
 import hashlib
@@ -279,7 +281,7 @@ set -eu
 umask 077
 TESLATLAS_CLAIM_RESPONSE="$private_dir/claim.json" \
 TESLATLAS_AUTH_HEADER="$private_dir/authorization.header" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.0.0" \
+TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" \
 python3 - <<'PY'
 import os
 from pathlib import Path
@@ -302,7 +304,7 @@ PY
 
 validate_resource() {
   RESOURCE_BODY="$1" RESOURCE_HEADERS="$2" RESOURCE_KIND="$3" \
-  TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.0.0" python3 - <<'PY'
+  TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" python3 - <<'PY'
 import os
 from pathlib import Path
 from conformance import hub_http
@@ -321,7 +323,7 @@ if status != 200 or hub_http.validate_raw(
     os.environ["TESLATLAS_PROFILE"], os.environ["RESOURCE_KIND"], status,
     headers, body_path.read_bytes()
 ):
-    raise SystemExit("resource response does not match hub-http-v1@1.0.0")
+    raise SystemExit("resource response does not match hub-http-v1@1.1.0")
 PY
 }
 
@@ -420,7 +422,7 @@ while [ "$page" -lt "$max_pages" ]; do
   DRIVE_PAGE="$output" DRIVE_HEADERS="$headers" CURSOR_FILE="$cursor_file" \
   SEEN_CURSORS="$seen_cursors" \
   NEXT_CURSOR_FILE="$private_dir/next.cursor" \
-  TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.0.0" python3 - <<'PY'
+  TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" python3 - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -440,7 +442,7 @@ problems = hub_http.validate_raw(
     os.environ["TESLATLAS_PROFILE"], "drives", status, headers, body_path.read_bytes()
 )
 if problems:
-    raise SystemExit("drive response does not match hub-http-v1@1.0.0")
+    raise SystemExit("drive response does not match hub-http-v1@1.1.0")
 value = hub_http.strict_json(body_path.read_bytes())
 next_cursor = value["next_cursor"]
 next_path = Path(os.environ["NEXT_CURSOR_FILE"])
@@ -494,7 +496,7 @@ curl --silent --show-error --get \
   "$endpoint/v1/vehicles/$vehicle_id/drives"
 DRIVE_PAGE="$private_dir/drives-conditional.json" \
 DRIVE_HEADERS="$private_dir/drives-conditional.headers" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.0.0" python3 - <<'PY'
+TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" python3 - <<'PY'
 import os
 from pathlib import Path
 from conformance import hub_http
@@ -559,7 +561,7 @@ chmod 600 "$private_dir/authorization.old"
 ROTATED_CLAIM="$private_dir/rotated-claim.json" \
 ROTATED_HEADERS="$private_dir/rotated-claim.headers" \
 AUTH_HEADER="$private_dir/authorization.header" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.0.0" python3 - <<'PY'
+TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" python3 - <<'PY'
 import os
 from pathlib import Path
 from conformance import hub_http

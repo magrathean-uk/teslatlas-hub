@@ -30,7 +30,7 @@ except ImportError:  # direct execution through conformance/adapters/actual-hub
 MATRIX_KIND = "protocol-actual-hub-matrix"
 PRODUCT_VERSION = "2026.36.2"
 PROFILE_NAME = "hub-http-v1"
-PROFILE_REVISION = "1.0.0"
+PROFILE_REVISION = "1.1.0"
 UNKNOWN_VEHICLE = "33333333-3333-4333-8333-333333333333"
 EXPECTED_VEHICLES = [
     {"vehicle_id": "11111111-1111-4111-8111-111111111111", "display_name": "Interop – Árvíztűrő 🚗"},
@@ -255,7 +255,7 @@ def _validate_profile_staging(inputs, header):
         if len(candidates) != 1 or candidates[0] in by_name:
             raise MatrixAcceptanceError("matrix profile member layout is invalid")
         name = candidates[0]
-        suffix = "/hub-http-v1/1.0.0/" + name
+        suffix = "/hub-http-v1/1.1.0/" + name
         if not staged["root"]["path"].endswith(suffix) or not staged["local"]["path"].endswith(suffix):
             raise MatrixAcceptanceError("matrix profile member layout is invalid")
         by_name[name] = staged
@@ -280,7 +280,7 @@ def _validate_profile_staging(inputs, header):
         profile = hub_http.strict_json(_strict_private_file(by_name["profile.json"]["local"]["path"], "matrix profile.json"))
     except Exception:
         raise MatrixAcceptanceError("matrix profile.json is invalid") from None
-    if not isinstance(profile, dict) or profile.get("profile_id") != "hub-http-v1@1.0.0" or profile.get("contract_version") != "1.0.0":
+    if not isinstance(profile, dict) or profile.get("profile_id") != "hub-http-v1@1.1.0" or profile.get("contract_version") != "1.1.0":
         raise MatrixAcceptanceError("matrix profile identity is invalid")
     if not isinstance(header, dict) or header.get("profile_sha256") != manifest["local"]["sha256"]:
         raise MatrixAcceptanceError("matrix profile differs from evidence header")

@@ -6,7 +6,7 @@ Public, source-neutral protocol contracts for Teslatlas Hub clients and integrat
 
 This repository carries three related contracts with different identities:
 
-- Candidate current-Hub HTTP: `hub-http-v1@1.0.0`, documented in
+- Candidate current-Hub HTTP: `hub-http-v1@1.1.0`, documented in
   [`docs/current-hub.md`](docs/current-hub.md). It describes discovery,
   pairing, authenticated vehicle/current/drives reads, and credential
   rotation.
@@ -79,7 +79,7 @@ acceptance.
 - `fixtures/v1/` — deterministic normal, duplicate, delayed, missing, and
   reordered observation scenarios.
 - `compatibility/` — the current and previous two minor profiles.
-- `profiles/hub-http-v1/1.0.0/` — current-Hub HTTP schemas, OpenAPI 3.1.0,
+- `profiles/hub-http-v1/1.1.0/` — current-Hub HTTP schemas, OpenAPI 3.1.0,
   examples, cases, and content hash. Distribute the complete directory because
   its OpenAPI references adjacent schema files.
 - `profiles/edge-delivery-v2/2.0.0/` — Edge pull, stable identity,

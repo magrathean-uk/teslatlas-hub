@@ -38,7 +38,7 @@ conflict is resolved and the local validation gate passes.
 | Events | `events/teslatlas-v1.sse.json` | SSE event names, payloads, framing, replay rules |
 | Data | `schemas/*.schema.json` | Observation, projection, quality, resource, command, metadata payloads |
 | Compatibility | `fixtures/`, `compatibility/`, `conformance/` | Rich-profile deterministic cross-client behaviour and two-minor-version support |
-| Current-Hub HTTP | `profiles/hub-http-v1/1.0.0/` | Candidate discovery, pairing, authenticated read, rotation, and bounded conformance contract |
+| Current-Hub HTTP | `profiles/hub-http-v1/1.1.0/` | Candidate discovery, pairing, authenticated read, rotation, and bounded conformance contract |
 
 ## Public rules
 

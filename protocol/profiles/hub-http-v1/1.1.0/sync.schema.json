@@ -55,6 +55,6 @@
       "type": "object"
     }
   },
-  "$id": "urn:teslatlas:hub-http-v1:1.0.0:sync",
+  "$id": "urn:teslatlas:hub-http-v1:1.1.0:sync",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }

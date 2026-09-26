@@ -17,8 +17,8 @@ import urllib.request
 
 from jsonschema import Draft202012Validator, FormatChecker
 
-PROFILE_ID='hub-http-v1@1.0.0'
-DEFAULT_PROFILE=Path(__file__).resolve().parents[1]/'profiles/hub-http-v1/1.0.0'
+PROFILE_ID='hub-http-v1@1.1.0'
+DEFAULT_PROFILE=Path(__file__).resolve().parents[1]/'profiles/hub-http-v1/1.1.0'
 MAX_BYTES=1048576
 
 _native_spec=importlib.util.spec_from_file_location('hub_native_evidence',Path(__file__).with_name('hub_native_evidence.py'))

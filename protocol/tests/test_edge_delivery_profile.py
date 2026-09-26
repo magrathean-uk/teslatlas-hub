@@ -64,10 +64,10 @@ class EdgeDeliveryProfileTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual(self.profile["profile_id"], PROFILE_ID)
-        current_hub_manifest = ROOT / "profiles/hub-http-v1/1.0.0/SHA256SUMS"
+        current_hub_manifest = ROOT / "profiles/hub-http-v1/1.1.0/SHA256SUMS"
         self.assertEqual(
             hashlib.sha256(current_hub_manifest.read_bytes()).hexdigest(),
-            "65568a9a03b8a94d44574105777d5bb702b0e226cb900833a76108c3011bf4d0",
+            "47278485e4962aaa3ae177a3fc916281191b0d066edd1b40aad73fdad20b0f85",
         )
 
     def test_literal_stable_and_legacy_ids_match_independent_hashes(self):

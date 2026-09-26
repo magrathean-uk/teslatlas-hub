@@ -113,14 +113,10 @@
       "status": 401
     },
     {
-      "id": "rotated-bearer-grace-valid",
+      "body": "empty",
+      "id": "rotated-bearer",
       "kind": "vehicles",
-      "status": 200
-    },
-    {
-      "id": "rotation-lost-response-retry",
-      "kind": "rotate",
-      "status": 200
+      "status": 401
     },
     {
       "error_code": "invalid_cursor",

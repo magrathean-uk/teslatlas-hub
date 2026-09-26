@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT))
 from conformance import hub_http
 
 
-PROFILE = ROOT / "profiles" / "hub-http-v1" / "1.0.0"
+PROFILE = ROOT / "profiles" / "hub-http-v1" / "1.1.0"
 HEADER_LIMIT = 16 * 1024
 CONFIG_FIELDS = {
     "endpoint",

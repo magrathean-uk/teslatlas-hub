@@ -22,7 +22,7 @@ from conformance import hub_matrix
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "profiles/hub-http-v1/1.0.0"
+PROFILE = ROOT / "profiles/hub-http-v1/1.1.0"
 HUB_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 NORMAL_PAIRING = "44444444-4444-4444-8444-444444444444"
 EXPIRED_PAIRING = "66666666-6666-4666-8666-666666666666"
@@ -368,7 +368,7 @@ class SyntheticControl:
             "service_generation": "synthetic-generation-" + str(self.generation),
             "binary_sha256": "a" * 64,
             "seed_binary_sha256": "b" * 64,
-            "profile_id": "hub-http-v1@1.0.0",
+            "profile_id": "hub-http-v1@1.1.0",
             "profile_path": str(self.profile),
             "profile_sha256": profile_sha256(),
             "scenario_path": str(self.scenario),
@@ -380,7 +380,7 @@ class SyntheticControl:
             "session_id": "11111111-1111-4111-8111-111111111111",
             "sequence": self.sequence,
             "tls": {"endpoint": self.hub.endpoint, "certificate_der_sha256": self.hub.der_sha256, "verified_chain": True, "verified_hostname": True, "redirect_count": 0},
-            "discovery": {"hub_id": HUB_ID, "product_version": "2026.36.2", "profile_id": "hub-http-v1@1.0.0", "profile_sha256": profile_sha256()},
+            "discovery": {"hub_id": HUB_ID, "product_version": "2026.36.2", "profile_id": "hub-http-v1@1.1.0", "profile_sha256": profile_sha256()},
             "service": {"mode": "installed-deb-systemd", "generation": descriptor["service_generation"], "hub": {"pid": 4242, "start_identity": descriptor["hub_started_at"], "executable_sha256": "a" * 64}},
             "config": {"seed_sha256": "b" * 64, "scenario_sha256": descriptor["scenario_sha256"]},
         }
@@ -433,7 +433,7 @@ class HubMatrixTests(unittest.TestCase):
             "adapter": "protocol_actual_hub",
             "cell_id": "protocol_actual_hub__debian13_amd64",
             "product_version": "2026.36.2",
-            "profile": {"id": "hub-http-v1", "revision": "1.0.0", "path": str(PROFILE), "sha256": profile_sha256()},
+            "profile": {"id": "hub-http-v1", "revision": "1.1.0", "path": str(PROFILE), "sha256": profile_sha256()},
             "source_identities": [
                 {"role": "hub_source", "repo": str(ROOT / "synthetic-hub-source"), "head": "0" * 40, "dirty_patch_sha256": "c" * 64, "untracked_source_manifest_sha256": "d" * 64},
                 {"role": "protocol_source", "repo": str(ROOT), "head": "1" * 40, "dirty_patch_sha256": "e" * 64, "untracked_source_manifest_sha256": "f" * 64},

@@ -8,10 +8,12 @@ real-data, and full-platform claims that have not been accepted.
 
 | Contract | Revision | Manifest SHA-256 |
 | --- | --- | --- |
-| Current-Hub HTTP | `hub-http-v1@1.0.0` | `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926` |
+| Current-Hub HTTP, G3 r2 accepted | `hub-http-v1@1.0.0` | `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926` |
+| Current-Hub HTTP, candidate | `hub-http-v1@1.1.0` | `47278485e4962aaa3ae177a3fc916281191b0d066edd1b40aad73fdad20b0f85` |
 | Edge delivery | `edge-delivery-v2@2.0.0` | `e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224` |
 
-G3 r2 admitted and read back the five active compatibility records. The receipt
+G3 r2 admitted and read back the five active compatibility records for
+`hub-http-v1@1.0.0`; it does not admit the `1.1.0` candidate. The receipt
 is
 [`g3-compatibility-admission-2026-09-19-r2.json`](development/g3-compatibility-admission-2026-09-19-r2.json)
 (SHA-256

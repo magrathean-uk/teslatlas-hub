@@ -65,6 +65,6 @@
       "type": "object"
     }
   },
-  "$id": "urn:teslatlas:hub-http-v1:1.0.0:rotation-grace",
+  "$id": "urn:teslatlas:hub-http-v1:1.1.0:rotation-grace",
   "$schema": "https://json-schema.org/draft/2020-12/schema"
 }
