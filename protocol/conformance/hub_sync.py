@@ -7,8 +7,8 @@ import re
 from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "profiles/hub-sync-v1/1.1.0"
-PROFILE_ID = "hub-sync-v1@1.1.0"
+PROFILE = ROOT / "profiles/hub-sync-v1/1.2.0"
+PROFILE_ID = "hub-sync-v1@1.2.0"
 
 
 class ContractError(ValueError):
@@ -37,7 +37,7 @@ def load_profile(root=PROFILE):
         if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
             raise ContractError("profile file digest mismatch")
         listed[name] = digest
-    required = {"profile.json", "changes-since-request.schema.json", "changed-set-receipt.schema.json", "rebase-hint.schema.json", "sync-manifest.schema.json", "noop.schema.json", "status-tables.schema.json", "status-tables.json", "openapi.json", "cases.json"}
+    required = {"profile.json", "changes-since-request.schema.json", "changed-set-receipt.schema.json", "rebase-hint.schema.json", "sync-manifest.schema.json", "noop.schema.json", "prepared-artefact.schema.json", "status-tables.schema.json", "status-tables.json", "openapi.json", "cases.json"}
     if not required <= set(listed):
         raise ContractError("incomplete profile manifest")
     profile = strict_json((root / "profile.json").read_bytes())
@@ -135,8 +135,32 @@ def validate_status_tables(value, root=PROFILE):
         "GET /v1/vehicles/{vehicle_id}/sync/manifest": {200, 401, 406},
         "GET /v1/vehicles/{vehicle_id}/sync/noop": {200, 401, 406},
         "GET /v1/packs/sha256/{object_name}": {200, 206, 401, 404},
+        "GET /v1/vehicles/{vehicle_id}/sync/prepared-artefacts/{artifact_id}": {200, 401, 404},
     }
     actual = {item["route"]: {response["status"] for response in item["responses"]} for item in value["tables"]}
     if actual != expected:
         return ["status tables are incomplete"]
     return []
+
+
+def validate_prepared_artefact(value, root=PROFILE):
+    errors = list(Draft202012Validator(_schema(root, "prepared-artefact.schema.json", "receipt"), format_checker=FormatChecker()).iter_errors(value))
+    if errors:
+        return ["prepared-artefact receipt violates schema"]
+    window = value["window"]
+    if window["from_ms"] >= window["to_ms"]:
+        return ["prepared-artefact window is invalid"]
+    spans = value["dirty_spans"]
+    if not spans["map_months"] and not spans["routes"]:
+        return ["prepared-artefact has no dirty spans"]
+    if len({span["month"] for span in spans["map_months"]}) != len(spans["map_months"]):
+        return ["prepared-artefact repeats map month"]
+    if len({span["route_id"] for span in spans["routes"]}) != len(spans["routes"]):
+        return ["prepared-artefact repeats route"]
+    for span in [*spans["map_months"], *spans["routes"]]:
+        if span["from_ms"] >= span["to_ms"] or span["from_ms"] < window["from_ms"] or span["to_ms"] > window["to_ms"]:
+            return ["prepared-artefact dirty span is outside window"]
+    if value["generation"]["generated_at_ms"] < window["to_ms"]:
+        return ["prepared-artefact generation predates window"]
+    pack_errors = _validate_pack_limits([value["pack"]], root)
+    return pack_errors or _validate_signature(value)

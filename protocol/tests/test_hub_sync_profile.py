@@ -11,7 +11,7 @@ from jsonschema import Draft202012Validator
 from openapi_spec_validator import validate as validate_openapi
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "profiles/hub-sync-v1/1.1.0"
+PROFILE = ROOT / "profiles/hub-sync-v1/1.2.0"
 
 
 class HubSyncProfileTests(unittest.TestCase):
@@ -28,17 +28,17 @@ class HubSyncProfileTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(ROOT / "tools/build_hub_sync_profile.py"), "--check"], capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         profile = self.sync.load_profile()
-        self.assertEqual(profile["profile_id"], "hub-sync-v1@1.1.0")
+        self.assertEqual(profile["profile_id"], "hub-sync-v1@1.2.0")
         self.assertEqual(profile["product_version_binding"], "none; this protocol profile has no exact Hub product-version pin")
         self.assertEqual(profile["authentication"], "paired bearer")
-        self.assertEqual(profile["previous_profile"], "hub-sync-v1@1.0.0")
+        self.assertEqual(profile["previous_profile"], "hub-sync-v1@1.1.0")
         self.assertEqual(profile["limits"]["max_changed_set_packs"], 1)
         self.assertEqual(profile["limits"]["max_manifest_chunks"], 4096)
-        frozen = ROOT / "profiles/hub-sync-v1/1.0.0/SHA256SUMS"
-        self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(), "875c42ffceab748e4d81b6356fdbe698e8b107a8c47c9abf33ad131f2fd34c7b")
+        frozen = ROOT / "profiles/hub-sync-v1/1.1.0/SHA256SUMS"
+        self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(), "0a6db376b69071f79bed3f437a7ae564ffa6378fec2b944340eb0b5306d63e3a")
 
     def test_schemas_and_openapi_are_independently_valid(self):
-        for name in ("changes-since-request.schema.json", "changed-set-receipt.schema.json", "rebase-hint.schema.json", "sync-manifest.schema.json", "noop.schema.json", "status-tables.schema.json"):
+        for name in ("changes-since-request.schema.json", "changed-set-receipt.schema.json", "rebase-hint.schema.json", "sync-manifest.schema.json", "noop.schema.json", "prepared-artefact.schema.json", "status-tables.schema.json"):
             Draft202012Validator.check_schema(json.loads((PROFILE / name).read_text()))
         validate_openapi(json.loads((PROFILE / "openapi.json").read_text()), base_uri=PROFILE.as_uri() + "/")
 
@@ -50,6 +50,7 @@ class HubSyncProfileTests(unittest.TestCase):
         manifest = self.fixture("schema-2-2-multi-chunk-manifest")["manifest"]
         noop = self.fixture("sync-noop-signed")["receipt"]
         unavailable = self.fixture("sync-noop-unavailable")["response"]
+        prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
         status_tables = json.loads((PROFILE / "status-tables.json").read_text())
         self.assertEqual(self.fixture("changes-since-request")["fixture_id"], "changes-since-request-v1")
         self.assertEqual(self.fixture("changes-since-changed-set")["fixture_id"], "changes-since-changed-set-v1")
@@ -62,6 +63,8 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(self.sync.validate_manifest(manifest_2_1), [])
         self.assertEqual(self.sync.validate_manifest(manifest), [])
         self.assertEqual(self.sync.validate_noop(200, noop), [])
+        self.assertEqual(self.fixture("prepared-artefact-map-months-routes")["fixture_id"], "prepared-artefact-map-months-routes-v1")
+        self.assertEqual(self.sync.validate_prepared_artefact(prepared), [])
         self.assertEqual(self.sync.validate_noop(unavailable["status"], {}, {"Cache-Control": unavailable["headers"]["cache_control"]}, b""), [])
         self.assertEqual(self.sync.validate_status_tables(status_tables), [])
         self.assertEqual(rebase["reason"], "compacted")
@@ -86,6 +89,12 @@ class HubSyncProfileTests(unittest.TestCase):
         noop["signature"]["signed_payload_sha256"] = "0" * 64
         self.assertEqual(self.sync.validate_noop(200, noop), ["signature digest is reserved"])
         self.assertEqual(self.sync.validate_noop(406, {}, {"Cache-Control": "private"}, b""), ["no-op unavailable must be empty no-store"])
+        prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
+        prepared["dirty_spans"]["routes"][0]["to_ms"] = prepared["window"]["to_ms"] + 1
+        self.assertEqual(self.sync.validate_prepared_artefact(prepared), ["prepared-artefact dirty span is outside window"])
+        prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
+        prepared["dirty_spans"] = {"map_months": [], "routes": []}
+        self.assertEqual(self.sync.validate_prepared_artefact(prepared), ["prepared-artefact receipt violates schema"])
         status_tables = json.loads((PROFILE / "status-tables.json").read_text())
         status_tables["tables"][3]["responses"].pop()
         self.assertEqual(self.sync.validate_status_tables(status_tables), ["status tables are incomplete"])

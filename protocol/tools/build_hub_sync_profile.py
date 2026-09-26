@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "profiles/hub-sync-v1/1.1.0"
-PROFILE_ID = "hub-sync-v1@1.1.0"
+PROFILE = ROOT / "profiles/hub-sync-v1/1.2.0"
+PROFILE_ID = "hub-sync-v1@1.2.0"
 DRAFT = "https://json-schema.org/draft/2020-12/schema"
 DIGEST = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
 OPAQUE = {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[A-Za-z0-9._~-]+$"}
@@ -22,7 +22,7 @@ def strict(properties, required=None):
 
 
 def document(name, body):
-    return {"$schema": DRAFT, "$id": f"urn:teslatlas:hub-sync-v1:1.1.0:{name}", **body}
+    return {"$schema": DRAFT, "$id": f"urn:teslatlas:hub-sync-v1:1.2.0:{name}", **body}
 
 
 def pack_ref():
@@ -108,6 +108,37 @@ def bundle():
             "manifest_schema": SCHEMA_VERSION, "signature": signing(),
         }),
     }})
+    prepared = document("prepared-artefact", {"$defs": {
+        "map_month": strict({
+            "month": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"},
+            "from_ms": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1},
+            "to_ms": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "reason": {"const": "changed"},
+        }),
+        "route": strict({
+            "route_id": OPAQUE,
+            "from_ms": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1},
+            "to_ms": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "reason": {"const": "changed"},
+        }),
+        "receipt": strict({
+            "artifact_id": OPAQUE,
+            "artifact_type": {"const": "map_months_and_routes"},
+            "vehicle_id": UUID,
+            "source": strict({"kind": {"const": "hub_compute"}, "input_manifest_id": OPAQUE, "input_sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1}}),
+            "window": strict({"from_ms": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1}, "to_ms": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1}}),
+            "generation": strict({"generation_id": OPAQUE, "generated_at_ms": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1}}),
+            "units": strict({"distance": {"const": "km"}, "time": {"const": "ms"}, "coordinates": {"const": "wgs84_degrees"}}),
+            "algorithm_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$", "maxLength": 128},
+            "dirty_spans": strict({"map_months": {"type": "array", "maxItems": 120, "items": {"$ref": "#/$defs/map_month"}}, "routes": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/route"}}}),
+            "pack": pack_ref(),
+            "signature": signing(),
+        }),
+    }})
+    prepared["$defs"]["receipt"]["properties"]["dirty_spans"]["anyOf"] = [
+        {"properties": {"map_months": {"minItems": 1}}},
+        {"properties": {"routes": {"minItems": 1}}},
+    ]
     status_tables_schema = document("status-tables", {"$defs": {
         "response": strict({
             "status": {"type": "integer", "minimum": 100, "maximum": 599},
@@ -136,6 +167,10 @@ def bundle():
             {"route": "GET /v1/packs/sha256/{object_name}", "responses": [
                 {"status": 200, "body": "pack bytes", "headers": {"etag": "strong"}},
                 {"status": 206, "body": "single contiguous byte range", "headers": {"content_range": "required", "etag": "strong"}},
+                {"status": 401, "body": "empty", "signature": "absent"},
+                {"status": 404, "body": "empty", "signature": "absent"}]},
+            {"route": "GET /v1/vehicles/{vehicle_id}/sync/prepared-artefacts/{artifact_id}", "responses": [
+                {"status": 200, "body": "signed prepared-artefact receipt"},
                 {"status": 401, "body": "empty", "signature": "absent"},
                 {"status": 404, "body": "empty", "signature": "absent"}]},
         ],
@@ -192,23 +227,38 @@ def bundle():
         "fixture_id": "sync-noop-unavailable-v1",
         "response": {"status": 406, "headers": {"cache_control": "no-store"}, "body_bytes": 0, "manifest_signature": "absent"},
     }
+    prepared_example = {
+        "fixture_id": "prepared-artefact-map-months-routes-v1",
+        "receipt": {"artifact_id": "prepared_demo_000900", "artifact_type": "map_months_and_routes", "vehicle_id": "11111111-1111-4111-8111-111111111111",
+                    "source": {"kind": "hub_compute", "input_manifest_id": "manifest_demo_000900", "input_sequence": 900},
+                    "window": {"from_ms": 1735689600000, "to_ms": 1740787200000},
+                    "generation": {"generation_id": "generation_demo_000001", "generated_at_ms": 1740790800000},
+                    "units": {"distance": "km", "time": "ms", "coordinates": "wgs84_degrees"}, "algorithm_version": "1.0.0",
+                    "dirty_spans": {"map_months": [
+                        {"month": "2025-01", "from_ms": 1735689600000, "to_ms": 1738368000000, "reason": "changed"},
+                        {"month": "2025-02", "from_ms": 1738368000000, "to_ms": 1740787200000, "reason": "changed"}],
+                        "routes": [{"route_id": "route_demo_000045", "from_ms": 1738454400000, "to_ms": 1738458000000, "reason": "changed"}]},
+                    "pack": {"object_name": "packs/prepared-demo-000900.sqlite.zst", "sha256": "c" * 64, "compressed_bytes": 8 * 1024 * 1024},
+                    "signature": {**signature, "signed_payload_sha256": "d" * 64}},
+    }
     profile = {
-        "profile_id": PROFILE_ID, "status": "candidate", "contract_version": "1.1.0",
+        "profile_id": PROFILE_ID, "status": "candidate", "contract_version": "1.2.0",
         "authentication": "paired bearer",
         "product_version_binding": "none; this protocol profile has no exact Hub product-version pin",
         "schema_version_range": {"minimum": "2.1", "maximum": "2.2"},
-        "previous_profile": "hub-sync-v1@1.0.0",
+        "previous_profile": "hub-sync-v1@1.1.0",
         "limits": {"max_changed_set_packs": 1, "min_pack_compressed_bytes": 8 * 1024 * 1024,
                    "max_pack_compressed_bytes": 16 * 1024 * 1024, "max_manifest_chunks": 4096,
                    "max_request_bytes": 8192, "max_response_bytes": 2 * 1024 * 1024},
         "status_tables": "status-tables.json",
+        "prepared_artefact": "prepared-artefact.schema.json",
         "route": {"method": "POST", "path": "/v1/vehicles/{vehicle_id}/sync/changes-since",
                   "success_status": 200, "compacted_status": 409},
         "signature_rule": "Each receipt or rebase hint MUST carry an Ed25519 detached signature over RFC 8785 canonical JSON of the object with its signature member omitted. signed_payload_sha256 is the SHA-256 of those canonical bytes. Fixtures use a deterministic shape-only signature and MUST NOT be accepted as cryptographic proof.",
         "compaction_rule": "A compacted base MUST return 409 and the signed rebase hint. The client applies replacement.pack, persists replacement receipt_id and sequence, then sends retry_request. It MUST NOT infer a rebase target or substitute a full-history request.",
-        "scope": "One changed pack per changed-set receipt; schema 2.2 snapshot manifests may contain multiple chunks under one signature. Prepared-compute artifacts are a separate contract.",
+        "scope": "One changed pack per changed-set receipt; schema 2.2 snapshot manifests may contain multiple chunks under one signature; prepared artefacts contain only changed map-month and route spans. No other prepared-compute artefact type is defined.",
     }
-    openapi = {"openapi": "3.1.0", "info": {"title": "Teslatlas changes-since", "version": "1.1.0"},
+    openapi = {"openapi": "3.1.0", "info": {"title": "Teslatlas changes-since", "version": "1.2.0"},
       "paths": {"/v1/vehicles/{vehicle_id}/sync/changes-since": {"post": {"operationId": "changesSince",
         "parameters": [{"name": "vehicle_id", "in": "path", "required": True, "schema": UUID}],
         "requestBody": {"required": True, "content": {"application/json": {"schema": {"$ref": "changes-since-request.schema.json#/$defs/request"}}}},
@@ -226,6 +276,9 @@ def bundle():
     openapi["paths"]["/v1/packs/sha256/{object_name}"] = {"get": {"operationId": "syncPack", "security": [{"pairedBearer": []}],
         "parameters": [{"name": "object_name", "in": "path", "required": True, "schema": {"type": "string", "minLength": 1, "maxLength": 1024}}],
         "responses": {"200": {"description": "pack bytes", "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}}, "206": {"description": "single byte range", "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}}, "401": {"description": "empty authentication failure", "content": {}}, "404": {"description": "empty missing pack", "content": {}}}}}
+    openapi["paths"]["/v1/vehicles/{vehicle_id}/sync/prepared-artefacts/{artifact_id}"] = {"get": {"operationId": "preparedArtefact", "security": [{"pairedBearer": []}],
+        "parameters": [{"name": "vehicle_id", "in": "path", "required": True, "schema": UUID}, {"name": "artifact_id", "in": "path", "required": True, "schema": OPAQUE}],
+        "responses": {"200": {"description": "signed prepared-artefact receipt", "content": {"application/json": {"schema": {"$ref": "prepared-artefact.schema.json#/$defs/receipt"}}}}, "401": {"description": "empty authentication failure", "content": {}}, "404": {"description": "empty missing artefact", "content": {}}}}}
     cases = {"profile_id": PROFILE_ID, "cases": [
       {"id": "changes-since-changed-set", "request_fixture": request_example["fixture_id"], "status": 200, "response_fixture": receipt_example["fixture_id"]},
       {"id": "changes-since-rebase-after-compaction", "request_fixture": request_example["fixture_id"], "status": 409, "response_fixture": rebase_example["fixture_id"]},
@@ -233,10 +286,11 @@ def bundle():
       {"id": "schema-2-2-multi-chunk-manifest", "status": 200, "response_fixture": manifest_2_2_example["fixture_id"]},
       {"id": "sync-noop-signed", "status": 200, "response_fixture": noop_example["fixture_id"]},
       {"id": "sync-noop-unavailable", "status": 406, "response_fixture": noop_unavailable["fixture_id"]},
+      {"id": "prepared-artefact-map-months-routes", "status": 200, "response_fixture": prepared_example["fixture_id"]},
     ]}
     out = {"profile.json": profile, "changes-since-request.schema.json": request,
            "changed-set-receipt.schema.json": receipt, "rebase-hint.schema.json": rebase,
-           "sync-manifest.schema.json": manifest, "noop.schema.json": noop, "status-tables.schema.json": status_tables_schema, "status-tables.json": status_tables,
+           "sync-manifest.schema.json": manifest, "noop.schema.json": noop, "prepared-artefact.schema.json": prepared, "status-tables.schema.json": status_tables_schema, "status-tables.json": status_tables,
            "openapi.json": openapi, "cases.json": cases,
            "examples/changes-since-request.json": request_example,
            "examples/changes-since-changed-set.json": receipt_example,
@@ -244,7 +298,8 @@ def bundle():
            "examples/schema-2-1-single-pack-manifest.json": manifest_2_1_example,
            "examples/schema-2-2-multi-chunk-manifest.json": manifest_2_2_example,
            "examples/sync-noop-signed.json": noop_example,
-           "examples/sync-noop-unavailable.json": noop_unavailable}
+           "examples/sync-noop-unavailable.json": noop_unavailable,
+           "examples/prepared-artefact-map-months-routes.json": prepared_example}
     encoded = {name: (json.dumps(value, sort_keys=True, indent=2) + "\n").encode() for name, value in out.items()}
     sums = "".join(f"{hashlib.sha256(encoded[name]).hexdigest()}  {name}\n" for name in sorted(encoded))
     return {**encoded, "SHA256SUMS": sums.encode()}

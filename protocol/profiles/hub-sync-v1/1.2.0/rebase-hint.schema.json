@@ -1,0 +1,173 @@
+{
+  "$defs": {
+    "hint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "rebase_required"
+        },
+        "reason": {
+          "const": "compacted"
+        },
+        "replacement": {
+          "additionalProperties": false,
+          "properties": {
+            "manifest_schema": {
+              "enum": [
+                "2.1",
+                "2.2"
+              ],
+              "type": "string"
+            },
+            "pack": {
+              "additionalProperties": false,
+              "properties": {
+                "compressed_bytes": {
+                  "maximum": 16777216,
+                  "minimum": 8388608,
+                  "type": "integer"
+                },
+                "object_name": {
+                  "pattern": "^[a-z0-9][a-z0-9._/-]{0,1023}$",
+                  "type": "string"
+                },
+                "sha256": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "object_name",
+                "sha256",
+                "compressed_bytes"
+              ],
+              "type": "object"
+            },
+            "receipt_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "sequence": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "receipt_id",
+            "sequence",
+            "manifest_schema",
+            "pack"
+          ],
+          "type": "object"
+        },
+        "requested_base_receipt_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "requested_from_sequence": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "retry_request": {
+          "additionalProperties": false,
+          "properties": {
+            "base_receipt_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "from_sequence": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "schema_version_range": {
+              "additionalProperties": false,
+              "properties": {
+                "maximum": {
+                  "enum": [
+                    "2.1",
+                    "2.2"
+                  ],
+                  "type": "string"
+                },
+                "minimum": {
+                  "enum": [
+                    "2.1",
+                    "2.2"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "minimum",
+                "maximum"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "base_receipt_id",
+            "from_sequence",
+            "schema_version_range"
+          ],
+          "type": "object"
+        },
+        "signature": {
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "const": "ed25519"
+            },
+            "key_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._-]+$",
+              "type": "string"
+            },
+            "signature": {
+              "pattern": "^[A-Za-z0-9+/]{86}==$",
+              "type": "string"
+            },
+            "signed_payload_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "algorithm",
+            "key_id",
+            "signed_payload_sha256",
+            "signature"
+          ],
+          "type": "object"
+        },
+        "vehicle_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "vehicle_id",
+        "requested_base_receipt_id",
+        "requested_from_sequence",
+        "reason",
+        "replacement",
+        "retry_request",
+        "signature"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-sync-v1:1.2.0:rebase-hint",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

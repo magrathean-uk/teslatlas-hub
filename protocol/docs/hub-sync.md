@@ -1,7 +1,7 @@
 # Hub changes-since contract
 
-[`hub-sync-v1@1.1.0`](../profiles/hub-sync-v1/1.1.0/) is the candidate,
-source-neutral successor to the retained `hub-sync-v1@1.0.0` candidate. It
+[`hub-sync-v1@1.2.0`](../profiles/hub-sync-v1/1.2.0/) is the candidate,
+source-neutral successor to retained `hub-sync-v1@1.0.0` and `1.1.0` candidates. It
 has no exact Hub product-version pin. A client sends the accepted manifest schema range and
 its persisted receipt checkpoint to `POST
 /v1/vehicles/{vehicle_id}/sync/changes-since` with a paired bearer. A missing,
@@ -26,5 +26,10 @@ invalid signature, digest, or canonical payload.
 The `1.1.0` successor adds signed no-op receipts, `406` empty no-store
 unavailability, pack range semantics, status tables, and one signed schema 2.2
 manifest containing ordered chunks. Each chunk is 8–16 MiB compressed; the
-outer manifest has the only signature. Prepared-compute artifacts remain a
-separate contract.
+outer manifest has the only signature.
+
+`1.2.0` adds the `map_months_and_routes` prepared-artefact pack receipt. It
+binds source manifest and sequence, the input window, generation identity and
+time, fixed units, algorithm version, a single pack, and one signature. Its
+dirty spans admit only changed map months and changed route identifiers inside
+that window. Other prepared-compute artefact types remain separate contracts.
