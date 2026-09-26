@@ -264,7 +264,7 @@ def materialize_body_fixture(value):
     return raw
 
 
-def validate_manifest_body(raw, vehicle_id, root=PROFILE):
+def validate_control_response_body(raw, response_type, status, vehicle_id, headers=None, root=PROFILE):
     limit = load_profile(root)["limits"]["max_response_bytes"]
     if len(raw) > limit:
         return [f"response body exceeds {limit} bytes"]
@@ -272,7 +272,27 @@ def validate_manifest_body(raw, vehicle_id, root=PROFILE):
         value = strict_json(raw)
     except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
         return ["response body is not valid JSON"]
-    return validate_manifest(value, vehicle_id, root)
+    if response_type == "manifest":
+        if status != 200:
+            return ["status is not specified by profile"]
+        return validate_manifest(value, vehicle_id, root)
+    if response_type in {"changed_set", "rebase"}:
+        return validate_response(status, value, vehicle_id, headers, root)
+    if response_type == "noop":
+        return validate_noop(status, value, vehicle_id, headers, root=root)
+    if response_type == "error":
+        return validate_http_error(status, value, headers, root)
+    if response_type == "signing_keys":
+        return validate_signing_keys_response(status, value, vehicle_id, headers, root)
+    if response_type == "prepared_artefact":
+        if status != 200:
+            return ["status is not specified by profile"]
+        return validate_prepared_artefact(value, vehicle_id, root)
+    return ["response type is not specified by profile"]
+
+
+def validate_manifest_body(raw, vehicle_id, root=PROFILE):
+    return validate_control_response_body(raw, "manifest", 200, vehicle_id, root=root)
 
 
 def validate_noop(status, value, vehicle_id, headers=None, raw=b"", root=PROFILE):
@@ -340,7 +360,7 @@ def _case_errors(case, fixtures, root):
     if not isinstance(case, dict):
         return ["case is not an object"]
     validator = case.get("validator")
-    if validator not in {"changes_since", "changes_since_request_error", "manifest", "manifest_body", "noop", "prepared_artefact", "signing_keys"}:
+    if validator not in {"changes_since", "changes_since_request_error", "control_response_body", "manifest", "manifest_body", "noop", "prepared_artefact", "signing_keys"}:
         return ["case has an unknown validator"]
     status = case.get("status")
     if type(status) is not int:
@@ -370,11 +390,16 @@ def _case_errors(case, fixtures, root):
     if not isinstance(response, dict):
         return ["response fixture is missing"]
     if validator == "changes_since_request_error":
-        if request_errors != ["request violates changes-since schema"]:
-            return ["request fixture is not schema-invalid"]
         value = response.get("response")
         if not isinstance(value, dict) or value.get("status") != status:
             return ["sync error fixture status does not match case"]
+        code = value.get("body", {}).get("code") if isinstance(value.get("body"), dict) else None
+        expected_request_errors = {
+            "invalid_request": {"request violates changes-since schema"},
+            "invalid_schema_range": {"schema version range is reversed", "base manifest schema is outside accepted range"},
+        }
+        if len(request_errors) != 1 or code not in expected_request_errors or request_errors[0] not in expected_request_errors[code]:
+            return ["request fixture does not match sync error"]
         headers = {"Cache-Control": item for key, item in value.get("headers", {}).items() if key == "cache_control"}
         return validate_http_error(status, copy.deepcopy(value.get("body")), headers, root)
     if validator == "changes_since":
@@ -412,6 +437,16 @@ def _case_errors(case, fixtures, root):
         except ContractError as error:
             return [str(error)]
         return validate_manifest_body(raw, vehicle_id, root)
+    if validator == "control_response_body":
+        response_type = case.get("response_type")
+        if response.get("response_type") != response_type or response.get("status") != status:
+            return ["control response fixture does not match case"]
+        try:
+            raw = materialize_body_fixture(response)
+        except ContractError as error:
+            return [str(error)]
+        headers = {"Cache-Control": item for key, item in response.get("headers", {}).items() if key == "cache_control"}
+        return validate_control_response_body(raw, response_type, status, vehicle_id, headers, root)
     if validator == "prepared_artefact":
         return validate_prepared_artefact(copy.deepcopy(response.get("receipt")), vehicle_id, root)
     if validator == "signing_keys":

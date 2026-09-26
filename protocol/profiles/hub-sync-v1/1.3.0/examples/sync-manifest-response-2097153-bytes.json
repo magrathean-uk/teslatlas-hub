@@ -27,5 +27,7 @@
   },
   "fixture_id": "sync-manifest-response-2097153-bytes-v1",
   "padding_bytes": 2096465,
+  "response_type": "manifest",
+  "status": 200,
   "vehicle_id": "11111111-1111-4111-8111-111111111111"
 }

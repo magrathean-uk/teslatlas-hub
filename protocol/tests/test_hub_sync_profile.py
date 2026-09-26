@@ -169,6 +169,10 @@ class HubSyncProfileTests(unittest.TestCase):
             self.assertEqual(self.sync.validate_request(invalid), ["request violates changes-since schema"])
         unsupported = self.fixture("changes-since-request-unsupported-range")["request"]
         self.assertEqual(self.sync.validate_request(unsupported), ["schema version range is unsupported"])
+        reversed_range = self.fixture("changes-since-request-reversed-range")["request"]
+        self.assertEqual(self.sync.validate_request(reversed_range), ["schema version range is reversed"])
+        base_excluded = self.fixture("changes-since-request-base-excluded")["request"]
+        self.assertEqual(self.sync.validate_request(base_excluded), ["base manifest schema is outside accepted range"])
 
     def test_signed_responses_and_key_selection_match_route_vehicle(self):
         changed = self.fixture("changes-since-changed-set")["receipt"]
@@ -196,17 +200,51 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(self.sync.validate_signing_keys_response(key_fixture["status"], key_fixture["body"], VEHICLE_ID, headers), [])
         self.assertEqual(self.sync.validate_signing_keys_response(key_fixture["status"], key_fixture["body"], VEHICLE_ID, {}), ["signing keys response must be no-store"])
 
-    def test_response_body_limit_is_executable_at_exact_boundary(self):
-        at_limit = self.fixture("sync-manifest-response-2097152-bytes")
-        over_limit = self.fixture("sync-manifest-response-2097153-bytes")
-        raw = self.sync.materialize_body_fixture(at_limit)
-        self.assertEqual(len(raw), 2 * 1024 * 1024)
-        self.assertEqual(hashlib.sha256(raw).hexdigest(), at_limit["body_sha256"])
-        self.assertEqual(self.sync.validate_manifest_body(raw, at_limit["vehicle_id"]), [])
-        raw = self.sync.materialize_body_fixture(over_limit)
-        self.assertEqual(len(raw), 2 * 1024 * 1024 + 1)
-        self.assertEqual(hashlib.sha256(raw).hexdigest(), over_limit["body_sha256"])
-        self.assertEqual(self.sync.validate_manifest_body(raw, over_limit["vehicle_id"]), ["response body exceeds 2097152 bytes"])
+    def test_every_json_control_response_enforces_exact_raw_body_boundary(self):
+        response_types = (
+            ("sync-manifest", "manifest"),
+            ("changes-since-changed-set", "changed_set"),
+            ("sync-noop", "noop"),
+            ("changes-since-rebase", "rebase"),
+            ("changes-since-error", "error"),
+            ("signing-keys", "signing_keys"),
+            ("prepared-artefact", "prepared_artefact"),
+        )
+        for prefix, response_type in response_types:
+            with self.subTest(response_type=response_type):
+                at_limit = self.fixture(prefix + "-response-2097152-bytes")
+                over_limit = self.fixture(prefix + "-response-2097153-bytes")
+                headers = {
+                    "Cache-Control": value
+                    for key, value in at_limit.get("headers", {}).items()
+                    if key == "cache_control"
+                }
+                raw = self.sync.materialize_body_fixture(at_limit)
+                self.assertEqual(len(raw), 2 * 1024 * 1024)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), at_limit["body_sha256"])
+                self.assertEqual(
+                    self.sync.validate_control_response_body(
+                        raw,
+                        response_type,
+                        at_limit["status"],
+                        at_limit["vehicle_id"],
+                        headers,
+                    ),
+                    [],
+                )
+                raw = self.sync.materialize_body_fixture(over_limit)
+                self.assertEqual(len(raw), 2 * 1024 * 1024 + 1)
+                self.assertEqual(hashlib.sha256(raw).hexdigest(), over_limit["body_sha256"])
+                self.assertEqual(
+                    self.sync.validate_control_response_body(
+                        raw,
+                        response_type,
+                        over_limit["status"],
+                        over_limit["vehicle_id"],
+                        headers,
+                    ),
+                    ["response body exceeds 2097152 bytes"],
+                )
 
     def test_schema_maxima_keep_compact_control_responses_within_two_mib(self):
         opaque = "a" * 4096
@@ -356,7 +394,7 @@ class HubSyncProfileTests(unittest.TestCase):
 
     def test_registered_fixture_cases_cover_positive_and_negative_vectors(self):
         results = self.sync.run_fixture_cases()
-        self.assertEqual(len(results), 27)
+        self.assertEqual(len(results), 41)
         self.assertTrue(all(result["passed"] for result in results))
         by_case = {result["case_id"]: result for result in results}
         self.assertEqual(

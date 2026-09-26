@@ -383,6 +383,12 @@ def bundle():
     unsupported_request = copy.deepcopy(request_example)
     unsupported_request["fixture_id"] = "changes-since-request-unsupported-range-v1"
     unsupported_request["request"]["schema_version_range"] = {"minimum": "2.3", "maximum": "2.3"}
+    reversed_range_request = copy.deepcopy(request_example)
+    reversed_range_request["fixture_id"] = "changes-since-request-reversed-range-v1"
+    reversed_range_request["request"]["schema_version_range"] = {"minimum": "2.2", "maximum": "2.1"}
+    base_excluded_request = copy.deepcopy(request_example)
+    base_excluded_request["fixture_id"] = "changes-since-request-base-excluded-v1"
+    base_excluded_request["request"]["schema_version_range"] = {"minimum": "2.2", "maximum": "2.2"}
 
     compact_request = json.dumps(request_example["request"], sort_keys=True, separators=(",", ":"))
     request_at_limit = {"fixture_id": "changes-since-request-8192-bytes-v1", "body": compact_request + " " * (8192 - len(compact_request.encode()))}
@@ -399,18 +405,36 @@ def bundle():
     signing_keys_example = {"fixture_id": "signing-keys-vehicle-bound-v1", "response": {
         "status": 200, "headers": {"cache_control": "no-store"}, "body": signing_keys}}
 
-    def padded_body_fixture(fixture_id, document_value, body_bytes):
+    def padded_body_fixture(fixture_id, response_type, status, document_value, body_bytes, headers=None):
         compact = json.dumps(document_value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         padding_bytes = body_bytes - len(compact)
         if padding_bytes < 0:
             raise ValueError("fixture document exceeds response boundary")
         raw = compact + b" " * padding_bytes
-        return {"fixture_id": fixture_id, "vehicle_id": vehicle_id, "body_bytes": body_bytes,
-                "padding_bytes": padding_bytes, "body_sha256": hashlib.sha256(raw).hexdigest(),
-                "document": document_value}
+        value = {"fixture_id": fixture_id, "response_type": response_type, "status": status,
+                 "vehicle_id": vehicle_id, "body_bytes": body_bytes,
+                 "padding_bytes": padding_bytes, "body_sha256": hashlib.sha256(raw).hexdigest(),
+                 "document": document_value}
+        if headers:
+            value["headers"] = headers
+        return value
 
-    response_at_limit = padded_body_fixture("sync-manifest-response-2097152-bytes-v1", manifest_2_2_small_example["manifest"], MAX_RESPONSE_BYTES)
-    response_over_limit = padded_body_fixture("sync-manifest-response-2097153-bytes-v1", manifest_2_2_small_example["manifest"], MAX_RESPONSE_BYTES + 1)
+    response_boundary_specs = (
+        ("sync-manifest", "manifest", 200, manifest_2_2_small_example["manifest"], None),
+        ("changes-since-changed-set", "changed_set", 200, receipt_example["receipt"], None),
+        ("sync-noop", "noop", 200, noop_example["receipt"], None),
+        ("changes-since-rebase", "rebase", 409, rebase_example["response"], None),
+        ("changes-since-error", "error", 422, error_examples["changes-since-error-invalid-request"]["response"]["body"], None),
+        ("signing-keys", "signing_keys", 200, signing_keys, {"cache_control": "no-store"}),
+        ("prepared-artefact", "prepared_artefact", 200, prepared_example["receipt"], None),
+    )
+    response_boundary_examples = {}
+    for prefix, response_type, status, document_value, headers in response_boundary_specs:
+        for body_bytes in (MAX_RESPONSE_BYTES, MAX_RESPONSE_BYTES + 1):
+            name = f"{prefix}-response-{body_bytes}-bytes"
+            response_boundary_examples[name] = padded_body_fixture(
+                name + "-v1", response_type, status, document_value, body_bytes, headers
+            )
     profile = {
         "profile_id": PROFILE_ID, "status": "candidate", "contract_version": "1.3.0",
         "authentication": "paired bearer",
@@ -489,9 +513,17 @@ def bundle():
       {"id": "sync-noop-unavailable-cacheable", "validator": "noop", "vehicle_id": vehicle_id, "status": 406, "response_fixture": cacheable_noop["fixture_id"], "expected_errors": ["no-op unavailable must be empty no-store"]},
       {"id": "signing-keys-vehicle-bound", "validator": "signing_keys", "vehicle_id": vehicle_id, "status": 200, "response_fixture": signing_keys_example["fixture_id"], "expected_errors": []},
       *[{"id": "changes-since-request-invalid-" + suffix, "validator": "changes_since_request_error", "vehicle_id": vehicle_id, "request_fixture": value["fixture_id"], "status": 422, "response_fixture": error_examples["changes-since-error-invalid-request"]["fixture_id"], "expected_errors": []} for suffix, value in invalid_request_examples.items()],
+      {"id": "changes-since-request-reversed-range", "validator": "changes_since_request_error", "vehicle_id": vehicle_id, "request_fixture": reversed_range_request["fixture_id"], "status": 422, "response_fixture": error_examples["changes-since-error-invalid-schema-range"]["fixture_id"], "expected_errors": []},
+      {"id": "changes-since-request-base-excluded", "validator": "changes_since_request_error", "vehicle_id": vehicle_id, "request_fixture": base_excluded_request["fixture_id"], "status": 422, "response_fixture": error_examples["changes-since-error-invalid-schema-range"]["fixture_id"], "expected_errors": []},
       *[{"id": name, "validator": "changes_since", "vehicle_id": vehicle_id, "status": value["response"]["status"], "response_fixture": value["fixture_id"], "expected_errors": [], **({"request_fixture": unsupported_request["fixture_id"]} if name == "changes-since-error-schema-range-unsupported" else {})} for name, value in error_examples.items() if name != "changes-since-error-invalid-request"],
-      {"id": "sync-manifest-response-at-limit", "validator": "manifest_body", "vehicle_id": vehicle_id, "status": 200, "response_fixture": response_at_limit["fixture_id"], "expected_errors": []},
-      {"id": "sync-manifest-response-over-limit", "validator": "manifest_body", "vehicle_id": vehicle_id, "status": 200, "response_fixture": response_over_limit["fixture_id"], "expected_errors": ["response body exceeds 2097152 bytes"]},
+      *[
+          {"id": prefix + ("-response-at-limit" if body_bytes == MAX_RESPONSE_BYTES else "-response-over-limit"),
+           "validator": "control_response_body", "response_type": response_type, "vehicle_id": vehicle_id,
+           "status": status, "response_fixture": response_boundary_examples[f"{prefix}-response-{body_bytes}-bytes"]["fixture_id"],
+           "expected_errors": [] if body_bytes == MAX_RESPONSE_BYTES else ["response body exceeds 2097152 bytes"]}
+          for prefix, response_type, status, _, _ in response_boundary_specs
+          for body_bytes in (MAX_RESPONSE_BYTES, MAX_RESPONSE_BYTES + 1)
+      ],
     ]}
     out = {"profile.json": profile, "changes-since-request.schema.json": request,
            "changed-set-receipt.schema.json": receipt, "rebase-hint.schema.json": rebase,
@@ -517,10 +549,11 @@ def bundle():
            "examples/signing-keys-vehicle-bound.json": signing_keys_example,
            **{"examples/changes-since-request-invalid-" + suffix + ".json": value for suffix, value in invalid_request_examples.items()},
            "examples/changes-since-request-unsupported-range.json": unsupported_request,
+           "examples/changes-since-request-reversed-range.json": reversed_range_request,
+           "examples/changes-since-request-base-excluded.json": base_excluded_request,
            "examples/changes-since-request-8192-bytes.json": request_at_limit,
            "examples/changes-since-request-8193-bytes.json": request_over_limit,
-           "examples/sync-manifest-response-2097152-bytes.json": response_at_limit,
-           "examples/sync-manifest-response-2097153-bytes.json": response_over_limit,
+           **{"examples/" + name + ".json": value for name, value in response_boundary_examples.items()},
            **{"examples/" + name + ".json": value for name, value in error_examples.items()}}
     encoded = {name: (json.dumps(value, sort_keys=True, indent=2) + "\n").encode() for name, value in out.items()}
     sums = "".join(f"{hashlib.sha256(encoded[name]).hexdigest()}  {name}\n" for name in sorted(encoded))
