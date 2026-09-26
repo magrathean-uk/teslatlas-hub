@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "document": {
+      "additionalProperties": false,
+      "properties": {
+        "key_set_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/key"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        },
+        "profile_id": {
+          "const": "hub-sync-v1@1.3.0"
+        },
+        "rotation": {
+          "additionalProperties": false,
+          "properties": {
+            "key_selection": {
+              "const": "key_id"
+            },
+            "publish_before_use": {
+              "const": true
+            },
+            "retain_retired_keys": {
+              "const": true
+            }
+          },
+          "required": [
+            "key_selection",
+            "publish_before_use",
+            "retain_retired_keys"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "profile_id",
+        "key_set_id",
+        "keys",
+        "rotation"
+      ],
+      "type": "object"
+    },
+    "key": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "ed25519"
+        },
+        "key_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "type": "string"
+        },
+        "public_key": {
+          "pattern": "^[A-Za-z0-9+/]{43}=$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "algorithm",
+        "key_id",
+        "public_key"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-sync-v1:1.3.0:signing-keys",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

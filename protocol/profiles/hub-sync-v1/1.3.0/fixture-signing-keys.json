@@ -1,0 +1,16 @@
+{
+  "key_set_id": "fixture-ed25519-rfc8032",
+  "keys": [
+    {
+      "algorithm": "ed25519",
+      "key_id": "fixture-ed25519-rfc8032-1",
+      "public_key": "11qYAYKxCrfVS/7TyWQHOg7hcvPapiMlrwIaaPcHURo="
+    }
+  ],
+  "profile_id": "hub-sync-v1@1.3.0",
+  "rotation": {
+    "key_selection": "key_id",
+    "publish_before_use": true,
+    "retain_retired_keys": true
+  }
+}

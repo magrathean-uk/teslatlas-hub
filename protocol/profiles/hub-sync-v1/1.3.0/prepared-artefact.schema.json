@@ -1,0 +1,283 @@
+{
+  "$defs": {
+    "map_month": {
+      "additionalProperties": false,
+      "properties": {
+        "from_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "month": {
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+          "type": "string"
+        },
+        "reason": {
+          "const": "changed"
+        },
+        "to_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "month",
+        "from_ms",
+        "to_ms",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "receipt": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm_version": {
+          "maxLength": 128,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$",
+          "type": "string"
+        },
+        "artifact_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "artifact_type": {
+          "const": "map_months_and_routes"
+        },
+        "dirty_spans": {
+          "additionalProperties": false,
+          "anyOf": [
+            {
+              "properties": {
+                "map_months": {
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "properties": {
+                "routes": {
+                  "minItems": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "map_months": {
+              "items": {
+                "$ref": "#/$defs/map_month"
+              },
+              "maxItems": 120,
+              "type": "array"
+            },
+            "routes": {
+              "items": {
+                "$ref": "#/$defs/route"
+              },
+              "maxItems": 10000,
+              "type": "array"
+            }
+          },
+          "required": [
+            "map_months",
+            "routes"
+          ],
+          "type": "object"
+        },
+        "generation": {
+          "additionalProperties": false,
+          "properties": {
+            "generated_at_ms": {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "generation_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "generation_id",
+            "generated_at_ms"
+          ],
+          "type": "object"
+        },
+        "pack": {
+          "additionalProperties": false,
+          "properties": {
+            "compressed_bytes": {
+              "maximum": 16777216,
+              "minimum": 8388608,
+              "type": "integer"
+            },
+            "object_name": {
+              "pattern": "^[a-z0-9][a-z0-9._/-]{0,1023}$",
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "object_name",
+            "sha256",
+            "compressed_bytes"
+          ],
+          "type": "object"
+        },
+        "signature": {
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "const": "ed25519"
+            },
+            "key_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._-]+$",
+              "type": "string"
+            },
+            "signature": {
+              "pattern": "^[A-Za-z0-9+/]{86}==$",
+              "type": "string"
+            },
+            "signed_payload_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "algorithm",
+            "key_id",
+            "signed_payload_sha256",
+            "signature"
+          ],
+          "type": "object"
+        },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "input_manifest_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "input_sequence": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "kind": {
+              "const": "hub_compute"
+            }
+          },
+          "required": [
+            "kind",
+            "input_manifest_id",
+            "input_sequence"
+          ],
+          "type": "object"
+        },
+        "units": {
+          "additionalProperties": false,
+          "properties": {
+            "coordinates": {
+              "const": "wgs84_degrees"
+            },
+            "distance": {
+              "const": "km"
+            },
+            "time": {
+              "const": "ms"
+            }
+          },
+          "required": [
+            "distance",
+            "time",
+            "coordinates"
+          ],
+          "type": "object"
+        },
+        "vehicle_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "window": {
+          "additionalProperties": false,
+          "properties": {
+            "from_ms": {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "to_ms": {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "from_ms",
+            "to_ms"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "artifact_type",
+        "vehicle_id",
+        "source",
+        "window",
+        "generation",
+        "units",
+        "algorithm_version",
+        "dirty_spans",
+        "pack",
+        "signature"
+      ],
+      "type": "object"
+    },
+    "route": {
+      "additionalProperties": false,
+      "properties": {
+        "from_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "const": "changed"
+        },
+        "route_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "to_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "route_id",
+        "from_ms",
+        "to_ms",
+        "reason"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-sync-v1:1.3.0:prepared-artefact",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

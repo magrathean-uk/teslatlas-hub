@@ -3,12 +3,16 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import base64
+import binascii
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from jsonschema import Draft202012Validator, FormatChecker
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "profiles/hub-sync-v1/1.2.0"
-PROFILE_ID = "hub-sync-v1@1.2.0"
+PROFILE = ROOT / "profiles/hub-sync-v1/1.3.0"
+PROFILE_ID = "hub-sync-v1@1.3.0"
 
 
 class ContractError(ValueError):
@@ -37,7 +41,7 @@ def load_profile(root=PROFILE):
         if hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
             raise ContractError("profile file digest mismatch")
         listed[name] = digest
-    required = {"profile.json", "changes-since-request.schema.json", "changed-set-receipt.schema.json", "rebase-hint.schema.json", "sync-manifest.schema.json", "noop.schema.json", "prepared-artefact.schema.json", "status-tables.schema.json", "status-tables.json", "openapi.json", "cases.json"}
+    required = {"profile.json", "changes-since-request.schema.json", "changed-set-receipt.schema.json", "rebase-hint.schema.json", "sync-manifest.schema.json", "noop.schema.json", "prepared-artefact.schema.json", "signing-keys.schema.json", "fixture-signing-keys.json", "status-tables.schema.json", "status-tables.json", "openapi.json", "cases.json"}
     if not required <= set(listed):
         raise ContractError("incomplete profile manifest")
     profile = strict_json((root / "profile.json").read_bytes())
@@ -51,6 +55,27 @@ def _schema(root, name, definition):
     return {**schema, "$ref": "#/$defs/" + definition}
 
 
+def canonical_fixture_payload(value):
+    payload = dict(value)
+    payload.pop("signature", None)
+    # Fixtures are in the narrow RFC 8785 subset of ASCII strings, integers,
+    # arrays, and objects; sorted compact UTF-8 JSON is JCS for that subset.
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+
+
+def load_signing_keys(root=PROFILE):
+    root = Path(root)
+    profile = load_profile(root)
+    name = profile["fixture_signing_keys"]
+    value = strict_json((root / name).read_bytes())
+    errors = list(Draft202012Validator(_schema(root, "signing-keys.schema.json", "document")).iter_errors(value))
+    if errors:
+        raise ContractError("invalid fixture signing keys")
+    if value["profile_id"] != profile["profile_id"]:
+        raise ContractError("fixture signing keys profile mismatch")
+    return value
+
+
 def validate_request(value, root=PROFILE):
     errors = list(Draft202012Validator(_schema(root, "changes-since-request.schema.json", "request"), format_checker=FormatChecker()).iter_errors(value))
     if errors:
@@ -61,11 +86,26 @@ def validate_request(value, root=PROFILE):
     return []
 
 
-def _validate_signature(value):
+def verify_signature(value, key_set):
     signature = value["signature"]
     if signature["signed_payload_sha256"] == "0" * 64:
         return ["signature digest is reserved"]
+    payload = canonical_fixture_payload(value)
+    if hashlib.sha256(payload).hexdigest() != signature["signed_payload_sha256"]:
+        return ["signature payload digest mismatch"]
+    matches = [item for item in key_set["keys"] if item["key_id"] == signature["key_id"] and item["algorithm"] == signature["algorithm"]]
+    if len(matches) != 1:
+        return ["signature key is unknown"]
+    try:
+        public_key = Ed25519PublicKey.from_public_bytes(base64.b64decode(matches[0]["public_key"], validate=True))
+        public_key.verify(base64.b64decode(signature["signature"], validate=True), payload)
+    except (InvalidSignature, ValueError, binascii.Error):
+        return ["signature verification failed"]
     return []
+
+
+def _validate_signature(value, root):
+    return verify_signature(value, load_signing_keys(root))
 
 
 def validate_response(status, value, root=PROFILE):
@@ -76,7 +116,7 @@ def validate_response(status, value, root=PROFILE):
         if value["to_sequence"] <= value["from_sequence"]:
             return ["changed-set receipt does not advance"]
         pack_errors = _validate_pack_limits([value["pack"]], root)
-        return pack_errors or _validate_signature(value)
+        return pack_errors or _validate_signature(value, root)
     if status == 409:
         errors = list(Draft202012Validator(_schema(root, "rebase-hint.schema.json", "hint"), format_checker=FormatChecker()).iter_errors(value))
         if errors:
@@ -88,7 +128,7 @@ def validate_response(status, value, root=PROFILE):
         if float(retry["schema_version_range"]["minimum"]) > float(retry["schema_version_range"]["maximum"]):
             return ["schema version range is reversed"]
         pack_errors = _validate_pack_limits([replacement["pack"]], root)
-        return pack_errors or _validate_signature(value)
+        return pack_errors or _validate_signature(value, root)
     return ["status is not specified by profile"]
 
 
@@ -104,12 +144,12 @@ def validate_manifest(value, root=PROFILE):
     if errors:
         return ["sync manifest violates schema"]
     if value["schema_version"] == "2.1":
-        return _validate_pack_limits([value["pack"]], root) + _validate_signature(value)
+        return _validate_pack_limits([value["pack"]], root) + _validate_signature(value, root)
     chunks = value["chunks"]
     if [item["chunk_index"] for item in chunks] != list(range(len(chunks))):
         return ["manifest chunks are not contiguous"]
     pack_errors = _validate_pack_limits([item["pack"] for item in chunks], root)
-    return pack_errors or _validate_signature(value)
+    return pack_errors or _validate_signature(value, root)
 
 
 def validate_noop(status, value, headers=None, raw=b"", root=PROFILE):
@@ -117,7 +157,7 @@ def validate_noop(status, value, headers=None, raw=b"", root=PROFILE):
         errors = list(Draft202012Validator(_schema(root, "noop.schema.json", "receipt"), format_checker=FormatChecker()).iter_errors(value))
         if errors:
             return ["no-op receipt violates schema"]
-        return _validate_signature(value)
+        return _validate_signature(value, root)
     if status == 406:
         headers = {key.lower(): item for key, item in (headers or {}).items()}
         if raw or headers.get("cache-control") != "no-store":
@@ -163,4 +203,4 @@ def validate_prepared_artefact(value, root=PROFILE):
     if value["generation"]["generated_at_ms"] < window["to_ms"]:
         return ["prepared-artefact generation predates window"]
     pack_errors = _validate_pack_limits([value["pack"]], root)
-    return pack_errors or _validate_signature(value)
+    return pack_errors or _validate_signature(value, root)

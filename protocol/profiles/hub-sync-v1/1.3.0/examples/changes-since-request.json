@@ -1,0 +1,11 @@
+{
+  "fixture_id": "changes-since-request-v1",
+  "request": {
+    "base_receipt_id": "receipt_demo_000042",
+    "from_sequence": 42,
+    "schema_version_range": {
+      "maximum": "2.2",
+      "minimum": "2.1"
+    }
+  }
+}

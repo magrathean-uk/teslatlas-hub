@@ -1,0 +1,23 @@
+{
+  "fixture_id": "changes-since-changed-set-v1",
+  "receipt": {
+    "base_receipt_id": "receipt_demo_000042",
+    "changed_set_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "from_sequence": 42,
+    "manifest_schema": "2.2",
+    "pack": {
+      "compressed_bytes": 8388608,
+      "object_name": "packs/demo-changed-set-000045.sqlite.zst",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "receipt_id": "receipt_demo_000045",
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "fixture-ed25519-rfc8032-1",
+      "signature": "2H8IM/FrEn3VkKj4K5nBfhJX/rPfFaVdg4YtMp/nSKKXAofAUhMy0t5Lf8BzOUMovnBkod6Mcw++Fu/rOhDSDQ==",
+      "signed_payload_sha256": "399d83af753126a64fd965626755721d1f561b484059138d9f3b88b87f007b0b"
+    },
+    "to_sequence": 45,
+    "vehicle_id": "11111111-1111-4111-8111-111111111111"
+  }
+}

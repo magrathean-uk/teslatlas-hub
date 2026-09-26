@@ -1,0 +1,52 @@
+{
+  "$defs": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "base_receipt_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "from_sequence": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "schema_version_range": {
+          "additionalProperties": false,
+          "properties": {
+            "maximum": {
+              "enum": [
+                "2.1",
+                "2.2"
+              ],
+              "type": "string"
+            },
+            "minimum": {
+              "enum": [
+                "2.1",
+                "2.2"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "minimum",
+            "maximum"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "base_receipt_id",
+        "from_sequence",
+        "schema_version_range"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-sync-v1:1.3.0:changes-since-request",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

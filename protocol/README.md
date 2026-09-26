@@ -10,7 +10,7 @@ This repository carries three related contracts with different identities:
   [`docs/current-hub.md`](docs/current-hub.md). It describes discovery,
   pairing, authenticated vehicle/current/drives reads, and credential
   rotation.
-- Candidate Hub changes-since: `hub-sync-v1@1.2.0`, documented in
+- Candidate Hub changes-since: `hub-sync-v1@1.3.0`, documented in
   [`docs/hub-sync.md`](docs/hub-sync.md). It defines one changed-set receipt
   and a signed rebase hint after compaction without a product-version pin.
 - Rich semantic HTTP and event profiles: `1.0.0`, `1.1.0`, and `1.2.0`.
@@ -85,7 +85,7 @@ acceptance.
 - `profiles/hub-http-v1/1.1.0/` — current-Hub HTTP schemas, OpenAPI 3.1.0,
   examples, cases, and content hash. Distribute the complete directory because
   its OpenAPI references adjacent schema files.
-- `profiles/hub-sync-v1/1.2.0/` — changes-since, no-op, pack, status-table, and schema 2.2
+- `profiles/hub-sync-v1/1.3.0/` — changes-since, no-op, pack, status-table, and schema 2.2
   multi-chunk manifest contracts.
 - `profiles/edge-delivery-v2/2.0.0/` — Edge pull, stable identity,
   sequence/gap, acknowledgement, and durable-consumer disposition contract.

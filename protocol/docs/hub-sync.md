@@ -1,7 +1,7 @@
 # Hub changes-since contract
 
-[`hub-sync-v1@1.2.0`](../profiles/hub-sync-v1/1.2.0/) is the candidate,
-source-neutral successor to retained `hub-sync-v1@1.0.0` and `1.1.0` candidates. It
+[`hub-sync-v1@1.3.0`](../profiles/hub-sync-v1/1.3.0/) is the candidate,
+source-neutral successor to retained `hub-sync-v1@1.0.0`, `1.1.0`, and `1.2.0` candidates. It
 has no exact Hub product-version pin. A client sends the accepted manifest schema range and
 its persisted receipt checkpoint to `POST
 /v1/vehicles/{vehicle_id}/sync/changes-since` with a paired bearer. A missing,
@@ -18,10 +18,13 @@ replacement receipt and sequence, and sends the exact `retry_request` from the
 hint. It must not infer another checkpoint or replace this with a full-history
 request.
 
-The checked-in signature fields are deterministic transport-shape fixtures.
-They are intentionally not cryptographic evidence. Production clients must
-verify the Ed25519 signature with the key selected by `key_id` and reject an
-invalid signature, digest, or canonical payload.
+The `1.3.0` fixtures carry deterministic, valid Ed25519 signatures over their
+canonical payloads. [`fixture-signing-keys.json`](../profiles/hub-sync-v1/1.3.0/fixture-signing-keys.json)
+selects the public test key by `key_id`; it requires publication before use and
+retention of retired keys during rotation. This fixture key set is a test trust
+anchor only. Production clients must obtain a paired-Hub trust anchor, select
+keys by `key_id`, and reject an unknown key, digest mismatch, or invalid
+signature.
 
 The `1.1.0` successor adds signed no-op receipts, `406` empty no-store
 unavailability, pack range semantics, status tables, and one signed schema 2.2

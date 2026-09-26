@@ -1,0 +1,62 @@
+{
+  "fixture_id": "prepared-artefact-map-months-routes-v1",
+  "receipt": {
+    "algorithm_version": "1.0.0",
+    "artifact_id": "prepared_demo_000900",
+    "artifact_type": "map_months_and_routes",
+    "dirty_spans": {
+      "map_months": [
+        {
+          "from_ms": 1735689600000,
+          "month": "2025-01",
+          "reason": "changed",
+          "to_ms": 1738368000000
+        },
+        {
+          "from_ms": 1738368000000,
+          "month": "2025-02",
+          "reason": "changed",
+          "to_ms": 1740787200000
+        }
+      ],
+      "routes": [
+        {
+          "from_ms": 1738454400000,
+          "reason": "changed",
+          "route_id": "route_demo_000045",
+          "to_ms": 1738458000000
+        }
+      ]
+    },
+    "generation": {
+      "generated_at_ms": 1740790800000,
+      "generation_id": "generation_demo_000001"
+    },
+    "pack": {
+      "compressed_bytes": 8388608,
+      "object_name": "packs/prepared-demo-000900.sqlite.zst",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "fixture-ed25519-rfc8032-1",
+      "signature": "2RLQmK3fLoQ1DaAmsoVcyy915Is8IpX7sMxvbGVwDtRcLOVrL15J+7xUaKTtc5cBW8qxmKcs8CIvyM0FQoJWAA==",
+      "signed_payload_sha256": "b506e8c4ce77783e98e583abb2ca7c0bc01da57fe9330eca4b253f646f12c64d"
+    },
+    "source": {
+      "input_manifest_id": "manifest_demo_000900",
+      "input_sequence": 900,
+      "kind": "hub_compute"
+    },
+    "units": {
+      "coordinates": "wgs84_degrees",
+      "distance": "km",
+      "time": "ms"
+    },
+    "vehicle_id": "11111111-1111-4111-8111-111111111111",
+    "window": {
+      "from_ms": 1735689600000,
+      "to_ms": 1740787200000
+    }
+  }
+}
