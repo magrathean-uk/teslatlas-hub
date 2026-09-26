@@ -65,6 +65,8 @@ const MAX_ACTIVE_PACK_STREAMS_PER_DEVICE: usize = 2;
 const PACK_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_HANDLER_TIMEOUT: Duration = Duration::from_secs(15);
 const READINESS_CACHE_TTL: Duration = Duration::from_secs(1);
+const MAX_SYNC_CONTROL_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+const HUB_SYNC_PROFILE_ID: &str = "hub-sync-v1@1.3.0";
 const PUBLIC_API_VERSIONS: [&str; 1] = ["1.0"];
 const PUBLIC_BASE_CAPABILITIES: [&str; 2] = ["query.vehicles", "query.current"];
 const PUBLIC_CAPABILITIES: [&str; 4] = [
@@ -705,6 +707,10 @@ fn router_with_access_telemetry_and_http(
         .route("/v1/vehicles", get(vehicles))
         .route("/v1/vehicles/{vehicle_id}/current", get(current_vehicle))
         .route("/v1/vehicles/{vehicle_id}/drives", get(drives))
+        .route(
+            "/v1/vehicles/{vehicle_id}/sync/signing-keys",
+            get(signing_keys),
+        )
         .route("/v1/vehicles/{vehicle_id}/sync/manifest", get(manifest))
         .route("/v1/vehicles/{vehicle_id}/sync/noop", get(schema_22_noop))
         .route("/v1/packs/sha256/{object_name}", get(pack))
@@ -1628,6 +1634,83 @@ async fn manifest(
     }
 }
 
+#[derive(Serialize)]
+struct SigningKeysDocument {
+    profile_id: &'static str,
+    vehicle_id: Uuid,
+    key_set_id: String,
+    keys: Vec<SigningKeyDocument>,
+    rotation: SigningKeyRotation,
+}
+
+#[derive(Serialize)]
+struct SigningKeyDocument {
+    algorithm: &'static str,
+    key_id: String,
+    public_key: String,
+}
+
+#[derive(Serialize)]
+struct SigningKeyRotation {
+    key_selection: &'static str,
+    key_id_derivation: &'static str,
+    publish_before_use: bool,
+    retain_retired_keys: bool,
+}
+
+async fn signing_keys(
+    State(state): State<AppState>,
+    Path(vehicle_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(status) = require_authorized_device(&state, &headers) {
+        return device_auth_reject(status);
+    }
+    let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match state.store.vehicle_is_active(vehicle_id) {
+        Ok(true) => {}
+        Ok(false) => return StatusCode::NOT_FOUND.into_response(),
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot check signing-key vehicle binding");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    }
+    let Some(signing) = state.manifest_signing.as_deref() else {
+        tracing::error!(%vehicle_id, "manifest signing key is unavailable");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let document = signing_keys_document(signing, vehicle_id);
+    match bounded_no_store_json(&document) {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot serialize bounded signing-key response");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+fn signing_keys_document(signing: &ManifestSigning, vehicle_id: Uuid) -> SigningKeysDocument {
+    let key_id = signing.key_id();
+    SigningKeysDocument {
+        profile_id: HUB_SYNC_PROFILE_ID,
+        vehicle_id,
+        key_set_id: key_id.clone(),
+        keys: vec![SigningKeyDocument {
+            algorithm: "ed25519",
+            key_id,
+            public_key: signing.verifying_key_base64(),
+        }],
+        rotation: SigningKeyRotation {
+            key_selection: "key_id",
+            key_id_derivation: "ed25519-sha256-hex-public-key",
+            publish_before_use: true,
+            retain_retired_keys: true,
+        },
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SyncCapabilityRequest {
     Legacy,
@@ -1899,6 +1982,33 @@ fn no_store_manifest(
 
 fn no_store_json_bytes(raw_json: Vec<u8>, signing: Option<&ManifestSigning>) -> Response {
     signed_no_store_json_bytes(StatusCode::OK, raw_json, signing)
+}
+
+#[derive(Debug)]
+enum BoundedJsonError {
+    Serialize(serde_json::Error),
+    ResponseTooLarge,
+}
+
+impl std::fmt::Display for BoundedJsonError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Serialize(error) => write!(formatter, "{error}"),
+            Self::ResponseTooLarge => formatter.write_str("response exceeds profile byte limit"),
+        }
+    }
+}
+
+fn bounded_no_store_json(value: &impl Serialize) -> Result<Response, BoundedJsonError> {
+    let raw_json = serde_json::to_vec(value).map_err(BoundedJsonError::Serialize)?;
+    bounded_no_store_json_bytes(raw_json)
+}
+
+fn bounded_no_store_json_bytes(raw_json: Vec<u8>) -> Result<Response, BoundedJsonError> {
+    if raw_json.len() > MAX_SYNC_CONTROL_RESPONSE_BYTES {
+        return Err(BoundedJsonError::ResponseTooLarge);
+    }
+    Ok(signed_no_store_json_bytes(StatusCode::OK, raw_json, None))
 }
 
 fn signed_no_store_json_bytes(

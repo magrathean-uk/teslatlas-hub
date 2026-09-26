@@ -5,7 +5,7 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{Signer, SigningKey};
 
-use crate::protocol::CursorKey;
+use crate::protocol::{CursorKey, Sha256Digest};
 
 pub(crate) struct ManifestSigning {
     signing_key: SigningKey,
@@ -21,6 +21,17 @@ impl ManifestSigning {
 
     pub(crate) fn verifying_key_hex(&self) -> String {
         hex::encode(self.signing_key.verifying_key().to_bytes())
+    }
+
+    pub(crate) fn verifying_key_base64(&self) -> String {
+        STANDARD.encode(self.signing_key.verifying_key().to_bytes())
+    }
+
+    pub(crate) fn key_id(&self) -> String {
+        format!(
+            "ed25519-sha256-{}",
+            Sha256Digest::of_bytes(&self.signing_key.verifying_key().to_bytes())
+        )
     }
 
     pub(crate) fn sign_base64(&self, raw_manifest_json: &[u8]) -> String {
@@ -76,6 +87,14 @@ mod tests {
         assert_eq!(first.verifying_key_hex(), second.verifying_key_hex());
         assert_ne!(first.verifying_key_hex(), different.verifying_key_hex());
         assert_eq!(first.verifying_key_hex().len(), 64);
+        assert_eq!(first.verifying_key_base64().len(), 44);
+        assert_eq!(
+            first.key_id(),
+            format!(
+                "ed25519-sha256-{}",
+                Sha256Digest::of_bytes(&first.signing_key.verifying_key().to_bytes())
+            )
+        );
         assert!(
             first
                 .verifying_key_hex()

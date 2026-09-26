@@ -1369,6 +1369,211 @@ async fn tls_capabilities_publish_lowercase_manifest_verifying_key() {
 }
 
 #[tokio::test]
+async fn signing_keys_matches_protocol_fixture_and_vehicle_binding() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let source_id = Uuid::new_v4();
+    let vehicle_id = Uuid::new_v4();
+    seed_active_vehicle_identity(&store, source_id, vehicle_id);
+    let cursor_key = CursorKey::from_bytes([30; 32]);
+    let signing = ManifestSigning::from_cursor_key(&cursor_key);
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("signing keys fixture", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let response = paired_router(store, &cursor_key)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/signing-keys"))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", access.access_token.as_bearer()),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("signing keys response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert!(response.headers().get(MANIFEST_SIGNATURE_HEADER).is_none());
+    let raw = response
+        .into_body()
+        .collect()
+        .await
+        .expect("signing keys body")
+        .to_bytes();
+    assert!(raw.len() <= MAX_SYNC_CONTROL_RESPONSE_BYTES);
+    let actual: serde_json::Value = serde_json::from_slice(&raw).expect("signing keys JSON");
+
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/signing-keys-vehicle-bound.json"
+    )))
+    .expect("Protocol signing keys fixture");
+    let mut expected = fixture["response"]["body"].clone();
+    expected["vehicle_id"] = serde_json::json!(vehicle_id);
+    expected["key_set_id"] = serde_json::json!(signing.key_id());
+    expected["keys"][0]["key_id"] = serde_json::json!(signing.key_id());
+    expected["keys"][0]["public_key"] = serde_json::json!(signing.verifying_key_base64());
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn singleton_signing_key_set_id_is_stable_key_id_and_tracks_active_key() {
+    let vehicle_id = Uuid::new_v4();
+    let first_signing = ManifestSigning::from_cursor_key(&CursorKey::from_bytes([81; 32]));
+    let same_signing = ManifestSigning::from_cursor_key(&CursorKey::from_bytes([81; 32]));
+    let next_signing = ManifestSigning::from_cursor_key(&CursorKey::from_bytes([82; 32]));
+    let first = signing_keys_document(&first_signing, vehicle_id);
+    let same = signing_keys_document(&same_signing, vehicle_id);
+    let next = signing_keys_document(&next_signing, vehicle_id);
+
+    assert_eq!(first.key_set_id, first.keys[0].key_id);
+    assert_eq!(same.key_set_id, first.key_set_id);
+    assert_ne!(next.key_set_id, first.key_set_id);
+    assert_eq!(next.key_set_id, next.keys[0].key_id);
+}
+
+#[tokio::test]
+async fn signing_keys_enforces_protocol_raw_response_boundary() {
+    fn materialize(fixture: &serde_json::Value) -> Vec<u8> {
+        let mut raw = serde_json::to_vec(&fixture["document"]).expect("fixture document");
+        let padding = fixture["padding_bytes"]
+            .as_u64()
+            .and_then(|value| usize::try_from(value).ok())
+            .expect("fixture padding");
+        raw.resize(raw.len() + padding, b' ');
+        assert_eq!(
+            raw.len(),
+            fixture["body_bytes"]
+                .as_u64()
+                .and_then(|value| usize::try_from(value).ok())
+                .expect("fixture body size")
+        );
+        assert_eq!(
+            Sha256Digest::of_bytes(&raw).to_string(),
+            fixture["body_sha256"].as_str().expect("fixture digest")
+        );
+        raw
+    }
+
+    let at_limit: serde_json::Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/signing-keys-response-2097152-bytes.json"
+    )))
+    .expect("at-limit Protocol fixture");
+    let over_limit: serde_json::Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/signing-keys-response-2097153-bytes.json"
+    )))
+    .expect("over-limit Protocol fixture");
+
+    let accepted = materialize(&at_limit);
+    assert_eq!(accepted.len(), MAX_SYNC_CONTROL_RESPONSE_BYTES);
+    let response = bounded_no_store_json_bytes(accepted.clone()).expect("at-limit response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert_eq!(
+        response
+            .into_body()
+            .collect()
+            .await
+            .expect("at-limit response body")
+            .to_bytes()
+            .as_ref(),
+        accepted.as_slice()
+    );
+
+    let rejected = materialize(&over_limit);
+    assert_eq!(rejected.len(), MAX_SYNC_CONTROL_RESPONSE_BYTES + 1);
+    assert!(matches!(
+        bounded_no_store_json_bytes(rejected),
+        Err(BoundedJsonError::ResponseTooLarge)
+    ));
+}
+
+#[tokio::test]
+async fn signing_keys_authenticates_before_empty_not_found() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([83; 32]);
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("signing keys auth", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store, &cursor_key);
+
+    let unauthenticated = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/vehicles/not-a-uuid/sync/signing-keys")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("unauthenticated response");
+    assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        unauthenticated
+            .into_body()
+            .collect()
+            .await
+            .expect("unauthenticated body")
+            .to_bytes()
+            .is_empty()
+    );
+
+    for vehicle_id in ["not-a-uuid".to_owned(), Uuid::new_v4().to_string()] {
+        let not_found = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/vehicles/{vehicle_id}/sync/signing-keys"))
+                    .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("not-found response");
+        assert_eq!(not_found.status(), StatusCode::NOT_FOUND);
+        assert!(
+            not_found
+                .into_body()
+                .collect()
+                .await
+                .expect("not-found body")
+                .to_bytes()
+                .is_empty()
+        );
+    }
+}
+
+#[tokio::test]
 async fn tls_router_requires_a_paired_device_and_claims_once() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store");
