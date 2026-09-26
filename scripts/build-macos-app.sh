@@ -5,12 +5,12 @@ set -eu
 
 umask 022
 
-PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin
-export PATH
 MACOSX_DEPLOYMENT_TARGET=13.0
 export MACOSX_DEPLOYMENT_TARGET
 COPYFILE_DISABLE=1
 export COPYFILE_DISABLE
+PYTHONDONTWRITEBYTECODE=1
+export PYTHONDONTWRITEBYTECODE
 
 die() {
     printf '%s\n' "build-macos-app: $*" >&2
@@ -89,26 +89,41 @@ case "$check_go_toolchain" in
         ;;
 esac
 
+[ -n "${TESLATLAS_DERIVED_DATA-}" ] && [ -n "${TESLATLAS_LAB-}" ] \
+    || die "run through ../scripts/dev/run.sh hub so build output stays outside the checkout"
+for output_root in "$TESLATLAS_LAB" "$TESLATLAS_DERIVED_DATA"; do
+    resolved_root=$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$output_root")
+    case "$resolved_root" in
+        "$ROOT"|"$ROOT"/*) die "build output would enter the Hub checkout" ;;
+    esac
+done
+TARGET_DIRECTORY=$(cargo metadata --locked --format-version 1 --no-deps | \
+    /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])') \
+    || die "cannot find the managed Cargo target directory"
+case "$TARGET_DIRECTORY" in
+    "$HOME/Library/Caches/clean-development/"*) ;;
+    *) die "Cargo target directory is outside the managed build cache" ;;
+esac
+
 SOURCE_COMMIT=${TESLATLAS_HUB_SOURCE_COMMIT-}
 /usr/bin/printf '%s\n' "$SOURCE_COMMIT" | /usr/bin/grep -Eq '^[0-9a-f]{40}$' \
     || die "TESLATLAS_HUB_SOURCE_COMMIT must be exactly 40 lowercase hexadecimal characters"
 export TESLATLAS_HUB_SOURCE_COMMIT
 
-ICON_BUILD="$ROOT/scripts/build-app-icon.sh"
 APP_SOURCE="$ROOT/macos/TeslatlasHubApp"
-DERIVED="$ROOT/target/macos-app"
+DERIVED="$TESLATLAS_DERIVED_DATA/macos-app"
 GENERATED="$DERIVED/generated"
 PROJECT_DIR="$DERIVED/project"
 PROJECT="$PROJECT_DIR/TeslatlasHubApp.xcodeproj"
-RUST_BINARY="$ROOT/target/release/teslatlas-hub"
-PROXY_BINARY="$ROOT/target/release/tesla-http-proxy"
-FLEET_TELEMETRY_BINARY="$ROOT/target/release/fleet-telemetry"
+RUST_BINARY="$TARGET_DIRECTORY/release/teslatlas-hub"
+PROXY_BINARY="$GENERATED/tesla-http-proxy"
+FLEET_TELEMETRY_BINARY="$GENERATED/fleet-telemetry"
 SERVICE_PACKAGE="$GENERATED/TeslatlasHubService.pkg"
 APP_COMPONENT_PACKAGE="$GENERATED/TeslatlasHubApp.pkg"
 PRODUCT_DISTRIBUTION="$GENERATED/TeslatlasHub-distribution.xml"
 PRODUCT_EXPANSION="$GENERATED/expanded-product"
 PRODUCT="$DERIVED/Build/Products/Release/Teslatlas Hub.app"
-DIST="$ROOT/dist"
+DIST="$TESLATLAS_LAB/build/hub/dist"
 DIST_APP="$DIST/Teslatlas Hub.app"
 DIST_PACKAGE="$DIST/TeslatlasHub.pkg"
 STALE_DIST_SERVICE_PACKAGE="$DIST/TeslatlasHubService.pkg"
@@ -119,9 +134,9 @@ DIST_GO_EVIDENCE="$DIST/go-proxy-evidence"
 DIST_FLEET_TELEMETRY_EVIDENCE="$DIST/fleet-telemetry-evidence"
 DIST_LEGAL_BUNDLE="$DIST/dependency-legal"
 
-[ -x "$ICON_BUILD" ] && [ ! -L "$ICON_BUILD" ] \
-    || die "app icon generator is missing or unsafe"
-"$ICON_BUILD"
+[ -f "$APP_SOURCE/TeslatlasHubApp/Resources/AppIcon.icns" ] \
+    && [ ! -L "$APP_SOURCE/TeslatlasHubApp/Resources/AppIcon.icns" ] \
+    || die "tracked app icon is missing or unsafe"
 
 ensure_real_directory() {
     directory=$1
@@ -211,7 +226,7 @@ esac
 ensure_real_directory "$DERIVED"
 ensure_real_directory "$GENERATED"
 case "$PROJECT_DIR" in
-    "$ROOT/target/macos-app/project") ;;
+    "$TESLATLAS_DERIVED_DATA/macos-app/project") ;;
     *) die "refusing unsafe generated project directory" ;;
 esac
 if [ -e "$PROJECT_DIR" ] || [ -L "$PROJECT_DIR" ]; then
@@ -233,7 +248,7 @@ ensure_real_directory "$DIST"
     # build-time helpers unoptimized; the shipped Hub binary remains optimized.
     DYLD_FALLBACK_LIBRARY_PATH="$RUST_TOOLCHAIN_LIB" RUSTC="$RUST_COMPILER" \
         CARGO_PROFILE_RELEASE_BUILD_OVERRIDE_OPT_LEVEL=0 \
-        "$RUST_CARGO" build --locked --release --bin teslatlas-hub
+        cargo build --locked --release --bin teslatlas-hub
 )
 
 "$ROOT/scripts/build-tesla-command-proxy.sh" \
@@ -416,7 +431,7 @@ embedded_fleet_telemetry_sha256=$(/usr/bin/shasum -a 256 \
     || die "app Fleet Telemetry receiver changed after evidence generation"
 
 case "$DIST_APP" in
-    "$ROOT/dist/Teslatlas Hub.app") ;;
+    "$TESLATLAS_LAB/build/hub/dist/Teslatlas Hub.app") ;;
     *) die "refusing unsafe distribution destination" ;;
 esac
 if [ -e "$DIST_APP" ] || [ -L "$DIST_APP" ]; then
@@ -456,7 +471,7 @@ done
 
 for distribution_package in "$DIST_PACKAGE" "$STALE_DIST_SERVICE_PACKAGE"; do
     case "$distribution_package" in
-        "$ROOT/dist/TeslatlasHub.pkg"|"$ROOT/dist/TeslatlasHubService.pkg") ;;
+        "$TESLATLAS_LAB/build/hub/dist/TeslatlasHub.pkg"|"$TESLATLAS_LAB/build/hub/dist/TeslatlasHubService.pkg") ;;
         *) die "refusing unsafe distribution package destination" ;;
     esac
     if [ -e "$distribution_package" ] || [ -L "$distribution_package" ]; then
@@ -582,7 +597,7 @@ done
 # Drop the exact Xcode staging tree so repeated builds do not retain hundreds
 # of megabytes. Failed builds intentionally keep it for diagnosis.
 case "$DERIVED" in
-    "$ROOT/target/macos-app") ;;
+    "$TESLATLAS_DERIVED_DATA/macos-app") ;;
     *) die "refusing unsafe Xcode staging cleanup" ;;
 esac
 [ -d "$DERIVED" ] && [ ! -L "$DERIVED" ] \

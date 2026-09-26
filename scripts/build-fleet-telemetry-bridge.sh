@@ -210,7 +210,13 @@ GOCACHE="$work/go-build-cache"
 export GOCACHE
 /bin/mkdir -p "$GOCACHE"
 
-cache_directory="$repository_root/target/upstream-cache"
+[ -n "${TESLATLAS_LAB-}" ] \
+    || die "run through ../scripts/dev/run.sh hub so the upstream cache stays outside the checkout"
+resolved_lab=$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$TESLATLAS_LAB")
+case "$resolved_lab" in
+    "$repository_root"|"$repository_root"/*) die "upstream cache would enter the Hub checkout" ;;
+esac
+cache_directory="$TESLATLAS_LAB/build/hub/upstream-cache"
 if [ -e "$cache_directory" ] || [ -L "$cache_directory" ]; then
     [ -d "$cache_directory" ] && [ ! -L "$cache_directory" ] \
         || die "upstream cache is not a real directory"

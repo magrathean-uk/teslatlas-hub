@@ -76,8 +76,8 @@ fi
     || fail "Hub app icon is missing or unsafe"
 /usr/bin/file "$APP_ICON" | /usr/bin/grep -Fq 'Mac OS X icon' \
     || fail "Hub app icon is not an ICNS file"
-/usr/bin/grep -Fq '"$ICON_BUILD"' "$APP_BUILD" \
-    || fail "macOS app build does not regenerate the icon from tracked source"
+/usr/bin/grep -Fq 'tracked app icon is missing or unsafe' "$APP_BUILD" \
+    || fail "macOS app build does not require the tracked icon"
 /usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$APP_INFO" | /usr/bin/grep -qx AppIcon \
     || fail "Hub app Info.plist has no app icon"
 /usr/bin/grep -Fq 'CFBundleIconFile: AppIcon' "$APP_PROJECT" \
@@ -314,8 +314,14 @@ fi
     || fail "app build does not produce the combined installer name"
 /usr/bin/grep -Fq 'STALE_DIST_SERVICE_PACKAGE="$DIST/TeslatlasHubService.pkg"' "$APP_BUILD" \
     || fail "app build does not identify the stale public service-only installer"
-/usr/bin/grep -Fq '"$ROOT/target/macos-app") ;;' "$APP_BUILD" \
+/usr/bin/grep -Fq '"$TESLATLAS_DERIVED_DATA/macos-app") ;;' "$APP_BUILD" \
     || fail "app build does not scope Xcode staging cleanup"
+/usr/bin/grep -Fq 'TARGET_DIRECTORY=$(cargo metadata --locked --format-version 1 --no-deps' "$APP_BUILD" \
+    || fail "app build does not use the managed Cargo target"
+if /usr/bin/grep -Fq '"$ROOT/target/' "$APP_BUILD" \
+    || /usr/bin/grep -Fq '"$ROOT/dist' "$APP_BUILD"; then
+    fail "app build writes output inside the checkout"
+fi
 /usr/bin/grep -Fq '/usr/bin/find "$DERIVED" -depth -delete' "$APP_BUILD" \
     || fail "app build does not clean successful Xcode staging"
 assert_before_fixed 'final combined installer is missing' '/usr/bin/find "$DERIVED" -depth -delete' "$APP_BUILD"

@@ -15,7 +15,7 @@ For an existing installation, follow [Upgrade and rollback](../releases/upgrade.
 
 ## Install
 
-1. Open your locally built `dist/TeslatlasHub.pkg`.
+1. Open your locally built `~/dev/lab/teslatlas-v7/build/hub/dist/TeslatlasHub.pkg`.
 2. Complete the macOS Installer flow. It installs **Teslatlas Hub.app** in
    `/Applications` and the service payload in
    `/Library/Application Support/Teslatlas Hub`.
@@ -139,7 +139,7 @@ checkout of `main` (or a historical tag when reproducing it), the combined insta
 ```sh
 HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
 git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
-TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ./scripts/build-macos-app.sh
+TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ../scripts/dev/run.sh hub ./scripts/build-macos-app.sh
 ```
 
 See the [source build guide](build-from-source.md). Source builds do not

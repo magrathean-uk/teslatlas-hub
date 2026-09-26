@@ -29,9 +29,10 @@ toolchain requirements. The previously verified toolchains were Rust 1.98,
 Go 1.27.0 and Xcode 27. Building downloads locked dependency source material.
 
 ```sh
-TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ./scripts/build-macos-app.sh
-codesign --verify --deep --strict "dist/Teslatlas Hub.app"
-pkgutil --payload-files dist/TeslatlasHub.pkg
+TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ../scripts/dev/run.sh hub ./scripts/build-macos-app.sh
+HUB_DIST="$HOME/dev/lab/teslatlas-v7/build/hub/dist"
+codesign --verify --deep --strict "$HUB_DIST/Teslatlas Hub.app"
+pkgutil --payload-files "$HUB_DIST/TeslatlasHub.pkg"
 ```
 
 If Go 1.27.0 is installed outside the default `PATH`, select its executable
@@ -45,10 +46,10 @@ an arbitrary Go 1.27.0 installation is not sufficient.
 
 ```sh
 TESLATLAS_GO="/absolute/path/to/go" \
-  TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ./scripts/build-macos-app.sh
+  TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ../scripts/dev/run.sh hub ./scripts/build-macos-app.sh
 ```
 
-Install `dist/TeslatlasHub.pkg`, then follow [Mac setup](install-macos.md).
+Install `~/dev/lab/teslatlas-v7/build/hub/dist/TeslatlasHub.pkg`, then follow [Mac setup](install-macos.md).
 The combined package installs both the control app and background service.
 An ad-hoc build is not Developer ID signed or notarised; macOS or organisation
 policy may block it. Do not disable system-wide security controls. In-app

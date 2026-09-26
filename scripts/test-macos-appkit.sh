@@ -15,7 +15,7 @@ project_root="$stage/TeslatlasHubApp"
 derived_data="$stage/DerivedData"
 mkdir -p "$project_root"
 
-developer_dir=${DEVELOPER_DIR:-/Applications/Xcode-beta.app/Contents/Developer}
+developer_dir=${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}
 [ -d "$developer_dir" ] && [ ! -L "$developer_dir" ] || {
     echo "test-macos-appkit: Xcode developer directory is unavailable: $developer_dir" >&2
     exit 69
