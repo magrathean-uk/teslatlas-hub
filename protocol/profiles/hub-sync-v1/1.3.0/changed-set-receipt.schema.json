@@ -21,7 +21,7 @@
           "type": "string"
         },
         "from_sequence": {
-          "maximum": 9223372036854775807,
+          "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
@@ -92,7 +92,7 @@
           "type": "object"
         },
         "to_sequence": {
-          "maximum": 9223372036854775807,
+          "maximum": 9007199254740991,
           "minimum": 1,
           "type": "integer"
         },

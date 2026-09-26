@@ -4,7 +4,7 @@
       "additionalProperties": false,
       "properties": {
         "from_ms": {
-          "maximum": 9223372036854775807,
+          "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
@@ -16,7 +16,7 @@
           "const": "changed"
         },
         "to_ms": {
-          "maximum": 9223372036854775807,
+          "maximum": 9007199254740991,
           "minimum": 1,
           "type": "integer"
         }
@@ -90,7 +90,7 @@
           "additionalProperties": false,
           "properties": {
             "generated_at_ms": {
-              "maximum": 9223372036854775807,
+              "maximum": 9007199254740991,
               "minimum": 0,
               "type": "integer"
             },
@@ -170,7 +170,7 @@
               "type": "string"
             },
             "input_sequence": {
-              "maximum": 9223372036854775807,
+              "maximum": 9007199254740991,
               "minimum": 1,
               "type": "integer"
             },
@@ -214,12 +214,12 @@
           "additionalProperties": false,
           "properties": {
             "from_ms": {
-              "maximum": 9223372036854775807,
+              "maximum": 9007199254740991,
               "minimum": 0,
               "type": "integer"
             },
             "to_ms": {
-              "maximum": 9223372036854775807,
+              "maximum": 9007199254740991,
               "minimum": 1,
               "type": "integer"
             }
@@ -250,7 +250,7 @@
       "additionalProperties": false,
       "properties": {
         "from_ms": {
-          "maximum": 9223372036854775807,
+          "maximum": 9007199254740991,
           "minimum": 0,
           "type": "integer"
         },
@@ -264,7 +264,7 @@
           "type": "string"
         },
         "to_ms": {
-          "maximum": 9223372036854775807,
+          "maximum": 9007199254740991,
           "minimum": 1,
           "type": "integer"
         }

@@ -27,6 +27,7 @@ PUBLIC_KEY = {"type": "string", "pattern": "^[A-Za-z0-9+/]{43}=$"}
 MAX_MANIFEST_CHUNKS = 1771
 MAX_PREPARED_ROUTES = 497
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+I_JSON_MAX_INTEGER = 2**53 - 1
 # RFC 8032 test-vector seed. It is a public, deterministic fixture value only.
 FIXTURE_SIGNING_SEED = bytes.fromhex("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60")
 FIXTURE_PUBLIC_KEY_BYTES = Ed25519PrivateKey.from_private_bytes(FIXTURE_SIGNING_SEED).public_key().public_bytes(
@@ -88,7 +89,7 @@ def bundle():
         "request": strict({
             "base_receipt_id": OPAQUE,
             "base_manifest_schema": SCHEMA_VERSION,
-            "from_sequence": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1},
+            "from_sequence": {"type": "integer", "minimum": 0, "maximum": I_JSON_MAX_INTEGER},
             "schema_version_range": strict({"minimum": REQUEST_SCHEMA_VERSION, "maximum": REQUEST_SCHEMA_VERSION}),
         })
     }})
@@ -98,8 +99,8 @@ def bundle():
             "vehicle_id": UUID,
             "base_receipt_id": OPAQUE,
             "base_manifest_schema": SCHEMA_VERSION,
-            "from_sequence": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1},
-            "to_sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "from_sequence": {"type": "integer", "minimum": 0, "maximum": I_JSON_MAX_INTEGER},
+            "to_sequence": {"type": "integer", "minimum": 1, "maximum": I_JSON_MAX_INTEGER},
             "manifest_schema": SCHEMA_VERSION,
             "changed_set_sha256": DIGEST,
             "pack": pack_ref(),
@@ -112,13 +113,13 @@ def bundle():
             "vehicle_id": UUID,
             "requested_base_receipt_id": OPAQUE,
             "requested_base_manifest_schema": SCHEMA_VERSION,
-            "requested_from_sequence": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1},
+            "requested_from_sequence": {"type": "integer", "minimum": 0, "maximum": I_JSON_MAX_INTEGER},
             "reason": {"const": "compacted"},
             "replacement": {"oneOf": [{"$ref": "#/$defs/replacement_2_1"}, {"$ref": "#/$defs/replacement_2_2"}]},
             "retry_request": strict({
                 "base_receipt_id": OPAQUE,
                 "base_manifest_schema": SCHEMA_VERSION,
-                "from_sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+                "from_sequence": {"type": "integer", "minimum": 1, "maximum": I_JSON_MAX_INTEGER},
                 "schema_version_range": strict({"minimum": REQUEST_SCHEMA_VERSION, "maximum": REQUEST_SCHEMA_VERSION}),
             }),
             "signature": signing(),
@@ -126,14 +127,14 @@ def bundle():
         "replacement_2_1": strict({
             "manifest_id": OPAQUE,
             "receipt_id": OPAQUE,
-            "sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "sequence": {"type": "integer", "minimum": 1, "maximum": I_JSON_MAX_INTEGER},
             "manifest_schema": {"const": "2.1"},
             "pack": pack_ref(),
         }),
         "replacement_2_2": strict({
             "manifest_id": OPAQUE,
             "receipt_id": OPAQUE,
-            "sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "sequence": {"type": "integer", "minimum": 1, "maximum": I_JSON_MAX_INTEGER},
             "manifest_schema": {"const": "2.2"},
             "chunks": {"type": "array", "minItems": 1, "maxItems": MAX_MANIFEST_CHUNKS, "items": {"$ref": "#/$defs/chunk"}},
         }),
@@ -149,12 +150,12 @@ def bundle():
     manifest = document("sync-manifest", {"$defs": {
         "schema_2_1": strict({
             "manifest_id": OPAQUE, "receipt_id": OPAQUE, "vehicle_id": UUID, "kind": {"const": "snapshot"},
-            "schema_version": {"const": "2.1"}, "sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "schema_version": {"const": "2.1"}, "sequence": {"type": "integer", "minimum": 1, "maximum": I_JSON_MAX_INTEGER},
             "pack": pack_ref(), "signature": signing(),
         }),
         "schema_2_2": strict({
             "manifest_id": OPAQUE, "receipt_id": OPAQUE, "vehicle_id": UUID, "kind": {"const": "snapshot"},
-            "schema_version": {"const": "2.2"}, "sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "schema_version": {"const": "2.2"}, "sequence": {"type": "integer", "minimum": 1, "maximum": I_JSON_MAX_INTEGER},
             "chunks": {"type": "array", "minItems": 1, "maxItems": MAX_MANIFEST_CHUNKS, "items": chunk}, "signature": signing(),
         }),
         "manifest": {"oneOf": [{"$ref": "#/$defs/schema_2_1"}, {"$ref": "#/$defs/schema_2_2"}]},
@@ -163,30 +164,30 @@ def bundle():
         "receipt": strict({
             "kind": {"const": "no_op"}, "vehicle_id": UUID, "base_receipt_id": OPAQUE,
             "base_manifest_schema": SCHEMA_VERSION,
-            "sequence": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1},
+            "sequence": {"type": "integer", "minimum": 0, "maximum": I_JSON_MAX_INTEGER},
             "manifest_schema": SCHEMA_VERSION, "signature": signing(),
         }),
     }})
     prepared = document("prepared-artefact", {"$defs": {
         "map_month": strict({
             "month": {"type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"},
-            "from_ms": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1},
-            "to_ms": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "from_ms": {"type": "integer", "minimum": 0, "maximum": I_JSON_MAX_INTEGER},
+            "to_ms": {"type": "integer", "minimum": 1, "maximum": I_JSON_MAX_INTEGER},
             "reason": {"const": "changed"},
         }),
         "route": strict({
             "route_id": OPAQUE,
-            "from_ms": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1},
-            "to_ms": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "from_ms": {"type": "integer", "minimum": 0, "maximum": I_JSON_MAX_INTEGER},
+            "to_ms": {"type": "integer", "minimum": 1, "maximum": I_JSON_MAX_INTEGER},
             "reason": {"const": "changed"},
         }),
         "receipt": strict({
             "artifact_id": OPAQUE,
             "artifact_type": {"const": "map_months_and_routes"},
             "vehicle_id": UUID,
-            "source": strict({"kind": {"const": "hub_compute"}, "input_manifest_id": OPAQUE, "input_sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1}}),
-            "window": strict({"from_ms": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1}, "to_ms": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1}}),
-            "generation": strict({"generation_id": OPAQUE, "generated_at_ms": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1}}),
+            "source": strict({"kind": {"const": "hub_compute"}, "input_manifest_id": OPAQUE, "input_sequence": {"type": "integer", "minimum": 1, "maximum": I_JSON_MAX_INTEGER}}),
+            "window": strict({"from_ms": {"type": "integer", "minimum": 0, "maximum": I_JSON_MAX_INTEGER}, "to_ms": {"type": "integer", "minimum": 1, "maximum": I_JSON_MAX_INTEGER}}),
+            "generation": strict({"generation_id": OPAQUE, "generated_at_ms": {"type": "integer", "minimum": 0, "maximum": I_JSON_MAX_INTEGER}}),
             "units": strict({"distance": {"const": "km"}, "time": {"const": "ms"}, "coordinates": {"const": "wgs84_degrees"}}),
             "algorithm_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$", "maxLength": 128},
             "dirty_spans": strict({"map_months": {"type": "array", "maxItems": 120, "items": {"$ref": "#/$defs/map_month"}}, "routes": {"type": "array", "maxItems": MAX_PREPARED_ROUTES, "items": {"$ref": "#/$defs/route"}}}),
@@ -408,6 +409,9 @@ def bundle():
                     manifest_2_2_small_example["manifest"], noop_example["receipt"],
                     changes_noop_example["receipt"], prepared_example["receipt"]):
         sign_fixture(fixture)
+    unsafe_integer_manifest = copy.deepcopy(manifest_2_1_example)
+    unsafe_integer_manifest["fixture_id"] = "schema-2-1-manifest-unsafe-integer-v1"
+    unsafe_integer_manifest["manifest"]["sequence"] = I_JSON_MAX_INTEGER + 2
     tampered_changed = copy.deepcopy(receipt_example)
     tampered_changed["fixture_id"] = "changes-since-changed-set-tampered-v1"
     tampered_changed["receipt"]["to_sequence"] += 1
@@ -526,7 +530,8 @@ def bundle():
                    "target_pack_compressed_bytes": 8 * 1024 * 1024,
                    "max_pack_compressed_bytes": 16 * 1024 * 1024, "max_manifest_chunks": MAX_MANIFEST_CHUNKS,
                    "max_prepared_routes": MAX_PREPARED_ROUTES,
-                   "max_request_bytes": 8192, "max_response_bytes": MAX_RESPONSE_BYTES},
+                   "max_request_bytes": 8192, "max_response_bytes": MAX_RESPONSE_BYTES,
+                   "max_i_json_integer": I_JSON_MAX_INTEGER},
         "status_tables": "status-tables.json",
         "prepared_artefact": "prepared-artefact.schema.json",
         "fixture_signing_keys": "fixture-signing-keys.json",
@@ -546,6 +551,7 @@ def bundle():
         "route": {"method": "POST", "path": "/v1/vehicles/{vehicle_id}/sync/changes-since",
                   "success_status": 200, "compacted_status": 409},
         "signature_rule": "Each receipt or rebase hint MUST carry an Ed25519 detached signature over RFC 8785 canonical JSON of the object with its signature member omitted. signed_payload_sha256 is the SHA-256 of those canonical bytes. The signed object's vehicle_id and the selected signing key set's vehicle_id MUST both equal the route vehicle_id. Production clients obtain vehicle-bound keys from the authenticated no-store signing-keys route. key_id MUST equal ed25519-sha256- plus lowercase SHA-256 hex of the raw 32-byte public key. Fixtures carry deterministic Ed25519 signatures using only the published fixture public key; they are test vectors, not production trust anchors.",
+        "integer_rule": "Every integer-valued wire member MUST be in the inclusive I-JSON exact-integer range -9007199254740991 through 9007199254740991. This profile defines only non-negative integer members, so every schema maximum is 9007199254740991 or a narrower limit. Values outside the member schema MUST be rejected before RFC 8785 canonicalization or signature verification.",
         "bootstrap_rule": "A client selects the hub-sync-v1@1.3.0 bootstrap representation only by sending exactly one x-teslatlas-sync-profile: hub-sync-v1@1.3.0 header and exactly one x-teslatlas-supported-schemas: 2.1,2.2 header. If an explicit profile selector is present but either header is missing, duplicated, or has any other value, the Hub MUST return an empty 406 with Cache-Control: no-store and MUST NOT fall back to legacy routing. The schema header without a profile selector remains legacy SyncManifest negotiation and MUST NOT select this representation. After applying a signed 1.3 manifest, the client MUST persist manifest.receipt_id, sequence, and schema_version. It sends those exact values as base_receipt_id, from_sequence, and base_manifest_schema on changes-since.",
         "schema_continuity_rule": "A changed-set or no-op receipt MUST use the base manifest schema. A schema 2.2 base cannot receive a schema 2.1 delta. Any schema transition requires a signed rebase whose replacement schema is accepted by the request range.",
         "pack_sizing_rule": "Every compressed pack is 1 to 16 MiB inclusive. Writers SHOULD target at least 8 MiB for each non-final snapshot chunk. A complete small history, the final chunk, a changed set, or a prepared artefact MAY be smaller than 8 MiB.",
@@ -598,6 +604,7 @@ def bundle():
       {"id": "changes-since-changed-set", "validator": "changes_since", "request_fixture": request_example["fixture_id"], "status": 200, "response_fixture": receipt_example["fixture_id"], "expected_errors": []},
       {"id": "changes-since-rebase-after-compaction", "validator": "changes_since", "request_fixture": request_example["fixture_id"], "status": 409, "response_fixture": rebase_example["fixture_id"], "expected_errors": []},
       {"id": "schema-2-1-single-pack-manifest", "validator": "manifest", "vehicle_id": vehicle_id, "status": 200, "response_fixture": manifest_2_1_example["fixture_id"], "expected_errors": []},
+      {"id": "schema-2-1-manifest-unsafe-integer", "validator": "manifest", "vehicle_id": vehicle_id, "status": 200, "response_fixture": unsafe_integer_manifest["fixture_id"], "expected_errors": ["sync manifest violates schema"]},
       {"id": "schema-2-2-multi-chunk-manifest", "validator": "manifest", "vehicle_id": vehicle_id, "status": 200, "response_fixture": manifest_2_2_example["fixture_id"], "expected_errors": []},
       {"id": "schema-2-2-single-small-chunk-manifest", "validator": "manifest", "vehicle_id": vehicle_id, "status": 200, "response_fixture": manifest_2_2_small_example["fixture_id"], "expected_errors": []},
       {"id": "changes-since-no-change", "validator": "changes_since", "request_fixture": request_example["fixture_id"], "status": 200, "response_fixture": changes_noop_example["fixture_id"], "expected_errors": []},
@@ -633,6 +640,7 @@ def bundle():
            "examples/changes-since-changed-set.json": receipt_example,
            "examples/changes-since-rebase-after-compaction.json": rebase_example,
            "examples/schema-2-1-single-pack-manifest.json": manifest_2_1_example,
+           "examples/schema-2-1-manifest-unsafe-integer.json": unsafe_integer_manifest,
            "examples/schema-2-2-multi-chunk-manifest.json": manifest_2_2_example,
            "examples/schema-2-2-single-small-chunk-manifest.json": manifest_2_2_small_example,
            "examples/bootstrap-hub-sync-v1-1-3-selected.json": bootstrap_request,

@@ -74,6 +74,16 @@
       "vehicle_id": "11111111-1111-4111-8111-111111111111"
     },
     {
+      "expected_errors": [
+        "sync manifest violates schema"
+      ],
+      "id": "schema-2-1-manifest-unsafe-integer",
+      "response_fixture": "schema-2-1-manifest-unsafe-integer-v1",
+      "status": 200,
+      "validator": "manifest",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
       "expected_errors": [],
       "id": "schema-2-2-multi-chunk-manifest",
       "response_fixture": "schema-2-2-multi-chunk-manifest-v1",

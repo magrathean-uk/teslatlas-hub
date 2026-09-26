@@ -245,8 +245,8 @@ class ConformanceContractTests(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         summary = json.loads(completed.stdout)
         self.assertEqual(["1.0.0", "1.1.0", "1.2.0", "hub-sync-v1@1.3.0"], summary["profiles"])
-        self.assertEqual(80, summary["runs"])
-        self.assertEqual(80, summary["passed"])
+        self.assertEqual(81, summary["runs"])
+        self.assertEqual(81, summary["passed"])
         self.assertEqual(0, summary["failed"])
 
     def test_runner_runs_the_registered_hub_sync_fixture_gate_by_profile(self) -> None:
@@ -261,7 +261,7 @@ class ConformanceContractTests(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         summary = json.loads(completed.stdout)
         self.assertEqual(["hub-sync-v1@1.3.0"], summary["profiles"])
-        self.assertEqual((49, 49, 0), (summary["runs"], summary["passed"], summary["failed"]))
+        self.assertEqual((50, 50, 0), (summary["runs"], summary["passed"], summary["failed"]))
 
     def test_runner_rejects_default_jsonl_adapter_invocation(self) -> None:
         runner = ROOT / "conformance" / "run"

@@ -17,8 +17,10 @@
   "compaction_rule": "A compacted base MUST return 409 and the signed rebase hint. The replacement MUST be a complete admitted snapshot for its declared schema and limits, never a delta, compacted delta, or partial lineage. The client applies the replacement pack for schema 2.1 or all contiguous replacement chunks for schema 2.2, persists replacement receipt_id, sequence, and manifest_schema, then sends retry_request. It MUST NOT infer a rebase target or substitute a full-history request. A Hub MUST NOT admit a checkpoint that it cannot replace with such a complete snapshot while the checkpoint can remain valid.",
   "contract_version": "1.3.0",
   "fixture_signing_keys": "fixture-signing-keys.json",
+  "integer_rule": "Every integer-valued wire member MUST be in the inclusive I-JSON exact-integer range -9007199254740991 through 9007199254740991. This profile defines only non-negative integer members, so every schema maximum is 9007199254740991 or a narrower limit. Values outside the member schema MUST be rejected before RFC 8785 canonicalization or signature verification.",
   "limits": {
     "max_changed_set_packs": 1,
+    "max_i_json_integer": 9007199254740991,
     "max_manifest_chunks": 1771,
     "max_pack_compressed_bytes": 16777216,
     "max_prepared_routes": 497,

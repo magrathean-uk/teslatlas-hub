@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PROFILE = ROOT / "profiles/hub-sync-v1/1.3.0"
 VEHICLE_ID = "11111111-1111-4111-8111-111111111111"
 OTHER_VEHICLE_ID = "22222222-2222-4222-8222-222222222222"
+I_JSON_MAX_INTEGER = 2**53 - 1
 
 
 class HubSyncProfileTests(unittest.TestCase):
@@ -40,6 +41,7 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(profile["limits"]["max_request_bytes"], 8192)
         self.assertEqual(profile["limits"]["min_pack_compressed_bytes"], 1)
         self.assertEqual(profile["limits"]["target_pack_compressed_bytes"], 8 * 1024 * 1024)
+        self.assertEqual(profile["limits"]["max_i_json_integer"], I_JSON_MAX_INTEGER)
         self.assertEqual(
             profile["bootstrap_selector"],
             {
@@ -63,6 +65,36 @@ class HubSyncProfileTests(unittest.TestCase):
         for name in ("changes-since-request.schema.json", "changed-set-receipt.schema.json", "rebase-hint.schema.json", "sync-manifest.schema.json", "noop.schema.json", "prepared-artefact.schema.json", "signing-keys.schema.json", "sync-error.schema.json", "status-tables.schema.json"):
             Draft202012Validator.check_schema(json.loads((PROFILE / name).read_text()))
         validate_openapi(json.loads((PROFILE / "openapi.json").read_text()), base_uri=PROFILE.as_uri() + "/")
+
+    def test_every_integer_wire_field_is_i_json_safe(self):
+        schema_names = (
+            "changes-since-request.schema.json",
+            "changed-set-receipt.schema.json",
+            "rebase-hint.schema.json",
+            "sync-manifest.schema.json",
+            "noop.schema.json",
+            "prepared-artefact.schema.json",
+            "signing-keys.schema.json",
+        )
+        integer_fields = []
+
+        def collect(value, path):
+            if isinstance(value, dict):
+                if value.get("type") == "integer":
+                    integer_fields.append((path, value))
+                for key, item in value.items():
+                    collect(item, path + "/" + key)
+            elif isinstance(value, list):
+                for index, item in enumerate(value):
+                    collect(item, path + "/" + str(index))
+
+        for name in schema_names:
+            collect(json.loads((PROFILE / name).read_text()), name)
+        self.assertTrue(integer_fields)
+        for path, field in integer_fields:
+            with self.subTest(path=path):
+                self.assertGreaterEqual(field["minimum"], -I_JSON_MAX_INTEGER)
+                self.assertLessEqual(field["maximum"], I_JSON_MAX_INTEGER)
 
     def test_changed_set_and_compaction_fixtures_are_deterministic(self):
         request_fixture = self.fixture("changes-since-request")
@@ -311,7 +343,7 @@ class HubSyncProfileTests(unittest.TestCase):
             "vehicle_id": VEHICLE_ID,
             "kind": "snapshot",
             "schema_version": "2.2",
-            "sequence": 2**63 - 1,
+            "sequence": I_JSON_MAX_INTEGER,
             "chunks": chunks,
             "signature": signature,
         }
@@ -324,19 +356,19 @@ class HubSyncProfileTests(unittest.TestCase):
             "vehicle_id": VEHICLE_ID,
             "requested_base_receipt_id": opaque,
             "requested_base_manifest_schema": "2.2",
-            "requested_from_sequence": 2**63 - 1,
+            "requested_from_sequence": I_JSON_MAX_INTEGER,
             "reason": "compacted",
             "replacement": {
                 "manifest_id": opaque,
                 "receipt_id": opaque,
-                "sequence": 2**63 - 1,
+                "sequence": I_JSON_MAX_INTEGER,
                 "manifest_schema": "2.2",
                 "chunks": chunks,
             },
             "retry_request": {
                 "base_receipt_id": opaque,
                 "base_manifest_schema": "2.2",
-                "from_sequence": 2**63 - 1,
+                "from_sequence": I_JSON_MAX_INTEGER,
                 "schema_version_range": {"minimum": "0.0", "maximum": "999.999"},
             },
             "signature": signature,
@@ -349,20 +381,20 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertGreater(compact_size(rebase), 2 * 1024 * 1024)
 
         routes = [
-            {"route_id": "a" * (4096 - len(str(index))) + str(index), "from_ms": 0, "to_ms": 2**63 - 1, "reason": "changed"}
+            {"route_id": "a" * (4096 - len(str(index))) + str(index), "from_ms": 0, "to_ms": I_JSON_MAX_INTEGER, "reason": "changed"}
             for index in range(498)
         ]
         months = [
-            {"month": f"{2000 + index // 12:04d}-{index % 12 + 1:02d}", "from_ms": 0, "to_ms": 2**63 - 1, "reason": "changed"}
+            {"month": f"{2000 + index // 12:04d}-{index % 12 + 1:02d}", "from_ms": 0, "to_ms": I_JSON_MAX_INTEGER, "reason": "changed"}
             for index in range(120)
         ]
         prepared = {
             "artifact_id": opaque,
             "artifact_type": "map_months_and_routes",
             "vehicle_id": VEHICLE_ID,
-            "source": {"kind": "hub_compute", "input_manifest_id": opaque, "input_sequence": 2**63 - 1},
-            "window": {"from_ms": 0, "to_ms": 2**63 - 1},
-            "generation": {"generation_id": opaque, "generated_at_ms": 2**63 - 1},
+            "source": {"kind": "hub_compute", "input_manifest_id": opaque, "input_sequence": I_JSON_MAX_INTEGER},
+            "window": {"from_ms": 0, "to_ms": I_JSON_MAX_INTEGER},
+            "generation": {"generation_id": opaque, "generated_at_ms": I_JSON_MAX_INTEGER},
             "units": {"distance": "km", "time": "ms", "coordinates": "wgs84_degrees"},
             "algorithm_version": "1.1.1+" + "a" * 122,
             "dirty_spans": {"map_months": months, "routes": routes[:497]},
@@ -435,7 +467,7 @@ class HubSyncProfileTests(unittest.TestCase):
 
     def test_registered_fixture_cases_cover_positive_and_negative_vectors(self):
         results = self.sync.run_fixture_cases()
-        self.assertEqual(len(results), 49)
+        self.assertEqual(len(results), 50)
         self.assertTrue(all(result["passed"] for result in results))
         by_case = {result["case_id"]: result for result in results}
         self.assertEqual(
@@ -465,6 +497,14 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(
             by_case["bootstrap-schema-list-only-keeps-legacy-shape"]["fixture_ids"],
             ["bootstrap-schema-list-only-legacy-v1"],
+        )
+        self.assertEqual(
+            by_case["schema-2-1-manifest-unsafe-integer"]["fixture_ids"],
+            ["schema-2-1-manifest-unsafe-integer-v1"],
+        )
+        self.assertEqual(
+            self.fixture("schema-2-1-manifest-unsafe-integer")["manifest"]["sequence"],
+            2**53 + 1,
         )
 
     def test_bootstrap_profile_selector_preserves_legacy_schema_negotiation(self):

@@ -75,6 +75,12 @@ before parsing. Pack byte responses use the separate 16 MiB compressed pack
 limit. A schema 2.2 manifest or rebase may contain at most 1,771 chunks, and a
 prepared artefact may contain at most 497 route spans in addition to 120 map
 months. These maxima keep their largest compact JSON forms inside 2 MiB.
+Every integer-valued wire member is also bounded to the I-JSON exact-integer
+range. This profile uses non-negative integers, so `sequence`, request and
+rebase sequence fields, prepared-artefact timestamps and input sequence, pack
+sizes, and chunk indexes are all at most `9007199254740991`, with narrower
+limits where specified. A client rejects an out-of-range value before RFC 8785
+canonicalization or signature verification.
 
 Changes-since returns stable JSON error bodies for invalid JSON (`400`), an
 unknown vehicle (`404`), an unsupported schema range (`406`), an oversized
