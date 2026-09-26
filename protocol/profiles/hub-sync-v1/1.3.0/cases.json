@@ -1,41 +1,91 @@
 {
   "cases": [
     {
+      "expected_errors": [],
       "id": "changes-since-changed-set",
       "request_fixture": "changes-since-request-v1",
       "response_fixture": "changes-since-changed-set-v1",
-      "status": 200
+      "status": 200,
+      "validator": "changes_since"
     },
     {
+      "expected_errors": [],
       "id": "changes-since-rebase-after-compaction",
       "request_fixture": "changes-since-request-v1",
       "response_fixture": "changes-since-rebase-after-compaction-v1",
-      "status": 409
+      "status": 409,
+      "validator": "changes_since"
     },
     {
+      "expected_errors": [],
       "id": "schema-2-1-single-pack-manifest",
       "response_fixture": "schema-2-1-single-pack-manifest-v1",
-      "status": 200
+      "status": 200,
+      "validator": "manifest"
     },
     {
+      "expected_errors": [],
       "id": "schema-2-2-multi-chunk-manifest",
       "response_fixture": "schema-2-2-multi-chunk-manifest-v1",
-      "status": 200
+      "status": 200,
+      "validator": "manifest"
     },
     {
+      "expected_errors": [],
       "id": "sync-noop-signed",
       "response_fixture": "sync-noop-signed-v1",
-      "status": 200
+      "status": 200,
+      "validator": "noop"
     },
     {
+      "expected_errors": [],
       "id": "sync-noop-unavailable",
       "response_fixture": "sync-noop-unavailable-v1",
-      "status": 406
+      "status": 406,
+      "validator": "noop"
     },
     {
+      "expected_errors": [],
       "id": "prepared-artefact-map-months-routes",
       "response_fixture": "prepared-artefact-map-months-routes-v1",
-      "status": 200
+      "status": 200,
+      "validator": "prepared_artefact"
+    },
+    {
+      "expected_errors": [
+        "signature payload digest mismatch"
+      ],
+      "id": "changes-since-changed-set-tampered",
+      "response_fixture": "changes-since-changed-set-tampered-v1",
+      "status": 200,
+      "validator": "changes_since"
+    },
+    {
+      "expected_errors": [
+        "signature key is unknown"
+      ],
+      "id": "changes-since-changed-set-unknown-key",
+      "response_fixture": "changes-since-changed-set-unknown-key-v1",
+      "status": 200,
+      "validator": "changes_since"
+    },
+    {
+      "expected_errors": [
+        "manifest chunks are not contiguous"
+      ],
+      "id": "schema-2-2-multi-chunk-manifest-noncontiguous",
+      "response_fixture": "schema-2-2-multi-chunk-manifest-noncontiguous-v1",
+      "status": 200,
+      "validator": "manifest"
+    },
+    {
+      "expected_errors": [
+        "no-op unavailable must be empty no-store"
+      ],
+      "id": "sync-noop-unavailable-cacheable",
+      "response_fixture": "sync-noop-unavailable-cacheable-v1",
+      "status": 406,
+      "validator": "noop"
     }
   ],
   "profile_id": "hub-sync-v1@1.3.0"

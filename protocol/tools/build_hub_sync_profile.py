@@ -2,6 +2,7 @@
 """Export the source-neutral Hub changes-since contract."""
 import argparse
 import base64
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -276,6 +277,18 @@ def bundle():
                     manifest_2_1_example["manifest"], manifest_2_2_example["manifest"],
                     noop_example["receipt"], prepared_example["receipt"]):
         sign_fixture(fixture)
+    tampered_changed = copy.deepcopy(receipt_example)
+    tampered_changed["fixture_id"] = "changes-since-changed-set-tampered-v1"
+    tampered_changed["receipt"]["to_sequence"] += 1
+    unknown_key_changed = copy.deepcopy(receipt_example)
+    unknown_key_changed["fixture_id"] = "changes-since-changed-set-unknown-key-v1"
+    unknown_key_changed["receipt"]["signature"]["key_id"] = "fixture-ed25519-unknown"
+    noncontiguous_manifest = copy.deepcopy(manifest_2_2_example)
+    noncontiguous_manifest["fixture_id"] = "schema-2-2-multi-chunk-manifest-noncontiguous-v1"
+    noncontiguous_manifest["manifest"]["chunks"][1]["chunk_index"] = 2
+    cacheable_noop = copy.deepcopy(noop_unavailable)
+    cacheable_noop["fixture_id"] = "sync-noop-unavailable-cacheable-v1"
+    cacheable_noop["response"]["headers"]["cache_control"] = "private"
     signing_keys_schema = document("signing-keys", {"$defs": {
         "key": strict({"algorithm": {"const": "ed25519"}, "key_id": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9._-]+$"}, "public_key": PUBLIC_KEY}),
         "document": strict({"profile_id": {"const": PROFILE_ID}, "key_set_id": OPAQUE,
@@ -325,13 +338,17 @@ def bundle():
         "parameters": [{"name": "vehicle_id", "in": "path", "required": True, "schema": UUID}, {"name": "artifact_id", "in": "path", "required": True, "schema": OPAQUE}],
         "responses": {"200": {"description": "signed prepared-artefact receipt", "content": {"application/json": {"schema": {"$ref": "prepared-artefact.schema.json#/$defs/receipt"}}}}, "401": {"description": "empty authentication failure", "content": {}}, "404": {"description": "empty missing artefact", "content": {}}}}}
     cases = {"profile_id": PROFILE_ID, "cases": [
-      {"id": "changes-since-changed-set", "request_fixture": request_example["fixture_id"], "status": 200, "response_fixture": receipt_example["fixture_id"]},
-      {"id": "changes-since-rebase-after-compaction", "request_fixture": request_example["fixture_id"], "status": 409, "response_fixture": rebase_example["fixture_id"]},
-      {"id": "schema-2-1-single-pack-manifest", "status": 200, "response_fixture": manifest_2_1_example["fixture_id"]},
-      {"id": "schema-2-2-multi-chunk-manifest", "status": 200, "response_fixture": manifest_2_2_example["fixture_id"]},
-      {"id": "sync-noop-signed", "status": 200, "response_fixture": noop_example["fixture_id"]},
-      {"id": "sync-noop-unavailable", "status": 406, "response_fixture": noop_unavailable["fixture_id"]},
-      {"id": "prepared-artefact-map-months-routes", "status": 200, "response_fixture": prepared_example["fixture_id"]},
+      {"id": "changes-since-changed-set", "validator": "changes_since", "request_fixture": request_example["fixture_id"], "status": 200, "response_fixture": receipt_example["fixture_id"], "expected_errors": []},
+      {"id": "changes-since-rebase-after-compaction", "validator": "changes_since", "request_fixture": request_example["fixture_id"], "status": 409, "response_fixture": rebase_example["fixture_id"], "expected_errors": []},
+      {"id": "schema-2-1-single-pack-manifest", "validator": "manifest", "status": 200, "response_fixture": manifest_2_1_example["fixture_id"], "expected_errors": []},
+      {"id": "schema-2-2-multi-chunk-manifest", "validator": "manifest", "status": 200, "response_fixture": manifest_2_2_example["fixture_id"], "expected_errors": []},
+      {"id": "sync-noop-signed", "validator": "noop", "status": 200, "response_fixture": noop_example["fixture_id"], "expected_errors": []},
+      {"id": "sync-noop-unavailable", "validator": "noop", "status": 406, "response_fixture": noop_unavailable["fixture_id"], "expected_errors": []},
+      {"id": "prepared-artefact-map-months-routes", "validator": "prepared_artefact", "status": 200, "response_fixture": prepared_example["fixture_id"], "expected_errors": []},
+      {"id": "changes-since-changed-set-tampered", "validator": "changes_since", "status": 200, "response_fixture": tampered_changed["fixture_id"], "expected_errors": ["signature payload digest mismatch"]},
+      {"id": "changes-since-changed-set-unknown-key", "validator": "changes_since", "status": 200, "response_fixture": unknown_key_changed["fixture_id"], "expected_errors": ["signature key is unknown"]},
+      {"id": "schema-2-2-multi-chunk-manifest-noncontiguous", "validator": "manifest", "status": 200, "response_fixture": noncontiguous_manifest["fixture_id"], "expected_errors": ["manifest chunks are not contiguous"]},
+      {"id": "sync-noop-unavailable-cacheable", "validator": "noop", "status": 406, "response_fixture": cacheable_noop["fixture_id"], "expected_errors": ["no-op unavailable must be empty no-store"]},
     ]}
     out = {"profile.json": profile, "changes-since-request.schema.json": request,
            "changed-set-receipt.schema.json": receipt, "rebase-hint.schema.json": rebase,
@@ -344,6 +361,10 @@ def bundle():
            "examples/schema-2-2-multi-chunk-manifest.json": manifest_2_2_example,
            "examples/sync-noop-signed.json": noop_example,
            "examples/sync-noop-unavailable.json": noop_unavailable,
+           "examples/changes-since-changed-set-tampered.json": tampered_changed,
+           "examples/changes-since-changed-set-unknown-key.json": unknown_key_changed,
+           "examples/schema-2-2-multi-chunk-manifest-noncontiguous.json": noncontiguous_manifest,
+           "examples/sync-noop-unavailable-cacheable.json": cacheable_noop,
            "examples/prepared-artefact-map-months-routes.json": prepared_example}
     encoded = {name: (json.dumps(value, sort_keys=True, indent=2) + "\n").encode() for name, value in out.items()}
     sums = "".join(f"{hashlib.sha256(encoded[name]).hexdigest()}  {name}\n" for name in sorted(encoded))

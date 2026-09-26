@@ -1,4 +1,5 @@
 """Deterministic validation for the source-neutral changes-since profile."""
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -74,6 +75,17 @@ def load_signing_keys(root=PROFILE):
     if value["profile_id"] != profile["profile_id"]:
         raise ContractError("fixture signing keys profile mismatch")
     return value
+
+
+def load_fixtures(root=PROFILE):
+    fixtures = {}
+    for path in sorted((Path(root) / "examples").glob("*.json")):
+        value = strict_json(path.read_bytes())
+        fixture_id = value.get("fixture_id") if isinstance(value, dict) else None
+        if not isinstance(fixture_id, str) or not fixture_id or fixture_id in fixtures:
+            raise ContractError("invalid fixture identifier")
+        fixtures[fixture_id] = value
+    return fixtures
 
 
 def validate_request(value, root=PROFILE):
@@ -204,3 +216,85 @@ def validate_prepared_artefact(value, root=PROFILE):
         return ["prepared-artefact generation predates window"]
     pack_errors = _validate_pack_limits([value["pack"]], root)
     return pack_errors or _validate_signature(value, root)
+
+
+def _case_errors(case, fixtures, root):
+    if not isinstance(case, dict):
+        return ["case is not an object"]
+    validator = case.get("validator")
+    if validator not in {"changes_since", "manifest", "noop", "prepared_artefact"}:
+        return ["case has an unknown validator"]
+    status = case.get("status")
+    if type(status) is not int:
+        return ["case status is invalid"]
+
+    request_id = case.get("request_fixture")
+    if request_id is not None:
+        request = fixtures.get(request_id)
+        if not isinstance(request, dict) or "request" not in request:
+            return ["request fixture is missing"]
+        errors = validate_request(copy.deepcopy(request["request"]), root)
+        if errors:
+            return errors
+
+    response_id = case.get("response_fixture")
+    response = fixtures.get(response_id)
+    if not isinstance(response, dict):
+        return ["response fixture is missing"]
+    if validator == "changes_since":
+        value = response.get("receipt") if status == 200 else response.get("response")
+        return validate_response(status, copy.deepcopy(value), root)
+    if validator == "manifest":
+        return validate_manifest(copy.deepcopy(response.get("manifest")), root)
+    if validator == "prepared_artefact":
+        return validate_prepared_artefact(copy.deepcopy(response.get("receipt")), root)
+    if status == 200:
+        return validate_noop(status, copy.deepcopy(response.get("receipt")), root=root)
+    unavailable = response.get("response")
+    if not isinstance(unavailable, dict):
+        return ["no-op fixture is invalid"]
+    if unavailable.get("status") != status:
+        return ["no-op fixture status does not match case"]
+    headers = {
+        "Cache-Control": value
+        for key, value in unavailable.get("headers", {}).items()
+        if key == "cache_control"
+    }
+    raw = b"x" * unavailable.get("body_bytes", 0)
+    return validate_noop(status, {}, headers, raw, root)
+
+
+def run_fixture_cases(root=PROFILE):
+    profile = load_profile(root)
+    cases_document = strict_json((Path(root) / "cases.json").read_bytes())
+    if not isinstance(cases_document, dict) or cases_document.get("profile_id") != profile["profile_id"]:
+        raise ContractError("fixture cases profile mismatch")
+    cases = cases_document.get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise ContractError("fixture cases are invalid")
+    fixtures = load_fixtures(root)
+    results = []
+    seen = set()
+    for case in cases:
+        case_id = case.get("id") if isinstance(case, dict) else None
+        if not isinstance(case_id, str) or not case_id or case_id in seen:
+            raise ContractError("fixture case identifier is invalid")
+        seen.add(case_id)
+        expected = case.get("expected_errors", [])
+        if not isinstance(expected, list) or not all(isinstance(item, str) for item in expected):
+            raise ContractError("fixture case expected errors are invalid")
+        errors = _case_errors(case, fixtures, root)
+        results.append(
+            {
+                "case_id": case_id,
+                "fixture_ids": [
+                    value
+                    for value in (case.get("request_fixture"), case.get("response_fixture"))
+                    if isinstance(value, str)
+                ],
+                "errors": errors,
+                "expected_errors": expected,
+                "passed": errors == expected,
+            }
+        )
+    return results

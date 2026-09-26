@@ -231,7 +231,7 @@ class ConformanceContractTests(unittest.TestCase):
             deprecated["steps"][1]["request"]["path"],
         )
 
-    def test_runner_passes_all_three_profiles_through_reference_adapter(self) -> None:
+    def test_runner_passes_rich_and_hub_sync_profiles_through_their_local_gates(self) -> None:
         runner = ROOT / "conformance" / "run"
         self.assertTrue(runner.is_file())
         self.assertTrue(runner.stat().st_mode & 0o111)
@@ -244,10 +244,47 @@ class ConformanceContractTests(unittest.TestCase):
         )
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         summary = json.loads(completed.stdout)
-        self.assertEqual(["1.0.0", "1.1.0", "1.2.0"], summary["profiles"])
-        self.assertEqual(31, summary["runs"])
-        self.assertEqual(31, summary["passed"])
+        self.assertEqual(["1.0.0", "1.1.0", "1.2.0", "hub-sync-v1@1.3.0"], summary["profiles"])
+        self.assertEqual(42, summary["runs"])
+        self.assertEqual(42, summary["passed"])
         self.assertEqual(0, summary["failed"])
+
+    def test_runner_runs_the_registered_hub_sync_fixture_gate_by_profile(self) -> None:
+        runner = ROOT / "conformance" / "run"
+        completed = subprocess.run(
+            [str(runner), "--profile", "hub-sync-v1@1.3.0", "--json"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
+        summary = json.loads(completed.stdout)
+        self.assertEqual(["hub-sync-v1@1.3.0"], summary["profiles"])
+        self.assertEqual((11, 11, 0), (summary["runs"], summary["passed"], summary["failed"]))
+
+    def test_runner_rejects_jsonl_adapters_for_hub_sync_fixture_conformance(self) -> None:
+        runner = ROOT / "conformance" / "run"
+        adapter = ROOT / "tests" / "fixtures" / "nonconforming_adapter.py"
+        completed = subprocess.run(
+            [
+                str(runner),
+                "--profile",
+                "hub-sync-v1@1.3.0",
+                "--adapter",
+                str(adapter),
+                "--json",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(2, completed.returncode)
+        self.assertEqual(
+            "hub-sync fixture conformance does not use a JSONL adapter",
+            json.loads(completed.stdout)["error"],
+        )
 
     def test_runner_rejects_a_nonconforming_language_neutral_adapter(self) -> None:
         runner = ROOT / "conformance" / "run"

@@ -17,11 +17,17 @@ from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError
 from referencing import Registry, Resource
 
+try:
+    from . import hub_sync
+except ImportError:
+    import hub_sync
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = re.compile(r"^\$\{([^}]+)\}$")
 DISCOVERY_SCHEMA = "urn:teslatlas:protocol:schema:discovery:1.2.0"
 METADATA_SCHEMA = "urn:teslatlas:protocol:schema:metadata:1.2.0"
+HUB_SYNC_PROFILE = hub_sync.PROFILE_ID
 
 
 class ConformanceError(Exception):
@@ -825,21 +831,45 @@ def run() -> int:
             command += ["--json"]
         return subprocess.run(command, check=False).returncode
 
+    if args.profile and HUB_SYNC_PROFILE in args.profile and args.adapter is not None:
+        raise ConformanceError("hub-sync fixture conformance does not use a JSONL adapter")
+
     schemas, registry = load_schemas()
     manifest, profiles, cases = load_contract()
     validate_contract_artifacts(manifest, profiles, cases, schemas, registry)
-    selected_profiles = args.profile or manifest["supported_profiles"]
-    unknown = [item for item in selected_profiles if item not in profiles]
+    selected_profiles = args.profile or [*manifest["supported_profiles"], HUB_SYNC_PROFILE]
+    unknown = [item for item in selected_profiles if item not in profiles and item != HUB_SYNC_PROFILE]
     if unknown:
         raise ConformanceError(f"unknown profile: {', '.join(unknown)}")
 
-    command = adapter_command(args.adapter)
+    rich_profiles = [item for item in selected_profiles if item in profiles]
+    command = adapter_command(args.adapter) if rich_profiles else []
     response_validator = adapter_response_validator(schemas, registry)
 
     runs = 0
     passed = 0
     failures: list[dict[str, Any]] = []
-    for profile_name in selected_profiles:
+    if HUB_SYNC_PROFILE in selected_profiles:
+        for result in hub_sync.run_fixture_cases():
+            runs += 1
+            if result["passed"]:
+                passed += 1
+                if not args.json:
+                    print(f"PASS {HUB_SYNC_PROFILE} {result['case_id']}")
+            else:
+                failures.append(
+                    {
+                        "profile": HUB_SYNC_PROFILE,
+                        "case_id": result["case_id"],
+                        "fixture_ids": result["fixture_ids"],
+                        "errors": result["errors"],
+                        "expected_errors": result["expected_errors"],
+                    }
+                )
+                if not args.json:
+                    print(f"FAIL {HUB_SYNC_PROFILE} {result['case_id']}: {result['errors']}")
+
+    for profile_name in rich_profiles:
         profile = profiles[profile_name]
         for case_id in profile["cases"]:
             runs += 1

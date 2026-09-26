@@ -116,6 +116,20 @@ class HubSyncProfileTests(unittest.TestCase):
         wrong_key["keys"][0]["public_key"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
         self.assertEqual(self.sync.verify_signature(changed, wrong_key), ["signature verification failed"])
 
+    def test_registered_fixture_cases_cover_positive_and_negative_vectors(self):
+        results = self.sync.run_fixture_cases()
+        self.assertEqual(len(results), 11)
+        self.assertTrue(all(result["passed"] for result in results))
+        by_case = {result["case_id"]: result for result in results}
+        self.assertEqual(
+            by_case["changes-since-changed-set-tampered"]["fixture_ids"],
+            ["changes-since-changed-set-tampered-v1"],
+        )
+        self.assertEqual(
+            by_case["changes-since-changed-set-unknown-key"]["expected_errors"],
+            ["signature key is unknown"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

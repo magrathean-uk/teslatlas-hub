@@ -29,9 +29,22 @@ Select profiles or request one machine-readable result:
 ./conformance/run --profile 1.2.0 --adapter ./adapter --json
 ```
 
-The current gate executes 31 profile/case runs: nine for `1.0.0`, ten for
+The rich-profile gate executes 31 profile/case runs: nine for `1.0.0`, ten for
 `1.1.0`, and twelve for `1.2.0`. A profile contains every case whose
 `introduced_in` version is not newer than that profile.
+
+`hub-sync-v1@1.3.0` is also registered with this entrypoint. It runs eleven
+deterministic fixture cases, including signed changed-set, compaction, schema
+2.1 and 2.2 manifests, no-op, prepared artefact, and four negative fixtures.
+Hub and App can invoke the shared fixture gate with:
+
+```sh
+./conformance/run --profile hub-sync-v1@1.3.0 --json
+```
+
+The result identifies every failing case and its exact fixture IDs. This gate
+validates the published fixture corpus; product adapters and a running Hub are
+separate runtime evidence.
 
 ## Current-Hub acceptance
 
