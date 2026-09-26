@@ -17,6 +17,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.teslatlas_hub.client import HubConnectionError
 from custom_components.teslatlas_hub.const import (
     CONF_ACCESS_TOKEN,
+    CONF_DEVICE_ID,
     CONF_HUB_ID,
     CONF_PORT,
     CONF_TOKEN_EXPIRES_AT_MS,
@@ -36,6 +37,7 @@ def _entry(hass: HomeAssistant) -> MockConfigEntry:
             CONF_PORT: 7443,
             CONF_USE_TLS: True,
             CONF_HUB_ID: "hub-fixture",
+            CONF_DEVICE_ID: "device-fixture",
             CONF_ACCESS_TOKEN: "fixture-device-bearer",
         },
     )
@@ -110,6 +112,42 @@ async def test_rotation_failure_keeps_existing_credential(
     coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
 
     with pytest.raises(UpdateFailed, match="lost response"):
+        await coordinator._async_update_data()
+
+    assert entry.data[CONF_ACCESS_TOKEN] == "fixture-device-bearer"
+    assert client.bearer_updates == []
+    await coordinator.async_shutdown()
+
+
+async def test_rotation_rejects_another_paired_device(
+    hass: HomeAssistant,
+) -> None:
+    now = datetime(2026, 9, 26, tzinfo=UTC)
+    entry = _entry(hass)
+    _set_expiry(hass, entry, now + timedelta(days=6))
+    client = FixtureHubClient()
+    client.rotated_device_id = "another-device"
+    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+
+    with pytest.raises(ConfigEntryAuthFailed, match="authentication expired"):
+        await coordinator._async_update_data()
+
+    assert entry.data[CONF_ACCESS_TOKEN] == "fixture-device-bearer"
+    assert client.bearer_updates == []
+    await coordinator.async_shutdown()
+
+
+async def test_rotation_rejects_out_of_range_expiry_before_persisting(
+    hass: HomeAssistant,
+) -> None:
+    now = datetime(2026, 9, 26, tzinfo=UTC)
+    entry = _entry(hass)
+    _set_expiry(hass, entry, now + timedelta(days=6))
+    client = FixtureHubClient()
+    client.rotation_expires_at_ms = 10**100
+    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+
+    with pytest.raises(UpdateFailed, match="outside the supported range"):
         await coordinator._async_update_data()
 
     assert entry.data[CONF_ACCESS_TOKEN] == "fixture-device-bearer"

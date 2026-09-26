@@ -101,6 +101,7 @@ class FixtureHubClient:
         self.info = self.snapshot.info
         self.access_token = "fixture-device-bearer"
         self.rotated_access_token = "rotated-device-bearer"
+        self.rotated_device_id = "device-fixture"
         self.rotation_expires_at_ms = 2_000_000_000_000
         self.probe_error: HubClientError | None = None
         self.pair_error: HubClientError | None = None
@@ -162,7 +163,7 @@ class FixtureHubClient:
         return PairingResult(
             info=self.info,
             access_token=self.rotated_access_token,
-            device_id="device-fixture",
+            device_id=self.rotated_device_id,
             expires_at_ms=self.rotation_expires_at_ms,
         )
 

@@ -18,7 +18,13 @@ from .client import (
     HubContractError,
     TeslatlasHubClient,
 )
-from .const import CONF_ACCESS_TOKEN, CONF_HUB_ID, CONF_TOKEN_EXPIRES_AT_MS, DOMAIN
+from .const import (
+    CONF_ACCESS_TOKEN,
+    CONF_DEVICE_ID,
+    CONF_HUB_ID,
+    CONF_TOKEN_EXPIRES_AT_MS,
+    DOMAIN,
+)
 from .models import HubSnapshot
 
 _LOGGER = logging.getLogger(__name__)
@@ -26,6 +32,16 @@ _LOGGER = logging.getLogger(__name__)
 POLL_INTERVAL_SECONDS = 30
 POLL_BACKOFF_SECONDS = (30, 60, 120, 300)
 ROTATION_LEAD_TIME = timedelta(days=7)
+
+
+def _expiration_datetime(value: object, field_name: str) -> datetime:
+    """Validate an epoch-millisecond expiry before converting it to UTC."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise HubContractError(f"{field_name} must be an integer")
+    try:
+        return datetime.fromtimestamp(value / 1000, UTC)
+    except (OSError, OverflowError, ValueError) as err:
+        raise HubContractError(f"{field_name} is outside the supported range") from err
 
 
 class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
@@ -85,9 +101,9 @@ class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
         """Persist a replacement bearer before making it active in the client."""
         async with self._rotation_lock:
             expires_at_ms = self.config_entry.data.get(CONF_TOKEN_EXPIRES_AT_MS)
-            if not isinstance(expires_at_ms, int) or isinstance(expires_at_ms, bool):
+            if expires_at_ms is None:
                 return
-            expires_at = datetime.fromtimestamp(expires_at_ms / 1000, UTC)
+            expires_at = _expiration_datetime(expires_at_ms, CONF_TOKEN_EXPIRES_AT_MS)
             if expires_at - self._now() > ROTATION_LEAD_TIME:
                 return
 
@@ -96,6 +112,11 @@ class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
                 raise HubAuthenticationError(
                     "Teslatlas Hub identity changed during rotation"
                 )
+            if rotated.device_id != self.config_entry.data.get(CONF_DEVICE_ID):
+                raise HubAuthenticationError(
+                    "Teslatlas Hub device identity changed during rotation"
+                )
+            _expiration_datetime(rotated.expires_at_ms, "rotated expires_at_ms")
 
             updated_data: dict[str, Any] = {
                 **self.config_entry.data,
