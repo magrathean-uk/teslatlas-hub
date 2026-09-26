@@ -1781,6 +1781,6 @@ fn rated_range_charge_consensus_updates_live_car_efficiency() {
             .unwrap()
             .unwrap()
             .efficiency_wh_per_km,
-        Some(0.2)
+        Some(200.0)
     );
 }

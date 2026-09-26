@@ -313,9 +313,10 @@ fn recompute_car_efficiency(
             break;
         }
     }
-    let Some(efficiency) = selected else {
+    let Some(efficiency_kwh_per_km) = selected else {
         return Ok(());
     };
+    let efficiency = efficiency_kwh_per_km * 1_000.0;
     let current: Option<String> = transaction
         .query_row(
             "SELECT car_json FROM materialised_cars
