@@ -6,9 +6,12 @@ Hub separates ordinary data backup from credential disaster recovery.
 
 The following commands are for a Debian package installation. Create a private
 parent directory owned by the service account; each backup destination itself
-must not already exist.
+must not already exist. Stop the Hub service first: backup and credential
+export take the exclusive Hub instance lock and will refuse to run while Serve
+owns it.
 
 ```sh
+sudo systemctl stop teslatlas-hub.service
 sudo install -d -o teslatlas -g teslatlas -m 0700 \
   /srv/teslatlas-hub-backups
 sudo -u teslatlas -- /usr/bin/teslatlas-hub \
@@ -72,6 +75,9 @@ Credential restore requires the matching installation ID and refuses to
 overwrite an existing `secrets` directory. Run `doctor`, pair devices again,
 and prove a fresh observation before declaring recovery complete.
 
-On macOS, run backup and recovery commands as the signed-in user with the
-packaged binary and per-user configuration paths documented in
-[CLI reference](../guides/cli.md#platform-invocation).
+On macOS, stop the per-user service with the Mac app or the packaged CLI before
+running backup and recovery commands. Run those commands as the signed-in user
+with the packaged binary and per-user configuration paths documented in
+[CLI reference](../guides/cli.md#platform-invocation). Restart the service only
+after the command has completed and the intended data and configuration have
+been checked.

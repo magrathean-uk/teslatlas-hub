@@ -201,13 +201,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_os = "macos")]
     if matches!(&cli.command, Command::Install) {
         let config = HubConfig::load(&config_path)?;
-        let admission = AdmittedUserHub::admit(&config.data_dir)?;
-        teslatlas_hub::macos_launch_agent::preflight_hub_for_config(&config)?;
-        let installed =
-            teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, &config_path)?;
-        drop(admission);
-        teslatlas_hub::macos_launch_agent::start_prepared(&installed)?;
-        println!("installed {}; launch requested", installed.binary.display());
+        let installed_binary = replace_macos_launch_agent(&config, &config_path)?;
+        println!("installed {}; launch requested", installed_binary.display());
         return Ok(());
     }
 
@@ -256,11 +251,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(target_os = "macos")]
         if start_hub {
             let config = HubConfig::load(&config_path)?;
-            teslatlas_hub::macos_launch_agent::preflight_hub_for_config(&config)?;
-            let installed =
-                teslatlas_hub::macos_launch_agent::prepare_install(&config.data_dir, &config_path)?;
-            teslatlas_hub::macos_launch_agent::start_prepared(&installed)?;
-            println!("installed {}; launch requested", installed.binary.display());
+            let installed_binary = replace_macos_launch_agent(&config, &config_path)?;
+            println!("installed {}; launch requested", installed_binary.display());
         }
         #[cfg(target_os = "linux")]
         if start_hub {
@@ -963,4 +955,40 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
     catalogue_checkpoint.finish()?;
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn replace_macos_launch_agent(
+    config: &HubConfig,
+    config_path: &Path,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    use teslatlas_hub::macos_launch_agent;
+
+    // Validate before interrupting a healthy service. The prepared install
+    // repeats this check while holding the instance lock.
+    macos_launch_agent::preflight_hub_for_config(config)?;
+    let previously_loaded = macos_launch_agent::stop_for_replacement()?;
+
+    let prepared = (|| -> Result<_, Box<dyn std::error::Error>> {
+        let admission = AdmittedUserHub::admit(&config.data_dir)?;
+        let installed = macos_launch_agent::prepare_install(&config.data_dir, config_path)?;
+        drop(admission);
+        Ok(installed)
+    })();
+    let installed = match prepared {
+        Ok(installed) => installed,
+        Err(error) if previously_loaded => {
+            if let Err(restart_error) = macos_launch_agent::start_preflighted_installed() {
+                return Err(format!(
+                    "{error}; previous Hub service restart failed: {restart_error}"
+                )
+                .into());
+            }
+            return Err(format!("{error}; previous Hub service restarted").into());
+        }
+        Err(error) => return Err(error),
+    };
+
+    macos_launch_agent::start_prepared(&installed, previously_loaded)?;
+    Ok(installed.binary)
 }

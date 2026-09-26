@@ -289,15 +289,23 @@ pub fn preflight_hub_for_serve(
 }
 
 /// Load and request start of an already prepared LaunchAgent. The caller must
-/// have released the Hub instance lock first so Serve can acquire it.
-pub fn start_prepared(paths: &InstallPaths) -> io::Result<()> {
-    launch(paths)
+/// have released the Hub instance lock first so Serve can acquire it. The
+/// original loaded state controls whether a failed replacement is restarted.
+pub fn start_prepared(paths: &InstallPaths, previously_loaded: bool) -> io::Result<()> {
+    launch(paths, previously_loaded)
 }
 
 /// Query the per-user LaunchAgent without changing it.
 pub fn service_is_loaded() -> io::Result<bool> {
     let (_, service) = service_identifiers();
     service_is_loaded_with_runner(&service, &mut real_launchctl)
+}
+
+/// Stop and settle the current LaunchAgent before replacing files or taking
+/// the Hub instance lock. Returns whether the service must be restarted.
+pub fn stop_for_replacement() -> io::Result<bool> {
+    let (_, service) = service_identifiers();
+    stop_for_replacement_with_runner(&service, &mut real_launchctl)
 }
 
 /// Start an already-installed Hub LaunchAgent after revalidating Hub data.
@@ -503,10 +511,10 @@ fn install_files(
     result
 }
 
-fn launch(paths: &InstallPaths) -> io::Result<()> {
+fn launch(paths: &InstallPaths, previously_loaded: bool) -> io::Result<()> {
     let (domain, service) = service_identifiers();
     let mut runner = real_launchctl;
-    launch_with_runner(paths, &domain, &service, &mut runner)
+    launch_with_runner(paths, previously_loaded, &domain, &service, &mut runner)
 }
 
 fn service_identifiers() -> (String, String) {
@@ -577,6 +585,17 @@ fn stop_installed_with_runner(
     wait_for_service_unloaded_with_runner(service, runner)
 }
 
+fn stop_for_replacement_with_runner(
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<bool> {
+    let was_loaded = service_is_loaded_with_runner(service, runner)?;
+    if was_loaded {
+        stop_installed_with_runner(service, runner)?;
+    }
+    Ok(was_loaded)
+}
+
 fn wait_for_service_unloaded_with_runner(
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
@@ -614,41 +633,64 @@ fn restart_installed_with_runner(
 
 fn launch_with_runner(
     paths: &InstallPaths,
+    previously_loaded: bool,
     domain: &str,
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
 ) -> io::Result<()> {
     let print = [std::ffi::OsStr::new("print"), std::ffi::OsStr::new(service)];
-    let was_loaded = match runner(&print) {
-        Ok(was_loaded) => was_loaded,
-        Err(error) => {
-            let kind = error.kind();
-            let message = match restore_prepared_files(paths) {
-                Ok(()) => format!("{error}; prepared install files restored"),
-                Err(rollback) => {
-                    format!("{error}; prepared install file restore failed: {rollback}")
-                }
-            };
-            return Err(io::Error::new(kind, message));
-        }
-    };
+    if let Err(error) = runner(&print) {
+        return Err(with_rollback_context(
+            error,
+            previously_loaded,
+            false,
+            paths,
+            domain,
+            service,
+            runner,
+        ));
+    }
     let bootout = [
         std::ffi::OsStr::new("bootout"),
         std::ffi::OsStr::new(service),
     ];
-    let _ = runner(&bootout)?;
-    wait_for_service_unloaded_with_runner(service, runner)?;
+    if let Err(error) = runner(&bootout) {
+        return Err(with_rollback_context(
+            error,
+            previously_loaded,
+            false,
+            paths,
+            domain,
+            service,
+            runner,
+        ));
+    }
+    if let Err(error) = wait_for_service_unloaded_with_runner(service, runner) {
+        return Err(with_rollback_context(
+            error,
+            previously_loaded,
+            false,
+            paths,
+            domain,
+            service,
+            runner,
+        ));
+    }
     let bootstrap = [
         std::ffi::OsStr::new("bootstrap"),
         std::ffi::OsStr::new(domain),
         paths.plist.as_os_str(),
     ];
     if let Err(error) = run_launchctl(runner, &bootstrap) {
-        let result = with_rollback_context(error, was_loaded, paths, domain, service, runner);
-        if !was_loaded {
-            cleanup_backups(paths);
-        }
-        return Err(result);
+        return Err(with_rollback_context(
+            error,
+            previously_loaded,
+            true,
+            paths,
+            domain,
+            service,
+            runner,
+        ));
     }
     let kickstart = [
         std::ffi::OsStr::new("kickstart"),
@@ -656,11 +698,15 @@ fn launch_with_runner(
         std::ffi::OsStr::new(service),
     ];
     if let Err(error) = run_launchctl(runner, &kickstart) {
-        let result = with_rollback_context(error, was_loaded, paths, domain, service, runner);
-        if !was_loaded {
-            cleanup_backups(paths);
-        }
-        return Err(result);
+        return Err(with_rollback_context(
+            error,
+            previously_loaded,
+            true,
+            paths,
+            domain,
+            service,
+            runner,
+        ));
     }
     cleanup_backups(paths);
     Ok(())
@@ -668,14 +714,15 @@ fn launch_with_runner(
 
 fn with_rollback_context(
     error: io::Error,
-    was_loaded: bool,
+    previously_loaded: bool,
+    replacement_may_be_loaded: bool,
     paths: &InstallPaths,
     domain: &str,
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
 ) -> io::Error {
     let kind = error.kind();
-    let rollback = if was_loaded {
+    let rollback = if previously_loaded {
         match paths.previous_plist.as_deref() {
             Some(previous_plist) => restore_previous_service(
                 &paths.binary,
@@ -688,15 +735,48 @@ fn with_rollback_context(
             ),
             None => Err(io::Error::other("previous plist backup is unavailable")),
         }
+    } else if replacement_may_be_loaded {
+        restore_stopped_prepared_files(paths, service, runner)
     } else {
-        Ok(())
+        restore_prepared_files(paths)
     };
     let message = match rollback {
-        Ok(()) if was_loaded => format!("{error}; previous Hub service restored"),
-        Ok(()) => error.to_string(),
-        Err(rollback) => format!("{error}; previous Hub service restore failed: {rollback}"),
+        Ok(()) if previously_loaded => format!("{error}; previous Hub service restored"),
+        Ok(()) => format!("{error}; prepared install files restored"),
+        Err(rollback) if previously_loaded => {
+            format!("{error}; previous Hub service restore failed: {rollback}")
+        }
+        Err(rollback) => format!("{error}; stopped-install rollback failed: {rollback}"),
     };
     io::Error::new(kind, message)
+}
+
+fn restore_stopped_prepared_files(
+    paths: &InstallPaths,
+    service: &str,
+    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+) -> io::Result<()> {
+    let bootout = [
+        std::ffi::OsStr::new("bootout"),
+        std::ffi::OsStr::new(service),
+    ];
+    let unload = match runner(&bootout) {
+        Ok(_) => wait_for_service_unloaded_with_runner(service, runner),
+        Err(error) => Err(error),
+    };
+    let files = restore_prepared_files(paths);
+    match (unload, files) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(unload), Ok(())) => Err(io::Error::new(
+            unload.kind(),
+            format!("replacement service unload failed: {unload}; prepared files restored"),
+        )),
+        (Ok(()), Err(files)) => Err(files),
+        (Err(unload), Err(files)) => Err(io::Error::new(
+            unload.kind(),
+            format!("replacement service unload failed: {unload}; file restore failed: {files}"),
+        )),
+    }
 }
 
 fn restore_previous_service(

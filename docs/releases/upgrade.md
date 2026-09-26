@@ -23,15 +23,16 @@ and Gatekeeper trust.
 
 1. Record the installed version, platform, configuration location, and current
    service status. Save the previous installer or package.
-2. Create a data backup and retain separately recoverable credentials using
+2. Stop the existing Hub service through the Mac app, the packaged CLI, or
+   `sudo systemctl stop teslatlas-hub.service` on Debian. Prevent simultaneous
+   collectors from owning the same refresh credentials. Backup and credential
+   export require the same exclusive Hub instance lock as the service.
+3. Create a data backup and retain separately recoverable credentials using
    [Backup and recovery](../operations/backup-and-recovery.md). Keep these
    private. A data-only restore does not restore collector authority, TLS,
    configuration or service state; retain and rehearse those inputs separately.
-3. Inspect your new package and retain its checksum, source commit, toolchain
+4. Inspect your new package and retain its checksum, source commit, toolchain
    versions and completed build/test results.
-4. Stop the existing Hub service through the Mac app or
-   `sudo systemctl stop teslatlas-hub.service` on Debian. Prevent simultaneous
-   collectors from owning the same refresh credentials.
 
 ## Install and check
 
