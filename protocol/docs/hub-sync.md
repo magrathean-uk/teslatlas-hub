@@ -24,13 +24,21 @@ use the request's `base_manifest_schema`; in particular, a schema 2.2 base
 cannot receive a schema 2.1 delta. A schema transition occurs only through a
 signed rebase whose replacement schema falls inside the requested range.
 
-If compaction removed the requested base, the Hub returns a signed `409`
-`rebase_required` hint. A schema 2.1 replacement contains one pack. A schema
-2.2 replacement contains one or more ordered chunks, so a large compacted base
-does not need to fit one pack. The client applies the complete replacement,
-persists its receipt, sequence, and manifest schema, and sends the exact
-`retry_request` from the hint. It must not infer another checkpoint or replace
-this with a full-history request.
+Receipt resolution is scoped to the route vehicle. A current-lineage checkpoint
+is current. Any base or delta checkpoint in an unexpired retained prior lineage
+was compacted and returns a signed `409` `rebase_required` hint. A receipt absent
+from both the current lineage and every unexpired retained prior lineage returns
+unsigned `422 unknown_base_receipt`.
+
+The rebase replacement is a complete admitted snapshot for its declared schema
+and limits, never a delta, compacted delta, or partial lineage. A schema 2.1
+replacement contains one pack. A schema 2.2 replacement contains one or more
+ordered chunks, so a large compacted base does not need to fit one pack. The
+client applies the complete replacement, persists its receipt, sequence, and
+manifest schema, and sends the exact `retry_request` from the hint. It must not
+infer another checkpoint or replace this with a full-history request. A Hub must
+not admit a checkpoint that it cannot replace with a complete snapshot while
+the checkpoint can remain valid.
 
 The `1.3.0` fixtures carry deterministic, valid Ed25519 signatures over their
 canonical payloads. Production clients retrieve the vehicle-bound key set from
@@ -63,10 +71,12 @@ months. These maxima keep their largest compact JSON forms inside 2 MiB.
 Changes-since returns stable JSON error bodies for invalid JSON (`400`), an
 unknown vehicle (`404`), an unsupported schema range (`406`), an oversized
 body (`413`), and a schema-invalid body, reversed range, or range that excludes
-the base schema (`422`). Schema-invalid bodies use `invalid_request`; the two
-range validation failures use `invalid_schema_range`. A syntactically valid
-range with no overlap with schemas 2.1 through 2.2 returns
-`406 schema_range_unsupported` with `Cache-Control: no-store`. Authentication
+the base schema (`422`). A well-formed receipt that is unknown for the route
+vehicle also returns `422`. Schema-invalid bodies use `invalid_request`; the two
+range validation failures use `invalid_schema_range`; the unknown receipt uses
+`unknown_base_receipt`. A syntactically valid range with no overlap with schemas
+2.1 through 2.2 returns `406 schema_range_unsupported` with
+`Cache-Control: no-store`. Authentication
 failure remains the unsigned empty `401`; compaction remains the signed `409`
 rebase flow.
 

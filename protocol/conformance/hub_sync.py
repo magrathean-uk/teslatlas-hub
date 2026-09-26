@@ -174,7 +174,7 @@ def validate_signing_keys_response(status, value, vehicle_id, headers=None, root
 
 
 def validate_http_error(status, value, headers=None, root=PROFILE):
-    expected = {400: {"invalid_json"}, 404: {"vehicle_not_found"}, 406: {"schema_range_unsupported"}, 413: {"request_too_large"}, 422: {"invalid_request", "invalid_schema_range"}}
+    expected = {400: {"invalid_json"}, 404: {"vehicle_not_found"}, 406: {"schema_range_unsupported"}, 413: {"request_too_large"}, 422: {"invalid_request", "invalid_schema_range", "unknown_base_receipt"}}
     if status not in expected:
         return ["status does not carry a sync error"]
     errors = list(Draft202012Validator(_schema(root, "sync-error.schema.json", "error")).iter_errors(value))

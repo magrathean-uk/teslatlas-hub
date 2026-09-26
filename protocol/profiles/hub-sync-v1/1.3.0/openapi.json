@@ -188,7 +188,7 @@
                 }
               }
             },
-            "description": "request violates the schema, reverses the range, or excludes the base schema",
+            "description": "request violates the schema, reverses the range, excludes the base schema, or names a base receipt unknown to this vehicle",
             "x-max-body-bytes": 2097152
           }
         },

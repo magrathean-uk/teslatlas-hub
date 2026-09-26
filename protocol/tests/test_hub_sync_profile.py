@@ -140,6 +140,7 @@ class HubSyncProfileTests(unittest.TestCase):
             (413, "request_too_large"),
             (422, "invalid_schema_range"),
             (422, "invalid_request"),
+            (422, "unknown_base_receipt"),
         )
         for status, code in expected:
             with self.subTest(status=status, code=code):
@@ -173,6 +174,8 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(self.sync.validate_request(reversed_range), ["schema version range is reversed"])
         base_excluded = self.fixture("changes-since-request-base-excluded")["request"]
         self.assertEqual(self.sync.validate_request(base_excluded), ["base manifest schema is outside accepted range"])
+        unknown_base = self.fixture("changes-since-request-unknown-base-receipt")["request"]
+        self.assertEqual(self.sync.validate_request(unknown_base), [])
 
     def test_signed_responses_and_key_selection_match_route_vehicle(self):
         changed = self.fixture("changes-since-changed-set")["receipt"]
@@ -394,7 +397,7 @@ class HubSyncProfileTests(unittest.TestCase):
 
     def test_registered_fixture_cases_cover_positive_and_negative_vectors(self):
         results = self.sync.run_fixture_cases()
-        self.assertEqual(len(results), 41)
+        self.assertEqual(len(results), 42)
         self.assertTrue(all(result["passed"] for result in results))
         by_case = {result["case_id"]: result for result in results}
         self.assertEqual(
@@ -408,6 +411,10 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(
             by_case["changes-since-changed-set-invalid-signature"]["fixture_ids"],
             ["changes-since-changed-set-invalid-signature-v1"],
+        )
+        self.assertEqual(
+            by_case["changes-since-error-unknown-base-receipt"]["fixture_ids"],
+            ["changes-since-request-unknown-base-receipt-v1", "changes-since-error-unknown-base-receipt-v1"],
         )
         self.assertEqual(
             by_case["changes-since-changed-set-cross-schema"]["expected_errors"],

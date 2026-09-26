@@ -8,6 +8,7 @@
             "invalid_json",
             "invalid_request",
             "invalid_schema_range",
+            "unknown_base_receipt",
             "vehicle_not_found",
             "schema_range_unsupported",
             "request_too_large"

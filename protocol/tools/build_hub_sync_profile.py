@@ -197,7 +197,7 @@ def bundle():
     ]
     sync_error = document("sync-error", {"$defs": {
         "error": strict({
-            "code": {"enum": ["invalid_json", "invalid_request", "invalid_schema_range", "vehicle_not_found", "schema_range_unsupported", "request_too_large"]},
+            "code": {"enum": ["invalid_json", "invalid_request", "invalid_schema_range", "unknown_base_receipt", "vehicle_not_found", "schema_range_unsupported", "request_too_large"]},
             "message": {"type": "string", "minLength": 1, "maxLength": 256},
         }),
     }})
@@ -222,7 +222,7 @@ def bundle():
                 {"status": 406, "body": "schema_range_unsupported error", "headers": {"cache_control": "no-store"}, "signature": "absent"},
                 {"status": 409, "body": "signed rebase hint"},
                 {"status": 413, "body": "request_too_large error", "signature": "absent"},
-                {"status": 422, "body": "invalid_request or invalid_schema_range error", "signature": "absent"}]},
+                {"status": 422, "body": "invalid_request, invalid_schema_range, or unknown_base_receipt error", "signature": "absent"}]},
             {"route": "GET /v1/vehicles/{vehicle_id}/sync/manifest", "responses": [
                 {"status": 200, "body": "one signed schema 2.1 or 2.2 manifest"},
                 {"status": 401, "body": "empty", "signature": "absent"},
@@ -361,6 +361,7 @@ def bundle():
         (413, "request_too_large", "Request body exceeds 8192 bytes."),
         (422, "invalid_request", "Request body does not match the changes-since schema."),
         (422, "invalid_schema_range", "Schema range is reversed or excludes the base schema."),
+        (422, "unknown_base_receipt", "Base receipt is not known for this vehicle."),
     )
     error_examples = {}
     for status, code, message in error_specs:
@@ -389,6 +390,9 @@ def bundle():
     base_excluded_request = copy.deepcopy(request_example)
     base_excluded_request["fixture_id"] = "changes-since-request-base-excluded-v1"
     base_excluded_request["request"]["schema_version_range"] = {"minimum": "2.2", "maximum": "2.2"}
+    unknown_base_receipt_request = copy.deepcopy(request_example)
+    unknown_base_receipt_request["fixture_id"] = "changes-since-request-unknown-base-receipt-v1"
+    unknown_base_receipt_request["request"]["base_receipt_id"] = "receipt_unknown_999999"
 
     compact_request = json.dumps(request_example["request"], sort_keys=True, separators=(",", ":"))
     request_at_limit = {"fixture_id": "changes-since-request-8192-bytes-v1", "body": compact_request + " " * (8192 - len(compact_request.encode()))}
@@ -456,7 +460,8 @@ def bundle():
         "schema_continuity_rule": "A changed-set or no-op receipt MUST use the base manifest schema. A schema 2.2 base cannot receive a schema 2.1 delta. Any schema transition requires a signed rebase whose replacement schema is accepted by the request range.",
         "pack_sizing_rule": "Every compressed pack is 1 to 16 MiB inclusive. Writers SHOULD target at least 8 MiB for each non-final snapshot chunk. A complete small history, the final chunk, a changed set, or a prepared artefact MAY be smaller than 8 MiB.",
         "response_size_rule": "Every JSON control response MUST be at most 2097152 encoded bytes before parsing. Pack byte responses use max_pack_compressed_bytes instead. The schema maxima also keep a compact encoding of every admitted control response within this bound.",
-        "compaction_rule": "A compacted base MUST return 409 and the signed rebase hint. The client applies the replacement pack for schema 2.1 or all contiguous replacement chunks for schema 2.2, persists replacement receipt_id, sequence, and manifest_schema, then sends retry_request. It MUST NOT infer a rebase target or substitute a full-history request.",
+        "receipt_resolution_rule": "Receipt resolution is scoped to the route vehicle. A checkpoint in the current lineage is current. Any base or delta checkpoint found in an unexpired retained prior lineage was compacted and MUST return the signed 409 rebase hint. A receipt absent from both the current lineage and every unexpired retained prior lineage MUST return unsigned 422 unknown_base_receipt.",
+        "compaction_rule": "A compacted base MUST return 409 and the signed rebase hint. The replacement MUST be a complete admitted snapshot for its declared schema and limits, never a delta, compacted delta, or partial lineage. The client applies the replacement pack for schema 2.1 or all contiguous replacement chunks for schema 2.2, persists replacement receipt_id, sequence, and manifest_schema, then sends retry_request. It MUST NOT infer a rebase target or substitute a full-history request. A Hub MUST NOT admit a checkpoint that it cannot replace with such a complete snapshot while the checkpoint can remain valid.",
         "scope": "One changed pack per changed-set receipt; schema 2.2 snapshot and rebase manifests may contain one or more chunks under one signature; prepared artefacts contain only changed map-month and route spans. No other prepared-compute artefact type is defined.",
     }
     def error_response(description):
@@ -476,7 +481,7 @@ def bundle():
                       "404": error_response("vehicle is not available to this pairing"),
                       "406": {**error_response("schema range has no supported version; Cache-Control: no-store"), "headers": no_store_header},
                       "413": error_response("request body exceeds 8192 bytes"),
-                      "422": error_response("request violates the schema, reverses the range, or excludes the base schema"),
+                      "422": error_response("request violates the schema, reverses the range, excludes the base schema, or names a base receipt unknown to this vehicle"),
                       "409": {"description": "signed rebase hint after compaction", "x-max-body-bytes": MAX_RESPONSE_BYTES, "content": {"application/json": {"schema": {"$ref": "rebase-hint.schema.json#/$defs/hint"}}}}}}}},
       "components": {"securitySchemes": {"pairedBearer": {"type": "http", "scheme": "bearer", "bearerFormat": "opaque paired bearer"}}}}
     openapi["paths"]["/v1/vehicles/{vehicle_id}/sync/manifest"] = {"get": {"operationId": "syncManifest", "security": [{"pairedBearer": []}],
@@ -515,7 +520,7 @@ def bundle():
       *[{"id": "changes-since-request-invalid-" + suffix, "validator": "changes_since_request_error", "vehicle_id": vehicle_id, "request_fixture": value["fixture_id"], "status": 422, "response_fixture": error_examples["changes-since-error-invalid-request"]["fixture_id"], "expected_errors": []} for suffix, value in invalid_request_examples.items()],
       {"id": "changes-since-request-reversed-range", "validator": "changes_since_request_error", "vehicle_id": vehicle_id, "request_fixture": reversed_range_request["fixture_id"], "status": 422, "response_fixture": error_examples["changes-since-error-invalid-schema-range"]["fixture_id"], "expected_errors": []},
       {"id": "changes-since-request-base-excluded", "validator": "changes_since_request_error", "vehicle_id": vehicle_id, "request_fixture": base_excluded_request["fixture_id"], "status": 422, "response_fixture": error_examples["changes-since-error-invalid-schema-range"]["fixture_id"], "expected_errors": []},
-      *[{"id": name, "validator": "changes_since", "vehicle_id": vehicle_id, "status": value["response"]["status"], "response_fixture": value["fixture_id"], "expected_errors": [], **({"request_fixture": unsupported_request["fixture_id"]} if name == "changes-since-error-schema-range-unsupported" else {})} for name, value in error_examples.items() if name != "changes-since-error-invalid-request"],
+      *[{"id": name, "validator": "changes_since", "vehicle_id": vehicle_id, "status": value["response"]["status"], "response_fixture": value["fixture_id"], "expected_errors": [], **({"request_fixture": unsupported_request["fixture_id"]} if name == "changes-since-error-schema-range-unsupported" else {"request_fixture": unknown_base_receipt_request["fixture_id"]} if name == "changes-since-error-unknown-base-receipt" else {})} for name, value in error_examples.items() if name != "changes-since-error-invalid-request"],
       *[
           {"id": prefix + ("-response-at-limit" if body_bytes == MAX_RESPONSE_BYTES else "-response-over-limit"),
            "validator": "control_response_body", "response_type": response_type, "vehicle_id": vehicle_id,
@@ -551,6 +556,7 @@ def bundle():
            "examples/changes-since-request-unsupported-range.json": unsupported_request,
            "examples/changes-since-request-reversed-range.json": reversed_range_request,
            "examples/changes-since-request-base-excluded.json": base_excluded_request,
+           "examples/changes-since-request-unknown-base-receipt.json": unknown_base_receipt_request,
            "examples/changes-since-request-8192-bytes.json": request_at_limit,
            "examples/changes-since-request-8193-bytes.json": request_over_limit,
            **{"examples/" + name + ".json": value for name, value in response_boundary_examples.items()},

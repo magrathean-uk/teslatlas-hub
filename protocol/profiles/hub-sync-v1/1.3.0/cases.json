@@ -238,6 +238,15 @@
     },
     {
       "expected_errors": [],
+      "id": "changes-since-error-unknown-base-receipt",
+      "request_fixture": "changes-since-request-unknown-base-receipt-v1",
+      "response_fixture": "changes-since-error-unknown-base-receipt-v1",
+      "status": 422,
+      "validator": "changes_since",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [],
       "id": "sync-manifest-response-at-limit",
       "response_fixture": "sync-manifest-response-2097152-bytes-v1",
       "response_type": "manifest",

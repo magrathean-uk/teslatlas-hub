@@ -1,7 +1,7 @@
 {
   "authentication": "paired bearer",
   "bootstrap_rule": "After applying a signed initial manifest, the client MUST persist manifest.receipt_id, sequence, and schema_version. It sends those exact values as base_receipt_id, from_sequence, and base_manifest_schema on changes-since.",
-  "compaction_rule": "A compacted base MUST return 409 and the signed rebase hint. The client applies the replacement pack for schema 2.1 or all contiguous replacement chunks for schema 2.2, persists replacement receipt_id, sequence, and manifest_schema, then sends retry_request. It MUST NOT infer a rebase target or substitute a full-history request.",
+  "compaction_rule": "A compacted base MUST return 409 and the signed rebase hint. The replacement MUST be a complete admitted snapshot for its declared schema and limits, never a delta, compacted delta, or partial lineage. The client applies the replacement pack for schema 2.1 or all contiguous replacement chunks for schema 2.2, persists replacement receipt_id, sequence, and manifest_schema, then sends retry_request. It MUST NOT infer a rebase target or substitute a full-history request. A Hub MUST NOT admit a checkpoint that it cannot replace with such a complete snapshot while the checkpoint can remain valid.",
   "contract_version": "1.3.0",
   "fixture_signing_keys": "fixture-signing-keys.json",
   "limits": {
@@ -19,6 +19,7 @@
   "previous_profile": "hub-sync-v1@1.2.0",
   "product_version_binding": "none; this protocol profile has no exact Hub product-version pin",
   "profile_id": "hub-sync-v1@1.3.0",
+  "receipt_resolution_rule": "Receipt resolution is scoped to the route vehicle. A checkpoint in the current lineage is current. Any base or delta checkpoint found in an unexpired retained prior lineage was compacted and MUST return the signed 409 rebase hint. A receipt absent from both the current lineage and every unexpired retained prior lineage MUST return unsigned 422 unknown_base_receipt.",
   "response_size_rule": "Every JSON control response MUST be at most 2097152 encoded bytes before parsing. Pack byte responses use max_pack_compressed_bytes instead. The schema maxima also keep a compact encoding of every admitted control response within this bound.",
   "route": {
     "compacted_status": 409,
