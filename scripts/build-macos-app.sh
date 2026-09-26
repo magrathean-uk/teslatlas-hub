@@ -100,8 +100,15 @@ done
 TARGET_DIRECTORY=$(cargo metadata --locked --format-version 1 --no-deps | \
     /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])') \
     || die "cannot find the managed Cargo target directory"
+MANAGED_BUILD_ROOT=$("$CLEAN_DEVELOPMENT" status --json | \
+    /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["buildRoot"])') \
+    || die "cannot find the managed build root"
+case "$MANAGED_BUILD_ROOT" in
+    /*) ;;
+    *) die "managed build root is not absolute" ;;
+esac
 case "$TARGET_DIRECTORY" in
-    "$HOME/Library/Caches/clean-development/"*) ;;
+    "$MANAGED_BUILD_ROOT"/hub-*/cargo/target) ;;
     *) die "Cargo target directory is outside the managed build cache" ;;
 esac
 
