@@ -1,44 +1,15 @@
-# Browser support
+# Browser evidence
 
-## Proven today
+Chromium is the only browser named in the repository's automated configuration and retained installed-browser receipts. Those receipts are historical and apply to their exact source, package, browser, and synthetic Hub setup. They do not establish current cross-browser support.
 
-The fixture suite runs against the Chromium revision bundled with the locked
-Playwright package on macOS. It verifies:
+## What the source covers
 
-- discovery and fixture pairing;
-- all seven reference views;
-- complete, empty, stale, inferred, degraded, offline, loading, and error
-  states;
-- paired-device confirmation, removal, and clear-session flow;
-- no fixture API requests;
-- axe accessibility scans;
-- keyboard entry and focus order;
-- reduced-motion preference;
-- 320px reflow, equivalent to a 1280px layout at 400% zoom;
-- deterministic desktop and mobile screenshots.
+The fixture specs cover the seven views, state labels, connection and local-session interactions, keyboard behavior, reduced motion, and narrow layouts. Screenshot specs use 1280 by 800 desktop and 375 by 812 mobile viewports; the existing accessibility spec includes 320 by 800 reflow checks.
 
-The recorded built-Viewer acceptance lane used native ARM64 Chromium
-`152.0.7977.75` on Debian 13.6 with a private NSS database and normal CA
-validation against a synthetic Hub. That historical receipt covered wrong-Hub
-rejection, pairing, two bounded pages, `304` replay, outage recovery,
-authenticated-session loss, local logout, and unsupported resources. The
-current Viewer requests up to 25 rows per user-driven page; a fresh run is
-required before claiming current paging or installed-Hub compatibility. A
-second browser without the fixture CA failed with
-`ERR_CERT_AUTHORITY_INVALID` in that lane.
+The [verification guide](verification.md) separates fixture checks from installed Hub runs and explains why the unqualified browser test command should not be used as a fixture smoke check.
 
-## Design target, not yet a compatibility claim
+## Limits
 
-The code uses standard evergreen-browser features: ES modules, `AbortController`,
-`structuredClone`, CSS Grid, and Flexbox. Current Safari, Firefox, Chrome, and
-Edge are design targets, but only Chromium has executable evidence today.
+Safari, Firefox, Edge, and WebKit do not have equivalent accepted evidence in this checkout. Modern browser APIs in the source are implementation choices, not proof of compatibility. Expand a browser claim only after recording the relevant ordinary-user route on that browser, including live TLS, pairing, current state, history, recovery, and local session clearing where applicable.
 
-Add a browser to the support claim only after the same Playwright suite passes
-there from a clean checkout. The Chromium automation is not a Safari or WebKit
-claim.
-
-## Viewports
-
-Committed screenshots cover 1280×800 desktop and 375×812 mobile. Automated
-reflow also checks 320×800. Layouts use content-driven breakpoints rather than
-device names.
+Existing tests do not lift the owner's development deferral or authorize accessibility work. See [the development note](development/PLAN.md).

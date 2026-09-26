@@ -28,19 +28,19 @@ SDK implementation.
 
 The live adapter:
 
-1. imports types and client functions from the released package;
-2. maps released response types into the viewer-owned display model;
-3. leaves cursors, conditional requests, event replay, typed errors, and
-   credential storage with the SDK;
+1. imports types and client functions from the pinned package;
+2. maps public response types into the viewer-owned display model;
+3. uses SDK transport and typed errors while retaining its own in-memory
+   credential and vehicle-bound page cache;
 4. has mapper/lifecycle tests for current-Hub null and failure semantics;
 5. has a managed and installed-Hub browser acceptance path; those runs are
    recorded separately from the local fixture and unit evidence.
 
-Do not retrofit fixture property names into that adapter. The released SDK is
+Do not retrofit fixture property names into that adapter. The public SDK contract is
 authoritative even when its names differ.
 
-See the [public SDK integration roadmap](public-sdk-integration-roadmap.md) for
-the artifact and evidence gates.
+See [verification](verification.md) for artifact and evidence checks, and
+[architecture](architecture.md) for the adapter boundary.
 
 ## Fixture scenarios
 

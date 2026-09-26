@@ -1,119 +1,63 @@
 # Viewer verification
 
-This page records the commands and evidence for the Viewer. A green local
-check proves the current checkout only. Installed Hub acceptance also needs a
-Hub-owned disposable target and its redacted descriptor; it is not inferred
-from fixture data or from a build.
+These commands are documented from the source. They were not executed during the documentation refresh. Viewer development remains deferred; follow [AGENTS.md](../AGENTS.md) before running checks.
 
-## Local source gates
+## Source checks
 
-Verified in the 2026-09-08 execution on macOS with Node `v26.8.1`, npm
-`11.19.0`, and `/usr/bin/tar`: `npm ci --include=dev`, `npm run sdk:verify`,
-`npm run typecheck`, `npm test -- --run` (104 tests),
-`npm run test:sdk-artifact` (2 tests), `npm run build`, `npm run test:cli` (1
-test), and `npm run test:e2e` (14 Chromium tests) passed. The production build
-still emits Vite's advisory about the roughly 1,064 kB JavaScript chunk; it is
-recorded as a measured M3 limitation rather than suppressed or treated as a
-failure.
+Prepare the pinned SDK archive and install development dependencies using the [README](../README.md#build-from-source). Run only checks relevant to an authorized change.
 
-The earlier connection findings are covered by source and browser checks:
-M1 is closed by the editable connection form and in-place correction path; M2
-is closed by retaining the invitation TLS identity in the live adapter and
-mapped snapshot. M3 remains an advisory bundle-size limitation pending a
-measured code-splitting decision.
+| Command | What it checks |
+| --- | --- |
+| `npm run sdk:verify` | Recorded SDK archive and installed package identity |
+| `npm run typecheck` | TypeScript project compilation checks |
+| `npm test -- --run` | Vitest unit and component tests, including adapter lifecycle |
+| `npm run test:sdk-artifact` | SDK artifact verifier cases |
+| `npm run test:sdk-source` | Source artifact preparation cases |
+| `npm run build` | SDK verification, TypeScript compilation, and Vite output |
+| `npm run test:cli` | Build, local package/install, static server, containment, and shutdown |
+| `npm run test:container:source` | Docker and Compose source shape, not container runtime |
+| `python3 -m unittest discover -s tools -p 'test_matrix_contract.py'` | Compatibility admission contract, using Python 3.10 or later |
+| `node --test tools/matrix-live.test.mjs` | Compatibility launcher and SessionInput wiring |
 
-Run from this repository after the accepted SDK archive and metadata are present:
+`pretypecheck`, `pretest`, and `prebuild` run the SDK verifier. TypeScript checks and builds can write output; the CLI check also builds, packs, installs, and starts a local server. These are not read-only documentation checks.
 
-```sh
-npm ci --include=dev
-npm run sdk:verify
-npm run typecheck
-npm test -- --run
-npm run test:sdk-artifact
-npm run build
-npm run test:cli
-npm run test:e2e
-```
+## Fixture browser checks
 
-The locked development toolchain requires Node 26.x (the current recorded
-machine uses Node 26.8.1), npm 11.x, and `tar`. The SDK verifier checks the
-project-relative `@teslatlas/sdk` archive before typecheck, test and build. The
-current metadata records SDK version `2026.36.2`, 80 installed members,
-tarball SHA-256
-`d1ab6ba0ede3a24ae12ed4151db0c90bf957fa19f5640cc4323bd368e565e8bb`, and
-profile `hub-http-v1@1.0.0`.
-
-The default Playwright suite is fixture-only and makes no Hub requests. The
-CLI test packages and installs the static server, checks GET/HEAD, fallback,
-version metadata, containment and shutdown, and does not upload the package.
-
-## Managed synthetic-Hub lane
-
-`npm run test:e2e:hub` builds the production Viewer and starts the packaged
-static CLI through `playwright.hub.config.ts`. The existing private descriptor
-and browser trust witness supply the endpoint, Hub UUID, disposable invitation,
-normal CA trust and synthetic data. Required private variables are selected by
-the Hub handoff and are never copied into this document or a receipt.
-
-The managed lane supplements, but does not replace, ordinary installed-Hub
-acceptance. Its credential-rotation `auth-loss` scenario proves a bounded 401
-recovery path; only a Hub operator's confirmed revocation of the exact test
-device proves revocation.
-
-The managed lane was not run in this execution because the Hub-owned descriptor,
-browser trust witness, and forwarding handoff were not available.
-
-## Installed production Viewer lane
-
-First serve a production build with the packaged CLI or the local Docker image.
-Then run the read/claim-only smoke against that already serving origin:
+Select the intended specs explicitly:
 
 ```sh
-TESLATLAS_VIEWER_EXTERNAL_SERVER=1 \
-TESLATLAS_VIEWER_PAGE_ORIGIN=https://viewer.example.test \
-npm run test:e2e:installed:hub
+npm run test:e2e -- e2e/viewer.spec.ts
 ```
 
-The Hub owner supplies the remaining private descriptor variables and keeps
-invitations out of logs. The smoke starts at `/`, follows the visible live
-connection link, corrects a wrong Hub UUID without reload, pairs through the
-ordinary form, reads current data, loads a seeded 51-drive vehicle as
-25/25/1, observes terminal history and an empty vehicle, refreshes, and clears
-the local session. Normal browser certificate validation remains enabled.
+This uses the configured Chromium project and starts Vite on loopback port 4173. The screenshot recipe, `npm run capture:screenshots`, writes fixture images under `output/playwright/screenshots/`. Review image changes before including them in a patch.
 
-The coordinated installed acceptance requires a separate Hub-owned browser
-session to observe a temporary outage and recovery, then operator revocation
-of the exact disposable device, a 401 on the next authenticated read, and a
-successful fresh-invitation re-pair. The Viewer never performs the revoke or
-changes Hub service state. Record the browser, Viewer origin, Hub version and
-source, profile/artifact identity, request/status/ETag observations, seed
-counts, operator revoke result and cleanup in a private owner-only receipt.
-Persist no invitation, authorization value or raw cursor; compare cursors only
-in memory and record presence or a digest when needed.
+The unqualified `npm run test:e2e` is not a fixture-only command in this checkout. Its configuration excludes `live-hub.spec.ts` and `installed-hub.spec.ts`, but also discovers the installed R1 recovery and data-state specs. Those require an external Viewer and private Hub coordination. Do not run the unqualified command as a local smoke check.
 
-As of the current plan, this installed target and operator receipt are pending
-Hub admission. Therefore `compatibility/hub.json` remains `candidate` with
-empty tested-Hub and receipt arrays. Chromium is the only browser with current
-automated evidence; Safari, Firefox, Edge and other Hub platforms remain
-untested unless their own runs are recorded.
+An existing accessibility spec remains in the tree. The current workspace scope excludes accessibility work; its presence does not authorize a new accessibility task.
 
-## Container check
+## Live and installed Hub checks
 
-The Docker build runs the same SDK verifier and production build in a pinned
-Node 26.8.1 Debian slim image. Validate locally when Docker is available:
+`npm run test:e2e:hub` first builds the Viewer, then starts its static CLI through `playwright.hub.config.ts`. It needs a fresh Hub-owned descriptor and normal browser trust.
 
-```sh
-docker compose config
-docker compose up --build -d
-curl -fsS http://127.0.0.1:4173/
-docker compose down
-```
+The installed scripts are `test:e2e:installed:hub`, `test:e2e:installed:recovery`, and `test:e2e:installed:data-state`. They set external-server mode. Configuration requires a bound page origin, browser executable, and raw-evidence directory, while the specs need the matching private handoff. These scripts are not standalone setup recipes.
 
-The runtime contains only `dist`, the static CLI and package metadata, runs as
-the non-root `node` user, and has no Viewer persistence. Public HTTPS and Hub
-CORS belong to the existing TLS proxy and Hub configuration.
+The Hub coordinator supplies disposable synthetic records, distinct Viewer and Hub origins, CORS configuration, trusted TLS, invitations, lifecycle control, and cleanup ownership. The Viewer does not revoke devices or stop Hub processes. Never bypass certificate validation, reuse expired invitations, or copy raw credentials into a receipt. Operator revocation and a browser's simulated authentication failure are different evidence.
 
-`docker-compose config` passed on this host. Image build and runtime checks were
-blocked because the Docker daemon socket was unavailable, and the installed
-`docker` binary does not provide the Compose subcommand; no container or
-multi-architecture claim is made.
+## Historical evidence
+
+The preserved receipts describe specific past runs:
+
+| Receipt | Scope recorded |
+| --- | --- |
+| [B1 installed browser](development/receipts/2026-09-08-b1-installed-browser-r3.json) | Pairing, five drives, empty vehicle, refresh, and local session clearing on Debian ARM64 |
+| [R1 recovery](development/receipts/2026-09-09-r1-installed-recovery7.json) | 51-drive paging, outage recovery, operator revocation, and re-pairing |
+| [R1 data state](development/receipts/2026-09-09-r1-installed-data-state.json) | Conditional revalidation, unsupported resources, partial failure, and cancellation |
+| [D1 container](development/receipts/2026-09-09-d1-container-source.json) | One Debian ARM64 container's build, liveness, HTTP, restart, and cleanup |
+
+These records do not verify today's dirty checkout, a different package, a different browser, or a complete compatibility matrix. The [compatibility manifest](../compatibility/hub.json) still says `candidate` and has no accepted Hub-version or receipt entries. Native package and macOS lifecycle acceptance are not established here.
+
+## Container boundary
+
+[Dockerfile](../Dockerfile) builds with `node:26.8.1-bookworm-slim`. The SDK archive must exist before its build. The runtime serves static assets as the non-root `node` user. [Compose](../compose.yaml) maps port 4173 to host loopback, uses `unless-stopped`, and declares no volume.
+
+For an authorized container task, `docker compose config` inspects configuration, `docker compose up --build -d` builds and starts the service, and `docker compose down` stops it. The health probe checks HTTP 200 at the static root only. It does not test Hub readiness, pairing, browser trust, or CORS. A running container is not an installed user-path acceptance result.

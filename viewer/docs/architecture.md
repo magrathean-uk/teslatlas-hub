@@ -104,7 +104,7 @@ Paired-device removal updates only the current in-memory snapshot.
 - reduced-motion styles;
 - mobile-first reflow with horizontal navigation contained inside its own
   scroll area;
-- automated axe checks and 320px viewport proof.
+- existing automated axe and 320px viewport checks, subject to current work scope.
 
 ## Boundaries
 
@@ -112,5 +112,6 @@ The viewer uses public protocol concepts only. It cannot call an undocumented
 Hub route. It contains no Hub implementation, proprietary Teslatlas source,
 command dashboard, cloud deployment, or persisted credential policy.
 
-See the [public SDK integration roadmap](public-sdk-integration-roadmap.md) for
-the release-backed catalogue, fixture, and evidence gates.
+See [verification](verification.md) for the distinct fixture, installed-browser,
+and container evidence boundaries. Development status is recorded in the
+[development note](development/PLAN.md).
