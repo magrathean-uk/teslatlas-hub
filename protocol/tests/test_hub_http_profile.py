@@ -7,7 +7,7 @@ import subprocess
 import sys
 import unittest
 
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, FormatChecker
 from openapi_spec_validator import validate as validate_openapi
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,7 +51,7 @@ class HubHttpTests(unittest.TestCase):
         validate_openapi(document, base_uri=PROFILE.as_uri() + '/')
 
     def test_current_hub_schemas_are_meta_valid_and_references_are_local(self):
-        for name in ('discovery.schema.json', 'resources.schema.json', 'auth.schema.json', 'errors.schema.json'):
+        for name in ('discovery.schema.json', 'resources.schema.json', 'auth.schema.json', 'rotation-grace.schema.json', 'sync.schema.json', 'errors.schema.json'):
             with self.subTest(name=name):
                 document = json.loads((PROFILE / name).read_text())
                 Draft202012Validator.check_schema(document)
@@ -135,6 +135,20 @@ class HubHttpTests(unittest.TestCase):
         # unsupported rich semantic fields or claim commands capability.
         value=self.example('discovery');value['protocol_revision']=1
         self.assertTrue(self.validate('discovery',value))
+
+    def test_rotation_grace_and_schema_2_2_unavailable_fixtures_are_exact(self):
+        rotation=json.loads((PROFILE/'examples/rotation-grace.json').read_text())
+        rotation_schema=json.loads((PROFILE/'rotation-grace.schema.json').read_text())
+        self.assertFalse(list(Draft202012Validator({**rotation_schema,'$ref':'#/$defs/fixture'},format_checker=FormatChecker()).iter_errors(rotation)))
+        self.assertEqual(rotation['grace_duration_ms'],86400000)
+        self.assertEqual(rotation['old_bearer_valid_from_ms'],rotation['rotation_at_ms'])
+        self.assertEqual(rotation['old_bearer_valid_until_ms'],rotation['rotation_at_ms']+rotation['grace_duration_ms'])
+        self.assertEqual(rotation['lost_response_retry'],{'request':'POST /v1/device/rotate','status':200})
+        self.assertEqual(rotation['after_grace'],{'status':401})
+        unavailable=json.loads((PROFILE/'examples/sync-schema-2-2-noop-unavailable.json').read_text())
+        sync_schema=json.loads((PROFILE/'sync.schema.json').read_text())
+        self.assertFalse(list(Draft202012Validator({**sync_schema,'$ref':'#/$defs/schema_2_2_noop_unavailable_fixture'},format_checker=FormatChecker()).iter_errors(unavailable)))
+        self.assertEqual(unavailable['response'],{'status':406,'headers':{'cache_control':'no-store'},'body_bytes':0,'manifest_signature':'absent'})
 
     def test_private_network_config_rejects_missing_prerequisites(self):
         for config in ({}, {'endpoint':'https://127.0.0.1:1','profile_id':'hub-http-v1@1.0.0'}):

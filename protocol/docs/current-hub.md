@@ -536,10 +536,12 @@ pagination or reconciliation incorrect.
 ## Rotate credentials
 
 Rotation is authenticated and returns a replacement claim object. Keep the
-new response private before replacing the old header file. The old bearer is
-invalid immediately after a successful rotation; a lost rotation response may
-therefore have already invalidated it. Do not retry blindly or promise a
-rollback. Re-enter the owner pairing flow if recovery is needed:
+new response private before replacing the old header file. A successful
+rotation leaves the prior bearer valid for 24 hours, ending exactly at
+`rotation_at_ms + 86,400,000` milliseconds. A client that loses the response
+MAY retry `POST /v1/device/rotate` with that prior bearer during the grace
+window and use the replacement claim it receives. The claim response fields
+remain `device_id`, `access_token`, and `expires_at_ms`.
 
 ~~~sh
 set -eu
@@ -605,7 +607,7 @@ curl --silent --show-error --get \
   --output "$private_dir/old-bearer.json" \
   "$endpoint/v1/vehicles"
 old_status="$(awk 'NR == 1 { print $2; exit }' "$private_dir/old-bearer.headers")"
-[ "$old_status" = 401 ] || { echo 'old bearer was not rejected after rotation' >&2; exit 1; }
+[ "$old_status" = 200 ] || { echo 'old bearer was not accepted during rotation grace' >&2; exit 1; }
 rm -f "$private_dir/authorization.old"
 ~~~
 
@@ -613,9 +615,9 @@ Validate the replacement response before replacing the header. A non-200
 response is an error and must leave the old header untouched; on `200`, run the
 same strict `auth.schema.json` validation used for claim responses, write the
 new header to a mode-600 temporary path, then atomically rename it over the old
-header. Verify that the old bearer no longer works. Owner revocation and
-re-pairing are lifecycle operations outside this HTTP profile; there is no
-public revoke route.
+header. The old bearer must be treated as expired after the 24-hour grace
+window. Owner revocation and re-pairing are lifecycle operations outside this
+HTTP profile; there is no public revoke route.
 
 ## Errors and unsupported surfaces
 
@@ -630,7 +632,9 @@ The current-Hub profile intentionally has no public SSE/events endpoint,
 command submission, metadata CRUD, snapshot revision, or charge-query route.
 Do not send rich-profile headers such as `Teslatlas-Protocol-Version` and do
 not infer unsupported routes from discovery. The sync appendix documents pack
-delivery checks separately from these HTTP query semantics.
+delivery checks separately from these HTTP query semantics. A schema 2.2
+no-op that is unavailable returns an unsigned, empty `406` with
+`Cache-Control: no-store`; it is never a signed `503` or an invented snapshot.
 
 For the full route schemas, examples, and conformance vectors, use the profile
 directory and [`docs/conformance.md`](conformance.md). The native acceptance

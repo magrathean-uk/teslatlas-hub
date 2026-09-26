@@ -67,7 +67,7 @@ class EdgeDeliveryProfileTests(unittest.TestCase):
         current_hub_manifest = ROOT / "profiles/hub-http-v1/1.0.0/SHA256SUMS"
         self.assertEqual(
             hashlib.sha256(current_hub_manifest.read_bytes()).hexdigest(),
-            "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+            "65568a9a03b8a94d44574105777d5bb702b0e226cb900833a76108c3011bf4d0",
         )
 
     def test_literal_stable_and_legacy_ids_match_independent_hashes(self):

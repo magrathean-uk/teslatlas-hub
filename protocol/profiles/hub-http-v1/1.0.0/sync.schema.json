@@ -1,0 +1,60 @@
+{
+  "$defs": {
+    "schema_2_2_noop_unavailable_fixture": {
+      "additionalProperties": false,
+      "properties": {
+        "fixture_id": {
+          "const": "schema-2-2-noop-unavailable"
+        },
+        "requested_schema": {
+          "const": "2.2"
+        },
+        "response": {
+          "additionalProperties": false,
+          "properties": {
+            "body_bytes": {
+              "const": 0
+            },
+            "headers": {
+              "additionalProperties": false,
+              "properties": {
+                "cache_control": {
+                  "const": "no-store"
+                }
+              },
+              "required": [
+                "cache_control"
+              ],
+              "type": "object"
+            },
+            "manifest_signature": {
+              "const": "absent"
+            },
+            "status": {
+              "const": 406
+            }
+          },
+          "required": [
+            "status",
+            "headers",
+            "body_bytes",
+            "manifest_signature"
+          ],
+          "type": "object"
+        },
+        "route": {
+          "const": "GET /v1/vehicles/{vehicle_id}/sync/noop"
+        }
+      },
+      "required": [
+        "fixture_id",
+        "route",
+        "requested_schema",
+        "response"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-http-v1:1.0.0:sync",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

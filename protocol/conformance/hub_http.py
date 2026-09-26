@@ -72,7 +72,7 @@ def load_profile(root,expected_hash=None):
         if name in listed or hashlib.sha256((root/name).read_bytes()).hexdigest()!=value:
             raise AcceptanceError('profile file digest mismatch')
         listed.append(name)
-    required={'profile.json','openapi.json','discovery.schema.json','resources.schema.json','auth.schema.json','errors.schema.json','field-semantics.json','cases.json','sync-regression.json'}
+    required={'profile.json','openapi.json','discovery.schema.json','resources.schema.json','auth.schema.json','rotation-grace.schema.json','sync.schema.json','errors.schema.json','field-semantics.json','cases.json','sync-regression.json'}
     if not required<=set(listed):raise AcceptanceError('incomplete profile manifest')
     profile=strict_json((root/'profile.json').read_bytes())
     if profile.get('profile_id')!=PROFILE_ID:raise AcceptanceError('unsupported profile identity')
@@ -238,8 +238,10 @@ def run_network(config):
     for key,value in scenario['later_current'].items():require(later[key]==value,'later current scenario mismatch: '+key)
     rotated,_=exchange('rotate-success','rotate','/v1/device/rotate',bearer=token,body={})
     require(rotated['device_id']==claim['device_id'] and rotated['access_token']!=token,'rotation did not replace bearer')
-    exchange('rotated-bearer','vehicles','/v1/vehicles',401,bearer=token)
-    exchange('rotated-bearer-valid','vehicles','/v1/vehicles',bearer=rotated['access_token'])
+    exchange('rotated-bearer-grace-valid','vehicles','/v1/vehicles',bearer=token)
+    retried,_=exchange('rotation-lost-response-retry','rotate','/v1/device/rotate',bearer=token,body={})
+    require(retried['device_id']==claim['device_id'] and retried['access_token']!=token,'grace bearer could not retry lost rotation response')
+    exchange('rotated-bearer-valid','vehicles','/v1/vehicles',bearer=retried['access_token'])
     verified_native=verify_native_fixture(config)
     return {'schema_version':1,'status':'passed','provenance':'synthetic-real-process','profile_id':PROFILE_ID,'profile_sha256':profile['profile_sha256'],
         'scenario_sha256':config['scenario_sha256'],'hub_product_version':discovery['version'],'binary_sha256':config['binary_sha256'],'seed_binary_sha256':config['seed_binary_sha256'],

@@ -40,8 +40,13 @@
       "device_name"
     ],
     "invitation_command": "teslatlas-hub --config PRIVATE_CONFIG pair --json",
-    "lifetime": "expiresAtMs epoch milliseconds; default invitation lifetime 900 seconds, owner-configurable; single use. Bearer expires_at_ms is returned by claim/rotate. Rotation invalidates prior bearer.",
+    "lifetime": "expiresAtMs epoch milliseconds; default invitation lifetime 900 seconds, owner-configurable; single use. Bearer expires_at_ms is returned by claim/rotate.",
     "path_field": "pairingId",
+    "rotation": {
+      "old_bearer_grace_ms": 86400000,
+      "old_bearer_validity": "The prior bearer remains valid from a successful rotation through rotation_at_ms + 86400000 milliseconds, exclusive. A request with that bearer during the grace window, including a retry of POST /v1/device/rotate after its response is lost, MUST authenticate normally. After the window, the prior bearer returns 401.",
+      "response_fields": "Rotation keeps the claim response fields device_id, access_token, and expires_at_ms unchanged."
+    },
     "trust": "endpoint plus tlsPin (SHA256 of DER leaf certificate); validate TLS identity before sending secret. Fixture uses a private CA trust file and verifies hostname. pairingUri duplicates secret; keep whole invitation private."
   },
   "product_version_binding": "independent; see ecosystem compatibility manifests",

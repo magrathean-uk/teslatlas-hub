@@ -87,11 +87,15 @@ PROFILE_MEMBERS = (
     "examples/health.json",
     "examples/invitation.json",
     "examples/ready.json",
+    "examples/rotation-grace.json",
+    "examples/sync-schema-2-2-noop-unavailable.json",
     "examples/vehicles.json",
     "field-semantics.json",
     "openapi.json",
     "profile.json",
     "resources.schema.json",
+    "rotation-grace.schema.json",
+    "sync.schema.json",
     "sync-regression.json",
 )
 SESSION_INPUT_KEYS = {
@@ -1157,18 +1161,21 @@ class MatrixCases:
             rotated, _headers = self.credential_exchange("rotate", "/v1/device/rotate", method="POST", bearer=old_token, body={})
             self.token, self.device_id = rotated["access_token"], rotated["device_id"]
             self._vehicles(self.token)
-            stale = self._error_fact("vehicles", "/v1/vehicles", 401, bearer=old_token)
+            self._vehicles(old_token)
+            retried, _headers = self.credential_exchange("rotate", "/v1/device/rotate", method="POST", bearer=old_token, body={})
+            self.token, self.device_id = retried["access_token"], retried["device_id"]
+            self._vehicles(self.token)
             return {
                 "rotated": self.token != old_token,
                 "same_device": self.device_id == old_device,
                 "vehicles": 200,
-                "old_credential_error": stale["typed_error"],
-                "old_credential_status": stale["http_status"],
+                "old_credential_status": 200,
+                "lost_response_retry_status": 200,
             }
 
         self.capture(
             "credential_rotation_api",
-            {"rotated": True, "same_device": True, "vehicles": 200, "old_credential_error": "hub_http_error", "old_credential_status": 401},
+            {"rotated": True, "same_device": True, "vehicles": 200, "old_credential_status": 200, "lost_response_retry_status": 200},
             rotate,
         )
 

@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "fixture": {
+      "additionalProperties": false,
+      "properties": {
+        "after_grace": {
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": 401
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "fixture_id": {
+          "const": "paired-bearer-rotation-grace-24h"
+        },
+        "grace_duration_ms": {
+          "const": 86400000
+        },
+        "lost_response_retry": {
+          "additionalProperties": false,
+          "properties": {
+            "request": {
+              "const": "POST /v1/device/rotate"
+            },
+            "status": {
+              "const": 200
+            }
+          },
+          "required": [
+            "request",
+            "status"
+          ],
+          "type": "object"
+        },
+        "old_bearer_valid_from_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "type": "integer"
+        },
+        "old_bearer_valid_until_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "type": "integer"
+        },
+        "rotation_at_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "fixture_id",
+        "rotation_at_ms",
+        "grace_duration_ms",
+        "old_bearer_valid_from_ms",
+        "old_bearer_valid_until_ms",
+        "lost_response_retry",
+        "after_grace"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-http-v1:1.0.0:rotation-grace",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

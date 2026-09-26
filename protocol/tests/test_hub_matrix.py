@@ -84,6 +84,7 @@ class SyntheticHub:
         self.used_pairings = set()
         self.revoked_devices = set()
         self.current_token = None
+        self.grace_tokens = set()
         self.current_device = None
         self.claim_count = 0
         self.next_request = 0
@@ -187,7 +188,8 @@ class SyntheticHub:
                         self.wfile.write(raw)
 
             def _authorized(self):
-                return self.headers.get("authorization") == "Bearer " + str(owner.current_token)
+                token = self.headers.get("authorization", "").removeprefix("Bearer ")
+                return token == owner.current_token or token in owner.grace_tokens
 
             def do_GET(self):
                 begun = self._begin()
@@ -292,6 +294,8 @@ class SyntheticHub:
                 if parsed.path == "/v1/device/rotate":
                     if not self._authorized():
                         return self._send(401, request_id)
+                    if owner.current_token is not None:
+                        owner.grace_tokens.add(owner.current_token)
                     owner.current_token = TOKEN_2
                     return self._send(
                         200,

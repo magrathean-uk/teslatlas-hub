@@ -104,7 +104,7 @@ class MatrixContractTests(unittest.TestCase):
             "endpoint_restart": {"same_hub": True, "new_process": True, "vehicles": 200},
             "outage_recovery": {"outage_observed": True, "vehicles": 200},
             "unsupported_operation_zero_requests": {"outgoing_requests": 0},
-            "credential_rotation_api": {"rotated": True, "same_device": True, "vehicles": 200, "old_credential_error": "hub_http_error", "old_credential_status": 401},
+            "credential_rotation_api": {"rotated": True, "same_device": True, "vehicles": 200, "old_credential_status": 200, "lost_response_retry_status": 200},
             "drives_three_page_order": {"pages": [[105, 104], [103, 102], [101]]},
             "drives_terminal_cursor": {"next_cursor": None, "ids": [101]},
             "drives_etag_304": {"kind": "notModified", "post_304_ids": [103, 102]},

@@ -312,13 +312,13 @@
       "id": "protocol-http-v1",
       "schema": {
         "path": "protocol-http-v1.schema.json",
-        "sha256": "97241f70538c98e0b851581c4d13f983b0b5f57bf543883abb8a6ede1ac23cd9"
+        "sha256": "b22c51aa3fffb2586c0d483d86e4eeb563579ec4e98c2438ca3bafa351501d50"
       }
     }
   ],
   "phases": [],
   "validator": {
     "path": "matrix_contract.py",
-    "sha256": "eef926e5d732a4c7ad46a9fe02a6089ea28d5c36b4e2523607212603b4994b24"
+    "sha256": "c1f9801e3aad72145a720b67bdd4dd779ec5f1b036e17931d55f22cc540af425"
   }
 }

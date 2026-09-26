@@ -1,0 +1,14 @@
+{
+  "after_grace": {
+    "status": 401
+  },
+  "fixture_id": "paired-bearer-rotation-grace-24h",
+  "grace_duration_ms": 86400000,
+  "lost_response_retry": {
+    "request": "POST /v1/device/rotate",
+    "status": 200
+  },
+  "old_bearer_valid_from_ms": 1788566400000,
+  "old_bearer_valid_until_ms": 1788652800000,
+  "rotation_at_ms": 1788566400000
+}

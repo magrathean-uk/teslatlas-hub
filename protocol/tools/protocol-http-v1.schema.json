@@ -220,13 +220,13 @@
     "credential_rotation_api": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["rotated", "same_device", "vehicles", "old_credential_error", "old_credential_status"],
+      "required": ["rotated", "same_device", "vehicles", "old_credential_status", "lost_response_retry_status"],
       "properties": {
         "rotated": {"const": true},
         "same_device": {"const": true},
         "vehicles": {"const": 200},
-        "old_credential_error": {"type": "string", "minLength": 1},
-        "old_credential_status": {"const": 401}
+        "old_credential_status": {"const": 200},
+        "lost_response_retry_status": {"const": 200}
       }
     },
     "drives_three_page_order": {
