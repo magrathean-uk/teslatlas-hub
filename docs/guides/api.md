@@ -108,11 +108,11 @@ payloads, precise locations, or pack contents to a public issue.
 
 ## Accepted evidence boundary
 
-[G3 r2](../../../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json)
+G3 r2 (`teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json`)
 admitted the exact product/profile records using accepted
-[G4 TypeScript](../../../teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json),
-[G5 Edge](../../../teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json),
-and [G6 Swift](../../../teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json)
+G4 TypeScript (`teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json`),
+G5 Edge (`teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json`),
+and G6 Swift (`teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json`)
 receipts. The G3 receipt SHA-256 is
 `5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865`.
 Those receipts cover source-built synthetic
