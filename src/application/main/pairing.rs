@@ -176,12 +176,16 @@ fn build_pairing_presentation(
     } else {
         let qr = render_pairing_qr(pairing_uri).map_err(|_| PairingCommandError::Presentation)?;
         output
-            .try_reserve_exact(qr.len().saturating_add(128))
+            .try_reserve_exact(
+                qr.len()
+                    .saturating_add(pairing_uri.len())
+                    .saturating_add(128),
+            )
             .map_err(|_| PairingCommandError::Presentation)?;
         write!(
             output,
-            "Scan with Teslatlas:\n{}\nExpires in {expires_in_seconds} seconds.\n",
-            qr.as_str()
+            "Scan with Teslatlas:\n{}\nPairing link: {pairing_uri}\nExpires in {expires_in_seconds} seconds.\n",
+            qr.as_str(),
         )
         .map_err(|_| PairingCommandError::Presentation)?;
     }

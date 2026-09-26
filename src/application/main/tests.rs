@@ -29,8 +29,8 @@ use sha2::Sha256;
 use super::{
     Cli, Command, CompanionCommand, CompanionMode, ControlCommand, CurrentVehicleStatusFields,
     MAX_TLS_CERTIFICATE_CHAIN_BYTES, MAX_TLS_PRIVATE_KEY_BYTES, PairingCommandError,
-    PairingCommandInput, current_vehicle_status_fields, execute_pairing_at,
-    leaf_certificate_sha256, leaf_certificate_sha256_after_open, pairing_uri,
+    PairingCommandInput, build_pairing_presentation, current_vehicle_status_fields,
+    execute_pairing_at, leaf_certificate_sha256, leaf_certificate_sha256_after_open, pairing_uri,
     persist_and_present_pairing, read_tls_identity_file, render_pairing_qr, run,
     run_immutable_diagnostic_with,
 };
@@ -2786,4 +2786,32 @@ fn pairing_qr_renders_without_printing_the_raw_secret() {
     let qr = render_pairing_qr(&uri).expect("render QR");
     assert!(qr.contains('█') || qr.contains('▀') || qr.contains('▄'));
     assert!(!qr.contains("0123456789abcdef"));
+}
+
+#[test]
+fn default_pairing_presentation_includes_a_plain_link() {
+    let temporary = tempfile::tempdir().expect("temporary root");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("Hub store");
+    let invitation = store
+        .prepare_pairing("headless phone", 1_000, 901_000)
+        .expect("pairing prepares");
+    let uri = pairing_uri(
+        "https://hub.example/",
+        &"a".repeat(64),
+        invitation.pairing_id,
+        invitation.secret(),
+    )
+    .expect("pairing URI");
+    let presentation = build_pairing_presentation(
+        false,
+        "https://hub.example/",
+        &"a".repeat(64),
+        &uri,
+        &invitation,
+        900,
+    )
+    .expect("terminal presentation");
+    let text = std::str::from_utf8(&presentation).expect("terminal UTF-8");
+    assert!(text.contains("Scan with Teslatlas:"));
+    assert!(text.contains(&format!("Pairing link: {}", uri.as_str())));
 }
