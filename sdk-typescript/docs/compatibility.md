@@ -14,16 +14,17 @@ npm run protocol:check
 shasum -a 256 protocol/lock.json
 ```
 
-Regenerate only from a checkout at the locked revision:
+The current lock has `source.kind: local-content`, with a base commit and content digest. It cannot be reproduced by checking out only that base commit. Do not sync an arbitrary latest Protocol checkout into it.
+
+For an intentional reviewed contract update, `protocol:sync -- --candidate` imports the selected checkout's current files, regenerates outputs, and rewrites the lock:
 
 ```bash
-npm run protocol:sync -- /absolute/path/to/teslatlas-protocol
-npm run protocol:generate
+npm run protocol:sync -- --candidate /absolute/path/to/teslatlas-protocol
 npm run protocol:check
+npm run test:protocol
 ```
 
-The canonical SDK codebase was retained. A separate documentation-only clone
-was design input, not an executable branch to merge.
+Use that command only with the reviewed Protocol input. A plain `protocol:sync -- /absolute/path/to/teslatlas-protocol` is for a lock whose source kind is `git-commit` and whose commit matches the supplied checkout; it rejects this current content-bound lock. `npm run protocol:generate` regenerates outputs from already vendored inputs, but does not itself update the lock hashes.
 
 ## Current Hub profile
 
@@ -60,9 +61,7 @@ The exact reproducibility tuple is Node 26.7.0 and npm 11.19.0. Current accepted
 runtime evidence is Node 26.7.0 and Chrome 153 on macOS 27; no broader Node,
 browser, or operating-system floor is claimed by that evidence.
 `tools/platform-support.json` encodes this as evidence with null declared
-Node/npm/browser floors; null means unaccepted, not unlimited support. The
-native Debian ARM64 Docker lane and both active-platform final-Hub journeys
-remain mandatory and unrun.
+Node/npm/browser floors; null means unaccepted, not unlimited support. The historical 2026-09-20 Docker receipt records a bounded package-only pass; see [Docker](docker.md). The `acceptance_boundary` string in `tools/platform-support.json` still says that lane is unrun and predates that receipt. Neither record establishes current final-Hub acceptance. New runtime claims need exact-source receipts.
 
 `logout()` is the local credential-store operation and is distinct from server
 revocation. Consumers await it before `dispose()` and must pair again after a

@@ -1,156 +1,88 @@
 # Teslatlas TypeScript SDK
 
-Private, protocol-derived Teslatlas client for browser and Node.js development.
+The Teslatlas TypeScript SDK is a private, protocol-derived client for Node.js and browser applications. It exposes the released Teslatlas operations through typed methods and validates discovery responses, protocol data, errors, metadata, command jobs, and server-sent events before returning them to the caller.
 
-## Status
+The package is private and is not a registry release. The package manifest identifies version `2026.36.2`, Apache-2.0 licensing, and an evidence-only runtime policy. Local protocol fixtures and consumer checks demonstrate SDK behavior against checked-in inputs. They do not establish the behavior of a remote Hub or a production deployment.
 
-The SDK implements the 20 named operations in the pinned Teslatlas protocol
-snapshot. It validates discovery, responses, errors, metadata, command jobs,
-and typed event streams before returning protocol data.
+## Entry points
 
-The package is private. Local protocol-case checks exercise SDK behavior against
-vendored fixtures; they do not establish the behavior of a remote deployment.
-
-## Use a runtime factory
-
-The root entry point exports public types, errors, and opaque constructors. Use
-a runtime-specific factory to create a client:
+Use a runtime-specific entry point to create a client:
 
 ```ts
 import { createClient } from "@teslatlas/sdk/node";
 
 const client = await createClient({
   baseUrl: "https://hub.example.invalid",
-  authorization: async () => loadCallerCredential(),
+  authorization: () => undefined, // Supply a complete authorization value for protected reads.
 });
 
-const result = await client.listVehicles();
-if (result.kind === "modified") {
-  console.log(result.value.items);
+const vehicles = await client.listVehicles();
+if (vehicles.kind === "modified") {
+  console.log(vehicles.value.items);
 }
 ```
 
-Callers provide complete authorization values and own any credential or event
-checkpoint persistence. See the [API reference](docs/api.md) and
-[compatibility guide](docs/compatibility.md) for the result, error, ETag, and
-replay contracts.
+Import `createClient` from `@teslatlas/sdk/node` or `@teslatlas/sdk/browser`. The root `@teslatlas/sdk` entry point exports public types, errors, opaque value constructors, and caller-owned interfaces. It does not expose an arbitrary route executor or a runtime factory.
 
-For the frozen current Hub API, import `createHubClient` from the same browser
-or Node subpath. Supply the exact Hub endpoint, expected Hub UUID, and a
-caller-owned credential store. This dedicated adapter preserves the richer
-`createClient` API and exposes discovery, health/readiness, pairing, credential
-rotation, vehicles, current state, and drives.
+The example URL is a placeholder. The authorization provider is caller-owned; protected reads require a valid credential.
 
-The Node current-Hub adapter keeps ordinary CA and hostname verification and,
-on the same new TLS connection, verifies the invitation `tlsPin` against the
-SHA-256 of the connected leaf certificate's DER bytes before claim bytes are
-sent. Pairing expects the operator to obtain an invitation from Hub's
-`pair --json` command and to learn the expected Hub UUID through trusted setup
-context; the invitation itself does not contain that UUID.
+The public client has 20 named operations covering discovery, vehicles, current state, drives, positions, charges, samples, states, updates, events, data quality, commands, and metadata. The [API reference](docs/api.md) lists the entry points and methods. The [compatibility guide](docs/compatibility.md) describes result, error, ETag, pagination, command, and event replay behavior.
 
-Browser Fetch does not expose the peer certificate, so the browser adapter
-fails `claimPairing` with `HubTlsPinUnavailableError` before discovery or claim
-network I/O unless the caller supplies a pin-capable `claimTransport` (for
-example, a trusted native bridge). Browser reads and rotation continue to use
-normal Web PKI and caller-owned credentials; the SDK never disables TLS checks.
+## Current Hub adapter
 
-## Current-Hub consumer
+The browser and Node entry points also export `createHubClient` for the locked `hub-http-v1@1.0.0` profile. It uses a fixed HTTPS endpoint, an expected Hub UUID, and a caller-owned credential store. Its operations cover discovery, health, readiness, pairing, credential rotation, vehicles, current state, and drives.
 
-Build a candidate tarball, then install that file into the source-distributed
-minimal consumer outside this repository:
+The Node adapter keeps normal CA and hostname verification. During pairing it checks the invitation `tlsPin` against the SHA-256 digest of the connected leaf certificate DER bytes on the same new TLS connection before sending claim bytes. Browser Fetch cannot inspect the connected certificate, so browser pairing fails with `hub_tls_pin_unavailable` before discovery or claim network I/O unless the embedding supplies a pin-capable claim transport. Browser reads and rotation continue to use normal Web PKI. The SDK never disables certificate verification.
 
-```bash
-npm run build
-mkdir -p /tmp/teslatlas-sdk /tmp/teslatlas-hub-consumer
-npm pack --pack-destination /tmp/teslatlas-sdk
-cp examples/hub/{package.json,node.mjs,index.html,app.js,serve.mjs} /tmp/teslatlas-hub-consumer/
-npm --prefix /tmp/teslatlas-hub-consumer install --no-save --package-lock=false --ignore-scripts \
-  /tmp/teslatlas-sdk/teslatlas-sdk-2026.36.2.tgz
-```
+Credentials and event checkpoints remain caller-owned. Do not put authorization values or invitations in source files, command arguments, browser code, or published logs. See the [architecture guide](docs/architecture.md) for lifecycle and boundary details.
 
-Run the Node consumer with an operator-confirmed endpoint and Hub UUID. Keep
-the invitation or credential envelope in a private file; no token is accepted
-on the command line:
+## Local development
 
-```bash
-node /tmp/teslatlas-hub-consumer/node.mjs \
-  --endpoint "$HUB_ENDPOINT" --hub-id "$HUB_ID" \
-  --invitation-file "$INVITATION_FILE"
-```
+Use the Node `26.7.0` and npm `11.19.0` toolchain named by `package.json`. The manifest declares no broader runtime floor because the current evidence policy does not accept one.
 
-The browser consumer is a static example served from loopback. Provision its
-endpoint- and Hub-bound credential envelope with the pin-capable Node path or a
-trusted native bridge; do not paste an invitation into browser JavaScript:
-
-```bash
-npm --prefix /tmp/teslatlas-hub-consumer run browser
-```
-
-Hub must allow the exact page origin, and the browser must trust the endpoint
-certificate. Browser Fetch can expose a generic CORS or TLS error when either
-condition fails. The example verifies the credential envelope against the
-entered endpoint and Hub UUID, clears the input after ingestion, keeps the
-credential in memory, awaits logout before disposal, and requires a newly
-provisioned credential after a 401. It does not poll or scan for Hub instances. See `examples/hub/`
-for the five source files and the compatibility guide for the complete API
-contract.
-
-## Local verification
+Follow `CONTRIBUTING.md` in the [source repository](https://github.com/magrathean-uk/teslatlas-sdk-typescript) and applicable workspace instructions before running package commands. A build replaces the checkout's `dist/` directory. With the pinned toolchain, the local verification sequence is:
 
 ```bash
 npm ci
-npx playwright install chromium
+npm run build
 npm run verify
 ```
 
-The reproducibility toolchain is exactly Node.js `26.7.0` and npm `11.19.0`.
-Current runtime evidence covers that Node version and Chrome 153 on macOS 27;
-this package does not yet claim a broader accepted runtime or browser floor.
-The machine-readable evidence boundary is in
-[`tools/platform-support.json`](tools/platform-support.json) and the same
-evidence-only tuple is embedded in `package.json` as `teslatlasSupport`.
+Browser conformance needs the Playwright Chromium runtime to be available. Dependency installation alone does not establish that prerequisite.
 
-Package lifecycle acceptance requires two different exact archives, their
-separate independently accepted source/package admission receipts and the exact
-non-empty five-companion catalog. `gate:package-lifecycle` validates every input
-before creating a consumer, then exercises candidate fresh install and removal,
-predecessor install, candidate update, predecessor rollback and final removal.
-It fails closed when either receipt, frozen source export or exact catalog cohort
-is absent; reinstalling the same candidate is not an update or rollback claim.
-See the [Docker/package gate](docs/docker.md) for the native ARM64 and final-Hub lanes.
+The `verify` script runs formatting, linting, type checking, protocol checks, the build, unit and conformance suites, protocol cases, the Node example, package checks, and the clean-package test. Targeted commands are also available:
 
-## Examples
+```bash
+npm run test:unit
+npm run test:conformance
+npm run test:protocol
+npm run typecheck
+npm run protocol:check
+npm run pack:check
+```
+
+The examples use local fixture responses:
 
 ```bash
 npm run example:node
-```
-
-Expected output:
-
-```text
-Teslatlas SDK Node client: 1 vehicle, protocol 1.2.0
-```
-
-```bash
 npm run example:browser
 ```
 
-The browser example runs only local fixture responses and renders:
+The current-Hub Node and browser examples require an operator-provisioned external fixture and caller-owned credentials. Their source files are under `examples/hub/`; the compatibility and package lifecycle guides describe the contracts without embedding credentials or private runtime paths.
 
-```text
-Teslatlas SDK browser client: 1 vehicle, protocol 1.2.0
-```
+## Further reading
 
-## Read next
-
-- [Product versioning](docs/product-versioning.md)
-- [Architecture](docs/architecture.md)
 - [API reference](docs/api.md)
+- [Architecture](docs/architecture.md)
 - [Compatibility](docs/compatibility.md)
-- [Docker setup](docs/docker.md)
-- [Package lifecycle and final consumers](docs/package-lifecycle.md)
+- [Product versioning](docs/product-versioning.md)
 - [Protocol dependency gate](docs/protocol-dependency-gate.md)
+- [Docker package gate](docs/docker.md)
+- [Package lifecycle](docs/package-lifecycle.md)
+- [Apache-2.0 licence](LICENSE)
+
+Repository-only guides are available in the [source repository](https://github.com/magrathean-uk/teslatlas-sdk-typescript): `CONTRIBUTING.md`, `SUPPORT.md`, `SECURITY.md`, and `docs/licensing.md`. They are not bundled in the npm archive.
 
 ## Licence
 
-Apache-2.0.
+Apache-2.0. See [LICENSE](LICENSE) for the complete licence text.

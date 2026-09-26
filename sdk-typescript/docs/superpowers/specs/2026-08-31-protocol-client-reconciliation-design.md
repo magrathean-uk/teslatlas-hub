@@ -1,5 +1,7 @@
 # Teslatlas TypeScript SDK protocol-client reconciliation design
 
+> Historical design record. It describes the dated source inputs below, not current authorization or product status. See the [development record](../../development/PLAN.md) and current [architecture](../../architecture.md).
+
 ## Status and source inputs
 
 This design reconciles two concurrent SDK efforts:
@@ -8,13 +10,13 @@ This design reconciles two concurrent SDK efforts:
   `2d4518a2f2fc55ec62724b45a586b2db910e993f`, which contains a tested
   browser/Node transport foundation;
 - the dirty documentation-only clone at
-  `/Users/bolyki/Documents/Codex/2026-08-30/teslatlas-sdk-typescript/outputs/teslatlas-sdk-typescript`
+  `<historical-documentation-checkout>`
   at `e6715a4c005ceeb483e081efba6ea998ca5fb1ea`, whose useful material is
   architecture and implementation-planning analysis rather than executable
   code.
 
 The protocol authority is now
-`/Users/bolyki/dev/source/teslatlas-protocol` at
+`<historical-protocol-checkout>` at
 `79ced4c7fdc79520ad31d72a0280bf5f3f19f407`. Its local `./tools/check` gate
 passes 54 artifact tests and 31 conformance profile/case runs across protocol
 profiles `1.0.0`, `1.1.0`, and `1.2.0`.

@@ -1,21 +1,14 @@
-# TypeScript SDK — source-published post-cleanup state
+# Development record
 
-Revision 2026-09-22. The accepted current-Mac implementation is published on `main`.
-The owner then requested removal of all local builds, artifacts, runtimes and VMs.
+This file preserves the 2026-09-22 source-publication and cleanup snapshot. It is historical, not an active plan or a runnable installation record. In the multi-repository workspace, the parent `docs/development/MASTER_PLAN.md` is the current plan and status authority. Follow applicable workspace instructions and the assigned task.
 
-## Published result
+## Recorded snapshot
 
-- Accepted implementation lineage: `3644ad8c0a7bf10c01e524c050026ead898d47e5`
-- Published `main` before this cleanup metadata update: `71340531eeacfca475ca5216cd76a9b5986050a5`
-- The published SDK source contains the accepted signed schema 2.2 history and pagination behavior.
+- Accepted implementation lineage: `3644ad8c0a7bf10c01e524c050026ead898d47e5`.
+- Recorded published `main` before the cleanup metadata update: `71340531eeacfca475ca5216cd76a9b5986050a5`.
+- The record says the exact packed candidate consumed non-empty history across restart and matched Swift semantic output.
+- External candidates, receipts, runtime fixtures, builds, and dependencies were removed during that cleanup.
 
-## Evidence boundary
+These historical results apply to their former source and artifacts. They do not show that the present checkout has a working installation. A new runtime claim needs fresh evidence from the exact package and environment. `STATUS.json` in this directory is the same dated snapshot.
 
-Historical: the exact packed candidate consumed non-empty history across restart and matched Swift semantic output. The corresponding external candidates, receipts and runtime fixtures
-were deliberately deleted. Those results remain historical provenance and do not
-claim that a runnable local installation exists now.
-
-## Current state
-
-Source and Git history are retained. Regenerable builds and dependencies are removed.
-No packed candidate or dependency tree remains; registry publication remains deferred.
+Use [contribution guidance](../../CONTRIBUTING.md) for local development, [compatibility](../compatibility.md) for the locked contracts, and [acceptance](../acceptance.md) to interpret earlier evidence. Registry publication remains deferred.

@@ -1,10 +1,12 @@
 # TypeScript SDK transport foundation design
 
+> Historical design record. It describes the dated source inputs below, not current authorization or product status. See the [development record](../../development/PLAN.md) and current [architecture](../../architecture.md).
+
 ## Status and authority
 
 This design implements the contract-neutral work that is possible at SDK
 HEAD `e6715a4` while treating
-`/Users/bolyki/dev/source/teslatlas-protocol` at
+`<historical-protocol-checkout>` at
 `b7b48a86a7705e8ab016f1debd25cecd20ebbb89` as the public contract authority.
 
 The protocol repository currently defines architectural rules, but it does not

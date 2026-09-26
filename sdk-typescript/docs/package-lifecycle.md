@@ -43,9 +43,10 @@ bootstrap identity uses Hub's complete source-copy contract: the same exclusion
 set and 50,000-file/1 GiB bounds, path/byte SHA-256/size/executable records,
 Unicode code-point ordering, and Python-compatible ASCII JSON encoding. A
 single stable, no-follow file read supplies both identities, so no path is read
-twice under different bytes or modes. The current export differs only by
-excluded `AGENTS.md`, producing the 284-file catalog view. The gate does not
-rewrite or weaken the independently accepted 285-file receipt identity.
+twice under different bytes or modes. The historical export used for the recorded gate differed only by excluded
+`AGENTS.md`, producing a 284-file catalog view and a 285-file receipt identity.
+These counts are historical, not fixed expectations for a new export. The gate
+must preserve each independently accepted receipt identity.
 
 The strict Hub-owned schema-1 catalog must contain separate exact cohorts for
 both the candidate and predecessor. Each cohort binds Protocol, TypeScript SDK,

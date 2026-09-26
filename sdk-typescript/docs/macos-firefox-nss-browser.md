@@ -26,7 +26,9 @@ It requires owner-only `cert9.db`, `key4.db`, and `pkcs11.txt`, then calls Playw
 `security.enterprise_roots.enabled: false`. The context and exact disposable profile are removed on
 success or failure.
 
-## Future authorized invocation
+## Invocation with a fresh handoff
+
+Use the pinned Node 26.7.0 executable on `PATH`. The paths below are placeholders for the fresh handoff.
 
 ```sh
 TESLATLAS_HUB_HTTP_CONFIG=/private/runtime/mac3-sdk-descriptor.json \
@@ -34,7 +36,7 @@ TESLATLAS_HUB_CREDENTIAL_FILE=/private/runtime/mac3-sdk-credential.json \
 TESLATLAS_HUB_SDK_PACKAGE_ROOT=/private/runtime/node_modules/@teslatlas/sdk \
 TESLATLAS_HUB_BROWSER_ORIGIN=http://127.0.0.1:4174 \
 TESLATLAS_HUB_BROWSER_RECEIPT=/private/runtime/mac3-sdk-firefox-receipt.json \
-/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node \
+node \
   scripts/test-hub-browser-direct.mjs
 ```
 

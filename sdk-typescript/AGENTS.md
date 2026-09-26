@@ -1,21 +1,33 @@
 # Teslatlas TypeScript SDK
 
-Follow `../AGENTS.md` and `../docs/development/COORDINATION.md`, then this
-product's `docs/development/PLAN.md` and `STATUS.json`. Model and effort defaults
-are in `../AGENTS.md`. Work only on the assigned scope. App v7 (`../app`) consumes
-this product; change the App only as App work. Viewer is excluded.
+This repository owns the public browser and Node.js transport bindings for
+Teslatlas. When working in the multi-repository workspace, follow its `AGENTS.md` and active programme plan first. Keep work within the SDK:
+do not add viewer UI, Hub implementation, server-held credentials, CI, release
+automation, tags, or publication without an explicit owner instruction.
 
-Run commands through `../scripts/dev/run.sh teslatlas-sdk-typescript COMMAND...` so build output and
-caches stay out of this tree (clean-development routes the npm cache; see `.clean-development.json`).
+## Boundaries
 
-This repository owns public browser and Node.js transport bindings.
-
+- Derive public types and protocol behavior from the locked protocol artifacts.
 - Use `camelCase` TypeScript names and lowercase-hyphenated documentation names.
-- Derive public types from released protocol artifacts.
-- Keep credential storage caller-owned and browser-safe.
-- Preserve cursors, ETags, SSE replay, typed errors, and non-idempotent command safety.
-- Do not add viewer UI, Hub implementation, or server-held credentials.
+- Keep credential and replay-checkpoint persistence caller-owned and browser-safe.
+- Preserve typed errors, ETags, cursor binding, SSE replay handling, and the
+  one-shot behavior of non-idempotent commands.
+- Keep the current-Hub pairing boundary intact: Node claim transport verifies
+  normal TLS trust, hostname, and the invitation leaf pin on one connection;
+  browser pairing fails closed unless the embedding supplies a pin-capable
+  claim transport.
+- Do not turn fixture, unit, or package checks into a claim about a live Hub or
+  ordinary browser acceptance.
 
-## Local execution
+Preserve existing changes and private data. In the current workspace, keep the existing `main` checkout; do not create branches, worktrees, or stashes. Pushes and vehicle commands need an explicit owner instruction. Read the [contribution guide](CONTRIBUTING.md) for command prerequisites and [development record](docs/development/PLAN.md) for the distinction between current authority and historical evidence.
 
-Run task-relevant disposable local checks and repair failures without repeated approval when the lane is open. Existing owner pauses, workspace authority, production and release gates remain in force.
+## Working locally
+
+Use the commands defined in `package.json` and run the smallest relevant check:
+`npm run build` followed by `npm run typecheck`, `npm run test:unit`, `npm run test:conformance`,
+`npm run protocol:check`, or `npm run verify` for the full local suite.
+`npm run build` writes `dist/` in this checkout, so do not claim that cache
+routing alone keeps every generated output outside the repository.
+
+For optional cache and output management, see
+[Clean Development](https://github.com/magrathean-uk/clean-development).

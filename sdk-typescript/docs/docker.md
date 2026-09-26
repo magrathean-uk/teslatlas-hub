@@ -60,8 +60,9 @@ handoff and the non-empty exact companion catalog is available. That gate
 installs the same archive into a fresh external consumer and reuses the strict
 Node pin and real-browser Web PKI/CORS gates. It does not start Hub.
 
-Current accepted runtime evidence is limited to Node `26.7.0`, npm `11.19.0`
-and Chrome `153.0.8010.52` on macOS 27 ARM64. The exact admitted `070906b5…`
-archive also passed this package-only lane on a native Debian Linux ARM64 Docker
+Recorded runtime evidence is limited to Node `26.7.0`, npm `11.19.0`
+and Chrome `153.0.8010.52` on macOS 27 ARM64. The historical 2026-09-20 [package receipt](https://github.com/magrathean-uk/teslatlas-sdk-typescript/blob/main/docs/development/f6-native-linux-arm64-docker-package-2026-09-20-r1.json) records that archive `070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7` passed this package-only lane on a native Debian Linux ARM64 Docker
 engine. No broader Node, npm, browser, or operating-system floor is claimed, and
 the Docker result does not replace the final Hub consumer journey.
+
+The receipt applies to that archive and its recorded environment. It does not establish a current local installation. The older `tools/platform-support.json` acceptance-boundary sentence was not updated after that pass.
