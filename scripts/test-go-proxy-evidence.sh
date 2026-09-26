@@ -12,14 +12,16 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-python3 - "$ROOT" <<'PY'
+python3 - "$ROOT" "$TMP" <<'PY'
 import copy
+import errno
 import importlib.util
 import json
 from pathlib import Path
 import sys
 
 root = Path(sys.argv[1])
+test_root = Path(sys.argv[2])
 sys.path.insert(0, str(root / "scripts"))
 spec = importlib.util.spec_from_file_location(
     "go_proxy_evidence", root / "scripts" / "go-proxy-evidence.py"
@@ -28,6 +30,29 @@ module = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
 spec.loader.exec_module(module)
 lock = json.loads((root / "scripts" / "tesla-proxy-lock.json").read_text())
+
+cleanup_race = test_root / "cleanup-race"
+cleanup_race.mkdir()
+(cleanup_race / "created-during-cleanup").write_text("temporary")
+real_rmtree = module.shutil.rmtree
+real_sleep = module.time.sleep
+attempts = []
+
+def rmtree_with_one_nonempty_race(path, *args, **kwargs):
+    attempts.append(path)
+    if len(attempts) == 1:
+        raise OSError(errno.ENOTEMPTY, "Directory not empty", path)
+    return real_rmtree(path, *args, **kwargs)
+
+module.shutil.rmtree = rmtree_with_one_nonempty_race
+module.time.sleep = lambda seconds: None
+try:
+    module.remove_work_tree(cleanup_race)
+finally:
+    module.shutil.rmtree = real_rmtree
+    module.time.sleep = real_sleep
+assert len(attempts) == 2
+assert not cleanup_race.exists()
 
 assert lock["schema"] == "teslatlas.tesla-proxy-lock/v3"
 policy = module.validate_lock(copy.deepcopy(lock))["build_host"]

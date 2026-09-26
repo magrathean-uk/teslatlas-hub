@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
 import gzip
 import hashlib
 import io
@@ -19,6 +20,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from typing import Any
 from urllib.parse import quote
 import zipfile
@@ -752,24 +754,33 @@ def write_file(path: Path, data: bytes, mode: int = 0o600) -> None:
 
 
 def remove_work_tree(path: Path) -> None:
-    if not path.exists():
-        return
-    for root, directories, files in os.walk(path, topdown=False, followlinks=False):
-        for name in files:
-            try:
-                os.chmod(Path(root) / name, 0o600, follow_symlinks=False)
-            except OSError:
-                pass
-        for name in directories:
-            try:
-                os.chmod(Path(root) / name, 0o700, follow_symlinks=False)
-            except OSError:
-                pass
-    try:
-        os.chmod(path, 0o700, follow_symlinks=False)
-    except OSError:
-        pass
-    shutil.rmtree(path)
+    for attempt in range(5):
+        if not path.exists():
+            return
+        for root, directories, files in os.walk(path, topdown=False, followlinks=False):
+            for name in files:
+                try:
+                    os.chmod(Path(root) / name, 0o600, follow_symlinks=False)
+                except OSError:
+                    pass
+            for name in directories:
+                try:
+                    os.chmod(Path(root) / name, 0o700, follow_symlinks=False)
+                except OSError:
+                    pass
+        try:
+            os.chmod(path, 0o700, follow_symlinks=False)
+        except OSError:
+            pass
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            if exc.errno != errno.ENOTEMPTY or attempt == 4:
+                raise
+            time.sleep(0.05)
 
 
 def populate_file_proxy(proxy: Path, sources: list[dict[str, Any]]) -> None:
