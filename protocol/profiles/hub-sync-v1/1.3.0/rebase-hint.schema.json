@@ -1,5 +1,44 @@
 {
   "$defs": {
+    "chunk": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_index": {
+          "maximum": 4095,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pack": {
+          "additionalProperties": false,
+          "properties": {
+            "compressed_bytes": {
+              "maximum": 16777216,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "object_name": {
+              "pattern": "^[a-z0-9][a-z0-9._/-]{0,1023}$",
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "object_name",
+            "sha256",
+            "compressed_bytes"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "chunk_index",
+        "pack"
+      ],
+      "type": "object"
+    },
     "hint": {
       "additionalProperties": false,
       "properties": {
@@ -10,58 +49,21 @@
           "const": "compacted"
         },
         "replacement": {
-          "additionalProperties": false,
-          "properties": {
-            "manifest_schema": {
-              "enum": [
-                "2.1",
-                "2.2"
-              ],
-              "type": "string"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/replacement_2_1"
             },
-            "pack": {
-              "additionalProperties": false,
-              "properties": {
-                "compressed_bytes": {
-                  "maximum": 16777216,
-                  "minimum": 8388608,
-                  "type": "integer"
-                },
-                "object_name": {
-                  "pattern": "^[a-z0-9][a-z0-9._/-]{0,1023}$",
-                  "type": "string"
-                },
-                "sha256": {
-                  "pattern": "^[0-9a-f]{64}$",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "object_name",
-                "sha256",
-                "compressed_bytes"
-              ],
-              "type": "object"
-            },
-            "receipt_id": {
-              "maxLength": 4096,
-              "minLength": 1,
-              "pattern": "^[A-Za-z0-9._~-]+$",
-              "type": "string"
-            },
-            "sequence": {
-              "maximum": 9223372036854775807,
-              "minimum": 1,
-              "type": "integer"
+            {
+              "$ref": "#/$defs/replacement_2_2"
             }
-          },
-          "required": [
-            "receipt_id",
-            "sequence",
-            "manifest_schema",
-            "pack"
+          ]
+        },
+        "requested_base_manifest_schema": {
+          "enum": [
+            "2.1",
+            "2.2"
           ],
-          "type": "object"
+          "type": "string"
         },
         "requested_base_receipt_id": {
           "maxLength": 4096,
@@ -77,6 +79,13 @@
         "retry_request": {
           "additionalProperties": false,
           "properties": {
+            "base_manifest_schema": {
+              "enum": [
+                "2.1",
+                "2.2"
+              ],
+              "type": "string"
+            },
             "base_receipt_id": {
               "maxLength": 4096,
               "minLength": 1,
@@ -115,6 +124,7 @@
           },
           "required": [
             "base_receipt_id",
+            "base_manifest_schema",
             "from_sequence",
             "schema_version_range"
           ],
@@ -159,11 +169,110 @@
         "kind",
         "vehicle_id",
         "requested_base_receipt_id",
+        "requested_base_manifest_schema",
         "requested_from_sequence",
         "reason",
         "replacement",
         "retry_request",
         "signature"
+      ],
+      "type": "object"
+    },
+    "replacement_2_1": {
+      "additionalProperties": false,
+      "properties": {
+        "manifest_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "manifest_schema": {
+          "const": "2.1"
+        },
+        "pack": {
+          "additionalProperties": false,
+          "properties": {
+            "compressed_bytes": {
+              "maximum": 16777216,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "object_name": {
+              "pattern": "^[a-z0-9][a-z0-9._/-]{0,1023}$",
+              "type": "string"
+            },
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "object_name",
+            "sha256",
+            "compressed_bytes"
+          ],
+          "type": "object"
+        },
+        "receipt_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "manifest_id",
+        "receipt_id",
+        "sequence",
+        "manifest_schema",
+        "pack"
+      ],
+      "type": "object"
+    },
+    "replacement_2_2": {
+      "additionalProperties": false,
+      "properties": {
+        "chunks": {
+          "items": {
+            "$ref": "#/$defs/chunk"
+          },
+          "maxItems": 4096,
+          "minItems": 1,
+          "type": "array"
+        },
+        "manifest_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "manifest_schema": {
+          "const": "2.2"
+        },
+        "receipt_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "sequence": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "manifest_id",
+        "receipt_id",
+        "sequence",
+        "manifest_schema",
+        "chunks"
       ],
       "type": "object"
     }

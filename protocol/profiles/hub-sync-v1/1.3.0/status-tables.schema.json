@@ -11,7 +11,7 @@
             "$ref": "#/$defs/table"
           },
           "maxItems": 16,
-          "minItems": 4,
+          "minItems": 6,
           "type": "array"
         }
       },

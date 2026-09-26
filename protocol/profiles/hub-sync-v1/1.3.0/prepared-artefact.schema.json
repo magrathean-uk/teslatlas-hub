@@ -112,7 +112,7 @@
           "properties": {
             "compressed_bytes": {
               "maximum": 16777216,
-              "minimum": 8388608,
+              "minimum": 1,
               "type": "integer"
             },
             "object_name": {

@@ -2,34 +2,60 @@
 
 [`hub-sync-v1@1.3.0`](../profiles/hub-sync-v1/1.3.0/) is the candidate,
 source-neutral successor to retained `hub-sync-v1@1.0.0`, `1.1.0`, and `1.2.0` candidates. It
-has no exact Hub product-version pin. A client sends the accepted manifest schema range and
-its persisted receipt checkpoint to `POST
-/v1/vehicles/{vehicle_id}/sync/changes-since` with a paired bearer. A missing,
-invalid, expired, or revoked bearer returns the unsigned empty `401` response.
+has no exact Hub product-version pin. A client applies a signed initial
+manifest, then persists its `receipt_id`, `sequence`, and `schema_version` as
+the changes-since base. It sends those exact values plus its accepted manifest
+schema range to `POST /v1/vehicles/{vehicle_id}/sync/changes-since` with a
+paired bearer. The JSON body limit is 8192 bytes inclusive; 8193 bytes returns
+`413 request_too_large`. A missing, invalid, expired, or revoked bearer returns
+the unsigned empty `401` response.
 
-A `200` response is a signed changed-set receipt. It advances the sequence and
-contains exactly one pack reference in this slice. The client verifies the
-Ed25519 signature over the canonical receipt before trusting the pack, then
-persists the new receipt checkpoint only after applying that pack.
+A `200` response is either a signed changed-set receipt or a signed no-op
+receipt. A changed set advances the sequence and contains exactly one pack
+reference in this slice. A no-op preserves the base receipt and sequence. The
+client verifies the Ed25519 signature over the canonical receipt before
+trusting either result, then persists a new changed-set checkpoint only after
+applying its pack.
+
+The base and delta schemas are continuous. A changed-set or no-op receipt MUST
+use the request's `base_manifest_schema`; in particular, a schema 2.2 base
+cannot receive a schema 2.1 delta. A schema transition occurs only through a
+signed rebase whose replacement schema falls inside the requested range.
 
 If compaction removed the requested base, the Hub returns a signed `409`
-`rebase_required` hint. The client applies its replacement pack, persists the
-replacement receipt and sequence, and sends the exact `retry_request` from the
-hint. It must not infer another checkpoint or replace this with a full-history
-request.
+`rebase_required` hint. A schema 2.1 replacement contains one pack. A schema
+2.2 replacement contains one or more ordered chunks, so a large compacted base
+does not need to fit one pack. The client applies the complete replacement,
+persists its receipt, sequence, and manifest schema, and sends the exact
+`retry_request` from the hint. It must not infer another checkpoint or replace
+this with a full-history request.
 
 The `1.3.0` fixtures carry deterministic, valid Ed25519 signatures over their
-canonical payloads. [`fixture-signing-keys.json`](../profiles/hub-sync-v1/1.3.0/fixture-signing-keys.json)
-selects the public test key by `key_id`; it requires publication before use and
-retention of retired keys during rotation. This fixture key set is a test trust
-anchor only. Production clients must obtain a paired-Hub trust anchor, select
-keys by `key_id`, and reject an unknown key, digest mismatch, or invalid
-signature.
+canonical payloads. Production clients retrieve the vehicle-bound key set from
+authenticated `GET /v1/vehicles/{vehicle_id}/sync/signing-keys` over the paired
+Hub channel. The returned `vehicle_id` MUST match the route. Every stable
+`key_id` is `ed25519-sha256-` followed by lowercase SHA-256 hex of the raw
+32-byte public key. Key rotation publishes a key before first use and retains
+retired keys while old signed objects remain valid.
+
+[`fixture-signing-keys.json`](../profiles/hub-sync-v1/1.3.0/fixture-signing-keys.json)
+uses the same binding and identifier rules for the public test key. It is a
+test trust anchor only. Clients reject a vehicle mismatch, unstable or unknown
+key identifier, digest mismatch, or invalid signature.
 
 The `1.1.0` successor adds signed no-op receipts, `406` empty no-store
 unavailability, pack range semantics, status tables, and one signed schema 2.2
-manifest containing ordered chunks. Each chunk is 8–16 MiB compressed; the
+manifest containing ordered chunks. A compressed pack is 1 byte through 16
+MiB inclusive. Writers should target at least 8 MiB for each non-final snapshot
+chunk. A complete small history, final chunk, changed set, or prepared artefact
+may be smaller, and a schema 2.2 manifest may therefore contain one chunk. The
 outer manifest has the only signature.
+
+Changes-since returns stable JSON error bodies for invalid JSON (`400`), an
+unknown vehicle (`404`), an unsupported schema range (`406`), an oversized
+body (`413`), and a reversed range or one that excludes the base schema
+(`422`). Authentication failure remains the unsigned empty `401`; compaction
+remains the signed `409` rebase flow.
 
 `1.2.0` adds the `map_months_and_routes` prepared-artefact pack receipt. It
 binds source manifest and sequence, the input window, generation identity and

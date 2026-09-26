@@ -1,6 +1,7 @@
 {
   "authentication": "paired bearer",
-  "compaction_rule": "A compacted base MUST return 409 and the signed rebase hint. The client applies replacement.pack, persists replacement receipt_id and sequence, then sends retry_request. It MUST NOT infer a rebase target or substitute a full-history request.",
+  "bootstrap_rule": "After applying a signed initial manifest, the client MUST persist manifest.receipt_id, sequence, and schema_version. It sends those exact values as base_receipt_id, from_sequence, and base_manifest_schema on changes-since.",
+  "compaction_rule": "A compacted base MUST return 409 and the signed rebase hint. The client applies the replacement pack for schema 2.1 or all contiguous replacement chunks for schema 2.2, persists replacement receipt_id, sequence, and manifest_schema, then sends retry_request. It MUST NOT infer a rebase target or substitute a full-history request.",
   "contract_version": "1.3.0",
   "fixture_signing_keys": "fixture-signing-keys.json",
   "limits": {
@@ -9,8 +10,10 @@
     "max_pack_compressed_bytes": 16777216,
     "max_request_bytes": 8192,
     "max_response_bytes": 2097152,
-    "min_pack_compressed_bytes": 8388608
+    "min_pack_compressed_bytes": 1,
+    "target_pack_compressed_bytes": 8388608
   },
+  "pack_sizing_rule": "Every compressed pack is 1 to 16 MiB inclusive. Writers SHOULD target at least 8 MiB for each non-final snapshot chunk. A complete small history, the final chunk, a changed set, or a prepared artefact MAY be smaller than 8 MiB.",
   "prepared_artefact": "prepared-artefact.schema.json",
   "previous_profile": "hub-sync-v1@1.2.0",
   "product_version_binding": "none; this protocol profile has no exact Hub product-version pin",
@@ -21,12 +24,13 @@
     "path": "/v1/vehicles/{vehicle_id}/sync/changes-since",
     "success_status": 200
   },
+  "schema_continuity_rule": "A changed-set or no-op receipt MUST use the base manifest schema. A schema 2.2 base cannot receive a schema 2.1 delta. Any schema transition requires a signed rebase whose replacement schema is accepted by the request range.",
   "schema_version_range": {
     "maximum": "2.2",
     "minimum": "2.1"
   },
-  "scope": "One changed pack per changed-set receipt; schema 2.2 snapshot manifests may contain multiple chunks under one signature; prepared artefacts contain only changed map-month and route spans. No other prepared-compute artefact type is defined.",
-  "signature_rule": "Each receipt or rebase hint MUST carry an Ed25519 detached signature over RFC 8785 canonical JSON of the object with its signature member omitted. signed_payload_sha256 is the SHA-256 of those canonical bytes. Fixtures carry deterministic Ed25519 signatures using only the published fixture public key; they are test vectors, not production trust anchors.",
+  "scope": "One changed pack per changed-set receipt; schema 2.2 snapshot and rebase manifests may contain one or more chunks under one signature; prepared artefacts contain only changed map-month and route spans. No other prepared-compute artefact type is defined.",
+  "signature_rule": "Each receipt or rebase hint MUST carry an Ed25519 detached signature over RFC 8785 canonical JSON of the object with its signature member omitted. signed_payload_sha256 is the SHA-256 of those canonical bytes. Production clients obtain vehicle-bound keys from the authenticated signing-keys route. key_id MUST equal ed25519-sha256- plus lowercase SHA-256 hex of the raw 32-byte public key. Fixtures carry deterministic Ed25519 signatures using only the published fixture public key; they are test vectors, not production trust anchors.",
   "status": "candidate",
   "status_tables": "status-tables.json"
 }

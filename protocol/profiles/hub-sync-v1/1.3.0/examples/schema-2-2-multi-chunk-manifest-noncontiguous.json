@@ -13,7 +13,7 @@
       {
         "chunk_index": 2,
         "pack": {
-          "compressed_bytes": 8388608,
+          "compressed_bytes": 4096,
           "object_name": "packs/demo-000900-0001.sqlite.zst",
           "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
         }
@@ -21,13 +21,14 @@
     ],
     "kind": "snapshot",
     "manifest_id": "manifest_demo_000900",
+    "receipt_id": "receipt_demo_000900",
     "schema_version": "2.2",
     "sequence": 900,
     "signature": {
       "algorithm": "ed25519",
-      "key_id": "fixture-ed25519-rfc8032-1",
-      "signature": "N9f/PoGCO77VYs1GphlkmdmatYS7eWiBM3C2uTYul98sEwVhfriHaP+mVV2nf3a9jEPQea9TP3TY2/QQKuDyAw==",
-      "signed_payload_sha256": "42c2363996fe0efd1a49c9291b825405db9d34a1b3a0b16911e4840dd75f88fe"
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "G2SmW8CfIV8FlDiRFG5tgXvJkhwVaztxkMjQFh5lzI/WfEGEZtxiO/LRKiXVsZOzjLKd32Sy3AQxLmsvaYn3BQ==",
+      "signed_payload_sha256": "595fe29acfe3d3a3d7df609373cc365b3221f55ccf566b95abda0e53e573bc23"
     },
     "vehicle_id": "11111111-1111-4111-8111-111111111111"
   }

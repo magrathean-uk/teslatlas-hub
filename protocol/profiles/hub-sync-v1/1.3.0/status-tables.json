@@ -4,8 +4,13 @@
     {
       "responses": [
         {
-          "body": "signed changed-set receipt",
+          "body": "signed changed-set or no-op receipt",
           "status": 200
+        },
+        {
+          "body": "invalid_json error",
+          "signature": "absent",
+          "status": 400
         },
         {
           "body": "empty",
@@ -13,8 +18,31 @@
           "status": 401
         },
         {
+          "body": "vehicle_not_found error",
+          "signature": "absent",
+          "status": 404
+        },
+        {
+          "body": "schema_range_unsupported error",
+          "headers": {
+            "cache_control": "no-store"
+          },
+          "signature": "absent",
+          "status": 406
+        },
+        {
           "body": "signed rebase hint",
           "status": 409
+        },
+        {
+          "body": "request_too_large error",
+          "signature": "absent",
+          "status": 413
+        },
+        {
+          "body": "invalid_schema_range error",
+          "signature": "absent",
+          "status": 422
         }
       ],
       "route": "POST /v1/vehicles/{vehicle_id}/sync/changes-since"
@@ -111,6 +139,29 @@
         }
       ],
       "route": "GET /v1/vehicles/{vehicle_id}/sync/prepared-artefacts/{artifact_id}"
+    },
+    {
+      "responses": [
+        {
+          "body": "vehicle-bound signing key set",
+          "headers": {
+            "cache_control": "no-store"
+          },
+          "signature": "absent",
+          "status": 200
+        },
+        {
+          "body": "empty",
+          "signature": "absent",
+          "status": 401
+        },
+        {
+          "body": "empty",
+          "signature": "absent",
+          "status": 404
+        }
+      ],
+      "route": "GET /v1/vehicles/{vehicle_id}/sync/signing-keys"
     }
   ]
 }

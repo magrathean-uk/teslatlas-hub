@@ -3,6 +3,13 @@
     "request": {
       "additionalProperties": false,
       "properties": {
+        "base_manifest_schema": {
+          "enum": [
+            "2.1",
+            "2.2"
+          ],
+          "type": "string"
+        },
         "base_receipt_id": {
           "maxLength": 4096,
           "minLength": 1,
@@ -41,6 +48,7 @@
       },
       "required": [
         "base_receipt_id",
+        "base_manifest_schema",
         "from_sequence",
         "schema_version_range"
       ],

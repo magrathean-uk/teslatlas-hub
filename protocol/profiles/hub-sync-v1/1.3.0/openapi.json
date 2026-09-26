@@ -91,22 +91,60 @@
               }
             }
           },
-          "required": true
+          "required": true,
+          "x-max-body-bytes": 8192
         },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "changed-set-receipt.schema.json#/$defs/receipt"
+                  "oneOf": [
+                    {
+                      "$ref": "changed-set-receipt.schema.json#/$defs/receipt"
+                    },
+                    {
+                      "$ref": "noop.schema.json#/$defs/receipt"
+                    }
+                  ]
                 }
               }
             },
-            "description": "signed changed-set receipt"
+            "description": "signed changed-set or no-op receipt"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "sync-error.schema.json#/$defs/error"
+                }
+              }
+            },
+            "description": "invalid JSON request body"
           },
           "401": {
             "content": {},
             "description": "missing, invalid, expired, or revoked paired bearer"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "sync-error.schema.json#/$defs/error"
+                }
+              }
+            },
+            "description": "vehicle is not available to this pairing"
+          },
+          "406": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "sync-error.schema.json#/$defs/error"
+                }
+              }
+            },
+            "description": "schema range has no supported version; Cache-Control: no-store"
           },
           "409": {
             "content": {
@@ -117,6 +155,26 @@
               }
             },
             "description": "signed rebase hint after compaction"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "sync-error.schema.json#/$defs/error"
+                }
+              }
+            },
+            "description": "request body exceeds 8192 bytes"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "sync-error.schema.json#/$defs/error"
+                }
+              }
+            },
+            "description": "schema range is reversed or excludes the base schema"
           }
         },
         "security": [
@@ -263,6 +321,48 @@
           "404": {
             "content": {},
             "description": "empty missing artefact"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/sync/signing-keys": {
+      "get": {
+        "operationId": "syncSigningKeys",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "signing-keys.schema.json#/$defs/document"
+                }
+              }
+            },
+            "description": "vehicle-bound signing keys over the authenticated paired channel; Cache-Control: no-store"
+          },
+          "401": {
+            "content": {},
+            "description": "empty authentication failure"
+          },
+          "404": {
+            "content": {},
+            "description": "empty unknown vehicle"
           }
         },
         "security": [

@@ -1,0 +1,10 @@
+{
+  "fixture_id": "changes-since-error-schema-range-unsupported-v1",
+  "response": {
+    "body": {
+      "code": "schema_range_unsupported",
+      "message": "Requested schema range has no supported version."
+    },
+    "status": 406
+  }
+}

@@ -3,6 +3,13 @@
     "receipt": {
       "additionalProperties": false,
       "properties": {
+        "base_manifest_schema": {
+          "enum": [
+            "2.1",
+            "2.2"
+          ],
+          "type": "string"
+        },
         "base_receipt_id": {
           "maxLength": 4096,
           "minLength": 1,
@@ -30,7 +37,7 @@
           "properties": {
             "compressed_bytes": {
               "maximum": 16777216,
-              "minimum": 8388608,
+              "minimum": 1,
               "type": "integer"
             },
             "object_name": {
@@ -99,6 +106,7 @@
         "receipt_id",
         "vehicle_id",
         "base_receipt_id",
+        "base_manifest_schema",
         "from_sequence",
         "to_sequence",
         "manifest_schema",

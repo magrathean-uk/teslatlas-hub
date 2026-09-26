@@ -1,0 +1,30 @@
+{
+  "$defs": {
+    "error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_json",
+            "invalid_schema_range",
+            "vehicle_not_found",
+            "schema_range_unsupported",
+            "request_too_large"
+          ]
+        },
+        "message": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-sync-v1:1.3.0:sync-error",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

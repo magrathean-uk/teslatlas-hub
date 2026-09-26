@@ -23,6 +23,9 @@
         "rotation": {
           "additionalProperties": false,
           "properties": {
+            "key_id_derivation": {
+              "const": "ed25519-sha256-hex-public-key"
+            },
             "key_selection": {
               "const": "key_id"
             },
@@ -35,14 +38,21 @@
           },
           "required": [
             "key_selection",
+            "key_id_derivation",
             "publish_before_use",
             "retain_retired_keys"
           ],
           "type": "object"
+        },
+        "vehicle_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
         }
       },
       "required": [
         "profile_id",
+        "vehicle_id",
         "key_set_id",
         "keys",
         "rotation"
@@ -56,9 +66,7 @@
           "const": "ed25519"
         },
         "key_id": {
-          "maxLength": 128,
-          "minLength": 1,
-          "pattern": "^[A-Za-z0-9._-]+$",
+          "pattern": "^ed25519-sha256-[0-9a-f]{64}$",
           "type": "string"
         },
         "public_key": {

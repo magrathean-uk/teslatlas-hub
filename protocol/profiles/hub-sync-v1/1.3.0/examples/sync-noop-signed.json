@@ -1,15 +1,16 @@
 {
   "fixture_id": "sync-noop-signed-v1",
   "receipt": {
+    "base_manifest_schema": "2.2",
     "base_receipt_id": "receipt_demo_000045",
     "kind": "no_op",
     "manifest_schema": "2.2",
     "sequence": 45,
     "signature": {
       "algorithm": "ed25519",
-      "key_id": "fixture-ed25519-rfc8032-1",
-      "signature": "Qcy4m46VA9VV0b28w4Y+47KTT73A9ntE0xR3GGS//R7tPMjgTM+defu5YwehyQ7GkgNycRTLlPmyF833NJmTBQ==",
-      "signed_payload_sha256": "e19e1e4bc6e7213a99a8353c0b508f76b7a1a2f74432e6d492b04e101bc903a7"
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "xfELyxVctiM7CbbgnYQrHtawd11yT8CLOLfmElIGmUfJosh0T81mRpo+skP6Bl4DjIY/Jr0b83PcxZrTSCkGCQ==",
+      "signed_payload_sha256": "7779d3e6fae6fc314e49e6a1d674fa112aa77c4e6cdf0dcdc633e4616f2307b3"
     },
     "vehicle_id": "11111111-1111-4111-8111-111111111111"
   }

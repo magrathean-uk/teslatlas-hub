@@ -33,15 +33,15 @@
       "generation_id": "generation_demo_000001"
     },
     "pack": {
-      "compressed_bytes": 8388608,
+      "compressed_bytes": 4096,
       "object_name": "packs/prepared-demo-000900.sqlite.zst",
       "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
     },
     "signature": {
       "algorithm": "ed25519",
-      "key_id": "fixture-ed25519-rfc8032-1",
-      "signature": "2RLQmK3fLoQ1DaAmsoVcyy915Is8IpX7sMxvbGVwDtRcLOVrL15J+7xUaKTtc5cBW8qxmKcs8CIvyM0FQoJWAA==",
-      "signed_payload_sha256": "b506e8c4ce77783e98e583abb2ca7c0bc01da57fe9330eca4b253f646f12c64d"
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "1lTVU3z2Qn1QpoYklBL1bO0pAfkPOQBFKcnZwQbrm1ddOv20Eul6fq9bEIoAABee+vkDVn1/aosjargkz/1AAQ==",
+      "signed_payload_sha256": "3cb534184096efaba2efa63892aefbf2ed06cb3a7fbea8875470b203adf7a748"
     },
     "source": {
       "input_manifest_id": "manifest_demo_000900",
