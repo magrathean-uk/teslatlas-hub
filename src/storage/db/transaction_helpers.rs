@@ -115,12 +115,9 @@ fn publish_manifest_in_transaction(
                 ],
             )
             .map_err(StoreError::LineageCatalog)?;
-        transaction
-            .execute(
-                "UPDATE sync_mutations SET published = 1, claimed_until_ms = 0 WHERE vehicle_id = ?1 AND published = 0",
-                params![manifest.vehicle_id.to_string()],
-            )
-            .map_err(StoreError::LineageCatalog)?;
+        // A collector may have recorded rows while the source snapshot was
+        // being built. The imported base cannot prove which of those rows it
+        // contains, so leave their journal entries pending for a typed delta.
     }
     Ok(())
 }

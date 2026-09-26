@@ -221,6 +221,57 @@ fn claimed_collector_delta(
 }
 
 #[test]
+fn live_setting_recorded_before_import_base_remains_pending_for_client_delta() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, manifest) = v2_base_manifest(&store);
+    store
+        .persist_materialised_car_if_absent(
+            vehicle.vehicle_id,
+            &import_delta_test_car(binding.selected_car_id),
+        )
+        .expect("collector car before import base");
+    store
+        .upsert_car_settings(
+            vehicle.vehicle_id,
+            binding.selected_car_id,
+            &ProjectionCarSettings {
+                enabled: false,
+                ..ProjectionCarSettings::default()
+            },
+        )
+        .expect("live setting before import base");
+
+    store
+        .finalize_import_snapshot_with_binding(
+            &manifest,
+            Sha256Digest::of_bytes(b"import base after live setting"),
+            &[],
+            &binding,
+        )
+        .expect("publish imported base");
+    let pending = store
+        .claim_sync_mutations(vehicle.vehicle_id, 2_000, 100)
+        .expect("claim pre-import live mutation")
+        .expect("live mutation must remain pending after base");
+    assert_eq!(pending.mutations.len(), 2);
+    assert_eq!(pending.mutations[1].entity, "car_setting");
+    let delta = store
+        .projection_delta_for_mutations(
+            &pending,
+            binding,
+            SequenceRange {
+                from_exclusive: manifest.head_sequence,
+                to_inclusive: manifest.head_sequence + 2,
+            },
+            manifest.chunks[0].sha256,
+        )
+        .expect("live changes can be projected after import");
+    assert_eq!(delta.cars.len(), 1);
+    assert!(!delta.cars[0].settings.enabled);
+}
+
+#[test]
 fn live_delta_publication_does_not_rehash_every_historical_pack() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
