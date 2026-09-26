@@ -1,27 +1,52 @@
 # Teslatlas Swift SDK
 
-This repository owns the public Swift client boundary.
+This package provides four public Swift products across separate wire contracts:
 
-Follow `../AGENTS.md` and `../docs/development/COORDINATION.md`, then this
-product's `docs/development/PLAN.md` and `STATUS.json`. Model and effort defaults
-are in `../AGENTS.md`. Work only on the assigned scope. App v7 (`../app`) consumes
-this product; change the App only as App work. Viewer is excluded.
+- `TeslatlasHubSDK` and `TeslatlasCommands` implement the public protocol profile.
+- `TeslatlasHubV1Compatibility` supports the deployed Hub v1 compatibility surface.
+- `TeslatlasCurrentHub` supports the approved current-Hub profile.
 
-Run commands through `../scripts/dev/run.sh teslatlas-sdk-swift COMMAND...` so build output and
-caches stay out of this tree (SwiftPM output is not routed by clean-development; pass `--scratch-path` outside the checkout).
+Do not share models, routes, capabilities, or conformance claims across these
+contracts without an explicit reviewed binding. Keep compatibility bindings
+independent from protocol authority.
 
-- Follow Swift API Design Guidelines. Use the ecosystem calendar product version;
-  keep SwiftPM/wire semantic versions separate.
-- Use `PascalCase` public types, `camelCase` members, and lowercase-hyphenated documentation names.
-- Keep `TeslatlasHubSDK` and `TeslatlasCommands` strictly derived from released public protocol artifacts.
-- Keep `TeslatlasHubV1Compatibility` independent and limited to its hash-pinned deployed-Hub binding.
-- Keep `TeslatlasCurrentHub` independently bound to the approved `hub-http-v1`
-  profile and its explicit Hub product version binding; local tests do not imply
-  installed acceptance.
-- Never share models, routes, capabilities, or conformance claims across those contract boundaries implicitly.
-- Keep credentials, endpoint identity, origins, query limits, and typed errors fail-closed.
-- Do not add product UI, Rust FFI, Hub implementation source, proprietary Teslatlas source, hosted automation, or invented routes.
+## Development
 
-## Local execution
+Follow Swift API Design Guidelines. Keep public types in `PascalCase`, members
+in `camelCase`, and documentation filenames lowercase with hyphens.
 
-Run task-relevant disposable local checks and repair failures without repeated approval when the lane is open. Existing owner pauses, workspace authority, production and release gates remain in force.
+Read [docs/development.md](docs/development.md) for commands and test selection. Use
+an external SwiftPM scratch path, including for `swift package dump-package`.
+Run the smallest relevant check first, then the fixture suite when changes cross
+products, transports or bindings. Keep live, matrix and Apple consumer journeys
+opt-in; ordinary package validation must retain their documented exclusions.
+
+Complete authorized safe local work and focused checks without repeated approval.
+Delegate independent bounded work when useful, with one writer per file and a clear
+stop condition. Preserve existing changes. In the coordinated workspace, follow
+its root guidance, single-main-branch policy, build lock and current
+`docs/development/MASTER_PLAN.md`; old SDK plan files are historical evidence.
+Use `codebase-memory-mcp` when graph-assisted code lookup is needed, not CodeGraph.
+
+## Boundaries
+
+Treat credentials, pairing invitations, endpoint identity, origins, query
+bounds, response limits, cursors, and typed errors as security boundaries. Keep
+validation fail-closed. Do not log credentials or invitation data. A cursor is
+opaque and must remain bound to its issuing Hub, vehicle, and time window.
+
+Do not add product UI, Rust FFI, Hub implementation code, proprietary
+Teslatlas source, hosted automation, or inferred routes to this repository.
+
+Do not issue live vehicle commands or expose public ingress.
+
+GitHub is source storage only. Do not add CI workflows, releases, tags,
+package publication, signing, or deployment without explicit owner direction.
+
+
+## Evidence
+
+Record the source revision, command, platform and result. Distinguish fixture
+checks, external consumer builds, installed-Hub journeys and physical-device
+acceptance. Do not claim broader support from a narrower check. Preserve
+[LICENSE](LICENSE), binding attribution and fixture authority records.

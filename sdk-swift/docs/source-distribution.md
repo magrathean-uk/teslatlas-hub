@@ -1,62 +1,33 @@
 # Source distribution
 
-The repository provides a deterministic source-only handoff for the four
-public SwiftPM libraries. It is not a release archive, tag, binary package, or
-runtime acceptance artifact.
+`tools/source_handoff.py` prepares and verifies a deterministic source handoff for all four public libraries. It is a source package, not a binary release or runtime acceptance artifact. Run these commands from a full repository checkout.
 
-Run the complete temporary exercise from the repository root:
+## Temporary validation
 
 ```sh
 python3 tools/source_handoff.py exercise
 ```
 
-The command stages a package below a private temporary directory using the
-required basename `teslatlas-sdk-swift`, verifies every staged path, byte size,
-and SHA-256 digest, asks SwiftPM to validate the manifest, and builds a separate
-source-only consumer that imports these products:
+The command stages the package under the required basename `teslatlas-sdk-swift`, verifies the file manifest, asks SwiftPM to parse the package and builds a separate consumer importing all four libraries. It does not run that consumer. The temporary package, consumer and build scratch are removed on exit, including failure.
 
-- `TeslatlasHubSDK`
-- `TeslatlasCommands`
-- `TeslatlasHubV1Compatibility`
-- `TeslatlasCurrentHub`
+## Retained handoff
 
-The temporary package, consumer, and build scratch directory are removed when
-the command exits, including after a failed check. No executable is run.
-
-To retain a handoff for another reviewer, choose a new absent output path:
+Choose an absent output directory outside the checkout:
 
 ```sh
-python3 tools/source_handoff.py prepare --output /private/review/swift-handoff
-python3 tools/source_handoff.py verify --handoff /private/review/swift-handoff
-python3 tools/source_handoff.py smoke --handoff /private/review/swift-handoff
+python3 tools/source_handoff.py prepare --output /tmp/teslatlas-sdk-review-handoff
+python3 tools/source_handoff.py verify --handoff /tmp/teslatlas-sdk-review-handoff
+python3 tools/source_handoff.py smoke --handoff /tmp/teslatlas-sdk-review-handoff
 ```
 
-`prepare` refuses to merge with or replace an existing path. The handoff
-contains `source-handoff.json`, the canonical `teslatlas-sdk-swift` package
-root, and a sibling `external-four-library-consumer`. The manifest is
-timestamp-free and path-independent. Its `source_package.identity_sha256`
-binds the ordered relative paths, byte sizes, and file hashes. The validator
-rejects duplicate JSON keys, schema drift, missing or extra files and
-directories, symlinks, special filesystem entries, escaped paths, wrong root
-names, checksum changes, and a consumer that does not declare all four
-products. Source selection applies the same symlink and repository-containment
-rules before copying any input.
+`prepare` refuses an existing path. The result contains `source-handoff.json`, the package directory and a sibling `external-four-library-consumer`. `smoke` builds that separate consumer with external scratch, removes known SwiftPM metadata it generated and verifies the handoff again.
 
-Filesystem metadata is also deterministic. Every staged directory has mode
-`0755`, every regular file has mode `0644`, and every modification timestamp is
-`2000-01-01T00:00:00Z` (`946684800` Unix seconds). These values are independent
-of the caller's umask and are enforced again during verification. SwiftPM may
-create local metadata while parsing or building; `smoke` removes only those
-known generated paths, restores the fixed metadata, and performs a final exact
-readback.
+## Contents and integrity
 
-The selected source payload contains the Swift manifest, version, licence,
-README, all package sources and tests, both source examples, and public
-documentation. Local build output, private inputs, development receipts,
-archived plans, Git metadata, IDE state, and platform harness projects are not
-source-package inputs.
+The selection in `tools/source_handoff.py` includes the manifest, version, license, README, package sources and tests, both source examples and seven named public guides. It excludes Git metadata, build output, private inputs, historical receipts, platform harness projects and the `tools` directory. Additional repository policies and new documentation are not included automatically. Links to repository-only material in a handoff should be read in the full source checkout.
 
-Successful `smoke` output proves that SwiftPM can parse the staged source and
-compile an external consumer of all four libraries on the recorded host. It
-does not prove macOS 14, iOS 17, Linux ARM64, live Hub behavior, installation,
-upgrade, rollback, removal, real-data semantics, or final F3/F6/F7 acceptance.
+The manifest binds ordered relative paths, byte sizes and SHA-256 digests. Verification rejects duplicate JSON keys, unexpected schema or entries, symlinks, special files, path escapes, checksum changes and an invalid four-product consumer. Directories use mode `0755`, files `0644`, and timestamps `2000-01-01T00:00:00Z`.
+
+Documentation edits change the current-tree handoff identity when those documents are selected. They do not change the older identity pinned by the platform-gate harness. Do not overwrite old receipts or claim that their results cover the new package.
+
+A successful smoke check proves package parsing and consumer compilation on the recorded host. It does not establish minimum OS support, live Hub behavior, installation, upgrade, rollback or real-data acceptance.

@@ -27,10 +27,7 @@ At implementation time, `teslatlas-protocol` commit
 v1.0.0 binding. Its compatibility profiles describe public protocol profiles,
 not the deployed Hub release.
 
-The original task therefore reached its dependency stop. A later instruction
-to retrieve the required public material authorised a local compatibility
-binding to be built from the immutable Hub release boundary instead of
-inventing a transport. The result is:
+The local compatibility binding was derived from that immutable Hub release boundary. Its identities are:
 
 - Hub tag: `v1.0.0`
 - annotated tag object: `4b45708a00f14f76306f6cb37375eb0c538643d7`

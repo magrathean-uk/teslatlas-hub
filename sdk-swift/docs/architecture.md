@@ -73,8 +73,7 @@ management, events, commands, metadata endpoint, charge history, manifest,
 pack, position, state, or update route. It does not expose `sync.packs` even
 when discovery advertises that capability.
 
-Full protocol conformance remains pending an independently implemented JSONL
-adapter. Live Hub-v1 proof remains separate from deterministic fixture proof.
+Protocol conformance, deterministic fixture checks and live Hub-v1 journeys require separate evidence. None is established merely by importing the package.
 
 ## Current Hub trust model
 

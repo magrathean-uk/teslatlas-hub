@@ -1,86 +1,50 @@
 # Development
 
-Run SwiftPM commands from the repository root. The normal local verification
-selection leaves live and installed-matrix journeys opt-in:
+The package declares Swift tools 6.0, iOS 17 and macOS 14. These are manifest requirements, not proof that a particular revision has passed every platform floor. Linux `TeslatlasCurrentHub` uses the C shim and requires OpenSSL-backed libcurl plus libssl/libcrypto headers and libraries.
+
+Run commands from the repository root. In a coordinated Teslatlas workspace, follow its current task order and build-lock rules. Use an external SwiftPM scratch directory; for example:
 
 ```sh
-swift package dump-package
-swift test --skip CurrentHubLiveTests --skip CurrentHubMatrixWorkerTests --skip CurrentHubAppleConsumerTests --skip LiveHubBlackBoxTests
-swift build -c release
-swift test -c release --skip CurrentHubLiveTests --skip CurrentHubMatrixWorkerTests --skip CurrentHubAppleConsumerTests --skip LiveHubBlackBoxTests
-uv run --python 3.11 --with 'jsonschema[format-nongpl]>=4.26,<5' python -m unittest discover -s tools -p 'test_matrix_adapter.py'
+SDK_SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-sdk-swift.XXXXXX")"
+swift package --scratch-path "$SDK_SCRATCH" dump-package
+swift test --scratch-path "$SDK_SCRATCH" \
+  --skip CurrentHubLiveTests \
+  --skip CurrentHubMatrixWorkerTests \
+  --skip CurrentHubAppleConsumerTests \
+  --skip LiveHubBlackBoxTests
 ```
 
-The adapter check requires Python 3.11 or newer and the pinned development
-requirement in `tools/requirements-dev.txt`; an equivalent isolated virtual
-environment is fine when `uv` is unavailable.
+The example leaves its scratch directory available for inspection. Remove only the directory created for your run when finished. When release-mode behavior is relevant, use the same selection with `swift test -c release --scratch-path "$SDK_SCRATCH"` or build with `swift build -c release --scratch-path "$SDK_SCRATCH"`.
 
-`CurrentHubLiveTests`, `CurrentHubMatrixWorkerTests`, and
-`LiveHubBlackBoxTests` require separately provisioned inputs and a reachable
-Hub. They are not made safe or meaningful by running inside this image. The
-image's default command also skips `CurrentHubAppleConsumerTests` when that
-SDK-owned Apple-only suite is present.
+## Choose checks for the change
 
-## Linux Swift with Docker
+| Change | Relevant checks |
+| --- | --- |
+| Strict protocol models, routes or commands | `TeslatlasHubSDKTests` |
+| Historical Hub-v1 binding or client | `TeslatlasHubV1CompatibilityTests`, excluding `LiveHubBlackBoxTests` |
+| Current Hub binding, client or transport | `TeslatlasCurrentHubTests`, excluding the three opt-in suites above |
+| Source handoff selection or validation | `tools/test_source_handoff.py` |
+| Platform harness | `tools/test_platform_gate.py`, `tools/test_ios_runtime_host.py` |
+| Matrix adapter | `tools/test_matrix_adapter.py` |
 
-The [Dockerfile](../Dockerfile) is the native Linux ARM64 platform-gate image.
-It does not start a Hub, expose a port, use a database, mount a Docker socket,
-or provide installed-matrix acceptance. It pins Docker Official Image
-`swift:6.0.3-jammy` directly to the `linux/arm64/v8` child
-`sha256:c84da0197afcc90ef90a64194d4d451be7c090a845bcbf632755f9c16334ba8f`.
-The locked parent OCI index is
-`sha256:e2b0410500126d7f569d387b5817426cef5c38cc02dc494c3dc5edc8e10304d6`.
-The image installs `ca-certificates`, `libcurl4-openssl-dev`, `libssl-dev`,
-and `python3`; the Linux transport therefore uses the system OpenSSL-backed
-libcurl and its libssl/libcrypto libraries.
+Use `--filter` for a focused Swift test when appropriate. Retain the live-suite exclusions when selecting an entire test target. Binding changes need matching fixture and hash validation, not only a successful compile.
 
-The live repository is not a valid context for this Dockerfile. The gate
-materializes published commit `d7ac4488fc5908015e8de55cd57983ea87172266`,
-prepares and verifies the accepted 124-file handoff, and supplies only its
-canonical `teslatlas-sdk-swift` directory plus its separately checksummed
-`external-four-library-consumer`. The Dockerfile copies only those two roots.
-SwiftPM build output goes to `/tmp`; the package input remains unchanged.
-
-The current-host, non-runtime checks are:
+The Python matrix checks require Python 3.11 or newer with the requirement from `tools/requirements-dev.txt` already available in an isolated environment:
 
 ```sh
-python3 tools/platform_gate.py verify
-python3 tools/platform_gate.py command linux-arm64
+python3 -m unittest discover -s tools -p 'test_matrix_adapter.py'
 ```
 
-The run command is authorized only on a native Linux ARM64 host with a Docker
-Engine that independently reports Linux ARM64:
+The other Python suites use the same discovery syntax with their own filename. Some harness checks invoke SwiftPM or Xcode tools; read their scope before selecting them.
 
-```sh
-python3 tools/platform_gate.py run linux-arm64
-```
+## Live checks
 
-The runner rejects emulation, never invokes `matrix_wire.py`, builds the
-separately checksummed four-library consumer, then removes the temporary
-handoff and owned image tag. It accepts no private inputs and does not run live
-tests. This lane remains preparation until exact-floor execution and review.
+`CurrentHubLiveTests`, `CurrentHubMatrixWorkerTests`, `CurrentHubAppleConsumerTests` and `LiveHubBlackBoxTests` are separate, provisioned journeys. Do not remove exclusions merely to make the command shorter. Current-Hub live tests require private configuration and a suitable reachable Hub; the legacy live test requires the exact historical binding. See the relevant client guide and [consumer example](../Examples/CurrentHubConsumer/README.md).
 
-## Validation record
+Use dedicated test credentials and synthetic data for state-changing pairing and rotation checks. Preserve ordinary user credentials and any live service. Never interpret fixture success as live-Hub, installer or physical-device acceptance.
 
-Historical evidence only: on 2026-09-08, the then-pinned multi-architecture
-manifest was checked before using the explicitly selected
-`colima-interop-20260905` context. The
-context supplied Docker client 29.8.0, Engine 29.5.2, Linux arm64, and kernel
-6.8.0-117-generic. The buildx component was unavailable, so the documented build ran
-with Docker's legacy builder and the image was tagged
-`teslatlas-swift-sdk:20260908-arm64` (image ID
-`sha256:254cd5a67ffc0e947159f9f38682b10cd3c4ab71b8608ec836ba32e5f052b565`). The
-image runs as `swiftuser` UID/GID 10001 from `/workspace/teslatlas-sdk-swift`.
+## Source and platform checks
 
-The default command completed with 148 selected XCTest tests and zero failures. A
-release package build and the external `Examples/CurrentHubConsumer` release build
-also completed successfully. Runtime inspection recorded Swift 6.0.3 targeting
-`aarch64-unknown-linux-gnu`, libcurl 7.81.0 with its OpenSSL 3.0.2 TLS backend,
-libcurl4/libssl3 package versions `7.81.0-1ubuntu1.27` and `3.0.2-0ubuntu1.29`, and
-Python 3.10. All owned `--rm` containers were absent after the checks. The full
-receipts and logs are retained in
-`/Users/bolyki/.codex/artifacts/teslatlas-interop/2026-09-08-task10-swift-adapter-current-final/`.
+[Source distribution](source-distribution.md) explains the current-tree handoff. [Platform gates](development/platform-gate-preparation.md) explain the separately pinned historical snapshot used by `tools/platform_gate.py` and the Dockerfile. A platform-gate result for that snapshot does not validate a newer checkout.
 
-Only Linux ARM64 was executed in that historical run. It does not accept the
-new immutable handoff-input lane, installed Hub, live Hub, iOS, or physical
-device behavior.
+GitHub is source storage. Local checks are the validation path; no hosted build or test automation is part of this workflow.

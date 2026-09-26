@@ -23,11 +23,7 @@ Hub v1.0.0. The generic `compatibility/1.0.0/profile.json` advertises protocol
 features that are not the deployed Hub v1.0.0 surface and could not safely be
 used as its binding.
 
-Under the original task wording this was a mandatory implementation stop. The
-first result archive documented that stop. The later instruction to pull the
-needed public material from the internet changed the execution decision: an
-isolated local binding was audited from the immutable Hub `v1.0.0` tag rather
-than inventing routes or altering the strict SDK.
+The compatibility product therefore uses an isolated local binding audited from the immutable Hub `v1.0.0` tag. It does not add deployed routes to the strict protocol products.
 
 The local authority is pinned to:
 
@@ -71,6 +67,4 @@ not be relabelled as protocol authority. When an official binding appears, it
 must be compared with the vendored bytes, fields, limits, errors, and fixtures
 before any replacement.
 
-Other external validation still includes macOS/Xcode/iOS builds and an opted-in
-live Hub run. Linux FoundationNetworking enforces response size after URL
-loading returns; Apple URLSession uses bounded streamed reads.
+The default strict and compatibility transports enforce response bounds while receiving data. Live-Hub and platform claims still require their own recorded runs; fixture validation cannot establish them.

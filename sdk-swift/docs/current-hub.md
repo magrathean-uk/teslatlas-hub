@@ -80,35 +80,13 @@ three pages at limit two, three per-page conditional `304` responses, units,
 nulls, zeroes, bearer rotation, old-bearer rejection, invitation replay,
 unsupported zero-I/O behavior, cancellation and a streamed oversized response.
 
-G6 accepted the maintained external consumer against a wholly fresh
-source-built synthetic Hub on macOS 27.0 arm64 with Swift 6.4. The accepted
-journey covered the exact discovery/profile/product/capabilities, normal TLS,
-claim and replay rejection, health/readiness, two current results, drive pages
-`2/2/1` and three `304`s, rotation, old-token rejection, post-rotation readback,
-and Hub restart continuity. See the
-[Swift G6 receipt](development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json)
-and [Hub G6 receipt](../../hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json).
-
-[G3 r2](../../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json)
-admitted the exact product `2026.36.2` compatibility record and profile digest
-after G6 (receipt SHA-256
-`5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865`).
-This remains current-macOS synthetic source-built evidence.
-The declared iOS 17 and macOS 14 package floors were not minimum-floor tested,
-and no App, installer, notarization, package service, real Tesla data,
-production, source publication/tag, or full-platform acceptance is claimed.
+The [2026-09-19 G6 receipt](development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json) records a synthetic, source-built macOS journey for the then-tested inputs. The later [cleanup snapshot](development/PLAN.md) records removal of local artifacts and runtimes. These records do not establish current-source, minimum-OS, installer, App, physical-device or real-data acceptance.
 
 ## External consumer and caller lifecycle
 
-`Examples/CurrentHubConsumer` is a small SwiftPM client that imports only
-`TeslatlasCurrentHub`. Build it with `swift build -c release` from that
-directory, then pass an owner-only JSON configuration file to
-`swift run -c release CurrentHubConsumer /private/current-hub-consumer.json`.
-The sample uses the production transport and an in-memory actor credential
-store, so no bearer or invitation is written to disk. Applications should
-replace that actor with an atomic Keychain or file-backed implementation and
-clear it on sign-out. Create a new store and client after changing Hub
-identity; never carry credentials or cursors between identities.
+The [external consumer](../Examples/CurrentHubConsumer/README.md) imports `TeslatlasCurrentHub` and demonstrates the caller lifecycle. Follow its guide for configuration and commands. It uses the production transport and an in-memory actor credential store; applications must supply their own durable storage and sign-out policy.
+
+Create a new store and client after changing Hub identity. Never carry credentials or cursors between identities.
 
 The SDK does not expose a server-revoke or logout operation. Claim and bearer
 rotation are single-use requests: when their network result is uncertain,
@@ -117,6 +95,4 @@ Cancellation and reconnect remain caller responsibilities around the public
 transport and credential store; a custom store that never returns cannot be
 bounded by the SDK.
 
-For Linux development, `Dockerfile` provides an unprivileged Swift 6.0.3
-environment with CA certificates, OpenSSL-backed libcurl and Python for the
-fixture server. It is not a Hub runtime or installed-matrix acceptance image.
+The Dockerfile is used by the pinned [platform gate](development/platform-gate-preparation.md). It is not a general live-repository build context or a Hub runtime.
