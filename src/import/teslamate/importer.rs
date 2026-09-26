@@ -64,7 +64,7 @@ use crate::{
     teslamate_reader::{
         TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits, read_open_session, read_selected_car,
     },
-    teslamate_stage::{TeslaMateStage, TeslaMateStageTable},
+    teslamate_stage::{TeslaMateStage, TeslaMateStageFormat, TeslaMateStageTable},
     updates_delivery::{
         ProductionUpdatesPublication, UpdatesDeliveryError,
         discard_prepared_initial_production_updates_schema_22,
@@ -1353,6 +1353,9 @@ fn publish_staged_history_with_limits(
     open_session: &TeslaMateOpenSession,
     fragment_limits: TeslaMateFragmentLimits,
 ) -> Result<TeslaMateImportReport, TeslaMateImportError> {
+    if stage.format()? != TeslaMateStageFormat::CompatibilityV2 {
+        return Err(crate::teslamate_fragments::TeslaMateFragmentError::WrongStageFormat.into());
+    }
     let publication_gate = store.try_acquire_publication_gate()?;
     let selected_car_id = selected_car_id(request)?;
     let car = stage

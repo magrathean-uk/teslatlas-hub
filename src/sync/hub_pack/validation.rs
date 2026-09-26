@@ -203,9 +203,6 @@ fn validate_request_v2_2(
     if request.pack_id.is_nil() || request.snapshot_id.is_nil() {
         return Err(invalid("pack and snapshot IDs must not be nil"));
     }
-    if request.ordinal != 0 {
-        return Err(invalid("schema 2.2 full snapshot must use ordinal 0"));
-    }
     validate_binding_v2_2(&request.binding)?;
     if !request.sequence.is_ordered() {
         return Err(invalid("full snapshot sequence is unordered"));

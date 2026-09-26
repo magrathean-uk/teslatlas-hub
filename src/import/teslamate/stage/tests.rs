@@ -36,6 +36,57 @@ fn private_imports(temporary: &tempfile::TempDir) -> PathBuf {
 }
 
 #[test]
+fn stage_format_is_explicit_and_compatibility_remains_the_default() {
+    let temporary = tempdir().expect("temp dir");
+    let mut compatibility =
+        TeslaMateStage::create(temporary.path().join("compatibility"), limits())
+            .expect("compatibility stage");
+    assert_eq!(
+        compatibility.format().expect("compatibility format"),
+        TeslaMateStageFormat::CompatibilityV2
+    );
+    assert!(matches!(
+        compatibility
+            .insert(
+                TeslaMateStageTable::GlobalSettings,
+                1,
+                &Row {
+                    label: "physical".into(),
+                    ordinal: 1,
+                },
+            )
+            .expect_err("compatibility stage must reject physical roots"),
+        TeslaMateStageError::TableFormatMismatch { .. }
+    ));
+
+    let physical = TeslaMateStage::create_physical_v3(temporary.path().join("physical"), limits())
+        .expect("physical stage");
+    assert_eq!(
+        physical.format().expect("physical format"),
+        TeslaMateStageFormat::PhysicalV3
+    );
+}
+
+#[test]
+fn a_pre_format_sealed_stage_reopens_as_compatibility() {
+    let temporary = tempdir().expect("temp dir");
+    let mut stage = TeslaMateStage::create(private_imports(&temporary), limits()).expect("stage");
+    stage
+        .connection
+        .execute("DELETE FROM stage_meta WHERE key = ?1", [META_FORMAT])
+        .expect("remove new metadata to model an old stage");
+    stage.seal().expect("seal old stage shape");
+    let path = stage.path().to_owned();
+    drop(stage);
+
+    let reopened = TeslaMateStage::open_sealed(path).expect("reopen old stage");
+    assert_eq!(
+        reopened.format().expect("default format"),
+        TeslaMateStageFormat::CompatibilityV2
+    );
+}
+
+#[test]
 fn encoding_workers_are_bounded() {
     assert_eq!(stage_encoding_worker_count_for(0), 1);
     assert_eq!(stage_encoding_worker_count_for(1), 1);

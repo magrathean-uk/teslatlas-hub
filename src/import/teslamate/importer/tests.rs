@@ -9,7 +9,7 @@ use crate::{
     hub_pack::ProjectionPackOwnership,
     protocol::{CursorKey, ProtocolLimits},
     teslamate::ReadOnlySource,
-    teslamate_fragments::TeslaMateFragmentLimits,
+    teslamate_fragments::{TeslaMateFragmentError, TeslaMateFragmentLimits},
     teslamate_projection::{
         TeslaMateCar, TeslaMateGeofence, TeslaMateHistory, TeslaMatePosition, TeslaMateUpdate,
     },
@@ -43,6 +43,55 @@ impl crate::teslamate_projection_state::PriorProjectionStateLookup for EmptyPrio
                 next_after: None,
             },
         )
+    }
+}
+
+#[test]
+fn staged_import_rejects_a_physical_stage_before_registering_any_state() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let mut stage = TeslaMateStage::create_physical_v3(
+        temporary.path().join("imports"),
+        TeslaMateStageLimits {
+            max_rows: 10,
+            max_stage_bytes: 512 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("physical stage");
+    stage.seal().expect("seal physical stage");
+
+    let error = publish_staged_history_with_session(
+        &store,
+        &CursorKey::from_bytes([31; 32]),
+        &TeslaMateImportRequest {
+            source_key: "physical-v3-must-not-enter-v2".into(),
+            scope: TeslaMateImportScope::Selected(1),
+            imported_at_ms: 1_700_000_000_000,
+        },
+        &stage,
+        &TeslaMateOpenSession::default(),
+    )
+    .expect_err("physical stage must reject before registration");
+    assert!(matches!(
+        error,
+        TeslaMateImportError::Fragments(TeslaMateFragmentError::WrongStageFormat)
+    ));
+
+    let connection = store.open().expect("catalogue");
+    for table in [
+        "sources",
+        "vehicles",
+        "import_generations",
+        "sync_manifests",
+        "sync_packs",
+    ] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("table count");
+        assert_eq!(count, 0, "physical-stage rejection mutated {table}");
     }
 }
 

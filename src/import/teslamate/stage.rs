@@ -36,6 +36,7 @@ const META_PAYLOAD_BYTES: &str = "payload_bytes";
 const META_MAX_ROWS: &str = "max_rows";
 const META_MAX_STAGE_BYTES: &str = "max_stage_bytes";
 const META_MINIMUM_FREE_BYTES: &str = "minimum_free_bytes";
+const META_FORMAT: &str = "format";
 const MIN_STAGE_BYTES: u64 = 64 * 1024;
 const MAX_PAGE_SIZE: u32 = 10_000;
 const MAX_ENCODING_WORKERS: usize = 8;
@@ -52,6 +53,8 @@ const CHARGE_SAMPLES_PAGE_SQL: &str = "SELECT source_id, row_json
 /// interpolate relation names into a query.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TeslaMateStageTable {
+    GlobalSettings,
+    CarSettings,
     Cars,
     Drives,
     Positions,
@@ -78,6 +81,8 @@ impl TeslaMateStageTable {
 
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::GlobalSettings => "global_settings",
+            Self::CarSettings => "car_settings",
             Self::Cars => "cars",
             Self::Drives => "drives",
             Self::Positions => "positions",
@@ -87,6 +92,45 @@ impl TeslaMateStageTable {
             Self::Geofences => "geofences",
             Self::States => "states",
             Self::Updates => "updates",
+        }
+    }
+}
+
+/// Persisted row contract for one private source stage. Compatibility stages
+/// retain the existing projected JSON shapes. Physical V3 stages are a
+/// separate, explicit boundary and may never be consumed by the schema-2.1
+/// fragment writer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TeslaMateStageFormat {
+    CompatibilityV2,
+    PhysicalV3,
+}
+
+impl TeslaMateStageFormat {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::CompatibilityV2 => "compatibility-v2",
+            Self::PhysicalV3 => "physical-v3",
+        }
+    }
+
+    fn parse(value: &str) -> Result<Self, TeslaMateStageError> {
+        match value {
+            "compatibility-v2" => Ok(Self::CompatibilityV2),
+            "physical-v3" => Ok(Self::PhysicalV3),
+            other => Err(TeslaMateStageError::InvalidPersistedFormat(
+                other.to_owned(),
+            )),
+        }
+    }
+
+    const fn accepts(self, table: TeslaMateStageTable) -> bool {
+        match self {
+            Self::CompatibilityV2 => !matches!(
+                table,
+                TeslaMateStageTable::GlobalSettings | TeslaMateStageTable::CarSettings
+            ),
+            Self::PhysicalV3 => true,
         }
     }
 }
@@ -186,6 +230,7 @@ pub struct TeslaMateStage {
     path: PathBuf,
     connection: Connection,
     writable: bool,
+    format: TeslaMateStageFormat,
     file_identity: StageFileIdentity,
     directory: PrivateDirectory,
     file_name: OsString,
@@ -216,6 +261,7 @@ impl std::fmt::Debug for TeslaMateStage {
             .debug_struct("TeslaMateStage")
             .field("path", &self.path)
             .field("writable", &self.writable)
+            .field("format", &self.format)
             .finish_non_exhaustive()
     }
 }
@@ -226,6 +272,24 @@ impl TeslaMateStage {
     pub fn create(
         imports_dir: impl AsRef<Path>,
         limits: TeslaMateStageLimits,
+    ) -> Result<Self, TeslaMateStageError> {
+        Self::create_with_format(imports_dir, limits, TeslaMateStageFormat::CompatibilityV2)
+    }
+
+    /// Start a source-physical stage for schema-2.2 pack production. This is
+    /// intentionally distinct from [`Self::create`], whose persisted rows
+    /// remain the compatibility projection used by schema 2.1.
+    pub fn create_physical_v3(
+        imports_dir: impl AsRef<Path>,
+        limits: TeslaMateStageLimits,
+    ) -> Result<Self, TeslaMateStageError> {
+        Self::create_with_format(imports_dir, limits, TeslaMateStageFormat::PhysicalV3)
+    }
+
+    fn create_with_format(
+        imports_dir: impl AsRef<Path>,
+        limits: TeslaMateStageLimits,
+        format: TeslaMateStageFormat,
     ) -> Result<Self, TeslaMateStageError> {
         limits.validate()?;
         let imports_dir = imports_dir.as_ref();
@@ -253,12 +317,13 @@ impl TeslaMateStage {
         )?;
         verify_stage_path_identity(&staging_dir, &file_name, &path, file_identity)?;
         configure_writable_connection(&connection, limits)?;
-        initialise_schema(&connection, limits)?;
+        initialise_schema(&connection, limits, format)?;
         verify_stage_path_identity(&staging_dir, &file_name, &path, file_identity)?;
         Ok(Self {
             path,
             connection,
             writable: true,
+            format,
             file_identity,
             directory: staging_dir,
             file_name,
@@ -288,10 +353,12 @@ impl TeslaMateStage {
             &path,
             file_identity,
         )?;
+        let format = read_stage_format(&connection)?;
         let stage = Self {
             path,
             connection,
             writable: false,
+            format,
             file_identity,
             directory: stage_path.directory,
             file_name: stage_path.file_name,
@@ -348,6 +415,7 @@ impl TeslaMateStage {
             path,
             connection,
             writable: _,
+            format: _,
             file_identity,
             directory,
             file_name,
@@ -412,6 +480,14 @@ impl TeslaMateStage {
             payload_bytes,
             limits,
         })
+    }
+
+    /// Return the persisted row contract. Stages created before this marker
+    /// existed remain compatibility stages, so an upgrade cannot reinterpret
+    /// their projected JSON as physical source rows.
+    pub fn format(&self) -> Result<TeslaMateStageFormat, TeslaMateStageError> {
+        self.verify_path_identity()?;
+        Ok(self.format)
     }
 
     /// Insert exactly one decoded source row. The value must serialize to a
@@ -535,6 +611,13 @@ impl TeslaMateStage {
     ) -> Result<(), TeslaMateStageError> {
         if encoded.is_empty() {
             return Ok(());
+        }
+        let format = self.format()?;
+        if !format.accepts(table) {
+            return Err(TeslaMateStageError::TableFormatMismatch {
+                format: format.as_str(),
+                table: table.as_str(),
+            });
         }
         let stats = self.stats()?;
         let page_rows = u64::try_from(encoded.len()).expect("usize always fits u64");
@@ -858,6 +941,7 @@ fn open_read_only_sqlite_from_descriptor(
 fn initialise_schema(
     connection: &Connection,
     limits: TeslaMateStageLimits,
+    format: TeslaMateStageFormat,
 ) -> Result<(), TeslaMateStageError> {
     connection.execute_batch(
         "CREATE TABLE stage_meta(
@@ -871,7 +955,8 @@ fn initialise_schema(
              encoded_bytes INTEGER NOT NULL CHECK(encoded_bytes >= 0),
              PRIMARY KEY(table_name, source_id),
              CHECK(table_name IN (
-                 'cars', 'drives', 'positions', 'charging_processes', 'charges',
+                 'global_settings', 'car_settings', 'cars', 'drives',
+                 'positions', 'charging_processes', 'charges',
                  'addresses', 'geofences', 'states', 'updates'
              ))
          ) STRICT, WITHOUT ROWID;",
@@ -886,6 +971,7 @@ fn initialise_schema(
         (META_STATE, TeslaMateStageState::Open.as_str().to_owned()),
         (META_ROW_COUNT, "0".to_owned()),
         (META_PAYLOAD_BYTES, "0".to_owned()),
+        (META_FORMAT, format.as_str().to_owned()),
         (META_MAX_ROWS, limits.max_rows.to_string()),
         (META_MAX_STAGE_BYTES, limits.max_stage_bytes.to_string()),
         (
@@ -974,6 +1060,21 @@ fn read_meta(connection: &Connection, key: &'static str) -> Result<String, Tesla
         )
         .optional()?
         .ok_or(TeslaMateStageError::MissingMetadata(key))
+}
+
+fn read_stage_format(connection: &Connection) -> Result<TeslaMateStageFormat, TeslaMateStageError> {
+    let value = connection
+        .query_row(
+            "SELECT value FROM stage_meta WHERE key = ?1",
+            params![META_FORMAT],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    value
+        .as_deref()
+        .map(TeslaMateStageFormat::parse)
+        .transpose()
+        .map(|value| value.unwrap_or(TeslaMateStageFormat::CompatibilityV2))
 }
 
 fn parse_meta_u64(connection: &Connection, key: &'static str) -> Result<u64, TeslaMateStageError> {
@@ -1506,6 +1607,13 @@ pub enum TeslaMateStageError {
     StageLimitTooSmall { minimum: u64 },
     #[error("stage state is invalid: {0}")]
     InvalidPersistedState(String),
+    #[error("stage format is invalid: {0}")]
+    InvalidPersistedFormat(String),
+    #[error("stage format {format} cannot contain {table} rows")]
+    TableFormatMismatch {
+        format: &'static str,
+        table: &'static str,
+    },
     #[error("stage metadata is missing {0}")]
     MissingMetadata(&'static str),
     #[error("stage metadata is invalid for {0}")]

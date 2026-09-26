@@ -36,7 +36,9 @@ use crate::{
         project_update,
     },
     teslamate_projection_state::{TeslaMateProjectionStateCapture, TeslaMateProjectionStateError},
-    teslamate_stage::{TeslaMateStage, TeslaMateStageError, TeslaMateStageTable},
+    teslamate_stage::{
+        TeslaMateStage, TeslaMateStageError, TeslaMateStageFormat, TeslaMateStageTable,
+    },
 };
 
 const STAGE_PAGE_ROWS: u32 = 10_000;
@@ -246,11 +248,19 @@ where
     E: From<TeslaMateFragmentError>,
 {
     limits.validate().map_err(E::from)?;
-    let stage_rows = stage
+    let stage_stats = stage
         .stats()
         .map_err(TeslaMateFragmentError::from)
+        .map_err(E::from)?;
+    if stage
+        .format()
+        .map_err(TeslaMateFragmentError::from)
         .map_err(E::from)?
-        .row_count;
+        != TeslaMateStageFormat::CompatibilityV2
+    {
+        return Err(E::from(TeslaMateFragmentError::WrongStageFormat));
+    }
+    let stage_rows = stage_stats.row_count;
     let mut effective_limits = initial_staged_fragment_limits(stage_rows, limits);
     loop {
         let projection_state = capture_factory()?;
@@ -1928,6 +1938,8 @@ pub enum TeslaMateFragmentError {
     InvalidSelectedCarId,
     #[error("TeslaMate full snapshot sequence is unordered")]
     UnorderedSequence,
+    #[error("schema-2.1 staged pack production requires a compatibility-v2 stage")]
+    WrongStageFormat,
     #[error("fragment row target must allow a car, parent, and child")]
     FragmentRowTargetTooSmall,
     #[error("fragment row target exceeds the protocol ceiling")]

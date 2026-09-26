@@ -197,8 +197,11 @@ async fn capture_raw_table_pages(
     }
 }
 
-const fn stage_table_source(table: TeslaMateStageTable) -> SourceTable {
+fn stage_table_source(table: TeslaMateStageTable) -> SourceTable {
     match table {
+        TeslaMateStageTable::GlobalSettings | TeslaMateStageTable::CarSettings => {
+            unreachable!("physical-only roots are not compatibility capture jobs")
+        }
         TeslaMateStageTable::Cars => SourceTable::Cars,
         TeslaMateStageTable::Drives => SourceTable::Drives,
         TeslaMateStageTable::Positions => SourceTable::Positions,
@@ -248,6 +251,9 @@ async fn source_max_id(
 
 fn encode_stage_row(table: TeslaMateStageTable, row: &Row) -> Result<String, TeslaMateReaderError> {
     let encoded = match table {
+        TeslaMateStageTable::GlobalSettings | TeslaMateStageTable::CarSettings => {
+            unreachable!("physical-only roots are not compatibility capture jobs")
+        }
         TeslaMateStageTable::Cars => serde_json::to_string(&decode_car(row)?),
         TeslaMateStageTable::Drives => serde_json::to_string(&decode_drive(row)?),
         TeslaMateStageTable::Positions => serde_json::to_string(&decode_position(row)?),

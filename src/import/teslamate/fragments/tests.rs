@@ -167,6 +167,35 @@ fn mutable_stage() -> (tempfile::TempDir, TeslaMateStage) {
     stage_with_sealed(false)
 }
 
+#[test]
+fn schema_2_1_writer_rejects_a_sealed_physical_stage_before_pack_work() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let mut stage = TeslaMateStage::create_physical_v3(
+        temporary.path().join("imports"),
+        TeslaMateStageLimits {
+            max_rows: 10,
+            max_stage_bytes: 512 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("physical stage");
+    stage.seal().expect("seal physical stage");
+    let packs = temporary.path().join("packs");
+    let error = write_staged_full_snapshot(
+        &stage,
+        &ProjectionPackWriter::new(&packs),
+        binding(),
+        Uuid::from_u128(99),
+        SequenceRange {
+            from_exclusive: 0,
+            to_inclusive: 1,
+        },
+    )
+    .expect_err("physical stage must not reach schema 2.1");
+    assert!(matches!(error, TeslaMateFragmentError::WrongStageFormat));
+    assert!(!packs.exists(), "format rejection must precede pack work");
+}
+
 fn stage_with_sealed(seal: bool) -> (tempfile::TempDir, TeslaMateStage) {
     let temporary = crate::private_tempdir().unwrap();
     let mut stage = TeslaMateStage::create(
