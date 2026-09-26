@@ -20,7 +20,7 @@ Run all supported profiles against the bundled harness self-test adapter:
 Run an implementation adapter:
 
 ```sh
-./conformance/run --adapter /absolute/path/to/adapter
+./conformance/run --profile 1.2.0 --adapter /absolute/path/to/adapter
 ```
 
 Select profiles or request one machine-readable result:
@@ -33,9 +33,9 @@ The rich-profile gate executes 31 profile/case runs: nine for `1.0.0`, ten for
 `1.1.0`, and twelve for `1.2.0`. A profile contains every case whose
 `introduced_in` version is not newer than that profile.
 
-`hub-sync-v1@1.3.0` is also registered with this entrypoint. It runs eleven
+`hub-sync-v1@1.3.0` is also registered with this entrypoint. It runs twelve
 deterministic fixture cases, including signed changed-set, compaction, schema
-2.1 and 2.2 manifests, no-op, prepared artefact, and four negative fixtures.
+2.1 and 2.2 manifests, no-op, prepared artefact, and five negative fixtures.
 Hub and App can invoke the shared fixture gate with:
 
 ```sh
@@ -45,6 +45,10 @@ Hub and App can invoke the shared fixture gate with:
 The result identifies every failing case and its exact fixture IDs. This gate
 validates the published fixture corpus; product adapters and a running Hub are
 separate runtime evidence.
+
+JSONL adapter runs require explicit rich profiles and reject a mixed or default
+all-profile invocation. Their `adapter-contract` provenance therefore covers
+only adapter-exercised rich cases.
 
 ## Current-Hub acceptance
 

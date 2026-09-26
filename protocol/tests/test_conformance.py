@@ -245,8 +245,8 @@ class ConformanceContractTests(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         summary = json.loads(completed.stdout)
         self.assertEqual(["1.0.0", "1.1.0", "1.2.0", "hub-sync-v1@1.3.0"], summary["profiles"])
-        self.assertEqual(42, summary["runs"])
-        self.assertEqual(42, summary["passed"])
+        self.assertEqual(43, summary["runs"])
+        self.assertEqual(43, summary["passed"])
         self.assertEqual(0, summary["failed"])
 
     def test_runner_runs_the_registered_hub_sync_fixture_gate_by_profile(self) -> None:
@@ -261,7 +261,23 @@ class ConformanceContractTests(unittest.TestCase):
         self.assertEqual(0, completed.returncode, completed.stdout + completed.stderr)
         summary = json.loads(completed.stdout)
         self.assertEqual(["hub-sync-v1@1.3.0"], summary["profiles"])
-        self.assertEqual((11, 11, 0), (summary["runs"], summary["passed"], summary["failed"]))
+        self.assertEqual((12, 12, 0), (summary["runs"], summary["passed"], summary["failed"]))
+
+    def test_runner_rejects_default_jsonl_adapter_invocation(self) -> None:
+        runner = ROOT / "conformance" / "run"
+        adapter = ROOT / "tests" / "fixtures" / "nonconforming_adapter.py"
+        completed = subprocess.run(
+            [str(runner), "--adapter", str(adapter), "--json"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(2, completed.returncode)
+        self.assertEqual(
+            "JSONL adapter conformance requires explicit rich profile selections; hub-sync fixture conformance runs separately",
+            json.loads(completed.stdout)["error"],
+        )
 
     def test_runner_rejects_jsonl_adapters_for_hub_sync_fixture_conformance(self) -> None:
         runner = ROOT / "conformance" / "run"
@@ -291,7 +307,7 @@ class ConformanceContractTests(unittest.TestCase):
         adapter = ROOT / "tests" / "fixtures" / "nonconforming_adapter.py"
         self.assertTrue(runner.is_file())
         completed = subprocess.run(
-            [str(runner), "--json", "--adapter", str(adapter)],
+            [str(runner), "--json", "--profile", "1.0.0", "--adapter", str(adapter)],
             cwd=ROOT,
             text=True,
             capture_output=True,

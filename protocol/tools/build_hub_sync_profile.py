@@ -283,6 +283,9 @@ def bundle():
     unknown_key_changed = copy.deepcopy(receipt_example)
     unknown_key_changed["fixture_id"] = "changes-since-changed-set-unknown-key-v1"
     unknown_key_changed["receipt"]["signature"]["key_id"] = "fixture-ed25519-unknown"
+    invalid_signature_changed = copy.deepcopy(receipt_example)
+    invalid_signature_changed["fixture_id"] = "changes-since-changed-set-invalid-signature-v1"
+    invalid_signature_changed["receipt"]["signature"]["signature"] = "A" * 86 + "=="
     noncontiguous_manifest = copy.deepcopy(manifest_2_2_example)
     noncontiguous_manifest["fixture_id"] = "schema-2-2-multi-chunk-manifest-noncontiguous-v1"
     noncontiguous_manifest["manifest"]["chunks"][1]["chunk_index"] = 2
@@ -347,6 +350,7 @@ def bundle():
       {"id": "prepared-artefact-map-months-routes", "validator": "prepared_artefact", "status": 200, "response_fixture": prepared_example["fixture_id"], "expected_errors": []},
       {"id": "changes-since-changed-set-tampered", "validator": "changes_since", "status": 200, "response_fixture": tampered_changed["fixture_id"], "expected_errors": ["signature payload digest mismatch"]},
       {"id": "changes-since-changed-set-unknown-key", "validator": "changes_since", "status": 200, "response_fixture": unknown_key_changed["fixture_id"], "expected_errors": ["signature key is unknown"]},
+      {"id": "changes-since-changed-set-invalid-signature", "validator": "changes_since", "status": 200, "response_fixture": invalid_signature_changed["fixture_id"], "expected_errors": ["signature verification failed"]},
       {"id": "schema-2-2-multi-chunk-manifest-noncontiguous", "validator": "manifest", "status": 200, "response_fixture": noncontiguous_manifest["fixture_id"], "expected_errors": ["manifest chunks are not contiguous"]},
       {"id": "sync-noop-unavailable-cacheable", "validator": "noop", "status": 406, "response_fixture": cacheable_noop["fixture_id"], "expected_errors": ["no-op unavailable must be empty no-store"]},
     ]}
@@ -363,6 +367,7 @@ def bundle():
            "examples/sync-noop-unavailable.json": noop_unavailable,
            "examples/changes-since-changed-set-tampered.json": tampered_changed,
            "examples/changes-since-changed-set-unknown-key.json": unknown_key_changed,
+           "examples/changes-since-changed-set-invalid-signature.json": invalid_signature_changed,
            "examples/schema-2-2-multi-chunk-manifest-noncontiguous.json": noncontiguous_manifest,
            "examples/sync-noop-unavailable-cacheable.json": cacheable_noop,
            "examples/prepared-artefact-map-months-routes.json": prepared_example}

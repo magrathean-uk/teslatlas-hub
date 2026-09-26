@@ -116,9 +116,36 @@ class HubSyncProfileTests(unittest.TestCase):
         wrong_key["keys"][0]["public_key"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
         self.assertEqual(self.sync.verify_signature(changed, wrong_key), ["signature verification failed"])
 
+    def test_signed_response_shapes_reject_a_known_key_corrupted_signature(self):
+        changed = self.fixture("changes-since-changed-set")["receipt"]
+        corrupted_fixture = self.fixture("changes-since-changed-set-invalid-signature")
+        corrupted = corrupted_fixture["receipt"]
+        self.assertEqual(
+            self.sync.canonical_fixture_payload(changed),
+            self.sync.canonical_fixture_payload(corrupted),
+        )
+        self.assertEqual(
+            changed["signature"]["signed_payload_sha256"],
+            corrupted["signature"]["signed_payload_sha256"],
+        )
+        self.assertEqual(changed["signature"]["key_id"], corrupted["signature"]["key_id"])
+        self.assertEqual(self.sync.validate_response(200, corrupted), ["signature verification failed"])
+
+        fixtures = (
+            (self.fixture("changes-since-rebase-after-compaction")["response"], lambda value: self.sync.validate_response(409, value)),
+            (self.fixture("schema-2-1-single-pack-manifest")["manifest"], self.sync.validate_manifest),
+            (self.fixture("schema-2-2-multi-chunk-manifest")["manifest"], self.sync.validate_manifest),
+            (self.fixture("sync-noop-signed")["receipt"], lambda value: self.sync.validate_noop(200, value)),
+            (self.fixture("prepared-artefact-map-months-routes")["receipt"], self.sync.validate_prepared_artefact),
+        )
+        for value, validate in fixtures:
+            with self.subTest(fixture_id=value.get("fixture_id", "embedded")):
+                value["signature"]["signature"] = "A" * 86 + "=="
+                self.assertEqual(validate(value), ["signature verification failed"])
+
     def test_registered_fixture_cases_cover_positive_and_negative_vectors(self):
         results = self.sync.run_fixture_cases()
-        self.assertEqual(len(results), 11)
+        self.assertEqual(len(results), 12)
         self.assertTrue(all(result["passed"] for result in results))
         by_case = {result["case_id"]: result for result in results}
         self.assertEqual(
@@ -128,6 +155,10 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(
             by_case["changes-since-changed-set-unknown-key"]["expected_errors"],
             ["signature key is unknown"],
+        )
+        self.assertEqual(
+            by_case["changes-since-changed-set-invalid-signature"]["fixture_ids"],
+            ["changes-since-changed-set-invalid-signature-v1"],
         )
 
 

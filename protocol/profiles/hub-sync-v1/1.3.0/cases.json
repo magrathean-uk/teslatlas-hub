@@ -71,6 +71,15 @@
     },
     {
       "expected_errors": [
+        "signature verification failed"
+      ],
+      "id": "changes-since-changed-set-invalid-signature",
+      "response_fixture": "changes-since-changed-set-invalid-signature-v1",
+      "status": 200,
+      "validator": "changes_since"
+    },
+    {
+      "expected_errors": [
         "manifest chunks are not contiguous"
       ],
       "id": "schema-2-2-multi-chunk-manifest-noncontiguous",

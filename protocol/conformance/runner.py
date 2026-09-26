@@ -831,6 +831,11 @@ def run() -> int:
             command += ["--json"]
         return subprocess.run(command, check=False).returncode
 
+    if args.adapter is not None and not args.profile:
+        raise ConformanceError(
+            "JSONL adapter conformance requires explicit rich profile selections; "
+            "hub-sync fixture conformance runs separately"
+        )
     if args.profile and HUB_SYNC_PROFILE in args.profile and args.adapter is not None:
         raise ConformanceError("hub-sync fixture conformance does not use a JSONL adapter")
 
