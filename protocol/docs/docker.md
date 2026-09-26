@@ -13,11 +13,11 @@ docker build -t teslatlas-protocol-check .
 docker run --rm --network none teslatlas-protocol-check
 ```
 
-The local gate has passed once on explicit Docker context
-`colima-interop-20260905`: a frozen 172-file snapshot built as Linux/arm64 and
-completed `./tools/check` with `--network none` (133 tests, exit 0, no OOM).
-That is native ARM64 package proof only. AMD64 coverage, a container-to-Hub
-smoke, a running Hub, and installed acceptance cells remain unverified.
+The development history records a successful Linux ARM64 gate on an older
+frozen source snapshot. That result is historical and does not verify an image
+built from the current checkout. Record the exact source and image for any new
+run. A local image check does not establish AMD64 support, a container-to-Hub
+smoke, or installed-Hub acceptance.
 
 ## Read-only remote wire smoke
 

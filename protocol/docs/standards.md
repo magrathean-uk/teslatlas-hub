@@ -18,7 +18,6 @@ adjacent JSON Schema files; use its own profile documents and
 | Problem details | [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) | `application/problem+json` error base |
 | OpenAPI | [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) | operation and HTTP representation contract |
 | JSON Schema | [Core](https://json-schema.org/draft/2020-12/json-schema-core.html) and [Validation](https://json-schema.org/draft/2020-12/json-schema-validation.html) | all public data schemas |
-| Cursor pagination | [RFC 8977](https://www.rfc-editor.org/rfc/rfc8977.html) and [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865.html) | opaque cursor model and profile vocabulary |
 | Deprecation | [RFC 9745](https://www.rfc-editor.org/rfc/rfc9745.html) | `Deprecation` response header |
 | Sunset | [RFC 8594](https://www.rfc-editor.org/rfc/rfc8594.html) | scheduled removal response header |
 | Canonical JSON | [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html) | projection and metadata hash inputs |
@@ -39,3 +38,11 @@ standards above:
 
 The `teslatlas-hub` well-known suffix is defined here for private and
 development use. This repository does not claim an IANA registration.
+
+## Pagination background
+
+[RFC 8977](https://www.rfc-editor.org/rfc/rfc8977.html) defines RDAP sorting and
+paging; [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865.html) defines SCIM
+cursor pagination. They provide background for cursor-based designs, not
+Teslatlas wire requirements. Teslatlas cursor fields, binding, and errors are
+defined by its own profiles and [HTTP contract](http.md#opaque-cursors).

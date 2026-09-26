@@ -3,7 +3,11 @@
 The Protocol contracts and local tooling are Apache-2.0 licensed; see
 `LICENSE`. The local development gate uses the exact dependency versions in
 `uv.lock`. Those packages are not redistributed in the developer source
-bundle. Their declared licence identifiers are listed here for operator review.
+bundle. The existing declared licence identifiers are retained below for
+operator review. The table is incomplete for the current lockfile: it omits
+`cryptography 46.0.7`, `cffi 2.1.1`, and `pycparser 3.0`. See
+[licensing](docs/licensing.md) for the verification needed before
+redistributing those dependencies.
 
 | Package | Locked version | Declared licence |
 | --- | --- | --- |

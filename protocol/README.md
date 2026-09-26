@@ -4,7 +4,8 @@ Public, source-neutral protocol contracts for Teslatlas Hub clients and integrat
 
 ## Status
 
-This repository carries three related contracts with different identities:
+This repository carries four distinct contract families with different
+identities:
 
 - Candidate current-Hub HTTP: `hub-http-v1@1.1.0`, documented in
   [`docs/current-hub.md`](docs/current-hub.md). It describes discovery,
@@ -57,16 +58,19 @@ implementations, hosted automation, or deployment instructions.
 
 ## Validate locally
 
-Install [uv](https://docs.astral.sh/uv/), then run:
+Python 3.11 or later and [uv](https://docs.astral.sh/uv/) are required. From the
+repository root, install the locked environment and run the complete local gate:
 
 ```sh
 uv sync --locked
 ./tools/check
 ```
 
-The gate validates every JSON Schema, OpenAPI, SSE example, valid and invalid
-example, deterministic fixture, conformance vector, and all three compatibility
-profiles. It uses no hosted CI.
+The gate validates generated profiles, every JSON Schema, OpenAPI, SSE example,
+valid and invalid example, deterministic fixture, conformance vector, and all
+three compatibility profiles. It then runs the unit suite and bundled
+conformance adapter. This is local contract evidence, not installed-Hub,
+product, real-data, or release acceptance. It uses no hosted CI.
 
 To build and verify the deterministic, unpublished source bundle, follow
 [`docs/developer-bundle.md`](docs/developer-bundle.md). The bundle includes the
@@ -97,6 +101,7 @@ acceptance.
 - [Product versioning](docs/product-versioning.md)
 - [Architecture](docs/architecture.md)
 - [Current-Hub walkthrough](docs/current-hub.md)
+- [Hub changes-since contract](docs/hub-sync.md)
 - [Docker checker and read-only smoke](docs/docker.md)
 - [Deterministic developer bundle](docs/developer-bundle.md)
 - [Compatibility record](docs/compatibility.md)
@@ -110,6 +115,16 @@ acceptance.
 - [Normative references](docs/standards.md)
 - [Foundation plan](docs/plans/2026-08-30-foundation.md)
 
-## Licence
+## Contributing and support
 
-Apache-2.0.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing a contract. Use
+[SUPPORT.md](SUPPORT.md) for questions and [SECURITY.md](SECURITY.md) for
+sensitive reports. GitHub is source storage for this project; validation runs
+locally.
+
+## Licence and notices
+
+The repository is licensed under the [Apache License 2.0](LICENSE). Existing
+third-party notices, their coverage limits, and redistribution guidance are in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). See the
+[licensing guide](docs/licensing.md) for project and third-party boundaries.

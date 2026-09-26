@@ -1,9 +1,11 @@
 # Teslatlas protocol
 
-Follow `../AGENTS.md` and `../docs/development/COORDINATION.md`, then this
-product's `docs/development/PLAN.md` and `STATUS.json`. Model and effort defaults
-are in `../AGENTS.md`. Work only on the assigned scope. App v7 (`../app`) consumes
-this product; change the App only as App work. Viewer is excluded.
+Follow `../AGENTS.md`, `../docs/development/MASTER_PLAN.md` and
+`../docs/development/COORDINATION.md`. The root master plan is the only current
+plan and status record; this product's dated `docs/development/PLAN.md` and
+`STATUS.json` are historical records. Model and effort defaults are in
+`../AGENTS.md`. Work only on the assigned scope. App v7 (`../app`) consumes this
+product; change the App only as App work. Viewer is excluded.
 
 Run commands through `../scripts/dev/run.sh teslatlas-protocol COMMAND...` so build output and
 caches stay out of this tree (clean-development routes the `uv` cache; see `.clean-development.json`).
@@ -49,6 +51,17 @@ This repository owns public contracts, not Hub implementation.
   and must never be added to examples, test fixtures, image layers, output, or
   diagnostics. The image gate is offline after its locked dependency install;
   an unrun Docker definition is static evidence only.
+
+## Workspace boundaries
+
+- Preserve existing work, private data, and exact evidence bindings.
+- GitHub is source storage only. Do not add CI, releases, tags, binary
+  publication, signing, or deployment automation without owner direction.
+- Use `codebase-memory-mcp` for structural repository lookup; do not introduce
+  CodeGraph files or tooling.
+- Local conformance, synthetic runtime, bundle, and Docker checks do not prove
+  installed, deployed, real-data, or product acceptance beyond their recorded
+  scope.
 
 ## Local execution
 

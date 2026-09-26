@@ -1,7 +1,7 @@
-# Superseded: Teslatlas Protocol Working Product Development Plan
+# Historical protocol plan
 
-This operational plan was replaced on 2026-09-08.
-
-Use the [canonical development plan](../../development/PLAN.md). The first milestone is a simple working bootstrap; polished installers and cross-platform acceptance follow later. Product coding and native goals are held until the owner says start.
-
-The [original document](../../development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md) is preserved as historical evidence only. Do not execute it or treat its old model, goal, package or permission clauses as current authority.
+This plan was superseded on 2026-09-08. The
+[original document](../../development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md)
+is retained as historical evidence. Its execution order, pauses, model choices,
+and approval rules are not current instructions. Use the repository's current
+agent and contribution guidance for new work.

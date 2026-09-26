@@ -1,7 +1,7 @@
 # Product versioning
 
 This repository carries the shared Teslatlas Hub ecosystem product version
-`2026.36.2` in `YEAR.WEEK.REVISION` form. G3 r2 accepted the bounded
+`2026.36.2` in `YEAR.WEEK.REVISION` form. G3 r2 accepted the bounded historical
 compatibility records for this cohort. The number alone still does not imply a
 tag, package publication, release artifact, or support outside those records.
 
@@ -27,3 +27,7 @@ paths were admitted by
 That metadata acceptance retains each receipt's synthetic runtime and platform
 limits; it is not installed-service, publication, real-data, App, or full-matrix
 acceptance.
+
+The candidate Hub sync contract `hub-sync-v1@1.3.0` also has an independent
+revision. Historical admission does not establish current runtime support; see
+[verification limits](verification.md).

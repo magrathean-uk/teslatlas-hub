@@ -1,7 +1,8 @@
 # Compatibility record
 
 [`compatibility/hub.json`](../compatibility/hub.json) is the machine-readable
-record for this repository's current-Hub HTTP claim. G3 r2 accepted the record
+historical record for this repository's current-Hub HTTP claim. G3 r2 accepted
+the record
 for product `2026.36.2`, profile `hub-http-v1@1.0.0`, and manifest SHA-256
 `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
 The tested versions, content-bound Hub source fingerprints, and six G4/G5/G6
@@ -32,7 +33,7 @@ Edge owners bind their own artifacts and report their own acceptance. Do not
 edit sibling pins or infer a broad supported-version range from one product
 cohort.
 
-The active evidence is
+The retained metadata-admission evidence is
 [`g3-compatibility-admission-2026-09-19-r2.json`](development/g3-compatibility-admission-2026-09-19-r2.json)
 (SHA-256
 `5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865`).
@@ -41,3 +42,8 @@ macOS 27 Apple-silicon and Debian 13.6 ARM64 synthetic journeys. Installed or
 release artifacts, declared minimum floors, real Tesla data, App integration,
 and the full platform matrix remain unaccepted. The admission is not evidence
 that any source was published or tagged.
+
+The associated runtime fixtures and external receipts were later removed, as
+recorded in the development history. These bindings describe prior evidence,
+not a current running installation. See
+[verification limits](verification.md).

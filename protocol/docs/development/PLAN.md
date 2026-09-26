@@ -1,21 +1,21 @@
-# Protocol — source-published post-cleanup state
+# Historical protocol cleanup record
 
-Revision 2026-09-22. The accepted current-Mac implementation is published on `main`.
-The owner then requested removal of all local builds, artifacts, runtimes and VMs.
+This page records the source-publication and cleanup snapshot dated 2026-09-22.
+It is retained as provenance, not a current work plan or runtime inventory.
 
-## Published result
+## Recorded source identities
 
-- Accepted implementation lineage: `788cfa2fec520896e9dc4accfc9202325327a135`
-- Published `main` before this cleanup metadata update: `c3ee94f2e12e22d0be7402b1ad185058aa9f0752`
-- The published contracts retain the distinct reference, current-Hub, compatibility and Edge profiles, including schema 2.2 signatures and opaque cursors.
+- Accepted implementation lineage: `788cfa2fec520896e9dc4accfc9202325327a135`.
+- Published `main` before the cleanup metadata update, as recorded at the time:
+  `c3ee94f2e12e22d0be7402b1ad185058aa9f0752`.
 
-## Evidence boundary
+The source record describes historical Node, Swift, and strict-browser checks
+of schema 2.2 and opaque cursors. It also records removal of the corresponding
+local builds, external candidates, receipts, runtime fixtures, and VMs. Those
+historical checks do not establish current integration or a runnable
+installation.
 
-Historical: Node, Swift and strict-browser consumers passed the recorded schema 2.2 and cursor checks. The corresponding external candidates, receipts and runtime fixtures
-were deliberately deleted. Those results remain historical provenance and do not
-claim that a runnable local installation exists now.
-
-## Current state
-
-Source and Git history are retained. Regenerable builds and dependencies are removed.
-No local receipt or runtime remains; new integration claims require a fresh coordinated run.
+The adjacent `STATUS.json` is the machine-readable snapshot from the same date.
+New integration claims require fresh evidence for the exact source and
+artifacts; do not interpret its completed planning state as completion of later
+work. See [verification evidence and limits](../verification.md).
