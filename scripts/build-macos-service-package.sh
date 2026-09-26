@@ -25,6 +25,15 @@ die() {
     exit 1
 }
 
+# BEGIN TESTABLE RUST TOOLCHAIN HELPER
+maintained_rust_toolchain() {
+    case "$1" in
+        1.98|1.98.0|1.98.1) printf '%s\n' 1.98.1 ;;
+        *) return 1 ;;
+    esac
+}
+# END TESTABLE RUST TOOLCHAIN HELPER
+
 # BEGIN TESTABLE HUB VERSION HELPER
 require_hub_version() {
     version_binary=$1
@@ -171,15 +180,12 @@ require_hub_source_commit "$binary" "$source_commit" \
 [ -f "$fleet_telemetry_binary" ] && [ ! -L "$fleet_telemetry_binary" ] && [ -x "$fleet_telemetry_binary" ] \
     || die "Fleet Telemetry binary must be an executable regular file"
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
-RUST_TOOLCHAIN=$(
+CARGO_RUST_VERSION=$(
     /usr/bin/sed -nE 's/^rust-version = "([0-9]+\.[0-9]+(\.[0-9]+)?)"$/\1/p' \
         "$ROOT/Cargo.toml"
 )
-case "$RUST_TOOLCHAIN" in
-    *.*.*) ;;
-    *.*) RUST_TOOLCHAIN="$RUST_TOOLCHAIN.0" ;;
-    *) die "cannot read the pinned Rust version" ;;
-esac
+RUST_TOOLCHAIN=$(maintained_rust_toolchain "$CARGO_RUST_VERSION") \
+    || die "Cargo rust-version is incompatible with maintained Rust 1.98.1"
 RUSTUP=$(PATH="$CALLER_PATH" command -v rustup) \
     || die "rustup is required for dependency legal verification"
 case "$RUSTUP" in

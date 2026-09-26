@@ -61,6 +61,38 @@ done
 /bin/sh -n "$SERVICE_BUILD" || fail "invalid macOS service build script"
 /bin/sh -n "$PROXY_BUILD" || fail "invalid Tesla command proxy build script"
 /bin/sh -n "$FLEET_TELEMETRY_BUILD" || fail "invalid Fleet Telemetry build script"
+for rust_build in "$APP_BUILD" "$SERVICE_BUILD"; do
+    /usr/bin/grep -Fq \
+        'RUST_TOOLCHAIN=$(maintained_rust_toolchain "$CARGO_RUST_VERSION")' \
+        "$rust_build" \
+        || fail "macOS packaging does not select Rust from Cargo minimum: $rust_build"
+    if /usr/bin/grep -Fq 'RUST_TOOLCHAIN="$RUST_TOOLCHAIN.0"' "$rust_build"; then
+        fail "macOS packaging can silently select Rust 1.98.0: $rust_build"
+    fi
+done
+rust_helper="$TEST_ROOT/rust-toolchain-helper.sh"
+service_rust_helper="$TEST_ROOT/service-rust-toolchain-helper.sh"
+/usr/bin/sed -n \
+    '/^# BEGIN TESTABLE RUST TOOLCHAIN HELPER$/,/^# END TESTABLE RUST TOOLCHAIN HELPER$/p' \
+    "$APP_BUILD" > "$rust_helper"
+/usr/bin/sed -n \
+    '/^# BEGIN TESTABLE RUST TOOLCHAIN HELPER$/,/^# END TESTABLE RUST TOOLCHAIN HELPER$/p' \
+    "$SERVICE_BUILD" > "$service_rust_helper"
+/usr/bin/cmp -s "$rust_helper" "$service_rust_helper" \
+    || fail "macOS package builders use different Rust compatibility checks"
+# shellcheck source=/dev/null
+. "$rust_helper"
+for cargo_rust_version in 1.98 1.98.0 1.98.1; do
+    selected_rust=$(maintained_rust_toolchain "$cargo_rust_version") \
+        || fail "compatible Cargo minimum was rejected: $cargo_rust_version"
+    [ "$selected_rust" = 1.98.1 ] \
+        || fail "Cargo minimum selected Rust $selected_rust instead of 1.98.1"
+done
+for cargo_rust_version in 1.98.2 1.99 invalid; do
+    if maintained_rust_toolchain "$cargo_rust_version" >/dev/null; then
+        fail "incompatible Cargo minimum was accepted: $cargo_rust_version"
+    fi
+done
 /usr/bin/grep -Fq 'bootstrap-companions.py' "$SERVICE_BUILD" \
     || fail "service package does not include the companion bootstrap helper"
 /usr/bin/grep -Fq 'catalog-current.json' "$SERVICE_BUILD" \

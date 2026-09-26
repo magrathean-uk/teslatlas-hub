@@ -67,10 +67,10 @@ arbitrary Go 1.27.0 installation is insufficient. The relocked proxy subject was
 confirmed by two clean matching builds, but that evidence covers the proxy
 component only. It does not establish a working combined package or installed Hub.
 
-The packager's current Rust selection expands `Cargo.toml`'s `1.98` to `1.98.0`,
-which differs from the maintained workspace's Rust 1.98.1 requirement. Resolve
-that mismatch in the implementation before treating this path as a working build
-procedure; do not install another toolchain merely to bypass the workspace rule.
+The packaging source checks select exactly the maintained Rust 1.98.1 toolchain
+for `Cargo.toml`'s `1.98` minimum and reject incompatible minimum changes. That
+check proves the source-level toolchain selection only; a successful local
+package build and ordinary-user install or upgrade acceptance remain required.
 
 Within the maintained workspace, the entry point is:
 
