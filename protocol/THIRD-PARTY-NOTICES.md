@@ -4,16 +4,16 @@ The Protocol contracts and local tooling are Apache-2.0 licensed; see
 `LICENSE`. The local development gate uses the exact dependency versions in
 `uv.lock`. Those packages are not redistributed in the developer source
 bundle. The existing declared licence identifiers are retained below for
-operator review. The table is incomplete for the current lockfile: it omits
-`cryptography 46.0.7`, `cffi 2.1.1`, and `pycparser 3.0`. See
-[licensing](docs/licensing.md) for the verification needed before
-redistributing those dependencies.
+operator review. See [licensing](docs/licensing.md) for the evidence boundary
+and the checks required before redistributing those dependencies.
 
 | Package | Locked version | Declared licence |
 | --- | --- | --- |
 | annotated-types | 0.8.0 | MIT |
 | arrow | 1.4.0 | Apache-2.0 |
 | attrs | 26.1.0 | MIT |
+| cffi | 2.1.1 | MIT-0 |
+| cryptography | 46.0.7 | Apache-2.0 OR BSD-3-Clause |
 | fqdn | 1.5.1 | MPL-2.0 |
 | idna | 3.19 | BSD-3-Clause |
 | isoduration | 20.11.0 | MIT |
@@ -26,6 +26,7 @@ redistributing those dependencies.
 | openapi-schema-validator | 0.9.0 | BSD-3-Clause |
 | openapi-spec-validator | 0.9.0 | Apache-2.0 |
 | pathable | 0.6.0 | Apache-2.0 |
+| pycparser | 3.0 | BSD-3-Clause |
 | pydantic | 2.13.5 | MIT |
 | pydantic-core | 2.46.5 | MIT |
 | pydantic-settings | 2.15.0 | MIT |

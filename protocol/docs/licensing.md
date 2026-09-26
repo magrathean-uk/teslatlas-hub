@@ -17,16 +17,23 @@ preserving applicable copyright, patent, trademark, and attribution notices.
 Apache-2.0 does not grant trademark permission except as its terms allow.
 
 [`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md) is an informational
-dependency list. It is incomplete for the current lockfile. It is not a
-substitute for the licence files supplied with any dependency distribution.
-Preserve the notices and licence materials shipped with dependencies that are
-redistributed.
+dependency list. The three entries added to close the previous inventory gap
+were checked against the licence files in the exact installed distributions
+and the matching tagged upstream sources:
 
-The table omits `cryptography 46.0.7`, `cffi 2.1.1`, and `pycparser 3.0` from
-the current `uv.lock`. The direct `cryptography` dependency is declared in
-`pyproject.toml`. Verify the licence texts and required attribution from the
-exact dependency distributions before redistributing them or adding licence
-identifiers to the table. Existing notices remain preserved.
+- `cryptography 46.0.7`: `Apache-2.0 OR BSD-3-Clause`, with the tagged
+  [licence selector](https://github.com/pyca/cryptography/blob/46.0.7/LICENSE).
+- `cffi 2.1.1`: `MIT-0`, with the tagged
+  [licence file](https://github.com/python-cffi/cffi/blob/v2.1.1/LICENSE).
+- `pycparser 3.0`: `BSD-3-Clause`, with the tagged
+  [licence file](https://github.com/eliben/pycparser/blob/release_v3.00/LICENSE).
+
+This closes the documentation inventory gap for the locked artifacts; it is
+not legal clearance and does not establish the contents or obligations of a
+different wheel, source distribution, build, or version. The table is not a
+substitute for the licence files supplied with an artifact. Before
+redistributing a dependency, inspect that exact artifact and preserve every
+licence, notice, attribution, and other required material it ships.
 
 ## Contributions and ownership
 
