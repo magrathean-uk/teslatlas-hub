@@ -21,18 +21,22 @@ expect_failure() {
 
 SOURCE=$(python3 - "$REPO" <<'PY'
 import json
-import hashlib
+import os
 import pathlib
 import sys
 
 repo = pathlib.Path(sys.argv[1])
+lab = os.environ.get("TESLATLAS_LAB")
+if not lab:
+    raise SystemExit("TESLATLAS_LAB is required")
 lock = json.loads(
     (repo / "packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json").read_text()
 )
 upstream = lock["upstream"]
 print(
-    repo
-    / "target"
+    pathlib.Path(lab)
+    / "build"
+    / "hub"
     / "upstream-cache"
     / (
         "fleet-telemetry-"
@@ -50,7 +54,6 @@ printf '%s\n' 'deterministic-test-receiver' >"$TMP/receiver"
 python3 "$SCRIPT" \
   --repo "$REPO" \
   --receiver-binary "$TMP/receiver" \
-  --source-archive "$SOURCE" \
   --module-cache "$MODULE_CACHE" \
   --target linux-amd64 \
   --output-dir "$TMP/evidence-a" >/dev/null

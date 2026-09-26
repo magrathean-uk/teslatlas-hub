@@ -457,6 +457,8 @@ fi
     || fail "proxy build has no macOS 13 deployment target"
 /usr/bin/grep -Fq 'cache_directory="$TESLATLAS_LAB/build/hub/upstream-cache"' "$FLEET_TELEMETRY_BUILD" \
     || fail "Fleet Telemetry source archive is not cached in the managed lab"
+/usr/bin/grep -Fq -- '--source-archive "$TESLATLAS_LAB/build/hub/upstream-cache/fleet-telemetry-' "$APP_BUILD" \
+    || fail "Fleet Telemetry evidence does not use the managed source archive"
 /usr/bin/grep -Fq 'cached upstream archive checksum mismatch' "$FLEET_TELEMETRY_BUILD" \
     || fail "Fleet Telemetry cached source is not revalidated before use"
 /usr/bin/grep -Fq 'cache_installing=$(/usr/bin/mktemp' "$FLEET_TELEMETRY_BUILD" \

@@ -285,6 +285,7 @@ done
     --proxy-binary "$PROXY_BINARY" --output-dir "$GO_EVIDENCE" >/dev/null
 "$ROOT/scripts/fleet-telemetry-evidence.py" --repo "$ROOT" \
     --receiver-binary "$FLEET_TELEMETRY_BINARY" \
+    --source-archive "$TESLATLAS_LAB/build/hub/upstream-cache/fleet-telemetry-d64c73ab65e7c5fb5fc12b35fe507e2c6054227b-a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9.tar.gz" \
     --output-dir "$FLEET_TELEMETRY_EVIDENCE" >/dev/null
 "$ROOT/scripts/legal-bundle.py" --repo "$ROOT" \
     --go-proxy-evidence "$GO_EVIDENCE" \

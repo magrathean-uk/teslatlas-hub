@@ -1167,20 +1167,27 @@ def main() -> int:
     bridge_path = repo / "packaging" / "fleet-telemetry-bridge" / BRIDGE_LOCK_NAME
     bridge_bytes = regular_bytes(bridge_path, "Fleet Telemetry bridge lock", MAX_LOCK_BYTES)
     bridge = validate_bridge_lock(parse_json(bridge_bytes, "Fleet Telemetry bridge lock"))
-    source_path = (
-        Path(os.path.abspath(args.source_archive))
-        if args.source_archive is not None
-        else repo
-        / "target"
-        / "upstream-cache"
-        / (
-            "fleet-telemetry-"
-            + bridge["upstream"]["commit"]
-            + "-"
-            + bridge["upstream"]["archive_sha256"]
-            + ".tar.gz"
+    if args.source_archive is not None:
+        source_path = Path(os.path.abspath(args.source_archive))
+    else:
+        lab = os.environ.get("TESLATLAS_LAB")
+        if not lab:
+            raise GateError(
+                "TESLATLAS_LAB is required when --source-archive is not provided"
+            )
+        source_path = (
+            Path(os.path.abspath(lab))
+            / "build"
+            / "hub"
+            / "upstream-cache"
+            / (
+                "fleet-telemetry-"
+                + bridge["upstream"]["commit"]
+                + "-"
+                + bridge["upstream"]["archive_sha256"]
+                + ".tar.gz"
+            )
         )
-    )
     if args.module_cache is not None:
         configured_go_override()
         module_cache_path = Path(os.path.abspath(args.module_cache))
