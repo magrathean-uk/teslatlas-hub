@@ -1,8 +1,14 @@
 {
   "authentication": "paired bearer",
-  "bootstrap_rule": "A client selects the hub-sync-v1@1.3.0 bootstrap representation only by sending both x-teslatlas-sync-profile: hub-sync-v1@1.3.0 and x-teslatlas-supported-schemas: 2.1,2.2. The schema header alone remains legacy SyncManifest negotiation and MUST NOT select this representation. After applying a signed 1.3 manifest, the client MUST persist manifest.receipt_id, sequence, and schema_version. It sends those exact values as base_receipt_id, from_sequence, and base_manifest_schema on changes-since.",
+  "bootstrap_rule": "A client selects the hub-sync-v1@1.3.0 bootstrap representation only by sending exactly one x-teslatlas-sync-profile: hub-sync-v1@1.3.0 header and exactly one x-teslatlas-supported-schemas: 2.1,2.2 header. If an explicit profile selector is present but either header is missing, duplicated, or has any other value, the Hub MUST return an empty 406 with Cache-Control: no-store and MUST NOT fall back to legacy routing. The schema header without a profile selector remains legacy SyncManifest negotiation and MUST NOT select this representation. After applying a signed 1.3 manifest, the client MUST persist manifest.receipt_id, sequence, and schema_version. It sends those exact values as base_receipt_id, from_sequence, and base_manifest_schema on changes-since.",
   "bootstrap_selector": {
     "header": "x-teslatlas-sync-profile",
+    "invalid_explicit_selector": {
+      "body_bytes": 0,
+      "cache_control": "no-store",
+      "manifest_signature": "absent",
+      "status": 406
+    },
     "required_schema_header": "x-teslatlas-supported-schemas",
     "required_schema_value": "2.1,2.2",
     "value": "hub-sync-v1@1.3.0",

@@ -122,8 +122,6 @@ def validate_request_body(raw, root=PROFILE):
 
 
 def validate_bootstrap_selection(value, status, root=PROFILE):
-    if status != 200:
-        return ["bootstrap fixture status is invalid"]
     if not isinstance(value, dict) or not isinstance(value.get("vehicle_id"), str):
         return ["bootstrap fixture is invalid"]
     request = value.get("request")
@@ -132,22 +130,34 @@ def validate_bootstrap_selection(value, status, root=PROFILE):
     if request.get("path") != f"/v1/vehicles/{value['vehicle_id']}/sync/manifest":
         return ["bootstrap fixture route is invalid"]
     headers = request.get("headers")
-    if not isinstance(headers, dict) or not all(isinstance(key, str) and isinstance(item, str) for key, item in headers.items()):
+    if not isinstance(headers, list) or not all(
+        isinstance(item, dict)
+        and set(item) == {"name", "value"}
+        and isinstance(item["name"], str)
+        and isinstance(item["value"], str)
+        for item in headers
+    ):
         return ["bootstrap fixture headers are invalid"]
-    lowered = {key.lower(): item for key, item in headers.items()}
-    if len(lowered) != len(headers):
-        return ["bootstrap fixture repeats a header"]
     selector = load_profile(root)["bootstrap_selector"]
-    schema_value = lowered.get(selector["required_schema_header"])
-    profile_value = lowered.get(selector["header"])
-    if profile_value is None:
-        selected = selector["without_selector"]
-    elif profile_value == selector["value"] and schema_value == selector["required_schema_value"]:
-        selected = selector["value"]
+    profile_values = [item["value"] for item in headers if item["name"].lower() == selector["header"]]
+    schema_values = [item["value"] for item in headers if item["name"].lower() == selector["required_schema_header"]]
+    if not profile_values:
+        actual_response = {"status": 200, "representation": selector["without_selector"]}
+    elif profile_values == [selector["value"]] and schema_values == [selector["required_schema_value"]]:
+        actual_response = {"status": 200, "representation": selector["value"]}
     else:
-        selected = "unsupported"
-    if value.get("expected_representation") != selected:
-        return ["bootstrap representation does not match request headers"]
+        rejection = selector["invalid_explicit_selector"]
+        actual_response = {
+            "status": rejection["status"],
+            "representation": "empty",
+            "headers": {"cache_control": rejection["cache_control"]},
+            "body_bytes": rejection["body_bytes"],
+            "manifest_signature": rejection["manifest_signature"],
+        }
+    if status != actual_response["status"]:
+        return ["bootstrap fixture status does not match request headers"]
+    if value.get("expected_response") != actual_response:
+        return ["bootstrap response does not match request headers"]
     return []
 
 

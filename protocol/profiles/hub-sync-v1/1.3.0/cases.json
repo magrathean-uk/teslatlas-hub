@@ -16,6 +16,41 @@
     },
     {
       "expected_errors": [],
+      "id": "bootstrap-profile-selector-invalid",
+      "request_fixture": "bootstrap-profile-selector-invalid-v1",
+      "status": 406,
+      "validator": "bootstrap_selection"
+    },
+    {
+      "expected_errors": [],
+      "id": "bootstrap-profile-selector-missing-schema",
+      "request_fixture": "bootstrap-profile-selector-missing-schema-v1",
+      "status": 406,
+      "validator": "bootstrap_selection"
+    },
+    {
+      "expected_errors": [],
+      "id": "bootstrap-profile-selector-invalid-schema",
+      "request_fixture": "bootstrap-profile-selector-invalid-schema-v1",
+      "status": 406,
+      "validator": "bootstrap_selection"
+    },
+    {
+      "expected_errors": [],
+      "id": "bootstrap-profile-selector-duplicate",
+      "request_fixture": "bootstrap-profile-selector-duplicate-v1",
+      "status": 406,
+      "validator": "bootstrap_selection"
+    },
+    {
+      "expected_errors": [],
+      "id": "bootstrap-profile-selector-duplicate-schema",
+      "request_fixture": "bootstrap-profile-selector-duplicate-schema-v1",
+      "status": 406,
+      "validator": "bootstrap_selection"
+    },
+    {
+      "expected_errors": [],
       "id": "changes-since-changed-set",
       "request_fixture": "changes-since-request-v1",
       "response_fixture": "changes-since-changed-set-v1",

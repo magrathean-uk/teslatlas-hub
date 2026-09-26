@@ -6,7 +6,11 @@ has no exact Hub product-version pin. A client selects its bootstrap
 representation with both `x-teslatlas-sync-profile: hub-sync-v1@1.3.0` and
 `x-teslatlas-supported-schemas: 2.1,2.2`. The schema header by itself remains
 legacy `SyncManifest` negotiation and MUST NOT select the 1.3 representation.
-This preserves existing clients that already send the schema list. A client
+This preserves existing clients that already send the schema list. Once a
+profile selector is present, both headers must occur exactly once with those
+exact values. A missing companion, different value, or duplicate selector or
+schema header returns an empty `406` with `Cache-Control: no-store`; it never
+falls back to the legacy representation. A client
 applies the selected signed initial manifest, then persists its `receipt_id`, `sequence`, and `schema_version` as
 the changes-since base. It sends those exact values plus its accepted manifest
 schema range to `POST /v1/vehicles/{vehicle_id}/sync/changes-since` with a

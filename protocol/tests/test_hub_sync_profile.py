@@ -48,6 +48,12 @@ class HubSyncProfileTests(unittest.TestCase):
                 "required_schema_header": "x-teslatlas-supported-schemas",
                 "required_schema_value": "2.1,2.2",
                 "without_selector": "legacy-sync-manifest",
+                "invalid_explicit_selector": {
+                    "status": 406,
+                    "body_bytes": 0,
+                    "cache_control": "no-store",
+                    "manifest_signature": "absent",
+                },
             },
         )
         frozen = ROOT / "profiles/hub-sync-v1/1.2.0/SHA256SUMS"
@@ -184,6 +190,11 @@ class HubSyncProfileTests(unittest.TestCase):
             {"const": "2.1,2.2"},
         )
         self.assertTrue(headers["x-teslatlas-supported-schemas"]["required"])
+        self.assertEqual(manifest["responses"]["406"]["content"], {})
+        self.assertEqual(
+            manifest["responses"]["406"]["headers"]["Cache-Control"]["schema"],
+            {"const": "no-store"},
+        )
 
         at_limit = self.fixture("changes-since-request-8192-bytes")
         over_limit = self.fixture("changes-since-request-8193-bytes")
@@ -424,7 +435,7 @@ class HubSyncProfileTests(unittest.TestCase):
 
     def test_registered_fixture_cases_cover_positive_and_negative_vectors(self):
         results = self.sync.run_fixture_cases()
-        self.assertEqual(len(results), 44)
+        self.assertEqual(len(results), 49)
         self.assertTrue(all(result["passed"] for result in results))
         by_case = {result["case_id"]: result for result in results}
         self.assertEqual(
@@ -461,20 +472,49 @@ class HubSyncProfileTests(unittest.TestCase):
         legacy = self.fixture("bootstrap-schema-list-only-legacy")
         self.assertEqual(self.sync.validate_bootstrap_selection(selected, 200), [])
         self.assertEqual(self.sync.validate_bootstrap_selection(legacy, 200), [])
-        self.assertEqual(legacy["request"]["headers"], {"x-teslatlas-supported-schemas": "2.1,2.2"})
-        self.assertEqual(legacy["expected_representation"], "legacy-sync-manifest")
-
-        ambiguous = copy.deepcopy(selected)
-        ambiguous["request"]["headers"].pop("x-teslatlas-sync-profile")
         self.assertEqual(
-            self.sync.validate_bootstrap_selection(ambiguous, 200),
-            ["bootstrap representation does not match request headers"],
+            legacy["request"]["headers"],
+            [{"name": "x-teslatlas-supported-schemas", "value": "2.1,2.2"}],
         )
-        missing_schema = copy.deepcopy(selected)
-        missing_schema["request"]["headers"].pop("x-teslatlas-supported-schemas")
+        self.assertEqual(legacy["expected_response"], {"status": 200, "representation": "legacy-sync-manifest"})
+
+        rejected = (
+            "bootstrap-profile-selector-invalid",
+            "bootstrap-profile-selector-missing-schema",
+            "bootstrap-profile-selector-invalid-schema",
+            "bootstrap-profile-selector-duplicate",
+            "bootstrap-profile-selector-duplicate-schema",
+        )
+        for name in rejected:
+            with self.subTest(name=name):
+                fixture = self.fixture(name)
+                self.assertEqual(self.sync.validate_bootstrap_selection(fixture, 406), [])
+                self.assertEqual(
+                    fixture["expected_response"],
+                    {
+                        "status": 406,
+                        "representation": "empty",
+                        "headers": {"cache_control": "no-store"},
+                        "body_bytes": 0,
+                        "manifest_signature": "absent",
+                    },
+                )
+        duplicate = self.fixture("bootstrap-profile-selector-duplicate")
         self.assertEqual(
-            self.sync.validate_bootstrap_selection(missing_schema, 200),
-            ["bootstrap representation does not match request headers"],
+            [item["name"] for item in duplicate["request"]["headers"]].count("x-teslatlas-sync-profile"),
+            2,
+        )
+        duplicate_schema = self.fixture("bootstrap-profile-selector-duplicate-schema")
+        self.assertEqual(
+            [item["name"] for item in duplicate_schema["request"]["headers"]].count("x-teslatlas-supported-schemas"),
+            2,
+        )
+
+        malformed = copy.deepcopy(selected)
+        malformed["request"]["headers"] = {"x-teslatlas-sync-profile": "hub-sync-v1@1.3.0"}
+        self.assertEqual(
+            self.sync.validate_bootstrap_selection(malformed, 200),
+            ["bootstrap fixture headers are invalid"],
         )
 
 

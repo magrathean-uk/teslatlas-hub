@@ -59,7 +59,7 @@
           "status": 401
         },
         {
-          "body": "empty",
+          "body": "empty invalid or unavailable explicit bootstrap negotiation",
           "headers": {
             "cache_control": "no-store"
           },

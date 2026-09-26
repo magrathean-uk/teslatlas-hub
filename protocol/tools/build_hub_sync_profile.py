@@ -229,7 +229,7 @@ def bundle():
             {"route": "GET /v1/vehicles/{vehicle_id}/sync/manifest", "responses": [
                 {"status": 200, "body": "one signed schema 2.1 or 2.2 manifest"},
                 {"status": 401, "body": "empty", "signature": "absent"},
-                {"status": 406, "body": "empty", "headers": {"cache_control": "no-store"}, "signature": "absent"}]},
+                {"status": 406, "body": "empty invalid or unavailable explicit bootstrap negotiation", "headers": {"cache_control": "no-store"}, "signature": "absent"}]},
             {"route": "GET /v1/vehicles/{vehicle_id}/sync/noop", "responses": [
                 {"status": 200, "body": "signed no-op receipt"},
                 {"status": 401, "body": "empty", "signature": "absent"},
@@ -303,17 +303,74 @@ def bundle():
         "request": {
             "method": "GET",
             "path": f"/v1/vehicles/{vehicle_id}/sync/manifest",
-            "headers": {
-                BOOTSTRAP_PROFILE_HEADER: PROFILE_ID,
-                SUPPORTED_SCHEMAS_HEADER: SUPPORTED_SCHEMAS_VALUE,
-            },
+            "headers": [
+                {"name": BOOTSTRAP_PROFILE_HEADER, "value": PROFILE_ID},
+                {"name": SUPPORTED_SCHEMAS_HEADER, "value": SUPPORTED_SCHEMAS_VALUE},
+            ],
         },
-        "expected_representation": PROFILE_ID,
+        "expected_response": {"status": 200, "representation": PROFILE_ID},
     }
     legacy_bootstrap_request = copy.deepcopy(bootstrap_request)
     legacy_bootstrap_request["fixture_id"] = "bootstrap-schema-list-only-legacy-v1"
-    legacy_bootstrap_request["request"]["headers"].pop(BOOTSTRAP_PROFILE_HEADER)
-    legacy_bootstrap_request["expected_representation"] = "legacy-sync-manifest"
+    legacy_bootstrap_request["request"]["headers"] = [
+        {"name": SUPPORTED_SCHEMAS_HEADER, "value": SUPPORTED_SCHEMAS_VALUE}
+    ]
+    legacy_bootstrap_request["expected_response"] = {"status": 200, "representation": "legacy-sync-manifest"}
+
+    def rejected_bootstrap_fixture(fixture_id, headers):
+        return {
+            "fixture_id": fixture_id,
+            "vehicle_id": vehicle_id,
+            "request": {
+                "method": "GET",
+                "path": f"/v1/vehicles/{vehicle_id}/sync/manifest",
+                "headers": headers,
+            },
+            "expected_response": {
+                "status": 406,
+                "representation": "empty",
+                "headers": {"cache_control": "no-store"},
+                "body_bytes": 0,
+                "manifest_signature": "absent",
+            },
+        }
+
+    rejected_bootstrap_examples = {
+        "bootstrap-profile-selector-invalid": rejected_bootstrap_fixture(
+            "bootstrap-profile-selector-invalid-v1",
+            [
+                {"name": BOOTSTRAP_PROFILE_HEADER, "value": "hub-sync-v1@1.3"},
+                {"name": SUPPORTED_SCHEMAS_HEADER, "value": SUPPORTED_SCHEMAS_VALUE},
+            ],
+        ),
+        "bootstrap-profile-selector-missing-schema": rejected_bootstrap_fixture(
+            "bootstrap-profile-selector-missing-schema-v1",
+            [{"name": BOOTSTRAP_PROFILE_HEADER, "value": PROFILE_ID}],
+        ),
+        "bootstrap-profile-selector-invalid-schema": rejected_bootstrap_fixture(
+            "bootstrap-profile-selector-invalid-schema-v1",
+            [
+                {"name": BOOTSTRAP_PROFILE_HEADER, "value": PROFILE_ID},
+                {"name": SUPPORTED_SCHEMAS_HEADER, "value": "2.1, 2.2"},
+            ],
+        ),
+        "bootstrap-profile-selector-duplicate": rejected_bootstrap_fixture(
+            "bootstrap-profile-selector-duplicate-v1",
+            [
+                {"name": BOOTSTRAP_PROFILE_HEADER, "value": PROFILE_ID},
+                {"name": BOOTSTRAP_PROFILE_HEADER, "value": PROFILE_ID},
+                {"name": SUPPORTED_SCHEMAS_HEADER, "value": SUPPORTED_SCHEMAS_VALUE},
+            ],
+        ),
+        "bootstrap-profile-selector-duplicate-schema": rejected_bootstrap_fixture(
+            "bootstrap-profile-selector-duplicate-schema-v1",
+            [
+                {"name": BOOTSTRAP_PROFILE_HEADER, "value": PROFILE_ID},
+                {"name": SUPPORTED_SCHEMAS_HEADER, "value": SUPPORTED_SCHEMAS_VALUE},
+                {"name": SUPPORTED_SCHEMAS_HEADER, "value": SUPPORTED_SCHEMAS_VALUE},
+            ],
+        ),
+    }
     noop_example = {
         "fixture_id": "sync-noop-signed-v1",
         "receipt": {"kind": "no_op", "vehicle_id": vehicle_id,
@@ -479,11 +536,17 @@ def bundle():
             "required_schema_header": SUPPORTED_SCHEMAS_HEADER,
             "required_schema_value": SUPPORTED_SCHEMAS_VALUE,
             "without_selector": "legacy-sync-manifest",
+            "invalid_explicit_selector": {
+                "status": 406,
+                "body_bytes": 0,
+                "cache_control": "no-store",
+                "manifest_signature": "absent",
+            },
         },
         "route": {"method": "POST", "path": "/v1/vehicles/{vehicle_id}/sync/changes-since",
                   "success_status": 200, "compacted_status": 409},
         "signature_rule": "Each receipt or rebase hint MUST carry an Ed25519 detached signature over RFC 8785 canonical JSON of the object with its signature member omitted. signed_payload_sha256 is the SHA-256 of those canonical bytes. The signed object's vehicle_id and the selected signing key set's vehicle_id MUST both equal the route vehicle_id. Production clients obtain vehicle-bound keys from the authenticated no-store signing-keys route. key_id MUST equal ed25519-sha256- plus lowercase SHA-256 hex of the raw 32-byte public key. Fixtures carry deterministic Ed25519 signatures using only the published fixture public key; they are test vectors, not production trust anchors.",
-        "bootstrap_rule": "A client selects the hub-sync-v1@1.3.0 bootstrap representation only by sending both x-teslatlas-sync-profile: hub-sync-v1@1.3.0 and x-teslatlas-supported-schemas: 2.1,2.2. The schema header alone remains legacy SyncManifest negotiation and MUST NOT select this representation. After applying a signed 1.3 manifest, the client MUST persist manifest.receipt_id, sequence, and schema_version. It sends those exact values as base_receipt_id, from_sequence, and base_manifest_schema on changes-since.",
+        "bootstrap_rule": "A client selects the hub-sync-v1@1.3.0 bootstrap representation only by sending exactly one x-teslatlas-sync-profile: hub-sync-v1@1.3.0 header and exactly one x-teslatlas-supported-schemas: 2.1,2.2 header. If an explicit profile selector is present but either header is missing, duplicated, or has any other value, the Hub MUST return an empty 406 with Cache-Control: no-store and MUST NOT fall back to legacy routing. The schema header without a profile selector remains legacy SyncManifest negotiation and MUST NOT select this representation. After applying a signed 1.3 manifest, the client MUST persist manifest.receipt_id, sequence, and schema_version. It sends those exact values as base_receipt_id, from_sequence, and base_manifest_schema on changes-since.",
         "schema_continuity_rule": "A changed-set or no-op receipt MUST use the base manifest schema. A schema 2.2 base cannot receive a schema 2.1 delta. Any schema transition requires a signed rebase whose replacement schema is accepted by the request range.",
         "pack_sizing_rule": "Every compressed pack is 1 to 16 MiB inclusive. Writers SHOULD target at least 8 MiB for each non-final snapshot chunk. A complete small history, the final chunk, a changed set, or a prepared artefact MAY be smaller than 8 MiB.",
         "response_size_rule": "Every JSON control response MUST be at most 2097152 encoded bytes before parsing. Pack byte responses use max_pack_compressed_bytes instead. The schema maxima also keep a compact encoding of every admitted control response within this bound.",
@@ -513,9 +576,9 @@ def bundle():
       "components": {"securitySchemes": {"pairedBearer": {"type": "http", "scheme": "bearer", "bearerFormat": "opaque paired bearer"}}}}
     openapi["paths"]["/v1/vehicles/{vehicle_id}/sync/manifest"] = {"get": {"operationId": "syncManifest", "security": [{"pairedBearer": []}],
         "parameters": [{"name": "vehicle_id", "in": "path", "required": True, "schema": UUID},
-                       {"name": BOOTSTRAP_PROFILE_HEADER, "in": "header", "required": True, "description": "Exact profile selector for the 1.3 bootstrap representation. Without this header, the request remains legacy SyncManifest negotiation.", "schema": {"const": PROFILE_ID}},
-                       {"name": SUPPORTED_SCHEMAS_HEADER, "in": "header", "required": True, "schema": {"const": SUPPORTED_SCHEMAS_VALUE}}],
-        "responses": {"200": {"description": "signed manifest", "x-max-body-bytes": MAX_RESPONSE_BYTES, "content": {"application/json": {"schema": {"$ref": "sync-manifest.schema.json#/$defs/manifest"}}}}, "401": {"description": "empty authentication failure", "content": {}}, "406": {"description": "empty unavailable response with Cache-Control: no-store", "headers": no_store_header, "content": {}}}}}
+                       {"name": BOOTSTRAP_PROFILE_HEADER, "in": "header", "required": True, "description": "Exact, single profile selector for the 1.3 bootstrap representation. A missing, duplicated, or different explicit selector/companion returns empty no-store 406. Without any profile selector, the request remains legacy SyncManifest negotiation.", "schema": {"const": PROFILE_ID}},
+                       {"name": SUPPORTED_SCHEMAS_HEADER, "in": "header", "required": True, "description": "Exact, single schema companion for the explicit 1.3 selector.", "schema": {"const": SUPPORTED_SCHEMAS_VALUE}}],
+        "responses": {"200": {"description": "signed manifest", "x-max-body-bytes": MAX_RESPONSE_BYTES, "content": {"application/json": {"schema": {"$ref": "sync-manifest.schema.json#/$defs/manifest"}}}}, "401": {"description": "empty authentication failure", "content": {}}, "406": {"description": "empty unavailable or malformed explicit bootstrap negotiation response with Cache-Control: no-store", "headers": no_store_header, "content": {}}}}}
     openapi["paths"]["/v1/vehicles/{vehicle_id}/sync/noop"] = {"get": {"operationId": "syncNoop", "security": [{"pairedBearer": []}],
         "parameters": [{"name": "vehicle_id", "in": "path", "required": True, "schema": UUID}],
         "responses": {"200": {"description": "signed no-op receipt", "x-max-body-bytes": MAX_RESPONSE_BYTES, "content": {"application/json": {"schema": {"$ref": "noop.schema.json#/$defs/receipt"}}}}, "401": {"description": "empty authentication failure", "content": {}}, "406": {"description": "empty unavailable response with Cache-Control: no-store", "headers": no_store_header, "content": {}}}}}
@@ -531,6 +594,7 @@ def bundle():
     cases = {"profile_id": PROFILE_ID, "cases": [
       {"id": "bootstrap-hub-sync-v1-1-3-selected", "validator": "bootstrap_selection", "request_fixture": bootstrap_request["fixture_id"], "status": 200, "expected_errors": []},
       {"id": "bootstrap-schema-list-only-keeps-legacy-shape", "validator": "bootstrap_selection", "request_fixture": legacy_bootstrap_request["fixture_id"], "status": 200, "expected_errors": []},
+      *[{"id": name, "validator": "bootstrap_selection", "request_fixture": value["fixture_id"], "status": 406, "expected_errors": []} for name, value in rejected_bootstrap_examples.items()],
       {"id": "changes-since-changed-set", "validator": "changes_since", "request_fixture": request_example["fixture_id"], "status": 200, "response_fixture": receipt_example["fixture_id"], "expected_errors": []},
       {"id": "changes-since-rebase-after-compaction", "validator": "changes_since", "request_fixture": request_example["fixture_id"], "status": 409, "response_fixture": rebase_example["fixture_id"], "expected_errors": []},
       {"id": "schema-2-1-single-pack-manifest", "validator": "manifest", "vehicle_id": vehicle_id, "status": 200, "response_fixture": manifest_2_1_example["fixture_id"], "expected_errors": []},
@@ -573,6 +637,7 @@ def bundle():
            "examples/schema-2-2-single-small-chunk-manifest.json": manifest_2_2_small_example,
            "examples/bootstrap-hub-sync-v1-1-3-selected.json": bootstrap_request,
            "examples/bootstrap-schema-list-only-legacy.json": legacy_bootstrap_request,
+           **{"examples/" + name + ".json": value for name, value in rejected_bootstrap_examples.items()},
            "examples/changes-since-no-change.json": changes_noop_example,
            "examples/sync-noop-signed.json": noop_example,
            "examples/sync-noop-unavailable.json": noop_unavailable,
