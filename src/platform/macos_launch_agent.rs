@@ -6,7 +6,7 @@ use std::{
     ffi::OsStr,
     fs::{self, File, OpenOptions},
     io::{self, Write},
-    net::IpAddr,
+    net::{IpAddr, SocketAddr, TcpStream},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -20,12 +20,24 @@ const PLIST_NAME: &str = "com.teslatlas.hub.plist";
 const BINARY_NAME: &str = "teslatlas-hub";
 const PLIST_TEMPLATE: &str = include_str!("../../packaging/com.teslatlas.hub.plist.in");
 const SERVICE_UNLOAD_ATTEMPTS: usize = 100;
+const SERVICE_READY_ATTEMPTS: usize = 50;
+const SERVICE_READY_STABLE_OBSERVATIONS: usize = 10;
+const LOCK_RELEASE_ATTEMPTS: usize = 100;
 pub const DEVELOPMENT_SERVE_ENV: &str = "TESLATLAS_HUB_DEVELOPMENT";
 pub const DEVELOPMENT_SERVE_MODE_ENV: &str = "TESLATLAS_HUB_DEVELOPMENT_MODE";
 #[cfg(not(test))]
 const SERVICE_UNLOAD_DELAY: Duration = Duration::from_millis(100);
 #[cfg(test)]
 const SERVICE_UNLOAD_DELAY: Duration = Duration::ZERO;
+#[cfg(not(test))]
+const SERVICE_READY_DELAY: Duration = Duration::from_millis(100);
+#[cfg(test)]
+const SERVICE_READY_DELAY: Duration = Duration::ZERO;
+#[cfg(not(test))]
+const LOCK_RELEASE_DELAY: Duration = Duration::from_millis(100);
+#[cfg(test)]
+const LOCK_RELEASE_DELAY: Duration = Duration::ZERO;
+const READINESS_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
 
 pub struct InstallPaths {
     pub binary: PathBuf,
@@ -291,8 +303,12 @@ pub fn preflight_hub_for_serve(
 /// Load and request start of an already prepared LaunchAgent. The caller must
 /// have released the Hub instance lock first so Serve can acquire it. The
 /// original loaded state controls whether a failed replacement is restarted.
-pub fn start_prepared(paths: &InstallPaths, previously_loaded: bool) -> io::Result<()> {
-    launch(paths, previously_loaded)
+pub fn start_prepared(
+    paths: &InstallPaths,
+    config: &crate::config::HubConfig,
+    previously_loaded: bool,
+) -> io::Result<()> {
+    launch(paths, config, previously_loaded)
 }
 
 /// Query the per-user LaunchAgent without changing it.
@@ -306,6 +322,24 @@ pub fn service_is_loaded() -> io::Result<bool> {
 pub fn stop_for_replacement() -> io::Result<bool> {
     let (_, service) = service_identifiers();
     stop_for_replacement_with_runner(&service, &mut real_launchctl)
+}
+
+/// Wait for a stopped Serve process to release the lifetime lock, then retain
+/// the admission through file preparation.
+pub fn admit_after_service_stop(
+    data_dir: &Path,
+) -> io::Result<std::sync::Arc<crate::hub_user_process::AdmittedUserHub>> {
+    wait_for_admission_with_probe(|| crate::hub_user_process::AdmittedUserHub::admit(data_dir))
+}
+
+/// Prove that the installed job is running, owns the Hub lifetime lock, and
+/// has bound its configured listener for a stable bounded interval.
+pub fn wait_for_installed_readiness(config: &crate::config::HubConfig) -> io::Result<()> {
+    let (_, service) = service_identifiers();
+    let mut ready_pid = None;
+    wait_for_service_ready_with_probe(&mut || {
+        installed_service_is_ready(config, &service, &mut ready_pid)
+    })
 }
 
 /// Start an already-installed Hub LaunchAgent after revalidating Hub data.
@@ -511,10 +545,23 @@ fn install_files(
     result
 }
 
-fn launch(paths: &InstallPaths, previously_loaded: bool) -> io::Result<()> {
+fn launch(
+    paths: &InstallPaths,
+    config: &crate::config::HubConfig,
+    previously_loaded: bool,
+) -> io::Result<()> {
     let (domain, service) = service_identifiers();
     let mut runner = real_launchctl;
-    launch_with_runner(paths, previously_loaded, &domain, &service, &mut runner)
+    let mut ready_pid = None;
+    let mut readiness = || installed_service_is_ready(config, &service, &mut ready_pid);
+    launch_with_runner(
+        paths,
+        previously_loaded,
+        &domain,
+        &service,
+        &mut runner,
+        &mut readiness,
+    )
 }
 
 fn service_identifiers() -> (String, String) {
@@ -596,6 +643,25 @@ fn stop_for_replacement_with_runner(
     Ok(was_loaded)
 }
 
+fn wait_for_admission_with_probe<T>(
+    mut admit: impl FnMut() -> Result<T, crate::hub_user_process::UserLifetimeLockError>,
+) -> io::Result<T> {
+    for attempt in 0..LOCK_RELEASE_ATTEMPTS {
+        match admit() {
+            Ok(admission) => return Ok(admission),
+            Err(crate::hub_user_process::UserLifetimeLockError::AlreadyRunning) => {}
+            Err(error) => return Err(io::Error::other(error)),
+        }
+        if attempt + 1 < LOCK_RELEASE_ATTEMPTS {
+            std::thread::sleep(LOCK_RELEASE_DELAY);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::TimedOut,
+        "Hub lifetime lock is still held after service stop",
+    ))
+}
+
 fn wait_for_service_unloaded_with_runner(
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
@@ -621,6 +687,81 @@ fn service_is_loaded_with_runner(
     runner(&[std::ffi::OsStr::new("print"), std::ffi::OsStr::new(service)])
 }
 
+fn wait_for_service_ready_with_probe(
+    probe: &mut impl FnMut() -> io::Result<bool>,
+) -> io::Result<()> {
+    let mut consecutive = 0;
+    for attempt in 0..SERVICE_READY_ATTEMPTS {
+        if probe()? {
+            consecutive += 1;
+            if consecutive == SERVICE_READY_STABLE_OBSERVATIONS {
+                return Ok(());
+            }
+        } else {
+            consecutive = 0;
+        }
+        if attempt + 1 < SERVICE_READY_ATTEMPTS {
+            std::thread::sleep(SERVICE_READY_DELAY);
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::TimedOut,
+        "replacement Hub service did not become stably ready",
+    ))
+}
+
+fn installed_service_is_ready(
+    config: &crate::config::HubConfig,
+    service: &str,
+    ready_pid: &mut Option<u32>,
+) -> io::Result<bool> {
+    let Some(pid) = real_service_running_pid(service)? else {
+        *ready_pid = None;
+        return Ok(false);
+    };
+    match crate::hub_user_process::AdmittedUserHub::admit(&config.data_dir) {
+        Err(crate::hub_user_process::UserLifetimeLockError::AlreadyRunning) => {}
+        Ok(admission) => {
+            drop(admission);
+            *ready_pid = None;
+            return Ok(false);
+        }
+        Err(error) => return Err(io::Error::other(error)),
+    }
+    if *ready_pid == Some(pid) {
+        return Ok(true);
+    }
+    match TcpStream::connect_timeout(&readiness_address(config.bind), READINESS_CONNECT_TIMEOUT) {
+        Ok(stream) => {
+            drop(stream);
+            *ready_pid = Some(pid);
+            Ok(true)
+        }
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::ConnectionRefused
+                    | io::ErrorKind::TimedOut
+                    | io::ErrorKind::AddrNotAvailable
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn readiness_address(configured: SocketAddr) -> SocketAddr {
+    if configured.ip().is_unspecified() {
+        match configured {
+            SocketAddr::V4(address) => SocketAddr::from(([127, 0, 0, 1], address.port())),
+            SocketAddr::V6(address) => SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 1], address.port())),
+        }
+    } else {
+        configured
+    }
+}
+
 fn restart_installed_with_runner(
     plist: &Path,
     domain: &str,
@@ -637,6 +778,7 @@ fn launch_with_runner(
     domain: &str,
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+    readiness: &mut impl FnMut() -> io::Result<bool>,
 ) -> io::Result<()> {
     let print = [std::ffi::OsStr::new("print"), std::ffi::OsStr::new(service)];
     if let Err(error) = runner(&print) {
@@ -648,6 +790,7 @@ fn launch_with_runner(
             domain,
             service,
             runner,
+            readiness,
         ));
     }
     let bootout = [
@@ -663,6 +806,7 @@ fn launch_with_runner(
             domain,
             service,
             runner,
+            readiness,
         ));
     }
     if let Err(error) = wait_for_service_unloaded_with_runner(service, runner) {
@@ -674,6 +818,7 @@ fn launch_with_runner(
             domain,
             service,
             runner,
+            readiness,
         ));
     }
     let bootstrap = [
@@ -690,6 +835,7 @@ fn launch_with_runner(
             domain,
             service,
             runner,
+            readiness,
         ));
     }
     let kickstart = [
@@ -706,6 +852,19 @@ fn launch_with_runner(
             domain,
             service,
             runner,
+            readiness,
+        ));
+    }
+    if let Err(error) = wait_for_service_ready_with_probe(readiness) {
+        return Err(with_rollback_context(
+            error,
+            previously_loaded,
+            true,
+            paths,
+            domain,
+            service,
+            runner,
+            readiness,
         ));
     }
     cleanup_backups(paths);
@@ -720,6 +879,7 @@ fn with_rollback_context(
     domain: &str,
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+    readiness: &mut impl FnMut() -> io::Result<bool>,
 ) -> io::Error {
     let kind = error.kind();
     let rollback = if previously_loaded {
@@ -732,6 +892,7 @@ fn with_rollback_context(
                 domain,
                 service,
                 runner,
+                readiness,
             ),
             None => Err(io::Error::other("previous plist backup is unavailable")),
         }
@@ -787,6 +948,7 @@ fn restore_previous_service(
     domain: &str,
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
+    readiness: &mut impl FnMut() -> io::Result<bool>,
 ) -> io::Result<()> {
     let bootout = [
         std::ffi::OsStr::new("bootout"),
@@ -812,6 +974,7 @@ fn restore_previous_service(
         std::ffi::OsStr::new(service),
     ];
     run_launchctl(runner, &kickstart)?;
+    wait_for_service_ready_with_probe(readiness)?;
     if let Some(previous_binary) = previous_binary {
         let _ = fs::remove_file(previous_binary);
     }
@@ -861,6 +1024,45 @@ fn real_launchctl(arguments: &[&std::ffi::OsStr]) -> io::Result<bool> {
         "launchctl {action} failed ({}): {detail}",
         output.status
     )))
+}
+
+fn real_service_running_pid(service: &str) -> io::Result<Option<u32>> {
+    let output = Command::new("/bin/launchctl")
+        .arg("print")
+        .arg(service)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()?;
+    if output.status.success() {
+        return Ok(launchctl_print_running_pid(&String::from_utf8_lossy(
+            &output.stdout,
+        )));
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = [stderr.trim(), stdout.trim()]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if expected_launchctl_absence("print", output.status.code(), &detail) {
+        return Ok(None);
+    }
+    Err(io::Error::other(format!(
+        "launchctl print failed ({}): {detail}",
+        output.status
+    )))
+}
+
+fn launchctl_print_running_pid(output: &str) -> Option<u32> {
+    let running = output.lines().any(|line| line.trim() == "state = running");
+    let pid = output.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("pid = ")
+            .and_then(|value| value.parse::<u32>().ok())
+            .filter(|pid| *pid > 0)
+    });
+    running.then_some(pid).flatten()
 }
 
 fn expected_launchctl_absence(action: &str, status: Option<i32>, detail: &str) -> bool {

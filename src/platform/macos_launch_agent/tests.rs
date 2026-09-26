@@ -229,6 +229,27 @@ fn assert_no_install_artifacts(data: &Path, home: &Path) {
     );
 }
 
+fn prepared_install_fixture(root: &Path, with_previous: bool) -> InstallPaths {
+    let binary = root.join("teslatlas-hub");
+    let plist = root.join("com.teslatlas.hub.plist");
+    fs::write(&binary, b"new binary").expect("new binary");
+    fs::write(&plist, b"new plist").expect("new plist");
+    let previous_binary = with_previous.then(|| root.join(".teslatlas-hub.previous"));
+    let previous_plist = with_previous.then(|| root.join(".com.teslatlas.hub.plist.previous"));
+    if let Some(previous) = &previous_binary {
+        fs::write(previous, b"old binary").expect("old binary");
+    }
+    if let Some(previous) = &previous_plist {
+        fs::write(previous, b"old plist").expect("old plist");
+    }
+    InstallPaths {
+        binary,
+        plist,
+        previous_binary,
+        previous_plist,
+    }
+}
+
 #[test]
 fn launchctl_query_failure_restores_prepared_replacement_files() {
     let temporary = tempfile::tempdir().expect("temporary directory");
@@ -261,6 +282,7 @@ fn launchctl_query_failure_restores_prepared_replacement_files() {
         "gui/501",
         "gui/501/com.teslatlas.hub",
         &mut runner,
+        &mut || Ok(true),
     )
     .expect_err("query failure must abort install");
     assert!(
@@ -301,6 +323,7 @@ fn launchctl_query_failure_removes_new_install_files_without_backups() {
         "gui/501",
         "gui/501/com.teslatlas.hub",
         &mut runner,
+        &mut || Ok(true),
     )
     .expect_err("query failure must abort install");
     assert!(!binary.exists());
@@ -409,6 +432,58 @@ fn running_service_is_stopped_and_settled_before_replacement() {
 }
 
 #[test]
+fn replacement_waits_for_lifetime_lock_release_after_launchd_unloads() {
+    let mut attempts = 0;
+    let admission = wait_for_admission_with_probe(|| {
+        attempts += 1;
+        if attempts < 3 {
+            Err(crate::hub_user_process::UserLifetimeLockError::AlreadyRunning)
+        } else {
+            Ok("admitted")
+        }
+    })
+    .expect("lock should become available");
+
+    assert_eq!(admission, "admitted");
+    assert_eq!(attempts, 3);
+}
+
+#[test]
+fn replacement_lock_wait_is_bounded() {
+    let mut attempts = 0;
+    let error = wait_for_admission_with_probe::<()>(|| {
+        attempts += 1;
+        Err(crate::hub_user_process::UserLifetimeLockError::AlreadyRunning)
+    })
+    .expect_err("persistently held lock must time out");
+
+    assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+    assert_eq!(attempts, LOCK_RELEASE_ATTEMPTS);
+}
+
+#[test]
+fn launchctl_running_state_requires_a_live_pid() {
+    assert_eq!(
+        launchctl_print_running_pid(
+            "gui/501/com.teslatlas.hub = {\n\tstate = running\n\tpid = 4312\n}"
+        ),
+        Some(4312)
+    );
+    assert_eq!(
+        launchctl_print_running_pid(
+            "gui/501/com.teslatlas.hub = {\n\tstate = exited\n\tlast exit code = 1\n}"
+        ),
+        None
+    );
+    assert_eq!(
+        launchctl_print_running_pid(
+            "gui/501/com.teslatlas.hub = {\n\tstate = running\n\tpid = 0\n}"
+        ),
+        None
+    );
+}
+
+#[test]
 fn failed_stopped_replacement_restores_previous_files() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let binary = temporary.path().join("teslatlas-hub");
@@ -447,6 +522,7 @@ fn failed_stopped_replacement_restores_previous_files() {
         "gui/501",
         "gui/501/com.teslatlas.hub",
         &mut runner,
+        &mut || Ok(true),
     )
     .expect_err("replacement must fail");
     assert!(
@@ -498,6 +574,7 @@ fn failed_fresh_bootstrap_removes_prepared_files() {
         "gui/501",
         "gui/501/com.teslatlas.hub",
         &mut runner,
+        &mut || Ok(true),
     )
     .expect_err("fresh bootstrap must fail");
     assert!(
@@ -507,6 +584,173 @@ fn failed_fresh_bootstrap_removes_prepared_files() {
     );
     assert!(!binary.exists());
     assert!(!plist.exists());
+    assert!(outcomes.is_empty());
+}
+
+#[test]
+fn replacement_without_stable_readiness_restores_running_service() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let paths = prepared_install_fixture(temporary.path(), true);
+    let mut outcomes = std::collections::VecDeque::from([
+        false, // print: old service was already stopped
+        false, // bootout: absent
+        false, // print: absent after bootout
+        true,  // bootstrap replacement
+        true,  // kickstart replacement
+        true,  // rollback bootout replacement
+        false, // print: replacement unloaded
+        true,  // bootstrap previous service
+        true,  // kickstart previous service
+    ]);
+    let mut runner = |_: &[&std::ffi::OsStr]| {
+        outcomes
+            .pop_front()
+            .ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    let mut probes = 0;
+    let mut readiness = || {
+        probes += 1;
+        Ok(probes > SERVICE_READY_ATTEMPTS)
+    };
+
+    let error = launch_with_runner(
+        &paths,
+        true,
+        "gui/501",
+        "gui/501/com.teslatlas.hub",
+        &mut runner,
+        &mut readiness,
+    )
+    .expect_err("unstable replacement must roll back");
+    assert!(error.to_string().contains("previous Hub service restored"));
+    assert_eq!(fs::read(&paths.binary).expect("old binary"), b"old binary");
+    assert_eq!(fs::read(&paths.plist).expect("old plist"), b"old plist");
+    assert_eq!(
+        probes,
+        SERVICE_READY_ATTEMPTS + SERVICE_READY_STABLE_OBSERVATIONS
+    );
+    assert!(outcomes.is_empty());
+}
+
+#[test]
+fn replacement_without_stable_readiness_restores_stopped_files() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let paths = prepared_install_fixture(temporary.path(), true);
+    let mut outcomes = std::collections::VecDeque::from([
+        false, // print: service remains stopped
+        false, // bootout: absent
+        false, // print: absent after bootout
+        true,  // bootstrap replacement
+        true,  // kickstart replacement
+        true,  // rollback bootout replacement
+        false, // print: replacement unloaded
+    ]);
+    let mut runner = |_: &[&std::ffi::OsStr]| {
+        outcomes
+            .pop_front()
+            .ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+
+    let error = launch_with_runner(
+        &paths,
+        false,
+        "gui/501",
+        "gui/501/com.teslatlas.hub",
+        &mut runner,
+        &mut || Ok(false),
+    )
+    .expect_err("unstable replacement must restore stopped files");
+    assert!(
+        error
+            .to_string()
+            .contains("prepared install files restored")
+    );
+    assert_eq!(fs::read(&paths.binary).expect("old binary"), b"old binary");
+    assert_eq!(fs::read(&paths.plist).expect("old plist"), b"old plist");
+    assert!(outcomes.is_empty());
+}
+
+#[test]
+fn fresh_install_without_stable_readiness_removes_files() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let paths = prepared_install_fixture(temporary.path(), false);
+    let mut outcomes = std::collections::VecDeque::from([
+        false, // print: no service
+        false, // bootout: absent
+        false, // print: absent after bootout
+        true,  // bootstrap replacement
+        true,  // kickstart replacement
+        true,  // rollback bootout replacement
+        false, // print: replacement unloaded
+    ]);
+    let mut runner = |_: &[&std::ffi::OsStr]| {
+        outcomes
+            .pop_front()
+            .ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+
+    let error = launch_with_runner(
+        &paths,
+        false,
+        "gui/501",
+        "gui/501/com.teslatlas.hub",
+        &mut runner,
+        &mut || Ok(false),
+    )
+    .expect_err("unstable fresh install must roll back");
+    assert!(
+        error
+            .to_string()
+            .contains("prepared install files restored")
+    );
+    assert!(!paths.binary.exists());
+    assert!(!paths.plist.exists());
+    assert!(outcomes.is_empty());
+}
+
+#[test]
+fn stable_replacement_commits_only_after_consecutive_readiness() {
+    let temporary = tempfile::tempdir().expect("temporary directory");
+    let paths = prepared_install_fixture(temporary.path(), true);
+    let previous_binary = paths.previous_binary.clone().expect("previous binary");
+    let previous_plist = paths.previous_plist.clone().expect("previous plist");
+    let mut outcomes = std::collections::VecDeque::from([
+        false, // print: old service was already stopped
+        false, // bootout: absent
+        false, // print: absent after bootout
+        true,  // bootstrap replacement
+        true,  // kickstart replacement
+    ]);
+    let mut runner = |_: &[&std::ffi::OsStr]| {
+        outcomes
+            .pop_front()
+            .ok_or_else(|| io::Error::other("unexpected launchctl call"))
+    };
+    let mut readiness = std::collections::VecDeque::from(
+        std::iter::repeat_n(true, SERVICE_READY_STABLE_OBSERVATIONS - 1)
+            .chain(std::iter::once(false))
+            .chain(std::iter::repeat_n(true, SERVICE_READY_STABLE_OBSERVATIONS))
+            .collect::<Vec<_>>(),
+    );
+
+    launch_with_runner(
+        &paths,
+        true,
+        "gui/501",
+        "gui/501/com.teslatlas.hub",
+        &mut runner,
+        &mut || {
+            readiness
+                .pop_front()
+                .ok_or_else(|| io::Error::other("unexpected readiness probe"))
+        },
+    )
+    .expect("stable replacement should commit");
+    assert_eq!(fs::read(&paths.binary).expect("new binary"), b"new binary");
+    assert_eq!(fs::read(&paths.plist).expect("new plist"), b"new plist");
+    assert!(!previous_binary.exists());
+    assert!(!previous_plist.exists());
+    assert!(readiness.is_empty());
     assert!(outcomes.is_empty());
 }
 
@@ -597,6 +841,7 @@ fn failed_replacement_restores_loaded_service_without_launchctl() {
             "gui/501",
             "gui/501/com.teslatlas.hub",
             &mut runner,
+            &mut || Ok(true),
         )
     };
     assert!(
@@ -656,6 +901,7 @@ fn failed_replacement_restores_loaded_plist_without_binary_backup() {
         "gui/501",
         "gui/501/com.teslatlas.hub",
         &mut runner,
+        &mut || Ok(true),
     )
     .expect_err("replacement must fail");
     assert!(error.to_string().contains("previous Hub service restored"));

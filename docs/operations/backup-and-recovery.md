@@ -46,6 +46,16 @@ Store the data backup, encrypted credential export, and raw recovery key in
 separate security domains after export. In particular, move the raw key off the
 Hub host; do not leave it beside the encrypted credential bundle.
 
+After the backup and credential export complete, restart the Debian service
+and verify that systemd kept it active. Inspect its recent log before treating
+collection as resumed:
+
+```sh
+sudo systemctl start teslatlas-hub.service
+sudo systemctl is-active --quiet teslatlas-hub.service
+sudo journalctl -u teslatlas-hub.service -n 50 --no-pager
+```
+
 ## Restore
 
 Restore data into a new empty directory:

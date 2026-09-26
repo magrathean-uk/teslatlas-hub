@@ -970,7 +970,7 @@ fn replace_macos_launch_agent(
     let previously_loaded = macos_launch_agent::stop_for_replacement()?;
 
     let prepared = (|| -> Result<_, Box<dyn std::error::Error>> {
-        let admission = AdmittedUserHub::admit(&config.data_dir)?;
+        let admission = macos_launch_agent::admit_after_service_stop(&config.data_dir)?;
         let installed = macos_launch_agent::prepare_install(&config.data_dir, config_path)?;
         drop(admission);
         Ok(installed)
@@ -984,11 +984,17 @@ fn replace_macos_launch_agent(
                 )
                 .into());
             }
+            if let Err(readiness_error) = macos_launch_agent::wait_for_installed_readiness(config) {
+                return Err(format!(
+                    "{error}; previous Hub service restarted but did not become ready: {readiness_error}"
+                )
+                .into());
+            }
             return Err(format!("{error}; previous Hub service restarted").into());
         }
         Err(error) => return Err(error),
     };
 
-    macos_launch_agent::start_prepared(&installed, previously_loaded)?;
+    macos_launch_agent::start_prepared(&installed, config, previously_loaded)?;
     Ok(installed.binary)
 }
