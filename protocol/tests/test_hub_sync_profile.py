@@ -40,6 +40,16 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(profile["limits"]["max_request_bytes"], 8192)
         self.assertEqual(profile["limits"]["min_pack_compressed_bytes"], 1)
         self.assertEqual(profile["limits"]["target_pack_compressed_bytes"], 8 * 1024 * 1024)
+        self.assertEqual(
+            profile["bootstrap_selector"],
+            {
+                "header": "x-teslatlas-sync-profile",
+                "value": "hub-sync-v1@1.3.0",
+                "required_schema_header": "x-teslatlas-supported-schemas",
+                "required_schema_value": "2.1,2.2",
+                "without_selector": "legacy-sync-manifest",
+            },
+        )
         frozen = ROOT / "profiles/hub-sync-v1/1.2.0/SHA256SUMS"
         self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(), "331920326476ffe8d3e382181a73937d478c613793c3cc5c0a7e2db14e091ed5")
 
@@ -157,6 +167,23 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(set(changes["responses"]), {"200", "400", "401", "404", "406", "409", "413", "422"})
         keys = spec["paths"]["/v1/vehicles/{vehicle_id}/sync/signing-keys"]["get"]
         self.assertEqual(keys["responses"]["200"]["content"]["application/json"]["schema"]["$ref"], "signing-keys.schema.json#/$defs/document")
+
+        manifest = spec["paths"]["/v1/vehicles/{vehicle_id}/sync/manifest"]["get"]
+        headers = {
+            item["name"]: item
+            for item in manifest["parameters"]
+            if item["in"] == "header"
+        }
+        self.assertEqual(
+            headers["x-teslatlas-sync-profile"]["schema"],
+            {"const": "hub-sync-v1@1.3.0"},
+        )
+        self.assertTrue(headers["x-teslatlas-sync-profile"]["required"])
+        self.assertEqual(
+            headers["x-teslatlas-supported-schemas"]["schema"],
+            {"const": "2.1,2.2"},
+        )
+        self.assertTrue(headers["x-teslatlas-supported-schemas"]["required"])
 
         at_limit = self.fixture("changes-since-request-8192-bytes")
         over_limit = self.fixture("changes-since-request-8193-bytes")
@@ -397,7 +424,7 @@ class HubSyncProfileTests(unittest.TestCase):
 
     def test_registered_fixture_cases_cover_positive_and_negative_vectors(self):
         results = self.sync.run_fixture_cases()
-        self.assertEqual(len(results), 42)
+        self.assertEqual(len(results), 44)
         self.assertTrue(all(result["passed"] for result in results))
         by_case = {result["case_id"]: result for result in results}
         self.assertEqual(
@@ -423,6 +450,31 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(
             by_case["changes-since-changed-set-cross-vehicle"]["expected_errors"],
             ["signed response vehicle does not match route"],
+        )
+        self.assertEqual(
+            by_case["bootstrap-schema-list-only-keeps-legacy-shape"]["fixture_ids"],
+            ["bootstrap-schema-list-only-legacy-v1"],
+        )
+
+    def test_bootstrap_profile_selector_preserves_legacy_schema_negotiation(self):
+        selected = self.fixture("bootstrap-hub-sync-v1-1-3-selected")
+        legacy = self.fixture("bootstrap-schema-list-only-legacy")
+        self.assertEqual(self.sync.validate_bootstrap_selection(selected, 200), [])
+        self.assertEqual(self.sync.validate_bootstrap_selection(legacy, 200), [])
+        self.assertEqual(legacy["request"]["headers"], {"x-teslatlas-supported-schemas": "2.1,2.2"})
+        self.assertEqual(legacy["expected_representation"], "legacy-sync-manifest")
+
+        ambiguous = copy.deepcopy(selected)
+        ambiguous["request"]["headers"].pop("x-teslatlas-sync-profile")
+        self.assertEqual(
+            self.sync.validate_bootstrap_selection(ambiguous, 200),
+            ["bootstrap representation does not match request headers"],
+        )
+        missing_schema = copy.deepcopy(selected)
+        missing_schema["request"]["headers"].pop("x-teslatlas-supported-schemas")
+        self.assertEqual(
+            self.sync.validate_bootstrap_selection(missing_schema, 200),
+            ["bootstrap representation does not match request headers"],
         )
 
 

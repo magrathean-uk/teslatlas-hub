@@ -2,6 +2,20 @@
   "cases": [
     {
       "expected_errors": [],
+      "id": "bootstrap-hub-sync-v1-1-3-selected",
+      "request_fixture": "bootstrap-hub-sync-v1-1-3-selected-v1",
+      "status": 200,
+      "validator": "bootstrap_selection"
+    },
+    {
+      "expected_errors": [],
+      "id": "bootstrap-schema-list-only-keeps-legacy-shape",
+      "request_fixture": "bootstrap-schema-list-only-legacy-v1",
+      "status": 200,
+      "validator": "bootstrap_selection"
+    },
+    {
+      "expected_errors": [],
       "id": "changes-since-changed-set",
       "request_fixture": "changes-since-request-v1",
       "response_fixture": "changes-since-changed-set-v1",

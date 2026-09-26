@@ -2,8 +2,12 @@
 
 [`hub-sync-v1@1.3.0`](../profiles/hub-sync-v1/1.3.0/) is the candidate,
 source-neutral successor to retained `hub-sync-v1@1.0.0`, `1.1.0`, and `1.2.0` candidates. It
-has no exact Hub product-version pin. A client applies a signed initial
-manifest, then persists its `receipt_id`, `sequence`, and `schema_version` as
+has no exact Hub product-version pin. A client selects its bootstrap
+representation with both `x-teslatlas-sync-profile: hub-sync-v1@1.3.0` and
+`x-teslatlas-supported-schemas: 2.1,2.2`. The schema header by itself remains
+legacy `SyncManifest` negotiation and MUST NOT select the 1.3 representation.
+This preserves existing clients that already send the schema list. A client
+applies the selected signed initial manifest, then persists its `receipt_id`, `sequence`, and `schema_version` as
 the changes-since base. It sends those exact values plus its accepted manifest
 schema range to `POST /v1/vehicles/{vehicle_id}/sync/changes-since` with a
 paired bearer. The JSON body limit is 8192 bytes inclusive; 8193 bytes returns

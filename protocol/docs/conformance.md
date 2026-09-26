@@ -33,9 +33,10 @@ The rich-profile gate executes 31 profile/case runs: nine for `1.0.0`, ten for
 `1.1.0`, and twelve for `1.2.0`. A profile contains every case whose
 `introduced_in` version is not newer than that profile.
 
-`hub-sync-v1@1.3.0` is also registered with this entrypoint. It runs forty-two
+`hub-sync-v1@1.3.0` is also registered with this entrypoint. It runs forty-four
 deterministic fixture cases, including signed changed-set and no-change paths,
 multi-chunk compaction, small and final chunks, schema 2.1 and 2.2 manifests,
+explicit bootstrap-profile selection and legacy schema-list-only routing,
 vehicle-bound key discovery, retained-checkpoint rebases, unknown-receipt errors,
 prepared artefacts, stable HTTP errors, exact raw
 body limits for every JSON control response type, and signature and ordering

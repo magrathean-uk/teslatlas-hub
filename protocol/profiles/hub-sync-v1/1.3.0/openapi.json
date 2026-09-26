@@ -214,12 +214,20 @@
             }
           },
           {
+            "description": "Exact profile selector for the 1.3 bootstrap representation. Without this header, the request remains legacy SyncManifest negotiation.",
+            "in": "header",
+            "name": "x-teslatlas-sync-profile",
+            "required": true,
+            "schema": {
+              "const": "hub-sync-v1@1.3.0"
+            }
+          },
+          {
             "in": "header",
             "name": "x-teslatlas-supported-schemas",
             "required": true,
             "schema": {
-              "pattern": "^2\\.1,2\\.2$",
-              "type": "string"
+              "const": "2.1,2.2"
             }
           }
         ],

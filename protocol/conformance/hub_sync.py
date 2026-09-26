@@ -121,6 +121,36 @@ def validate_request_body(raw, root=PROFILE):
     return validate_request(value, root)
 
 
+def validate_bootstrap_selection(value, status, root=PROFILE):
+    if status != 200:
+        return ["bootstrap fixture status is invalid"]
+    if not isinstance(value, dict) or not isinstance(value.get("vehicle_id"), str):
+        return ["bootstrap fixture is invalid"]
+    request = value.get("request")
+    if not isinstance(request, dict) or request.get("method") != "GET":
+        return ["bootstrap fixture request is invalid"]
+    if request.get("path") != f"/v1/vehicles/{value['vehicle_id']}/sync/manifest":
+        return ["bootstrap fixture route is invalid"]
+    headers = request.get("headers")
+    if not isinstance(headers, dict) or not all(isinstance(key, str) and isinstance(item, str) for key, item in headers.items()):
+        return ["bootstrap fixture headers are invalid"]
+    lowered = {key.lower(): item for key, item in headers.items()}
+    if len(lowered) != len(headers):
+        return ["bootstrap fixture repeats a header"]
+    selector = load_profile(root)["bootstrap_selector"]
+    schema_value = lowered.get(selector["required_schema_header"])
+    profile_value = lowered.get(selector["header"])
+    if profile_value is None:
+        selected = selector["without_selector"]
+    elif profile_value == selector["value"] and schema_value == selector["required_schema_value"]:
+        selected = selector["value"]
+    else:
+        selected = "unsupported"
+    if value.get("expected_representation") != selected:
+        return ["bootstrap representation does not match request headers"]
+    return []
+
+
 def verify_signature(value, key_set):
     signature = value["signature"]
     if signature["signed_payload_sha256"] == "0" * 64:
@@ -360,11 +390,17 @@ def _case_errors(case, fixtures, root):
     if not isinstance(case, dict):
         return ["case is not an object"]
     validator = case.get("validator")
-    if validator not in {"changes_since", "changes_since_request_error", "control_response_body", "manifest", "manifest_body", "noop", "prepared_artefact", "signing_keys"}:
+    if validator not in {"bootstrap_selection", "changes_since", "changes_since_request_error", "control_response_body", "manifest", "manifest_body", "noop", "prepared_artefact", "signing_keys"}:
         return ["case has an unknown validator"]
     status = case.get("status")
     if type(status) is not int:
         return ["case status is invalid"]
+
+    if validator == "bootstrap_selection":
+        request = fixtures.get(case.get("request_fixture"))
+        if case.get("response_fixture") is not None:
+            return ["bootstrap selection case has an unexpected response fixture"]
+        return validate_bootstrap_selection(copy.deepcopy(request), status, root)
 
     vehicle_id = case.get("vehicle_id")
     request_value = None
