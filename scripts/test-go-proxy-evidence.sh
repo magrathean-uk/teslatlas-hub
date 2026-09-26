@@ -53,6 +53,25 @@ user_owned = {
 assert official in policy["go"]
 assert homebrew in policy["go"]
 assert user_owned in policy["go"]
+assert policy["compiler"] == {
+    "path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+    "sha256": "5922f5f7843fee699497c45cc98134b6686e0a5e2fa8a5866ab74c5482fa87a5",
+    "version": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+}
+assert policy["xcode"] == {
+    "version": "Xcode 27.0",
+    "build": "Build version 27A266a",
+}
+assert policy["sdk"] == {
+    "path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+    "version": "27.0",
+    "build": "26A425",
+}
+assert lock["subjects"]["darwin-arm64"] == {
+    "name": "tesla-http-proxy",
+    "sha256": "7ff7c45fc8cb3d3900a54b24010d8cd86fcbcba34ed639572af09a0885705222",
+    "size": 12666818,
+}
 
 def rejected(action, message):
     try:
@@ -195,10 +214,10 @@ import tarfile
 evidence = Path(sys.argv[1])
 proxy = Path(sys.argv[2])
 digest = lambda data: hashlib.sha256(data).hexdigest()
-user_owned = {
-    "path": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64/bin/go",
+official = {
+    "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
     "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
-    "goroot": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64",
+    "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64",
 }
 
 manifest = json.loads((evidence / "go-component-manifest.json").read_text())
@@ -248,7 +267,7 @@ assert "DefaultGODEBUG" not in {
     item["Key"] for item in receipt["build_info"]["Settings"]
 }
 assert len(receipt["build_host"]["go"]["sha256"]) == 64
-assert receipt["build_host"]["go"] == user_owned
+assert receipt["build_host"]["go"] == official
 assert len(receipt["build_host"]["compiler"]["sha256"]) == 64
 assert receipt["build_host"]["go"]["goroot"]
 assert receipt["build_host"]["xcode"]["version"].startswith("Xcode ")

@@ -4,7 +4,7 @@
   "subjects": {
     "darwin-arm64": {
       "name": "tesla-http-proxy",
-      "sha256": "52eefaa62497dc345721fc6b5b75c80d86f03827d2c29d071de0485beacb97ca",
+      "sha256": "7ff7c45fc8cb3d3900a54b24010d8cd86fcbcba34ed639572af09a0885705222",
       "size": 12666818
     },
     "linux-amd64": {
@@ -37,18 +37,18 @@
       }
     ],
     "compiler": {
-      "path": "/Applications/Xcode-beta.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
-      "sha256": "32e0a259d4b5931e66cdc09f2b47b2de482d4dbdcf02825c70ed44ca852594bc",
-      "version": "Apple clang version 21.0.0 (clang-2100.3.33.1)"
+      "path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
+      "sha256": "5922f5f7843fee699497c45cc98134b6686e0a5e2fa8a5866ab74c5482fa87a5",
+      "version": "Apple clang version 21.0.0 (clang-2100.3.34.2)"
     },
     "xcode": {
       "version": "Xcode 27.0",
-      "build": "Build version 27A5252f"
+      "build": "Build version 27A266a"
     },
     "sdk": {
-      "path": "/Applications/Xcode-beta.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+      "path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
       "version": "27.0",
-      "build": "26A5419a"
+      "build": "26A425"
     }
   },
   "toolchain": {
