@@ -367,7 +367,7 @@ fn schema_58_upgrade_preserves_old_lineage_and_enforces_new_immutable_car_identi
         .unwrap();
 
     migrate(&connection).unwrap();
-    assert_eq!(schema_version(&connection).unwrap(), 60);
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     assert_eq!(
         connection
             .query_row(

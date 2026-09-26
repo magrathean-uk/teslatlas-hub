@@ -239,9 +239,7 @@ where
                             }
                             let now = Instant::now();
                             let delay = scheduler.discovery_failed_for_error(&error, now);
-                            tracing::warn!(error = %error, "owner API discovery failed; backing off");
-                            sleep(delay).await;
-                            continue;
+                            tracing::warn!(error = %error, delay_ms = delay.as_millis(), "owner API discovery failed; retry scheduled");
                         }
                     }
                 }

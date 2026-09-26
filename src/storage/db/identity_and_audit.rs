@@ -203,11 +203,59 @@ impl HubStore {
             return Ok(None);
         };
         let connection = self.open()?;
-        connection
+        let current = connection
             .query_row(
                 "SELECT device_id, display_name, created_at_ms, expires_at_ms, revoked_at_ms, last_authenticated_at_ms \
                  FROM paired_devices
                   WHERE token_sha256 = ?1 AND revoked_at_ms IS NULL AND expires_at_ms > ?2",
+                params![token_digest.as_slice(), now_ms],
+                paired_device_from_row,
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        if let Some(mut device) = current {
+            if now_ms < device.created_at_ms {
+                return Ok(None);
+            }
+            let next_expiry = device
+                .expires_at_ms
+                .max(now_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS));
+            let next_authenticated = device.last_authenticated_at_ms.unwrap_or(0).max(now_ms);
+            if next_expiry != device.expires_at_ms
+                || device.last_authenticated_at_ms != Some(next_authenticated)
+            {
+                let changed = connection
+                    .execute(
+                        "UPDATE paired_devices
+                         SET expires_at_ms = MAX(expires_at_ms, ?1),
+                             last_authenticated_at_ms = MAX(COALESCE(last_authenticated_at_ms, 0), ?2)
+                         WHERE device_id = ?3 AND token_sha256 = ?4
+                           AND revoked_at_ms IS NULL AND expires_at_ms > ?2",
+                        params![
+                            next_expiry,
+                            now_ms,
+                            device.device_id.to_string(),
+                            token_digest.as_slice(),
+                        ],
+                    )
+                    .map_err(StoreError::Query)?;
+                if changed != 1 {
+                    return Ok(None);
+                }
+                device.expires_at_ms = next_expiry;
+                device.last_authenticated_at_ms = Some(next_authenticated);
+            }
+            return Ok(Some(device));
+        }
+        connection
+            .query_row(
+                "SELECT p.device_id, p.display_name, p.created_at_ms, p.expires_at_ms,
+                        p.revoked_at_ms, p.last_authenticated_at_ms
+                   FROM paired_devices AS p
+                   JOIN paired_device_token_grace AS g ON g.device_id = p.device_id
+                  WHERE g.token_sha256 = ?1 AND g.valid_until_ms > ?2
+                    AND p.created_at_ms <= ?2 AND p.revoked_at_ms IS NULL
+                    AND p.expires_at_ms > ?2",
                 params![token_digest.as_slice(), now_ms],
                 paired_device_from_row,
             )
@@ -229,8 +277,12 @@ impl HubStore {
         let plausible: bool = read_only
             .query_row(
                 "SELECT EXISTS(
-                    SELECT 1 FROM paired_devices
-                     WHERE token_sha256 = ?1 AND revoked_at_ms IS NULL AND expires_at_ms > ?2
+                    SELECT 1 FROM paired_devices AS p
+                     LEFT JOIN paired_device_token_grace AS g ON g.device_id = p.device_id
+                     WHERE (p.token_sha256 = ?1 OR
+                            (g.token_sha256 = ?1 AND g.valid_until_ms > ?2))
+                       AND p.created_at_ms <= ?2 AND p.revoked_at_ms IS NULL
+                       AND p.expires_at_ms > ?2
                  )",
                 params![token_digest.as_slice(), now_ms],
                 |row| row.get(0),
@@ -243,10 +295,15 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        let device: Option<(Uuid, String)> = transaction
+        let device: Option<(Uuid, Vec<u8>, i64, Option<i64>)> = transaction
             .query_row(
-                "SELECT device_id, display_name FROM paired_devices
-                 WHERE token_sha256 = ?1 AND revoked_at_ms IS NULL AND expires_at_ms > ?2",
+                "SELECT p.device_id, p.token_sha256, p.expires_at_ms, g.valid_until_ms
+                   FROM paired_devices AS p
+                   LEFT JOIN paired_device_token_grace AS g ON g.device_id = p.device_id
+                  WHERE (p.token_sha256 = ?1 OR
+                         (g.token_sha256 = ?1 AND g.valid_until_ms > ?2))
+                    AND p.created_at_ms <= ?2 AND p.revoked_at_ms IS NULL
+                    AND p.expires_at_ms > ?2",
                 params![token_digest.as_slice(), now_ms],
                 |row| {
                     let id: String = row.get(0)?;
@@ -257,16 +314,38 @@ impl HubStore {
                             Box::new(error),
                         )
                     })?;
-                    Ok((id, row.get(1)?))
+                    Ok((id, row.get(1)?, row.get(2)?, row.get(3)?))
                 },
             )
             .optional()
             .map_err(StoreError::RotateDevice)?;
-        let Some((device_id, _display_name)) = device else {
+        let Some((device_id, current_digest, current_expiry_ms, prior_grace_until_ms)) = device
+        else {
             return Err(StoreError::PairingRejected);
         };
         let replacement = DeviceAccessToken::generate()?;
-        let expires_at_ms = now_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS);
+        let expires_at_ms =
+            current_expiry_ms.max(now_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS));
+        let is_current = current_digest.as_slice() == token_digest.as_slice();
+        let grace_until_ms = if is_current {
+            now_ms.saturating_add(PAIRED_DEVICE_ROTATION_GRACE_MS)
+        } else {
+            prior_grace_until_ms.ok_or(StoreError::PairingRejected)?
+        };
+        transaction
+            .execute(
+                "INSERT INTO paired_device_token_grace(device_id, token_sha256, valid_until_ms)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(device_id) DO UPDATE SET
+                   token_sha256 = excluded.token_sha256,
+                   valid_until_ms = excluded.valid_until_ms",
+                params![
+                    device_id.to_string(),
+                    token_digest.as_slice(),
+                    grace_until_ms
+                ],
+            )
+            .map_err(StoreError::RotateDevice)?;
         let changed = transaction
             .execute(
                 "UPDATE paired_devices
@@ -278,7 +357,7 @@ impl HubStore {
                     expires_at_ms,
                     now_ms,
                     device_id.to_string(),
-                    token_digest.as_slice(),
+                    current_digest,
                 ],
             )
             .map_err(StoreError::RotateDevice)?;

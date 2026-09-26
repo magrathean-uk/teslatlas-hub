@@ -5,8 +5,8 @@ use std::future::Future;
 use std::{
     collections::HashMap,
     fs,
-    io::Read,
-    os::unix::fs::MetadataExt,
+    io::{Read, Write},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt},
     path::Path as FsPath,
     sync::{Arc, Mutex},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -16,7 +16,8 @@ use axum::{
     Json, Router,
     body::{Body, Bytes},
     extract::{DefaultBodyLimit, Path, Query, State, rejection::QueryRejection},
-    http::{HeaderMap, HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, Request, StatusCode, header},
+    middleware::Next,
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -373,6 +374,104 @@ pub struct AppState {
 struct FleetTelemetryIngress {
     token_digest: Sha256Digest,
     accumulators: Arc<tokio::sync::Mutex<HashMap<String, FleetTelemetryAccumulator>>>,
+}
+
+#[derive(Clone)]
+struct LocalLoopbackAccess {
+    expected_host: String,
+    token_digest: Sha256Digest,
+}
+
+impl LocalLoopbackAccess {
+    fn load_or_create(data_dir: &FsPath, bind: std::net::SocketAddr) -> std::io::Result<Self> {
+        let secrets = data_dir.join("secrets");
+        match fs::DirBuilder::new().mode(0o700).create(&secrets) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+        let directory = fs::symlink_metadata(&secrets)?;
+        if !directory.file_type().is_dir()
+            || directory.uid() != getuid().as_raw()
+            || directory.mode() & 0o077 != 0
+        {
+            return Err(std::io::Error::other(
+                "local API secret directory is unsafe",
+            ));
+        }
+        let path = secrets.join("local-api-token");
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&path)
+        {
+            Ok(mut file) => {
+                let mut random = [0_u8; 32];
+                getrandom::fill(&mut random)
+                    .map_err(|_| std::io::Error::other("local API entropy is unavailable"))?;
+                file.write_all(hex::encode(random).as_bytes())?;
+                file.write_all(b"\n")?;
+                file.sync_all()?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error),
+        }
+        let metadata = fs::symlink_metadata(&path)?;
+        if metadata.nlink() != 1 || metadata.mode() & 0o777 != 0o600 {
+            return Err(std::io::Error::other("local API bearer file is unsafe"));
+        }
+        let token = read_tls_identity_file(&path, 65, true)?;
+        let token = token
+            .strip_suffix(b"\n")
+            .ok_or_else(|| std::io::Error::other("local API bearer file is invalid"))?;
+        if token.len() != 64 || !token.iter().all(u8::is_ascii_hexdigit) {
+            return Err(std::io::Error::other("local API bearer file is invalid"));
+        }
+        Ok(Self {
+            expected_host: bind.to_string(),
+            token_digest: Sha256Digest::of_bytes(token),
+        })
+    }
+}
+
+async fn require_local_loopback_access(
+    State(access): State<LocalLoopbackAccess>,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let mut hosts = request.headers().get_all(header::HOST).iter();
+    let host_is_expected = hosts
+        .next()
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|host| host == access.expected_host)
+        && hosts.next().is_none();
+    if !host_is_expected
+        || request
+            .uri()
+            .authority()
+            .is_some_and(|authority| authority.as_str() != access.expected_host)
+    {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    if matches!(
+        request.uri().path(),
+        "/healthz" | "/readyz" | "/.well-known/teslatlas-hub" | "/v1/internal/fleet-telemetry"
+    ) {
+        return next.run(request).await;
+    }
+    if request
+        .headers()
+        .get_all(header::AUTHORIZATION)
+        .iter()
+        .count()
+        != 1
+        || !bearer_from_headers(request.headers())
+            .is_some_and(|bearer| access.token_digest.matches(bearer.as_bytes()))
+    {
+        return unauthorized();
+    }
+    next.run(request).await
 }
 
 impl FleetTelemetryIngress {
@@ -917,6 +1016,7 @@ where
         }
     } else {
         revalidate_server_admission(admission.as_ref())?;
+        let local_access = LocalLoopbackAccess::load_or_create(&config.data_dir, config.bind)?;
         // Keep the same cancellation ownership as the TLS path. A dropped
         // JoinHandle would otherwise leave plaintext loopback service alive.
         let listener = std::net::TcpListener::bind(config.bind)?;
@@ -938,6 +1038,10 @@ where
                         fleet_telemetry,
                         CorsPolicy::for_config(config),
                     )
+                    .layer(axum::middleware::from_fn_with_state(
+                        local_access,
+                        require_local_loopback_access,
+                    ))
                     .into_make_service(),
                 ),
             ),
@@ -1621,16 +1725,24 @@ async fn schema_22_noop(
     }
     let Some(cursor_key) = state.cursor_key.as_deref() else {
         tracing::error!("schema 2.2 no-op serving requires the active cursor key");
-        return signed_sync_service_unavailable(state.manifest_signing.as_deref());
+        return unavailable_schema_22_noop();
     };
     match crate::updates_delivery::schema_22_signed_artifacts(&state.store, vehicle_id, cursor_key)
     {
         Ok((_, noop_bytes)) => no_store_json_bytes(noop_bytes, state.manifest_signing.as_deref()),
         Err(error) => {
             tracing::error!(%error, "schema 2.2 no-op pair is unavailable");
-            signed_sync_service_unavailable(state.manifest_signing.as_deref())
+            unavailable_schema_22_noop()
         }
     }
+}
+
+fn unavailable_schema_22_noop() -> Response {
+    (
+        StatusCode::NOT_ACCEPTABLE,
+        [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
+    )
+        .into_response()
 }
 
 async fn pack(
@@ -1787,17 +1899,6 @@ fn no_store_manifest(
 
 fn no_store_json_bytes(raw_json: Vec<u8>, signing: Option<&ManifestSigning>) -> Response {
     signed_no_store_json_bytes(StatusCode::OK, raw_json, signing)
-}
-
-fn signed_sync_service_unavailable(signing: Option<&ManifestSigning>) -> Response {
-    let raw_json = serde_json::to_vec(&PublicApiErrorEnvelope {
-        error: PublicApiError {
-            code: "service_unavailable",
-            message: "schema 2.2 synchronization state is temporarily unavailable",
-        },
-    })
-    .expect("static public API error is serializable");
-    signed_no_store_json_bytes(StatusCode::SERVICE_UNAVAILABLE, raw_json, signing)
 }
 
 fn signed_no_store_json_bytes(

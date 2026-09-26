@@ -2057,6 +2057,25 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 60;
     }
 
+    if version == 60 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS paired_device_token_grace (
+                    device_id TEXT PRIMARY KEY NOT NULL
+                        REFERENCES paired_devices(device_id) ON DELETE CASCADE,
+                    token_sha256 BLOB NOT NULL UNIQUE CHECK(length(token_sha256) = 32),
+                    valid_until_ms INTEGER NOT NULL CHECK(valid_until_ms >= 0)
+                ) STRICT;
+                PRAGMA user_version = 61;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 61;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {

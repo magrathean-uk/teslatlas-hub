@@ -429,6 +429,7 @@ async fn admitted_plain_server_reuses_the_persisted_schema_22_cursor_key() {
     let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
         .expect("persisted cursor key");
     let (vehicle_id, _) = inject_schema_22_catalogue(&store, &cursor_key);
+    let local_token_path = config.data_dir.join("secrets/local-api-token");
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let server_task = tokio::spawn(async move {
         serve_for_admitted_user(
@@ -445,11 +446,13 @@ async fn admitted_plain_server_reuses_the_persisted_schema_22_cursor_key() {
     });
 
     wait_for_tcp_listener(bind).await;
+    let local_token = fs::read_to_string(local_token_path).expect("private loopback bearer");
     let response = reqwest::Client::new()
         .get(format!(
             "http://{bind}/v1/vehicles/{vehicle_id}/sync/manifest"
         ))
         .header(SUPPORTED_SCHEMAS_HEADER, "2.2")
+        .bearer_auth(local_token.trim_end())
         .send()
         .await
         .expect("manifest request");
@@ -609,6 +612,9 @@ async fn plain_server_supervisor_shutdown_gracefully_awaits_listener_stop() {
     let rebound = wait_for_tcp_rebind(bind).await;
     drop(rebound);
 }
+
+#[path = "tests/loopback_access.rs"]
+mod loopback_access;
 
 #[tokio::test]
 async fn native_readiness_binds_the_loaded_config_contract_digest() {
@@ -1463,7 +1469,7 @@ async fn tls_router_requires_a_paired_device_and_claims_once() {
         )
         .await
         .expect("old token response");
-    assert_eq!(old_after_rotation.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(old_after_rotation.status(), StatusCode::OK);
     let new_after_rotation = app
         .clone()
         .oneshot(
@@ -2507,6 +2513,41 @@ async fn trusted_local_schema_22_uses_the_active_cursor_key() {
 }
 
 #[tokio::test]
+async fn schema_22_noop_without_active_key_is_permanently_unavailable() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let source_id = Uuid::new_v4();
+    let vehicle_id = Uuid::new_v4();
+    seed_active_vehicle_identity(&store, source_id, vehicle_id);
+
+    let response = trusted_local_router(store, false, None, None)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/noop"))
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("no-op response");
+    assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert!(response.headers().get(MANIFEST_SIGNATURE_HEADER).is_none());
+    assert!(
+        response
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn paired_schema_22_restart_keeps_exact_noop_and_wrong_key_fails_closed() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store_path = temp.path().join("store");
@@ -2628,7 +2669,7 @@ async fn paired_schema_22_restart_keeps_exact_noop_and_wrong_key_fails_closed() 
         )
         .await
         .expect("wrong-key no-op response");
-    assert_eq!(wrong_key_response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(wrong_key_response.status(), StatusCode::NOT_ACCEPTABLE);
     assert_eq!(
         wrong_key_response
             .headers()
@@ -2636,41 +2677,23 @@ async fn paired_schema_22_restart_keeps_exact_noop_and_wrong_key_fails_closed() 
             .expect("wrong-key cache policy"),
         "no-store"
     );
-    let error_signature = wrong_key_response
-        .headers()
-        .get(MANIFEST_SIGNATURE_HEADER)
-        .expect("wrong-key error signature")
-        .to_str()
-        .expect("ASCII wrong-key error signature")
-        .to_owned();
+    assert!(
+        wrong_key_response
+            .headers()
+            .get(MANIFEST_SIGNATURE_HEADER)
+            .is_none(),
+        "unavailable no-op must not carry a signature"
+    );
     let error_body = wrong_key_response
         .into_body()
         .collect()
         .await
         .expect("wrong-key error body")
         .to_bytes();
-    let error_json: serde_json::Value =
-        serde_json::from_slice(&error_body).expect("wrong-key error JSON");
-    assert_eq!(error_json["error"]["code"], "service_unavailable");
-    assert_eq!(
-        error_json["error"]["message"],
-        "schema 2.2 synchronization state is temporarily unavailable"
+    assert!(
+        error_body.is_empty(),
+        "unavailable no-op body must be empty"
     );
-    let wrong_verifying_key_bytes: [u8; 32] =
-        hex::decode(ManifestSigning::from_cursor_key(&wrong_key).verifying_key_hex())
-            .expect("wrong verifying key hex")
-            .try_into()
-            .expect("32-byte wrong verifying key");
-    let error_signature = Signature::from_slice(
-        &STANDARD
-            .decode(error_signature)
-            .expect("base64 wrong-key error signature"),
-    )
-    .expect("64-byte wrong-key error signature");
-    VerifyingKey::from_bytes(&wrong_verifying_key_bytes)
-        .expect("wrong-key error verifying key")
-        .verify_strict(&error_body, &error_signature)
-        .expect("exact wrong-key error body verifies");
 }
 
 #[tokio::test]

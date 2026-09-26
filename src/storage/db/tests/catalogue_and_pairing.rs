@@ -630,6 +630,12 @@ fn paired_bearer_expires_at_boundary_and_survives_restart() {
     let bearer = access.access_token.as_bearer().to_owned();
     assert!(
         store
+            .authenticate_device_at(&bearer, access.expires_at_ms)
+            .expect("unused bearer at expiry")
+            .is_none()
+    );
+    assert!(
+        store
             .authenticate_device_at(&bearer, access.expires_at_ms - 1)
             .expect("before expiry")
             .is_some()
@@ -637,8 +643,8 @@ fn paired_bearer_expires_at_boundary_and_survives_restart() {
     assert!(
         store
             .authenticate_device_at(&bearer, access.expires_at_ms)
-            .expect("at expiry")
-            .is_none()
+            .expect("original expiry after sliding renewal")
+            .is_some()
     );
     drop(store);
     let restarted = HubStore::open_existing(temporary.path()).expect("restart opens");
@@ -651,7 +657,48 @@ fn paired_bearer_expires_at_boundary_and_survives_restart() {
 }
 
 #[test]
-fn paired_bearer_revoke_and_rotation_invalidate_old_material() {
+fn paired_bearer_authentication_slides_lifetime_without_clock_regression() {
+    let temporary = crate::private_tempdir().expect("temporary database");
+    let store = HubStore::initialize(temporary.path()).expect("store initializes");
+    let invitation = store
+        .create_pairing("sliding lifetime", 10_000, 20_000)
+        .expect("pairing creates");
+    let access = store
+        .claim_pairing(invitation.pairing_id, invitation.secret(), "phone", 15_000)
+        .expect("claim succeeds");
+    let bearer = access.access_token.as_bearer();
+    let authenticated = store
+        .authenticate_device_at(bearer, 20_000)
+        .expect("current bearer auth")
+        .expect("current bearer is valid");
+    assert_eq!(
+        authenticated.expires_at_ms,
+        20_000 + PAIRED_DEVICE_TOKEN_LIFETIME_MS
+    );
+    assert_eq!(authenticated.last_authenticated_at_ms, Some(20_000));
+    store
+        .authenticate_device_at(bearer, 19_000)
+        .expect("clock regression auth")
+        .expect("current bearer remains valid");
+    assert!(
+        store
+            .authenticate_device_at("invalid", 21_000)
+            .unwrap()
+            .is_none()
+    );
+    drop(store);
+
+    let restarted = HubStore::open_existing(temporary.path()).expect("restart opens");
+    let persisted = restarted.list_paired_devices().expect("paired devices");
+    assert_eq!(
+        persisted[0].expires_at_ms,
+        20_000 + PAIRED_DEVICE_TOKEN_LIFETIME_MS
+    );
+    assert_eq!(persisted[0].last_authenticated_at_ms, Some(20_000));
+}
+
+#[test]
+fn paired_bearer_rotation_grace_allows_lost_response_retry_and_revoke() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
     let invitation = store
@@ -669,7 +716,7 @@ fn paired_bearer_revoke_and_rotation_invalidate_old_material() {
         store
             .authenticate_device_at(&old_bearer, 16_000)
             .expect("old auth")
-            .is_none()
+            .is_some()
     );
     assert!(
         store
@@ -677,10 +724,16 @@ fn paired_bearer_revoke_and_rotation_invalidate_old_material() {
             .expect("new auth")
             .is_some()
     );
-    assert!(matches!(
-        store.rotate_device(&old_bearer, 16_001),
-        Err(StoreError::PairingRejected)
-    ));
+    let retried = store
+        .rotate_device(&old_bearer, 16_001)
+        .expect("lost-response retry succeeds during grace");
+    assert_eq!(retried.device_id, access.device_id);
+    assert!(
+        store
+            .authenticate_device_at(retried.access_token.as_bearer(), 16_001)
+            .expect("retry bearer auth")
+            .is_some()
+    );
     store
         .revoke_device_at(rotated.device_id, 17_000)
         .expect("revoke succeeds");
@@ -694,9 +747,50 @@ fn paired_bearer_revoke_and_rotation_invalidate_old_material() {
             .expect("revoked auth")
             .is_none()
     );
+    assert!(
+        store
+            .authenticate_device_at(retried.access_token.as_bearer(), 17_000)
+            .expect("revoked retry bearer auth")
+            .is_none()
+    );
     let listed = store.list_paired_devices().expect("list devices");
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].revoked_at_ms, Some(17_000));
+}
+
+#[test]
+fn paired_bearer_rotation_grace_expires_at_24_hours() {
+    let temporary = crate::private_tempdir().expect("temporary database");
+    let store = HubStore::initialize(temporary.path()).expect("store initializes");
+    let invitation = store
+        .create_pairing("grace expiry", 10_000, 20_000)
+        .expect("pairing creates");
+    let access = store
+        .claim_pairing(invitation.pairing_id, invitation.secret(), "phone", 15_000)
+        .expect("claim succeeds");
+    let old = access.access_token.as_bearer().to_owned();
+    let rotated = store.rotate_device(&old, 16_000).expect("rotate succeeds");
+    assert!(
+        store
+            .authenticate_device_at(&old, 16_000 + PAIRED_DEVICE_ROTATION_GRACE_MS - 1)
+            .expect("last grace millisecond")
+            .is_some()
+    );
+    assert!(
+        store
+            .authenticate_device_at(&old, 16_000 + PAIRED_DEVICE_ROTATION_GRACE_MS)
+            .expect("after grace")
+            .is_none()
+    );
+    assert!(
+        store
+            .authenticate_device_at(
+                rotated.access_token.as_bearer(),
+                16_000 + PAIRED_DEVICE_ROTATION_GRACE_MS,
+            )
+            .expect("current bearer after grace")
+            .is_some()
+    );
 }
 
 #[test]

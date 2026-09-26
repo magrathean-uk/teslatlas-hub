@@ -355,6 +355,8 @@ fn downgrade_catalogue_fixture(connection: &Connection, schema: i32) {
     connection
         .execute_batch(
             "BEGIN IMMEDIATE;
+             DROP TABLE paired_device_token_grace;
+             ALTER TABLE vehicles DROP COLUMN retired_at_ms;
              DROP TABLE fleet_refresh_input_fences;
              DROP TABLE fleet_refresh_receipt_bindings;
              CREATE TABLE fleet_tokens_v54 (

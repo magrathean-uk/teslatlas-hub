@@ -105,9 +105,13 @@ fn remove_v50_current_observation_schema(connection: &Connection) {
 }
 
 fn remove_v55_fleet_schema(connection: &Connection) {
+    // Fixtures that mark a catalogue as pre-v55 must also remove the later
+    // v60/v61 shape before replaying the real migration sequence.
     connection
         .execute_batch(
-            "DROP TABLE fleet_refresh_input_fences;
+            "DROP TABLE paired_device_token_grace;
+                 ALTER TABLE vehicles DROP COLUMN retired_at_ms;
+                 DROP TABLE fleet_refresh_input_fences;
                  DROP INDEX fleet_refresh_receipt_output_generation;
                  DROP TABLE fleet_refresh_receipt_bindings;
                  DROP TABLE fleet_tokens;",
@@ -215,7 +219,7 @@ fn schema_59_upgrade_adds_null_vehicle_retirement_state() {
 
     migrate(&connection).expect("migrate schema 59");
 
-    assert_eq!(schema_version(&connection).unwrap(), 60);
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     assert_eq!(
         connection
             .query_row(
@@ -225,6 +229,44 @@ fn schema_59_upgrade_adds_null_vehicle_retirement_state() {
             )
             .unwrap(),
         None
+    );
+}
+
+#[test]
+fn schema_60_upgrade_keeps_paired_bearers_and_adds_rotation_grace() {
+    let temporary = crate::private_tempdir().expect("temporary database");
+    let store = HubStore::initialize(temporary.path()).expect("current store");
+    let invitation = store
+        .create_pairing("upgrade", 10_000, 20_000)
+        .expect("pairing creates");
+    let access = store
+        .claim_pairing(invitation.pairing_id, invitation.secret(), "phone", 15_000)
+        .expect("pairing claim");
+    let old = access.access_token.as_bearer().to_owned();
+    let connection = store.open().expect("migration connection");
+    connection
+        .execute_batch(
+            "DROP TABLE paired_device_token_grace;
+             PRAGMA user_version = 60;",
+        )
+        .expect("restore schema 60 shape");
+
+    migrate(&connection).expect("migrate schema 60");
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
+    assert!(
+        store
+            .authenticate_device_at(&old, 16_000)
+            .expect("existing bearer after migration")
+            .is_some()
+    );
+    store
+        .rotate_device(&old, 17_000)
+        .expect("rotate after migration");
+    assert!(
+        store
+            .authenticate_device_at(&old, 18_000)
+            .expect("old bearer in grace after migration")
+            .is_some()
     );
 }
 

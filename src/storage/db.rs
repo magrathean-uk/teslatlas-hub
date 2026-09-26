@@ -56,10 +56,11 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 60;
+pub const SCHEMA_VERSION: i32 = 61;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
+pub const PAIRED_DEVICE_ROTATION_GRACE_MS: i64 = 24 * 60 * 60 * 1_000;
 
 /// A supervised collector renews this durable lease from an independent task.
 /// The interval is deliberately much shorter than the lease so a short SQLite

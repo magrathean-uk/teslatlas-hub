@@ -730,7 +730,9 @@ fn outbox_uses_sparse_delta_after_immutable_base_and_preserves_base_pack() {
             |row| row.get(0),
         )
         .expect("pending mutations");
-    assert_eq!(delta_count, 1);
+    // The first live rows remain pending across base publication, so the
+    // initial outbox replay publishes them before this second observation.
+    assert_eq!(delta_count, 2);
     assert_eq!(unpublished, 0);
     drop(connection);
     assert_eq!(std::fs::read(&base_path).expect("base bytes"), base_bytes);
@@ -759,8 +761,11 @@ fn outbox_uses_sparse_delta_after_immutable_base_and_preserves_base_pack() {
         .expect("published lineage");
     lineage.validate().expect("valid published lineage");
     assert_eq!(lineage.base.digest.to_string(), base_digest);
-    assert_eq!(lineage.deltas.len(), 1);
-    assert_eq!(lineage.deltas[0].pack.snapshot_id, lineage.base.snapshot_id);
+    assert_eq!(lineage.deltas.len(), 2);
+    assert!(lineage
+        .deltas
+        .iter()
+        .all(|delta| delta.pack.snapshot_id == lineage.base.snapshot_id));
     assert!(lineage.deltas[0].pack.ordinal > lineage.base.packs[0].ordinal);
     assert_eq!(
         store
@@ -771,7 +776,7 @@ fn outbox_uses_sparse_delta_after_immutable_base_and_preserves_base_pack() {
         lineage.base.sequence
     );
 
-    let delta = lineage.deltas[0].clone();
+    let delta = lineage.deltas[1].clone();
     let mutation_count =
         usize::try_from(delta.to_sequence - delta.from_sequence).expect("delta mutation count");
     let connection = store.open().expect("database");

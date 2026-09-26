@@ -279,9 +279,7 @@ fn standard_fixture_is_admitted_for_fixture_source_run_not_production() {
         macos_launch_agent::development_serve_mode(None, None).unwrap(),
         None
     );
-    assert!(
-        macos_launch_agent::development_serve_mode(Some(OsStr::new("true")), None).is_err()
-    );
+    assert!(macos_launch_agent::development_serve_mode(Some(OsStr::new("true")), None).is_err());
     assert!(macos_launch_agent::preflight_hub_for_serve(&config, None).is_err());
     macos_launch_agent::preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Fixture))
         .expect("standard fixture development Serve");
@@ -291,11 +289,8 @@ fn standard_fixture_is_admitted_for_fixture_source_run_not_production() {
     let mut exposed = config.clone();
     exposed.bind = "0.0.0.0:21444".parse().unwrap();
     assert!(
-        macos_launch_agent::preflight_hub_for_serve(
-            &exposed,
-            Some(DevelopmentServeMode::Fixture)
-        )
-        .is_err()
+        macos_launch_agent::preflight_hub_for_serve(&exposed, Some(DevelopmentServeMode::Fixture))
+            .is_err()
     );
 
     let mut collecting = config.clone();
