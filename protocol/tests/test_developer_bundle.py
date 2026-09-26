@@ -79,6 +79,7 @@ class DeveloperBundleTests(unittest.TestCase):
             extracted = extract_archive(first_archive, extraction_root)
             self.assertEqual(verify_directory(extracted), manifest)
             self.assertTrue((extracted / "profiles/hub-http-v1/1.1.0/SHA256SUMS").is_file())
+            self.assertTrue((extracted / "profiles/hub-sync-v1/1.1.0/SHA256SUMS").is_file())
             self.assertTrue((extracted / "profiles/edge-delivery-v2/2.0.0/SHA256SUMS").is_file())
 
     def test_extracted_bundle_rejects_tamper_and_extra_members(self) -> None:

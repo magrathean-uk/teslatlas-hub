@@ -1,8 +1,8 @@
 # Hub changes-since contract
 
-[`hub-sync-v1@1.0.0`](../profiles/hub-sync-v1/1.0.0/) is the candidate,
-source-neutral contract for one incremental Hub changed-set. It has no exact
-Hub product-version pin. A client sends the accepted manifest schema range and
+[`hub-sync-v1@1.1.0`](../profiles/hub-sync-v1/1.1.0/) is the candidate,
+source-neutral successor to the retained `hub-sync-v1@1.0.0` candidate. It
+has no exact Hub product-version pin. A client sends the accepted manifest schema range and
 its persisted receipt checkpoint to `POST
 /v1/vehicles/{vehicle_id}/sync/changes-since` with a paired bearer. A missing,
 invalid, expired, or revoked bearer returns the unsigned empty `401` response.
@@ -23,5 +23,8 @@ They are intentionally not cryptographic evidence. Production clients must
 verify the Ed25519 signature with the key selected by `key_id` and reject an
 invalid signature, digest, or canonical payload.
 
-This profile does not define no-op delivery, multi-chunk schema 2.2 transfer,
-or prepared-compute artifacts.
+The `1.1.0` successor adds signed no-op receipts, `406` empty no-store
+unavailability, pack range semantics, status tables, and one signed schema 2.2
+manifest containing ordered chunks. Each chunk is 8–16 MiB compressed; the
+outer manifest has the only signature. Prepared-compute artifacts remain a
+separate contract.

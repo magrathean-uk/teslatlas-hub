@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PROFILE = ROOT / "profiles/hub-sync-v1/1.0.0"
-PROFILE_ID = "hub-sync-v1@1.0.0"
+PROFILE = ROOT / "profiles/hub-sync-v1/1.1.0"
+PROFILE_ID = "hub-sync-v1@1.1.0"
 DRAFT = "https://json-schema.org/draft/2020-12/schema"
 DIGEST = {"type": "string", "pattern": "^[0-9a-f]{64}$"}
 OPAQUE = {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^[A-Za-z0-9._~-]+$"}
@@ -22,14 +22,14 @@ def strict(properties, required=None):
 
 
 def document(name, body):
-    return {"$schema": DRAFT, "$id": f"urn:teslatlas:hub-sync-v1:1.0.0:{name}", **body}
+    return {"$schema": DRAFT, "$id": f"urn:teslatlas:hub-sync-v1:1.1.0:{name}", **body}
 
 
 def pack_ref():
     return strict({
         "object_name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]{0,1023}$"},
         "sha256": DIGEST,
-        "compressed_bytes": {"type": "integer", "minimum": 1, "maximum": 16 * 1024 * 1024},
+        "compressed_bytes": {"type": "integer", "minimum": 8 * 1024 * 1024, "maximum": 16 * 1024 * 1024},
     })
 
 
@@ -84,6 +84,62 @@ def bundle():
             "signature": signing(),
         }),
     }})
+    chunk = strict({
+        "chunk_index": {"type": "integer", "minimum": 0, "maximum": 4095},
+        "pack": pack_ref(),
+    })
+    manifest = document("sync-manifest", {"$defs": {
+        "schema_2_1": strict({
+            "manifest_id": OPAQUE, "vehicle_id": UUID, "kind": {"const": "snapshot"},
+            "schema_version": {"const": "2.1"}, "sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "pack": pack_ref(), "signature": signing(),
+        }),
+        "schema_2_2": strict({
+            "manifest_id": OPAQUE, "vehicle_id": UUID, "kind": {"const": "snapshot"},
+            "schema_version": {"const": "2.2"}, "sequence": {"type": "integer", "minimum": 1, "maximum": 2**63 - 1},
+            "chunks": {"type": "array", "minItems": 2, "maxItems": 4096, "items": chunk}, "signature": signing(),
+        }),
+        "manifest": {"oneOf": [{"$ref": "#/$defs/schema_2_1"}, {"$ref": "#/$defs/schema_2_2"}]},
+    }})
+    noop = document("noop", {"$defs": {
+        "receipt": strict({
+            "kind": {"const": "no_op"}, "vehicle_id": UUID, "base_receipt_id": OPAQUE,
+            "sequence": {"type": "integer", "minimum": 0, "maximum": 2**63 - 1},
+            "manifest_schema": SCHEMA_VERSION, "signature": signing(),
+        }),
+    }})
+    status_tables_schema = document("status-tables", {"$defs": {
+        "response": strict({
+            "status": {"type": "integer", "minimum": 100, "maximum": 599},
+            "body": {"type": "string", "minLength": 1, "maxLength": 256},
+            "headers": {"type": "object", "additionalProperties": False, "properties": {"cache_control": {"type": "string"}, "etag": {"type": "string"}, "content_range": {"type": "string"}}},
+            "signature": {"enum": ["present", "absent"]},
+        }, ["status", "body"]),
+        "table": strict({"route": {"type": "string", "minLength": 1, "maxLength": 512}, "responses": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/response"}}}),
+        "document": strict({"profile_id": {"const": PROFILE_ID}, "tables": {"type": "array", "minItems": 4, "maxItems": 16, "items": {"$ref": "#/$defs/table"}}}),
+    }})
+    status_tables = {
+        "profile_id": PROFILE_ID,
+        "tables": [
+            {"route": "POST /v1/vehicles/{vehicle_id}/sync/changes-since", "responses": [
+                {"status": 200, "body": "signed changed-set receipt"},
+                {"status": 401, "body": "empty", "signature": "absent"},
+                {"status": 409, "body": "signed rebase hint"}]},
+            {"route": "GET /v1/vehicles/{vehicle_id}/sync/manifest", "responses": [
+                {"status": 200, "body": "one signed schema 2.1 or 2.2 manifest"},
+                {"status": 401, "body": "empty", "signature": "absent"},
+                {"status": 406, "body": "empty", "headers": {"cache_control": "no-store"}, "signature": "absent"}]},
+            {"route": "GET /v1/vehicles/{vehicle_id}/sync/noop", "responses": [
+                {"status": 200, "body": "signed no-op receipt"},
+                {"status": 401, "body": "empty", "signature": "absent"},
+                {"status": 406, "body": "empty", "headers": {"cache_control": "no-store"}, "signature": "absent"}]},
+            {"route": "GET /v1/packs/sha256/{object_name}", "responses": [
+                {"status": 200, "body": "pack bytes", "headers": {"etag": "strong"}},
+                {"status": 206, "body": "single contiguous byte range", "headers": {"content_range": "required", "etag": "strong"}},
+                {"status": 401, "body": "empty", "signature": "absent"},
+                {"status": 404, "body": "empty", "signature": "absent"}]},
+        ],
+    }
     request_example = {
         "fixture_id": "changes-since-request-v1",
         "request": {"base_receipt_id": "receipt_demo_000042", "from_sequence": 42,
@@ -97,7 +153,7 @@ def bundle():
                     "base_receipt_id": "receipt_demo_000042", "from_sequence": 42, "to_sequence": 45,
                     "manifest_schema": "2.2", "changed_set_sha256": "2" * 64,
                     "pack": {"object_name": "packs/demo-changed-set-000045.sqlite.zst", "sha256": "3" * 64,
-                             "compressed_bytes": 1048576}, "signature": signature},
+                             "compressed_bytes": 8 * 1024 * 1024}, "signature": signature},
     }
     rebase_example = {
         "fixture_id": "changes-since-rebase-after-compaction-v1",
@@ -105,25 +161,54 @@ def bundle():
                      "requested_base_receipt_id": "receipt_compacted_000042", "requested_from_sequence": 42,
                      "reason": "compacted", "replacement": {"receipt_id": "receipt_retained_000900", "sequence": 900,
                      "manifest_schema": "2.2", "pack": {"object_name": "packs/demo-rebase-000900.sqlite.zst",
-                     "sha256": "4" * 64, "compressed_bytes": 2097152}},
+                     "sha256": "4" * 64, "compressed_bytes": 8 * 1024 * 1024}},
                      "retry_request": {"base_receipt_id": "receipt_retained_000900", "from_sequence": 900,
                      "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}},
                      "signature": {**signature, "signed_payload_sha256": "5" * 64}},
     }
+    manifest_2_1_example = {
+        "fixture_id": "schema-2-1-single-pack-manifest-v1",
+        "manifest": {"manifest_id": "manifest_demo_000899", "vehicle_id": "11111111-1111-4111-8111-111111111111",
+                     "kind": "snapshot", "schema_version": "2.1", "sequence": 899,
+                     "pack": {"object_name": "packs/demo-000899.sqlite.zst", "sha256": "a" * 64, "compressed_bytes": 8 * 1024 * 1024},
+                     "signature": {**signature, "signed_payload_sha256": "b" * 64}},
+    }
+    manifest_2_2_example = {
+        "fixture_id": "schema-2-2-multi-chunk-manifest-v1",
+        "manifest": {"manifest_id": "manifest_demo_000900", "vehicle_id": "11111111-1111-4111-8111-111111111111",
+                     "kind": "snapshot", "schema_version": "2.2", "sequence": 900,
+                     "chunks": [
+                         {"chunk_index": 0, "pack": {"object_name": "packs/demo-000900-0000.sqlite.zst", "sha256": "6" * 64, "compressed_bytes": 8 * 1024 * 1024}},
+                         {"chunk_index": 1, "pack": {"object_name": "packs/demo-000900-0001.sqlite.zst", "sha256": "7" * 64, "compressed_bytes": 8 * 1024 * 1024}},
+                     ], "signature": {**signature, "signed_payload_sha256": "8" * 64}},
+    }
+    noop_example = {
+        "fixture_id": "sync-noop-signed-v1",
+        "receipt": {"kind": "no_op", "vehicle_id": "11111111-1111-4111-8111-111111111111",
+                    "base_receipt_id": "receipt_demo_000045", "sequence": 45, "manifest_schema": "2.2",
+                    "signature": {**signature, "signed_payload_sha256": "9" * 64}},
+    }
+    noop_unavailable = {
+        "fixture_id": "sync-noop-unavailable-v1",
+        "response": {"status": 406, "headers": {"cache_control": "no-store"}, "body_bytes": 0, "manifest_signature": "absent"},
+    }
     profile = {
-        "profile_id": PROFILE_ID, "status": "candidate", "contract_version": "1.0.0",
+        "profile_id": PROFILE_ID, "status": "candidate", "contract_version": "1.1.0",
         "authentication": "paired bearer",
         "product_version_binding": "none; this protocol profile has no exact Hub product-version pin",
         "schema_version_range": {"minimum": "2.1", "maximum": "2.2"},
-        "limits": {"max_changed_set_packs": 1, "max_pack_compressed_bytes": 16 * 1024 * 1024,
+        "previous_profile": "hub-sync-v1@1.0.0",
+        "limits": {"max_changed_set_packs": 1, "min_pack_compressed_bytes": 8 * 1024 * 1024,
+                   "max_pack_compressed_bytes": 16 * 1024 * 1024, "max_manifest_chunks": 4096,
                    "max_request_bytes": 8192, "max_response_bytes": 2 * 1024 * 1024},
+        "status_tables": "status-tables.json",
         "route": {"method": "POST", "path": "/v1/vehicles/{vehicle_id}/sync/changes-since",
                   "success_status": 200, "compacted_status": 409},
         "signature_rule": "Each receipt or rebase hint MUST carry an Ed25519 detached signature over RFC 8785 canonical JSON of the object with its signature member omitted. signed_payload_sha256 is the SHA-256 of those canonical bytes. Fixtures use a deterministic shape-only signature and MUST NOT be accepted as cryptographic proof.",
         "compaction_rule": "A compacted base MUST return 409 and the signed rebase hint. The client applies replacement.pack, persists replacement receipt_id and sequence, then sends retry_request. It MUST NOT infer a rebase target or substitute a full-history request.",
-        "scope": "One changed pack per changed-set receipt. Multi-chunk transfer, prepared-compute artifacts, and no-op delivery are separate contracts.",
+        "scope": "One changed pack per changed-set receipt; schema 2.2 snapshot manifests may contain multiple chunks under one signature. Prepared-compute artifacts are a separate contract.",
     }
-    openapi = {"openapi": "3.1.0", "info": {"title": "Teslatlas changes-since", "version": "1.0.0"},
+    openapi = {"openapi": "3.1.0", "info": {"title": "Teslatlas changes-since", "version": "1.1.0"},
       "paths": {"/v1/vehicles/{vehicle_id}/sync/changes-since": {"post": {"operationId": "changesSince",
         "parameters": [{"name": "vehicle_id", "in": "path", "required": True, "schema": UUID}],
         "requestBody": {"required": True, "content": {"application/json": {"schema": {"$ref": "changes-since-request.schema.json#/$defs/request"}}}},
@@ -132,16 +217,34 @@ def bundle():
                       "401": {"description": "missing, invalid, expired, or revoked paired bearer", "content": {}},
                       "409": {"description": "signed rebase hint after compaction", "content": {"application/json": {"schema": {"$ref": "rebase-hint.schema.json#/$defs/hint"}}}}}}}},
       "components": {"securitySchemes": {"pairedBearer": {"type": "http", "scheme": "bearer", "bearerFormat": "opaque paired bearer"}}}}
+    openapi["paths"]["/v1/vehicles/{vehicle_id}/sync/manifest"] = {"get": {"operationId": "syncManifest", "security": [{"pairedBearer": []}],
+        "parameters": [{"name": "vehicle_id", "in": "path", "required": True, "schema": UUID}, {"name": "x-teslatlas-supported-schemas", "in": "header", "required": True, "schema": {"type": "string", "pattern": "^2\\.1,2\\.2$"}}],
+        "responses": {"200": {"description": "signed manifest", "content": {"application/json": {"schema": {"$ref": "sync-manifest.schema.json#/$defs/manifest"}}}}, "401": {"description": "empty authentication failure", "content": {}}, "406": {"description": "empty unavailable response with Cache-Control: no-store", "content": {}}}}}
+    openapi["paths"]["/v1/vehicles/{vehicle_id}/sync/noop"] = {"get": {"operationId": "syncNoop", "security": [{"pairedBearer": []}],
+        "parameters": [{"name": "vehicle_id", "in": "path", "required": True, "schema": UUID}],
+        "responses": {"200": {"description": "signed no-op receipt", "content": {"application/json": {"schema": {"$ref": "noop.schema.json#/$defs/receipt"}}}}, "401": {"description": "empty authentication failure", "content": {}}, "406": {"description": "empty unavailable response with Cache-Control: no-store", "content": {}}}}}
+    openapi["paths"]["/v1/packs/sha256/{object_name}"] = {"get": {"operationId": "syncPack", "security": [{"pairedBearer": []}],
+        "parameters": [{"name": "object_name", "in": "path", "required": True, "schema": {"type": "string", "minLength": 1, "maxLength": 1024}}],
+        "responses": {"200": {"description": "pack bytes", "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}}, "206": {"description": "single byte range", "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}}}, "401": {"description": "empty authentication failure", "content": {}}, "404": {"description": "empty missing pack", "content": {}}}}}
     cases = {"profile_id": PROFILE_ID, "cases": [
       {"id": "changes-since-changed-set", "request_fixture": request_example["fixture_id"], "status": 200, "response_fixture": receipt_example["fixture_id"]},
       {"id": "changes-since-rebase-after-compaction", "request_fixture": request_example["fixture_id"], "status": 409, "response_fixture": rebase_example["fixture_id"]},
+      {"id": "schema-2-1-single-pack-manifest", "status": 200, "response_fixture": manifest_2_1_example["fixture_id"]},
+      {"id": "schema-2-2-multi-chunk-manifest", "status": 200, "response_fixture": manifest_2_2_example["fixture_id"]},
+      {"id": "sync-noop-signed", "status": 200, "response_fixture": noop_example["fixture_id"]},
+      {"id": "sync-noop-unavailable", "status": 406, "response_fixture": noop_unavailable["fixture_id"]},
     ]}
     out = {"profile.json": profile, "changes-since-request.schema.json": request,
            "changed-set-receipt.schema.json": receipt, "rebase-hint.schema.json": rebase,
+           "sync-manifest.schema.json": manifest, "noop.schema.json": noop, "status-tables.schema.json": status_tables_schema, "status-tables.json": status_tables,
            "openapi.json": openapi, "cases.json": cases,
            "examples/changes-since-request.json": request_example,
            "examples/changes-since-changed-set.json": receipt_example,
-           "examples/changes-since-rebase-after-compaction.json": rebase_example}
+           "examples/changes-since-rebase-after-compaction.json": rebase_example,
+           "examples/schema-2-1-single-pack-manifest.json": manifest_2_1_example,
+           "examples/schema-2-2-multi-chunk-manifest.json": manifest_2_2_example,
+           "examples/sync-noop-signed.json": noop_example,
+           "examples/sync-noop-unavailable.json": noop_unavailable}
     encoded = {name: (json.dumps(value, sort_keys=True, indent=2) + "\n").encode() for name, value in out.items()}
     sums = "".join(f"{hashlib.sha256(encoded[name]).hexdigest()}  {name}\n" for name in sorted(encoded))
     return {**encoded, "SHA256SUMS": sums.encode()}

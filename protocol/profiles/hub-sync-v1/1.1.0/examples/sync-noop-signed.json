@@ -1,0 +1,16 @@
+{
+  "fixture_id": "sync-noop-signed-v1",
+  "receipt": {
+    "base_receipt_id": "receipt_demo_000045",
+    "kind": "no_op",
+    "manifest_schema": "2.2",
+    "sequence": 45,
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "fixture-ed25519-2026",
+      "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "signed_payload_sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+    },
+    "vehicle_id": "11111111-1111-4111-8111-111111111111"
+  }
+}
