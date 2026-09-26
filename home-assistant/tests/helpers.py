@@ -100,9 +100,12 @@ class FixtureHubClient:
         self.snapshot = initial_snapshot()
         self.info = self.snapshot.info
         self.access_token = "fixture-device-bearer"
+        self.rotated_access_token = "rotated-device-bearer"
+        self.rotation_expires_at_ms = 2_000_000_000_000
         self.probe_error: HubClientError | None = None
         self.pair_error: HubClientError | None = None
         self.snapshot_error: HubClientError | None = None
+        self.rotation_error: HubClientError | None = None
         self.events: list[HubEvent | HubClientError] = []
         self.event_connections: list[list[HubEvent | HubClientError]] = []
         self.pairing_secrets: list[str] = []
@@ -111,6 +114,8 @@ class FixtureHubClient:
         self.snapshots: list[HubSnapshot] = []
         self.event_cursors: list[str | None] = []
         self.snapshot_calls = 0
+        self.rotation_calls = 0
+        self.bearer_updates: list[tuple[str, int]] = []
         self.block_after_events = True
         self.stream_blocked = asyncio.Event()
         self.closed = False
@@ -151,12 +156,20 @@ class FixtureHubClient:
 
     async def async_rotate(self) -> PairingResult:
         """Return a deterministic rotated credential."""
+        self.rotation_calls += 1
+        if self.rotation_error is not None:
+            raise self.rotation_error
         return PairingResult(
             info=self.info,
-            access_token=self.access_token,
+            access_token=self.rotated_access_token,
             device_id="device-fixture",
-            expires_at_ms=1_788_567_300_000,
+            expires_at_ms=self.rotation_expires_at_ms,
         )
+
+    def set_bearer(self, access_token: str, expires_at_ms: int) -> None:
+        """Record the durable credential chosen by the coordinator."""
+        self.access_token = access_token
+        self.bearer_updates.append((access_token, expires_at_ms))
 
     async def async_events(self, last_event_id: str | None) -> AsyncIterator[HubEvent]:
         """Yield configured events and failures in order."""

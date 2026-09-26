@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from datetime import timedelta
-from typing import override
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any, override
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryAuthFailed
 from homeassistant.core import HomeAssistant
@@ -16,13 +18,14 @@ from .client import (
     HubContractError,
     TeslatlasHubClient,
 )
-from .const import CONF_HUB_ID, DOMAIN
+from .const import CONF_ACCESS_TOKEN, CONF_HUB_ID, CONF_TOKEN_EXPIRES_AT_MS, DOMAIN
 from .models import HubSnapshot
 
 _LOGGER = logging.getLogger(__name__)
 
 POLL_INTERVAL_SECONDS = 30
 POLL_BACKOFF_SECONDS = (30, 60, 120, 300)
+ROTATION_LEAD_TIME = timedelta(days=7)
 
 
 class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
@@ -33,6 +36,8 @@ class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
         hass: HomeAssistant,
         entry: ConfigEntry,
         client: TeslatlasHubClient,
+        *,
+        now: Callable[[], datetime] | None = None,
     ) -> None:
         """Initialize a non-overlapping 30-second polling coordinator."""
         super().__init__(
@@ -46,6 +51,8 @@ class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
         self.client = client
         self._failure_count = 0
         self._closed = False
+        self._now = now or (lambda: datetime.now(UTC))
+        self._rotation_lock = asyncio.Lock()
 
     @property
     def last_event_id(self) -> None:
@@ -56,6 +63,7 @@ class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
     async def _async_update_data(self) -> HubSnapshot:
         """Poll one bounded set of independently observed vehicle states."""
         try:
+            await self._async_rotate_bearer_if_due()
             snapshot = await self.client.async_snapshot()
         except HubAuthenticationError as err:
             raise ConfigEntryAuthFailed("Teslatlas Hub authentication expired") from err
@@ -72,6 +80,32 @@ class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
         self._failure_count = 0
         self.update_interval = timedelta(seconds=POLL_INTERVAL_SECONDS)
         return snapshot
+
+    async def _async_rotate_bearer_if_due(self) -> None:
+        """Persist a replacement bearer before making it active in the client."""
+        async with self._rotation_lock:
+            expires_at_ms = self.config_entry.data.get(CONF_TOKEN_EXPIRES_AT_MS)
+            if not isinstance(expires_at_ms, int) or isinstance(expires_at_ms, bool):
+                return
+            expires_at = datetime.fromtimestamp(expires_at_ms / 1000, UTC)
+            if expires_at - self._now() > ROTATION_LEAD_TIME:
+                return
+
+            rotated = await self.client.async_rotate()
+            if rotated.info.hub_id != self.config_entry.data[CONF_HUB_ID]:
+                raise HubAuthenticationError(
+                    "Teslatlas Hub identity changed during rotation"
+                )
+
+            updated_data: dict[str, Any] = {
+                **self.config_entry.data,
+                CONF_ACCESS_TOKEN: rotated.access_token,
+                CONF_TOKEN_EXPIRES_AT_MS: rotated.expires_at_ms,
+            }
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data=updated_data
+            )
+            self.client.set_bearer(rotated.access_token, rotated.expires_at_ms)
 
     @override
     async def async_shutdown(self) -> None:

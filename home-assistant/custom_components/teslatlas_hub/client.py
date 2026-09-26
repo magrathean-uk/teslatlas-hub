@@ -59,6 +59,9 @@ class TeslatlasHubClient(Protocol):
     async def async_rotate(self) -> PairingResult:
         """Rotate the current scoped device bearer."""
 
+    def set_bearer(self, access_token: str, expires_at_ms: int) -> None:
+        """Use a credential already durably stored by the integration."""
+
     async def async_close(self) -> None:
         """Release owned network resources."""
 

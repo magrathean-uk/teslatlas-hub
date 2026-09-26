@@ -427,6 +427,11 @@ class CurrentHubClient:
             expires_at_ms=expires_at_ms,
         )
 
+    def set_bearer(self, access_token: str, expires_at_ms: int) -> None:
+        """Switch to a credential that Home Assistant has already persisted."""
+        self._bearer_token = access_token
+        self._bearer_expires_at_ms = expires_at_ms
+
     async def _async_current(self, summary: Any) -> VehicleState:
         vehicle_id, name = _vehicle_summary(summary)
         async with self._current_semaphore:
