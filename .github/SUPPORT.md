@@ -11,8 +11,9 @@ Start with the [documentation](../docs/index.md) and
 | Tesla account, vehicle or provider-service fault | The relevant provider's support route |
 | Legal notice | Email `contact@magrathean.uk` with subject `LEGAL NOTICE` |
 
-Only platforms and versions named by a tagged release are supported. Include
-the exact Hub version, platform, topology, reproduction steps, expected result,
+The repository is source-only; historical tags do not establish support for the
+current development tree. Include the exact Hub version or commit, platform,
+topology, reproduction steps, expected result,
 actual result and redacted diagnostics. Do not post tokens, VINs, coordinates,
 private logs or production data.
 

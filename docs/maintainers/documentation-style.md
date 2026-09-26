@@ -55,5 +55,7 @@ release or observable source behaviour, not an intended future state.
 - Use diagrams only where they reduce explanation; decorative clutter is not
   documentation.
 
-Before merge, run the repository layout and provenance verifiers and check all
-local links from the file's actual location.
+Before merge, check local links from each file's actual location and run the
+layout and provenance verifiers for tracked documentation changes. Record any
+existing failures accurately. Do not run builds for prose-only edits. Do not use
+em dashes in new prose; preserve exact legal text and quotations.

@@ -1,55 +1,35 @@
 # GitHub repository settings
 
-This public repository stores source, issues, review history, and tags. It does
-not use GitHub-hosted build, test, or release automation, and v1.0.0 has no
-GitHub Release assets.
+GitHub is source storage for Teslatlas Hub. Do not add build, test, release or
+security automation without an explicit owner request. Current distribution is
+source-only; existing tags are historical snapshots. See
+[Source publishing and local builds](../releases/releasing.md).
 
-## About panel
+## Repository presentation
 
-Use this repository description:
+The landing page is `.github/README.md`, also referenced by `Cargo.toml`.
+Keep documentation under `docs/` and preserve `CITATION.cff` for citation metadata.
+The layout gate forbids tracked root Markdown and tool-specific configuration.
+Local agent guidance is separate from tracked public documentation.
 
-> Self-hosted multi-vehicle Tesla telemetry collector and local Teslatlas sync hub for macOS and Debian.
+A suitable About description is:
 
-Set the website to `https://teslatlas.eu` and keep these topics:
+> Self-hosted Tesla telemetry collector and local Teslatlas sync hub, written in Rust.
 
-```text
-debian fleet-api macos privacy rust self-hosted sqlite telemetry tesla teslamate vehicle-telemetry
-```
+Website: [teslatlas.eu](https://teslatlas.eu).
+Suggested topics: `tesla`, `telemetry`, `self-hosted`, `rust`, `sqlite`, `teslamate`,
+`macos`, `debian`.
 
-The public landing page intentionally lives at `.github/README.md`; Cargo also
-points to it. The repository layout gate forbids root Markdown. Root
-`CITATION.cff` supplies GitHub's citation metadata.
+## Review remote settings separately
 
-## Repository controls
+Check the live repository before stating which controls are enabled. Source files
+do not establish private advisory availability, branch protection, required reviews,
+secret scanning, dependency alerts or merge settings. Do not advertise automated
+checks when validation was performed locally.
 
-- default branch: `main`;
-- web-based commits require DCO sign-off;
-- squash merge only, using the pull-request title and body;
-- merged branches are deleted automatically;
-- wiki and projects remain disabled because maintained documentation lives in
-  the repository;
-- private vulnerability reporting, dependency alerts, secret scanning and push
-  protection are enabled; and
-- automated dependency fixes remain disabled pending explicit review.
+`CODEOWNERS` identifies review ownership. The contribution and security policies
+supply the rights process and private reporting route. Keep executed agreements,
+signatures and identity records outside the public repository.
 
-## Protected references
-
-The `main` ruleset blocks branch deletion and non-fast-forward updates. The
-`v*` tag ruleset blocks deletion and updates of published release tags. Only a
-repository administrator may change those rules in a documented emergency; no
-routine bypass should exist.
-
-Pull requests use `CODEOWNERS`, the contribution checklist, review and
-conversation resolution. This single-maintainer repository must not claim a
-GitHub status check passed when tests and release evidence were produced only
-locally. Record local results against the exact commit.
-
-## Contributor and release records
-
-Public contributor status should disclose only what is needed to operate the
-merge gate. Executed agreements, signatures, home addresses and identity
-records remain in encrypted Company-controlled storage.
-
-Only an authorised MAGRATHEAN UK LTD maintainer creates a source release. For
-v1.0.0, push the reviewed `main` commit and its immutable annotated tag. Do not
-create a GitHub Release or upload local `dist/` outputs.
+Changes to remote settings, tags or publication require a separate authorised
+operation. Documentation changes do not apply them.

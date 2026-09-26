@@ -1,60 +1,56 @@
 # Security policy
 
-## Supported versions
+## Scope
 
-| Release line | Security support |
-|---|---|
-| 2026.36.1 | Current release; reports accepted for its documented platform scope |
-| v1.0.0 | Historical source release; reports accepted, upgrade planning recommended |
-| v1.0.0-beta.1 and earlier | Unsupported; review current release and upgrade guidance |
-| `main` and untagged builds | Reports accepted, but not a supported release channel |
+Teslatlas Hub is self-hosted software for vehicle telemetry collection, local
+storage, paired-device sync, and optional provider integrations. This policy
+covers vulnerabilities in this repository and its released artefacts.
 
-## Private reporting
+The project does not publish a supported-release lifecycle table. Reports may
+identify a released version, a source commit, or the current `main` branch.
 
-Report vulnerabilities through
-[GitHub private vulnerability reporting](https://github.com/magrathean-uk/teslatlas-hub/security/advisories/new)
-or email `contact@magrathean.uk` with subject `SECURITY`.
+## Report privately
 
-Do not publish credentials, VINs, precise travel history, database dumps, signing keys or exploit details.
+Email [contact@magrathean.uk](mailto:contact@magrathean.uk) with the subject
+`SECURITY`. Do not use public issues for vulnerability reports.
 
-Include affected version/commit, platform, topology, reproduction, impact, preconditions and redacted evidence.
+Include the affected version or commit, platform and deployment topology,
+reproduction steps, impact, preconditions, and redacted evidence. Do not send
+credentials, private keys, VINs, precise locations, travel history, database
+dumps, backups, pairing material, or other personal data.
 
-## Response and coordinated disclosure
+The repository has no verified public statement of a response-time commitment,
+bounty, or private GitHub advisory configuration. This policy makes none.
 
-Magrathean will acknowledge a usable private report, identify a contact for
-follow-up, assess scope and severity, and provide material status changes while
-remediation is active. Response time depends on impact, reproducibility, and
-vehicle or credential risk; these expectations are not a paid-support SLA.
+## Security boundaries
 
-Keep exploit details private while a fix or mitigation is being prepared.
-Reporter and maintainer should agree a reasonable disclosure date based on the
-risk and deployment path. Magrathean will not require indefinite silence, and
-will publish a security advisory or release note when affected users need to
-act. Credit is offered when requested and consented to; no bounty is promised.
-If active exploitation or immediate safety risk is suspected, say so in the
-first line of the report.
+Reports are especially useful where they could break a documented boundary:
 
-## Safe harbour
+- provider access and refresh tokens, Fleet keys, pairing authority, signing
+  keys, vehicle identity, location, history, or recovery keys;
+- TLS and paired-device bearer authentication for remote sync;
+- short-lived, single-use pairing invitations, where only the claim is an
+  unauthenticated mutation;
+- the private bearer on the supervised loopback Fleet Telemetry route;
+- the private local bearer and matching `Host` header required for protected
+  loopback routes;
+- the requirement for TLS on a non-loopback bind;
+- redaction of credentials and identifying telemetry in logs and diagnostics;
+- bounded input, retention, retry, migration, and schema-admission behaviour;
+  or
+- release provenance, licence material, or source-identity integrity.
 
-MAGRATHEAN UK LTD will not pursue a good-faith researcher solely for authorised testing that:
+The controls above describe the intended design. A report that demonstrates a
+control failure remains in scope.
 
-- targets the researcher's own deployment or a Magrathean-controlled test system;
-- avoids persistence, destructive changes, denial of service and personal data;
-- stops when vehicle safety, credentials or third-party systems could be affected;
-- reports promptly and permits reasonable remediation time; and
-- does not condition non-disclosure on payment.
+## Testing boundaries
 
-This does not authorise testing of Tesla, TeslaMate, Apple, GitHub, a vehicle, another user's system or another provider.
+Only test systems and accounts you are authorised to use. Do not test Tesla,
+TeslaMate, Apple, GitHub, a vehicle, another person's system, or another
+provider merely because Teslatlas Hub can interoperate with it. Avoid actions
+that could affect vehicle safety, credentials, personal data, availability, or
+third-party services.
 
-## Excluded conduct
-
-No safe harbour covers vehicle commands, phishing, credential stuffing, access to another person's telemetry, destructive payloads, large-scale scanning, denial of service or unlawful conduct.
-
-## Release integrity
-
-The current source boundary is the immutable `v2026.36.1` tag. Compare release
-assets against `SHA256SUMS` and their source commit against `BUILD-INFO.md`.
-Read [verification guidance](../docs/releases/verification.md) and the
-[release limits](../docs/releases/release-notes-2026.36.1.md), including signing
-status and Debian companion omissions. The historical `v1.0.0` tag remains
-source-only and unchanged.
+Account support, deployment help, and requests to recover data are not
+vulnerability reports. A weakness in a third-party service is outside this
+repository unless it is caused by Teslatlas Hub code or packaging.

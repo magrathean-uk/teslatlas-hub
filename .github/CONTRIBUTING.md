@@ -1,54 +1,56 @@
 # Contributing
 
 Bug reports, documentation fixes and focused code changes are welcome. Discuss
-large protocol, storage, authentication, migration, licensing or branding work
-before building it; this avoids wasted effort and incompatible designs.
+protocol, storage, authentication, migration, licensing or branding changes
+before substantial implementation.
 
-## Before opening a pull request
+## Prepare a change
 
-1. Work from the current `main` branch and keep the change narrow.
-2. Add or update tests and documentation for observable behaviour.
-3. Sign off every commit under DCO 1.1 with `git commit -s`.
-4. Record every external source, copied or adapted fragment, generated asset and
-   material use of an AI tool.
-5. Use synthetic data only. Never submit credentials, VINs, precise journeys or
-   production databases.
+Use synthetic data. Do not submit credentials, VINs, precise journeys, private
+logs or production databases. Describe the user-visible problem, keep the scope
+small and preserve unrelated work. In the owner's workspace, follow its local
+agent guidance and single-branch policy.
 
-## Rights and provenance
+Sign off each commit under DCO 1.1 with `git commit -s`. Non-trivial external
+contributions require a signed individual or corporate copyright assignment
+before merge. A maintainer arranges that privately when acceptance is likely;
+executed agreements and identity records do not belong in GitHub.
 
-A non-trivial external contribution requires a signed individual or corporate
-copyright assignment before merge. You may discuss or open the work first; the
-maintainer will arrange the private agreement when the change is likely to be
-accepted. Executed agreements and identity records are never stored in GitHub.
-
-The pull request must identify:
-
-- whether the work was written from scratch;
-- every implementation, specification and repository consulted, with revision;
-- copied, translated, adapted or generated material and its licence;
-- any employment, client or confidentiality restriction; and
-- any movement from the separate proprietary Teslatlas codebase.
-
-“Available online” is not permission to copy. See the
-[DCO and assignment process](../docs/governance/contributor-agreement-process.md)
+Disclose consulted implementations and specifications with their revisions,
+copied or adapted material and licences, generated assets and material AI use.
+Disclose employment, client or confidentiality restrictions and any movement
+from proprietary Teslatlas code. See the
+[contributor agreement process](../docs/governance/contributor-agreement-process.md)
 and [provenance policy](../docs/legal/provenance.md).
 
-## Validation
+## Check the result
 
-Run the gates that apply to the change:
+Choose tests for the changed behaviour and its failure paths. The
+[source build guide](../docs/guides/build-from-source.md) explains standalone
+Cargo checks and the limits of the current packaging helpers. In the maintained
+workspace, use its existing command runner and build coordination.
+
+For tracked documentation and provenance changes, these read-only checks apply:
 
 ```sh
 python3 scripts/verify-repository-layout.py
 python3 scripts/verify-provenance.py
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked --all-targets
 ```
 
-Platform, packaging, migration or release changes need their dedicated test
-scripts and a documented rollback. Preserve least privilege, bounded resource
-use, stable redacted errors, licences and upstream notices.
+Check relative links from each document's location. Documentation-only changes
+do not need a build. Rust changes need formatting, relevant tests and Clippy;
+platform, migration or packaging changes also need their ordinary user path and
+recovery checks. Report commands actually run, the exact commit and unresolved
+failures. Local results are not GitHub status checks.
 
-Security vulnerabilities belong in the private route described in
-[SECURITY.md](SECURITY.md), not a public issue or pull request. Submission does
-not guarantee acceptance.
+Consider [Clean Development](https://github.com/magrathean-uk/clean-development)
+for keeping supported build output and caches outside source trees.
+
+## Submit
+
+Use the pull request template to explain outcome, validation, risks and rights.
+GitHub stores source; do not add CI, security automation, releases or binary
+publication without the owner's explicit request. Existing tags are historical.
+
+Report vulnerabilities privately through [SECURITY.md](SECURITY.md). Submission
+does not guarantee acceptance. Read the [code of conduct](CODE_OF_CONDUCT.md).

@@ -16,8 +16,10 @@ enabled = false
 enabled = false
 ```
 
-The plaintext listener must remain on loopback. Local plaintext is a transport
-choice, not an authentication boundary; every local process is trusted.
+The plaintext listener must remain on loopback. Every request must use one
+matching `Host` header. Protected routes also require the private local bearer.
+Health, readiness, and discovery routes do not require that bearer. Fleet
+Telemetry ingress uses its own bearer check.
 
 ## TLS and paired devices
 

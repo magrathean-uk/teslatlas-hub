@@ -6,6 +6,10 @@ connects to Hub to synchronise history.
 
 ## Choose your host
 
+These are source and packaging targets, not a claim of current acceptance on
+all hosts. The Mac packager depends on the maintained workspace; read the
+[build limitations](build-from-source.md#macos-app-and-combined-installer) first.
+
 | Host | Interface | Local build |
 |---|---|---|
 | Apple-silicon Mac, macOS 13+ | Native app and CLI | Combined installer with Fleet companions |
@@ -15,6 +19,11 @@ Start with [Mac setup and everyday use](install-macos.md) or
 [Debian installation](install-debian.md), after [building from source](build-from-source.md).
 No prebuilt releases are provided. Local Mac installers are unsigned and
 unnotarised by default and may be blocked by macOS.
+
+Current source and component checks do not establish a completed Mac installer
+journey or continuous installed collection. A bounded source-run observation is
+useful evidence for collection behaviour, but it does not substitute for those
+package and ordinary-use checks.
 
 ## Choose a setup path
 
@@ -54,8 +63,9 @@ client to access this Hub's history.
    [Configuration](configuration.md) before exposing a listener.
 2. Use the `pair` command from the [CLI reference](cli.md#platform-invocation)
    with the same configuration and operating-system user as the deployment.
-   It creates a short-lived, single-use invitation. This is a CLI step, not a
-   dashboard button.
+   Stop the serving process first: it holds a lifetime lock that prevents the
+   standalone pairing command from running. Create the short-lived, single-use
+   invitation, then restart the service before the client claims it.
 3. Complete pairing in the separately distributed Teslatlas client using its
    connection flow. Treat the invitation as a secret; do not paste it into
    issues or screenshots. Create a new invitation if the old one expires.

@@ -5,14 +5,14 @@
 - provider access and refresh tokens;
 - Fleet virtual-key and command-proxy material;
 - device pairing bearers and cursor-signing keys;
-- exact vehicle identity, location, and travel history;
+- exact vehicle identity, location, and travel history; and
 - backup and recovery keys.
 
 ## Trust boundaries
 
 | Boundary | Control |
 |---|---|
-| Local plaintext HTTP | Loopback only; local processes are trusted. |
+| Local plaintext HTTP | Loopback only. Protected routes require the private local bearer and one matching `Host` header. Health, readiness, discovery, and Fleet ingress have explicit route handling; Fleet ingress has its own bearer check. |
 | Remote sync | TLS plus paired-device bearer authentication. |
 | Pairing | Short-lived, single-use invitation; claim is the only unauthenticated mutation. |
 | Fleet Telemetry ingress | Private bearer on supervised loopback route. |
@@ -31,12 +31,12 @@
 - secrets enter through protected files or bounded standard input, not argv;
 - log display, copy, and save redact credentials and identifying telemetry;
 - service units use dedicated accounts and operating-system sandboxing;
-- fake/development sources are unavailable in release operation;
+- fake/development sources are unavailable in release operation; and
 - migration and schema admission fail closed.
 
 ## Out of scope
 
-This security model does not authorize testing Tesla, TeslaMate, Apple, GitHub,
+This security model does not authorise testing Tesla, TeslaMate, Apple, GitHub,
 another vehicle, or another person's system.
 
 Report product vulnerabilities privately under the [security policy](../../.github/SECURITY.md).

@@ -30,15 +30,10 @@ The crate keeps compatibility exports such as `teslatlas_hub::db` and
 3. Keep tests beside their implementation in a `tests.rs` file or a named
    `tests/` fragment when a suite has several concerns.
 4. Split a source unit before it exceeds 3,000 lines.
-5. Run the repository layout, provenance, formatting, Clippy, and test gates.
-
-```sh
-python3 scripts/verify-repository-layout.py
-python3 scripts/verify-provenance.py
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked --all-targets
-```
+5. Run the checks relevant to the changed behaviour. See
+   [Contributing](../../.github/CONTRIBUTING.md) for the validation and provenance
+   requirements, and [Build from source](../guides/build-from-source.md) for
+   standalone commands and workspace constraints.
 
 The layout gate rejects flat source modules, nonconforming Rust names,
 tool-specific repository metadata, missing domains, and source units above the

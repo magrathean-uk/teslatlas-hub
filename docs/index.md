@@ -1,12 +1,15 @@
 # Teslatlas Hub documentation
 
 Teslatlas Hub candidate 2026.36.2 targets Apple-silicon macOS 13 or later and
-Debian 13 on amd64 or ARM64.
+Debian 13 on amd64 or ARM64. These are development targets; source and packaging
+files do not establish current platform acceptance.
 
 Created by György Bolyki. Published and maintained by MAGRATHEAN UK LTD.
 
 Hub is source-only. [Build your own package](guides/build-from-source.md)
-before installing. GitHub releases and downloadable assets are no longer
+before installing. The current Mac installer builder depends on the maintained
+workspace; a standalone clone is not a complete Mac packaging environment.
+GitHub releases and downloadable assets are no longer
 provided; existing source tags and historical notes remain available.
 
 ## First installation

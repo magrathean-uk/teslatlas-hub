@@ -1,11 +1,18 @@
 # Legal framework
 
+This page is an index to the project's licensing and legal material. For the
+controlling grant, read [Licensing](licensing.md) and the complete root
+[`LICENSE`](../../LICENSE). For third-party material, see
+[Third-party notices](third-party-notices.md). For attribution, trade marks,
+source availability, and data handling, see the linked documents in this
+directory.
+
 ## Licence
 
 Project-authored and other AGPL-covered material is governed by GNU AGPL
 version 3 only and the permitted section 7 notices. Separately identified
 third-party material remains under its own licence and notices; see
-`docs/legal/licensing.md` and `docs/legal/third-party-notices.md`.
+[Licensing](licensing.md) and [Third-party notices](third-party-notices.md).
 
 No repository document removes a freedom granted by the GNU AGPL.
 

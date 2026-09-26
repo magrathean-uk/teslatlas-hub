@@ -1,7 +1,8 @@
 # Mac setup and everyday use
 
-Teslatlas Hub 2026.36.1 targets Apple-silicon Macs running macOS 13 or
-later.
+Teslatlas Hub targets Apple-silicon Macs running macOS 13 or later. This guide
+describes the installation and control flow; verify it against your exact
+source-built artifact before relying on a deployment.
 
 Build your own package using [Build from source](build-from-source.md).
 Prebuilt GitHub releases are no longer provided. By default the app is ad-hoc signed
@@ -15,7 +16,7 @@ For an existing installation, follow [Upgrade and rollback](../releases/upgrade.
 
 ## Install
 
-1. Open your locally built `~/dev/lab/teslatlas-v7/build/hub/dist/TeslatlasHub.pkg`.
+1. Open the `TeslatlasHub.pkg` produced by your validated local build.
 2. Complete the macOS Installer flow. It installs **Teslatlas Hub.app** in
    `/Applications` and the service payload in
    `/Library/Application Support/Teslatlas Hub`.
@@ -94,6 +95,15 @@ per-user LaunchAgent owns the running Hub service for the signed-in user.
 The app keeps Hub stopped when setup, version admission, package verification,
 or diagnostics fail. It never silently starts an unconfigured collector.
 
+When setup invokes the packaged `install` command to activate or replace the
+per-user service, Hub preflights the configuration before interruption, stops
+the current LaunchAgent, waits for its lifetime lock, and prepares the replacement.
+It treats replacement as successful only after one stable process owns the lock
+and accepts connections on the configured listener. If preparation, launch or
+readiness fails, it attempts to restore the previous files and running service.
+Retain the previous package and a verified backup: this bounded service recovery
+does not prove the whole installer journey or provide cross-version data rollback.
+
 ## Service controls
 
 Use the app, or run the installed binary by its absolute path. The package does
@@ -110,6 +120,10 @@ CONFIG="$HOME/Library/Application Support/Teslatlas Hub/config.toml"
 
 Stopping Hub pauses collection and closes streaming, HTTP, command-proxy, and
 supervised companion connections. Stored history remains intact.
+
+The replacement and recovery checks are implemented in the current source but
+have not established ordinary-user installation or upgrade acceptance for a
+new package. Verify the exact package on the intended Mac before relying on it.
 
 ## Logs and diagnostics
 
@@ -132,15 +146,7 @@ user still has a Hub LaunchAgent.
 
 ## Build from source
 
-For developers building from source, follow the toolchain and packaging
-requirements in the [release process](../releases/releasing.md). From a source
-checkout of `main` (or a historical tag when reproducing it), the combined installer entry point is:
-
-```sh
-HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
-git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
-TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ../scripts/dev/run.sh hub ./scripts/build-macos-app.sh
-```
-
-See the [source build guide](build-from-source.md). Source builds do not
+See [Build from source](build-from-source.md) for the current packaging
+requirements and limitations. The Mac installer helper depends on the maintained
+workspace and is not a complete standalone-clone procedure. Source builds do not
 automatically gain trusted signing or notarisation.

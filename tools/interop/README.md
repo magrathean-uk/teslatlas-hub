@@ -1,17 +1,29 @@
 # Owned synthetic Hub fixture
 
-Build the current native Hub and harness example in `hub/`:
+This directory provides a deterministic, private synthetic fixture for native
+Hub interoperability checks. It does not collect real telemetry or use Tesla
+credentials. Passing the fixture does not establish migration preservation,
+packaged client behaviour, sync ingestion correctness, Linux execution, or the
+full platform matrix.
+
+The launcher needs the sibling `teslatlas-protocol` checkout because it imports
+its native-evidence helper. Run Hub commands from the Hub root. Build the binary
+and harness using the existing workspace runner, or the standalone command
+below outside that workspace:
+
 
 ```sh
-cargo build --bin teslatlas-hub --example interop_fixture
+cargo build --locked --bin teslatlas-hub --example interop_fixture --features interop-fixture
 ```
 
-Create a new owner-only (0600) JSON config inside a private directory. Paths must be absolute. `output_dir` must not exist. Example fields (replace paths and the digest with the locally exported profile):
+Create an owner-only (`0600`) JSON config in a private directory. Replace these
+paths and the digest with your actual binaries and exported profile;
+`output_dir` must not exist:
 
 ```json
 {
-  "binary": "/absolute/hub/target/debug/teslatlas-hub",
-  "seed_binary": "/absolute/hub/target/debug/examples/interop_fixture",
+  "binary": "/absolute/build/teslatlas-hub",
+  "seed_binary": "/absolute/build/examples/interop_fixture",
   "output_dir": "/private/new-fixture",
   "lifetime_seconds": 3600,
   "profile_id": "hub-http-v1@1.0.0",
@@ -20,15 +32,15 @@ Create a new owner-only (0600) JSON config inside a private directory. Paths mus
 }
 ```
 
-An optional `port` fixes the loopback port; otherwise the launcher reserves an available port during seeding. It copies both executables into unique private staging files, hashes those inputs before execution, launches the seed, creates a supported `pair --json` invitation using the staged production binary, and launches the real TLS server. Collection, terrain and geocoding are disabled; provider-shaped credentials are explicitly nonfunctional synthetic strings.
-
 ```sh
 python3 tools/interop/fixture.py --config /private/config.json
 ```
 
-Wait for its redacted ready message. The private `ready.json` descriptor contains endpoint, trusted certificate path, profile ID/path/hash, scenario path/hash, invitation file path, staged executable paths/hashes, child PID, launcher PID, both process start identities, the retained readiness path, and the owned update marker/receipt paths. `connection.json` is the seed-stage descriptor; consumers must use `ready.json` for bound native acceptance.
-
-From `teslatlas-protocol/`, run:
+The config binds the Hub binary, seed harness, fresh output directory, profile
+ID and path, profile checksum, and optional loopback port. The launcher stages
+and hashes both executables, creates a supported one-use pairing invitation,
+starts the TLS server, and writes a private `ready.json` descriptor. Use that
+descriptor for acceptance. Run this command from the sibling Protocol root:
 
 ```sh
 ./conformance/run --profile hub-http-v1@1.0.0 \
@@ -36,43 +48,31 @@ From `teslatlas-protocol/`, run:
   --config /private/new-fixture/ready.json --json
 ```
 
-Alternatively, from `hub/`, save the redacted receipt using:
+Or, from the Hub root, save a redacted smoke receipt:
 
 ```sh
-python3 tools/interop/smoke.py --descriptor /private/new-fixture/ready.json \
+python3 tools/interop/smoke.py \
+  --descriptor /private/new-fixture/ready.json \
   --output /private/acceptance.json
 ```
 
-One complete acceptance run consumes the invitation, rotates its bearer and applies the scenario's one later observation. Use a fresh fixture for another complete run. SDK-focused sessions may create their own invitations with the staged supported CLI, saving secret stdout directly to a 0600 file. Keep `pairingUri`, claim secrets, bearer values and opaque cursors out of diagnostics.
+Each complete run consumes the invitation and changes the scenario. Start a
+fresh fixture for another complete run. The launcher stays attached until its
+lifetime limit, SIGINT or SIGTERM, then stops only its own child and retains
+evidence.
 
-The later observation is requested by creating the private `advance.request` marker named in the descriptor. The launcher alone invokes the staged harness's `--advance` command. Its independent scenario checks reopen the store and compare the preserved charge before writing `advance.json`; no production HTTP mutation route is added.
-
-For development-only dynamic-entity acceptance, build the harness with
-`--features interop-fixture`, then apply these commands to the exact private fixture
-root recorded in `ready.json`:
+The descriptor's later-observation marker drives the synthetic scenario. The
+launcher alone invokes the staged harness. Dynamic-entity checks are available
+only with the `interop-fixture` feature and use the exact private fixture root:
 
 ```sh
-target/debug/examples/interop_fixture --expose-dynamic /private/new-fixture
-target/debug/examples/interop_fixture --retire-dynamic /private/new-fixture
-target/debug/examples/interop_fixture --restore-dynamic /private/new-fixture
+/absolute/build/examples/interop_fixture --expose-dynamic /private/new-fixture
+/absolute/build/examples/interop_fixture --retire-dynamic /private/new-fixture
+/absolute/build/examples/interop_fixture --restore-dynamic /private/new-fixture
 ```
 
-They add one deterministic third signed synthetic vehicle, retire it from the public
-vehicle and direct UUID routes, and restore the same stable UUID. Repeating any step
-is safe. Retirement preserves history, aliases, manifests, no-op state and
-digest-addressed pack access. The harness requires the original owner-only fixture
-directory and matching `connection.json`; it does not add a production endpoint or
-CLI command.
-
-SIGINT/SIGTERM or the lifetime limit stops only the launcher's owned Hub child. Evidence, including staged binaries and `stopped.json`, is retained. Passing this synthetic native run does not establish import/migration preservation, packaged client behavior, sync ingestion correctness, Linux execution or the full platform matrix.
-
-Before reading the invitation, the acceptance adapter requires private retained
-staged files with strict matching SHA256 digests and checks the OS-reported
-native Hub executable, UID, direct parent, start identities and exact serve
-command. It compares the descriptor with the launcher-owned ready record and
-binds the listener/config/data directory to this fixture. Stopped or stale
-fixtures fail. It repeats identity checks before claim and before issuing a
-successful receipt. macOS uses libproc and Linux uses procfs for native
-executable identity; both require `ps`. This is run provenance evidence, not
-code signing or protection from another process deliberately acting as the
-same OS owner.
+Keep invitations, pairing URIs, bearer values, claim secrets, and opaque cursors
+out of logs and diagnostics. The adapter checks staged-file hashes, executable
+identity, process ownership, configuration binding, and fresh readiness before
+issuing a successful receipt. Retain private evidence and stopped records for
+review.

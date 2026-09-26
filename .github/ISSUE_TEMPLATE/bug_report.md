@@ -33,4 +33,4 @@ State whether data was changed, whether a backup exists and whether rollback was
 
 ## Security
 
-Do not use this template for an undisclosed vulnerability. Follow `SECURITY.md`.
+Do not use this template for an undisclosed vulnerability. Use the private reporting route in the [security policy](https://github.com/magrathean-uk/teslatlas-hub/blob/main/.github/SECURITY.md).

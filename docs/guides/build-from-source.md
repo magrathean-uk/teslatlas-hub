@@ -1,18 +1,39 @@
 # Build from source
 
-Hub packages include only the audited companion bootstrap modules and their
-small schemas/catalog. The five active companion repositories, dependency trees, and
-built outputs remain outside the Hub payload and are created only by the
-unprivileged command described in [Companion source setup](companion-setup.md).
+Hub is distributed as source. There are no current prebuilt GitHub installers.
+Existing tags and release notes describe historical source states. The current
+manifest is `2026.36.2`, with Rust edition 2024 and a minimum Rust version of 1.98.
+A successful build does not establish live collection or platform acceptance.
 
-Hub is source-only: no prebuilt GitHub releases or installer downloads are
-provided. Existing tags remain historical source snapshots. Distributable
-builds must receive the exact pushed Hub commit explicitly; the build never
-infers identity from Git metadata or the current directory.
+## Develop the Rust service
+
+Use rustup and a C toolchain suitable for the host. Fetch the repository and run
+commands from its root:
 
 ```sh
 git clone https://github.com/magrathean-uk/teslatlas-hub.git
 cd teslatlas-hub
+cargo check --locked
+cargo test --locked --lib TEST_FILTER
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets -- -D warnings
+```
+
+Replace `TEST_FILTER` with the affected test name. Run broader tests when a
+change affects shared behaviour. The maintained Teslatlas workspace has its own
+runner and heavy-build coordination; use those existing controls when working
+there instead of these standalone commands. The workspace pins Rust 1.98.1.
+
+An ordinary development build has no distributable source identity. Without
+`TESLATLAS_HUB_SOURCE_COMMIT`, discovery identifies the source repository but
+`teslatlas-hub source` fails. Do not present that binary as a source-bound release.
+
+## Bind distributable builds to source
+
+Start from a tracked-clean checkout at the exact official pushed commit you
+intend to reproduce. These commands only inspect local and remote source state:
+
+```sh
 HUB_SOURCE_COMMIT=$(git rev-parse HEAD)
 SOURCE_DATE_EPOCH=$(git show -s --format=%ct "$HUB_SOURCE_COMMIT")
 export SOURCE_DATE_EPOCH
@@ -21,118 +42,106 @@ git cat-file -e "${HUB_SOURCE_COMMIT}^{commit}"
 git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
 ```
 
-## Apple-silicon Mac
+Keep the commit, toolchain versions and artifact checksums with your build
+record. Build identity does not confer signing, notarisation or support.
 
-Install Xcode and its command-line tools, XcodeGen, Rust through rustup, and Go.
-The packaging helpers enforce the Rust version in `Cargo.toml` and companion
-toolchain requirements. The previously verified toolchains were Rust 1.98,
-Go 1.27.0 and Xcode 27. Building downloads locked dependency source material.
+## macOS app and combined installer
+
+The source includes an AppKit control app and a combined app/service packager
+for Apple-silicon macOS, with a macOS 13 deployment target. The current
+`scripts/build-macos-app.sh` is workspace-specific: it requires the parent
+workspace runner, external output locations and a reviewed Go host identity.
+A standalone clone does not contain that runner. There is no complete portable
+Mac installer recipe in this checkout.
+
+The packager checks Xcode, XcodeGen, rustup and exactly Go 1.27.0. It reads the
+current absolute `buildRoot` from the JSON emitted by
+`clean-development status --json` and accepts Cargo output only under that
+root's managed Hub directory.
+Do not hard-code a cache path or set Cargo's target directory around the runner.
+
+The reviewed Darwin proxy identity in `scripts/tesla-proxy-lock.json` binds the
+selected Go executable to Xcode 27.0, its Apple Clang toolchain and the macOS
+27.0 SDK. `TESLATLAS_GO` may select one of the recorded absolute Go paths; an
+arbitrary Go 1.27.0 installation is insufficient. The relocked proxy subject was
+confirmed by two clean matching builds, but that evidence covers the proxy
+component only. It does not establish a working combined package or installed Hub.
+
+The packager's current Rust selection expands `Cargo.toml`'s `1.98` to `1.98.0`,
+which differs from the maintained workspace's Rust 1.98.1 requirement. Resolve
+that mismatch in the implementation before treating this path as a working build
+procedure; do not install another toolchain merely to bypass the workspace rule.
+
+Within the maintained workspace, the entry point is:
 
 ```sh
-TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ../scripts/dev/run.sh hub ./scripts/build-macos-app.sh
-HUB_DIST="$HOME/dev/lab/teslatlas-v7/build/hub/dist"
-codesign --verify --deep --strict "$HUB_DIST/Teslatlas Hub.app"
-pkgutil --payload-files "$HUB_DIST/TeslatlasHub.pkg"
+TESLATLAS_GO=/absolute/reviewed/path/to/go \
+  TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
+  ../scripts/dev/run.sh hub ./scripts/build-macos-app.sh
 ```
 
-If Go 1.27.0 is installed outside the default `PATH`, select its executable
-explicitly. `TESLATLAS_GO` must be an absolute path to an executable file; the
-packaging parent, both Go companion builds and their evidence generators use
-the same selection and still reject any version other than exactly Go 1.27.0.
-Quote the path when it contains spaces. Go proxy evidence generation also
-requires the selected executable's resolved path, SHA-256 and reported GOROOT
-to match one complete reviewed host identity in `scripts/tesla-proxy-lock.json`;
-an arbitrary Go 1.27.0 installation is not sufficient.
+The script prints the app and package paths on success. Its output root follows
+the workspace's configured lab and managed build roots, so inspect the printed
+paths instead of assuming a location under the source checkout. Mac builds are not
+automatically Developer ID signed or notarised. Do not disable macOS security
+controls to install one. Once you have a validated package, follow
+[Mac setup](install-macos.md). The
+[source-run control app](../../macos/TeslatlasHubApp/DEVELOPMENT.md) describes
+unsigned development mode separately.
+
+## Debian core package
+
+`scripts/build-deb.sh` accepts a prebuilt service binary, legal bundle, exact
+source commit, version, architecture and output path. It supports `amd64` and
+`arm64` package metadata. Package construction does not prove the resulting
+binary works on Debian 13 or on either architecture.
+
+The following recipe is for a standalone native Debian build host with Python 3,
+Rust, a C toolchain and Debian packaging tools. The owner's test VMs run host-built
+artifacts and are not build hosts. Use a new, absolute directory outside the
+checkout for `HUB_BUILD`; legal generation refuses to overwrite an existing bundle.
 
 ```sh
-TESLATLAS_GO="/absolute/path/to/go" \
-  TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" ../scripts/dev/run.sh hub ./scripts/build-macos-app.sh
-```
-
-Install `~/dev/lab/teslatlas-v7/build/hub/dist/TeslatlasHub.pkg`, then follow [Mac setup](install-macos.md).
-The combined package installs both the control app and background service.
-An ad-hoc build is not Developer ID signed or notarised; macOS or organisation
-policy may block it. Do not disable system-wide security controls. In-app
-installation or version-changing service updates require trusted release
-metadata; use your locally built combined package instead. Reconnecting an
-account can reuse an already installed matching service.
-
-## Debian 13 core/Legacy package
-
-Build natively on amd64 or arm64. Install the Rust toolchain required by
-`Cargo.toml`, a C build toolchain, Python 3 and Debian packaging tools.
-Use a fresh output directory; legal-bundle generation refuses to overwrite one.
-
-```sh
-cargo fetch --locked
+HUB_BUILD=/absolute/path/to/new-hub-build
 HUB_SOURCE_ROOT=$(pwd -P)
+mkdir -p "$HUB_BUILD"
+cargo fetch --locked
 TESLATLAS_HUB_SOURCE_COMMIT="$HUB_SOURCE_COMMIT" \
   RUSTFLAGS="--remap-path-prefix=${HUB_SOURCE_ROOT}=/usr/src/teslatlas-hub" \
-  cargo build --locked --release --bin teslatlas-hub
-mkdir -p dist
-python3 scripts/legal-bundle.py --repo . --output-dir dist/dependency-legal
-HUB_VERSION=$(target/release/teslatlas-hub --version | awk '{print $2}')
+  cargo build --locked --release --bin teslatlas-hub --target-dir "$HUB_BUILD/target"
+python3 scripts/legal-bundle.py --repo . --output-dir "$HUB_BUILD/dependency-legal"
+HUB_VERSION=$("$HUB_BUILD/target/release/teslatlas-hub" --version | awk '{print $2}')
 HUB_ARCH=$(dpkg --print-architecture)
 scripts/build-deb.sh \
-  --binary target/release/teslatlas-hub \
-  --legal-bundle dist/dependency-legal \
+  --binary "$HUB_BUILD/target/release/teslatlas-hub" \
+  --legal-bundle "$HUB_BUILD/dependency-legal" \
   --version "$HUB_VERSION" --architecture "$HUB_ARCH" \
   --source-commit "$HUB_SOURCE_COMMIT" \
-  --output "dist/teslatlas-hub_${HUB_VERSION}_${HUB_ARCH}.deb"
+  --output "$HUB_BUILD/teslatlas-hub_${HUB_VERSION}_${HUB_ARCH}.deb"
 ```
 
-`cargo fetch --locked` is required before legal-bundle generation. The legal
-gate reads all locked target-specific package metadata offline, including
-dependencies that are not compiled for Linux; an ordinary native build alone
-does not populate that complete cache. The source-path remap prevents the
-checkout's absolute path from changing otherwise identical release binaries;
-keep the fixed destination exactly as shown. `SOURCE_DATE_EPOCH` is required by
-the Debian packager and must remain the selected pushed commit's timestamp so
-archive member metadata is reproducible across fresh source exports.
+`cargo fetch --locked` supplies all locked dependency metadata for the offline
+legal gate, including target-specific dependencies. Keep the fixed source-path
+remap and the source commit timestamp for reproducibility. This package is
+core/Legacy only. Fleet also requires compatible companions and evidence;
+see [Fleet setup](fleet-setup.md). Do not replace a Fleet deployment with a
+core-only package. See [Debian installation](install-debian.md) for local use.
 
-Follow [Debian installation](install-debian.md) using that local package.
-This command builds core/Legacy functionality only. Fleet requires both
-compatible companions and their evidence bundles; see
-[Fleet setup](fleet-setup.md) and the packaging script's options. Do not replace
-an existing Fleet deployment with a core-only package.
+## Container candidate
 
-## Linux ARM64 container archive
+`scripts/build-container-image.sh` builds a Linux ARM64 candidate image archive.
+It takes `--tag REPOSITORY:TAG` and `--output PATH`, checks the official source
+identity, and uses a fresh Git archive context. It requires Docker and Buildx;
+its archive validation is specific to the supported Docker save format.
 
-Docker 26 with its Buildx CLI component and classic image store provides the
-candidate local container path. From a tracked-clean checkout at an exact
-pushed commit, use the fail-closed builder described in
-[Run Hub with Docker Compose](install-docker.md#create-a-reproducibility-candidate-local-image-archive):
+Follow the [Docker guide](install-docker.md) for the exact requirements and
+candidate checks. Use an output path outside the checkout. A candidate archive
+is not evidence of a working installation or reproducibility; that requires
+independent builds and the documented runtime checks.
 
-```sh
-mkdir -p dist
-./scripts/build-container-image.sh \
-  --tag teslatlas-hub:2026.36.2-arm64 \
-  --output dist/teslatlas-hub_2026.36.2_linux-arm64.docker.tar
-```
+## Validate and redistribute
 
-The wrapper obtains the commit and its `SOURCE_DATE_EPOCH` directly from Git,
-requires the fixed official GitHub `main` tip to contain it, rejects Git object
-replacement and Git repository/configuration selection environment, builds only
-a fresh exact `git archive` context with every mtime normalized to the commit
-epoch, and uses `docker buildx build --load` with a Dockerfile-level legacy
-fallback rejection. The Dockerfile assembles one staged rootfs whose
-ownership, modes and mtimes are explicit. Docker 26.1.5 with Buildx 0.13.1 and
-the classic store emits the supported hybrid OCI/Docker save envelope. The
-canonicalizer validates every content-addressed blob, both OCI descriptor
-graphs, `LayerSources`, the bounded three-record legacy metadata chain, the
-staged application layer, and the exact empty WORKDIR layer. It then emits the
-proven minimal loadable Docker archive: blob directories, unchanged
-config/layer blobs, and deterministic `manifest.json`/`repositories` with the
-requested tag. Reproducibility is established only by matching two independent
-no-cache candidate builds.
-
-## Keep your build identifiable
-
-An ordinary `cargo build` without `TESLATLAS_HUB_SOURCE_COMMIT` remains useful
-for development: discovery reports the repository root, while `teslatlas-hub
-source` fails and the legal notice identifies the build as unbound and
-non-distributable. Retain the source commit, toolchain versions and local package checksum.
-Back up before replacing an installed version. Source builds are not proof of
-successful live collection or backup recovery. If you redistribute binaries,
-include the corresponding source and required legal material described in
-[source availability](../legal/source-availability.md).
+Test installation, start/stop, pairing, collection and backup recovery for the
+exact artifact and platform before relying on it. Back up before replacing an
+installation. Include the required licence texts, notices and
+[Corresponding Source](../legal/source-availability.md) when redistributing.

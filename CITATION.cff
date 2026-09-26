@@ -2,8 +2,6 @@ cff-version: 1.2.0
 message: "Please cite the specific Teslatlas Hub release or commit you used."
 title: "Teslatlas Hub"
 type: software
-version: "2026.36.1"
-date-released: 2026-09-05
 authors:
   - family-names: "Bolyki"
     given-names: "György"
@@ -11,7 +9,7 @@ authors:
     email: "contact@magrathean.uk"
 abstract: >-
   A self-hosted, multi-vehicle Tesla telemetry collector and local sync hub
-  for supported macOS and Debian deployments.
+  with macOS and Debian packaging sources.
 repository-code: "https://github.com/magrathean-uk/teslatlas-hub"
 url: "https://teslatlas.eu"
 license: "AGPL-3.0-only"
