@@ -8,6 +8,7 @@ use super::*;
 
 const MAX_CHANGES_SINCE_REQUEST_BYTES: usize = 8_192;
 const MAX_PROFILE_PACK_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_I_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -306,7 +307,7 @@ fn parse_changes_since_request(raw: &[u8]) -> Result<ChangesSinceRequest, Reques
     if request.base_receipt_id.is_empty()
         || request.base_receipt_id.len() > 4_096
         || !request.base_receipt_id.bytes().all(is_receipt_token_byte)
-        || request.from_sequence > i64::MAX as u64
+        || !sequence_is_admitted(request.from_sequence)
         || !matches!(request.base_manifest_schema.as_str(), "2.1" | "2.2")
     {
         return Err(RequestValidationError::InvalidRequest);
@@ -405,7 +406,7 @@ fn serve_changes_since(
     if let Some(checkpoint) = resolve_current_checkpoint(&lineage, &request) {
         return match checkpoint {
             CurrentCheckpoint::Changed(delta) => {
-                if !pack_is_admitted(&delta.pack) {
+                if !pack_is_admitted(&delta.pack) || !sequence_is_admitted(delta.to_sequence) {
                     return schema_range_unsupported();
                 }
                 let chain_digest = delta.chain_digest.to_string();
@@ -488,7 +489,7 @@ fn serve_changes_since(
 fn admitted_schema_21_base(lineage: &LineageManifestV2) -> Option<&crate::protocol::TransportPack> {
     if lineage.schema != HUB_PROJECTION_SCHEMA_V2
         || lineage.base.sequence == 0
-        || lineage.base.sequence > i64::MAX as u64
+        || !sequence_is_admitted(lineage.base.sequence)
         || lineage.base.packs.len() != 1
     {
         return None;
@@ -503,6 +504,10 @@ fn pack_is_admitted(pack: &crate::protocol::TransportPack) -> bool {
 
 fn pack_size_is_admitted(compressed_bytes: u64) -> bool {
     (1..=MAX_PROFILE_PACK_BYTES).contains(&compressed_bytes)
+}
+
+fn sequence_is_admitted(sequence: u64) -> bool {
+    sequence <= MAX_I_JSON_INTEGER
 }
 
 fn resolve_current_checkpoint<'a>(
@@ -751,6 +756,26 @@ mod tests {
                 .len(),
             MAX_CHANGES_SINCE_REQUEST_BYTES + 1
         );
+    }
+
+    #[test]
+    fn sequence_admission_matches_the_i_json_exact_integer_boundary() {
+        let mut request = fixture("changes-since-request.json")["request"].clone();
+        request["from_sequence"] = serde_json::json!(MAX_I_JSON_INTEGER);
+        assert!(
+            parse_changes_since_request(&serde_json::to_vec(&request).expect("safe request JSON"))
+                .is_ok()
+        );
+
+        request["from_sequence"] = serde_json::json!(MAX_I_JSON_INTEGER + 1);
+        assert_eq!(
+            parse_changes_since_request(
+                &serde_json::to_vec(&request).expect("unsafe request JSON")
+            ),
+            Err(RequestValidationError::InvalidRequest)
+        );
+        assert!(sequence_is_admitted(MAX_I_JSON_INTEGER));
+        assert!(!sequence_is_admitted(MAX_I_JSON_INTEGER + 1));
     }
 
     #[test]

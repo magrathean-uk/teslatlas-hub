@@ -792,6 +792,65 @@ fn seed_v2_lineage(
     (vehicle.vehicle_id, digest, pack_path)
 }
 
+fn set_v2_base_sequence(store: &HubStore, cursor_key: &CursorKey, vehicle_id: Uuid, sequence: u64) {
+    let mut lineage = store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage lookup")
+        .expect("published lineage");
+    assert!(
+        lineage.deltas.is_empty(),
+        "sequence fixture needs a base only"
+    );
+    lineage.base.sequence = sequence;
+    lineage.head_sequence = sequence;
+    for pack in &mut lineage.base.packs {
+        pack.sequence = SequenceRange {
+            from_exclusive: sequence,
+            to_inclusive: sequence,
+        };
+    }
+    lineage.terminal_cursor = OpaqueCursor::issue(
+        cursor_key,
+        CursorClaims {
+            protocol: ProtocolVersion { major: 1, minor: 0 },
+            schema: lineage.schema,
+            installation_id: lineage.installation_id,
+            account_id: lineage.account_id,
+            vehicle_id,
+            generation: lineage.generation,
+            sequence,
+        },
+    )
+    .expect("sequence cursor");
+    lineage.validate().expect("sequence lineage");
+
+    let connection = store.open().expect("sequence catalogue");
+    connection
+        .execute(
+            "UPDATE sync_bases
+                SET base_sequence = ?1, packs_json = ?2
+              WHERE vehicle_id = ?3",
+            rusqlite::params![
+                i64::try_from(sequence).expect("stored sequence"),
+                serde_json::to_vec(&lineage.base.packs).expect("base packs JSON"),
+                vehicle_id.to_string(),
+            ],
+        )
+        .expect("base sequence catalogue");
+    connection
+        .execute(
+            "UPDATE sync_heads
+                SET head_sequence = ?1, terminal_cursor = ?2
+              WHERE vehicle_id = ?3",
+            rusqlite::params![
+                i64::try_from(sequence).expect("stored head sequence"),
+                serde_json::to_string(&lineage.terminal_cursor).expect("cursor JSON"),
+                vehicle_id.to_string(),
+            ],
+        )
+        .expect("head sequence catalogue");
+}
+
 fn append_v2_delta_fixture(
     store: &HubStore,
     cursor_key: &CursorKey,
@@ -1889,6 +1948,28 @@ async fn changes_since_request_errors_match_protocol_fixtures() {
         assert_eq!(actual, error_fixture["response"]["body"]);
     }
 
+    let mut unsafe_sequence = protocol_fixture("changes-since-request.json")["request"].clone();
+    unsafe_sequence["from_sequence"] = serde_json::json!(9_007_199_254_740_992_u64);
+    let response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/changes-since"))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&unsafe_sequence).expect("unsafe sequence request"),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("unsafe sequence response");
+    assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+    let actual = response_json(response).await;
+    let expected = protocol_fixture("changes-since-error-invalid-request.json");
+    assert_eq!(actual, expected["response"]["body"]);
+
     let at_limit = protocol_fixture("changes-since-request-8192-bytes.json");
     let at_limit_body = at_limit["body"].as_str().expect("at-limit body");
     assert_eq!(at_limit_body.len(), 8_192);
@@ -2174,6 +2255,93 @@ async fn hub_sync_bootstrap_manifest_is_signed_and_resumes_with_one_changed_pack
     assert_eq!(noop["base_receipt_id"], delta.chain_digest.to_string());
     assert_eq!(noop["sequence"], delta.to_sequence);
     assert_hub_sync_signature(&noop, &cursor_key);
+}
+
+#[tokio::test]
+async fn hub_sync_bootstrap_sequence_is_i_json_bounded_without_changing_legacy() {
+    const MAX_I_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([91; 32]);
+    let (vehicle_id, _, _) = seed_v2_lineage(&store, &cursor_key);
+    set_v2_base_sequence(&store, &cursor_key, vehicle_id, MAX_I_JSON_INTEGER);
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("I-JSON sequence admission", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store.clone(), &cursor_key);
+    let request = || {
+        Request::builder()
+            .uri(format!("/v1/vehicles/{vehicle_id}/sync/manifest"))
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+            .header(SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID)
+            .body(Body::empty())
+            .unwrap()
+    };
+
+    let at_limit = app
+        .clone()
+        .oneshot(request())
+        .await
+        .expect("at-limit bootstrap response");
+    assert_eq!(at_limit.status(), StatusCode::OK);
+    let at_limit = response_json(at_limit).await;
+    assert_eq!(at_limit["sequence"], MAX_I_JSON_INTEGER);
+    assert_hub_sync_signature(&at_limit, &cursor_key);
+
+    let unsafe_fixture = hub_sync_protocol_fixture("schema-2-1-manifest-unsafe-integer.json");
+    let unsafe_sequence = unsafe_fixture["manifest"]["sequence"]
+        .as_u64()
+        .expect("unsafe fixture sequence");
+    assert!(unsafe_sequence > MAX_I_JSON_INTEGER);
+    set_v2_base_sequence(&store, &cursor_key, vehicle_id, unsafe_sequence);
+    let rejected = app
+        .clone()
+        .oneshot(request())
+        .await
+        .expect("unsafe bootstrap response");
+    assert_eq!(rejected.status(), StatusCode::NOT_ACCEPTABLE);
+    assert_eq!(
+        rejected.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert!(rejected.headers().get(MANIFEST_SIGNATURE_HEADER).is_none());
+    assert!(
+        rejected
+            .into_body()
+            .collect()
+            .await
+            .expect("unsafe bootstrap body")
+            .to_bytes()
+            .is_empty()
+    );
+
+    let legacy = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/manifest"))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("legacy manifest response");
+    assert_eq!(legacy.status(), StatusCode::OK);
+    let legacy = response_json(legacy).await;
+    assert!(legacy.get("protocol").is_some());
+    assert!(legacy.get("receipt_id").is_none());
 }
 
 #[tokio::test]
