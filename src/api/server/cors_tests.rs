@@ -246,13 +246,13 @@ async fn cors_pairing_and_sync_headers_are_scoped_to_their_routes() {
         (
             "/v1/vehicles/test/sync/manifest",
             "GET",
-            "x-teslatlas-supported-schemas, x-teslatlas-sync-capability",
+            "x-teslatlas-supported-schemas, x-teslatlas-sync-capability, x-teslatlas-sync-profile",
             StatusCode::NO_CONTENT,
         ),
         (
             "/v1/vehicles/test/sync/noop",
             "GET",
-            "x-teslatlas-supported-schemas, x-teslatlas-sync-capability",
+            "x-teslatlas-supported-schemas, x-teslatlas-sync-capability, x-teslatlas-sync-profile",
             StatusCode::NO_CONTENT,
         ),
         (

@@ -258,6 +258,7 @@ pub const MANIFEST_SIGNATURE_HEADER: &str = "x-teslatlas-manifest-signature";
 pub const NATIVE_CONFIG_DIGEST_HEADER: &str = "x-teslatlas-native-config-sha256";
 pub const SUPPORTED_SCHEMAS_HEADER: &str = "x-teslatlas-supported-schemas";
 pub const SYNC_CAPABILITY_HEADER: &str = "x-teslatlas-sync-capability";
+pub const SYNC_PROFILE_HEADER: &str = "x-teslatlas-sync-profile";
 pub const DELTA_V2_CAPABILITY: &str = "delta-v2";
 
 const HUB_PROJECTION_SCHEMAS: [SchemaVersion; 3] = [
@@ -1563,6 +1564,15 @@ async fn manifest(
     };
     if let Err(response) = require_active_vehicle(&state, vehicle_id) {
         return response;
+    }
+    match hub_sync_v1::bootstrap_selection(&headers) {
+        hub_sync_v1::BootstrapSelection::Legacy => {}
+        hub_sync_v1::BootstrapSelection::Selected => {
+            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id);
+        }
+        hub_sync_v1::BootstrapSelection::Unsupported => {
+            return hub_sync_v1::unavailable_bootstrap_manifest();
+        }
     }
     let capability = match requested_sync_capability(&headers) {
         Ok(capability) => capability,

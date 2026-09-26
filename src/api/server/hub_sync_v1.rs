@@ -95,6 +95,17 @@ struct NoOpPayload {
 }
 
 #[derive(Serialize)]
+struct Manifest21Payload {
+    manifest_id: String,
+    receipt_id: String,
+    vehicle_id: Uuid,
+    kind: &'static str,
+    schema_version: &'static str,
+    sequence: u64,
+    pack: WirePack,
+}
+
+#[derive(Serialize)]
 struct RebasePayload {
     kind: &'static str,
     vehicle_id: Uuid,
@@ -141,6 +152,65 @@ struct WireSignature {
 enum CurrentCheckpoint<'a> {
     Changed(&'a crate::protocol::LineageDelta),
     Head,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BootstrapSelection {
+    Legacy,
+    Selected,
+    Unsupported,
+}
+
+pub(super) fn bootstrap_selection(headers: &HeaderMap) -> BootstrapSelection {
+    if !headers.contains_key(SYNC_PROFILE_HEADER) {
+        return BootstrapSelection::Legacy;
+    }
+    if has_exact_single_header(headers, SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID.as_bytes())
+        && has_exact_single_header(headers, SUPPORTED_SCHEMAS_HEADER, b"2.1,2.2")
+    {
+        BootstrapSelection::Selected
+    } else {
+        BootstrapSelection::Unsupported
+    }
+}
+
+fn has_exact_single_header(headers: &HeaderMap, name: &str, expected: &[u8]) -> bool {
+    let mut values = headers.get_all(name).iter();
+    matches!(
+        (values.next(), values.next()),
+        (Some(value), None) if value.as_bytes() == expected
+    )
+}
+
+pub(super) fn bootstrap_manifest(state: &AppState, vehicle_id: Uuid) -> Response {
+    let Some(signing) = state.manifest_signing.as_deref() else {
+        tracing::error!(%vehicle_id, "manifest signing key is unavailable");
+        return unavailable_bootstrap_manifest();
+    };
+    let lineage = match state.store.lineage_manifest_for_vehicle(vehicle_id) {
+        Ok(Some(lineage)) => lineage,
+        Ok(None) => return unavailable_bootstrap_manifest(),
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot load hub-sync bootstrap lineage");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let Some(pack) = admitted_schema_21_base(&lineage) else {
+        return unavailable_bootstrap_manifest();
+    };
+    signed_control_response(
+        StatusCode::OK,
+        &Manifest21Payload {
+            manifest_id: lineage.base.snapshot_id.to_string(),
+            receipt_id: lineage.base.digest.to_string(),
+            vehicle_id,
+            kind: "snapshot",
+            schema_version: "2.1",
+            sequence: lineage.base.sequence,
+            pack: wire_pack(pack),
+        },
+        signing,
+    )
 }
 
 pub(super) async fn changes_since(
@@ -519,6 +589,14 @@ fn unknown_base_receipt() -> Response {
     )
 }
 
+pub(super) fn unavailable_bootstrap_manifest() -> Response {
+    (
+        StatusCode::NOT_ACCEPTABLE,
+        [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
+    )
+        .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use http_body_util::BodyExt;
@@ -531,6 +609,79 @@ mod tests {
             .join(name);
         serde_json::from_slice(&std::fs::read(path).expect("read Protocol fixture"))
             .expect("parse Protocol fixture")
+    }
+
+    #[test]
+    fn bootstrap_selector_is_exact_and_explicit_errors_fail_closed() {
+        let selected = fixture("bootstrap-hub-sync-v1-1-3-selected.json");
+        assert_eq!(
+            selected["request"]["headers"],
+            serde_json::json!([
+                {"name": SYNC_PROFILE_HEADER, "value": HUB_SYNC_PROFILE_ID},
+                {"name": SUPPORTED_SCHEMAS_HEADER, "value": "2.1,2.2"}
+            ])
+        );
+        let legacy = fixture("bootstrap-schema-list-only-legacy.json");
+        assert_eq!(
+            legacy["request"]["headers"],
+            serde_json::json!([
+                {"name": SUPPORTED_SCHEMAS_HEADER, "value": "2.1,2.2"}
+            ])
+        );
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            SUPPORTED_SCHEMAS_HEADER,
+            HeaderValue::from_static("2.1,2.2"),
+        );
+        assert_eq!(bootstrap_selection(&headers), BootstrapSelection::Legacy);
+
+        headers.insert(
+            SYNC_PROFILE_HEADER,
+            HeaderValue::from_static(HUB_SYNC_PROFILE_ID),
+        );
+        assert_eq!(bootstrap_selection(&headers), BootstrapSelection::Selected);
+
+        headers.insert(
+            SUPPORTED_SCHEMAS_HEADER,
+            HeaderValue::from_static("2.1, 2.2"),
+        );
+        assert_eq!(
+            bootstrap_selection(&headers),
+            BootstrapSelection::Unsupported
+        );
+
+        headers.insert(
+            SUPPORTED_SCHEMAS_HEADER,
+            HeaderValue::from_static("2.1,2.2"),
+        );
+        headers.append(
+            SUPPORTED_SCHEMAS_HEADER,
+            HeaderValue::from_static("2.1,2.2"),
+        );
+        assert_eq!(
+            bootstrap_selection(&headers),
+            BootstrapSelection::Unsupported
+        );
+
+        headers.remove(SUPPORTED_SCHEMAS_HEADER);
+        assert_eq!(
+            bootstrap_selection(&headers),
+            BootstrapSelection::Unsupported
+        );
+
+        headers.insert(
+            SUPPORTED_SCHEMAS_HEADER,
+            HeaderValue::from_static("2.1,2.2"),
+        );
+        headers.insert(
+            SYNC_PROFILE_HEADER,
+            HeaderValue::from_static("hub-sync-v1@1.2.0"),
+        );
+        assert_eq!(
+            bootstrap_selection(&headers),
+            BootstrapSelection::Unsupported
+        );
     }
 
     #[test]
@@ -612,7 +763,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn every_changes_since_json_response_is_raw_byte_bounded() {
+    async fn every_hub_sync_json_response_is_raw_byte_bounded() {
         fn materialize(name: &str, document_key: &str) -> Vec<u8> {
             let value = fixture(name);
             let mut raw = serde_json::to_vec(&value[document_key]).expect("fixture document");
@@ -636,6 +787,12 @@ mod tests {
         }
 
         for (at_limit, over_limit, document_key, status) in [
+            (
+                "sync-manifest-response-2097152-bytes.json",
+                "sync-manifest-response-2097153-bytes.json",
+                "document",
+                StatusCode::OK,
+            ),
             (
                 "changes-since-changed-set-response-2097152-bytes.json",
                 "changes-since-changed-set-response-2097153-bytes.json",

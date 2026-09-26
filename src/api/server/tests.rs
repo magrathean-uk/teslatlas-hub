@@ -1935,6 +1935,454 @@ fn assert_hub_sync_signature(value: &serde_json::Value, cursor_key: &CursorKey) 
         .expect("hub-sync JCS signature");
 }
 
+fn hub_sync_protocol_fixture(name: &str) -> serde_json::Value {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples")
+        .join(name);
+    serde_json::from_slice(&fs::read(path).expect("read hub-sync Protocol fixture"))
+        .expect("parse hub-sync Protocol fixture")
+}
+
+#[tokio::test]
+async fn hub_sync_bootstrap_manifest_is_signed_and_resumes_with_one_changed_pack() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([88; 32]);
+    let (vehicle_id, base_digest, _) = seed_v2_lineage(&store, &cursor_key);
+    let delta = append_v2_delta_fixture(
+        &store,
+        &cursor_key,
+        vehicle_id,
+        b"bootstrap-compatible-delta-pack",
+    );
+    let lineage = store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage lookup")
+        .expect("published lineage");
+    let base_pack = &lineage.base.packs[0];
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("hub sync bootstrap", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store, &cursor_key);
+
+    let unauthenticated = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri("/v1/vehicles/not-a-uuid/sync/manifest")
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .header(SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("unauthenticated bootstrap response");
+    assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        unauthenticated
+            .into_body()
+            .collect()
+            .await
+            .expect("unauthenticated bootstrap body")
+            .to_bytes()
+            .is_empty()
+    );
+
+    for name in [
+        "bootstrap-profile-selector-invalid.json",
+        "bootstrap-profile-selector-missing-schema.json",
+        "bootstrap-profile-selector-invalid-schema.json",
+        "bootstrap-profile-selector-duplicate.json",
+        "bootstrap-profile-selector-duplicate-schema.json",
+    ] {
+        let fixture = hub_sync_protocol_fixture(name);
+        let mut request = Request::builder()
+            .uri(format!("/v1/vehicles/{vehicle_id}/sync/manifest"))
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"));
+        for header in fixture["request"]["headers"]
+            .as_array()
+            .expect("selector fixture headers")
+        {
+            request = request.header(
+                header["name"].as_str().expect("selector header name"),
+                header["value"].as_str().expect("selector header value"),
+            );
+        }
+        let response = app
+            .clone()
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .expect("invalid selector response");
+        assert_eq!(
+            response.status().as_u16(),
+            fixture["expected_response"]["status"]
+                .as_u64()
+                .and_then(|status| u16::try_from(status).ok())
+                .expect("selector fixture status"),
+            "{name}"
+        );
+        assert_eq!(
+            response.headers().get(header::CACHE_CONTROL).unwrap(),
+            fixture["expected_response"]["headers"]["cache_control"]
+                .as_str()
+                .expect("selector cache-control"),
+            "{name}"
+        );
+        assert!(
+            response.headers().get(MANIFEST_SIGNATURE_HEADER).is_none(),
+            "{name}"
+        );
+        assert!(
+            response
+                .into_body()
+                .collect()
+                .await
+                .expect("invalid selector body")
+                .to_bytes()
+                .is_empty(),
+            "{name}"
+        );
+    }
+
+    let legacy = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/manifest"))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("legacy manifest response");
+    assert_eq!(legacy.status(), StatusCode::OK);
+    let legacy = response_json(legacy).await;
+    assert!(legacy.get("protocol").is_some());
+    assert!(legacy.get("receipt_id").is_none());
+
+    let bootstrap = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/manifest"))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .header(SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("hub-sync bootstrap response");
+    assert_eq!(bootstrap.status(), StatusCode::OK);
+    assert!(bootstrap.headers().get(MANIFEST_SIGNATURE_HEADER).is_none());
+    let bootstrap = response_json(bootstrap).await;
+    assert_eq!(
+        bootstrap["manifest_id"],
+        lineage.base.snapshot_id.to_string()
+    );
+    assert_eq!(bootstrap["receipt_id"], base_digest.to_string());
+    assert_eq!(bootstrap["vehicle_id"], vehicle_id.to_string());
+    assert_eq!(bootstrap["kind"], "snapshot");
+    assert_eq!(bootstrap["schema_version"], "2.1");
+    assert_eq!(bootstrap["sequence"], lineage.base.sequence);
+    assert_eq!(
+        bootstrap["pack"]["object_name"],
+        format!("{}.sqlite.zst", base_pack.sha256)
+    );
+    assert_eq!(bootstrap["pack"]["sha256"], base_pack.sha256.to_string());
+    assert_eq!(
+        bootstrap["pack"]["compressed_bytes"],
+        base_pack.compressed_bytes
+    );
+    assert_hub_sync_signature(&bootstrap, &cursor_key);
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/schema-2-1-single-pack-manifest.json"
+    )))
+    .expect("schema 2.1 Protocol fixture");
+    let mut expected = fixture["manifest"].clone();
+    expected["manifest_id"] = bootstrap["manifest_id"].clone();
+    expected["receipt_id"] = bootstrap["receipt_id"].clone();
+    expected["vehicle_id"] = bootstrap["vehicle_id"].clone();
+    expected["sequence"] = bootstrap["sequence"].clone();
+    expected["pack"] = bootstrap["pack"].clone();
+    expected["signature"] = bootstrap["signature"].clone();
+    assert_eq!(bootstrap, expected);
+
+    let changed_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/changes-since"))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "base_receipt_id": bootstrap["receipt_id"],
+                        "base_manifest_schema": bootstrap["schema_version"],
+                        "from_sequence": bootstrap["sequence"],
+                        "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+                    }))
+                    .expect("changes-since request"),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("changed-set response");
+    assert_eq!(changed_response.status(), StatusCode::OK);
+    let changed = response_json(changed_response).await;
+    assert_eq!(changed["receipt_id"], delta.chain_digest.to_string());
+    assert_eq!(changed["to_sequence"], delta.to_sequence);
+    assert_eq!(changed["pack"]["sha256"], delta.pack.sha256.to_string());
+    assert_hub_sync_signature(&changed, &cursor_key);
+
+    let noop = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/changes-since"))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "base_receipt_id": changed["receipt_id"],
+                        "base_manifest_schema": changed["manifest_schema"],
+                        "from_sequence": changed["to_sequence"],
+                        "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+                    }))
+                    .expect("no-op request"),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("no-op response");
+    assert_eq!(noop.status(), StatusCode::OK);
+    let noop = response_json(noop).await;
+    assert_eq!(noop["kind"], "no_op");
+    assert_eq!(noop["base_receipt_id"], delta.chain_digest.to_string());
+    assert_eq!(noop["sequence"], delta.to_sequence);
+    assert_hub_sync_signature(&noop, &cursor_key);
+}
+
+#[tokio::test]
+async fn hub_sync_bootstrap_rejects_a_multi_pack_internal_base() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([89; 32]);
+    let (vehicle_id, _, _) = seed_v2_lineage(&store, &cursor_key);
+    let lineage = store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage lookup")
+        .expect("published lineage");
+    let second_bytes = b"second-internal-base-pack";
+    let second_digest = Sha256Digest::of_bytes(second_bytes);
+    let mut second = lineage.base.packs[0].clone();
+    second.pack_id = Uuid::new_v4();
+    second.ordinal = 1;
+    second.sha256 = second_digest;
+    second.relative_path = TransportPack::canonical_relative_path(second_digest);
+    second.compressed_bytes = u64::try_from(second_bytes.len()).expect("second pack size");
+    fs::write(
+        store
+            .packs_dir()
+            .join("sha256")
+            .join(format!("{second_digest}.sqlite.zst")),
+        second_bytes,
+    )
+    .expect("second base pack");
+    let mut packs = lineage.base.packs.clone();
+    packs.push(second.clone());
+    let connection = store.open().expect("base catalogue");
+    connection
+        .execute(
+            "UPDATE sync_bases SET packs_json = ?1 WHERE vehicle_id = ?2",
+            rusqlite::params![
+                serde_json::to_vec(&packs).expect("base packs JSON"),
+                vehicle_id.to_string()
+            ],
+        )
+        .expect("multi-pack base catalogue");
+    connection
+        .execute(
+            "INSERT INTO sync_packs(
+                sha256, snapshot_id, ordinal, relative_path,
+                compressed_bytes, uncompressed_bytes
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                second.sha256.to_string(),
+                second.snapshot_id.to_string(),
+                i64::from(second.ordinal),
+                second.relative_path,
+                second.compressed_bytes as i64,
+                second.uncompressed_bytes as i64,
+            ],
+        )
+        .expect("second base pack catalogue");
+    drop(connection);
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("multi-pack admission", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let response = paired_router(store, &cursor_key)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/manifest"))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", access.access_token.as_bearer()),
+                )
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .header(SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("multi-pack bootstrap response");
+    assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert!(
+        response
+            .into_body()
+            .collect()
+            .await
+            .expect("unavailable body")
+            .to_bytes()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn hub_sync_bootstrap_rejects_an_internal_base_over_sixteen_mib() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let cursor_key = CursorKey::from_bytes([90; 32]);
+    let (vehicle_id, old_digest, _) = seed_v2_lineage(&store, &cursor_key);
+    let lineage = store
+        .lineage_manifest_for_vehicle(vehicle_id)
+        .expect("lineage lookup")
+        .expect("published lineage");
+    let oversized_bytes = vec![b'x'; 16 * 1024 * 1024 + 1];
+    let oversized_digest = Sha256Digest::of_bytes(&oversized_bytes);
+    let mut pack = lineage.base.packs[0].clone();
+    pack.sha256 = oversized_digest;
+    pack.relative_path = TransportPack::canonical_relative_path(oversized_digest);
+    pack.compressed_bytes = u64::try_from(oversized_bytes.len()).expect("oversized pack size");
+    fs::write(
+        store
+            .packs_dir()
+            .join("sha256")
+            .join(format!("{oversized_digest}.sqlite.zst")),
+        &oversized_bytes,
+    )
+    .expect("oversized base pack");
+    let connection = store.open().expect("base catalogue");
+    connection
+        .execute(
+            "UPDATE sync_bases
+                SET base_digest = ?1, packs_json = ?2
+              WHERE vehicle_id = ?3",
+            rusqlite::params![
+                oversized_digest.to_string(),
+                serde_json::to_vec(&vec![pack.clone()]).expect("base packs JSON"),
+                vehicle_id.to_string(),
+            ],
+        )
+        .expect("oversized base catalogue");
+    connection
+        .execute(
+            "UPDATE sync_heads SET head_digest = ?1 WHERE vehicle_id = ?2",
+            rusqlite::params![oversized_digest.to_string(), vehicle_id.to_string()],
+        )
+        .expect("oversized head catalogue");
+    connection
+        .execute(
+            "DELETE FROM sync_packs WHERE sha256 = ?1",
+            rusqlite::params![old_digest.to_string()],
+        )
+        .expect("remove original pack catalogue");
+    connection
+        .execute(
+            "INSERT INTO sync_packs(
+                sha256, snapshot_id, ordinal, relative_path,
+                compressed_bytes, uncompressed_bytes
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![
+                pack.sha256.to_string(),
+                pack.snapshot_id.to_string(),
+                i64::from(pack.ordinal),
+                pack.relative_path,
+                pack.compressed_bytes as i64,
+                pack.uncompressed_bytes as i64,
+            ],
+        )
+        .expect("oversized pack catalogue");
+    drop(connection);
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("oversized admission", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let response = paired_router(store, &cursor_key)
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{vehicle_id}/sync/manifest"))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", access.access_token.as_bearer()),
+                )
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .header(SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oversized bootstrap response");
+    assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert!(
+        response
+            .into_body()
+            .collect()
+            .await
+            .expect("unavailable body")
+            .to_bytes()
+            .is_empty()
+    );
+}
+
 #[tokio::test]
 async fn changes_since_serves_one_changed_pack_then_a_signed_noop() {
     let temp = crate::private_tempdir().expect("temp directory");

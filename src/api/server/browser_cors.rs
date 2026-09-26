@@ -10,7 +10,7 @@ use axum::{
 use crate::config::{HttpConfig, HubConfig};
 
 const BASIC_REQUEST_HEADERS: &str = "authorization, content-type, if-none-match, accept";
-const SYNC_REQUEST_HEADERS: &str = "authorization, content-type, if-none-match, accept, x-teslatlas-supported-schemas, x-teslatlas-sync-capability";
+const SYNC_REQUEST_HEADERS: &str = "authorization, content-type, if-none-match, accept, x-teslatlas-supported-schemas, x-teslatlas-sync-capability, x-teslatlas-sync-profile";
 const PACK_REQUEST_HEADERS: &str =
     "authorization, content-type, if-none-match, accept, range, if-range";
 const EXPOSED_RESPONSE_HEADERS: &str = "ETag, X-Request-ID, Accept-Ranges, Content-Range, Content-Length, Content-Encoding, X-Teslatlas-Manifest-Signature, X-Teslatlas-Native-Config-Sha256";
