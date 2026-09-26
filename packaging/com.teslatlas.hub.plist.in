@@ -11,6 +11,10 @@
     <string>@CONFIG@</string>
     <string>serve</string>
   </array>
+  <key>StandardOutPath</key>
+  <string>@STDOUT@</string>
+  <key>StandardErrorPath</key>
+  <string>@STDERR@</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>

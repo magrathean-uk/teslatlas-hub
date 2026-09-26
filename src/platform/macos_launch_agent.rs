@@ -131,9 +131,7 @@ pub fn development_serve_mode(
         }
         (Some(_), Some(_)) => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!(
-                "{DEVELOPMENT_SERVE_MODE_ENV} must be fixture, standalone, or edge"
-            ),
+            format!("{DEVELOPMENT_SERVE_MODE_ENV} must be fixture, standalone, or edge"),
         )),
     }
 }
@@ -474,7 +472,7 @@ fn install_files(
         copy_atomic(&executable, &binary, 0o700)?;
         write_atomic(
             &plist,
-            render_plist(&binary, &config_path)?.as_bytes(),
+            render_plist(&binary, &config_path, &data_dir)?.as_bytes(),
             0o600,
         )?;
         Ok(InstallPaths {
@@ -849,12 +847,16 @@ fn backup_existing_file(path: &Path, suffix: &str, mode: u32) -> io::Result<Opti
     Ok(Some(backup))
 }
 
-fn render_plist(binary: &Path, config_path: &Path) -> io::Result<String> {
+fn render_plist(binary: &Path, config_path: &Path, data_dir: &Path) -> io::Result<String> {
     let binary = xml_path(binary)?;
     let config = xml_path(config_path)?;
+    let stdout = xml_path(&data_dir.join("hub.stdout.log"))?;
+    let stderr = xml_path(&data_dir.join("hub.stderr.log"))?;
     Ok(PLIST_TEMPLATE
         .replace("@BINARY@", &binary)
-        .replace("@CONFIG@", &config))
+        .replace("@CONFIG@", &config)
+        .replace("@STDOUT@", &stdout)
+        .replace("@STDERR@", &stderr))
 }
 
 fn xml_path(path: &Path) -> io::Result<String> {

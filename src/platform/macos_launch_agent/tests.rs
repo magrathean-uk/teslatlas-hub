@@ -16,6 +16,20 @@ use crate::{
 };
 use rcgen::{CertifiedKey, generate_simple_self_signed};
 
+#[test]
+fn launch_agent_plist_routes_logs_to_the_private_data_directory() {
+    let plist = render_plist(
+        Path::new("/private/tmp/hub"),
+        Path::new("/private/tmp/config.toml"),
+        Path::new("/private/tmp/private & data"),
+    )
+    .expect("render plist");
+    assert!(plist.contains("<key>StandardOutPath</key>\n  <string>/private/tmp/private &amp; data/hub.stdout.log</string>"));
+    assert!(plist.contains("<key>StandardErrorPath</key>\n  <string>/private/tmp/private &amp; data/hub.stderr.log</string>"));
+    assert!(!plist.contains("@STDOUT@"));
+    assert!(!plist.contains("@STDERR@"));
+}
+
 fn seed_selected_car(data_dir: &Path) -> HubStore {
     let store = HubStore::initialize(data_dir).expect("store");
     let history = TeslaMateHistory {
@@ -131,9 +145,7 @@ fn source_run_mode_requires_explicit_opt_in_and_known_mode() {
     }
     assert!(development_serve_mode(None, Some(OsStr::new("standalone"))).is_err());
     assert!(development_serve_mode(Some(OsStr::new("true")), None).is_err());
-    assert!(
-        development_serve_mode(Some(OsStr::new("1")), Some(OsStr::new("production"))).is_err()
-    );
+    assert!(development_serve_mode(Some(OsStr::new("1")), Some(OsStr::new("production"))).is_err());
 }
 
 #[test]
