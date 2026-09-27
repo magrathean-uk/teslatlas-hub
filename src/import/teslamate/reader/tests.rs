@@ -2,8 +2,13 @@
 
 use super::*;
 use crate::{
-    teslamate_projection::TeslaMateCar,
-    teslamate_stage::{TeslaMateStageLimits, TeslaMateStageTable},
+    teslamate_projection::{
+        TeslaMateCar, TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2,
+        TeslaMateSettingsPhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
+    },
+    teslamate_stage::{
+        TeslaMateStageFormat, TeslaMateStageLimits, TeslaMateStageState, TeslaMateStageTable,
+    },
 };
 
 #[test]
@@ -920,6 +925,259 @@ fn cars_and_car_settings_v2_2_production_query_is_exact_and_physical() {
             "missing {clause}"
         );
     }
+}
+
+#[test]
+fn physical_v3_root_queries_keep_car_and_car_settings_separate() {
+    assert!(CAR_V2_2_SQL.contains("FROM public.cars AS source"));
+    assert!(CAR_V2_2_SQL.contains("WHERE source.id = $1"));
+    assert!(!CAR_V2_2_SQL.contains("JOIN"));
+    assert!(!CAR_V2_2_SQL.contains("public.car_settings"));
+    assert!(!CAR_V2_2_SQL.contains("public.settings"));
+
+    assert!(CAR_SETTINGS_V2_2_SQL.contains("FROM public.car_settings AS source"));
+    assert!(CAR_SETTINGS_V2_2_SQL.contains("WHERE source.id = $1"));
+    assert!(!CAR_SETTINGS_V2_2_SQL.contains("JOIN"));
+    assert!(!CAR_SETTINGS_V2_2_SQL.contains("public.cars"));
+    assert!(!CAR_SETTINGS_V2_2_SQL.contains("public.settings"));
+}
+
+#[test]
+fn physical_update_query_uses_a_nullable_initial_cursor() {
+    assert!(UPDATES_V2_2_SQL.contains("$1::integer IS NULL OR source.id > $1"));
+    assert!(UPDATES_V2_2_SQL.contains("source.car_id = $3"));
+    assert!(UPDATES_V2_2_SQL.contains("ORDER BY source.id ASC"));
+    assert!(UPDATES_V2_2_SQL.contains("LIMIT $2"));
+    assert!(!UPDATES_V2_2_SQL.contains("private.tokens"));
+
+    assert_eq!(
+        advance_signed_v2_2_cursor(None, -7, "updates").expect("nullable first cursor"),
+        Some(-7)
+    );
+    assert!(matches!(
+        require_positive_physical_id("updates", -7),
+        Err(TeslaMateReaderError::PhysicalSourceIdNotPositive {
+            table: "updates",
+            id: -7
+        })
+    ));
+}
+
+#[test]
+fn physical_car_efficiency_is_bit_exact_or_rejected_before_staging() {
+    for value in [0.0, -0.0, 0.1, -12.5, f64::MIN_POSITIVE, f64::MAX] {
+        validate_stage_efficiency(Some(value)).expect("stageable finite FLOAT8");
+        let encoded = serde_json::to_string(&value).expect("finite JSON");
+        let decoded: f64 = serde_json::from_str(&encoded).expect("finite JSON round trip");
+        assert_eq!(decoded.to_bits(), value.to_bits());
+    }
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(matches!(
+            validate_stage_efficiency(Some(value)),
+            Err(TeslaMateReaderError::PhysicalFloatNotStageable {
+                table: "cars",
+                column: "efficiency"
+            })
+        ));
+    }
+    validate_stage_efficiency(None).expect("nullable efficiency");
+}
+
+#[test]
+fn failed_physical_capture_discards_its_private_open_stage() {
+    let temporary = tempfile::tempdir().expect("temporary stage directory");
+    let stage = TeslaMateStage::create_physical_v3(
+        temporary.path().join("imports"),
+        TeslaMateStageLimits {
+            max_rows: 4,
+            max_stage_bytes: 64 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("physical stage");
+    let path = stage.path().to_path_buf();
+    let error = discard_stage_after_error(stage, TeslaMateReaderError::SettingsSingletonMissing);
+    assert!(matches!(
+        error,
+        TeslaMateReaderError::SettingsSingletonMissing
+    ));
+    assert!(!path.exists());
+}
+
+#[tokio::test]
+async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failures_when_configured()
+{
+    let (Ok(source_url), Ok(admin_url)) = (
+        std::env::var("TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_URL"),
+        std::env::var("TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_ADMIN_URL"),
+    ) else {
+        return;
+    };
+    let source = ReadOnlySource::parse(&source_url).expect("credential-free fixture source");
+    let password = TeslaMatePostgresPassword::from_bytes(b"fixture-password")
+        .expect("synthetic fixture password");
+    let admin_config = admin_url
+        .parse::<tokio_postgres::Config>()
+        .expect("credential-free fixture admin URL");
+    let (admin, connection) = admin_config
+        .connect(NoTls)
+        .await
+        .expect("fixture admin connection");
+    let connection_task = tokio::spawn(async move {
+        connection.await.expect("fixture admin connection task");
+    });
+
+    for version in crate::teslamate_schema::tests::PINNED_MIGRATION_VERSIONS {
+        admin
+            .execute(
+                "INSERT INTO public.schema_migrations(version) VALUES($1)",
+                &[&version],
+            )
+            .await
+            .expect("synthetic migration row");
+    }
+    admin
+        .batch_execute(
+            "INSERT INTO public.settings(
+                 id, inserted_at, updated_at, unit_of_length,
+                 unit_of_temperature, preferred_range, base_url, grafana_url,
+                 language, unit_of_pressure, theme_mode
+             ) VALUES (
+                 100, TIMESTAMP '2000-01-01 00:00:01',
+                 TIMESTAMP '2000-01-01 00:00:02', 'km', 'C', 'rated',
+                 NULL, NULL, 'en', 'bar', 'system'
+             );
+             INSERT INTO public.car_settings(
+                 id, suspend_min, suspend_after_idle_min, req_not_unlocked,
+                 free_supercharging, use_streaming_api, enabled, lfp_battery
+             ) VALUES (200, 21, 15, false, false, true, true, false);
+             INSERT INTO public.cars(
+                 id, eid, vid, model, efficiency, inserted_at, updated_at,
+                 vin, name, trim_badging, settings_id, exterior_color,
+                 spoiler_type, wheel_type, display_priority, marketing_name
+             ) VALUES (
+                 1, 1001, 2001, '3', '-0'::double precision,
+                 TIMESTAMP '2000-01-01 00:00:03',
+                 TIMESTAMP '2000-01-01 00:00:04',
+                 'SYNTHETIC-VIN', 'Fixture', 'LR', 200, 'white',
+                 'none', 'fixture-wheel', 1, 'Fixture 3'
+             );
+             INSERT INTO public.updates(id, start_date, end_date, version, car_id)
+             VALUES (
+                 10, TIMESTAMP '2000-01-01 00:00:00.123456', NULL,
+                 'pre-export', 1
+             );",
+        )
+        .await
+        .expect("synthetic physical roots and pre-export update");
+
+    let temporary = tempfile::tempdir().expect("private capture root");
+    let imports_dir = temporary.path().join("success");
+    let limits = TeslaMateReadLimits {
+        page_size: 1,
+        maximum_rows: 8,
+        maximum_stage_bytes: 256 * 1024,
+        minimum_free_bytes: 0,
+        parallel_copy_lanes: 1,
+        ..TeslaMateReadLimits::default()
+    };
+    let stage = capture_physical_v3_to_stage_with_post_export(
+        &source,
+        &password,
+        1,
+        limits,
+        &imports_dir,
+        || async {
+            admin
+                .execute(
+                    "INSERT INTO public.updates(
+                         id, start_date, end_date, version, car_id
+                     ) VALUES (
+                         11, TIMESTAMP '2000-01-01 00:00:00.654321', NULL,
+                         'post-export', 1
+                     )",
+                    &[],
+                )
+                .await?;
+            Ok(())
+        },
+    )
+    .await
+    .expect("sealed physical V3 capture");
+
+    assert_eq!(
+        stage.format().expect("stage format"),
+        TeslaMateStageFormat::PhysicalV3
+    );
+    let stats = stage.stats().expect("stage stats");
+    assert_eq!(stats.state, TeslaMateStageState::Sealed);
+    assert_eq!(stats.row_count, 4);
+    let settings = stage
+        .get::<TeslaMateSettingsPhysicalV2_2>(TeslaMateStageTable::GlobalSettings, 100)
+        .expect("settings lookup")
+        .expect("settings row");
+    assert_eq!(settings.inserted_at_pg_us, 1_000_000);
+    assert_eq!(settings.updated_at_pg_us, 2_000_000);
+    let car = stage
+        .get::<TeslaMateCarPhysicalV2_2>(TeslaMateStageTable::Cars, 1)
+        .expect("car lookup")
+        .expect("car row");
+    assert_eq!(
+        car.efficiency.expect("efficiency").to_bits(),
+        (-0.0_f64).to_bits()
+    );
+    assert_eq!(car.inserted_at_pg_us, 3_000_000);
+    let car_settings = stage
+        .get::<TeslaMateCarSettingsPhysicalV2_2>(TeslaMateStageTable::CarSettings, 200)
+        .expect("car settings lookup")
+        .expect("car settings row");
+    assert_eq!(car_settings.id, car.settings_id);
+    let updates = stage
+        .page::<TeslaMateUpdatePhysicalV2_2>(TeslaMateStageTable::Updates, 0, 10)
+        .expect("updates page");
+    assert_eq!(updates.rows.len(), 1);
+    assert_eq!(updates.rows[0].source_id, 10);
+    assert_eq!(updates.rows[0].value.version.as_deref(), Some("pre-export"));
+    assert_eq!(updates.rows[0].value.start_date_pg_us, 123_456);
+    assert_eq!(
+        admin
+            .query_one("SELECT COUNT(*)::bigint AS count FROM public.updates", &[])
+            .await
+            .expect("source update count")
+            .try_get::<_, i64>("count")
+            .expect("source update count value"),
+        2
+    );
+    let stage_path = stage.path().to_path_buf();
+    stage.discard().expect("discard successful test stage");
+    assert!(!stage_path.exists());
+
+    let failure_dir = temporary.path().join("failure");
+    let failure = capture_physical_v3_to_stage_with_post_export(
+        &source,
+        &password,
+        1,
+        limits,
+        &failure_dir,
+        || async { Err(TeslaMateReaderError::InvalidExportedSnapshot) },
+    )
+    .await;
+    assert!(matches!(
+        failure,
+        Err(TeslaMateReaderError::InvalidExportedSnapshot)
+    ));
+    let staged_files = std::fs::read_dir(failure_dir.join(".staging"))
+        .expect("failure staging directory")
+        .map(|entry| entry.expect("failure staging entry").path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "sqlite")
+        })
+        .collect::<Vec<_>>();
+    assert!(staged_files.is_empty(), "retained stages: {staged_files:?}");
+
+    drop(admin);
+    connection_task.await.expect("fixture admin join");
 }
 
 #[test]

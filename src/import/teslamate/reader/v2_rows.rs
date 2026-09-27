@@ -25,6 +25,49 @@ pub(crate) async fn read_car_and_car_settings_v2_2(
     Ok((car, car_settings))
 }
 
+async fn read_car_v2_2(
+    client: &Client,
+    selected_car_id: i16,
+    limits: TeslaMateReadLimits,
+    retained_rows: &mut usize,
+) -> Result<TeslaMateCarPhysicalV2_2, TeslaMateReaderError> {
+    let rows = client.query(CAR_V2_2_SQL, &[&selected_car_id]).await?;
+    let row = rows
+        .first()
+        .ok_or(TeslaMateReaderError::SelectedCarMissing {
+            selected_car_id: i64::from(selected_car_id),
+        })?;
+    retain_row(retained_rows, limits.maximum_rows)?;
+    let car = decode_car_v2_2(row)?;
+    validate_stage_efficiency(car.efficiency)?;
+    if car.id != selected_car_id {
+        return Err(TeslaMateReaderError::NonProgressingPage { table: "cars" });
+    }
+    require_positive_physical_id("cars", i64::from(car.id))?;
+    Ok(car)
+}
+
+async fn read_car_settings_v2_2(
+    client: &Client,
+    settings_id: i64,
+    limits: TeslaMateReadLimits,
+    retained_rows: &mut usize,
+) -> Result<TeslaMateCarSettingsPhysicalV2_2, TeslaMateReaderError> {
+    require_positive_physical_id("car_settings", settings_id)?;
+    let rows = client.query(CAR_SETTINGS_V2_2_SQL, &[&settings_id]).await?;
+    let row = rows
+        .first()
+        .ok_or(TeslaMateReaderError::CarSettingsMissing { settings_id })?;
+    retain_row(retained_rows, limits.maximum_rows)?;
+    let settings = decode_car_settings_v2_2(row)?;
+    if settings.id != settings_id {
+        return Err(TeslaMateReaderError::NonProgressingPage {
+            table: "car_settings",
+        });
+    }
+    Ok(settings)
+}
+
 /// Read the source-wide TeslaMate `settings` singleton for schema-2.2
 /// production capture. This has no selected-car argument: zero rows and two-or-more
 /// rows are both rejected rather than silently defaulted or truncated.
@@ -225,6 +268,10 @@ fn decode_settings_v2_2(row: &Row) -> Result<TeslaMateSettingsPhysicalV2_2, Tesl
 fn decode_car_and_car_settings_v2_2(
     row: &Row,
 ) -> Result<(TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2), TeslaMateReaderError> {
+    Ok((decode_car_v2_2(row)?, decode_car_settings_v2_2(row)?))
+}
+
+fn decode_car_v2_2(row: &Row) -> Result<TeslaMateCarPhysicalV2_2, TeslaMateReaderError> {
     let car = TeslaMateCarPhysicalV2_2 {
         id: required_i16(row, "cars", "id")?,
         eid: required_i64(row, "cars", "eid")?,
@@ -245,7 +292,13 @@ fn decode_car_and_car_settings_v2_2(
         updated_at_pg_us: required_timestamp_0_pg_us(row, "cars", "updated_at")?,
         settings_id: required_i64(row, "cars", "settings_id")?,
     };
-    let car_settings = TeslaMateCarSettingsPhysicalV2_2 {
+    Ok(car)
+}
+
+fn decode_car_settings_v2_2(
+    row: &Row,
+) -> Result<TeslaMateCarSettingsPhysicalV2_2, TeslaMateReaderError> {
+    Ok(TeslaMateCarSettingsPhysicalV2_2 {
         id: required_i64(row, "car_settings", "car_settings_row_id")?,
         suspend_min: required_i32(row, "car_settings", "suspend_min")?,
         suspend_after_idle_min: required_i32(row, "car_settings", "suspend_after_idle_min")?,
@@ -254,8 +307,27 @@ fn decode_car_and_car_settings_v2_2(
         use_streaming_api: required_bool(row, "car_settings", "use_streaming_api")?,
         enabled: required_bool(row, "car_settings", "enabled")?,
         lfp_battery: required_bool(row, "car_settings", "lfp_battery")?,
-    };
-    Ok((car, car_settings))
+    })
+}
+
+fn validate_stage_efficiency(value: Option<f64>) -> Result<(), TeslaMateReaderError> {
+    if value.is_some_and(|value| !value.is_finite()) {
+        return Err(TeslaMateReaderError::PhysicalFloatNotStageable {
+            table: "cars",
+            column: "efficiency",
+        });
+    }
+    Ok(())
+}
+
+fn require_positive_physical_id(
+    table: &'static str,
+    id: i64,
+) -> Result<(), TeslaMateReaderError> {
+    if id <= 0 {
+        return Err(TeslaMateReaderError::PhysicalSourceIdNotPositive { table, id });
+    }
+    Ok(())
 }
 
 fn decode_update_v2_2(row: &Row) -> Result<TeslaMateUpdatePhysicalV2_2, TeslaMateReaderError> {

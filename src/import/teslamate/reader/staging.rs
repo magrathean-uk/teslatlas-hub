@@ -614,6 +614,46 @@ ORDER BY source.id ASC
 LIMIT 2
 "#;
 
+const CAR_V2_2_SQL: &str = r#"
+SELECT
+  source.id,
+  source.eid,
+  source.vid,
+  source.vin,
+  source.name,
+  source.model,
+  source.efficiency,
+  source.trim_badging,
+  source.marketing_name,
+  source.exterior_color,
+  source.wheel_type,
+  source.spoiler_type,
+  source.display_priority,
+  source.inserted_at,
+  source.updated_at,
+  source.settings_id
+FROM public.cars AS source
+WHERE source.id = $1
+ORDER BY source.id ASC
+LIMIT 1
+"#;
+
+const CAR_SETTINGS_V2_2_SQL: &str = r#"
+SELECT
+  source.id AS car_settings_row_id,
+  source.suspend_min,
+  source.suspend_after_idle_min,
+  source.req_not_unlocked,
+  source.free_supercharging,
+  source.use_streaming_api,
+  source.enabled,
+  source.lfp_battery
+FROM public.car_settings AS source
+WHERE source.id = $1
+ORDER BY source.id ASC
+LIMIT 1
+"#;
+
 // This is a dedicated, selected-car physical source relation for the THP2.2
 // local candidate. It deliberately does not reuse the legacy `CARS` query or
 // its lossy/default-resolving decoder, and it never joins global `settings`.

@@ -1578,4 +1578,4 @@ pub const fn validate_settings_relationship(
 
 #[cfg(test)]
 #[path = "schema/tests.rs"]
-mod tests;
+pub(crate) mod tests;

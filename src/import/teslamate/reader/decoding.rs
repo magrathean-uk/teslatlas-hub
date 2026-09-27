@@ -300,6 +300,8 @@ pub enum TeslaMateReaderError {
     SelectedCarIdOutOfRange,
     #[error("TeslaMate selected car {selected_car_id} does not exist in the source")]
     SelectedCarMissing { selected_car_id: i64 },
+    #[error("TeslaMate selected car references missing car_settings row {settings_id}")]
+    CarSettingsMissing { settings_id: i64 },
     #[error(
         "TeslaMate selected car has {drives} open drives, {charges} open charging processes, and {states} open states; import requires at most one of each"
     )]
@@ -371,6 +373,13 @@ pub enum TeslaMateReaderError {
     SerializeStageRow(#[from] serde_json::Error),
     #[error("TeslaMate {table} page did not advance its keyset cursor")]
     NonProgressingPage { table: &'static str },
+    #[error("TeslaMate physical {table} source id must be positive (actual {id})")]
+    PhysicalSourceIdNotPositive { table: &'static str, id: i64 },
+    #[error("TeslaMate {table}.{column} FLOAT8 cannot be represented bit-exactly in a JSON stage")]
+    PhysicalFloatNotStageable {
+        table: &'static str,
+        column: &'static str,
+    },
     #[error("TeslaMate source exceeds the {maximum} row import limit")]
     MaximumRowsExceeded { maximum: usize },
     #[error(
