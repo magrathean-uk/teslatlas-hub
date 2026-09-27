@@ -199,10 +199,14 @@ fi
 
 work=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/fleet-telemetry-bridge.XXXXXX")
 cache_installing=
+ephemeral_cache=
 cleanup() {
     /usr/bin/find "$work" -depth -delete >/dev/null 2>&1 || true
     if [ -n "$cache_installing" ]; then
         /bin/rm -f "$cache_installing" >/dev/null 2>&1 || true
+    fi
+    if [ -n "$ephemeral_cache" ]; then
+        /usr/bin/find "$ephemeral_cache" -depth -delete >/dev/null 2>&1 || true
     fi
 }
 trap cleanup EXIT HUP INT TERM
@@ -212,7 +216,47 @@ GOCACHE="$work/go-build-cache"
 export GOCACHE
 /bin/mkdir -p "$GOCACHE"
 
-cache_directory="$repository_root/target/upstream-cache"
+if [ -n "${TESLATLAS_LAB-}" ]; then
+    [ -d "$TESLATLAS_LAB" ] && [ ! -L "$TESLATLAS_LAB" ] \
+        || die "TESLATLAS_LAB must be an existing real directory"
+    cache_directory="$TESLATLAS_LAB/build/teslatlas-edge/upstream-cache"
+    /usr/bin/python3 - "$repository_root" "$cache_directory" <<'PY' || die "upstream cache path is unsafe"
+import os
+import sys
+
+repository_root, destination = map(os.path.realpath, sys.argv[1:])
+if destination == repository_root or destination.startswith(repository_root + os.sep):
+    raise SystemExit("cache destination resolves inside the Edge checkout")
+
+current = os.path.abspath(sys.argv[2])
+while not os.path.exists(current):
+    parent = os.path.dirname(current)
+    if parent == current:
+        raise SystemExit("cache destination has no existing safe ancestor")
+    current = parent
+while True:
+    if os.path.islink(current):
+        raise SystemExit("cache destination contains a symlink ancestor")
+    canonical = os.path.realpath(current)
+    if canonical == repository_root or canonical.startswith(repository_root + os.sep):
+        raise SystemExit("cache ancestor resolves inside the Edge checkout")
+    parent = os.path.dirname(current)
+    if parent == current:
+        break
+    current = parent
+PY
+    /bin/mkdir -p "$cache_directory"
+    [ -d "$cache_directory" ] && [ ! -L "$cache_directory" ] \
+        || die "upstream cache is not a real directory"
+    resolved_cache=$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$cache_directory")
+    case "$resolved_cache" in
+        "$repository_root"|"$repository_root"/*) die "upstream cache would enter the Edge checkout" ;;
+    esac
+else
+    ephemeral_cache=$(/usr/bin/mktemp -d "/tmp/teslatlas-edge-upstream-cache.XXXXXX") \
+        || die "cannot create an ephemeral upstream cache"
+    cache_directory="$ephemeral_cache"
+fi
 if [ -e "$cache_directory" ] || [ -L "$cache_directory" ]; then
     [ -d "$cache_directory" ] && [ ! -L "$cache_directory" ] \
         || die "upstream cache is not a real directory"
