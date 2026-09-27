@@ -18,8 +18,9 @@ automation, tags, or publication without an explicit owner instruction.
   claim transport.
 - Do not turn fixture, unit, or package checks into a claim about a live Hub or
   ordinary browser acceptance.
+- Legal files (`LICENSE`, `NOTICE`, `docs/legal/`, contributor terms, copyright and attribution strings) are owner-controlled: change them only on the owner's explicit instruction.
 
-Preserve existing changes and private data. In the current workspace, keep the existing `main` checkout; do not create branches, worktrees, or stashes. Pushes and vehicle commands need an explicit owner instruction. Read the [contribution guide](CONTRIBUTING.md) for command prerequisites and [development record](docs/development/PLAN.md) for the distinction between current authority and historical evidence.
+Preserve existing changes and private data. In the current workspace, keep the existing `main` checkout; do not create branches, worktrees, or stashes. Pushes and vehicle commands need an explicit owner instruction. Read the [contribution guide](.github/CONTRIBUTING.md) for command prerequisites and [development record](docs/development/PLAN.md) for the distinction between current authority and historical evidence.
 
 ## Working locally
 

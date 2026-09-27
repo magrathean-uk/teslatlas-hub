@@ -1,6 +1,6 @@
 # Contributing
 
-This repository contains the browser and Node.js bindings for Teslatlas. Keep changes focused on the public client, transport behavior, protocol validation, examples, or package tooling. Hub implementation and application UI belong in their own repositories.
+This repository contains the browser and Node.js bindings for Teslatlas. Keep changes focused on the public client, transport behaviour, protocol validation, examples, or package tooling. Hub implementation and application UI belong in their own repositories.
 
 ## Development
 
@@ -29,18 +29,18 @@ The initial build provides declarations and artifacts needed by package-facing c
 
 ## Protocol and client boundaries
 
-Treat `protocol/lock.json` as the input and generated-output manifest. The current lock is a content-bound Protocol candidate, not a plain Git-commit import. See [compatibility](docs/compatibility.md) before regeneration. Do not hand-edit generated types or validators to conceal a contract mismatch.
+Treat `protocol/lock.json` as the input and generated-output manifest. The current lock is a content-bound Protocol candidate, not a plain Git-commit import. See [compatibility](../docs/compatibility.md) before regeneration. Do not hand-edit generated types or validators to conceal a contract mismatch.
 
 Keep authorization, credential storage, and event checkpoints caller-owned. Preserve opaque cursors, ETags, event replay, safe errors, and one-shot command dispatch. Browser code must remain free of Node-only dependencies. Do not replace certificate checks with bypass flags to make a test pass.
 
 ## Integration and review
 
-Real-Hub helpers need a fresh, explicitly scoped handoff with the exact package, endpoint, trust inputs, credentials, and cleanup owner. Do not reuse closed historical fixtures. The [package lifecycle](docs/package-lifecycle.md), [Docker](docs/docker.md), and [acceptance](docs/acceptance.md) documents describe those boundaries.
+Real-Hub helpers need a fresh, explicitly scoped handoff with the exact package, endpoint, trust inputs, credentials, and cleanup owner. Do not reuse closed historical fixtures. The [package lifecycle](../docs/package-lifecycle.md), [Docker](../docs/docker.md), and [acceptance](../docs/development/archive/acceptance.md) documents describe those boundaries.
 
-Review notes should describe the behavior change, source revision, checks actually run, and remaining gaps. Do not include tokens, pairing invitations, private certificates, vehicle identifiers, or location data. Report vulnerabilities using [SECURITY.md](SECURITY.md).
+Review notes should describe the behaviour change, source revision, checks actually run, and remaining gaps. Do not include tokens, pairing invitations, private certificates, vehicle identifiers, or location data. Report vulnerabilities using [SECURITY.md](SECURITY.md).
 
 GitHub is source storage for this project. Do not add CI, release automation, tags, registry publication, or deployment as an implied contribution step. Preserve existing changes and follow the workspace's branch and publication rules.
 
 ## Licensing
 
-Keep the [Apache 2.0 license](LICENSE) and existing attribution intact. Identify third-party material and its license when introducing it. See [licensing](docs/licensing.md). This guide adds no separate assignment or contributor agreement requirement.
+Keep the [Apache 2.0 licence](../LICENSE) and existing attribution intact. Identify third-party material and its licence when introducing it. See [licensing](../docs/legal/licensing.md). Contributions need no separate assignment or contributor agreement.

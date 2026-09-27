@@ -1,5 +1,7 @@
 # Security Policy
 
+Report a security issue in the Teslatlas TypeScript SDK privately, using the route below.
+
 ## System and scope
 
 This repository contains a TypeScript SDK for browser and Node.js clients. The
@@ -33,16 +35,16 @@ Report a finding when the SDK can expose credentials, bypass endpoint,
 identity, TLS, or pin validation, accept unsafe protocol data, cross an
 authorization or replay-checkpoint boundary, retry a non-idempotent command,
 or misrepresent the outcome of a cancelled or disposed operation. Include the
-affected version, entry point, and minimal reproduction without real
+affected version, entry point, and a minimal reproduction without real
 credentials or vehicle data.
 
 ## Reporting
 
-Use the existing private email route in the [Magrathean UK organization security policy](https://github.com/magrathean-uk/.github/blob/main/SECURITY.md): [contact@magrathean.uk](mailto:contact@magrathean.uk), with subject `SECURITY: teslatlas-sdk-typescript`.
+Use the private email route in the [Magrathean UK organization security policy](https://github.com/magrathean-uk/.github/blob/main/SECURITY.md): [contact@magrathean.uk](mailto:contact@magrathean.uk), with subject `SECURITY: teslatlas-sdk-typescript`.
 
 Do not report a suspected vulnerability in a public issue, discussion, or pull request. Provide a minimal, redacted reproduction with the affected version or commit, required permissions, and impact. Do not send live credentials, private keys, vehicle data, or production extracts. Follow the linked organization policy for research scope and disclosure handling.
 
-GitHub private vulnerability reporting was disabled for this repository when checked on 2026-09-26. The published email route remains available in the organization policy; this documentation review did not test mailbox monitoring or delivery.
+GitHub private vulnerability reporting was disabled for this repository as of 2026-09-26. Report by email instead, using the route above.
 
 ## Version coverage
 
@@ -52,5 +54,5 @@ The package is private (`private: true`), with version `2026.36.2` in the manife
 
 Vulnerabilities in a remote Hub service, a caller's credential or checkpoint
 store, or a caller-supplied transport require the owner of that component to
-remediate. They remain relevant here when SDK behavior bypasses its documented
+remediate. They remain relevant here when SDK behaviour bypasses its documented
 boundaries or enables the flaw.

@@ -1,4 +1,17 @@
-# Teslatlas TypeScript SDK
+<p align="center">
+  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/teslatlas.png" width="96" height="96" alt="">
+</p>
+
+<h1 align="center">Teslatlas TypeScript SDK</h1>
+
+<p align="center">A private, protocol-derived client for Node.js and browser applications.</p>
+
+<p align="center">
+  <a href="docs/architecture.md">Documentation</a> ·
+  <a href="LICENSE">Licence</a>
+</p>
+
+## Overview
 
 The Teslatlas TypeScript SDK is a private, protocol-derived client for Node.js and browser applications. It exposes the released Teslatlas operations through typed methods and validates discovery responses, protocol data, errors, metadata, command jobs, and server-sent events before returning them to the caller.
 
@@ -40,7 +53,7 @@ Credentials and event checkpoints remain caller-owned. Do not put authorization 
 
 Use the Node `26.7.0` and npm `11.19.0` toolchain named by `package.json`. The manifest declares no broader runtime floor because the current evidence policy does not accept one.
 
-Follow `CONTRIBUTING.md` in the [source repository](https://github.com/magrathean-uk/teslatlas-sdk-typescript) and applicable workspace instructions before running package commands. A build replaces the checkout's `dist/` directory. With the pinned toolchain, the local verification sequence is:
+Follow `.github/CONTRIBUTING.md` in the [source repository](https://github.com/magrathean-uk/teslatlas-sdk-typescript) and applicable workspace instructions before running package commands. A build replaces the checkout's `dist/` directory. With the pinned toolchain, the local verification sequence is:
 
 ```bash
 npm ci
@@ -81,8 +94,10 @@ The current-Hub Node and browser examples require an operator-provisioned extern
 - [Package lifecycle](docs/package-lifecycle.md)
 - [Apache-2.0 licence](LICENSE)
 
-Repository-only guides are available in the [source repository](https://github.com/magrathean-uk/teslatlas-sdk-typescript): `CONTRIBUTING.md`, `SUPPORT.md`, `SECURITY.md`, and `docs/licensing.md`. They are not bundled in the npm archive.
+Repository-only guides are available in the [source repository](https://github.com/magrathean-uk/teslatlas-sdk-typescript): `.github/CONTRIBUTING.md`, `.github/SUPPORT.md`, `.github/SECURITY.md`, and `docs/legal/licensing.md`. They are not bundled in the npm archive.
 
 ## Licence
 
-Apache-2.0. See [LICENSE](LICENSE) for the complete licence text.
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE) for the complete licence text and copyright notice.
+
+<sub>© 2026 MAGRATHEAN UK LTD · [Legal](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)</sub>
