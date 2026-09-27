@@ -1,8 +1,21 @@
-# Teslatlas Edge
+<p align="center">
+  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/teslatlas.png" width="96" height="96" alt="">
+</p>
+
+<h1 align="center">Teslatlas Edge</h1>
+
+<p align="center">An optional, user-operated Fleet Telemetry ingress for a Teslatlas home Hub.</p>
+
+<p align="center">
+  <a href="docs/architecture/overview.md">Documentation</a> ·
+  <a href="LICENSE">Licence</a>
+</p>
+
+## Overview
 
 Teslatlas Edge is an optional, user-operated Fleet Telemetry ingress for a Teslatlas home Hub. A pinned Tesla receiver sidecar sends decoded envelopes to Edge over a loopback bearer-protected endpoint. Edge admits them to an encrypted, bounded spool. The home Hub connects outbound to Edge over mTLS, pulls batches, commits them with deduplication, and acknowledges them. Delivery is at least once.
 
-Edge does not store Tesla account credentials, expose vehicle-command paths, or act as a hosted relay. The receiver, admission, Hub delivery, credential, health, metrics, and spool boundaries are described in [the architecture](docs/architecture.md).
+Edge does not store Tesla account credentials, expose vehicle-command paths, or act as a hosted relay. The receiver, admission, Hub delivery, credential, health, metrics, and spool boundaries are described in [the architecture](docs/architecture/overview.md).
 
 ## Current source status
 
@@ -16,11 +29,11 @@ Historical G5 evidence covers a bounded source-built synthetic journey on
 Debian 13.6 ARM64. The 2026-09-22 cleanup record reports removed runtime
 artifacts. Neither record establishes today's installation, listener state,
 package, service-manager lifecycle, live vehicle or production acceptance.
-See [product versioning](docs/product-versioning.md) for the evidence boundary.
+See [product versioning](docs/reference/product-versioning.md) for the evidence boundary.
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for prerequisites, build commands and
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for prerequisites, build commands and
 focused checks. The bridge check downloads and builds a pinned receiver and
 requires Go 1.27.0 exactly. In the maintained workspace, use its existing
 execution wrapper and toolchain policy; independent clones need an external
@@ -31,7 +44,7 @@ Cargo target directory. Package recipes consume matching target binaries.
 The checked-in examples are [packaging/config.toml.example](packaging/config.toml.example), [packaging/docker/config.toml.example](packaging/docker/config.toml.example), and the matching Fleet Telemetry JSON examples. Native service installation, TLS boundaries, credential enrolment, rotation, and local health checks are in [native installation](docs/operations/native-installation.md). Compose mounts and lifecycle commands are in [Docker installation](docs/operations/docker.md). Preserve the spool key and complete spool during backups and upgrades; [upgrade, backup, and recovery](docs/operations/upgrade-backup-recovery.md) documents the format-3 migration and recovery rules.
 
 The public delivery contract is `edge-delivery-v2@2.0.0` in the sibling
-`teslatlas-protocol/profiles/edge-delivery-v2/2.0.0` tree. The request and acknowledgement rules are in [the Hub delivery contract](docs/hub-delivery-contract.md). The installed matrix coordinator and source-only handoff helpers are documented in [tools/interop/client_lanes](tools/interop/client_lanes/README.md); the coordinator can drive lifecycle operations through the shared runner,
+`teslatlas-protocol/profiles/edge-delivery-v2/2.0.0` tree. The request and acknowledgement rules are in [the Hub delivery contract](docs/reference/hub-delivery-contract.md). The installed matrix coordinator and source-only handoff helpers are documented in [tools/interop/client_lanes](tools/interop/client_lanes/README.md); the coordinator can drive lifecycle operations through the shared runner,
 while the handoff helper only prepares validated inputs. Their presence does
 not demonstrate an installed matrix result.
 
@@ -43,17 +56,20 @@ Excluded: Tesla account tokens, vehicle commands, consumer APIs, a mandatory hos
 
 ## Contributing and support
 
-- [Contributing](CONTRIBUTING.md): requirements, checks and review expectations.
-- [Troubleshooting](SUPPORT.md): operational guides and safe report contents.
-- [Security](SECURITY.md): trust boundaries and private reporting limitations.
+- [Contributing](.github/CONTRIBUTING.md): requirements, checks and review expectations.
+- [Troubleshooting](.github/SUPPORT.md): operational guides and safe report contents.
+- [Security](.github/SECURITY.md): trust boundaries and private reporting limitations.
 - [Agent guidance](AGENTS.md): project-specific working rules.
 
 GitHub is source storage for this project. No hosted CI, build/test automation
 or release publishing is part of the development workflow.
 
-## License
+## Licence
 
-The main project declares [AGPL-3.0-only](LICENSE). The optional Tesla receiver
-sidecar retains its upstream Apache-2.0 terms and modification notices. See
-[licensing](docs/licensing.md), [third-party notices](docs/legal/third-party-notices.md)
+Teslatlas Edge is free software under the GNU AGPL, version 3 only. See
+[LICENSE](LICENSE) and [NOTICE](NOTICE). The optional Tesla receiver sidecar
+retains its upstream Apache-2.0 terms and modification notices. See
+[licensing](docs/legal/licensing.md), [third-party notices](docs/legal/third-party-notices.md)
 and the bundled [Apache License 2.0](docs/legal/Apache-2.0-fleet-telemetry.txt).
+
+<sub>© 2026 MAGRATHEAN UK LTD · [Legal](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)</sub>

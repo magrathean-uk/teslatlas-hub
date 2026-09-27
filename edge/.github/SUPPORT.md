@@ -1,11 +1,13 @@
 # Troubleshooting and support
 
+Where to look before reporting a problem with Teslatlas Edge.
+
 Start with the guide for your installation:
 
-- [Native services](docs/operations/native-installation.md)
-- [Docker](docs/operations/docker.md)
-- [Upgrade, backup and recovery](docs/operations/upgrade-backup-recovery.md)
-- [Hub delivery and authentication](docs/hub-delivery-contract.md)
+- [Native services](../docs/operations/native-installation.md)
+- [Docker](../docs/operations/docker.md)
+- [Upgrade, backup and recovery](../docs/operations/upgrade-backup-recovery.md)
+- [Hub delivery and authentication](../docs/reference/hub-delivery-contract.md)
 
 `doctor` validates configured files without opening listeners. `/healthz`
 reports liveness; `/readyz` can fail while the process is alive because delivery

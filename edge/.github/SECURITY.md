@@ -1,5 +1,7 @@
 # Security Policy
 
+The trust boundaries, invariants and reporting route for Teslatlas Edge.
+
 ## System and scope
 
 Teslatlas Edge is an optional, user-operated ingress between the Tesla Fleet

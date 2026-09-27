@@ -12,9 +12,9 @@ independently authored `edge-delivery-v2@2.0.0` contract profile, manifest
 SHA-256
 `e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224`.
 It binds one content-bound Hub source fingerprint and the accepted
-[Hub G5](../../hub/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json)
-and [Edge G5](development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json)
-receipts. [G3 r2](../../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json)
+Hub G5
+and [Edge G5](../development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json)
+receipts. [G3 r2](../../../teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r2.json)
 admitted and read back the exact record; its receipt SHA-256 is
 `5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865`.
 

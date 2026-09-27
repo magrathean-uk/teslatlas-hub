@@ -1,8 +1,10 @@
 # Contributing to Teslatlas Edge
 
+How to build, validate and propose a change to Teslatlas Edge.
+
 Keep changes focused on optional telemetry ingress. Read the relevant
-[architecture](docs/architecture.md) and
-[delivery contract](docs/hub-delivery-contract.md) before changing behavior.
+[architecture](../docs/architecture/overview.md) and
+[delivery contract](../docs/reference/hub-delivery-contract.md) before changing behavior.
 For a security concern, follow [SECURITY.md](SECURITY.md).
 
 ## Build requirements
@@ -38,7 +40,7 @@ for managing development caches and build output.
 | Configuration and listener lifecycle | `cargo test --locked --test config_contract --test runtime_contract` |
 | Package recipes and service files | `cargo test --locked --test packaging_contract` plus a disposable installed lifecycle check |
 | Receiver overlay or pin | `scripts/test-fleet-telemetry-bridge.sh` |
-| Installed matrix adapter | Read [the interop guide](tools/interop/client_lanes/README.md) and run the affected Python tests |
+| Installed matrix adapter | Read [the interop guide](../tools/interop/client_lanes/README.md) and run the affected Python tests |
 
 The receiver test downloads and builds pinned upstream source and checks the
 result. It needs network access and the exact Go toolchain. A Cargo test pass
@@ -60,7 +62,7 @@ acceptance separate. Include remaining gaps without presenting old receipts
 as current proof.
 
 Preserve existing changes and legal notices. Third-party updates need exact
-source/version and notice review; see [licensing](docs/licensing.md). Do not
+source/version and notice review; see [licensing](../docs/legal/licensing.md). Do not
 add contributor assignment, commercial terms or a new license through a docs
 change.
 

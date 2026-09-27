@@ -8,16 +8,17 @@ firewall change, a release, or an Azure request.
 
 ## Observed host boundary
 
-Read-only observation at 2026-09-08T19:48:29Z found `bolykihu` on Debian 13
+Read-only observation at 2026-09-08T19:48:29Z found `<lab-host>` on Debian 13
 AMD64 with two CPUs, about 2.1 GiB available memory, 17.4 GB free root-disk
-space, and existing Docker projects for TeslaMate, Pi-hole, and Alice Studio.
-The VPS has no Edge binary, unit, state root, image, or container. Existing
-listener and container inventories are evidence inputs, not targets to modify.
+space, and existing Docker projects for `<lab-service-a>`, `<lab-service-b>`,
+and `<lab-service-c>`. The VPS has no Edge binary, unit, state root, image, or
+container. Existing listener and container inventories are evidence inputs,
+not targets to modify.
 
 The candidate must never start, stop, restart, reload, inspect secrets from, or
 remove any existing service or project. In particular it must not act on
-`root-teslamate-*`, `pihole`, `alice-studio-*`, nginx, Cloudflare Tunnel,
-mail, databases, WireGuard, or firewall services.
+`<lab-service-a>-*`, `<lab-service-b>`, `<lab-service-c>-*`, nginx, Cloudflare
+Tunnel, mail, databases, WireGuard, or firewall services.
 
 ## Admission gate
 

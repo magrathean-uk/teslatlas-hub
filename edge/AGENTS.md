@@ -20,6 +20,9 @@ and mandatory hosted relays do not belong here.
   production operations need an explicit owner instruction.
 - Change sibling products only when assigned. Use `codebase-memory-mcp` when
   structural lookup helps; do not recreate CodeGraph tooling.
+- Legal files (`LICENSE`, `NOTICE`, `docs/legal/`, contributor terms, copyright
+  and attribution strings) are owner-controlled: change them only on the
+  owner's explicit instruction.
 
 ## Development and checks
 
@@ -27,7 +30,7 @@ Carry authorized work through its relevant checks and resolve routine local
 failures without repeated permission. Delegate bounded, independent work when
 it saves time; give each writer distinct paths and keep one coordinator.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for build requirements and commands.
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for build requirements and commands.
 Run focused Cargo integration tests for changed behavior, then the relevant
 interop or packaging checks. `cargo fmt --check` checks formatting without
 rewriting files. The bridge test script downloads and builds its pinned Go

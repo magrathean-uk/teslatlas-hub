@@ -15,7 +15,7 @@ exactly. Follow the maintained workspace toolchain policy when it applies.
 
 ## Build package candidates
 
-First follow [the build requirements](../../CONTRIBUTING.md#build-requirements).
+First follow [the build requirements](../../.github/CONTRIBUTING.md#build-requirements).
 For the commands below, set `EDGE_BINARY` and `EDGE_RECEIVER_BINARY` to absolute
 paths of matching target binaries and `EDGE_PACKAGE_DIR` to an existing output
 directory outside the checkout. Shell variables are caller inputs, not paths
@@ -59,7 +59,7 @@ after providing the fixed state/config/TLS paths. The uninstaller preserves
 ```bash
 git clone https://github.com/magrathean-uk/teslatlas-edge.git
 cd teslatlas-edge
-# Configure an external Cargo target directory as described in CONTRIBUTING.md.
+# Configure an external Cargo target directory as described in .github/CONTRIBUTING.md.
 cargo build --locked --release
 scripts/test-fleet-telemetry-bridge.sh
 scripts/build-fleet-telemetry-bridge.sh \
@@ -203,7 +203,7 @@ Transfer the one-time bearer and Hub client identity through a separate secure
 channel. Configure Hub to trust `hub-server.crt`, present a client certificate
 rooted in the dedicated `hub-client-ca.crt`, store both v1 and v2 record IDs,
 and connect outbound to Edge. Current bearer grants cover the complete queue.
-See the [delivery contract](../hub-delivery-contract.md).
+See the [delivery contract](../reference/hub-delivery-contract.md).
 
 ## Rotate the receiver bearer
 
