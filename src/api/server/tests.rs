@@ -2738,6 +2738,337 @@ async fn hub_sync_physical_rotation_stays_fail_closed_until_rebase_is_available(
 }
 
 #[tokio::test]
+async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let cursor_key = CursorKey::from_bytes([96; 32]);
+    let retained_at_ms = current_epoch_ms().expect("retention clock");
+
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let (binding, first) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("primary-first"),
+            &store,
+            &cursor_key,
+            1,
+            "physical-v3-rebase-primary",
+            1,
+        );
+    let prior = store
+        .stage_pending_physical_v3_admission(&gate, first)
+        .expect("first physical admission");
+    let (_, second) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("primary-second"),
+            &store,
+            &cursor_key,
+            513,
+            "physical-v3-rebase-primary",
+            2,
+        );
+    let current = store
+        .rotate_pending_physical_v3_admission_at(&gate, second, retained_at_ms)
+        .expect("rotated physical admission");
+    assert!(matches!(
+        store.activate_pending_physical_v3_rotation_at(
+            &gate,
+            binding.vehicle_id,
+            "pv3_unknown_retained_receipt",
+            retained_at_ms,
+        ),
+        Err(crate::storage::db::StoreError::PhysicalV3AdmissionConflict)
+    ));
+    let activated = store
+        .activate_pending_physical_v3_rotation_at(
+            &gate,
+            binding.vehicle_id,
+            &prior.receipt_id,
+            retained_at_ms,
+        )
+        .expect("activate rotated physical admission");
+    assert_eq!(activated, current);
+
+    let (other_binding, other_first) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("other-first"),
+            &store,
+            &cursor_key,
+            1,
+            "physical-v3-rebase-other",
+            1,
+        );
+    let other_prior = store
+        .stage_pending_physical_v3_admission(&gate, other_first)
+        .expect("other first admission");
+    let (_, other_second) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("other-second"),
+            &store,
+            &cursor_key,
+            1,
+            "physical-v3-rebase-other",
+            2,
+        );
+    store
+        .rotate_pending_physical_v3_admission_at(&gate, other_second, retained_at_ms)
+        .expect("other rotation");
+    store
+        .activate_pending_physical_v3_rotation_at(
+            &gate,
+            other_binding.vehicle_id,
+            &other_prior.receipt_id,
+            retained_at_ms,
+        )
+        .expect("activate other rotation");
+
+    let (expired_binding, expired_first) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("expired-first"),
+            &store,
+            &cursor_key,
+            1,
+            "physical-v3-rebase-expired",
+            1,
+        );
+    let expired_prior = store
+        .stage_pending_physical_v3_admission(&gate, expired_first)
+        .expect("expired first admission");
+    let (_, expired_second) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("expired-second"),
+            &store,
+            &cursor_key,
+            1,
+            "physical-v3-rebase-expired",
+            2,
+        );
+    store
+        .rotate_pending_physical_v3_admission_at(&gate, expired_second, 1)
+        .expect("expired rotation");
+    store
+        .activate_pending_physical_v3_rotation_at(
+            &gate,
+            expired_binding.vehicle_id,
+            &expired_prior.receipt_id,
+            1,
+        )
+        .expect("activate before retained expiry");
+    drop(gate);
+
+    let invitation = store
+        .create_pairing("physical rebase", retained_at_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            retained_at_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store.clone(), &cursor_key);
+    let request = |vehicle_id: Uuid, receipt_id: &str, sequence: u64| {
+        Request::builder()
+            .method("POST")
+            .uri(format!("/v1/vehicles/{vehicle_id}/sync/changes-since"))
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "base_receipt_id": receipt_id,
+                    "base_manifest_schema": "2.2",
+                    "from_sequence": sequence,
+                    "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+                }))
+                .expect("changes-since request"),
+            ))
+            .unwrap()
+    };
+
+    let rebase = app
+        .clone()
+        .oneshot(request(
+            binding.vehicle_id,
+            &prior.receipt_id,
+            prior.head_sequence,
+        ))
+        .await
+        .expect("physical rebase response");
+    assert_eq!(rebase.status(), StatusCode::CONFLICT);
+    let rebase_raw = rebase
+        .into_body()
+        .collect()
+        .await
+        .expect("physical rebase body")
+        .to_bytes();
+    assert!(rebase_raw.len() <= MAX_SYNC_CONTROL_RESPONSE_BYTES);
+    let rebase: serde_json::Value =
+        serde_json::from_slice(&rebase_raw).expect("physical rebase JSON");
+    let fixture = hub_sync_protocol_fixture("changes-since-rebase-after-compaction.json");
+    assert_eq!(
+        rebase
+            .as_object()
+            .expect("rebase object")
+            .keys()
+            .collect::<std::collections::BTreeSet<_>>(),
+        fixture["response"]
+            .as_object()
+            .expect("fixture rebase object")
+            .keys()
+            .collect::<std::collections::BTreeSet<_>>()
+    );
+    assert_eq!(
+        rebase["replacement"]
+            .as_object()
+            .expect("replacement object")
+            .keys()
+            .collect::<std::collections::BTreeSet<_>>(),
+        fixture["response"]["replacement"]
+            .as_object()
+            .expect("fixture replacement object")
+            .keys()
+            .collect::<std::collections::BTreeSet<_>>()
+    );
+    assert_eq!(
+        rebase["retry_request"]
+            .as_object()
+            .expect("retry object")
+            .keys()
+            .collect::<std::collections::BTreeSet<_>>(),
+        fixture["response"]["retry_request"]
+            .as_object()
+            .expect("fixture retry object")
+            .keys()
+            .collect::<std::collections::BTreeSet<_>>()
+    );
+    assert_eq!(rebase["kind"], "rebase_required");
+    assert_eq!(rebase["reason"], "compacted");
+    assert_eq!(rebase["vehicle_id"], binding.vehicle_id.to_string());
+    assert_eq!(rebase["requested_base_receipt_id"], prior.receipt_id);
+    assert_eq!(rebase["requested_base_manifest_schema"], "2.2");
+    assert_eq!(rebase["requested_from_sequence"], prior.head_sequence);
+    assert_eq!(
+        rebase["replacement"]["manifest_id"],
+        current.snapshot_id.to_string()
+    );
+    assert_eq!(rebase["replacement"]["receipt_id"], current.receipt_id);
+    assert_eq!(rebase["replacement"]["sequence"], current.head_sequence);
+    assert_eq!(rebase["replacement"]["manifest_schema"], "2.2");
+    let chunks = rebase["replacement"]["chunks"]
+        .as_array()
+        .expect("replacement chunks");
+    assert_eq!(chunks.len(), 513);
+    for (index, (chunk, pack)) in chunks.iter().zip(&current.manifest.chunks).enumerate() {
+        assert_eq!(chunk["chunk_index"], index as u64);
+        assert_eq!(chunk["pack"]["sha256"], pack.sha256.to_string());
+        assert_eq!(chunk["pack"]["compressed_bytes"], pack.compressed_bytes);
+        assert_eq!(
+            chunk["pack"]["object_name"],
+            format!("{}.sqlite.zst", pack.sha256)
+        );
+    }
+    assert_eq!(
+        rebase["retry_request"],
+        serde_json::json!({
+            "base_receipt_id": current.receipt_id,
+            "base_manifest_schema": "2.2",
+            "from_sequence": current.head_sequence,
+            "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+        })
+    );
+    assert_hub_sync_signature(&rebase, &cursor_key);
+    assert_hub_sync_signature_rejects(&rebase, &CursorKey::from_bytes([97; 32]));
+
+    let noop = app
+        .clone()
+        .oneshot(request(
+            binding.vehicle_id,
+            &current.receipt_id,
+            current.head_sequence,
+        ))
+        .await
+        .expect("active no-op response");
+    assert_eq!(noop.status(), StatusCode::OK);
+    let noop = response_json(noop).await;
+    assert_eq!(noop["kind"], "no_op");
+    assert_eq!(noop["vehicle_id"], binding.vehicle_id.to_string());
+    assert_eq!(noop["base_receipt_id"], current.receipt_id);
+    assert_eq!(noop["base_manifest_schema"], "2.2");
+    assert_eq!(noop["sequence"], current.head_sequence);
+    assert_eq!(noop["manifest_schema"], "2.2");
+    assert_hub_sync_signature(&noop, &cursor_key);
+
+    for (vehicle_id, receipt_id, sequence) in [
+        (
+            binding.vehicle_id,
+            prior.receipt_id.as_str(),
+            prior.head_sequence + 1,
+        ),
+        (
+            binding.vehicle_id,
+            "pv3_unknown_receipt",
+            prior.head_sequence,
+        ),
+        (
+            binding.vehicle_id,
+            other_prior.receipt_id.as_str(),
+            other_prior.head_sequence,
+        ),
+        (
+            expired_binding.vehicle_id,
+            expired_prior.receipt_id.as_str(),
+            expired_prior.head_sequence,
+        ),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(request(vehicle_id, receipt_id, sequence))
+            .await
+            .expect("unknown retained receipt response");
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(response.headers().get(MANIFEST_SIGNATURE_HEADER).is_none());
+        assert_eq!(
+            response_json(response).await,
+            hub_sync_protocol_fixture("changes-since-error-unknown-base-receipt.json")["response"]
+                ["body"]
+        );
+    }
+
+    for pack in [
+        &current.manifest.chunks[0],
+        current.manifest.chunks.last().expect("last current chunk"),
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(&pack.relative_path)
+                    .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("active successor pack response");
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+    let retained_pack = &prior.manifest.chunks[0];
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri(&retained_pack.relative_path)
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("retained prior pack response");
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn hub_sync_physical_routes_fail_closed_for_retired_rebound_or_tampered_pack() {
     use std::io::Write as _;
 

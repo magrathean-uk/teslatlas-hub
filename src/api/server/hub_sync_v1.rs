@@ -124,14 +124,14 @@ struct WireChunk {
 }
 
 #[derive(Serialize)]
-struct RebasePayload {
+struct RebasePayload<R> {
     kind: &'static str,
     vehicle_id: Uuid,
     requested_base_receipt_id: String,
     requested_base_manifest_schema: &'static str,
     requested_from_sequence: u64,
     reason: &'static str,
-    replacement: Replacement21,
+    replacement: R,
     retry_request: RetryRequest,
 }
 
@@ -142,6 +142,15 @@ struct Replacement21 {
     sequence: u64,
     manifest_schema: &'static str,
     pack: WirePack,
+}
+
+#[derive(Serialize)]
+struct Replacement22 {
+    manifest_id: String,
+    receipt_id: String,
+    sequence: u64,
+    manifest_schema: &'static str,
+    chunks: Vec<WireChunk>,
 }
 
 #[derive(Serialize)]
@@ -549,20 +558,75 @@ fn serve_physical_changes_since(
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-    if request.base_receipt_id != admission.receipt_id
-        || request.from_sequence != admission.head_sequence
+    if request.base_receipt_id == admission.receipt_id
+        && request.from_sequence == admission.head_sequence
     {
-        return unknown_base_receipt();
+        return signed_control_response(
+            StatusCode::OK,
+            &NoOpPayload {
+                kind: "no_op",
+                vehicle_id,
+                base_receipt_id: request.base_receipt_id,
+                base_manifest_schema: "2.2",
+                sequence: request.from_sequence,
+                manifest_schema: "2.2",
+            },
+            signing,
+        );
     }
+    let now_ms = match current_epoch_ms() {
+        Ok(now_ms) => now_ms,
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot read retained physical checkpoint clock");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let retained = match state.store.retained_physical_v3_admission_for_receipt_at(
+        vehicle_id,
+        &request.base_receipt_id,
+        now_ms,
+        false,
+    ) {
+        Ok(Some(retained)) if retained.admission.head_sequence == request.from_sequence => retained,
+        Ok(Some(_)) | Ok(None) => return unknown_base_receipt(),
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot resolve retained physical checkpoint");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    if retained.admission.installation_id != admission.installation_id
+        || retained.admission.account_id != admission.account_id
+        || retained.admission.vehicle_id != admission.vehicle_id
+        || retained.admission.selected_car_id != admission.selected_car_id
+        || retained.admission.manifest.generation != admission.manifest.generation
+        || retained.admission.head_sequence >= admission.head_sequence
+    {
+        tracing::error!(%vehicle_id, "retained physical checkpoint does not bind active replacement");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+    let replacement_receipt = admission.receipt_id.clone();
     signed_control_response(
-        StatusCode::OK,
-        &NoOpPayload {
-            kind: "no_op",
+        StatusCode::CONFLICT,
+        &RebasePayload {
+            kind: "rebase_required",
             vehicle_id,
-            base_receipt_id: request.base_receipt_id,
-            base_manifest_schema: "2.2",
-            sequence: request.from_sequence,
-            manifest_schema: "2.2",
+            requested_base_receipt_id: request.base_receipt_id,
+            requested_base_manifest_schema: "2.2",
+            requested_from_sequence: request.from_sequence,
+            reason: "compacted",
+            replacement: Replacement22 {
+                manifest_id: admission.snapshot_id.to_string(),
+                receipt_id: replacement_receipt.clone(),
+                sequence: admission.head_sequence,
+                manifest_schema: "2.2",
+                chunks: admission.manifest.chunks.iter().map(wire_chunk).collect(),
+            },
+            retry_request: RetryRequest {
+                base_receipt_id: replacement_receipt,
+                base_manifest_schema: "2.2",
+                from_sequence: admission.head_sequence,
+                schema_version_range: request.schema_version_range,
+            },
         },
         signing,
     )

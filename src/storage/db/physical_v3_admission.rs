@@ -382,6 +382,137 @@ impl HubStore {
         }
     }
 
+    /// Promote one already-rotated PhysicalV3 successor after the runtime has
+    /// gained retained-prior rebase support. This method has no production
+    /// caller yet: a later source publication cut must invoke it while holding
+    /// the same publication gate used for rotation.
+    pub(crate) fn activate_pending_physical_v3_rotation_at(
+        &self,
+        _publication_gate: &PublicationGate,
+        vehicle_id: Uuid,
+        retained_receipt_id: &str,
+        now_ms: i64,
+    ) -> Result<PendingPhysicalV3Admission, StoreError> {
+        let current = self
+            .pending_physical_v3_admission_for_vehicle(vehicle_id)?
+            .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
+        let retained = self
+            .retained_physical_v3_admission_for_receipt_at(
+                vehicle_id,
+                retained_receipt_id,
+                now_ms,
+                true,
+            )?
+            .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
+        let prior = &retained.admission;
+        if current.installation_id != prior.installation_id
+            || current.account_id != prior.account_id
+            || current.vehicle_id != prior.vehicle_id
+            || current.selected_car_id != prior.selected_car_id
+            || current.manifest.generation != prior.manifest.generation
+            || current.head_sequence <= prior.head_sequence
+        {
+            return Err(StoreError::PhysicalV3AdmissionInvalid);
+        }
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let state: Option<String> = transaction
+            .query_row(
+                "SELECT serve_state FROM pending_physical_v3_admissions
+                  WHERE vehicle_id = ?1 AND snapshot_id = ?2",
+                params![vehicle_id.to_string(), current.snapshot_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        match state.as_deref() {
+            Some("public_first") => return Ok(current),
+            Some("blocked_rotation") => {}
+            _ => return Err(StoreError::PhysicalV3AdmissionConflict),
+        }
+        let changed = transaction
+            .execute(
+                "UPDATE pending_physical_v3_admissions
+                    SET serve_state = 'public_first'
+                  WHERE vehicle_id = ?1
+                    AND snapshot_id = ?2
+                    AND serve_state = 'blocked_rotation'
+                    AND EXISTS (
+                        SELECT 1 FROM retained_physical_v3_admissions AS retained
+                         WHERE retained.vehicle_id = ?1
+                           AND retained.receipt_id = ?3
+                           AND retained.expires_at_ms > ?4
+                    )",
+                params![
+                    vehicle_id.to_string(),
+                    current.snapshot_id.to_string(),
+                    retained_receipt_id,
+                    now_ms,
+                ],
+            )
+            .map_err(StoreError::PublishManifest)?;
+        if changed != 1 {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
+        self.commit_physical_v3_activation(transaction, vehicle_id, current.snapshot_id)?;
+        Ok(current)
+    }
+
+    fn commit_physical_v3_activation(
+        &self,
+        transaction: Transaction<'_>,
+        vehicle_id: Uuid,
+        snapshot_id: Uuid,
+    ) -> Result<(), StoreError> {
+        if let Err(source) = crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::CatalogueBeforeCommit,
+        ) {
+            drop(transaction);
+            return if self.physical_v3_activation_is_exact(vehicle_id, snapshot_id)? {
+                Err(StoreError::PhysicalV3AdmissionConflict)
+            } else {
+                Err(StoreError::CatalogueDurability(source))
+            };
+        }
+        if transaction.commit().is_err() {
+            return if self.physical_v3_activation_is_exact(vehicle_id, snapshot_id)? {
+                Ok(())
+            } else {
+                Err(StoreError::PhysicalV3AdmissionConflict)
+            };
+        }
+        if crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::CatalogueAfterCommit,
+        )
+        .is_err()
+            && !self.physical_v3_activation_is_exact(vehicle_id, snapshot_id)?
+        {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
+        Ok(())
+    }
+
+    fn physical_v3_activation_is_exact(
+        &self,
+        vehicle_id: Uuid,
+        snapshot_id: Uuid,
+    ) -> Result<bool, StoreError> {
+        self.open_read_only_connection()?
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1 FROM pending_physical_v3_admissions
+                     WHERE vehicle_id = ?1
+                       AND snapshot_id = ?2
+                       AND serve_state = 'public_first'
+                 )",
+                params![vehicle_id.to_string(), snapshot_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)
+    }
+
     pub(crate) fn pending_physical_v3_admission_for_vehicle(
         &self,
         vehicle_id: Uuid,
