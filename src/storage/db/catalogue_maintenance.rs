@@ -27,6 +27,7 @@ fn referenced_pack_rows_at(
             .collect::<Result<Vec<_>, _>>()
             .map_err(StoreError::Query)?
     };
+    rows.extend(pending_physical_v3_pack_rows(connection)?);
     let retired_rows = {
         let mut statement = connection
             .prepare(
@@ -82,6 +83,111 @@ fn referenced_pack_rows_at(
         deduplicated.push(row);
     }
     Ok(deduplicated)
+}
+
+fn pending_physical_v3_pack_rows(
+    connection: &Connection,
+) -> Result<Vec<(String, String, i64)>, StoreError> {
+    let admissions = connection
+        .prepare(
+            "SELECT vehicle_id, snapshot_id, installation_id, account_id,
+                    selected_car_id, profile,
+                    head_sequence, chunk_count, manifest_sha256,
+                    ordered_chunks_sha256, receipt_id, manifest_json
+               FROM pending_physical_v3_admissions ORDER BY vehicle_id",
+        )
+        .map_err(StoreError::Query)?
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, i64>(7)?,
+                row.get::<_, String>(8)?,
+                row.get::<_, String>(9)?,
+                row.get::<_, String>(10)?,
+                row.get::<_, Vec<u8>>(11)?,
+            ))
+        })
+        .map_err(StoreError::Query)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::Query)?;
+    let mut rows = Vec::new();
+    for (
+        vehicle_id,
+        snapshot_id,
+        installation_id,
+        account_id,
+        selected_car_id,
+        profile,
+        head_sequence,
+        chunk_count,
+        manifest_sha256,
+        ordered_chunks_sha256,
+        receipt_id,
+        manifest_json,
+    ) in admissions
+    {
+        let manifest: SyncManifest = serde_json::from_slice(&manifest_json)
+            .map_err(StoreError::DeserializeManifest)?;
+        validate_pending_physical_v3_manifest(&manifest)?;
+        let computed = physical_v3_admission_from_manifest(&manifest, selected_car_id)?;
+        if profile != HUB_SYNC_V1_1_3_PROFILE
+            || vehicle_id != computed.vehicle_id.to_string()
+            || snapshot_id != computed.snapshot_id.to_string()
+            || installation_id != computed.installation_id.to_string()
+            || account_id != computed.account_id.to_string()
+            || u64::try_from(head_sequence).ok() != Some(computed.head_sequence)
+            || u32::try_from(chunk_count).ok() != Some(computed.chunk_count)
+            || manifest_sha256 != computed.manifest_sha256.to_string()
+            || ordered_chunks_sha256 != computed.ordered_chunks_sha256.to_string()
+            || receipt_id != computed.receipt_id
+        {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
+        let stored = connection
+            .prepare(
+                "SELECT ordinal, sha256, relative_path,
+                        compressed_bytes, uncompressed_bytes
+                   FROM pending_physical_v3_packs
+                  WHERE snapshot_id = ?1 ORDER BY ordinal",
+            )
+            .map_err(StoreError::Query)?
+            .query_map([snapshot_id], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)?;
+        if stored.len() != manifest.chunks.len() {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
+        for (stored, pack) in stored.into_iter().zip(&manifest.chunks) {
+            let expected = (
+                i64::from(pack.ordinal),
+                pack.sha256.to_string(),
+                pack.relative_path.clone(),
+                i64::try_from(pack.compressed_bytes).map_err(|_| StoreError::PackSizeTooLarge)?,
+                i64::try_from(pack.uncompressed_bytes)
+                    .map_err(|_| StoreError::PackSizeTooLarge)?,
+            );
+            if stored != expected {
+                return Err(StoreError::PhysicalV3AdmissionConflict);
+            }
+            rows.push((expected.1, expected.2, expected.3));
+        }
+    }
+    Ok(rows)
 }
 
 fn validate_retired_lineage_pack_binding(

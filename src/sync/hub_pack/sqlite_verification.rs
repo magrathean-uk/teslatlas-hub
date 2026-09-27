@@ -514,6 +514,51 @@ fn verify_projection_sqlite_2_2(
     Ok(())
 }
 
+fn verify_projection_sqlite_2_2_publication_identity(
+    path: &Path,
+    pack: &TransportPack,
+    manifest: &SyncManifest,
+    binding: &ProjectionBinding,
+) -> Result<(), ProjectionPackError> {
+    let connection = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(ProjectionPackError::OpenSqlite)?;
+    connection
+        .execute_batch("PRAGMA trusted_schema = OFF;")
+        .map_err(ProjectionPackError::ConfigureSqlite)?;
+    let expected = [
+        ("publication_scope", "hub_sync_v1_1_3_physical".to_owned()),
+        ("ledger_state", "sealed_physical_source".to_owned()),
+        ("reconciliation", "source_exact".to_owned()),
+        ("pack_id", pack.pack_id.to_string()),
+        ("snapshot_id", manifest.snapshot_id.to_string()),
+        ("ordinal", pack.ordinal.to_string()),
+        ("installation_id", manifest.installation_id.to_string()),
+        ("account_id", manifest.account_id.to_string()),
+        ("vehicle_id", manifest.vehicle_id.to_string()),
+        ("generation", manifest.generation.to_string()),
+        ("selected_car_id", binding.selected_car_id.to_string()),
+        ("base_sequence", manifest.base_sequence.to_string()),
+        ("head_sequence", manifest.head_sequence.to_string()),
+        ("row_count", pack.row_count.to_string()),
+    ];
+    let mut statement = connection
+        .prepare("SELECT value FROM hub_pack_metadata WHERE key = ?1")
+        .map_err(ProjectionPackError::IntegrityCheck)?;
+    for (key, value) in expected {
+        let stored = statement
+            .query_row([key], |row| row.get::<_, String>(0))
+            .optional()
+            .map_err(ProjectionPackError::IntegrityCheck)?;
+        if stored.as_deref() != Some(value.as_str()) {
+            return Err(invalid("schema 2.2 physical publication identity is invalid"));
+        }
+    }
+    Ok(())
+}
+
 fn verify_projection_table_layout(
     connection: &Connection,
     table: &str,

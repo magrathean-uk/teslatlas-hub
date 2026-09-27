@@ -56,7 +56,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 61;
+pub const SCHEMA_VERSION: i32 = 62;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -214,6 +214,24 @@ enum CatalogueCommitReceiptState {
     Exact,
     Prior,
     Conflicting,
+}
+
+/// Exact durable provenance for one pending physical schema-2.2 snapshot.
+/// Pending rows retain verified objects across restart and backup but are not
+/// reachable from current-manifest or pack-serving catalogue paths.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingPhysicalV3Admission {
+    pub installation_id: Uuid,
+    pub account_id: Uuid,
+    pub vehicle_id: Uuid,
+    pub selected_car_id: i64,
+    pub snapshot_id: Uuid,
+    pub head_sequence: u64,
+    pub chunk_count: u32,
+    pub manifest_sha256: Sha256Digest,
+    pub ordered_chunks_sha256: Sha256Digest,
+    pub receipt_id: String,
+    pub manifest: SyncManifest,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1194,6 +1212,7 @@ include!("db/legacy_credentials.rs");
 include!("db/fleet_credentials.rs");
 include!("db/maintenance.rs");
 include!("db/publication.rs");
+include!("db/physical_v3_admission.rs");
 include!("db/live_sync.rs");
 include!("db/import_finalization.rs");
 include!("db/lineage_verification.rs");

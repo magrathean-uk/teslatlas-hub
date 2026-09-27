@@ -221,6 +221,14 @@ pub enum StoreError {
     InvalidSchema22Pair(String),
     #[error("schema 2.2 snapshot {snapshot_id} for vehicle {vehicle_id} is immutable")]
     Schema22SnapshotConflict { vehicle_id: Uuid, snapshot_id: Uuid },
+    #[error("physical schema 2.2 candidate is not publication-ready")]
+    PhysicalV3AdmissionInvalid,
+    #[error("physical schema 2.2 pack admission failed: {0}")]
+    PhysicalV3Pack(ProjectionPackError),
+    #[error("vehicle {0} already has an admitted physical schema 2.2 head")]
+    PhysicalV3SecondHeadUnsupported(Uuid),
+    #[error("physical schema 2.2 admission catalogue is inconsistent")]
+    PhysicalV3AdmissionConflict,
     #[error("cannot access import generation: {0}")]
     ImportGeneration(rusqlite::Error),
     #[error("import generation is invalid")]

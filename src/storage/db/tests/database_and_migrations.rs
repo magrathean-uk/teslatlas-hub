@@ -271,6 +271,65 @@ fn schema_60_upgrade_keeps_paired_bearers_and_adds_rotation_grace() {
 }
 
 #[test]
+fn schema_61_upgrade_adds_physical_v3_admission_marker() {
+    let temporary = crate::private_tempdir().expect("temporary database");
+    let store = HubStore::initialize(temporary.path()).expect("current store");
+    let connection = store.open().expect("migration connection");
+    connection
+        .execute_batch(
+            "DROP TABLE pending_physical_v3_packs;
+             DROP TABLE pending_physical_v3_admissions;
+             PRAGMA user_version = 61;",
+        )
+        .expect("restore schema 61 shape");
+
+    migrate(&connection).expect("migrate schema 61");
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
+    let columns: Vec<String> = connection
+        .prepare("SELECT name FROM pragma_table_info('pending_physical_v3_admissions') ORDER BY cid")
+        .expect("admission columns")
+        .query_map([], |row| row.get(0))
+        .expect("admission rows")
+        .collect::<Result<_, _>>()
+        .expect("admission column values");
+    assert_eq!(
+        columns,
+        [
+            "vehicle_id",
+            "snapshot_id",
+            "installation_id",
+            "account_id",
+            "selected_car_id",
+            "profile",
+            "head_sequence",
+            "chunk_count",
+            "manifest_sha256",
+            "ordered_chunks_sha256",
+            "receipt_id",
+            "manifest_json",
+        ]
+    );
+    let pack_columns: Vec<String> = connection
+        .prepare("SELECT name FROM pragma_table_info('pending_physical_v3_packs') ORDER BY cid")
+        .expect("pending pack columns")
+        .query_map([], |row| row.get(0))
+        .expect("pending pack rows")
+        .collect::<Result<_, _>>()
+        .expect("pending pack column values");
+    assert_eq!(
+        pack_columns,
+        [
+            "sha256",
+            "snapshot_id",
+            "ordinal",
+            "relative_path",
+            "compressed_bytes",
+            "uncompressed_bytes",
+        ]
+    );
+}
+
+#[test]
 fn inventory_counts_physical_pack_and_staging_bytes_once() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store initializes");

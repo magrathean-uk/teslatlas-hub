@@ -2076,6 +2076,57 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 61;
     }
 
+    if version == 61 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS pending_physical_v3_admissions (
+                    vehicle_id TEXT PRIMARY KEY NOT NULL,
+                    snapshot_id TEXT NOT NULL UNIQUE,
+                    installation_id TEXT NOT NULL,
+                    account_id TEXT NOT NULL,
+                    selected_car_id INTEGER NOT NULL
+                        CHECK(selected_car_id BETWEEN -32768 AND 32767),
+                    profile TEXT NOT NULL
+                        CHECK(profile = 'hub-sync-v1@1.3.0'),
+                    head_sequence INTEGER NOT NULL
+                        CHECK(head_sequence BETWEEN 0 AND 9007199254740991),
+                    chunk_count INTEGER NOT NULL
+                        CHECK(chunk_count BETWEEN 1 AND 1771),
+                    manifest_sha256 TEXT NOT NULL
+                        CHECK(length(manifest_sha256) = 64),
+                    ordered_chunks_sha256 TEXT NOT NULL
+                        CHECK(length(ordered_chunks_sha256) = 64),
+                    receipt_id TEXT NOT NULL UNIQUE
+                        CHECK(length(receipt_id) = 68),
+                    manifest_json BLOB NOT NULL
+                        CHECK(length(manifest_json) BETWEEN 2 AND 2097152),
+                    CHECK(length(vehicle_id) = 36),
+                    CHECK(length(snapshot_id) = 36),
+                    CHECK(length(installation_id) = 36),
+                    CHECK(length(account_id) = 36)
+                ) STRICT;
+                CREATE TABLE IF NOT EXISTS pending_physical_v3_packs (
+                    sha256 TEXT PRIMARY KEY NOT NULL CHECK(length(sha256) = 64),
+                    snapshot_id TEXT NOT NULL
+                        REFERENCES pending_physical_v3_admissions(snapshot_id)
+                        ON DELETE CASCADE,
+                    ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 1770),
+                    relative_path TEXT NOT NULL,
+                    compressed_bytes INTEGER NOT NULL
+                        CHECK(compressed_bytes BETWEEN 1 AND 16777216),
+                    uncompressed_bytes INTEGER NOT NULL CHECK(uncompressed_bytes >= 100),
+                    UNIQUE(snapshot_id, ordinal)
+                ) STRICT;
+                PRAGMA user_version = 62;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 62;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {

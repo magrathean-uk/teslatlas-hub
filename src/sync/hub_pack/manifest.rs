@@ -182,6 +182,16 @@ impl BuiltProjectionPack {
         verify_file(&self.metadata, &self.path, limits)
     }
 
+    /// Re-open the immutable bytes and prove the exact physical-publication
+    /// purpose and manifest identity before the catalogue can admit them.
+    pub(crate) fn verify_hub_sync_v1_1_3_physical_purpose(
+        &self,
+        manifest: &SyncManifest,
+        binding: &ProjectionBinding,
+    ) -> Result<(), ProjectionPackError> {
+        verify_physical_publication_file_2_2(&self.metadata, &self.path, manifest, binding)
+    }
+
     /// Candidate cleanup has a deletion right only for a newly linked pack.
     /// Keep this crate-visible so all cleanup paths share the same ownership
     /// boundary instead of open-coding a path-based guess.

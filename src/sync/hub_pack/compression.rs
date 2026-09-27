@@ -14,6 +14,50 @@ fn verify_file(
         .map_err(ProjectionPackError::Protocol)
 }
 
+fn verify_physical_publication_file_2_2(
+    metadata: &TransportPack,
+    path: &Path,
+    manifest: &SyncManifest,
+    binding: &ProjectionBinding,
+) -> Result<(), ProjectionPackError> {
+    let limits = ProtocolLimits::hub_sync_v1_1_3_schema_2_2();
+    verify_file(metadata, path, limits)?;
+    let staging_dir = path
+        .parent()
+        .and_then(Path::parent)
+        .map(|packs| packs.join(".staging"))
+        .ok_or_else(|| invalid("physical publication pack path has no staging directory"))?;
+    ensure_private_staging_directory(&staging_dir)?;
+    let sqlite = StagedFile::create(&staging_dir, "physical-admission.sqlite")?;
+    let file = File::open(path).map_err(|source| ProjectionPackError::OpenCompressed {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let decoder = zstd::stream::read::Decoder::new(file).map_err(ProjectionPackError::Decompress)?;
+    let maximum = metadata
+        .uncompressed_bytes
+        .checked_add(1)
+        .ok_or(ProjectionPackError::CapacityOverflow)?;
+    let mut output = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(sqlite.path())
+        .map_err(|source| ProjectionPackError::CreateTemporary {
+            path: sqlite.path().to_path_buf(),
+            source,
+        })?;
+    let decoded = io::copy(&mut decoder.take(maximum), &mut output)
+        .map_err(ProjectionPackError::Decompress)?;
+    if decoded != metadata.uncompressed_bytes {
+        return Err(invalid("physical publication pack decoded length is invalid"));
+    }
+    output
+        .sync_all()
+        .map_err(ProjectionPackError::SyncCompressed)?;
+    drop(output);
+    verify_projection_sqlite_2_2_publication_identity(sqlite.path(), metadata, manifest, binding)
+}
+
 fn compress_file(
     source_path: &Path,
     destination_path: &Path,

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use std::{fs::File, io::BufReader};
+use std::{
+    fs::File,
+    io::{BufReader, Write},
+};
 
 use rusqlite::Connection;
 use tempfile::tempdir;
@@ -13,7 +16,7 @@ use crate::{
         ProjectionUnitOfPressureV2_2, ProjectionUnitOfTemperatureV2_2,
     },
     protocol::MirrorTable,
-    storage::db::HubStore,
+    storage::db::{HubStore, SourceDescriptor, VehicleDescriptor},
     teslamate_stage::TeslaMateStageLimits,
 };
 
@@ -376,6 +379,48 @@ fn decode_pack(chunk: &BuiltProjectionPack, destination: &std::path::Path) {
     let mut decoder = zstd::stream::read::Decoder::new(BufReader::new(input)).expect("decoder");
     let mut output = File::create(destination).expect("decoded pack");
     std::io::copy(&mut decoder, &mut output).expect("decode pack");
+}
+
+fn two_chunk_physical_candidate(
+    temporary: &std::path::Path,
+    store: &HubStore,
+    candidate_snapshot_id: Uuid,
+    candidate_binding: ProjectionBinding,
+) -> StagedPhysicalProjectionV3 {
+    std::fs::create_dir_all(temporary).expect("candidate fixture root");
+    let mut stage = TeslaMateStage::create_physical_v3(
+        temporary.join(format!("stage-{candidate_snapshot_id}")),
+        stage_limits(),
+    )
+    .expect("physical stage");
+    seed_roots(&mut stage);
+    seed_updates(&mut stage, &[10, 11]);
+    stage.seal().expect("sealed physical stage");
+    write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        candidate_binding,
+        candidate_snapshot_id,
+        sequence(),
+        &CursorKey::from_bytes([19; 32]),
+        chunk_limits(),
+    )
+    .expect("two-chunk physical candidate")
+}
+
+fn registered_admission_binding(store: &HubStore) -> ProjectionBinding {
+    let source = store
+        .register_source(
+            &SourceDescriptor::new("teslamate", "physical-v3-admission"),
+            1_000,
+        )
+        .expect("physical source");
+    let vehicle = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "1"), 1_000)
+        .expect("physical vehicle");
+    store
+        .v2_projection_binding(vehicle.vehicle_id)
+        .expect("physical projection binding")
 }
 
 #[test]
@@ -1541,6 +1586,370 @@ fn compressed_profile_limit_removes_the_oversize_pack_and_prior_chunk() {
             .expect("catalogue count");
         assert_eq!(count, 0);
     }
+}
+
+#[test]
+fn physical_v3_admission_survives_restart_and_transfers_pack_ownership() {
+    let temporary = tempdir().expect("temp dir");
+    let root = temporary.path().join("hub");
+    let store = HubStore::initialize(&root).expect("store");
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let expected_binding = registered_admission_binding(&store);
+    let candidate = two_chunk_physical_candidate(
+        temporary.path(),
+        &store,
+        snapshot_id(),
+        expected_binding.clone(),
+    );
+    let paths = candidate
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    let admission = store
+        .stage_pending_physical_v3_admission(&gate, candidate)
+        .expect("physical admission");
+    assert_eq!(admission.chunk_count, 2);
+    assert_eq!(admission.vehicle_id, expected_binding.vehicle_id);
+    assert_eq!(admission.snapshot_id, snapshot_id());
+    assert!(admission.receipt_id.starts_with("pv3_"));
+    assert!(paths.iter().all(|path| path.is_file()));
+    assert!(
+        store
+            .manifest_for_vehicle(expected_binding.vehicle_id)
+            .expect("generic current manifest")
+            .is_none(),
+        "pending physical admission must not become a generic current manifest"
+    );
+    for pack in &admission.manifest.chunks {
+        assert!(
+            store
+                .pack_for_digest(pack.sha256)
+                .expect("generic pack lookup")
+                .is_none(),
+            "pending physical object must not reach the generic pack GET lookup"
+        );
+    }
+    drop(gate);
+    let backup_root = temporary.path().join("backup");
+    store
+        .backup_to(&backup_root)
+        .expect("pending physical admission backup");
+    drop(store);
+
+    let reopened = HubStore::initialize(&root).expect("reopened store");
+    assert_eq!(
+        reopened
+            .pending_physical_v3_admission_for_vehicle(expected_binding.vehicle_id)
+            .expect("admission lookup")
+            .expect("admission survives restart"),
+        admission
+    );
+    assert!(paths.iter().all(|path| path.is_file()));
+    drop(reopened);
+    let mut tampered = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&paths[0])
+        .expect("retained physical pack");
+    tampered
+        .write_all(&[0])
+        .expect("same-length retained pack tamper");
+    drop(tampered);
+    let tampered_restart = HubStore::initialize(&root).expect("tampered restart");
+    assert!(matches!(
+        tampered_restart.pending_physical_v3_admission_for_vehicle(expected_binding.vehicle_id),
+        Err(crate::storage::db::StoreError::PhysicalV3AdmissionConflict)
+    ));
+    let restored = HubStore::initialize(&backup_root).expect("restored backup");
+    assert_eq!(
+        restored
+            .pending_physical_v3_admission_for_vehicle(expected_binding.vehicle_id)
+            .expect("restored admission lookup")
+            .expect("pending admission survives backup"),
+        admission
+    );
+    assert!(
+        restored
+            .manifest_for_vehicle(expected_binding.vehicle_id)
+            .expect("restored generic manifest")
+            .is_none()
+    );
+}
+
+#[test]
+fn physical_v3_admission_faults_cleanup_only_unretained_objects() {
+    use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+    let temporary = tempdir().expect("temp dir");
+    let root = temporary.path().join("hub");
+    let store = HubStore::initialize(&root).expect("store");
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let expected_binding = registered_admission_binding(&store);
+    let candidate = two_chunk_physical_candidate(
+        temporary.path(),
+        &store,
+        snapshot_id(),
+        expected_binding.clone(),
+    );
+    let paths = candidate
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    let _fault = inject(DurabilityFaultPoint::CatalogueBeforeCommit);
+    assert!(matches!(
+        store.stage_pending_physical_v3_admission(&gate, candidate),
+        Err(crate::storage::db::StoreError::CatalogueDurability(_))
+    ));
+    drop(_fault);
+    assert!(paths.iter().all(|path| !path.exists()));
+    assert!(
+        store
+            .pending_physical_v3_admission_for_vehicle(expected_binding.vehicle_id)
+            .expect("absent admission")
+            .is_none()
+    );
+    let connection = store.open().expect("catalogue");
+    for table in [
+        "pending_physical_v3_admissions",
+        "pending_physical_v3_packs",
+        "sync_manifests",
+        "sync_packs",
+    ] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("catalogue count");
+        assert_eq!(count, 0, "pre-commit failure must leave {table} empty");
+    }
+    drop(connection);
+    drop(gate);
+
+    let committed_root = temporary.path().join("committed-hub");
+    let committed_store = HubStore::initialize(&committed_root).expect("committed store");
+    let committed_gate = committed_store
+        .try_acquire_publication_gate()
+        .expect("committed publication gate");
+    let committed_binding = registered_admission_binding(&committed_store);
+    let committed_candidate = two_chunk_physical_candidate(
+        &temporary.path().join("committed-candidate"),
+        &committed_store,
+        snapshot_id(),
+        committed_binding.clone(),
+    );
+    let committed_paths = committed_candidate
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    let _after_fault = inject(DurabilityFaultPoint::CatalogueAfterCommit);
+    let committed = committed_store
+        .stage_pending_physical_v3_admission(&committed_gate, committed_candidate)
+        .expect("post-commit fault reconciles exact admission");
+    drop(_after_fault);
+    assert_eq!(
+        committed_store
+            .pending_physical_v3_admission_for_vehicle(committed_binding.vehicle_id)
+            .expect("committed admission")
+            .expect("post-commit marker"),
+        committed
+    );
+    assert!(committed_paths.iter().all(|path| path.is_file()));
+}
+
+#[test]
+fn physical_v3_admission_rejects_tamper_and_a_second_head() {
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let expected_binding = registered_admission_binding(&store);
+
+    let tampered_snapshot = Uuid::from_u128(0x55555555_5555_4555_8555_555555555555);
+    let tampered = two_chunk_physical_candidate(
+        temporary.path(),
+        &store,
+        tampered_snapshot,
+        expected_binding.clone(),
+    );
+    let tampered_paths = tampered
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&tampered_paths[0])
+        .expect("tampered pack")
+        .write_all(b"tamper")
+        .expect("append tamper");
+    assert!(matches!(
+        store.stage_pending_physical_v3_admission(&gate, tampered),
+        Err(crate::storage::db::StoreError::UnpublishedPackDigestMismatch(_))
+            | Err(crate::storage::db::StoreError::PhysicalV3Pack(_))
+    ));
+    assert!(
+        store
+            .pending_physical_v3_admission_for_vehicle(expected_binding.vehicle_id)
+            .expect("no tampered admission")
+            .is_none()
+    );
+    assert!(
+        !tampered_paths[1].exists(),
+        "other unretained chunks are cleaned even when the tampered object needs operator repair"
+    );
+    for path in tampered_paths {
+        let _ = std::fs::remove_file(path);
+    }
+
+    let first = two_chunk_physical_candidate(
+        temporary.path(),
+        &store,
+        snapshot_id(),
+        expected_binding.clone(),
+    );
+    let admitted = store
+        .stage_pending_physical_v3_admission(&gate, first)
+        .expect("first admitted head");
+    let second_snapshot = Uuid::from_u128(0x66666666_6666_4666_8666_666666666666);
+    let second = two_chunk_physical_candidate(
+        temporary.path(),
+        &store,
+        second_snapshot,
+        expected_binding.clone(),
+    );
+    let second_paths = second
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        store.stage_pending_physical_v3_admission(&gate, second),
+        Err(crate::storage::db::StoreError::PhysicalV3SecondHeadUnsupported(vehicle_id))
+            if vehicle_id == expected_binding.vehicle_id
+    ));
+    assert!(second_paths.iter().all(|path| !path.exists()));
+    assert_eq!(
+        store
+            .pending_physical_v3_admission_for_vehicle(expected_binding.vehicle_id)
+            .expect("current admission")
+            .expect("first head retained"),
+        admitted
+    );
+}
+
+#[test]
+fn pending_physical_v3_admission_rejects_foreign_or_inactive_identity() {
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let expected_binding = registered_admission_binding(&store);
+
+    let mut foreign_binding = expected_binding.clone();
+    foreign_binding.installation_id = Uuid::from_u128(0x77777777_7777_4777_8777_777777777777);
+    let foreign = two_chunk_physical_candidate(
+        temporary.path(),
+        &store,
+        Uuid::from_u128(0x77777777_7777_4777_8777_777777777778),
+        foreign_binding,
+    );
+    let foreign_paths = foreign
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        store.stage_pending_physical_v3_admission(&gate, foreign),
+        Err(crate::storage::db::StoreError::PhysicalV3AdmissionInvalid)
+    ));
+    assert!(foreign_paths.iter().all(|path| !path.exists()));
+
+    let inactive = two_chunk_physical_candidate(
+        temporary.path(),
+        &store,
+        Uuid::from_u128(0x88888888_8888_4888_8888_888888888888),
+        expected_binding.clone(),
+    );
+    let inactive_paths = inactive
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    assert!(
+        store
+            .retire_vehicle(expected_binding.vehicle_id, 2_000)
+            .expect("retire vehicle")
+    );
+    assert!(matches!(
+        store.stage_pending_physical_v3_admission(&gate, inactive),
+        Err(crate::storage::db::StoreError::PhysicalV3AdmissionInvalid)
+    ));
+    assert!(inactive_paths.iter().all(|path| !path.exists()));
+}
+
+#[test]
+fn pending_physical_v3_lookup_rechecks_active_projection_binding() {
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let expected_binding = registered_admission_binding(&store);
+    let candidate = two_chunk_physical_candidate(
+        temporary.path(),
+        &store,
+        snapshot_id(),
+        expected_binding.clone(),
+    );
+    let admitted = store
+        .stage_pending_physical_v3_admission(&gate, candidate)
+        .expect("physical admission");
+
+    assert!(
+        store
+            .retire_vehicle(expected_binding.vehicle_id, 2_000)
+            .expect("retire vehicle")
+    );
+    assert!(matches!(
+        store.pending_physical_v3_admission_for_vehicle(expected_binding.vehicle_id),
+        Err(crate::storage::db::StoreError::PhysicalV3AdmissionInvalid)
+    ));
+    assert!(
+        store
+            .reactivate_vehicle(expected_binding.vehicle_id)
+            .expect("reactivate vehicle")
+    );
+    assert_eq!(
+        store
+            .pending_physical_v3_admission_for_vehicle(expected_binding.vehicle_id)
+            .expect("reactivated lookup")
+            .expect("retained admission"),
+        admitted
+    );
+
+    let connection = store.open().expect("catalogue");
+    connection
+        .execute(
+            "UPDATE sources SET generation = generation + 1
+              WHERE source_id = (
+                    SELECT source_id FROM vehicles WHERE vehicle_id = ?1
+              )",
+            [expected_binding.vehicle_id.to_string()],
+        )
+        .expect("advance source generation");
+    drop(connection);
+    assert!(matches!(
+        store.pending_physical_v3_admission_for_vehicle(expected_binding.vehicle_id),
+        Err(crate::storage::db::StoreError::PhysicalV3AdmissionInvalid)
+    ));
 }
 
 #[test]

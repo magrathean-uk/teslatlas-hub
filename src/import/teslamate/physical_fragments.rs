@@ -76,10 +76,19 @@ impl TeslaMatePhysicalFragmentLimits {
 pub struct StagedPhysicalProjectionV3 {
     pub chunks: Vec<BuiltProjectionPack>,
     pub manifest: SyncManifest,
+    pub binding: ProjectionBinding,
     /// Unique rows in the sealed source stage. The signed internal manifest
     /// separately counts transport rows, including roots repeated per chunk.
     pub logical_source_rows: u64,
     cleanup_on_drop: bool,
+}
+
+impl StagedPhysicalProjectionV3 {
+    /// Transfer deletion ownership only after the exact manifest, pack rows,
+    /// and physical admission marker have committed durably.
+    pub(crate) fn retain_catalogued_objects(&mut self) {
+        self.cleanup_on_drop = false;
+    }
 }
 
 impl Drop for StagedPhysicalProjectionV3 {
@@ -384,6 +393,7 @@ fn write_staged_physical_updates_snapshot_v3_inner(
     Ok(StagedPhysicalProjectionV3 {
         chunks,
         manifest,
+        binding,
         logical_source_rows: stage_stats.row_count,
         cleanup_on_drop: true,
     })

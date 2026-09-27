@@ -151,6 +151,8 @@ pub enum ProjectionPackError {
     CreateCompressed { path: PathBuf, source: io::Error },
     #[error("cannot compress projection pack: {0}")]
     Compress(io::Error),
+    #[error("cannot decompress projection pack: {0}")]
+    Decompress(io::Error),
     #[error("cannot synchronise compressed projection pack: {0}")]
     SyncCompressed(io::Error),
     #[error("projection durability checkpoint failed: {0}")]

@@ -11,13 +11,13 @@
 use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
-    io::{self, Write},
+    io::{self, Read, Write},
     os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     str::FromStr,
 };
 
-use rusqlite::{Connection, OpenFlags, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use rustix::fs::statvfs;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
