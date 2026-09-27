@@ -37,6 +37,12 @@
                   "format": "binary",
                   "type": "string"
                 }
+              },
+              "application/vnd.teslatlas.prepared+sqlite+zstd;version=1": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
             "description": "pack bytes"
@@ -44,6 +50,12 @@
           "206": {
             "content": {
               "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "application/vnd.teslatlas.prepared+sqlite+zstd;version=1": {
                 "schema": {
                   "format": "binary",
                   "type": "string"
@@ -354,7 +366,7 @@
                 }
               }
             },
-            "description": "signed prepared-artefact receipt",
+            "description": "signed map-month-only teslatlas-prepared-v1 receipt",
             "x-max-body-bytes": 2097152
           },
           "401": {

@@ -3,12 +3,16 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import sqlite3
+import struct
 import subprocess
 import sys
+import tempfile
 import unittest
 
 from jsonschema import Draft202012Validator, FormatChecker
 from openapi_spec_validator import validate as validate_openapi
+import zstandard
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = ROOT / "profiles/hub-sync-v1/1.3.0"
@@ -37,11 +41,24 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(profile["previous_profile"], "hub-sync-v1@1.2.0")
         self.assertEqual(profile["limits"]["max_changed_set_packs"], 1)
         self.assertEqual(profile["limits"]["max_manifest_chunks"], 1771)
-        self.assertEqual(profile["limits"]["max_prepared_routes"], 497)
+        self.assertEqual(profile["limits"]["max_prepared_uncompressed_bytes"], 64 * 1024 * 1024)
+        self.assertEqual(profile["limits"]["max_prepared_tiles_per_month"], 4096)
+        self.assertEqual(profile["limits"]["max_prepared_segments_per_tile"], 200_000)
+        self.assertEqual(profile["limits"]["max_prepared_tile_bytes"], 200_000 * 8)
+        self.assertEqual(
+            profile["limits"]["max_prepared_publication_bytes_per_month"],
+            8 * 1024 * 1024,
+        )
         self.assertEqual(profile["limits"]["max_request_bytes"], 8192)
         self.assertEqual(profile["limits"]["min_pack_compressed_bytes"], 1)
         self.assertEqual(profile["limits"]["target_pack_compressed_bytes"], 8 * 1024 * 1024)
         self.assertEqual(profile["limits"]["max_i_json_integer"], I_JSON_MAX_INTEGER)
+        contract = json.loads((PROFILE / profile["prepared_pack_contract"]).read_text())
+        self.assertEqual(contract["map_tiles"]["max_segments_per_tile"], 200_000)
+        self.assertEqual(
+            contract["map_tiles"]["app_repository_bytes_per_month"],
+            "8 + sum(40 + length(segments))",
+        )
         self.assertEqual(
             profile["bootstrap_selector"],
             {
@@ -58,8 +75,15 @@ class HubSyncProfileTests(unittest.TestCase):
                 },
             },
         )
-        frozen = ROOT / "profiles/hub-sync-v1/1.2.0/SHA256SUMS"
-        self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(), "331920326476ffe8d3e382181a73937d478c613793c3cc5c0a7e2db14e091ed5")
+        frozen_profiles = {
+            "1.0.0": "875c42ffceab748e4d81b6356fdbe698e8b107a8c47c9abf33ad131f2fd34c7b",
+            "1.1.0": "0a6db376b69071f79bed3f437a7ae564ffa6378fec2b944340eb0b5306d63e3a",
+            "1.2.0": "331920326476ffe8d3e382181a73937d478c613793c3cc5c0a7e2db14e091ed5",
+        }
+        for version, digest in frozen_profiles.items():
+            with self.subTest(version=version):
+                frozen = ROOT / f"profiles/hub-sync-v1/{version}/SHA256SUMS"
+                self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(), digest)
 
     def test_schemas_and_openapi_are_independently_valid(self):
         for name in ("changes-since-request.schema.json", "changed-set-receipt.schema.json", "rebase-hint.schema.json", "sync-manifest.schema.json", "noop.schema.json", "prepared-artefact.schema.json", "signing-keys.schema.json", "sync-error.schema.json", "status-tables.schema.json"):
@@ -107,7 +131,7 @@ class HubSyncProfileTests(unittest.TestCase):
         noop = self.fixture("sync-noop-signed")["receipt"]
         no_change = self.fixture("changes-since-no-change")["receipt"]
         unavailable = self.fixture("sync-noop-unavailable")["response"]
-        prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
+        prepared = self.fixture("prepared-artefact-map-months")["receipt"]
         status_tables = json.loads((PROFILE / "status-tables.json").read_text())
         vehicle_id = request_fixture["vehicle_id"]
         self.assertEqual(self.fixture("changes-since-request")["fixture_id"], "changes-since-request-v1")
@@ -127,7 +151,7 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(manifest_2_1["schema_version"], request["base_manifest_schema"])
         self.assertEqual(self.sync.validate_response(200, no_change, vehicle_id), [])
         self.assertEqual(self.sync.validate_noop(200, noop, vehicle_id), [])
-        self.assertEqual(self.fixture("prepared-artefact-map-months-routes")["fixture_id"], "prepared-artefact-map-months-routes-v1")
+        self.assertEqual(self.fixture("prepared-artefact-map-months")["fixture_id"], "prepared-artefact-map-months-v1")
         self.assertEqual(self.sync.validate_prepared_artefact(prepared, vehicle_id), [])
         self.assertEqual(self.sync.validate_noop(unavailable["status"], {}, vehicle_id, {"Cache-Control": unavailable["headers"]["cache_control"]}, b""), [])
         self.assertEqual(self.sync.validate_status_tables(status_tables), [])
@@ -144,6 +168,148 @@ class HubSyncProfileTests(unittest.TestCase):
             "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
         )
         self.assertEqual(self.sync.validate_signing_keys(keys, request_fixture["vehicle_id"]), [])
+
+    def test_prepared_pack_is_bound_map_month_only_sqlite(self):
+        fixture = self.fixture("prepared-artefact-map-months")
+        receipt = fixture["receipt"]
+        compressed = (PROFILE / fixture["pack_file"]).read_bytes()
+        self.assertEqual(self.sync.validate_prepared_pack(receipt, compressed, VEHICLE_ID), [])
+        self.assertEqual(receipt["map_style"], "route-stroke-v8-opaque")
+        self.assertEqual(receipt["tile_geometry_version"], "raster-v9-rounded-tile-px")
+        self.assertEqual(receipt["artifact_schema_version"], 1)
+        self.assertEqual(self.sync._sqlite_record(b"\x02\x09", 1), (1,))
+        for noncanonical_record in (
+            b"\x02\x01\x01",
+            b"\x80\x02\x09",
+            b"\x02\x09x",
+        ):
+            with self.subTest(record=noncanonical_record):
+                with self.assertRaises(ValueError):
+                    self.sync._sqlite_record(noncanonical_record, 1)
+        self.assertEqual(
+            receipt["source"],
+            {
+                "kind": "hub_compute",
+                "input_manifest_id": "manifest_demo_000900",
+                "input_receipt_id": "receipt_demo_000900",
+                "input_manifest_schema": "2.2",
+                "input_sequence": 900,
+            },
+        )
+        self.assertEqual(len(compressed), receipt["pack"]["compressed_bytes"])
+        self.assertEqual(hashlib.sha256(compressed).hexdigest(), receipt["pack"]["sha256"])
+        raw = zstandard.ZstdDecompressor().decompress(compressed, allow_extra_data=False)
+        self.assertEqual(len(raw), receipt["pack"]["uncompressed_bytes"])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pack.sqlite"
+            path.write_bytes(raw)
+            connection = sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
+            try:
+                self.assertEqual(
+                    {row[0] for row in connection.execute("SELECT name FROM sqlite_schema WHERE type = 'table'")},
+                    {"prepared_metadata", "map_months", "map_tiles"},
+                )
+                self.assertEqual(
+                    [row[0] for row in connection.execute("SELECT segments FROM map_tiles ORDER BY zoom")],
+                    [
+                        struct.pack("<hhhh", -2, 0, 1, 1) + struct.pack("<hhhh", 0, 0, 2, 2),
+                        struct.pack("<hhhh", -32768, -1, 0, 1) + struct.pack("<hhhh", 32767, 0, 1, 2),
+                    ],
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT month, resolution, drive_count, tile_count FROM map_months ORDER BY month"
+                    ).fetchall(),
+                    [("2025-01", "readyData", 1, 2), ("2025-02", "readyEmpty", 0, 0)],
+                )
+                self.assertEqual(
+                    connection.execute(
+                        "SELECT input_manifest_id, input_receipt_id, input_manifest_schema, input_sequence FROM prepared_metadata"
+                    ).fetchone(),
+                    ("manifest_demo_000900", "receipt_demo_000900", "2.2", 900),
+                )
+            finally:
+                connection.close()
+
+            other_writer_raw = bytearray(raw)
+            other_writer_raw[96:100] = (3_054_000).to_bytes(4, "big")
+            other_writer_path = Path(directory) / "other-writer.sqlite"
+            other_writer_path.write_bytes(other_writer_raw)
+            other_writer_connection = sqlite3.connect(
+                f"file:{other_writer_path}?mode=ro&immutable=1", uri=True
+            )
+            try:
+                other_writer_connection.execute("PRAGMA trusted_schema = OFF")
+                other_writer_connection.execute("PRAGMA query_only = ON")
+                contract = json.loads((PROFILE / "prepared-pack-v1-contract.json").read_text())
+                self.assertTrue(
+                    self.sync._prepared_sqlite_byte_domain_is_canonical(
+                        other_writer_raw, other_writer_connection, contract
+                    )
+                )
+                other_writer_raw[96:100] = (3_099_999).to_bytes(4, "big")
+                self.assertFalse(
+                    self.sync._prepared_sqlite_byte_domain_is_canonical(
+                        other_writer_raw, other_writer_connection, contract
+                    )
+                )
+            finally:
+                other_writer_connection.close()
+
+        ready_empty = self.fixture("prepared-artefact-ready-empty")
+        ready_empty_pack = (PROFILE / ready_empty["pack_file"]).read_bytes()
+        self.assertEqual(
+            self.sync.validate_prepared_pack(ready_empty["receipt"], ready_empty_pack, VEHICLE_ID),
+            [],
+        )
+
+        for fixture_name, marker, expect_freelist in (
+            ("prepared-pack-deleted-page-content", b"DELETED_ROUTE_CONTENT!", True),
+            ("prepared-pack-live-page-freeblock", b"DELETED!", False),
+            ("prepared-pack-surplus-record-field", b"private-location-row!", False),
+        ):
+            with self.subTest(fixture=fixture_name):
+                negative = self.fixture(fixture_name)
+                negative_compressed = (PROFILE / negative["pack_file"]).read_bytes()
+                negative_raw = zstandard.ZstdDecompressor().decompress(
+                    negative_compressed, allow_extra_data=False
+                )
+                self.assertIn(marker, negative_raw)
+                with tempfile.TemporaryDirectory() as directory:
+                    negative_path = Path(directory) / "pack.sqlite"
+                    negative_path.write_bytes(negative_raw)
+                    negative_connection = sqlite3.connect(
+                        f"file:{negative_path}?mode=ro&immutable=1", uri=True
+                    )
+                    try:
+                        freelist = negative_connection.execute("PRAGMA freelist_count").fetchone()[0]
+                        self.assertEqual(freelist > 0, expect_freelist)
+                        self.assertEqual(
+                            negative_connection.execute("PRAGMA integrity_check").fetchall(),
+                            [("ok",)],
+                        )
+                    finally:
+                        negative_connection.close()
+                self.assertEqual(
+                    self.sync.validate_prepared_pack(
+                        negative["receipt"], negative_compressed, VEHICLE_ID
+                    ),
+                    ["prepared pack SQLite image is not canonical"],
+                )
+
+        self.assertEqual(
+            self.sync.validate_prepared_pack(receipt, compressed + b"x", VEHICLE_ID),
+            ["prepared pack compressed size does not match receipt"],
+        )
+        wrong_digest = bytearray(compressed)
+        wrong_digest[-1] ^= 1
+        self.assertEqual(
+            self.sync.validate_prepared_pack(receipt, bytes(wrong_digest), VEHICLE_ID),
+            ["prepared pack digest does not match receipt"],
+        )
+
+        manifest_schema = json.loads((PROFILE / "sync-manifest.schema.json").read_text())
+        self.assertNotIn("prepared", json.dumps(manifest_schema))
 
     def test_conformance_rejects_reversed_range_nonadvancing_receipt_and_unbound_rebase(self):
         request = self.fixture("changes-since-request")["request"]
@@ -170,11 +336,11 @@ class HubSyncProfileTests(unittest.TestCase):
         noop["signature"]["signed_payload_sha256"] = "0" * 64
         self.assertEqual(self.sync.validate_noop(200, noop, VEHICLE_ID), ["signature digest is reserved"])
         self.assertEqual(self.sync.validate_noop(406, {}, VEHICLE_ID, {"Cache-Control": "private"}, b""), ["no-op unavailable must be empty no-store"])
-        prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
-        prepared["dirty_spans"]["routes"][0]["to_ms"] = prepared["window"]["to_ms"] + 1
+        prepared = self.fixture("prepared-artefact-map-months")["receipt"]
+        prepared["dirty_spans"]["map_months"][0]["to_ms"] = prepared["window"]["to_ms"] + 1
         self.assertEqual(self.sync.validate_prepared_artefact(prepared, VEHICLE_ID), ["prepared-artefact dirty span is outside window"])
-        prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
-        prepared["dirty_spans"] = {"map_months": [], "routes": []}
+        prepared = self.fixture("prepared-artefact-map-months")["receipt"]
+        prepared["dirty_spans"] = {"map_months": []}
         self.assertEqual(self.sync.validate_prepared_artefact(prepared, VEHICLE_ID), ["prepared-artefact receipt violates schema"])
         status_tables = json.loads((PROFILE / "status-tables.json").read_text())
         status_tables["tables"][3]["responses"].pop()
@@ -252,7 +418,7 @@ class HubSyncProfileTests(unittest.TestCase):
         rebase = self.fixture("changes-since-rebase-after-compaction")["response"]
         manifest = self.fixture("schema-2-2-multi-chunk-manifest")["manifest"]
         noop = self.fixture("sync-noop-signed")["receipt"]
-        prepared = self.fixture("prepared-artefact-map-months-routes")["receipt"]
+        prepared = self.fixture("prepared-artefact-map-months")["receipt"]
         for validate, value in (
             (lambda item: self.sync.validate_response(200, item, OTHER_VEHICLE_ID), changed),
             (lambda item: self.sync.validate_response(409, item, OTHER_VEHICLE_ID), rebase),
@@ -380,33 +546,52 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertFalse(rebase_validator.is_valid(rebase))
         self.assertGreater(compact_size(rebase), 2 * 1024 * 1024)
 
-        routes = [
-            {"route_id": "a" * (4096 - len(str(index))) + str(index), "from_ms": 0, "to_ms": I_JSON_MAX_INTEGER, "reason": "changed"}
-            for index in range(498)
-        ]
         months = [
-            {"month": f"{2000 + index // 12:04d}-{index % 12 + 1:02d}", "from_ms": 0, "to_ms": I_JSON_MAX_INTEGER, "reason": "changed"}
-            for index in range(120)
+            {
+                "month": f"{2000 + index // 12:04d}-{index % 12 + 1:02d}",
+                "from_ms": 0,
+                "to_ms": I_JSON_MAX_INTEGER,
+                "resolution": "readyEmpty",
+                "drive_count": 0,
+                "tile_count": 0,
+                "reason": "changed",
+            }
+            for index in range(121)
         ]
         prepared = {
             "artifact_id": opaque,
-            "artifact_type": "map_months_and_routes",
+            "artifact_type": "map_months",
+            "payload": "teslatlas-prepared-v1",
+            "scope": "map_months",
+            "map_style": "route-stroke-v8-opaque",
+            "tile_geometry_version": "raster-v9-rounded-tile-px",
+            "artifact_schema_version": 1,
             "vehicle_id": VEHICLE_ID,
-            "source": {"kind": "hub_compute", "input_manifest_id": opaque, "input_sequence": I_JSON_MAX_INTEGER},
+            "source": {
+                "kind": "hub_compute",
+                "input_manifest_id": opaque,
+                "input_receipt_id": opaque,
+                "input_manifest_schema": "2.2",
+                "input_sequence": I_JSON_MAX_INTEGER,
+            },
             "window": {"from_ms": 0, "to_ms": I_JSON_MAX_INTEGER},
             "generation": {"generation_id": opaque, "generated_at_ms": I_JSON_MAX_INTEGER},
             "units": {"distance": "km", "time": "ms", "coordinates": "wgs84_degrees"},
             "algorithm_version": "1.1.1+" + "a" * 122,
-            "dirty_spans": {"map_months": months, "routes": routes[:497]},
-            "pack": pack,
+            "dirty_spans": {"map_months": months[:120]},
+            "pack": {
+                **pack,
+                "payload": "teslatlas-prepared-v1",
+                "media_type": "application/vnd.teslatlas.prepared+sqlite+zstd;version=1",
+                "uncompressed_bytes": 64 * 1024 * 1024,
+            },
             "signature": signature,
         }
         prepared_validator = validator("prepared-artefact.schema.json", "receipt")
         self.assertTrue(prepared_validator.is_valid(prepared))
         self.assertLessEqual(compact_size(prepared), 2 * 1024 * 1024)
-        prepared["dirty_spans"]["routes"] = routes
+        prepared["dirty_spans"]["map_months"] = months
         self.assertFalse(prepared_validator.is_valid(prepared))
-        self.assertGreater(compact_size(prepared), 2 * 1024 * 1024)
 
     def test_fixture_signatures_reject_tampering_and_wrong_keys(self):
         changed = self.fixture("changes-since-changed-set")["receipt"]
@@ -458,7 +643,7 @@ class HubSyncProfileTests(unittest.TestCase):
             (self.fixture("schema-2-1-single-pack-manifest")["manifest"], lambda value: self.sync.validate_manifest(value, VEHICLE_ID)),
             (self.fixture("schema-2-2-multi-chunk-manifest")["manifest"], lambda value: self.sync.validate_manifest(value, VEHICLE_ID)),
             (self.fixture("sync-noop-signed")["receipt"], lambda value: self.sync.validate_noop(200, value, VEHICLE_ID)),
-            (self.fixture("prepared-artefact-map-months-routes")["receipt"], lambda value: self.sync.validate_prepared_artefact(value, VEHICLE_ID)),
+            (self.fixture("prepared-artefact-map-months")["receipt"], lambda value: self.sync.validate_prepared_artefact(value, VEHICLE_ID)),
         )
         for value, validate in fixtures:
             with self.subTest(fixture_id=value.get("fixture_id", "embedded")):
@@ -467,7 +652,7 @@ class HubSyncProfileTests(unittest.TestCase):
 
     def test_registered_fixture_cases_cover_positive_and_negative_vectors(self):
         results = self.sync.run_fixture_cases()
-        self.assertEqual(len(results), 50)
+        self.assertEqual(len(results), 64)
         self.assertTrue(all(result["passed"] for result in results))
         by_case = {result["case_id"]: result for result in results}
         self.assertEqual(
@@ -505,6 +690,39 @@ class HubSyncProfileTests(unittest.TestCase):
         self.assertEqual(
             self.fixture("schema-2-1-manifest-unsafe-integer")["manifest"]["sequence"],
             2**53 + 1,
+        )
+        self.assertEqual(
+            by_case["prepared-pack-route-content-unsupported"]["expected_errors"],
+            ["prepared pack contains unsupported route content"],
+        )
+        self.assertEqual(
+            by_case["prepared-pack-unsupported-payload-version"]["expected_errors"],
+            ["prepared pack payload version is unsupported"],
+        )
+        self.assertEqual(by_case["prepared-pack-ready-empty"]["expected_errors"], [])
+        self.assertEqual(
+            by_case["prepared-pack-weakened-schema"]["expected_errors"],
+            ["prepared pack SQLite schema is unsupported"],
+        )
+        self.assertEqual(
+            by_case["prepared-pack-hidden-column"]["expected_errors"],
+            ["prepared pack SQLite schema is unsupported"],
+        )
+        self.assertEqual(
+            by_case["prepared-pack-deleted-page-content"]["expected_errors"],
+            ["prepared pack SQLite image is not canonical"],
+        )
+        self.assertEqual(
+            by_case["prepared-pack-live-page-freeblock"]["expected_errors"],
+            ["prepared pack SQLite image is not canonical"],
+        )
+        self.assertEqual(
+            by_case["prepared-pack-surplus-record-field"]["expected_errors"],
+            ["prepared pack SQLite image is not canonical"],
+        )
+        self.assertEqual(
+            by_case["prepared-pack-source-lineage-mismatch"]["expected_errors"],
+            ["prepared pack metadata does not match receipt"],
         )
 
     def test_bootstrap_profile_selector_preserves_legacy_schema_negotiation(self):

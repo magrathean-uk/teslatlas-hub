@@ -1,0 +1,101 @@
+{
+  "admission_order": [
+    "validate the signed hub-sync-v1@1.3.0 prepared-artefact receipt",
+    "enforce compressed_bytes and sha256 before decompression",
+    "enforce the declared zstd content size and uncompressed_bytes before SQLite open",
+    "open SQLite read-only with trusted_schema off and query_only on; require integrity_check ok and exact application_id, user_version, sqlite_schema fingerprint, table_xinfo, and foreign keys",
+    "require metadata and map-month spans to equal the signed receipt",
+    "require readyData or readyEmpty month semantics, ordered tile keys and segment tuples, and the App repository's per-month canonical publication limits",
+    "validate the SQLite byte domain without reconstructing it: bounded B-tree and overflow traversal, every page reached exactly once, every unused or reserved byte zero, and every physical record canonically encoded with exact arity and exact equality to the logical rows"
+  ],
+  "artifact_schema_version": 1,
+  "canonical_image_rule": "Writers build a fresh SQLite image from admitted rows in primary-key order with the published DDL, 4096-byte pages, auto_vacuum NONE, journal_mode OFF, secure_delete ON, application_id and user_version set before schema creation, one commit after insertion, and a final VACUUM, then zero every structurally unallocated byte, fragment, freeblock body, and unused overflow tail without changing structural pointers or live records. Readers do not compare bytes produced by their SQLite library. They validate the SQLite file format directly: the declared header invariants, exact page count and length, zero freelist, bounded and non-overlapping freeblock chains with zero-filled bodies, exact fragment accounting, a bounded walk of every B-tree and overflow page, exactly one reference to every page, zero bytes in every unallocated region, fragment, reserved expansion region, and unused overflow tail, and every physical SQLite record decoded with exact field arity, canonical varints and serial encodings, no trailing header or body fields, and exact equality to the logical rows. Header writer-version bytes 96 through 99 MUST encode one of the explicitly supported SQLite writer versions.",
+  "compression": "zstd",
+  "container": "sqlite3",
+  "contract_id": "teslatlas-prepared-v1",
+  "fixture": {
+    "compressed_bytes": 1156,
+    "compressed_sha256": "6f146a43a34207b656d14235315ebfe342fffe396fe484a00c909ba1e81be41d",
+    "pack": "packs/prepared-map-months-v1.sqlite.zst",
+    "ready_empty_pack": "packs/prepared-ready-empty-v1.sqlite.zst",
+    "ready_empty_receipt": "examples/prepared-artefact-ready-empty.json",
+    "receipt": "examples/prepared-artefact-map-months.json",
+    "tile_payloads": "fixed abstract signed little-endian i16 segment tuples; no location rows",
+    "uncompressed_bytes": 16384
+  },
+  "limits": {
+    "max_compressed_bytes": 16777216,
+    "max_map_months": 120,
+    "max_tile_bytes": 1600000,
+    "max_tile_publication_bytes_per_month": 8388608,
+    "max_tiles_per_month": 4096,
+    "max_uncompressed_bytes": 67108864
+  },
+  "map_style": "route-stroke-v8-opaque",
+  "map_style_adoption_rule": "A producer and consumer MUST use the exact same map_style, tile_geometry_version, and artifact_schema_version values and semantics. Product adoption must match the App's TripsRouteStrokeStyle.renderCacheVersion, CURRENT_MAP_STYLE_VERSION, and CanonicalMapBuildRequest.artifactSchemaVersion values exactly.",
+  "map_tiles": {
+    "app_admission": "CanonicalBlockPublication::ReadyData",
+    "app_repository_bytes_per_month": "8 + sum(40 + length(segments))",
+    "key_order": "ascending (zoom, tile_x, tile_y) within each month",
+    "max_segments_per_tile": 200000,
+    "segment_format": "consecutive signed little-endian i16 tuples (x1, y1, x2, y2)",
+    "segment_order": "strict ascending signed tuple order with no duplicates within each tile",
+    "zoom_max": 13,
+    "zoom_min": 2
+  },
+  "media_type": "application/vnd.teslatlas.prepared+sqlite+zstd;version=1",
+  "month_resolution_rule": "Each admitted month is exactly readyData with one or more tiles, or readyEmpty with zero tiles. drive_count is the non-negative number of source drives observed for that month and is retained for either resolution.",
+  "receipt_binding": {
+    "pack_fields": [
+      "object_name",
+      "sha256",
+      "compressed_bytes",
+      "uncompressed_bytes",
+      "payload",
+      "media_type"
+    ],
+    "required_equal_fields": [
+      "artifact_id",
+      "vehicle_id",
+      "algorithm_version",
+      "window.from_ms",
+      "window.to_ms",
+      "map_style",
+      "tile_geometry_version",
+      "artifact_schema_version",
+      "source.input_manifest_id",
+      "source.input_receipt_id",
+      "source.input_manifest_schema",
+      "source.input_sequence",
+      "dirty_spans.map_months"
+    ]
+  },
+  "route_ids": "unsupported",
+  "route_payloads": "unsupported",
+  "scope": "map_months",
+  "sqlite": {
+    "allowed_tables": [
+      "map_months",
+      "map_tiles",
+      "prepared_metadata"
+    ],
+    "application_id": 1414807888,
+    "encoding": "UTF-8",
+    "file_change_counter": 7,
+    "max_btree_depth": 32,
+    "max_cells_per_page": 2044,
+    "max_page_count": 16384,
+    "page_size": 4096,
+    "schema": "prepared-pack-v1.sql",
+    "schema_sha256": "13c20aaf3e8a05536eb686b087f40197ef4e966c6a01e7787174ffe666914f52",
+    "sqlite_schema_sha256": "e1590f02372a4a1d069bcb7b3f9b1833b616c2e1fc72de50288c746f2a4f2f88",
+    "user_version": 1,
+    "writer_versions": [
+      3053001,
+      3053002,
+      3054000
+    ]
+  },
+  "status": "candidate",
+  "tile_geometry_version": "raster-v9-rounded-tile-px"
+}

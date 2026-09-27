@@ -27,6 +27,8 @@ and the matching tagged upstream sources:
   [licence file](https://github.com/python-cffi/cffi/blob/v2.1.1/LICENSE).
 - `pycparser 3.0`: `BSD-3-Clause`, with the tagged
   [licence file](https://github.com/eliben/pycparser/blob/release_v3.00/LICENSE).
+- `zstandard 0.25.0`: `BSD-3-Clause`, checked against the `LICENSE` shipped in
+  the exact installed distribution used by the local profile generator.
 
 This closes the documentation inventory gap for the locked artifacts; it is
 not legal clearance and does not establish the contents or obligations of a

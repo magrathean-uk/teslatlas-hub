@@ -44,6 +44,7 @@ and the checks required before redistributing those dependencies.
 | tzdata | 2026.3 | Apache-2.0 |
 | uri-template | 1.3.0 | MIT |
 | webcolors | 25.10.0 | BSD-3-Clause |
+| zstandard | 0.25.0 | BSD-3-Clause |
 
 This table is informational. When redistributing any dependency, obtain its
 source distribution or wheel and preserve the licence files shipped by that

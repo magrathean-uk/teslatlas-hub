@@ -125,10 +125,144 @@
     },
     {
       "expected_errors": [],
-      "id": "prepared-artefact-map-months-routes",
-      "response_fixture": "prepared-artefact-map-months-routes-v1",
+      "id": "prepared-artefact-map-months",
+      "response_fixture": "prepared-artefact-map-months-v1",
       "status": 200,
       "validator": "prepared_artefact",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [],
+      "id": "prepared-pack-map-months",
+      "response_fixture": "prepared-artefact-map-months-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [],
+      "id": "prepared-artefact-ready-empty",
+      "response_fixture": "prepared-artefact-ready-empty-v1",
+      "status": 200,
+      "validator": "prepared_artefact",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [],
+      "id": "prepared-pack-ready-empty",
+      "response_fixture": "prepared-artefact-ready-empty-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared-artefact receipt violates schema"
+      ],
+      "id": "prepared-artefact-route-id-unsupported",
+      "response_fixture": "prepared-artefact-route-id-unsupported-v1",
+      "status": 200,
+      "validator": "prepared_artefact",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared pack payload version is unsupported"
+      ],
+      "id": "prepared-pack-unsupported-payload-version",
+      "response_fixture": "prepared-pack-unsupported-payload-version-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared pack spans do not match receipt"
+      ],
+      "id": "prepared-pack-span-mismatch",
+      "response_fixture": "prepared-pack-span-mismatch-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared pack metadata does not match receipt"
+      ],
+      "id": "prepared-pack-source-lineage-mismatch",
+      "response_fixture": "prepared-pack-source-lineage-mismatch-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared pack contains unsupported route content"
+      ],
+      "id": "prepared-pack-route-content-unsupported",
+      "response_fixture": "prepared-pack-route-content-unsupported-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared pack tile is invalid"
+      ],
+      "id": "prepared-pack-invalid-tile",
+      "response_fixture": "prepared-pack-invalid-tile-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared pack SQLite schema is unsupported"
+      ],
+      "id": "prepared-pack-weakened-schema",
+      "response_fixture": "prepared-pack-weakened-schema-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared pack SQLite schema is unsupported"
+      ],
+      "id": "prepared-pack-hidden-column",
+      "response_fixture": "prepared-pack-hidden-column-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared pack SQLite image is not canonical"
+      ],
+      "id": "prepared-pack-deleted-page-content",
+      "response_fixture": "prepared-pack-deleted-page-content-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared pack SQLite image is not canonical"
+      ],
+      "id": "prepared-pack-live-page-freeblock",
+      "response_fixture": "prepared-pack-live-page-freeblock-v1",
+      "status": 200,
+      "validator": "prepared_pack",
+      "vehicle_id": "11111111-1111-4111-8111-111111111111"
+    },
+    {
+      "expected_errors": [
+        "prepared pack SQLite image is not canonical"
+      ],
+      "id": "prepared-pack-surplus-record-field",
+      "response_fixture": "prepared-pack-surplus-record-field-v1",
+      "status": 200,
+      "validator": "prepared_pack",
       "vehicle_id": "11111111-1111-4111-8111-111111111111"
     },
     {

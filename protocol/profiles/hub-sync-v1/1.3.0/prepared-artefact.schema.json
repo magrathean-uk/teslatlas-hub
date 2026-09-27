@@ -2,7 +2,36 @@
   "$defs": {
     "map_month": {
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "resolution": {
+              "const": "readyData"
+            },
+            "tile_count": {
+              "maximum": 4096,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        },
+        {
+          "properties": {
+            "resolution": {
+              "const": "readyEmpty"
+            },
+            "tile_count": {
+              "const": 0
+            }
+          }
+        }
+      ],
       "properties": {
+        "drive_count": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "from_ms": {
           "maximum": 9007199254740991,
           "minimum": 0,
@@ -15,6 +44,17 @@
         "reason": {
           "const": "changed"
         },
+        "resolution": {
+          "enum": [
+            "readyData",
+            "readyEmpty"
+          ]
+        },
+        "tile_count": {
+          "maximum": 4096,
+          "minimum": 0,
+          "type": "integer"
+        },
         "to_ms": {
           "maximum": 9007199254740991,
           "minimum": 1,
@@ -25,6 +65,9 @@
         "month",
         "from_ms",
         "to_ms",
+        "resolution",
+        "drive_count",
+        "tile_count",
         "reason"
       ],
       "type": "object"
@@ -43,46 +86,26 @@
           "pattern": "^[A-Za-z0-9._~-]+$",
           "type": "string"
         },
+        "artifact_schema_version": {
+          "const": 1
+        },
         "artifact_type": {
-          "const": "map_months_and_routes"
+          "const": "map_months"
         },
         "dirty_spans": {
           "additionalProperties": false,
-          "anyOf": [
-            {
-              "properties": {
-                "map_months": {
-                  "minItems": 1
-                }
-              }
-            },
-            {
-              "properties": {
-                "routes": {
-                  "minItems": 1
-                }
-              }
-            }
-          ],
           "properties": {
             "map_months": {
               "items": {
                 "$ref": "#/$defs/map_month"
               },
               "maxItems": 120,
-              "type": "array"
-            },
-            "routes": {
-              "items": {
-                "$ref": "#/$defs/route"
-              },
-              "maxItems": 497,
+              "minItems": 1,
               "type": "array"
             }
           },
           "required": [
-            "map_months",
-            "routes"
+            "map_months"
           ],
           "type": "object"
         },
@@ -107,6 +130,9 @@
           ],
           "type": "object"
         },
+        "map_style": {
+          "const": "route-stroke-v8-opaque"
+        },
         "pack": {
           "additionalProperties": false,
           "properties": {
@@ -115,21 +141,41 @@
               "minimum": 1,
               "type": "integer"
             },
+            "media_type": {
+              "const": "application/vnd.teslatlas.prepared+sqlite+zstd;version=1"
+            },
             "object_name": {
               "pattern": "^[a-z0-9][a-z0-9._/-]{0,1023}$",
               "type": "string"
             },
+            "payload": {
+              "const": "teslatlas-prepared-v1"
+            },
             "sha256": {
               "pattern": "^[0-9a-f]{64}$",
               "type": "string"
+            },
+            "uncompressed_bytes": {
+              "maximum": 67108864,
+              "minimum": 1,
+              "type": "integer"
             }
           },
           "required": [
             "object_name",
             "sha256",
-            "compressed_bytes"
+            "compressed_bytes",
+            "payload",
+            "media_type",
+            "uncompressed_bytes"
           ],
           "type": "object"
+        },
+        "payload": {
+          "const": "teslatlas-prepared-v1"
+        },
+        "scope": {
+          "const": "map_months"
         },
         "signature": {
           "additionalProperties": false,
@@ -169,6 +215,19 @@
               "pattern": "^[A-Za-z0-9._~-]+$",
               "type": "string"
             },
+            "input_manifest_schema": {
+              "enum": [
+                "2.1",
+                "2.2"
+              ],
+              "type": "string"
+            },
+            "input_receipt_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
             "input_sequence": {
               "maximum": 9007199254740991,
               "minimum": 1,
@@ -181,9 +240,14 @@
           "required": [
             "kind",
             "input_manifest_id",
+            "input_receipt_id",
+            "input_manifest_schema",
             "input_sequence"
           ],
           "type": "object"
+        },
+        "tile_geometry_version": {
+          "const": "raster-v9-rounded-tile-px"
         },
         "units": {
           "additionalProperties": false,
@@ -234,6 +298,11 @@
       "required": [
         "artifact_id",
         "artifact_type",
+        "payload",
+        "scope",
+        "map_style",
+        "tile_geometry_version",
+        "artifact_schema_version",
         "vehicle_id",
         "source",
         "window",
@@ -243,37 +312,6 @@
         "dirty_spans",
         "pack",
         "signature"
-      ],
-      "type": "object"
-    },
-    "route": {
-      "additionalProperties": false,
-      "properties": {
-        "from_ms": {
-          "maximum": 9007199254740991,
-          "minimum": 0,
-          "type": "integer"
-        },
-        "reason": {
-          "const": "changed"
-        },
-        "route_id": {
-          "maxLength": 4096,
-          "minLength": 1,
-          "pattern": "^[A-Za-z0-9._~-]+$",
-          "type": "string"
-        },
-        "to_ms": {
-          "maximum": 9007199254740991,
-          "minimum": 1,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "route_id",
-        "from_ms",
-        "to_ms",
-        "reason"
       ],
       "type": "object"
     }

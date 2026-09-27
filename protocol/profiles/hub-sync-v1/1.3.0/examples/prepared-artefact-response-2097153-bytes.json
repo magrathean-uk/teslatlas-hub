@@ -1,31 +1,30 @@
 {
   "body_bytes": 2097153,
-  "body_sha256": "510edd81e103310a2e561f2e3041cf75581514202a8668cb30494312a530efc0",
+  "body_sha256": "78808d1960b637e14f7c9dc0f620efdae9a2836e9d71ce31aeed0ef50884a3f3",
   "document": {
     "algorithm_version": "1.0.0",
     "artifact_id": "prepared_demo_000900",
-    "artifact_type": "map_months_and_routes",
+    "artifact_schema_version": 1,
+    "artifact_type": "map_months",
     "dirty_spans": {
       "map_months": [
         {
+          "drive_count": 1,
           "from_ms": 1735689600000,
           "month": "2025-01",
           "reason": "changed",
+          "resolution": "readyData",
+          "tile_count": 2,
           "to_ms": 1738368000000
         },
         {
+          "drive_count": 0,
           "from_ms": 1738368000000,
           "month": "2025-02",
           "reason": "changed",
+          "resolution": "readyEmpty",
+          "tile_count": 0,
           "to_ms": 1740787200000
-        }
-      ],
-      "routes": [
-        {
-          "from_ms": 1738454400000,
-          "reason": "changed",
-          "route_id": "route_demo_000045",
-          "to_ms": 1738458000000
         }
       ]
     },
@@ -33,22 +32,31 @@
       "generated_at_ms": 1740790800000,
       "generation_id": "generation_demo_000001"
     },
+    "map_style": "route-stroke-v8-opaque",
     "pack": {
-      "compressed_bytes": 4096,
-      "object_name": "packs/prepared-demo-000900.sqlite.zst",
-      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      "compressed_bytes": 1156,
+      "media_type": "application/vnd.teslatlas.prepared+sqlite+zstd;version=1",
+      "object_name": "packs/prepared-map-months-v1.sqlite.zst",
+      "payload": "teslatlas-prepared-v1",
+      "sha256": "6f146a43a34207b656d14235315ebfe342fffe396fe484a00c909ba1e81be41d",
+      "uncompressed_bytes": 16384
     },
+    "payload": "teslatlas-prepared-v1",
+    "scope": "map_months",
     "signature": {
       "algorithm": "ed25519",
       "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
-      "signature": "1lTVU3z2Qn1QpoYklBL1bO0pAfkPOQBFKcnZwQbrm1ddOv20Eul6fq9bEIoAABee+vkDVn1/aosjargkz/1AAQ==",
-      "signed_payload_sha256": "3cb534184096efaba2efa63892aefbf2ed06cb3a7fbea8875470b203adf7a748"
+      "signature": "xV5m20P7Ev566jK3qbX57uYeqUzFY2wdQLUh65L6szHKDn7K96oYPCVFtnXvZF8bLcod2159vLblT3cGahZwBw==",
+      "signed_payload_sha256": "ad0c4490109382ea763d4b2908dc75d3cb6c9ad6b540024da234262cd321b31f"
     },
     "source": {
       "input_manifest_id": "manifest_demo_000900",
+      "input_manifest_schema": "2.2",
+      "input_receipt_id": "receipt_demo_000900",
       "input_sequence": 900,
       "kind": "hub_compute"
     },
+    "tile_geometry_version": "raster-v9-rounded-tile-px",
     "units": {
       "coordinates": "wgs84_degrees",
       "distance": "km",
@@ -61,7 +69,7 @@
     }
   },
   "fixture_id": "prepared-artefact-response-2097153-bytes-v1",
-  "padding_bytes": 2095892,
+  "padding_bytes": 2095521,
   "response_type": "prepared_artefact",
   "status": 200,
   "vehicle_id": "11111111-1111-4111-8111-111111111111"

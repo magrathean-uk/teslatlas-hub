@@ -5,6 +5,7 @@ description = "Local validation and conformance tooling for the Teslatlas protoc
 requires-python = ">=3.11"
 dependencies = [
     "cryptography>=45,<47",
+    "zstandard>=0.25,<0.26",
 ]
 
 [dependency-groups]

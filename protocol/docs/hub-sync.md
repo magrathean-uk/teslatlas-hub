@@ -73,8 +73,9 @@ outer manifest has the only signature.
 Every JSON control response is limited to 2 MiB (2,097,152 encoded bytes)
 before parsing. Pack byte responses use the separate 16 MiB compressed pack
 limit. A schema 2.2 manifest or rebase may contain at most 1,771 chunks, and a
-prepared artefact may contain at most 497 route spans in addition to 120 map
-months. These maxima keep their largest compact JSON forms inside 2 MiB.
+the retained `1.2.0` prepared artefact may contain at most 497 route spans in
+addition to 120 map months. These maxima keep their largest compact JSON forms
+inside 2 MiB.
 Every integer-valued wire member is also bounded to the I-JSON exact-integer
 range. This profile uses non-negative integers, so `sequence`, request and
 rebase sequence fields, prepared-artefact timestamps and input sequence, pack
@@ -94,8 +95,55 @@ range validation failures use `invalid_schema_range`; the unknown receipt uses
 failure remains the unsigned empty `401`; compaction remains the signed `409`
 rebase flow.
 
-`1.2.0` adds the `map_months_and_routes` prepared-artefact pack receipt. It
-binds source manifest and sequence, the input window, generation identity and
-time, fixed units, algorithm version, a single pack, and one signature. Its
-dirty spans admit only changed map months and changed route identifiers inside
-that window. Other prepared-compute artefact types remain separate contracts.
+`1.2.0` retains its published `map_months_and_routes` receipt unchanged.
+
+Candidate `1.3.0` replaces that prepared payload for newly negotiated 1.3
+clients with the map-month-only `teslatlas-prepared-v1` contract. The signed
+receipt binds the source manifest, receipt, manifest schema and sequence, input
+window, generation identity, fixed units, algorithm version, map style, exact
+changed months, media type, compressed and uncompressed sizes, and the SHA-256
+of one `.sqlite.zst` pack.
+Snapshot schemas 2.1 and 2.2 remain separate and do not contain prepared rows.
+
+[`prepared-pack-v1-contract.json`](../profiles/hub-sync-v1/1.3.0/prepared-pack-v1-contract.json)
+is the machine-readable content contract and
+[`prepared-pack-v1.sql`](../profiles/hub-sync-v1/1.3.0/prepared-pack-v1.sql)
+is its exact SQLite schema. Admission checks the signed receipt, compressed
+size and digest, declared Zstandard content size, then opens SQLite read-only
+with `trusted_schema` disabled and `query_only` enabled. It compares the exact
+`sqlite_schema` fingerprint and `table_xinfo`, checks receipt-bound metadata and
+month outcomes, and enforces the current App
+`CanonicalBlockPublication::ReadyData` admission bounds.
+Writers create a fresh canonical image with 4096-byte pages,
+`secure_delete=ON`, a final `VACUUM`, no freelist pages, and an exact
+`page_count * page_size` file length, then zero structurally unallocated bytes,
+fragments, freeblock bodies, and unused overflow tails without changing live
+records or structural pointers. Readers do not compare bytes emitted by
+their local SQLite version. They validate the file format directly with a
+bounded walk of every B-tree and overflow page, require every page to be
+reachable exactly once, and require every unused or reserved byte to be zero.
+They decode every physical SQLite record, require exact field arity, canonical
+varints and serial encodings, no trailing header or body fields, and equality
+with the complete logical rows.
+SQLite writer-version header bytes may contain only the explicitly supported
+3.53.1, 3.53.2, or 3.54.0 values. This rejects deleted content
+retained in freed pages or live-page freeblocks even when the live schema and
+rows match.
+`readyData` months carry a non-zero tile count; `readyEmpty` months carry zero
+tiles. Both retain their non-negative `drive_count`. A one-month all-empty
+fixture is included. The deterministic data fixture uses fixed abstract signed
+little-endian `i16` segment tuples and contains no source location rows.
+
+The public candidate session identity is the explicitly versioned drawing style
+`route-stroke-v8-opaque`, tile geometry version
+`raster-v9-rounded-tile-px`, and artifact schema version `1`. They match the
+current App constants `TripsRouteStrokeStyle.renderCacheVersion`,
+`CURRENT_MAP_STYLE_VERSION`, and
+`CanonicalMapBuildRequest.artifactSchemaVersion`; product adoption must retain
+all three exact matches. Tile keys are zoom 2 through 13 and sort by `(zoom, x, y)`.
+Each tile contains unique, ascending signed little-endian `i16` tuples
+`(x1, y1, x2, y2)`, with at most 200,000 segments per tile. Each month's App
+repository publication size is `8 + sum(40 + segment bytes)` and is at most
+8 MiB.
+Prepared route identifiers and route payloads are not admitted by
+`teslatlas-prepared-v1`. They require a separate contract decision.
