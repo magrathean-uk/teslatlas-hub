@@ -356,6 +356,150 @@ fn decode_state_v2_2(row: &Row) -> Result<TeslaMateStatePhysicalV2_2, TeslaMateR
     })
 }
 
+fn decode_drive_v2_2(row: &Row) -> Result<TeslaMateDrivePhysicalV2_2, TeslaMateReaderError> {
+    Ok(TeslaMateDrivePhysicalV2_2 {
+        id: required_i32(row, "drives", "id")?,
+        car_id: required_i16(row, "drives", "car_id")?,
+        start_date_pg_us: required_timestamp_pg_us(row, "drives", "start_date")?,
+        end_date_pg_us: optional_timestamp_pg_us(row, "drives", "end_date")?,
+        start_position_id: optional_i32(row, "drives", "start_position_id")?,
+        end_position_id: optional_i32(row, "drives", "end_position_id")?,
+        start_address_id: optional_i32(row, "drives", "start_address_id")?,
+        end_address_id: optional_i32(row, "drives", "end_address_id")?,
+        start_geofence_id: optional_i32(row, "drives", "start_geofence_id")?,
+        end_geofence_id: optional_i32(row, "drives", "end_geofence_id")?,
+        outside_temp_avg_e1: optional_fixed_numeric_v2_2(
+            row,
+            "drives",
+            "outside_temp_avg",
+            1,
+        )?,
+        inside_temp_avg_e1: optional_fixed_numeric_v2_2(
+            row,
+            "drives",
+            "inside_temp_avg",
+            1,
+        )?,
+        speed_max: optional_i16(row, "drives", "speed_max")?,
+        power_max: optional_i16(row, "drives", "power_max")?,
+        power_min: optional_i16(row, "drives", "power_min")?,
+        start_ideal_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "drives",
+            "start_ideal_range_km",
+            2,
+        )?,
+        end_ideal_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "drives",
+            "end_ideal_range_km",
+            2,
+        )?,
+        start_rated_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "drives",
+            "start_rated_range_km",
+            2,
+        )?,
+        end_rated_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "drives",
+            "end_rated_range_km",
+            2,
+        )?,
+        start_km: optional_float_bits(row, "drives", "start_km")?,
+        end_km: optional_float_bits(row, "drives", "end_km")?,
+        distance: optional_float_bits(row, "drives", "distance")?,
+        duration_min: optional_i16(row, "drives", "duration_min")?,
+        ascent: optional_i16(row, "drives", "ascent")?,
+        descent: optional_i16(row, "drives", "descent")?,
+    })
+}
+
+fn decode_position_v2_2(row: &Row) -> Result<TeslaMatePositionPhysicalV2_2, TeslaMateReaderError> {
+    Ok(TeslaMatePositionPhysicalV2_2 {
+        id: required_i32(row, "positions", "id")?,
+        car_id: required_i16(row, "positions", "car_id")?,
+        drive_id: optional_i32(row, "positions", "drive_id")?,
+        date_pg_us: required_timestamp_pg_us(row, "positions", "date")?,
+        latitude_e6: required_fixed_numeric_v2_2(row, "positions", "latitude", 6)?,
+        longitude_e6: required_fixed_numeric_v2_2(row, "positions", "longitude", 6)?,
+        elevation: optional_i16(row, "positions", "elevation")?,
+        speed: optional_i16(row, "positions", "speed")?,
+        power: optional_i16(row, "positions", "power")?,
+        odometer: optional_float_bits(row, "positions", "odometer")?,
+        ideal_battery_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "positions",
+            "ideal_battery_range_km",
+            2,
+        )?,
+        est_battery_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "positions",
+            "est_battery_range_km",
+            2,
+        )?,
+        rated_battery_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "positions",
+            "rated_battery_range_km",
+            2,
+        )?,
+        battery_level: optional_i16(row, "positions", "battery_level")?,
+        usable_battery_level: optional_i16(row, "positions", "usable_battery_level")?,
+        battery_heater: optional_bool(row, "positions", "battery_heater")?,
+        battery_heater_on: optional_bool(row, "positions", "battery_heater_on")?,
+        battery_heater_no_power: optional_bool(
+            row,
+            "positions",
+            "battery_heater_no_power",
+        )?,
+        outside_temp_e1: optional_fixed_numeric_v2_2(row, "positions", "outside_temp", 1)?,
+        inside_temp_e1: optional_fixed_numeric_v2_2(row, "positions", "inside_temp", 1)?,
+        fan_status: optional_i32(row, "positions", "fan_status")?,
+        driver_temp_setting_e1: optional_fixed_numeric_v2_2(
+            row,
+            "positions",
+            "driver_temp_setting",
+            1,
+        )?,
+        passenger_temp_setting_e1: optional_fixed_numeric_v2_2(
+            row,
+            "positions",
+            "passenger_temp_setting",
+            1,
+        )?,
+        is_climate_on: optional_bool(row, "positions", "is_climate_on")?,
+        is_rear_defroster_on: optional_bool(row, "positions", "is_rear_defroster_on")?,
+        is_front_defroster_on: optional_bool(row, "positions", "is_front_defroster_on")?,
+        tpms_pressure_fl_e1: optional_fixed_numeric_v2_2(
+            row,
+            "positions",
+            "tpms_pressure_fl",
+            1,
+        )?,
+        tpms_pressure_fr_e1: optional_fixed_numeric_v2_2(
+            row,
+            "positions",
+            "tpms_pressure_fr",
+            1,
+        )?,
+        tpms_pressure_rl_e1: optional_fixed_numeric_v2_2(
+            row,
+            "positions",
+            "tpms_pressure_rl",
+            1,
+        )?,
+        tpms_pressure_rr_e1: optional_fixed_numeric_v2_2(
+            row,
+            "positions",
+            "tpms_pressure_rr",
+            1,
+        )?,
+    })
+}
+
 fn decode_car_settings_row(row: &Row) -> Result<ProjectionCarSettings, TeslaMateReaderError> {
     let defaults = ProjectionCarSettings::default();
     Ok(ProjectionCarSettings {

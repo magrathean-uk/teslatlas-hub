@@ -4,7 +4,8 @@ use super::*;
 use crate::{
     teslamate_projection::{
         TeslaMateCar, TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2,
-        TeslaMateSettingsPhysicalV2_2, TeslaMateStatePhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
+        TeslaMateDrivePhysicalV2_2, TeslaMatePositionPhysicalV2_2, TeslaMateSettingsPhysicalV2_2,
+        TeslaMateStatePhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
     },
     teslamate_stage::{
         TeslaMateStageFormat, TeslaMateStageLimits, TeslaMateStageState, TeslaMateStageTable,
@@ -943,8 +944,13 @@ fn physical_v3_root_queries_keep_car_and_car_settings_separate() {
 }
 
 #[test]
-fn physical_state_and_update_queries_use_nullable_initial_cursors() {
-    for (table, sql) in [("states", STATES_V2_2_SQL), ("updates", UPDATES_V2_2_SQL)] {
+fn physical_relation_queries_use_nullable_initial_cursors() {
+    for (table, sql) in [
+        ("drives", DRIVES_V2_2_SQL),
+        ("positions", POSITIONS_V2_2_SQL),
+        ("states", STATES_V2_2_SQL),
+        ("updates", UPDATES_V2_2_SQL),
+    ] {
         assert!(sql.contains("$1::integer IS NULL OR source.id > $1"));
         assert!(sql.contains("source.car_id = $3"));
         assert!(sql.contains("ORDER BY source.id ASC"));
@@ -953,6 +959,10 @@ fn physical_state_and_update_queries_use_nullable_initial_cursors() {
         assert!(!sql.contains("private.tokens"));
     }
     assert!(STATES_V2_2_SQL.contains("source.state::text AS state"));
+    for sql in [DRIVES_V2_2_SQL, POSITIONS_V2_2_SQL] {
+        assert!(sql.contains("::text AS"));
+        assert!(!sql.contains("::double precision"));
+    }
 
     assert_eq!(
         advance_signed_v2_2_cursor(None, -7, "states").expect("nullable first cursor"),
@@ -965,6 +975,29 @@ fn physical_state_and_update_queries_use_nullable_initial_cursors() {
             id: -7
         })
     ));
+}
+
+#[test]
+fn physical_fixed_numeric_and_float_decoders_preserve_source_values() {
+    for (value, scale, expected) in [
+        ("1.234567", 6, ProjectionFixedNumericV2_2::Finite(1_234_567)),
+        ("-0.1", 1, ProjectionFixedNumericV2_2::Finite(-1)),
+        ("42", 2, ProjectionFixedNumericV2_2::Finite(4_200)),
+        ("NaN", 6, ProjectionFixedNumericV2_2::NaN),
+    ] {
+        assert_eq!(
+            parse_fixed_numeric_v2_2(value, scale, "fixture", "numeric").unwrap(),
+            expected
+        );
+    }
+    assert!(matches!(
+        parse_fixed_numeric_v2_2("0.001", 2, "fixture", "numeric"),
+        Err(TeslaMateReaderError::DecimalFixedScale { .. })
+    ));
+    assert_eq!(
+        ProjectionFloat64BitsV2_2::from_f64(-0.0).0,
+        (-0.0_f64).to_bits()
+    );
 }
 
 #[test]
@@ -1075,6 +1108,18 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
              VALUES (
                  20, 1, 'online', TIMESTAMP '2000-01-01 00:00:00.234567',
                  'infinity'::timestamp
+             );
+             INSERT INTO public.drives(
+                 id, car_id, start_date, end_date, outside_temp_avg, start_km
+             ) VALUES (
+                 30, 1, TIMESTAMP '2000-01-01 00:00:00.345678',
+                 'infinity'::timestamp, 'NaN'::numeric, '-0'::double precision
+             );
+             INSERT INTO public.positions(
+                 id, car_id, drive_id, date, latitude, longitude, odometer
+             ) VALUES (
+                 40, 1, 30, TIMESTAMP '2000-01-01 00:00:00.456789',
+                 'NaN'::numeric, 1.234567, '-0'::double precision
              );",
         )
         .await
@@ -1084,7 +1129,7 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
     let imports_dir = temporary.path().join("success");
     let limits = TeslaMateReadLimits {
         page_size: 1,
-        maximum_rows: 5,
+        maximum_rows: 7,
         maximum_stage_bytes: 256 * 1024,
         minimum_free_bytes: 0,
         parallel_copy_lanes: 1,
@@ -1109,6 +1154,14 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
                      VALUES (
                          21, 1, 'offline',
                          TIMESTAMP '2000-01-01 00:00:00.765432', NULL
+                     );
+                     INSERT INTO public.drives(id, car_id, start_date)
+                     VALUES (31, 1, TIMESTAMP '2000-01-01 00:00:00.876543');
+                     INSERT INTO public.positions(
+                         id, car_id, drive_id, date, latitude, longitude
+                     ) VALUES (
+                         41, 1, 31, TIMESTAMP '2000-01-01 00:00:00.987654',
+                         2.345678, 3.456789
                      );",
                 )
                 .await?;
@@ -1124,7 +1177,7 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
     );
     let stats = stage.stats().expect("stage stats");
     assert_eq!(stats.state, TeslaMateStageState::Sealed);
-    assert_eq!(stats.row_count, 5);
+    assert_eq!(stats.row_count, 7);
     let settings = stage
         .get::<TeslaMateSettingsPhysicalV2_2>(TeslaMateStageTable::GlobalSettings, 100)
         .expect("settings lookup")
@@ -1163,6 +1216,40 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
     );
     assert_eq!(states.rows[0].value.start_date_pg_us, 234_567);
     assert_eq!(states.rows[0].value.end_date_pg_us, Some(i64::MAX));
+    let drives = stage
+        .page::<TeslaMateDrivePhysicalV2_2>(TeslaMateStageTable::Drives, 0, 10)
+        .expect("drives page");
+    assert_eq!(drives.rows.len(), 1);
+    assert_eq!(drives.rows[0].source_id, 30);
+    assert_eq!(drives.rows[0].value.start_date_pg_us, 345_678);
+    assert_eq!(drives.rows[0].value.end_date_pg_us, Some(i64::MAX));
+    assert_eq!(
+        drives.rows[0].value.outside_temp_avg_e1,
+        Some(ProjectionFixedNumericV2_2::NaN)
+    );
+    assert_eq!(
+        drives.rows[0].value.start_km,
+        Some(ProjectionFloat64BitsV2_2((-0.0_f64).to_bits()))
+    );
+    let positions = stage
+        .page::<TeslaMatePositionPhysicalV2_2>(TeslaMateStageTable::Positions, 0, 10)
+        .expect("positions page");
+    assert_eq!(positions.rows.len(), 1);
+    assert_eq!(positions.rows[0].source_id, 40);
+    assert_eq!(positions.rows[0].value.drive_id, Some(30));
+    assert_eq!(positions.rows[0].value.date_pg_us, 456_789);
+    assert_eq!(
+        positions.rows[0].value.latitude_e6,
+        ProjectionFixedNumericV2_2::NaN
+    );
+    assert_eq!(
+        positions.rows[0].value.longitude_e6,
+        ProjectionFixedNumericV2_2::Finite(1_234_567)
+    );
+    assert_eq!(
+        positions.rows[0].value.odometer,
+        Some(ProjectionFloat64BitsV2_2((-0.0_f64).to_bits()))
+    );
     assert_eq!(
         admin
             .query_one("SELECT COUNT(*)::bigint AS count FROM public.updates", &[])
@@ -1172,6 +1259,20 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
             .expect("source update count value"),
         2
     );
+    for table in ["drives", "positions"] {
+        assert_eq!(
+            admin
+                .query_one(
+                    &format!("SELECT COUNT(*)::bigint AS count FROM public.{table}"),
+                    &[]
+                )
+                .await
+                .expect("source relation count")
+                .try_get::<_, i64>("count")
+                .expect("source relation count value"),
+            2
+        );
+    }
     assert_eq!(
         admin
             .query_one("SELECT COUNT(*)::bigint AS count FROM public.states", &[])
@@ -1191,7 +1292,7 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
         &password,
         1,
         TeslaMateReadLimits {
-            maximum_rows: 4,
+            maximum_rows: 6,
             ..limits
         },
         &cap_dir,
@@ -1199,7 +1300,7 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
     .await;
     assert!(matches!(
         cap_failure,
-        Err(TeslaMateReaderError::MaximumRowsExceeded { maximum: 4 })
+        Err(TeslaMateReaderError::MaximumRowsExceeded { maximum: 6 })
     ));
     let capped_stages = std::fs::read_dir(cap_dir.join(".staging"))
         .expect("cap failure staging directory")

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Unpublished schema-2.2 state and update chunks from a sealed physical TeslaMate stage.
+//! Unpublished schema-2.2 drive, position, state, and update chunks from a sealed physical stage.
 //!
 //! This module proves the bounded stage-to-pack boundary only. It does not
 //! capture PostgreSQL rows and cannot publish a manifest to the Hub catalogue.
@@ -20,8 +20,9 @@ use crate::{
     },
     protocol::{CursorKey, ProtocolLimits, SequenceRange, SyncManifest},
     teslamate_projection::{
-        TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateSettingsPhysicalV2_2,
-        TeslaMateStatePhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
+        TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateDrivePhysicalV2_2,
+        TeslaMatePositionPhysicalV2_2, TeslaMateSettingsPhysicalV2_2, TeslaMateStatePhysicalV2_2,
+        TeslaMateUpdatePhysicalV2_2,
     },
     teslamate_stage::{
         TeslaMateStage, TeslaMateStageError, TeslaMateStageFormat, TeslaMateStageState,
@@ -90,7 +91,7 @@ impl Drop for StagedPhysicalProjectionV3 {
     }
 }
 
-/// Stream the state and update rows from one complete, sealed physical source stage into
+/// Stream drive, position, state, and update rows from one complete sealed physical source stage into
 /// independently verified V3 SQLite chunks, then sign exactly one manifest
 /// over all chunks. Any other relation-bearing history rejects before the first pack
 /// write. No catalogue method is reachable from this boundary.
@@ -187,8 +188,6 @@ fn write_staged_physical_updates_snapshot_v3_inner(
     for table in [
         TeslaMateStageTable::Addresses,
         TeslaMateStageTable::Geofences,
-        TeslaMateStageTable::Drives,
-        TeslaMateStageTable::Positions,
         TeslaMateStageTable::ChargingProcesses,
         TeslaMateStageTable::Charges,
     ] {
@@ -229,6 +228,65 @@ fn write_staged_physical_updates_snapshot_v3_inner(
     };
     let mut accumulator = PhysicalChunkAccumulator::new(roots, limits)?;
     let mut chunks = Vec::new();
+
+    let drives =
+        for_each_page::<TeslaMateDrivePhysicalV2_2, _>(stage, TeslaMateStageTable::Drives, |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "drives")?;
+            if i64::from(row.value.car_id) != binding.selected_car_id {
+                return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
+            }
+            let projected = row.value.into();
+            let projected_bytes = serialized_bytes(&projected)?;
+            if accumulator.needs_flush(projected_bytes, limits)? {
+                flush_chunk(
+                    writer,
+                    &binding,
+                    snapshot_id,
+                    sequence,
+                    &mut accumulator,
+                    &mut chunks,
+                    fail_before_ordinal,
+                )?;
+            }
+            accumulator.snapshot.drives.push(projected);
+            accumulator.add_payload(projected_bytes)?;
+            Ok(())
+        });
+    if let Err(error) = drives {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
+    }
+
+    let positions = for_each_page::<TeslaMatePositionPhysicalV2_2, _>(
+        stage,
+        TeslaMateStageTable::Positions,
+        |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "positions")?;
+            if i64::from(row.value.car_id) != binding.selected_car_id {
+                return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
+            }
+            let projected = row.value.into();
+            let projected_bytes = serialized_bytes(&projected)?;
+            if accumulator.needs_flush(projected_bytes, limits)? {
+                flush_chunk(
+                    writer,
+                    &binding,
+                    snapshot_id,
+                    sequence,
+                    &mut accumulator,
+                    &mut chunks,
+                    fail_before_ordinal,
+                )?;
+            }
+            accumulator.snapshot.positions.push(projected);
+            accumulator.add_payload(projected_bytes)?;
+            Ok(())
+        },
+    );
+    if let Err(error) = positions {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
+    }
 
     let states =
         for_each_page::<TeslaMateStatePhysicalV2_2, _>(stage, TeslaMateStageTable::States, |row| {
@@ -560,7 +618,7 @@ pub enum TeslaMatePhysicalFragmentError {
     StageNotSealed,
     #[error("physical V3 writer requires a physical-v3 stage")]
     WrongStageFormat,
-    #[error("physical V3 states/updates writer does not yet support nonempty {table} rows")]
+    #[error("physical V3 writer does not yet support nonempty {table} rows")]
     UnsupportedTableRows { table: &'static str },
     #[error("physical V3 stage must contain exactly one {table} root row")]
     RootCardinality { table: &'static str },

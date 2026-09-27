@@ -8,8 +8,9 @@ use tempfile::tempdir;
 use super::*;
 use crate::{
     hub_pack::{
-        ProjectionPreferredRangeV2_2, ProjectionStateStatusV2_2, ProjectionUnitOfLengthV2_2,
-        ProjectionUnitOfPressureV2_2, ProjectionUnitOfTemperatureV2_2,
+        ProjectionFixedNumericV2_2, ProjectionFloat64BitsV2_2, ProjectionPreferredRangeV2_2,
+        ProjectionStateStatusV2_2, ProjectionUnitOfLengthV2_2, ProjectionUnitOfPressureV2_2,
+        ProjectionUnitOfTemperatureV2_2,
     },
     protocol::MirrorTable,
     storage::db::HubStore,
@@ -135,6 +136,86 @@ fn seed_states(
     }
 }
 
+fn physical_drive() -> TeslaMateDrivePhysicalV2_2 {
+    TeslaMateDrivePhysicalV2_2 {
+        id: 30,
+        car_id: 1,
+        start_date_pg_us: 345_678,
+        end_date_pg_us: Some(i64::MAX),
+        start_position_id: Some(40),
+        end_position_id: None,
+        start_address_id: None,
+        end_address_id: None,
+        start_geofence_id: None,
+        end_geofence_id: None,
+        outside_temp_avg_e1: Some(ProjectionFixedNumericV2_2::NaN),
+        inside_temp_avg_e1: None,
+        speed_max: None,
+        power_max: None,
+        power_min: None,
+        start_ideal_range_km_e2: None,
+        end_ideal_range_km_e2: None,
+        start_rated_range_km_e2: None,
+        end_rated_range_km_e2: None,
+        start_km: Some(ProjectionFloat64BitsV2_2((-0.0_f64).to_bits())),
+        end_km: None,
+        distance: None,
+        duration_min: None,
+        ascent: None,
+        descent: None,
+    }
+}
+
+fn physical_position() -> TeslaMatePositionPhysicalV2_2 {
+    TeslaMatePositionPhysicalV2_2 {
+        id: 40,
+        car_id: 1,
+        drive_id: Some(30),
+        date_pg_us: 456_789,
+        latitude_e6: ProjectionFixedNumericV2_2::NaN,
+        longitude_e6: ProjectionFixedNumericV2_2::Finite(1_234_567),
+        elevation: None,
+        speed: None,
+        power: None,
+        odometer: Some(ProjectionFloat64BitsV2_2((-0.0_f64).to_bits())),
+        ideal_battery_range_km_e2: None,
+        est_battery_range_km_e2: None,
+        rated_battery_range_km_e2: None,
+        battery_level: None,
+        usable_battery_level: None,
+        battery_heater: None,
+        battery_heater_on: None,
+        battery_heater_no_power: None,
+        outside_temp_e1: None,
+        inside_temp_e1: None,
+        fan_status: None,
+        driver_temp_setting_e1: None,
+        passenger_temp_setting_e1: None,
+        is_climate_on: None,
+        is_rear_defroster_on: None,
+        is_front_defroster_on: None,
+        tpms_pressure_fl_e1: None,
+        tpms_pressure_fr_e1: None,
+        tpms_pressure_rl_e1: None,
+        tpms_pressure_rr_e1: None,
+    }
+}
+
+fn seed_drive_and_position(stage: &mut TeslaMateStage) {
+    let drive = physical_drive();
+    let position = physical_position();
+    stage
+        .insert(TeslaMateStageTable::Drives, i64::from(drive.id), &drive)
+        .expect("physical drive");
+    stage
+        .insert(
+            TeslaMateStageTable::Positions,
+            i64::from(position.id),
+            &position,
+        )
+        .expect("physical position");
+}
+
 fn deterministic_high_entropy_version(id: i32) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut state = (id as u64) ^ 0x9e37_79b9_7f4a_7c15;
@@ -236,7 +317,7 @@ fn physical_writer_requires_an_explicit_sealed_physical_stage() {
 }
 
 #[test]
-fn physical_states_updates_writer_rejects_unsupported_relations_before_writing_a_chunk() {
+fn physical_writer_rejects_unsupported_relations_before_writing_a_chunk() {
     let temporary = tempdir().expect("temp dir");
     let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
     let mut stage =
@@ -245,11 +326,11 @@ fn physical_states_updates_writer_rejects_unsupported_relations_before_writing_a
     seed_roots(&mut stage);
     stage
         .insert(
-            TeslaMateStageTable::Positions,
+            TeslaMateStageTable::Addresses,
             20,
             &serde_json::json!({"id": 20}),
         )
-        .expect("unsupported physical position marker");
+        .expect("unsupported physical address marker");
     stage.seal().expect("seal physical stage");
 
     let writer = ProjectionPackWriter::new(store.packs_dir());
@@ -264,7 +345,7 @@ fn physical_states_updates_writer_rejects_unsupported_relations_before_writing_a
     .expect_err("unsupported relation rows");
     assert!(matches!(
         error,
-        TeslaMatePhysicalFragmentError::UnsupportedTableRows { table: "positions" }
+        TeslaMatePhysicalFragmentError::UnsupportedTableRows { table: "addresses" }
     ));
     assert!(!store.packs_dir().join("sha256").exists());
 }
@@ -331,13 +412,82 @@ fn physical_state_rows_require_matching_source_identity_and_selected_car() {
 }
 
 #[test]
-fn sealed_physical_stage_streams_states_then_updates_in_verified_contiguous_v3_chunks() {
+fn physical_drive_and_position_rows_require_matching_source_identity_and_selected_car() {
+    for relation in ["drive-source", "position-car"] {
+        let temporary = tempdir().expect("temp dir");
+        let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+        let mut stage =
+            TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
+                .expect("physical stage");
+        seed_roots(&mut stage);
+        match relation {
+            "drive-source" => {
+                let drive = physical_drive();
+                stage
+                    .insert(TeslaMateStageTable::Drives, 31, &drive)
+                    .expect("physical drive");
+            }
+            "position-car" => {
+                let mut position = physical_position();
+                position.car_id = 2;
+                stage
+                    .insert(
+                        TeslaMateStageTable::Positions,
+                        i64::from(position.id),
+                        &position,
+                    )
+                    .expect("physical position");
+            }
+            _ => unreachable!(),
+        }
+        stage.seal().expect("seal physical stage");
+
+        let error = write_staged_physical_updates_snapshot_v3(
+            &stage,
+            &ProjectionPackWriter::new(store.packs_dir()),
+            binding(),
+            snapshot_id(),
+            sequence(),
+            &CursorKey::from_bytes([12; 32]),
+        )
+        .expect_err("invalid physical relation");
+        match relation {
+            "drive-source" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::SourceIdMismatch {
+                    table: "drives",
+                    stored: 31,
+                    decoded: 30
+                }
+            )),
+            "position-car" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::SelectedCarMismatch
+            )),
+            _ => unreachable!(),
+        }
+        assert!(!store.packs_dir().join("sha256").exists());
+        let connection = store.open().expect("catalogue");
+        for table in ["sync_manifests", "sync_packs"] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("catalogue count");
+            assert_eq!(count, 0);
+        }
+    }
+}
+
+#[test]
+fn sealed_physical_stage_streams_relations_in_verified_contiguous_v3_chunks() {
     let temporary = tempdir().expect("temp dir");
     let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
     let mut stage =
         TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
             .expect("physical stage");
     seed_roots(&mut stage);
+    seed_drive_and_position(&mut stage);
     seed_states(
         &mut stage,
         &[
@@ -366,16 +516,18 @@ fn sealed_physical_stage_streams_states_then_updates_in_verified_contiguous_v3_c
     )
     .expect("physical candidate");
 
-    assert_eq!(candidate.chunks.len(), 4);
-    assert_eq!(candidate.manifest.chunks.len(), 4);
-    assert_eq!(candidate.logical_source_rows, 7);
-    assert_eq!(candidate.manifest.total_rows, 16);
+    assert_eq!(candidate.chunks.len(), 6);
+    assert_eq!(candidate.manifest.chunks.len(), 6);
+    assert_eq!(candidate.logical_source_rows, 9);
+    assert_eq!(candidate.manifest.total_rows, 24);
     candidate
         .manifest
         .validate_terminal_cursor(&cursor_key)
         .expect("signed manifest cursor");
     let mut update_ids = Vec::new();
     let mut state_rows = Vec::new();
+    let mut drive_rows = Vec::new();
+    let mut position_rows = Vec::new();
     for (ordinal, chunk) in candidate.chunks.iter().enumerate() {
         assert_eq!(chunk.metadata.ordinal, ordinal as u32);
         assert_eq!(
@@ -390,10 +542,11 @@ fn sealed_physical_stage_streams_states_then_updates_in_verified_contiguous_v3_c
         assert!(chunk.metadata.compressed_bytes <= HUB_SYNC_PROFILE_MAX_PACK_BYTES);
         assert_eq!(
             chunk.metadata.tables,
-            if ordinal < 2 {
-                vec![MirrorTable::Car, MirrorTable::State]
-            } else {
-                vec![MirrorTable::Car, MirrorTable::Update]
+            match ordinal {
+                0 => vec![MirrorTable::Car, MirrorTable::Drive],
+                1 => vec![MirrorTable::Car, MirrorTable::Position],
+                2..=3 => vec![MirrorTable::Car, MirrorTable::State],
+                _ => vec![MirrorTable::Car, MirrorTable::Update],
             }
         );
         chunk
@@ -415,6 +568,57 @@ fn sealed_physical_stage_streams_states_then_updates_in_verified_contiguous_v3_c
                 .expect("root count");
             assert_eq!(count, 1, "{table} root must repeat in every chunk");
         }
+        let mut statement = connection
+            .prepare(
+                "SELECT id, start_date_pg_us, end_date_pg_us,
+                        outside_temp_avg_e1, outside_temp_avg_e1_is_nan,
+                        start_km_f64_be
+                 FROM drives ORDER BY id",
+            )
+            .expect("drive query");
+        drive_rows.extend(
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, i32>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, Option<i64>>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<Vec<u8>>>(5)?,
+                    ))
+                })
+                .expect("drives")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("drive rows"),
+        );
+        let mut statement = connection
+            .prepare(
+                "SELECT id, drive_id, date_pg_us,
+                        latitude_e6, latitude_e6_is_nan,
+                        longitude_e6, longitude_e6_is_nan,
+                        odometer_f64_be
+                 FROM positions ORDER BY id",
+            )
+            .expect("position query");
+        position_rows.extend(
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, i32>(0)?,
+                        row.get::<_, Option<i32>>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, Option<i64>>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, Option<Vec<u8>>>(7)?,
+                    ))
+                })
+                .expect("positions")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("position rows"),
+        );
         let mut statement = connection
             .prepare("SELECT id, state, start_date_pg_us, end_date_pg_us FROM states ORDER BY id")
             .expect("state query");
@@ -449,6 +653,30 @@ fn sealed_physical_stage_streams_states_then_updates_in_verified_contiguous_v3_c
             (20, "online".to_owned(), 234_567, Some(i64::MAX)),
             (21, "asleep".to_owned(), i64::MIN, None),
         ]
+    );
+    assert_eq!(
+        drive_rows,
+        vec![(
+            30,
+            345_678,
+            Some(i64::MAX),
+            None,
+            1,
+            Some((-0.0_f64).to_bits().to_be_bytes().to_vec()),
+        )]
+    );
+    assert_eq!(
+        position_rows,
+        vec![(
+            40,
+            Some(30),
+            456_789,
+            None,
+            1,
+            Some(1_234_567),
+            0,
+            Some((-0.0_f64).to_bits().to_be_bytes().to_vec()),
+        )]
     );
     assert_eq!(update_ids, vec![10, 11]);
 

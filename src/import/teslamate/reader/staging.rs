@@ -577,6 +577,56 @@ LIMIT $2
 // They deliberately do not reuse legacy COPY readers or compatibility epoch-ms
 // decoders: PostgreSQL timestamp binary i64 microseconds remain raw, including
 // the source infinity sentinels.
+const DRIVES_V2_2_SQL: &str = r#"
+SELECT
+  source.id, source.car_id, source.start_date, source.end_date,
+  source.start_position_id, source.end_position_id,
+  source.start_address_id, source.end_address_id,
+  source.start_geofence_id, source.end_geofence_id,
+  source.outside_temp_avg::text AS outside_temp_avg,
+  source.inside_temp_avg::text AS inside_temp_avg,
+  source.speed_max, source.power_max, source.power_min,
+  source.start_ideal_range_km::text AS start_ideal_range_km,
+  source.end_ideal_range_km::text AS end_ideal_range_km,
+  source.start_rated_range_km::text AS start_rated_range_km,
+  source.end_rated_range_km::text AS end_rated_range_km,
+  source.start_km, source.end_km, source.distance,
+  source.duration_min, source.ascent, source.descent
+FROM public.drives AS source
+WHERE ($1::integer IS NULL OR source.id > $1)
+  AND source.car_id = $3
+ORDER BY source.id ASC
+LIMIT $2
+"#;
+
+const POSITIONS_V2_2_SQL: &str = r#"
+SELECT
+  source.id, source.car_id, source.drive_id, source.date,
+  source.latitude::text AS latitude,
+  source.longitude::text AS longitude,
+  source.elevation, source.speed, source.power, source.odometer,
+  source.ideal_battery_range_km::text AS ideal_battery_range_km,
+  source.est_battery_range_km::text AS est_battery_range_km,
+  source.rated_battery_range_km::text AS rated_battery_range_km,
+  source.battery_level, source.usable_battery_level,
+  source.battery_heater, source.battery_heater_on, source.battery_heater_no_power,
+  source.outside_temp::text AS outside_temp,
+  source.inside_temp::text AS inside_temp,
+  source.fan_status,
+  source.driver_temp_setting::text AS driver_temp_setting,
+  source.passenger_temp_setting::text AS passenger_temp_setting,
+  source.is_climate_on, source.is_rear_defroster_on, source.is_front_defroster_on,
+  source.tpms_pressure_fl::text AS tpms_pressure_fl,
+  source.tpms_pressure_fr::text AS tpms_pressure_fr,
+  source.tpms_pressure_rl::text AS tpms_pressure_rl,
+  source.tpms_pressure_rr::text AS tpms_pressure_rr
+FROM public.positions AS source
+WHERE ($1::integer IS NULL OR source.id > $1)
+  AND source.car_id = $3
+ORDER BY source.id ASC
+LIMIT $2
+"#;
+
 const STATES_V2_2_SQL: &str = r#"
 SELECT
   source.id,

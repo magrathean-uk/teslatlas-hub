@@ -117,6 +117,61 @@ fn optional_float(
         .map_err(|source| cell(table, column, source))
 }
 
+fn optional_float_bits(
+    row: &Row,
+    table: &'static str,
+    column: &'static str,
+) -> Result<Option<ProjectionFloat64BitsV2_2>, TeslaMateReaderError> {
+    optional_float(row, table, column)
+        .map(|value| value.map(ProjectionFloat64BitsV2_2::from_f64))
+}
+
+fn parse_fixed_numeric_v2_2(
+    value: &str,
+    scale: u32,
+    table: &'static str,
+    column: &'static str,
+) -> Result<ProjectionFixedNumericV2_2, TeslaMateReaderError> {
+    if value == "NaN" {
+        return Ok(ProjectionFixedNumericV2_2::NaN);
+    }
+    let decimal = value
+        .parse::<Decimal>()
+        .map_err(|_| TeslaMateReaderError::DecimalFixedScale { table, column })?;
+    if decimal.scale() > scale {
+        return Err(TeslaMateReaderError::DecimalFixedScale { table, column });
+    }
+    let factor = 10_i128
+        .checked_pow(scale - decimal.scale())
+        .ok_or(TeslaMateReaderError::DecimalFixedRange { table, column })?;
+    let scaled = decimal
+        .mantissa()
+        .checked_mul(factor)
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or(TeslaMateReaderError::DecimalFixedRange { table, column })?;
+    Ok(ProjectionFixedNumericV2_2::Finite(scaled))
+}
+
+fn required_fixed_numeric_v2_2(
+    row: &Row,
+    table: &'static str,
+    column: &'static str,
+    scale: u32,
+) -> Result<ProjectionFixedNumericV2_2, TeslaMateReaderError> {
+    parse_fixed_numeric_v2_2(&required_text(row, table, column)?, scale, table, column)
+}
+
+fn optional_fixed_numeric_v2_2(
+    row: &Row,
+    table: &'static str,
+    column: &'static str,
+    scale: u32,
+) -> Result<Option<ProjectionFixedNumericV2_2>, TeslaMateReaderError> {
+    optional_text(row, table, column)?
+        .map(|value| parse_fixed_numeric_v2_2(&value, scale, table, column))
+        .transpose()
+}
+
 fn required_decimal(
     row: &Row,
     table: &'static str,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-/// Capture the bounded, source-shaped roots, states, and update rows needed by the
+/// Capture the bounded, source-shaped roots, drives, positions, states, and update rows needed by the
 /// first physical V3 source slice. This is deliberately unlinked from the
 /// importer and catalogue: callers receive one private sealed stage and must
 /// either consume or discard it explicitly.
@@ -179,7 +179,7 @@ async fn capture_physical_v3_from_exported_snapshot(
         limits,
     )
     .await?;
-    let states = capture_physical_state_pages(
+    let drives = capture_physical_drive_pages(
         lane.client(),
         selected_car_id,
         limits,
@@ -187,6 +187,32 @@ async fn capture_physical_v3_from_exported_snapshot(
         stage,
     )
     .await;
+    let positions = match drives {
+        Ok(()) => {
+            capture_physical_position_pages(
+                lane.client(),
+                selected_car_id,
+                limits,
+                &mut retained_rows,
+                stage,
+            )
+            .await
+        }
+        Err(error) => Err(error),
+    };
+    let states = match positions {
+        Ok(()) => {
+            capture_physical_state_pages(
+                lane.client(),
+                selected_car_id,
+                limits,
+                &mut retained_rows,
+                stage,
+            )
+            .await
+        }
+        Err(error) => Err(error),
+    };
     let capture = match states {
         Ok(()) => {
             capture_physical_update_pages(
@@ -205,6 +231,75 @@ async fn capture_physical_v3_from_exported_snapshot(
         (Err(error), _) => Err(error),
         (Ok(()), Ok(())) => Ok(()),
         (Ok(()), Err(error)) => Err(error),
+    }
+}
+
+async fn capture_physical_drive_pages(
+    client: &Client,
+    selected_car_id: i16,
+    limits: TeslaMateReadLimits,
+    retained_rows: &mut usize,
+    stage: &mut TeslaMateStage,
+) -> Result<(), TeslaMateReaderError> {
+    let page_size = i64::from(limits.page_size);
+    let mut last_id = None::<i32>;
+    loop {
+        let rows = client
+            .query(DRIVES_V2_2_SQL, &[&last_id, &page_size, &selected_car_id])
+            .await?;
+        let page_len = rows.len();
+        let mut decoded = Vec::with_capacity(page_len);
+        for row in rows {
+            let id = required_i32(&row, "drives", "id")?;
+            last_id = advance_signed_v2_2_cursor(last_id, id, "drives")?;
+            require_positive_physical_id("drives", i64::from(id))?;
+            retain_row(retained_rows, limits.maximum_rows)?;
+            let drive = decode_drive_v2_2(&row)?;
+            if drive.car_id != selected_car_id {
+                return Err(TeslaMateReaderError::NonProgressingPage { table: "drives" });
+            }
+            decoded.push((i64::from(id), drive));
+        }
+        stage.insert_page_parallel(TeslaMateStageTable::Drives, decoded)?;
+        if page_len < limits.page_size as usize {
+            return Ok(());
+        }
+    }
+}
+
+async fn capture_physical_position_pages(
+    client: &Client,
+    selected_car_id: i16,
+    limits: TeslaMateReadLimits,
+    retained_rows: &mut usize,
+    stage: &mut TeslaMateStage,
+) -> Result<(), TeslaMateReaderError> {
+    let page_size = i64::from(limits.page_size);
+    let mut last_id = None::<i32>;
+    loop {
+        let rows = client
+            .query(
+                POSITIONS_V2_2_SQL,
+                &[&last_id, &page_size, &selected_car_id],
+            )
+            .await?;
+        let page_len = rows.len();
+        let mut decoded = Vec::with_capacity(page_len);
+        for row in rows {
+            let id = required_i32(&row, "positions", "id")?;
+            last_id = advance_signed_v2_2_cursor(last_id, id, "positions")?;
+            require_positive_physical_id("positions", i64::from(id))?;
+            retain_row(retained_rows, limits.maximum_rows)?;
+            let position = decode_position_v2_2(&row)?;
+            if position.car_id != selected_car_id {
+                return Err(TeslaMateReaderError::NonProgressingPage { table: "positions" });
+            }
+            decoded.push((i64::from(id), position));
+        }
+        stage.insert_page_parallel(TeslaMateStageTable::Positions, decoded)?;
+        if page_len < limits.page_size as usize {
+            return Ok(());
+        }
     }
 }
 
