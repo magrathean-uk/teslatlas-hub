@@ -12,7 +12,7 @@ trap cleanup EXIT HUP INT TERM
 
 make_repo() {
     destination=$1
-    mkdir -p "$destination/scripts"
+    mkdir -p "$destination/scripts" "$destination/archive/deep"
     git -C "$destination" init -q
     git -C "$destination" config user.name Test
     git -C "$destination" config user.email test@example.invalid
@@ -23,6 +23,8 @@ make_repo() {
     printf '%s\n' data >"$destination/fixture.json"
     printf '%s\n' generated >"$destination/Cargo.lock"
     printf '%s\n' third-party >"$destination/LICENSE"
+    printf '%s\n' historical >"$destination/archive/direct.json"
+    printf '%s\n' historical >"$destination/archive/deep/history.json"
     cat >"$destination/provenance-manifest.json" <<'EOF'
 {
   "schema": "teslatlas.provenance-classification/v1",
@@ -67,6 +69,17 @@ make_repo() {
       }
     },
     {
+      "id": "fixture-archive",
+      "class": "DATA-OR-FACTS",
+      "rationale": "Test-only historical records at direct and nested archive paths.",
+      "globs": ["archive/**/*.json"],
+      "exception": {
+        "origin": "Created by the hermetic test.",
+        "licensing": "No external rights asserted by the fixture.",
+        "release_treatment": "Fixture only."
+      }
+    },
+    {
       "id": "fixture-third-party",
       "class": "THIRD-PARTY",
       "rationale": "Test-only third-party placeholder.",
@@ -85,7 +98,18 @@ EOF
 
 make_repo "$TMP/good"
 python3 "$VERIFY" --repo "$TMP/good" >"$TMP/good.out"
-grep -Fq '7 tracked files, exactly one class each' "$TMP/good.out"
+grep -Fq '9 tracked files, exactly one class each' "$TMP/good.out"
+
+cp -R "$TMP/good" "$TMP/unexpected-archive-extension"
+printf '%s\n' unexpected >"$TMP/unexpected-archive-extension/archive/deep/unclassified.toml"
+git -C "$TMP/unexpected-archive-extension" add archive/deep/unclassified.toml
+if python3 "$VERIFY" --repo "$TMP/unexpected-archive-extension" \
+    >"$TMP/unexpected-archive-extension.out" 2>&1; then
+    echo 'provenance test: unexpected archive extension was accepted' >&2
+    exit 1
+fi
+grep -Fq 'unclassified tracked files:' "$TMP/unexpected-archive-extension.out"
+grep -Fq 'archive/deep/unclassified.toml' "$TMP/unexpected-archive-extension.out"
 
 cp -R "$TMP/good" "$TMP/missing"
 printf '%s\n' uncovered >"$TMP/missing/new.txt"

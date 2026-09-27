@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+from functools import lru_cache
 import json
 from pathlib import Path, PurePosixPath
 import subprocess
@@ -105,12 +106,27 @@ def validate_pattern(pattern: Any, *, glob: bool) -> str:
 
 
 def matches_glob(path: str, pattern: str) -> bool:
-    # fnmatch's '*' crosses '/', so compare path segments explicitly.
+    # fnmatch's '*' crosses '/', so compare path segments explicitly. A '**'
+    # segment matches zero or more complete path segments.
     path_parts = path.split("/")
     pattern_parts = pattern.split("/")
-    if len(path_parts) != len(pattern_parts):
-        return False
-    return all(fnmatch.fnmatchcase(part, wanted) for part, wanted in zip(path_parts, pattern_parts))
+
+    @lru_cache(maxsize=None)
+    def matches(path_position: int, pattern_position: int) -> bool:
+        if pattern_position == len(pattern_parts):
+            return path_position == len(path_parts)
+        wanted = pattern_parts[pattern_position]
+        if wanted == "**":
+            return matches(path_position, pattern_position + 1) or (
+                path_position < len(path_parts) and matches(path_position + 1, pattern_position)
+            )
+        return (
+            path_position < len(path_parts)
+            and fnmatch.fnmatchcase(path_parts[path_position], wanted)
+            and matches(path_position + 1, pattern_position + 1)
+        )
+
+    return matches(0, 0)
 
 
 def require_nonempty_text(value: Any, label: str) -> str:

@@ -511,6 +511,136 @@
         "scripts/*.py",
         "scripts/*.sh"
       ]
+    },
+    {
+      "id": "current-project-material-missing-from-initial-inventory",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Explicitly inventoried current repository configuration, implementation, packaging, interoperability tooling, and focused tests treated as project-created.",
+      "paths": [
+        ".clean-development.json",
+        ".dockerignore",
+        "Dockerfile",
+        "build.rs",
+        "compose.yaml",
+        "docs/brand/design-system.md",
+        "docs/brand/product.md",
+        "docs/guides/install-docker.md",
+        "docs/maintainers/design-review-2026-09-21.md",
+        "macos/TeslatlasHubApp/DEVELOPMENT.md",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/DevelopmentHubRuntime.swift",
+        "packaging/components.json",
+        "packaging/docker/base-images.json",
+        "packaging/docker/config.toml",
+        "packaging/docker/config.toml.example",
+        "packaging/docker/initialize-volume.sh",
+        "packaging/docker/prepare-volumes.sh",
+        "source_identity.rs",
+        "src/api/server/tests/catalogue.rs",
+        "src/api/server/tests/fleet_listener.rs",
+        "src/api/server/tests/hub_sync.rs",
+        "src/api/server/tests/loopback_access.rs",
+        "tools/interop/__init__.py",
+        "tools/interop/edge_fixture_binding.py",
+        "tools/interop/edge_ledger_observer.py",
+        "tools/interop/test_edge_fixture_binding.py",
+        "tools/interop/test_edge_ledger_observer.py",
+        "tools/source_run_receiver_edge_hub.py"
+      ]
+    },
+    {
+      "id": "current-historical-planning-records",
+      "class": "DATA-OR-FACTS",
+      "rationale": "Superseded planning and status records retained outside the archival snapshot tree as historical context.",
+      "paths": [
+        "docs/development/PLAN.md",
+        "docs/development/STATUS.json",
+        "docs/superpowers/plans/2026-09-08-docker-product.md",
+        "docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+        "docs/superpowers/plans/2026-09-08-working-product-plan.md",
+        "docs/superpowers/plans/2026-09-09-swift-x1-fixed-adapter.md",
+        "docs/superpowers/plans/2026-09-09-typescript-t7-installed-cell-handoff.md",
+        "docs/superpowers/plans/2026-09-09-viewer-r1-51-drive-fixture.md"
+      ],
+      "exception": {
+        "origin": "Historical planning and status material retained from earlier repository work.",
+        "licensing": "Recorded project, ecosystem, and tool facts do not establish rights in any referenced material.",
+        "release_treatment": "Retain as historical context; current programme authority is maintained separately."
+      }
+    },
+    {
+      "id": "interop-scenario-fact",
+      "class": "DATA-OR-FACTS",
+      "rationale": "A deterministic interoperability scenario records test inputs and expected compatibility facts.",
+      "paths": [
+        "tests/interop/scenario-viewer-r1-51-drives.json"
+      ],
+      "exception": {
+        "origin": "Repository interoperability test work using deterministic fixture values.",
+        "licensing": "Scenario facts do not establish rights in any external protocol or client implementation.",
+        "release_treatment": "Ship only with the interoperability test harness and preserve its stated compatibility scope."
+      }
+    },
+    {
+      "id": "historical-archive-records",
+      "class": "DATA-OR-FACTS",
+      "rationale": "Historical documentation, receipts, logs, and checksum records retained under the development archive are background context, not current operating authority.",
+      "globs": [
+        "docs/development/archive/**/*.json",
+        "docs/development/archive/**/*.log",
+        "docs/development/archive/**/*.md",
+        "docs/development/archive/**/*.sha256",
+        "docs/development/archive/**/*.txt"
+      ],
+      "exception": {
+        "origin": "Pre-programme plans, receipts, snapshots, and supporting records retained during the 2026-09-25 repository reorganisation.",
+        "licensing": "Historical records can describe external systems and facts without establishing rights in referenced material.",
+        "release_treatment": "Retain as immutable historical context; do not use them as current plans, acceptance evidence, or release authority."
+      }
+    },
+    {
+      "id": "historical-archive-patches",
+      "class": "GENERATED",
+      "rationale": "Captured unified-diff outputs retained as historical reproducibility evidence.",
+      "paths": [
+        "docs/development/archive/2026-09-25-pre-programme/evidence/f1-f6-debian-arm64-package-reproducibility-2026-09-20-r1/built-determinism.patch",
+        "docs/development/archive/2026-09-25-pre-programme/evidence/f1-f6-debian-arm64-package-reproducibility-2026-09-20-r1/determinism.patch",
+        "docs/development/archive/2026-09-25-pre-programme/evidence/f1-f6-debian-arm64-package-reproducibility-2026-09-20-r1/validation-delta.patch"
+      ],
+      "exception": {
+        "origin": "Generated by historical reproducibility comparisons recorded under the named evidence run.",
+        "licensing": "Diff context can include project and third-party material; the source files and their notices remain authoritative.",
+        "release_treatment": "Retain only as historical evidence and do not treat a patch as a replacement source distribution."
+      }
+    },
+    {
+      "id": "historical-archive-dev-tooling",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Explicit historical snapshots of repository-maintained development wrapper tooling.",
+      "paths": [
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19-full-solution/scripts/dev/debian13-arm64.yaml",
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19-full-solution/scripts/dev/env.sh",
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19-full-solution/scripts/dev/run.sh",
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19-full-solution/scripts/dev/storage.sh",
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19-full-solution/scripts/dev/vm.sh",
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/scripts/dev/debian13-arm64.yaml",
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/scripts/dev/env.sh",
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/scripts/dev/run.sh",
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/scripts/dev/storage.sh",
+        "docs/development/archive/2026-09-25-pre-programme/workspace-planning/2026-09-19/scripts/dev/vm.sh"
+      ]
+    },
+    {
+      "id": "historical-archive-source-snapshot",
+      "class": "GENERATED",
+      "rationale": "A captured historical source archive contains the complete prior Hub source tree and its separate licence material.",
+      "paths": [
+        "docs/development/archive/2026-09-25-pre-programme/evidence/f6-arm64-container-runtime-2026-09-19-r2/files/source-archive.tar"
+      ],
+      "exception": {
+        "origin": "Historical container-runtime evidence captured the prior complete Hub source tree as a tar archive.",
+        "licensing": "The archive aggregates project source, third-party licence texts, and other classified material; each contained file retains its own applicable treatment.",
+        "release_treatment": "Retain as an immutable evidence artifact and do not treat the aggregate archive as a single-licence source file."
+      }
     }
   ]
 }

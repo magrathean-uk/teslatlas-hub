@@ -1,4 +1,5 @@
 #!/bin/zsh
+# SPDX-License-Identifier: AGPL-3.0-only
 set -euo pipefail
 
 postgres_bin=/opt/homebrew/opt/postgresql@18/bin
