@@ -357,7 +357,7 @@ CREATE TABLE charging_processes (
     CHECK((start_rated_range_km_e2 IS NULL AND start_rated_range_km_e2_is_nan IN (0, 1)) OR (start_rated_range_km_e2 IS NOT NULL AND start_rated_range_km_e2_is_nan = 0 AND start_rated_range_km_e2 BETWEEN -999999 AND 999999)),
     CHECK((end_rated_range_km_e2 IS NULL AND end_rated_range_km_e2_is_nan IN (0, 1)) OR (end_rated_range_km_e2 IS NOT NULL AND end_rated_range_km_e2_is_nan = 0 AND end_rated_range_km_e2 BETWEEN -999999 AND 999999)),
     CHECK((outside_temp_avg_e1 IS NULL AND outside_temp_avg_e1_is_nan IN (0, 1)) OR (outside_temp_avg_e1 IS NOT NULL AND outside_temp_avg_e1_is_nan = 0 AND outside_temp_avg_e1 BETWEEN -9999 AND 9999)),
-    CHECK((cost_e2 IS NULL AND cost_e2_is_nan IN (0, 1)) OR (cost_e2 IS NOT NULL AND cost_e2_is_nan = 0 AND cost_e2 BETWEEN -999999 AND 999999))
+    CHECK((cost_e2 IS NULL AND cost_e2_is_nan IN (0, 1)) OR (cost_e2 IS NOT NULL AND cost_e2_is_nan = 0 AND cost_e2 BETWEEN -99999999999999 AND 99999999999999))
 ) STRICT, WITHOUT ROWID
 "#;
 const THP2_2_CHARGES_SQLITE_DDL: &str = r#"

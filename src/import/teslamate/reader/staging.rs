@@ -627,6 +627,28 @@ ORDER BY source.id ASC
 LIMIT $2
 "#;
 
+const CHARGING_PROCESSES_V2_2_SQL: &str = r#"
+SELECT
+  source.id, source.car_id, source.position_id,
+  source.address_id, source.geofence_id,
+  source.start_date, source.end_date,
+  source.charge_energy_added::text AS charge_energy_added,
+  source.charge_energy_used::text AS charge_energy_used,
+  source.start_ideal_range_km::text AS start_ideal_range_km,
+  source.end_ideal_range_km::text AS end_ideal_range_km,
+  source.start_rated_range_km::text AS start_rated_range_km,
+  source.end_rated_range_km::text AS end_rated_range_km,
+  source.start_battery_level, source.end_battery_level,
+  source.duration_min,
+  source.outside_temp_avg::text AS outside_temp_avg,
+  source.cost::text AS cost
+FROM public.charging_processes AS source
+WHERE ($1::integer IS NULL OR source.id > $1)
+  AND source.car_id = $3
+ORDER BY source.id ASC
+LIMIT $2
+"#;
+
 const STATES_V2_2_SQL: &str = r#"
 SELECT
   source.id,

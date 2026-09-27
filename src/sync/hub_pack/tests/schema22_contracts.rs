@@ -759,6 +759,19 @@ fn schema_2_2_charging_contract_hashes_ddl_and_physical_bounds_are_pinned() {
         .expect("the local physical charging-process table has no outgoing FKs");
     verify_projection_foreign_keys(&connection, "charges", &[])
         .expect("the local physical charges table has no outgoing FKs");
+    connection
+        .execute_batch(
+            "INSERT INTO charging_processes (
+                id, car_id, position_id, start_date_pg_us,
+                charge_energy_added_e2_is_nan, charge_energy_used_e2_is_nan,
+                start_ideal_range_km_e2_is_nan, end_ideal_range_km_e2_is_nan,
+                start_rated_range_km_e2_is_nan, end_rated_range_km_e2_is_nan,
+                outside_temp_avg_e1_is_nan, cost_e2, cost_e2_is_nan
+             ) VALUES
+                (1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 99999999999999, 0),
+                (2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, -99999999999999, 0);",
+        )
+        .expect("numeric(14,2) scaled cost bounds must fit the canonical DDL");
 
     let unchecked_processes = THP2_2_CHARGING_PROCESSES_SQLITE_DDL
         .replace(" CHECK(position_id BETWEEN -2147483648 AND 2147483647)", "")
@@ -790,6 +803,24 @@ fn schema_2_2_charging_contract_hashes_ddl_and_physical_bounds_are_pinned() {
 
     let source = snapshot_v2_2();
     assert!(validate_request_v2_2(&request_v2_2(&source), ProtocolLimits::default()).is_ok());
+    for cost_e2 in [-99_999_999_999_999, 99_999_999_999_999] {
+        let mut boundary = snapshot_v2_2();
+        boundary.charging_processes[0].cost_e2 =
+            Some(ProjectionFixedNumericV2_2::Finite(cost_e2));
+        assert!(
+            validate_request_v2_2(&request_v2_2(&boundary), ProtocolLimits::default()).is_ok(),
+            "numeric(14,2) scaled cost boundary {cost_e2} must validate"
+        );
+    }
+    let mut cost_overflow = snapshot_v2_2();
+    cost_overflow.charging_processes[0].cost_e2 = Some(ProjectionFixedNumericV2_2::Finite(
+        100_000_000_000_000,
+    ));
+    assert!(matches!(
+        validate_request_v2_2(&request_v2_2(&cost_overflow), ProtocolLimits::default()),
+        Err(ProjectionPackError::Invalid(message))
+            if message == "charging_process.cost_e2 is outside its pinned source range"
+    ));
     let mut bad_timestamp = snapshot_v2_2();
     bad_timestamp.charging_processes[0].start_date_pg_us = i64::MIN + 1;
     assert!(matches!(

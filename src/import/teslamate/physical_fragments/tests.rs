@@ -216,6 +216,47 @@ fn seed_drive_and_position(stage: &mut TeslaMateStage) {
         .expect("physical position");
 }
 
+fn physical_charging_process(
+    id: i32,
+    cost_e2: ProjectionFixedNumericV2_2,
+) -> TeslaMateChargingProcessPhysicalV2_2 {
+    TeslaMateChargingProcessPhysicalV2_2 {
+        id,
+        car_id: 1,
+        position_id: 40,
+        address_id: None,
+        geofence_id: None,
+        start_date_pg_us: 567_890 + i64::from(id),
+        end_date_pg_us: Some(i64::MAX),
+        charge_energy_added_e2: Some(ProjectionFixedNumericV2_2::NaN),
+        charge_energy_used_e2: None,
+        start_ideal_range_km_e2: None,
+        end_ideal_range_km_e2: None,
+        start_rated_range_km_e2: None,
+        end_rated_range_km_e2: None,
+        start_battery_level: Some(10),
+        end_battery_level: Some(20),
+        duration_min: Some(30),
+        outside_temp_avg_e1: Some(ProjectionFixedNumericV2_2::Finite(-1)),
+        cost_e2: Some(cost_e2),
+    }
+}
+
+fn seed_charging_processes(stage: &mut TeslaMateStage) {
+    for process in [
+        physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(99_999_999_999_999)),
+        physical_charging_process(51, ProjectionFixedNumericV2_2::Finite(-99_999_999_999_999)),
+    ] {
+        stage
+            .insert(
+                TeslaMateStageTable::ChargingProcesses,
+                i64::from(process.id),
+                &process,
+            )
+            .expect("physical charging process");
+    }
+}
+
 fn deterministic_high_entropy_version(id: i32) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut state = (id as u64) ^ 0x9e37_79b9_7f4a_7c15;
@@ -318,36 +359,39 @@ fn physical_writer_requires_an_explicit_sealed_physical_stage() {
 
 #[test]
 fn physical_writer_rejects_unsupported_relations_before_writing_a_chunk() {
-    let temporary = tempdir().expect("temp dir");
-    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
-    let mut stage =
-        TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
-            .expect("physical stage");
-    seed_roots(&mut stage);
-    stage
-        .insert(
-            TeslaMateStageTable::Addresses,
-            20,
-            &serde_json::json!({"id": 20}),
-        )
-        .expect("unsupported physical address marker");
-    stage.seal().expect("seal physical stage");
+    for (stage_table, expected_table) in [
+        (TeslaMateStageTable::Addresses, "addresses"),
+        (TeslaMateStageTable::Geofences, "geofences"),
+        (TeslaMateStageTable::Charges, "charges"),
+    ] {
+        let temporary = tempdir().expect("temp dir");
+        let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+        let mut stage =
+            TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
+                .expect("physical stage");
+        seed_roots(&mut stage);
+        stage
+            .insert(stage_table, 20, &serde_json::json!({"id": 20}))
+            .expect("unsupported physical relation marker");
+        stage.seal().expect("seal physical stage");
 
-    let writer = ProjectionPackWriter::new(store.packs_dir());
-    let error = write_staged_physical_updates_snapshot_v3(
-        &stage,
-        &writer,
-        binding(),
-        snapshot_id(),
-        sequence(),
-        &CursorKey::from_bytes([10; 32]),
-    )
-    .expect_err("unsupported relation rows");
-    assert!(matches!(
-        error,
-        TeslaMatePhysicalFragmentError::UnsupportedTableRows { table: "addresses" }
-    ));
-    assert!(!store.packs_dir().join("sha256").exists());
+        let writer = ProjectionPackWriter::new(store.packs_dir());
+        let error = write_staged_physical_updates_snapshot_v3(
+            &stage,
+            &writer,
+            binding(),
+            snapshot_id(),
+            sequence(),
+            &CursorKey::from_bytes([10; 32]),
+        )
+        .expect_err("unsupported relation rows");
+        assert!(matches!(
+            error,
+            TeslaMatePhysicalFragmentError::UnsupportedTableRows { table }
+                if table == expected_table
+        ));
+        assert!(!store.packs_dir().join("sha256").exists());
+    }
 }
 
 #[test]
@@ -412,8 +456,13 @@ fn physical_state_rows_require_matching_source_identity_and_selected_car() {
 }
 
 #[test]
-fn physical_drive_and_position_rows_require_matching_source_identity_and_selected_car() {
-    for relation in ["drive-source", "position-car"] {
+fn physical_relation_rows_require_matching_source_identity_and_selected_car() {
+    for relation in [
+        "drive-source",
+        "position-car",
+        "charging-process-source",
+        "charging-process-car",
+    ] {
         let temporary = tempdir().expect("temp dir");
         let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
         let mut stage =
@@ -437,6 +486,25 @@ fn physical_drive_and_position_rows_require_matching_source_identity_and_selecte
                         &position,
                     )
                     .expect("physical position");
+            }
+            "charging-process-source" => {
+                let process =
+                    physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+                stage
+                    .insert(TeslaMateStageTable::ChargingProcesses, 51, &process)
+                    .expect("physical charging process");
+            }
+            "charging-process-car" => {
+                let mut process =
+                    physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+                process.car_id = 2;
+                stage
+                    .insert(
+                        TeslaMateStageTable::ChargingProcesses,
+                        i64::from(process.id),
+                        &process,
+                    )
+                    .expect("physical charging process");
             }
             _ => unreachable!(),
         }
@@ -464,6 +532,18 @@ fn physical_drive_and_position_rows_require_matching_source_identity_and_selecte
                 error,
                 TeslaMatePhysicalFragmentError::SelectedCarMismatch
             )),
+            "charging-process-source" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::SourceIdMismatch {
+                    table: "charging_processes",
+                    stored: 51,
+                    decoded: 50
+                }
+            )),
+            "charging-process-car" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::SelectedCarMismatch
+            )),
             _ => unreachable!(),
         }
         assert!(!store.packs_dir().join("sha256").exists());
@@ -488,6 +568,7 @@ fn sealed_physical_stage_streams_relations_in_verified_contiguous_v3_chunks() {
             .expect("physical stage");
     seed_roots(&mut stage);
     seed_drive_and_position(&mut stage);
+    seed_charging_processes(&mut stage);
     seed_states(
         &mut stage,
         &[
@@ -516,10 +597,10 @@ fn sealed_physical_stage_streams_relations_in_verified_contiguous_v3_chunks() {
     )
     .expect("physical candidate");
 
-    assert_eq!(candidate.chunks.len(), 6);
-    assert_eq!(candidate.manifest.chunks.len(), 6);
-    assert_eq!(candidate.logical_source_rows, 9);
-    assert_eq!(candidate.manifest.total_rows, 24);
+    assert_eq!(candidate.chunks.len(), 8);
+    assert_eq!(candidate.manifest.chunks.len(), 8);
+    assert_eq!(candidate.logical_source_rows, 11);
+    assert_eq!(candidate.manifest.total_rows, 32);
     candidate
         .manifest
         .validate_terminal_cursor(&cursor_key)
@@ -528,6 +609,7 @@ fn sealed_physical_stage_streams_relations_in_verified_contiguous_v3_chunks() {
     let mut state_rows = Vec::new();
     let mut drive_rows = Vec::new();
     let mut position_rows = Vec::new();
+    let mut charging_process_rows = Vec::new();
     for (ordinal, chunk) in candidate.chunks.iter().enumerate() {
         assert_eq!(chunk.metadata.ordinal, ordinal as u32);
         assert_eq!(
@@ -545,7 +627,8 @@ fn sealed_physical_stage_streams_relations_in_verified_contiguous_v3_chunks() {
             match ordinal {
                 0 => vec![MirrorTable::Car, MirrorTable::Drive],
                 1 => vec![MirrorTable::Car, MirrorTable::Position],
-                2..=3 => vec![MirrorTable::Car, MirrorTable::State],
+                2..=3 => vec![MirrorTable::Car, MirrorTable::Charge],
+                4..=5 => vec![MirrorTable::Car, MirrorTable::State],
                 _ => vec![MirrorTable::Car, MirrorTable::Update],
             }
         );
@@ -620,6 +703,35 @@ fn sealed_physical_stage_streams_relations_in_verified_contiguous_v3_chunks() {
                 .expect("position rows"),
         );
         let mut statement = connection
+            .prepare(
+                "SELECT id, position_id, start_date_pg_us, end_date_pg_us,
+                        charge_energy_added_e2, charge_energy_added_e2_is_nan,
+                        outside_temp_avg_e1, outside_temp_avg_e1_is_nan,
+                        cost_e2, cost_e2_is_nan
+                 FROM charging_processes ORDER BY id",
+            )
+            .expect("charging process query");
+        charging_process_rows.extend(
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, i32>(0)?,
+                        row.get::<_, i32>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                        row.get::<_, Option<i64>>(4)?,
+                        row.get::<_, i64>(5)?,
+                        row.get::<_, Option<i64>>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, Option<i64>>(8)?,
+                        row.get::<_, i64>(9)?,
+                    ))
+                })
+                .expect("charging processes")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("charging process rows"),
+        );
+        let mut statement = connection
             .prepare("SELECT id, state, start_date_pg_us, end_date_pg_us FROM states ORDER BY id")
             .expect("state query");
         state_rows.extend(
@@ -677,6 +789,35 @@ fn sealed_physical_stage_streams_relations_in_verified_contiguous_v3_chunks() {
             0,
             Some((-0.0_f64).to_bits().to_be_bytes().to_vec()),
         )]
+    );
+    assert_eq!(
+        charging_process_rows,
+        vec![
+            (
+                50,
+                40,
+                567_940,
+                Some(i64::MAX),
+                None,
+                1,
+                Some(-1),
+                0,
+                Some(99_999_999_999_999),
+                0,
+            ),
+            (
+                51,
+                40,
+                567_941,
+                Some(i64::MAX),
+                None,
+                1,
+                Some(-1),
+                0,
+                Some(-99_999_999_999_999),
+                0,
+            ),
+        ]
     );
     assert_eq!(update_ids, vec![10, 11]);
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Unpublished schema-2.2 drive, position, state, and update chunks from a sealed physical stage.
+//! Unpublished schema-2.2 drive, position, charging-process, state, and update chunks.
 //!
 //! This module proves the bounded stage-to-pack boundary only. It does not
 //! capture PostgreSQL rows and cannot publish a manifest to the Hub catalogue.
@@ -20,7 +20,8 @@ use crate::{
     },
     protocol::{CursorKey, ProtocolLimits, SequenceRange, SyncManifest},
     teslamate_projection::{
-        TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateDrivePhysicalV2_2,
+        TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2,
+        TeslaMateChargingProcessPhysicalV2_2, TeslaMateDrivePhysicalV2_2,
         TeslaMatePositionPhysicalV2_2, TeslaMateSettingsPhysicalV2_2, TeslaMateStatePhysicalV2_2,
         TeslaMateUpdatePhysicalV2_2,
     },
@@ -91,7 +92,7 @@ impl Drop for StagedPhysicalProjectionV3 {
     }
 }
 
-/// Stream drive, position, state, and update rows from one complete sealed physical source stage into
+/// Stream drive, position, charging-process, state, and update rows from one sealed physical stage into
 /// independently verified V3 SQLite chunks, then sign exactly one manifest
 /// over all chunks. Any other relation-bearing history rejects before the first pack
 /// write. No catalogue method is reachable from this boundary.
@@ -188,7 +189,6 @@ fn write_staged_physical_updates_snapshot_v3_inner(
     for table in [
         TeslaMateStageTable::Addresses,
         TeslaMateStageTable::Geofences,
-        TeslaMateStageTable::ChargingProcesses,
         TeslaMateStageTable::Charges,
     ] {
         if !stage
@@ -284,6 +284,37 @@ fn write_staged_physical_updates_snapshot_v3_inner(
         },
     );
     if let Err(error) = positions {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
+    }
+
+    let charging_processes = for_each_page::<TeslaMateChargingProcessPhysicalV2_2, _>(
+        stage,
+        TeslaMateStageTable::ChargingProcesses,
+        |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "charging_processes")?;
+            if i64::from(row.value.car_id) != binding.selected_car_id {
+                return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
+            }
+            let projected = row.value.into();
+            let projected_bytes = serialized_bytes(&projected)?;
+            if accumulator.needs_flush(projected_bytes, limits)? {
+                flush_chunk(
+                    writer,
+                    &binding,
+                    snapshot_id,
+                    sequence,
+                    &mut accumulator,
+                    &mut chunks,
+                    fail_before_ordinal,
+                )?;
+            }
+            accumulator.snapshot.charging_processes.push(projected);
+            accumulator.add_payload(projected_bytes)?;
+            Ok(())
+        },
+    );
+    if let Err(error) = charging_processes {
         cleanup_chunks(&mut chunks);
         return Err(error);
     }

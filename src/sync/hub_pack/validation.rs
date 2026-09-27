@@ -490,8 +490,8 @@ fn validate_request_v2_2(
             ),
             (
                 process.cost_e2,
-                -999_999,
-                999_999,
+                -99_999_999_999_999,
+                99_999_999_999_999,
                 "charging_process.cost_e2",
             ),
         ] {

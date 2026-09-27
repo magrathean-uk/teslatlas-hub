@@ -500,6 +500,70 @@ fn decode_position_v2_2(row: &Row) -> Result<TeslaMatePositionPhysicalV2_2, Tesl
     })
 }
 
+fn decode_charging_process_v2_2(
+    row: &Row,
+) -> Result<TeslaMateChargingProcessPhysicalV2_2, TeslaMateReaderError> {
+    Ok(TeslaMateChargingProcessPhysicalV2_2 {
+        id: required_i32(row, "charging_processes", "id")?,
+        car_id: required_i16(row, "charging_processes", "car_id")?,
+        position_id: required_i32(row, "charging_processes", "position_id")?,
+        address_id: optional_i32(row, "charging_processes", "address_id")?,
+        geofence_id: optional_i32(row, "charging_processes", "geofence_id")?,
+        start_date_pg_us: required_timestamp_pg_us(
+            row,
+            "charging_processes",
+            "start_date",
+        )?,
+        end_date_pg_us: optional_timestamp_pg_us(row, "charging_processes", "end_date")?,
+        charge_energy_added_e2: optional_fixed_numeric_v2_2(
+            row,
+            "charging_processes",
+            "charge_energy_added",
+            2,
+        )?,
+        charge_energy_used_e2: optional_fixed_numeric_v2_2(
+            row,
+            "charging_processes",
+            "charge_energy_used",
+            2,
+        )?,
+        start_ideal_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "charging_processes",
+            "start_ideal_range_km",
+            2,
+        )?,
+        end_ideal_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "charging_processes",
+            "end_ideal_range_km",
+            2,
+        )?,
+        start_rated_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "charging_processes",
+            "start_rated_range_km",
+            2,
+        )?,
+        end_rated_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "charging_processes",
+            "end_rated_range_km",
+            2,
+        )?,
+        start_battery_level: optional_i16(row, "charging_processes", "start_battery_level")?,
+        end_battery_level: optional_i16(row, "charging_processes", "end_battery_level")?,
+        duration_min: optional_i16(row, "charging_processes", "duration_min")?,
+        outside_temp_avg_e1: optional_fixed_numeric_v2_2(
+            row,
+            "charging_processes",
+            "outside_temp_avg",
+            1,
+        )?,
+        cost_e2: optional_fixed_numeric_v2_2(row, "charging_processes", "cost", 2)?,
+    })
+}
+
 fn decode_car_settings_row(row: &Row) -> Result<ProjectionCarSettings, TeslaMateReaderError> {
     let defaults = ProjectionCarSettings::default();
     Ok(ProjectionCarSettings {
