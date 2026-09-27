@@ -37,7 +37,8 @@ use teslatlas_hub::{
         ProjectionUnitOfLengthV2_2, ProjectionUnitOfPressureV2_2, ProjectionUnitOfTemperatureV2_2,
     },
     teslamate_physical_fragments::{
-        TeslaMatePhysicalFragmentLimits, write_staged_physical_updates_snapshot_v3_with_limits,
+        StagedPhysicalProjectionV3, TeslaMatePhysicalFragmentLimits,
+        write_staged_physical_updates_snapshot_v3_with_limits,
     },
     teslamate_projection::{
         TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateChargePhysicalV2_2,
@@ -78,7 +79,17 @@ const PHYSICAL_V3_PROFILE_ID: &str = "hub-sync-v1@1.3.0";
 #[cfg(feature = "interop-fixture")]
 const PHYSICAL_V3_SNAPSHOT_ID: Uuid = Uuid::from_u128(0x51351351513541358135513513513513);
 #[cfg(feature = "interop-fixture")]
+const PHYSICAL_V3_SUCCESSOR_SNAPSHOT_ID: Uuid = Uuid::from_u128(0x51451451514541458145514514514514);
+#[cfg(feature = "interop-fixture")]
 const PHYSICAL_V3_UPDATE_COUNT: i32 = 1_018;
+#[cfg(feature = "interop-fixture")]
+const PHYSICAL_V3_DRIVE_ID: i32 = 301;
+#[cfg(feature = "interop-fixture")]
+const PHYSICAL_V3_POSITION_IDS: [i32; 2] = [401, 402];
+#[cfg(feature = "interop-fixture")]
+const PHYSICAL_V3_CHARGING_PROCESS_ID: i32 = 501;
+#[cfg(feature = "interop-fixture")]
+const PHYSICAL_V3_CHARGE_IDS: [i32; 2] = [601, 602];
 
 #[derive(Serialize)]
 pub struct PreparedFixture {
@@ -109,6 +120,26 @@ pub struct PreparedPhysicalV3Admission {
     pub charge_sample_ids: [i32; 2],
     pub address_rows: u8,
     pub geofence_rows: u8,
+    pub collector_enabled: bool,
+}
+
+#[cfg(feature = "interop-fixture")]
+#[derive(Serialize)]
+pub struct RotatedPhysicalV3Admission {
+    pub status: &'static str,
+    pub profile_id: &'static str,
+    pub vehicle_id: Uuid,
+    pub retained_snapshot_id: Uuid,
+    pub retained_head_sequence: u64,
+    pub retained_receipt_id: String,
+    pub retained_at_ms: i64,
+    pub retained_expires_at_ms: i64,
+    pub active_snapshot_id: Uuid,
+    pub active_head_sequence: u64,
+    pub active_receipt_id: String,
+    pub active_chunk_count: u32,
+    pub active_first_chunk_sha256: String,
+    pub active_last_chunk_sha256: String,
     pub collector_enabled: bool,
 }
 
@@ -624,21 +655,20 @@ fn prepare_with_vehicle_identities(
     Ok(prepared)
 }
 
-/// Build one deterministic, source-physical schema-2.2 fixture and admit it
-/// through the private production marker. Its coordinates are synthetic and
-/// deliberately have no address or geofence rows.
+/// Build one deterministic, source-physical schema-2.2 candidate. Its
+/// coordinates are synthetic and deliberately have no address or geofence
+/// rows.
 #[cfg(feature = "interop-fixture")]
-fn prepare_physical_v3_public_admission(
+fn build_physical_v3_candidate(
     root: &Path,
     store: &HubStore,
     cursor_key: &teslatlas_hub::protocol::CursorKey,
     vehicle_id: Uuid,
-) -> Result<PreparedPhysicalV3Admission> {
+    snapshot_id: Uuid,
+    stage_directory: &str,
+    update_version_prefix: &str,
+) -> Result<(StagedPhysicalProjectionV3, u64)> {
     const CAR_ID: i16 = 9;
-    const DRIVE_ID: i32 = 301;
-    const POSITION_IDS: [i32; 2] = [401, 402];
-    const CHARGING_PROCESS_ID: i32 = 501;
-    const CHARGE_IDS: [i32; 2] = [601, 602];
     const ROOT_ROWS: u64 = 3;
     const RELATION_ROWS: u64 = 6;
 
@@ -647,7 +677,7 @@ fn prepare_physical_v3_public_admission(
         return Err("physical fixture selected-car binding changed".into());
     }
     let mut stage = TeslaMateStage::create_physical_v3(
-        root.join("physical-v3-source"),
+        root.join(stage_directory),
         TeslaMateStageLimits {
             max_rows: ROOT_ROWS + RELATION_ROWS + u64::try_from(PHYSICAL_V3_UPDATE_COUNT)?,
             max_stage_bytes: 8 * 1024 * 1024,
@@ -704,12 +734,12 @@ fn prepare_physical_v3_public_admission(
     stage.insert(TeslaMateStageTable::Cars, i64::from(car.id), &car)?;
 
     let drive = TeslaMateDrivePhysicalV2_2 {
-        id: DRIVE_ID,
+        id: PHYSICAL_V3_DRIVE_ID,
         car_id: CAR_ID,
         start_date_pg_us: 5_000_000,
         end_date_pg_us: Some(6_000_000),
-        start_position_id: Some(POSITION_IDS[0]),
-        end_position_id: Some(POSITION_IDS[1]),
+        start_position_id: Some(PHYSICAL_V3_POSITION_IDS[0]),
+        end_position_id: Some(PHYSICAL_V3_POSITION_IDS[1]),
         start_address_id: None,
         end_address_id: None,
         start_geofence_id: None,
@@ -731,11 +761,11 @@ fn prepare_physical_v3_public_admission(
         descent: Some(8),
     };
     stage.insert(TeslaMateStageTable::Drives, i64::from(drive.id), &drive)?;
-    for (index, id) in POSITION_IDS.into_iter().enumerate() {
+    for (index, id) in PHYSICAL_V3_POSITION_IDS.into_iter().enumerate() {
         let position = TeslaMatePositionPhysicalV2_2 {
             id,
             car_id: CAR_ID,
-            drive_id: Some(DRIVE_ID),
+            drive_id: Some(PHYSICAL_V3_DRIVE_ID),
             date_pg_us: 5_000_000 + i64::try_from(index)? * 1_000_000,
             latitude_e6: ProjectionFixedNumericV2_2::Finite(i64::try_from(index)? * 1_000),
             longitude_e6: ProjectionFixedNumericV2_2::Finite(0),
@@ -769,9 +799,9 @@ fn prepare_physical_v3_public_admission(
         stage.insert(TeslaMateStageTable::Positions, i64::from(id), &position)?;
     }
     let process = TeslaMateChargingProcessPhysicalV2_2 {
-        id: CHARGING_PROCESS_ID,
+        id: PHYSICAL_V3_CHARGING_PROCESS_ID,
         car_id: CAR_ID,
-        position_id: POSITION_IDS[1],
+        position_id: PHYSICAL_V3_POSITION_IDS[1],
         address_id: None,
         geofence_id: None,
         start_date_pg_us: 7_000_000,
@@ -793,10 +823,10 @@ fn prepare_physical_v3_public_admission(
         i64::from(process.id),
         &process,
     )?;
-    for (index, id) in CHARGE_IDS.into_iter().enumerate() {
+    for (index, id) in PHYSICAL_V3_CHARGE_IDS.into_iter().enumerate() {
         let charge = TeslaMateChargePhysicalV2_2 {
             id,
-            charging_process_id: CHARGING_PROCESS_ID,
+            charging_process_id: PHYSICAL_V3_CHARGING_PROCESS_ID,
             date_pg_us: 7_000_000 + i64::try_from(index)? * 1_000_000,
             battery_heater: None,
             battery_heater_on: Some(false),
@@ -828,7 +858,7 @@ fn prepare_physical_v3_public_admission(
             car_id: CAR_ID,
             start_date_pg_us: 10_000_000 + i64::from(id) * 1_000_000,
             end_date_pg_us: None,
-            version: Some(format!("fixture-{id:04}")),
+            version: Some(format!("{update_version_prefix}-{id:04}")),
         };
         stage.insert(TeslaMateStageTable::Updates, i64::from(update.id), &update)?;
     }
@@ -838,7 +868,7 @@ fn prepare_physical_v3_public_admission(
         &stage,
         &ProjectionPackWriter::new(store.packs_dir()),
         binding,
-        PHYSICAL_V3_SNAPSHOT_ID,
+        snapshot_id,
         SequenceRange {
             from_exclusive: head_sequence,
             to_inclusive: head_sequence,
@@ -861,6 +891,27 @@ fn prepare_physical_v3_public_admission(
         .into());
     }
     let logical_source_rows = candidate.logical_source_rows;
+    Ok((candidate, logical_source_rows))
+}
+
+/// Admit the deterministic first PhysicalV3 head through the private
+/// production marker.
+#[cfg(feature = "interop-fixture")]
+fn prepare_physical_v3_public_admission(
+    root: &Path,
+    store: &HubStore,
+    cursor_key: &teslatlas_hub::protocol::CursorKey,
+    vehicle_id: Uuid,
+) -> Result<PreparedPhysicalV3Admission> {
+    let (candidate, logical_source_rows) = build_physical_v3_candidate(
+        root,
+        store,
+        cursor_key,
+        vehicle_id,
+        PHYSICAL_V3_SNAPSHOT_ID,
+        "physical-v3-source",
+        "fixture",
+    )?;
     let admission = store.stage_interop_physical_v3_admission(candidate)?;
     if admission.chunk_count != 513 || admission.snapshot_id != PHYSICAL_V3_SNAPSHOT_ID {
         return Err("physical fixture admission receipt changed".into());
@@ -873,14 +924,120 @@ fn prepare_physical_v3_public_admission(
         receipt_id: admission.receipt_id,
         chunk_count: admission.chunk_count,
         logical_source_rows,
-        drive_ids: [DRIVE_ID],
-        position_ids: POSITION_IDS,
-        charging_process_ids: [CHARGING_PROCESS_ID],
-        charge_sample_ids: CHARGE_IDS,
+        drive_ids: [PHYSICAL_V3_DRIVE_ID],
+        position_ids: PHYSICAL_V3_POSITION_IDS,
+        charging_process_ids: [PHYSICAL_V3_CHARGING_PROCESS_ID],
+        charge_sample_ids: PHYSICAL_V3_CHARGE_IDS,
         address_rows: 0,
         geofence_rows: 0,
         collector_enabled: false,
     })
+}
+
+/// Rotate the fixed PhysicalV3 fixture to one deterministic successor and
+/// explicitly activate it. This is feature-only fixture control; product
+/// source capture has no caller for the rotation API.
+#[cfg(feature = "interop-fixture")]
+pub fn rotate_physical_v3_public_admission(root: &Path) -> Result<RotatedPhysicalV3Admission> {
+    let (store, expected_source_id) = open_owned_fixture(root)?;
+    let connection: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("connection.json"))?)?;
+    let prior = connection["physical_v3_admission"]
+        .as_object()
+        .ok_or("physical V3 fixture admission required")?;
+    if prior.get("profile_id").and_then(serde_json::Value::as_str) != Some(PHYSICAL_V3_PROFILE_ID)
+        || prior.get("snapshot_id").and_then(serde_json::Value::as_str)
+            != Some(PHYSICAL_V3_SNAPSHOT_ID.to_string().as_str())
+        || prior.get("chunk_count").and_then(serde_json::Value::as_u64) != Some(513)
+        || prior
+            .get("collector_enabled")
+            .and_then(serde_json::Value::as_bool)
+            != Some(false)
+    {
+        return Err("fixed PhysicalV3 fixture admission required".into());
+    }
+    let vehicle_id = Uuid::parse_str(
+        prior
+            .get("vehicle_id")
+            .and_then(serde_json::Value::as_str)
+            .ok_or("physical fixture vehicle identity required")?,
+    )?;
+    let retained_head_sequence = prior
+        .get("head_sequence")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or("physical fixture head sequence required")?;
+    let retained_receipt_id = prior
+        .get("receipt_id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("physical fixture receipt required")?
+        .to_owned();
+    let binding = store.v2_projection_binding(vehicle_id)?;
+    if binding.account_id != expected_source_id {
+        return Err("physical fixture source binding changed".into());
+    }
+    let cursor_key = load_or_create_cursor_key(&root.join("hub"))?;
+    let (candidate, _) = build_physical_v3_candidate(
+        root,
+        &store,
+        &cursor_key,
+        vehicle_id,
+        PHYSICAL_V3_SUCCESSOR_SNAPSHOT_ID,
+        "physical-v3-successor-source",
+        "fixture-successor",
+    )?;
+    let retained_at_ms = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis(),
+    )?;
+    let active = store.rotate_and_activate_interop_physical_v3_admission_at(
+        candidate,
+        &retained_receipt_id,
+        retained_at_ms,
+    )?;
+    if active.snapshot_id != PHYSICAL_V3_SUCCESSOR_SNAPSHOT_ID
+        || active.head_sequence <= retained_head_sequence
+        || active.receipt_id == retained_receipt_id
+        || active.chunk_count != 513
+    {
+        return Err("physical fixture successor admission changed".into());
+    }
+    let receipt = RotatedPhysicalV3Admission {
+        status: "rotated-and-activated",
+        profile_id: PHYSICAL_V3_PROFILE_ID,
+        vehicle_id,
+        retained_snapshot_id: PHYSICAL_V3_SNAPSHOT_ID,
+        retained_head_sequence,
+        retained_receipt_id,
+        retained_at_ms,
+        retained_expires_at_ms: retained_at_ms
+            .checked_add(teslatlas_hub::db::RETIRED_LINEAGE_PACK_RETENTION_MS)
+            .ok_or("physical fixture retention overflow")?,
+        active_snapshot_id: active.snapshot_id,
+        active_head_sequence: active.head_sequence,
+        active_receipt_id: active.receipt_id,
+        active_chunk_count: active.chunk_count,
+        active_first_chunk_sha256: active
+            .manifest
+            .chunks
+            .first()
+            .ok_or("physical fixture successor has no chunks")?
+            .sha256
+            .to_string(),
+        active_last_chunk_sha256: active
+            .manifest
+            .chunks
+            .last()
+            .ok_or("physical fixture successor has no chunks")?
+            .sha256
+            .to_string(),
+        collector_enabled: false,
+    };
+    write_private(
+        &root.join("physical-rotation.json"),
+        &serde_json::to_vec_pretty(&receipt)?,
+    )?;
+    Ok(receipt)
 }
 
 /// Build the minimal physical schema-2.2 snapshot for one synthetic fixture

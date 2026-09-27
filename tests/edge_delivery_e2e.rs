@@ -489,6 +489,7 @@ async fn run_actual_parity_lane(
         source_id,
         endpoint: format!("https://localhost:{hub_port}"),
         vehicle_ids: template.vehicle_ids,
+        physical_v3_admission: None,
     };
     install_hub_config(
         &prepared,

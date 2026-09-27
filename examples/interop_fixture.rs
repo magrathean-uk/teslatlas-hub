@@ -3,7 +3,7 @@
 #[path = "../tests/interop/seed.rs"]
 mod seed;
 
-const USAGE: &str = "usage: interop_fixture (--expose-dynamic|--retire-dynamic|--restore-dynamic|--advance) OWNED_FIXTURE_DIRECTORY | --output NEW_ABSOLUTE_DIRECTORY (--port PORT [--source-id UUID --vehicle-id UUID --vin VIN --car-id ID] [--scenario viewer-r1-51-drives|physical-v3-public-513] | --scenario empty-edge-binding --source-id UUID --vehicle-id UUID --vin VIN --car-id ID --installation-id ID --lineage ID)";
+const USAGE: &str = "usage: interop_fixture (--expose-dynamic|--retire-dynamic|--restore-dynamic|--advance|--rotate-physical) OWNED_FIXTURE_DIRECTORY | --output NEW_ABSOLUTE_DIRECTORY (--port PORT [--source-id UUID --vehicle-id UUID --vin VIN --car-id ID] [--scenario viewer-r1-51-drives|physical-v3-public-513] | --scenario empty-edge-binding --source-id UUID --vehicle-id UUID --vin VIN --car-id ID --installation-id ID --lineage ID)";
 
 const PHYSICAL_V3_FIXTURE_PORT: u16 = 21_445;
 const PHYSICAL_V3_FIXTURE_SOURCE_ID: uuid::Uuid =
@@ -27,6 +27,11 @@ fn run(args: &[String]) -> Result<serde_json::Value, Box<dyn std::error::Error>>
     if args.len() == 2 && args[0] == "--advance" {
         seed::advance(std::path::Path::new(&args[1]))?;
         return Ok(serde_json::json!({"status":"advanced"}));
+    }
+    if args.len() == 2 && args[0] == "--rotate-physical" {
+        return Ok(serde_json::to_value(
+            seed::rotate_physical_v3_public_admission(std::path::Path::new(&args[1]))?,
+        )?);
     }
     if args.len() == 2 && args[0] == "--expose-dynamic" {
         return Ok(serde_json::to_value(seed::expose_dynamic_vehicle(
@@ -161,6 +166,7 @@ fn run(args: &[String]) -> Result<serde_json::Value, Box<dyn std::error::Error>>
 #[cfg(test)]
 mod tests {
     use super::run;
+    use std::os::unix::fs::PermissionsExt;
 
     #[test]
     fn empty_edge_binding_scenario_requires_and_preserves_all_sealed_identities() {
@@ -263,5 +269,32 @@ mod tests {
         assert!(config.contains("bind = \"127.0.0.1:21445\""));
         assert!(config.contains("[collector]\ninterval_seconds = 0"));
         assert!(!output.join("hub/secrets/teslamate-encryption.key").exists());
+
+        let rotated = run(&["--rotate-physical".into(), output.to_str().unwrap().into()]).unwrap();
+        assert_eq!(rotated["status"], "rotated-and-activated");
+        assert_eq!(rotated["profile_id"], "hub-sync-v1@1.3.0");
+        assert_eq!(rotated["vehicle_id"], admission["vehicle_id"]);
+        assert_eq!(rotated["retained_snapshot_id"], admission["snapshot_id"]);
+        assert_eq!(rotated["retained_receipt_id"], admission["receipt_id"]);
+        assert_eq!(
+            rotated["active_snapshot_id"],
+            "51451451-5145-4145-8145-514514514514"
+        );
+        assert_eq!(rotated["active_chunk_count"], 513);
+        assert!(
+            rotated["active_head_sequence"].as_u64().unwrap()
+                > admission["head_sequence"].as_u64().unwrap()
+        );
+        assert_ne!(rotated["active_receipt_id"], admission["receipt_id"]);
+        assert_eq!(rotated["collector_enabled"], false);
+        assert_eq!(
+            std::fs::metadata(output.join("physical-rotation.json"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+        assert!(run(&["--rotate-physical".into(), output.to_str().unwrap().into()]).is_err());
     }
 }

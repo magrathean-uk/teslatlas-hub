@@ -18,6 +18,45 @@ impl HubStore {
         self.stage_pending_physical_v3_admission(&publication_gate, candidate)
     }
 
+    /// Rotate and explicitly activate one fixture-built successor through the
+    /// production storage path. The blocked-state check prevents this feature
+    /// only helper from hiding an accidental public successor before the
+    /// retained checkpoint has been supplied to activation.
+    #[cfg(feature = "interop-fixture")]
+    #[doc(hidden)]
+    pub fn rotate_and_activate_interop_physical_v3_admission_at(
+        &self,
+        candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        retained_receipt_id: &str,
+        retained_at_ms: i64,
+    ) -> Result<PendingPhysicalV3Admission, StoreError> {
+        let publication_gate = self.try_acquire_publication_gate()?;
+        let rotated = self.rotate_pending_physical_v3_admission_at(
+            &publication_gate,
+            candidate,
+            retained_at_ms,
+        )?;
+        match self.pending_physical_v3_control_admission_for_vehicle(rotated.vehicle_id) {
+            Err(StoreError::PhysicalV3SecondHeadUnsupported(vehicle_id))
+                if vehicle_id == rotated.vehicle_id => {}
+            _ => return Err(StoreError::PhysicalV3AdmissionConflict),
+        }
+        let active = self.activate_pending_physical_v3_rotation_at(
+            &publication_gate,
+            rotated.vehicle_id,
+            retained_receipt_id,
+            retained_at_ms,
+        )?;
+        if self
+            .pending_physical_v3_control_admission_for_vehicle(active.vehicle_id)?
+            .as_ref()
+            != Some(&active)
+        {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
+        Ok(active)
+    }
+
     /// Stage one complete physical schema-2.2 snapshot behind a private,
     /// durable marker. The generic current-manifest and pack-serving catalogue
     /// remains untouched. The caller must hold this store's publication gate

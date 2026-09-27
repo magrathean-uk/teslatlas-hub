@@ -4,8 +4,14 @@
 mod seed;
 
 use axum::{body::Body, http::Request};
+#[cfg(feature = "interop-fixture")]
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+#[cfg(feature = "interop-fixture")]
+use ed25519_dalek::{Signature, VerifyingKey};
 use http_body_util::BodyExt;
 use serde_json::Value;
+#[cfg(feature = "interop-fixture")]
+use teslatlas_hub::protocol::Sha256Digest;
 use teslatlas_hub::{
     db::{HubStore, VehicleDescriptor},
     server::paired_router,
@@ -68,6 +74,219 @@ fn standard_fixtures_publish_matching_schema_22_pairs_and_keep_query_rows() {
         assert_eq!(drive_count, expected_drives, "{name} query drives");
         assert_eq!(charge_count, 1, "{name} query charges");
     }
+}
+
+#[cfg(feature = "interop-fixture")]
+#[tokio::test]
+async fn physical_v3_fixture_rotates_and_completes_the_retained_rebase_journey() {
+    const SOURCE_ID: uuid::Uuid = uuid::Uuid::from_u128(0x51300000000040008000000000000513);
+    const PROFILE_HEADER: &str = "x-teslatlas-sync-profile";
+    const SCHEMAS_HEADER: &str = "x-teslatlas-supported-schemas";
+    const PROFILE_ID: &str = "hub-sync-v1@1.3.0";
+
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("physical-v3-two-head");
+    let prepared = seed::prepare_with_scenario_and_source_id(
+        &root,
+        21_445,
+        seed::FixtureScenario::PhysicalV3Public513,
+        SOURCE_ID,
+    )
+    .unwrap();
+    let initial = prepared.physical_v3_admission.as_ref().unwrap();
+    assert_eq!(initial.chunk_count, 513);
+    assert!(!initial.collector_enabled);
+    let store = HubStore::initialize(root.join("hub")).unwrap();
+    let key =
+        teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub")).unwrap();
+    let app = paired_router(store, &key);
+    let invitation: Value =
+        serde_json::from_slice(&std::fs::read(&prepared.invitation_path).unwrap()).unwrap();
+    let claim = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/v1/pairings/{}/claim",
+                    invitation["pairing_id"].as_str().unwrap()
+                ))
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "secret": invitation["secret"],
+                        "device_name": "physical-v3-two-head-fixture"
+                    })
+                    .to_string(),
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(claim.status(), 200);
+    let claim: Value =
+        serde_json::from_slice(&claim.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    let token = claim["access_token"].as_str().unwrap();
+
+    let signing_keys = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{}/sync/signing-keys",
+                    initial.vehicle_id
+                ))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(signing_keys.status(), 200);
+    let signing_keys: Value =
+        serde_json::from_slice(&signing_keys.into_body().collect().await.unwrap().to_bytes())
+            .unwrap();
+    assert_eq!(signing_keys["profile_id"], PROFILE_ID);
+    assert_eq!(signing_keys["vehicle_id"], initial.vehicle_id.to_string());
+    let public_key = signing_keys["keys"][0]["public_key"].as_str().unwrap();
+
+    let bootstrap = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{}/sync/manifest", initial.vehicle_id))
+                .header("authorization", format!("Bearer {token}"))
+                .header(PROFILE_HEADER, PROFILE_ID)
+                .header(SCHEMAS_HEADER, "2.1,2.2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(bootstrap.status(), 200);
+    let bootstrap: Value =
+        serde_json::from_slice(&bootstrap.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(bootstrap["receipt_id"], initial.receipt_id);
+    assert_eq!(bootstrap["sequence"], initial.head_sequence);
+    assert_eq!(bootstrap["chunks"].as_array().unwrap().len(), 513);
+    assert_hub_sync_fixture_signature(&bootstrap, public_key);
+    let retained_first_digest = bootstrap["chunks"][0]["pack"]["sha256"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let rotation = seed::rotate_physical_v3_public_admission(&root).unwrap();
+    assert_eq!(rotation.retained_receipt_id, initial.receipt_id);
+    assert_eq!(rotation.retained_head_sequence, initial.head_sequence);
+    assert_eq!(rotation.active_chunk_count, 513);
+    assert!(rotation.active_head_sequence > initial.head_sequence);
+    assert!(!rotation.collector_enabled);
+
+    let changes_request = |receipt_id: &str, sequence: u64| {
+        Request::builder()
+            .method("POST")
+            .uri(format!(
+                "/v1/vehicles/{}/sync/changes-since",
+                initial.vehicle_id
+            ))
+            .header("authorization", format!("Bearer {token}"))
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "base_receipt_id": receipt_id,
+                    "base_manifest_schema": "2.2",
+                    "from_sequence": sequence,
+                    "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+                })
+                .to_string(),
+            ))
+            .unwrap()
+    };
+    let rebase = app
+        .clone()
+        .oneshot(changes_request(
+            &rotation.retained_receipt_id,
+            rotation.retained_head_sequence,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(rebase.status(), 409);
+    let rebase: Value =
+        serde_json::from_slice(&rebase.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(rebase["kind"], "rebase_required");
+    assert_eq!(rebase["requested_base_receipt_id"], initial.receipt_id);
+    assert_eq!(
+        rebase["replacement"]["receipt_id"],
+        rotation.active_receipt_id
+    );
+    assert_eq!(
+        rebase["replacement"]["sequence"],
+        rotation.active_head_sequence
+    );
+    let chunks = rebase["replacement"]["chunks"].as_array().unwrap();
+    assert_eq!(chunks.len(), 513);
+    assert_eq!(
+        chunks.first().unwrap()["pack"]["sha256"],
+        rotation.active_first_chunk_sha256
+    );
+    assert_eq!(
+        chunks.last().unwrap()["pack"]["sha256"],
+        rotation.active_last_chunk_sha256
+    );
+    assert_eq!(
+        rebase["retry_request"]["base_receipt_id"],
+        rotation.active_receipt_id
+    );
+    assert_hub_sync_fixture_signature(&rebase, public_key);
+
+    for digest in [
+        &rotation.active_first_chunk_sha256,
+        &rotation.active_last_chunk_sha256,
+    ] {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/packs/sha256/{digest}.sqlite.zst"))
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(Sha256Digest::of_bytes(&body).to_string(), digest.as_str());
+    }
+    let retained_pack = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/packs/sha256/{retained_first_digest}.sqlite.zst"
+                ))
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(retained_pack.status(), 404);
+
+    let noop = app
+        .oneshot(changes_request(
+            &rotation.active_receipt_id,
+            rotation.active_head_sequence,
+        ))
+        .await
+        .unwrap();
+    assert_eq!(noop.status(), 200);
+    let noop: Value =
+        serde_json::from_slice(&noop.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(noop["kind"], "no_op");
+    assert_eq!(noop["base_receipt_id"], rotation.active_receipt_id);
+    assert_eq!(noop["sequence"], rotation.active_head_sequence);
+    assert_hub_sync_fixture_signature(&noop, public_key);
 }
 
 #[cfg(feature = "interop-fixture")]
@@ -754,6 +973,25 @@ fn ids(page: &Value) -> Vec<i64> {
         .iter()
         .map(|r| r["id"].as_i64().unwrap())
         .collect()
+}
+
+#[cfg(feature = "interop-fixture")]
+fn assert_hub_sync_fixture_signature(value: &Value, public_key: &str) {
+    let signature = value["signature"].as_object().unwrap();
+    let mut payload = value.clone();
+    payload.as_object_mut().unwrap().remove("signature");
+    let canonical = serde_jcs::to_vec(&payload).unwrap();
+    assert_eq!(
+        signature["signed_payload_sha256"],
+        Sha256Digest::of_bytes(&canonical).to_string()
+    );
+    let public_key: [u8; 32] = STANDARD.decode(public_key).unwrap().try_into().unwrap();
+    let verifying_key = VerifyingKey::from_bytes(&public_key).unwrap();
+    let signature_bytes = STANDARD
+        .decode(signature["signature"].as_str().unwrap())
+        .unwrap();
+    let signature = Signature::from_slice(&signature_bytes).unwrap();
+    verifying_key.verify_strict(&canonical, &signature).unwrap();
 }
 
 async fn get(app: &axum::Router, route: &str, token: &str) -> Value {

@@ -270,6 +270,86 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "profile"):
             self.load()
 
+    def test_physical_rotation_trigger_is_empty_private_and_consumed_once(self):
+        request = self.root / fixture.PHYSICAL_ROTATION_REQUEST
+        request.write_bytes(b"")
+        request.chmod(0o600)
+
+        self.assertTrue(fixture.consume_owned_empty_request(
+            self.root,
+            fixture.PHYSICAL_ROTATION_REQUEST,
+            fixture.PHYSICAL_ROTATION_CONSUMED,
+        ))
+        self.assertFalse(request.exists())
+        consumed = self.root / fixture.PHYSICAL_ROTATION_CONSUMED
+        self.assertTrue(consumed.is_file())
+        self.assertEqual(consumed.stat().st_mode & 0o777, 0o600)
+        with self.assertRaisesRegex(ValueError, "already consumed"):
+            fixture.consume_owned_empty_request(
+                self.root,
+                fixture.PHYSICAL_ROTATION_REQUEST,
+                fixture.PHYSICAL_ROTATION_CONSUMED,
+            )
+
+        other_root = self.root / "payload"
+        other_root.mkdir(mode=0o700)
+        payload = other_root / fixture.PHYSICAL_ROTATION_REQUEST
+        payload.write_text("no paths or commands")
+        payload.chmod(0o600)
+        with self.assertRaisesRegex(ValueError, "empty owner-only"):
+            fixture.consume_owned_empty_request(
+                other_root,
+                fixture.PHYSICAL_ROTATION_REQUEST,
+                fixture.PHYSICAL_ROTATION_CONSUMED,
+            )
+
+    def test_physical_rotation_runs_fixed_owned_command_and_validates_receipt(self):
+        prior = {
+            "profile_id": fixture.PHYSICAL_V3_PROFILE_ID,
+            "vehicle_id": "11111111-1111-4111-8111-111111111111",
+            "snapshot_id": fixture.PHYSICAL_V3_SNAPSHOT_ID,
+            "head_sequence": 3,
+            "receipt_id": "pv3_" + "a" * 64,
+        }
+        descriptor = {"physical_v3_admission": prior}
+        receipt = {
+            "status": "rotated-and-activated",
+            "profile_id": fixture.PHYSICAL_V3_PROFILE_ID,
+            "vehicle_id": prior["vehicle_id"],
+            "retained_snapshot_id": prior["snapshot_id"],
+            "retained_head_sequence": prior["head_sequence"],
+            "retained_receipt_id": prior["receipt_id"],
+            "retained_at_ms": 1788566400000,
+            "retained_expires_at_ms": 1788652800000,
+            "active_snapshot_id": fixture.PHYSICAL_V3_SUCCESSOR_SNAPSHOT_ID,
+            "active_head_sequence": 4,
+            "active_receipt_id": "pv3_" + "b" * 64,
+            "active_chunk_count": 513,
+            "active_first_chunk_sha256": "c" * 64,
+            "active_last_chunk_sha256": "d" * 64,
+            "collector_enabled": False,
+        }
+        receipt_path = self.root / fixture.PHYSICAL_ROTATION_RECEIPT
+        fixture.write_private_json(receipt_path, receipt)
+        completed = mock.Mock(returncode=0)
+
+        with mock.patch.object(fixture.subprocess, "run", return_value=completed) as run:
+            actual = fixture.run_owned_physical_rotation(
+                self.executable, self.root, descriptor
+            )
+
+        self.assertEqual(actual, receipt)
+        self.assertEqual(
+            run.call_args.args[0],
+            [str(self.executable), "--rotate-physical", str(self.root)],
+        )
+        self.assertIs(run.call_args.kwargs["stdin"], fixture.subprocess.DEVNULL)
+        self.assertIs(run.call_args.kwargs["stdout"], fixture.subprocess.DEVNULL)
+        self.assertEqual(receipt_path.stat().st_mode & 0o777, 0o600)
+        receipt["active_chunk_count"] = 512
+        with self.assertRaisesRegex(ValueError, "rotation receipt"):
+            fixture.validate_physical_rotation_receipt(descriptor, receipt)
+
     def test_unknown_scenario_selector_fails_before_state_creation(self):
         self.config["scenario_id"] = "../../untrusted"
 

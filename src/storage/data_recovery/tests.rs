@@ -355,6 +355,14 @@ fn downgrade_catalogue_fixture(connection: &Connection, schema: i32) {
     connection
         .execute_batch(
             "BEGIN IMMEDIATE;
+             -- PhysicalV3 admission state was introduced after schema 54. A
+             -- historical fixture must remove it before its user_version is
+             -- rewound, otherwise the later schema-62 migration would try to
+             -- add `serve_state` to an already-current table.
+             DROP TABLE IF EXISTS retained_physical_v3_packs;
+             DROP TABLE IF EXISTS retained_physical_v3_admissions;
+             DROP TABLE IF EXISTS pending_physical_v3_packs;
+             DROP TABLE IF EXISTS pending_physical_v3_admissions;
              DROP TABLE paired_device_token_grace;
              ALTER TABLE vehicles DROP COLUMN retired_at_ms;
              DROP TABLE fleet_refresh_input_fences;

@@ -292,11 +292,12 @@ async fn assert_pairing_and_pack_transfer(
     assert_eq!(wrong.status(), reqwest::StatusCode::NOT_FOUND);
 }
 
-/// Run against Cargo's real executable, or a native release/package artifact:
+/// Run the source-binary standalone-mode smoke for the seeded schema-2.1
+/// snapshot against Cargo's real executable, or a separately built Hub binary:
 /// TESLATLAS_HUB_SMOKE_BINARY=/absolute/path/teslatlas-hub cargo test --test
-/// tls_import_e2e packaged_binary_serves_seeded_snapshot -- --exact
+/// tls_import_e2e source_binary_standalone_mode_serves_seeded_schema_21_snapshot -- --exact
 #[tokio::test]
-async fn packaged_binary_serves_seeded_snapshot() {
+async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     use std::os::unix::fs::PermissionsExt;
     use teslatlas_hub::{
         credentials::OwnerTokens,
@@ -354,6 +355,16 @@ async fn packaged_binary_serves_seeded_snapshot() {
         owner_api = format!("https://{}/", owner_api_sink.local_addr().expect("sink address")),
     )).expect("smoke config");
     fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).expect("private config");
+    let production_rejection = teslatlas_hub::macos_launch_agent::preflight_hub_for_config(
+        &teslatlas_hub::config::HubConfig::load(&config).expect("smoke config loads"),
+    )
+    .expect_err("collector-disabled smoke config is not admitted for production Serve");
+    assert!(
+        production_rejection
+            .to_string()
+            .contains("production Hub requires an enabled collector path"),
+        "unexpected production admission failure: {production_rejection}"
+    );
     let binary = std::env::var_os("TESLATLAS_HUB_SMOKE_BINARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_teslatlas-hub")));
@@ -365,6 +376,8 @@ async fn packaged_binary_serves_seeded_snapshot() {
             .arg("--config")
             .arg(&config)
             .arg("serve")
+            .env("TESLATLAS_HUB_DEVELOPMENT", "1")
+            .env("TESLATLAS_HUB_DEVELOPMENT_MODE", "standalone")
             .stdin(Stdio::null())
             .stdout(Stdio::from(log.try_clone().expect("log clone")))
             .stderr(Stdio::from(log))

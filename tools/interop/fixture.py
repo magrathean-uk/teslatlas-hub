@@ -53,6 +53,10 @@ PHYSICAL_V3_SCENARIO_ID = "physical-v3-public-513"
 PHYSICAL_V3_PROFILE_ID = "hub-sync-v1@1.3.0"
 PHYSICAL_V3_PORT = 21445
 PHYSICAL_V3_SNAPSHOT_ID = "51351351-5135-4135-8135-513513513513"
+PHYSICAL_V3_SUCCESSOR_SNAPSHOT_ID = "51451451-5145-4145-8145-514514514514"
+PHYSICAL_ROTATION_REQUEST = "rotate-physical.request"
+PHYSICAL_ROTATION_CONSUMED = "rotate-physical.consumed"
+PHYSICAL_ROTATION_RECEIPT = "physical-rotation.json"
 SCENARIO_SOURCES = {
     DEFAULT_SCENARIO_ID: Path(__file__).resolve().parents[2] / "tests/interop/scenario.json",
     "viewer-r1-51-drives": Path(__file__).resolve().parents[2] / "tests/interop/scenario-viewer-r1-51-drives.json",
@@ -372,6 +376,69 @@ def validate_seeded_descriptor(config, descriptor, port):
         raise ValueError("physical V3 admission receipt changed")
 
 
+def consume_owned_empty_request(root, request_name, consumed_name):
+    root = Path(root)
+    request = root / request_name
+    consumed = root / consumed_name
+    if consumed.exists():
+        raise ValueError("fixture request was already consumed")
+    try:
+        request.rename(consumed)
+    except FileNotFoundError:
+        return False
+    metadata = consumed.lstat()
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid()
+            or metadata.st_nlink != 1 or metadata.st_mode & 0o077
+            or metadata.st_size != 0):
+        raise ValueError("fixture request must be an empty owner-only regular file")
+    return True
+
+
+def validate_physical_rotation_receipt(descriptor, receipt):
+    expected_keys = {
+        "status", "profile_id", "vehicle_id", "retained_snapshot_id",
+        "retained_head_sequence", "retained_receipt_id", "retained_at_ms",
+        "retained_expires_at_ms", "active_snapshot_id", "active_head_sequence",
+        "active_receipt_id", "active_chunk_count", "active_first_chunk_sha256",
+        "active_last_chunk_sha256", "collector_enabled",
+    }
+    prior = descriptor.get("physical_v3_admission")
+    if (not isinstance(receipt, dict) or set(receipt) != expected_keys
+            or not isinstance(prior, dict)
+            or receipt["status"] != "rotated-and-activated"
+            or receipt["profile_id"] != PHYSICAL_V3_PROFILE_ID
+            or receipt["vehicle_id"] != prior.get("vehicle_id")
+            or receipt["retained_snapshot_id"] != prior.get("snapshot_id")
+            or receipt["retained_head_sequence"] != prior.get("head_sequence")
+            or receipt["retained_receipt_id"] != prior.get("receipt_id")
+            or receipt["active_snapshot_id"] != PHYSICAL_V3_SUCCESSOR_SNAPSHOT_ID
+            or type(receipt["active_head_sequence"]) is not int
+            or receipt["active_head_sequence"] <= receipt["retained_head_sequence"]
+            or receipt["active_receipt_id"] == receipt["retained_receipt_id"]
+            or receipt["active_chunk_count"] != 513
+            or type(receipt["retained_at_ms"]) is not int
+            or type(receipt["retained_expires_at_ms"]) is not int
+            or receipt["retained_expires_at_ms"] <= receipt["retained_at_ms"]
+            or receipt["collector_enabled"] is not False):
+        raise ValueError("physical V3 rotation receipt is invalid")
+    for field in ("active_first_chunk_sha256", "active_last_chunk_sha256"):
+        if not isinstance(receipt[field], str) or not re.fullmatch(r"[0-9a-f]{64}", receipt[field]):
+            raise ValueError("physical V3 rotation digest is invalid")
+
+
+def run_owned_physical_rotation(seed_binary, root, descriptor):
+    update = subprocess.run(
+        [str(seed_binary), "--rotate-physical", str(root)],
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE, timeout=60,
+    )
+    if update.returncode:
+        raise RuntimeError("owned physical rotation failed")
+    receipt = read_private_json(Path(root) / PHYSICAL_ROTATION_RECEIPT)
+    validate_physical_rotation_receipt(descriptor, receipt)
+    return receipt
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -452,8 +519,17 @@ def run(config):
         scenario_path, scenario_sha256 = copy_selected_scenario(root, config)
         descriptor.update(invitation_path=str(invitation_path), profile_id=config["profile_id"],
                           profile_path=config["profile_path"], profile_sha256=config["profile_sha256"],
-                          scenario_path=str(scenario_path), scenario_sha256=scenario_sha256,
-                          update_request_path=str(root / "advance.request"), update_receipt_path=str(root / "advance.json"))
+                          scenario_path=str(scenario_path), scenario_sha256=scenario_sha256)
+        physical_v3 = config.get("scenario_id") == PHYSICAL_V3_SCENARIO_ID
+        if physical_v3:
+            descriptor.update(
+                rotation_request_path=str(root / PHYSICAL_ROTATION_REQUEST),
+                rotation_consumed_path=str(root / PHYSICAL_ROTATION_CONSUMED),
+                rotation_receipt_path=str(root / PHYSICAL_ROTATION_RECEIPT),
+            )
+        else:
+            descriptor.update(update_request_path=str(root / "advance.request"),
+                              update_receipt_path=str(root / "advance.json"))
         log_fd = os.open(root / "serve.log", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(log_fd, "wb") as log:
             process = start_owned_synthetic_serve(binary, descriptor["config_path"], log)
@@ -467,8 +543,14 @@ def run(config):
             print(json.dumps({"status": "ready", "descriptor": str(root / "ready.json")}), flush=True)
             until = time.monotonic() + config["lifetime_seconds"]
             advanced = False
+            rotated = False
             while not stop.wait(0.25) and time.monotonic() < until:
-                if not advanced and (root / "advance.request").is_file():
+                if (physical_v3 and not rotated
+                        and consume_owned_empty_request(
+                            root, PHYSICAL_ROTATION_REQUEST, PHYSICAL_ROTATION_CONSUMED)):
+                    rotated = True
+                    run_owned_physical_rotation(seed_binary, root, descriptor)
+                if not physical_v3 and not advanced and (root / "advance.request").is_file():
                     advanced = True
                     update = subprocess.run([str(seed_binary), "--advance", str(root)], stdin=subprocess.DEVNULL,
                                             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=30)
