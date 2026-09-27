@@ -1,0 +1,10 @@
+Teslatlas Compute
+Copyright 2026 Magrathean Technologies Ltd
+
+This product includes geometry and canonical CPU tile generation code adapted
+from the Teslatlas App at commit 569ac74867947616632ecb64bb65fb97ab565cb5.
+The adapted source is provided under the Apache License, Version 2.0.
+
+The public geometry identity `raster-v9-rounded-tile-px` follows the prepared
+artefact contract in Teslatlas Protocol commit
+4b5d3c1ee71ae5edb734416baeb836dba1c485f4.

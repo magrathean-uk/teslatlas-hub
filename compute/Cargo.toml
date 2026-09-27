@@ -1,0 +1,16 @@
+[package]
+name = "teslatlas-compute"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.1"
+license = "Apache-2.0"
+description = "Deterministic shared compute kernels for Teslatlas"
+repository = "https://github.com/magrathean/teslatlas-compute"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
