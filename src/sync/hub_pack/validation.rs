@@ -416,14 +416,14 @@ fn validate_request_v2_2(
         // zero and signed extremes—is deliberately admissible.
         validate_optional_fixed_numeric_v2_2(
             geofence.cost_per_unit_e4,
-            -999_999,
-            999_999,
+            -999_999_999,
+            999_999_999,
             "geofence.cost_per_unit_e4",
         )?;
         validate_optional_fixed_numeric_v2_2(
             geofence.session_fee_e2,
-            -999_999,
-            999_999,
+            -99_999_999_999_999,
+            99_999_999_999_999,
             "geofence.session_fee_e2",
         )?;
         validate_timestamp_0_pg_us(geofence.inserted_at_pg_us, "geofence.inserted_at_pg_us")?;

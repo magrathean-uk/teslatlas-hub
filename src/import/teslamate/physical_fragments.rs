@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Unpublished schema-2.2 drive, position, charging, state, and update chunks.
+//! Unpublished schema-2.2 physical TeslaMate relation chunks.
 //!
 //! This module proves the bounded stage-to-pack boundary only. It does not
 //! capture PostgreSQL rows and cannot publish a manifest to the Hub catalogue.
-//! Other relation-bearing history remains fail-closed until a later slice groups
-//! each child with the physical parents required by the V3 validator.
+//! Selected-car address and geofence rows are owned by their first deterministic
+//! referrer so every emitted relation satisfies the V3 same-pack boundary.
 
-use std::{fs, mem};
+use std::{collections::HashSet, fs, mem};
 
 use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
@@ -15,16 +15,17 @@ use uuid::Uuid;
 
 use crate::{
     hub_pack::{
-        BuiltProjectionPack, ProjectionBinding, ProjectionChargeV2_2,
-        ProjectionChargingProcessV2_2, ProjectionPackError, ProjectionPackRequestV2_2,
-        ProjectionPackWriter, ProjectionSnapshotV2_2, signed_full_snapshot_manifest,
+        BuiltProjectionPack, ProjectionAddressV2_2, ProjectionBinding, ProjectionChargeV2_2,
+        ProjectionChargingProcessV2_2, ProjectionGeofenceV2_2, ProjectionPackError,
+        ProjectionPackRequestV2_2, ProjectionPackWriter, ProjectionSnapshotV2_2,
+        signed_full_snapshot_manifest,
     },
     protocol::{CursorKey, ProtocolLimits, SequenceRange, SyncManifest},
     teslamate_projection::{
-        TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateChargePhysicalV2_2,
-        TeslaMateChargingProcessPhysicalV2_2, TeslaMateDrivePhysicalV2_2,
-        TeslaMatePositionPhysicalV2_2, TeslaMateSettingsPhysicalV2_2, TeslaMateStatePhysicalV2_2,
-        TeslaMateUpdatePhysicalV2_2,
+        TeslaMateAddressPhysicalV2_2, TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2,
+        TeslaMateChargePhysicalV2_2, TeslaMateChargingProcessPhysicalV2_2,
+        TeslaMateDrivePhysicalV2_2, TeslaMateGeofencePhysicalV2_2, TeslaMatePositionPhysicalV2_2,
+        TeslaMateSettingsPhysicalV2_2, TeslaMateStatePhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
     },
     teslamate_stage::{
         TeslaMateStage, TeslaMateStageError, TeslaMateStageFormat, TeslaMateStageState,
@@ -94,10 +95,9 @@ impl Drop for StagedPhysicalProjectionV3 {
     }
 }
 
-/// Stream drive, position, charging, state, and update rows from one sealed physical stage into
+/// Stream one sealed physical stage into
 /// independently verified V3 SQLite chunks, then sign exactly one manifest
-/// over all chunks. Any other relation-bearing history rejects before the first pack
-/// write. No catalogue method is reachable from this boundary.
+/// over all chunks. No catalogue method is reachable from this boundary.
 pub fn write_staged_physical_updates_snapshot_v3(
     stage: &TeslaMateStage,
     writer: &ProjectionPackWriter,
@@ -188,21 +188,6 @@ fn write_staged_physical_updates_snapshot_v3_inner(
     if stage.format()? != TeslaMateStageFormat::PhysicalV3 {
         return Err(TeslaMatePhysicalFragmentError::WrongStageFormat);
     }
-    for table in [
-        TeslaMateStageTable::Addresses,
-        TeslaMateStageTable::Geofences,
-    ] {
-        if !stage
-            .page::<serde_json::Value>(table, 0, 1)?
-            .rows
-            .is_empty()
-        {
-            return Err(TeslaMatePhysicalFragmentError::UnsupportedTableRows {
-                table: table.as_str(),
-            });
-        }
-    }
-
     let settings =
         exactly_one::<TeslaMateSettingsPhysicalV2_2>(stage, TeslaMateStageTable::GlobalSettings)?;
     require_source_id(settings.source_id, settings.value.id, "global_settings")?;
@@ -223,6 +208,7 @@ fn write_staged_physical_updates_snapshot_v3_inner(
     }
 
     preflight_charges(stage, binding.selected_car_id)?;
+    let relation_preflight = preflight_relations(stage, binding.selected_car_id)?;
 
     let roots = PhysicalRoots {
         global_settings: settings.value.into(),
@@ -231,30 +217,22 @@ fn write_staged_physical_updates_snapshot_v3_inner(
     };
     let mut accumulator = PhysicalChunkAccumulator::new(roots, limits)?;
     let mut chunks = Vec::new();
+    let mut emitted_address_ids = HashSet::with_capacity(relation_preflight.address_count);
+    let mut emitted_geofence_ids = HashSet::with_capacity(relation_preflight.geofence_count);
 
-    let drives =
-        for_each_page::<TeslaMateDrivePhysicalV2_2, _>(stage, TeslaMateStageTable::Drives, |row| {
-            require_source_id(row.source_id, i64::from(row.value.id), "drives")?;
-            if i64::from(row.value.car_id) != binding.selected_car_id {
-                return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
-            }
-            let projected = row.value.into();
-            let projected_bytes = serialized_bytes(&projected)?;
-            if accumulator.needs_flush(projected_bytes, limits)? {
-                flush_chunk(
-                    writer,
-                    &binding,
-                    snapshot_id,
-                    sequence,
-                    &mut accumulator,
-                    &mut chunks,
-                    fail_before_ordinal,
-                )?;
-            }
-            accumulator.snapshot.drives.push(projected);
-            accumulator.add_payload(projected_bytes)?;
-            Ok(())
-        });
+    let drives = stream_drives(
+        stage,
+        writer,
+        &binding,
+        snapshot_id,
+        sequence,
+        limits,
+        &mut accumulator,
+        &mut chunks,
+        &mut emitted_address_ids,
+        &mut emitted_geofence_ids,
+        fail_before_ordinal,
+    );
     if let Err(error) = drives {
         cleanup_chunks(&mut chunks);
         return Err(error);
@@ -300,11 +278,19 @@ fn write_staged_physical_updates_snapshot_v3_inner(
         limits,
         &mut accumulator,
         &mut chunks,
+        &mut emitted_address_ids,
+        &mut emitted_geofence_ids,
         fail_before_ordinal,
     );
     if let Err(error) = charging_processes {
         cleanup_chunks(&mut chunks);
         return Err(error);
+    }
+    if emitted_address_ids.len() != relation_preflight.address_count
+        || emitted_geofence_ids.len() != relation_preflight.geofence_count
+    {
+        cleanup_chunks(&mut chunks);
+        return Err(TeslaMatePhysicalFragmentError::UnemittedRelationRows);
     }
 
     let states =
@@ -463,9 +449,43 @@ impl PhysicalChunkAccumulator {
     }
 
     fn add_payload(&mut self, bytes: u64) -> Result<(), TeslaMatePhysicalFragmentError> {
+        self.add_payload_group(1, bytes)
+    }
+
+    fn group_needs_flush(
+        &self,
+        group_rows: u64,
+        group_bytes: u64,
+        limits: TeslaMatePhysicalFragmentLimits,
+    ) -> Result<bool, TeslaMatePhysicalFragmentError> {
+        let next_rows = self
+            .payload_rows
+            .checked_add(3)
+            .and_then(|value| value.checked_add(group_rows))
+            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+        let next_total_bytes = self
+            .projected_json_bytes
+            .checked_add(group_bytes)
+            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+        if self.payload_rows == 0
+            && (next_rows > limits.max_rows_per_chunk
+                || next_total_bytes > limits.max_projected_json_bytes)
+        {
+            return Err(TeslaMatePhysicalFragmentError::ParentRelationsExceedTarget);
+        }
+        Ok(self.payload_rows != 0
+            && (next_rows > limits.max_rows_per_chunk
+                || next_total_bytes > limits.max_projected_json_bytes))
+    }
+
+    fn add_payload_group(
+        &mut self,
+        rows: u64,
+        bytes: u64,
+    ) -> Result<(), TeslaMatePhysicalFragmentError> {
         self.payload_rows = self
             .payload_rows
-            .checked_add(1)
+            .checked_add(rows)
             .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
         self.projected_json_bytes = self
             .projected_json_bytes
@@ -605,6 +625,236 @@ where
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct RelationPreflight {
+    address_count: usize,
+    geofence_count: usize,
+}
+
+fn preflight_relations(
+    stage: &TeslaMateStage,
+    selected_car_id: i64,
+) -> Result<RelationPreflight, TeslaMatePhysicalFragmentError> {
+    let mut referenced_address_ids = HashSet::new();
+    let mut referenced_geofence_ids = HashSet::new();
+    for_each_page::<TeslaMateDrivePhysicalV2_2, _>(stage, TeslaMateStageTable::Drives, |row| {
+        require_source_id(row.source_id, i64::from(row.value.id), "drives")?;
+        if i64::from(row.value.car_id) != selected_car_id {
+            return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
+        }
+        referenced_address_ids.extend(
+            [row.value.start_address_id, row.value.end_address_id]
+                .into_iter()
+                .flatten()
+                .map(i64::from),
+        );
+        referenced_geofence_ids.extend(
+            [row.value.start_geofence_id, row.value.end_geofence_id]
+                .into_iter()
+                .flatten()
+                .map(i64::from),
+        );
+        Ok(())
+    })?;
+    for_each_page::<TeslaMateChargingProcessPhysicalV2_2, _>(
+        stage,
+        TeslaMateStageTable::ChargingProcesses,
+        |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "charging_processes")?;
+            if i64::from(row.value.car_id) != selected_car_id {
+                return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
+            }
+            referenced_address_ids.extend(row.value.address_id.map(i64::from));
+            referenced_geofence_ids.extend(row.value.geofence_id.map(i64::from));
+            Ok(())
+        },
+    )?;
+
+    let mut address_count = 0_usize;
+    for_each_page::<TeslaMateAddressPhysicalV2_2, _>(
+        stage,
+        TeslaMateStageTable::Addresses,
+        |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "addresses")?;
+            if !referenced_address_ids.contains(&row.source_id) {
+                return Err(TeslaMatePhysicalFragmentError::UnreferencedRelation {
+                    table: "addresses",
+                    source_id: row.source_id,
+                });
+            }
+            address_count = address_count
+                .checked_add(1)
+                .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+            Ok(())
+        },
+    )?;
+    let mut geofence_count = 0_usize;
+    for_each_page::<TeslaMateGeofencePhysicalV2_2, _>(
+        stage,
+        TeslaMateStageTable::Geofences,
+        |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "geofences")?;
+            if !referenced_geofence_ids.contains(&row.source_id) {
+                return Err(TeslaMatePhysicalFragmentError::UnreferencedRelation {
+                    table: "geofences",
+                    source_id: row.source_id,
+                });
+            }
+            geofence_count = geofence_count
+                .checked_add(1)
+                .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+            Ok(())
+        },
+    )?;
+    Ok(RelationPreflight {
+        address_count,
+        geofence_count,
+    })
+}
+
+#[derive(Debug, Default)]
+struct OwnedRelations {
+    addresses: Vec<ProjectionAddressV2_2>,
+    geofences: Vec<ProjectionGeofenceV2_2>,
+    serialized_bytes: u64,
+}
+
+impl OwnedRelations {
+    fn row_count(&self) -> Result<u64, TeslaMatePhysicalFragmentError> {
+        self.addresses
+            .len()
+            .checked_add(self.geofences.len())
+            .and_then(|rows| u64::try_from(rows).ok())
+            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.addresses.is_empty() && self.geofences.is_empty()
+    }
+}
+
+fn collect_owned_relations(
+    stage: &TeslaMateStage,
+    address_ids: impl IntoIterator<Item = i32>,
+    geofence_ids: impl IntoIterator<Item = i32>,
+    emitted_address_ids: &mut HashSet<i32>,
+    emitted_geofence_ids: &mut HashSet<i32>,
+) -> Result<OwnedRelations, TeslaMatePhysicalFragmentError> {
+    let mut owned = OwnedRelations::default();
+    for id in address_ids {
+        if id <= 0 || emitted_address_ids.contains(&id) {
+            continue;
+        }
+        let Some(value) = stage
+            .get::<TeslaMateAddressPhysicalV2_2>(TeslaMateStageTable::Addresses, i64::from(id))?
+        else {
+            continue;
+        };
+        require_source_id(i64::from(id), i64::from(value.id), "addresses")?;
+        let projected: ProjectionAddressV2_2 = value.into();
+        owned.serialized_bytes = owned
+            .serialized_bytes
+            .checked_add(serialized_bytes(&projected)?)
+            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+        emitted_address_ids.insert(id);
+        owned.addresses.push(projected);
+    }
+    for id in geofence_ids {
+        if id <= 0 || emitted_geofence_ids.contains(&id) {
+            continue;
+        }
+        let Some(value) = stage
+            .get::<TeslaMateGeofencePhysicalV2_2>(TeslaMateStageTable::Geofences, i64::from(id))?
+        else {
+            continue;
+        };
+        require_source_id(i64::from(id), i64::from(value.id), "geofences")?;
+        let projected: ProjectionGeofenceV2_2 = value.into();
+        owned.serialized_bytes = owned
+            .serialized_bytes
+            .checked_add(serialized_bytes(&projected)?)
+            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+        emitted_geofence_ids.insert(id);
+        owned.geofences.push(projected);
+    }
+    Ok(owned)
+}
+
+fn append_parent_relations(
+    accumulator: &mut PhysicalChunkAccumulator,
+    relations: OwnedRelations,
+) -> Result<(), TeslaMatePhysicalFragmentError> {
+    let rows = relations.row_count()?;
+    accumulator.snapshot.addresses.extend(relations.addresses);
+    accumulator.snapshot.geofences.extend(relations.geofences);
+    accumulator.add_payload_group(rows, relations.serialized_bytes)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stream_drives(
+    stage: &TeslaMateStage,
+    writer: &ProjectionPackWriter,
+    binding: &ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    limits: TeslaMatePhysicalFragmentLimits,
+    accumulator: &mut PhysicalChunkAccumulator,
+    chunks: &mut Vec<BuiltProjectionPack>,
+    emitted_address_ids: &mut HashSet<i32>,
+    emitted_geofence_ids: &mut HashSet<i32>,
+    fail_before_ordinal: Option<u32>,
+) -> Result<(), TeslaMatePhysicalFragmentError> {
+    for_each_page::<TeslaMateDrivePhysicalV2_2, _>(stage, TeslaMateStageTable::Drives, |row| {
+        require_source_id(row.source_id, i64::from(row.value.id), "drives")?;
+        if i64::from(row.value.car_id) != binding.selected_car_id {
+            return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
+        }
+        let address_ids = [row.value.start_address_id, row.value.end_address_id]
+            .into_iter()
+            .flatten();
+        let geofence_ids = [row.value.start_geofence_id, row.value.end_geofence_id]
+            .into_iter()
+            .flatten();
+        let relations = collect_owned_relations(
+            stage,
+            address_ids,
+            geofence_ids,
+            emitted_address_ids,
+            emitted_geofence_ids,
+        )?;
+        let projected = row.value.into();
+        let projected_bytes = serialized_bytes(&projected)?;
+        let group_rows = 1_u64
+            .checked_add(relations.row_count()?)
+            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+        let group_bytes = projected_bytes
+            .checked_add(relations.serialized_bytes)
+            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+        let needs_flush = if relations.is_empty() {
+            accumulator.needs_flush(projected_bytes, limits)?
+        } else {
+            accumulator.group_needs_flush(group_rows, group_bytes, limits)?
+        };
+        if needs_flush {
+            flush_chunk(
+                writer,
+                binding,
+                snapshot_id,
+                sequence,
+                accumulator,
+                chunks,
+                fail_before_ordinal,
+            )?;
+            if !relations.is_empty() {
+                accumulator.group_needs_flush(group_rows, group_bytes, limits)?;
+            }
+        }
+        accumulator.snapshot.drives.push(projected);
+        accumulator.add_payload(projected_bytes)?;
+        append_parent_relations(accumulator, relations)
+    })
+}
+
 fn preflight_charges(
     stage: &TeslaMateStage,
     selected_car_id: i64,
@@ -639,6 +889,8 @@ fn stream_charging_processes(
     limits: TeslaMatePhysicalFragmentLimits,
     accumulator: &mut PhysicalChunkAccumulator,
     chunks: &mut Vec<BuiltProjectionPack>,
+    emitted_address_ids: &mut HashSet<i32>,
+    emitted_geofence_ids: &mut HashSet<i32>,
     fail_before_ordinal: Option<u32>,
 ) -> Result<(), TeslaMatePhysicalFragmentError> {
     for_each_page::<TeslaMateChargingProcessPhysicalV2_2, _>(
@@ -650,6 +902,13 @@ fn stream_charging_processes(
                 return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
             }
             let process_id = row.value.id;
+            let mut relations = Some(collect_owned_relations(
+                stage,
+                row.value.address_id,
+                row.value.geofence_id,
+                emitted_address_ids,
+                emitted_geofence_ids,
+            )?);
             let projected_process: ProjectionChargingProcessV2_2 = row.value.into();
             let process_bytes = serialized_bytes(&projected_process)?;
             let mut saw_charge = false;
@@ -680,12 +939,56 @@ fn stream_charging_processes(
                             fail_before_ordinal,
                         )?;
                     }
-                    accumulator.ensure_parent_child_fits(process_bytes, charge_bytes, limits)?;
-                    accumulator
-                        .snapshot
-                        .charging_processes
-                        .push(projected_process.clone());
-                    accumulator.add_payload(process_bytes)?;
+                    let owned = relations
+                        .take()
+                        .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+                    if owned.is_empty() {
+                        accumulator.ensure_parent_child_fits(
+                            process_bytes,
+                            charge_bytes,
+                            limits,
+                        )?;
+                        accumulator
+                            .snapshot
+                            .charging_processes
+                            .push(projected_process.clone());
+                        accumulator.add_payload(process_bytes)?;
+                    } else {
+                        let group_rows = 1_u64
+                            .checked_add(owned.row_count()?)
+                            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+                        let group_bytes = process_bytes
+                            .checked_add(owned.serialized_bytes)
+                            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+                        accumulator.group_needs_flush(group_rows, group_bytes, limits)?;
+                        accumulator
+                            .snapshot
+                            .charging_processes
+                            .push(projected_process.clone());
+                        accumulator.add_payload(process_bytes)?;
+                        append_parent_relations(accumulator, owned)?;
+                        if accumulator.needs_flush(charge_bytes, limits)? {
+                            flush_chunk(
+                                writer,
+                                binding,
+                                snapshot_id,
+                                sequence,
+                                accumulator,
+                                chunks,
+                                fail_before_ordinal,
+                            )?;
+                            accumulator.ensure_parent_child_fits(
+                                process_bytes,
+                                charge_bytes,
+                                limits,
+                            )?;
+                            accumulator
+                                .snapshot
+                                .charging_processes
+                                .push(projected_process.clone());
+                            accumulator.add_payload(process_bytes)?;
+                        }
+                    }
                 } else if accumulator.needs_flush(charge_bytes, limits)? {
                     flush_chunk(
                         writer,
@@ -719,7 +1022,21 @@ fn stream_charging_processes(
                     fail_before_ordinal,
                 )?;
             } else {
-                if accumulator.needs_flush(process_bytes, limits)? {
+                let owned = relations
+                    .take()
+                    .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+                let group_rows = 1_u64
+                    .checked_add(owned.row_count()?)
+                    .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+                let group_bytes = process_bytes
+                    .checked_add(owned.serialized_bytes)
+                    .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+                let needs_flush = if owned.is_empty() {
+                    accumulator.needs_flush(process_bytes, limits)?
+                } else {
+                    accumulator.group_needs_flush(group_rows, group_bytes, limits)?
+                };
+                if needs_flush {
                     flush_chunk(
                         writer,
                         binding,
@@ -729,12 +1046,16 @@ fn stream_charging_processes(
                         chunks,
                         fail_before_ordinal,
                     )?;
+                    if !owned.is_empty() {
+                        accumulator.group_needs_flush(group_rows, group_bytes, limits)?;
+                    }
                 }
                 accumulator
                     .snapshot
                     .charging_processes
                     .push(projected_process);
                 accumulator.add_payload(process_bytes)?;
+                append_parent_relations(accumulator, owned)?;
             }
             Ok(())
         },
@@ -820,8 +1141,6 @@ pub enum TeslaMatePhysicalFragmentError {
     StageNotSealed,
     #[error("physical V3 writer requires a physical-v3 stage")]
     WrongStageFormat,
-    #[error("physical V3 writer does not yet support nonempty {table} rows")]
-    UnsupportedTableRows { table: &'static str },
     #[error("physical V3 stage must contain exactly one {table} root row")]
     RootCardinality { table: &'static str },
     #[error("physical V3 selected car does not match the binding")]
@@ -834,6 +1153,8 @@ pub enum TeslaMatePhysicalFragmentError {
     SingleRowExceedsTarget,
     #[error("one physical V3 charging parent and child exceed the configured chunk target")]
     ParentChildExceedsTarget,
+    #[error("one physical V3 parent and its owned relations exceed the configured chunk target")]
+    ParentRelationsExceedTarget,
     #[error("physical V3 candidate exceeds the Hub chunk ceiling")]
     TooManyChunks,
     #[error("physical V3 pack exceeds the 16 MiB Hub sync profile bound")]
@@ -849,6 +1170,10 @@ pub enum TeslaMatePhysicalFragmentError {
         stored: i64,
         decoded: i64,
     },
+    #[error("physical V3 {table} row {source_id} is not referenced by the selected car")]
+    UnreferencedRelation { table: &'static str, source_id: i64 },
+    #[error("physical V3 relation preflight did not emit every staged relation row")]
+    UnemittedRelationRows,
     #[error("physical V3 charge {charge_id} is missing charging process {charging_process_id}")]
     MissingChargingProcess {
         charge_id: i32,

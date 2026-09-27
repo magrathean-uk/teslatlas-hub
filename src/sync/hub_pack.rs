@@ -597,8 +597,8 @@ CREATE TABLE geofences (
     updated_at_pg_us INTEGER NOT NULL CHECK(updated_at_pg_us = (-9223372036854775807 - 1) OR updated_at_pg_us = 9223372036854775807 OR (updated_at_pg_us BETWEEN -211813488000000000 AND 9223371331199999999 AND updated_at_pg_us % 1000000 = 0)),
     CHECK((latitude_e6 IS NULL AND latitude_e6_is_nan = 1) OR (latitude_e6 IS NOT NULL AND latitude_e6_is_nan = 0 AND latitude_e6 BETWEEN -99999999 AND 99999999)),
     CHECK((longitude_e6 IS NULL AND longitude_e6_is_nan = 1) OR (longitude_e6 IS NOT NULL AND longitude_e6_is_nan = 0 AND longitude_e6 BETWEEN -999999999 AND 999999999)),
-    CHECK((cost_per_unit_e4 IS NULL AND cost_per_unit_e4_is_nan IN (0, 1)) OR (cost_per_unit_e4 IS NOT NULL AND cost_per_unit_e4_is_nan = 0 AND cost_per_unit_e4 BETWEEN -999999 AND 999999)),
-    CHECK((session_fee_e2 IS NULL AND session_fee_e2_is_nan IN (0, 1)) OR (session_fee_e2 IS NOT NULL AND session_fee_e2_is_nan = 0 AND session_fee_e2 BETWEEN -999999 AND 999999))
+    CHECK((cost_per_unit_e4 IS NULL AND cost_per_unit_e4_is_nan IN (0, 1)) OR (cost_per_unit_e4 IS NOT NULL AND cost_per_unit_e4_is_nan = 0 AND cost_per_unit_e4 BETWEEN -999999999 AND 999999999)),
+    CHECK((session_fee_e2 IS NULL AND session_fee_e2_is_nan IN (0, 1)) OR (session_fee_e2 IS NOT NULL AND session_fee_e2_is_nan = 0 AND session_fee_e2 BETWEEN -99999999999999 AND 99999999999999))
 ) STRICT, WITHOUT ROWID
 "#;
 

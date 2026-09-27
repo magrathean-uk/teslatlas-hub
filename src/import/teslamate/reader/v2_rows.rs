@@ -606,6 +606,52 @@ fn decode_charge_v2_2(row: &Row) -> Result<TeslaMateChargePhysicalV2_2, TeslaMat
     })
 }
 
+fn decode_address_v2_2(row: &Row) -> Result<TeslaMateAddressPhysicalV2_2, TeslaMateReaderError> {
+    Ok(TeslaMateAddressPhysicalV2_2 {
+        id: required_i32(row, "addresses", "id")?,
+        display_name: optional_text(row, "addresses", "display_name")?,
+        latitude_e6: optional_fixed_numeric_v2_2(row, "addresses", "latitude", 6)?,
+        longitude_e6: optional_fixed_numeric_v2_2(row, "addresses", "longitude", 6)?,
+        name: optional_text(row, "addresses", "name")?,
+        house_number: optional_text(row, "addresses", "house_number")?,
+        road: optional_text(row, "addresses", "road")?,
+        neighbourhood: optional_text(row, "addresses", "neighbourhood")?,
+        city: optional_text(row, "addresses", "city")?,
+        county: optional_text(row, "addresses", "county")?,
+        postcode: optional_text(row, "addresses", "postcode")?,
+        state: optional_text(row, "addresses", "state")?,
+        state_district: optional_text(row, "addresses", "state_district")?,
+        country: optional_text(row, "addresses", "country")?,
+        inserted_at_pg_us: required_timestamp_pg_us(row, "addresses", "inserted_at")?,
+        updated_at_pg_us: required_timestamp_pg_us(row, "addresses", "updated_at")?,
+        osm_id: optional_i64(row, "addresses", "osm_id")?,
+        osm_type: optional_text(row, "addresses", "osm_type")?,
+    })
+}
+
+fn decode_geofence_v2_2(row: &Row) -> Result<TeslaMateGeofencePhysicalV2_2, TeslaMateReaderError> {
+    let billing_type = required_text(row, "geofences", "billing_type")?
+        .parse::<GeofenceBillingType>()
+        .map_err(|_| TeslaMateReaderError::InvalidGeofenceBillingType)?;
+    Ok(TeslaMateGeofencePhysicalV2_2 {
+        id: required_i32(row, "geofences", "id")?,
+        name: required_text(row, "geofences", "name")?,
+        latitude_e6: required_fixed_numeric_v2_2(row, "geofences", "latitude", 6)?,
+        longitude_e6: required_fixed_numeric_v2_2(row, "geofences", "longitude", 6)?,
+        radius: required_i16(row, "geofences", "radius")?,
+        billing_type,
+        cost_per_unit_e4: optional_fixed_numeric_v2_2(
+            row,
+            "geofences",
+            "cost_per_unit",
+            4,
+        )?,
+        session_fee_e2: optional_fixed_numeric_v2_2(row, "geofences", "session_fee", 2)?,
+        inserted_at_pg_us: required_timestamp_pg_us(row, "geofences", "inserted_at")?,
+        updated_at_pg_us: required_timestamp_pg_us(row, "geofences", "updated_at")?,
+    })
+}
+
 fn decode_car_settings_row(row: &Row) -> Result<ProjectionCarSettings, TeslaMateReaderError> {
     let defaults = ProjectionCarSettings::default();
     Ok(ProjectionCarSettings {

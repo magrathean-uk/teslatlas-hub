@@ -3,10 +3,11 @@
 use super::*;
 use crate::{
     teslamate_projection::{
-        TeslaMateCar, TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2,
-        TeslaMateChargePhysicalV2_2, TeslaMateChargingProcessPhysicalV2_2,
-        TeslaMateDrivePhysicalV2_2, TeslaMatePositionPhysicalV2_2, TeslaMateSettingsPhysicalV2_2,
-        TeslaMateStatePhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
+        TeslaMateAddressPhysicalV2_2, TeslaMateCar, TeslaMateCarPhysicalV2_2,
+        TeslaMateCarSettingsPhysicalV2_2, TeslaMateChargePhysicalV2_2,
+        TeslaMateChargingProcessPhysicalV2_2, TeslaMateDrivePhysicalV2_2,
+        TeslaMateGeofencePhysicalV2_2, TeslaMatePositionPhysicalV2_2,
+        TeslaMateSettingsPhysicalV2_2, TeslaMateStatePhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
     },
     teslamate_stage::{
         TeslaMateStageFormat, TeslaMateStageLimits, TeslaMateStageState, TeslaMateStageTable,
@@ -955,6 +956,8 @@ fn physical_relation_queries_use_nullable_initial_cursors() {
             "source.car_id = $3",
         ),
         ("charges", CHARGES_V2_2_SQL, "process.car_id = $3"),
+        ("addresses", ADDRESSES_V2_2_SQL, "drive.car_id = $3"),
+        ("geofences", GEOFENCES_V2_2_SQL, "drive.car_id = $3"),
         ("states", STATES_V2_2_SQL, "source.car_id = $3"),
         ("updates", UPDATES_V2_2_SQL, "source.car_id = $3"),
     ] {
@@ -966,12 +969,20 @@ fn physical_relation_queries_use_nullable_initial_cursors() {
         assert!(!sql.contains("private.tokens"));
     }
     assert!(CHARGES_V2_2_SQL.contains("INNER JOIN public.charging_processes AS process"));
+    for sql in [ADDRESSES_V2_2_SQL, GEOFENCES_V2_2_SQL] {
+        assert!(sql.contains("INNER JOIN ("));
+        assert_eq!(sql.matches("\n  UNION\n").count(), 2);
+        assert!(sql.contains("process.car_id = $3"));
+        assert!(!sql.contains("source.raw"));
+    }
     assert!(STATES_V2_2_SQL.contains("source.state::text AS state"));
     for sql in [
         DRIVES_V2_2_SQL,
         POSITIONS_V2_2_SQL,
         CHARGING_PROCESSES_V2_2_SQL,
         CHARGES_V2_2_SQL,
+        ADDRESSES_V2_2_SQL,
+        GEOFENCES_V2_2_SQL,
     ] {
         assert!(sql.contains("::text AS"));
         assert!(!sql.contains("::double precision"));
@@ -1122,6 +1133,31 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
                  'SYNTHETIC-VIN', 'Fixture', 'LR', 200, 'white',
                  'none', 'fixture-wheel', 1, 'Fixture 3'
              );
+             INSERT INTO public.addresses(
+                 id, display_name, latitude, longitude, name, house_number,
+                 road, neighbourhood, city, county, postcode, state,
+                 state_district, country, raw, inserted_at, updated_at,
+                 osm_id, osm_type
+             ) VALUES
+                 (70, '', 'NaN'::numeric, -0.000001, 'Synthetic', NULL,
+                  '', NULL, 'Test City', NULL, '', NULL, NULL, 'GB',
+                  '{}'::jsonb, '-infinity'::timestamp,
+                  'infinity'::timestamp, -9223372036854775808, ''),
+                 (71, 'unrelated', 1.000001, 2.000002, NULL, NULL,
+                  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+                  NULL, TIMESTAMP '2000-01-01 00:00:05',
+                  TIMESTAMP '2000-01-01 00:00:06', NULL, NULL);
+             INSERT INTO public.geofences(
+                 id, name, latitude, longitude, radius, billing_type,
+                 cost_per_unit, session_fee, inserted_at, updated_at
+             ) VALUES
+                 (80, 'Synthetic geofence', 'NaN'::numeric, -0.000001,
+                  -32768, 'per_kwh', 99999.9999, -999999999999.99,
+                  '-infinity'::timestamp, 'infinity'::timestamp),
+                 (81, 'Unrelated geofence', 1.000001, 2.000002,
+                  1, 'per_minute', NULL, NULL,
+                  TIMESTAMP '2000-01-01 00:00:05',
+                  TIMESTAMP '2000-01-01 00:00:06');
              INSERT INTO public.updates(id, start_date, end_date, version, car_id)
              VALUES (
                  10, TIMESTAMP '2000-01-01 00:00:00.123456', NULL,
@@ -1133,10 +1169,12 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
                  'infinity'::timestamp
              );
              INSERT INTO public.drives(
-                 id, car_id, start_date, end_date, outside_temp_avg, start_km
+                 id, car_id, start_date, end_date, start_address_id,
+                 start_geofence_id, outside_temp_avg, start_km
              ) VALUES (
                  30, 1, TIMESTAMP '2000-01-01 00:00:00.345678',
-                 'infinity'::timestamp, 'NaN'::numeric, '-0'::double precision
+                 'infinity'::timestamp, 70, 80,
+                 'NaN'::numeric, '-0'::double precision
              );
              INSERT INTO public.positions(
                  id, car_id, drive_id, date, latitude, longitude, odometer
@@ -1145,10 +1183,12 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
                  'NaN'::numeric, 1.234567, '-0'::double precision
              );
              INSERT INTO public.charging_processes(
-                 id, car_id, position_id, start_date, end_date,
+                 id, car_id, position_id, address_id, geofence_id,
+                 start_date, end_date,
                  charge_energy_added, outside_temp_avg, cost
              ) VALUES (
-                 50, 1, 40, TIMESTAMP '2000-01-01 00:00:00.567890',
+                 50, 1, 40, 70, 80,
+                 TIMESTAMP '2000-01-01 00:00:00.567890',
                  'infinity'::timestamp, 'NaN'::numeric, -0.1,
                  999999999999.99
              );
@@ -1171,7 +1211,7 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
     let imports_dir = temporary.path().join("success");
     let limits = TeslaMateReadLimits {
         page_size: 1,
-        maximum_rows: 9,
+        maximum_rows: 11,
         maximum_stage_bytes: 256 * 1024,
         minimum_free_bytes: 0,
         parallel_copy_lanes: 1,
@@ -1186,7 +1226,21 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
         || async {
             admin
                 .batch_execute(
-                    "INSERT INTO public.updates(
+                    "INSERT INTO public.addresses(
+                         id, inserted_at, updated_at
+                     ) VALUES (
+                         72, TIMESTAMP '2000-01-01 00:00:07',
+                         TIMESTAMP '2000-01-01 00:00:08'
+                     );
+                     INSERT INTO public.geofences(
+                         id, name, latitude, longitude, radius, billing_type,
+                         inserted_at, updated_at
+                     ) VALUES (
+                         82, 'post-export', 3.000003, 4.000004, 2,
+                         'per_minute', TIMESTAMP '2000-01-01 00:00:07',
+                         TIMESTAMP '2000-01-01 00:00:08'
+                     );
+                     INSERT INTO public.updates(
                          id, start_date, end_date, version, car_id
                      ) VALUES (
                          11, TIMESTAMP '2000-01-01 00:00:00.654321', NULL,
@@ -1197,8 +1251,13 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
                          21, 1, 'offline',
                          TIMESTAMP '2000-01-01 00:00:00.765432', NULL
                      );
-                     INSERT INTO public.drives(id, car_id, start_date)
-                     VALUES (31, 1, TIMESTAMP '2000-01-01 00:00:00.876543');
+                     INSERT INTO public.drives(
+                         id, car_id, start_address_id, start_geofence_id,
+                         start_date
+                     ) VALUES (
+                         31, 1, 72, 82,
+                         TIMESTAMP '2000-01-01 00:00:00.876543'
+                     );
                      INSERT INTO public.positions(
                          id, car_id, drive_id, date, latitude, longitude
                      ) VALUES (
@@ -1206,9 +1265,11 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
                          2.345678, 3.456789
                      );
                      INSERT INTO public.charging_processes(
-                         id, car_id, position_id, start_date, cost
+                         id, car_id, position_id, address_id, geofence_id,
+                         start_date, cost
                      ) VALUES (
-                         51, 1, 41, TIMESTAMP '2000-01-01 00:00:00.998765',
+                         51, 1, 41, 72, 82,
+                         TIMESTAMP '2000-01-01 00:00:00.998765',
                          -999999999999.99
                      );
                      INSERT INTO public.charges(
@@ -1232,7 +1293,7 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
     );
     let stats = stage.stats().expect("stage stats");
     assert_eq!(stats.state, TeslaMateStageState::Sealed);
-    assert_eq!(stats.row_count, 9);
+    assert_eq!(stats.row_count, 11);
     let settings = stage
         .get::<TeslaMateSettingsPhysicalV2_2>(TeslaMateStageTable::GlobalSettings, 100)
         .expect("settings lookup")
@@ -1357,6 +1418,52 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
         charges.rows[0].value.outside_temp_e1,
         Some(ProjectionFixedNumericV2_2::Finite(-1))
     );
+    let addresses = stage
+        .page::<TeslaMateAddressPhysicalV2_2>(TeslaMateStageTable::Addresses, 0, 10)
+        .expect("addresses page");
+    assert_eq!(addresses.rows.len(), 1);
+    assert_eq!(addresses.rows[0].source_id, 70);
+    assert_eq!(addresses.rows[0].value.display_name.as_deref(), Some(""));
+    assert_eq!(
+        addresses.rows[0].value.latitude_e6,
+        Some(ProjectionFixedNumericV2_2::NaN)
+    );
+    assert_eq!(
+        addresses.rows[0].value.longitude_e6,
+        Some(ProjectionFixedNumericV2_2::Finite(-1))
+    );
+    assert_eq!(addresses.rows[0].value.inserted_at_pg_us, i64::MIN);
+    assert_eq!(addresses.rows[0].value.updated_at_pg_us, i64::MAX);
+    assert_eq!(addresses.rows[0].value.osm_id, Some(i64::MIN));
+    assert_eq!(addresses.rows[0].value.osm_type.as_deref(), Some(""));
+    let geofences = stage
+        .page::<TeslaMateGeofencePhysicalV2_2>(TeslaMateStageTable::Geofences, 0, 10)
+        .expect("geofences page");
+    assert_eq!(geofences.rows.len(), 1);
+    assert_eq!(geofences.rows[0].source_id, 80);
+    assert_eq!(
+        geofences.rows[0].value.latitude_e6,
+        ProjectionFixedNumericV2_2::NaN
+    );
+    assert_eq!(
+        geofences.rows[0].value.longitude_e6,
+        ProjectionFixedNumericV2_2::Finite(-1)
+    );
+    assert_eq!(geofences.rows[0].value.radius, i16::MIN);
+    assert_eq!(
+        geofences.rows[0].value.billing_type,
+        GeofenceBillingType::PerKwh
+    );
+    assert_eq!(
+        geofences.rows[0].value.cost_per_unit_e4,
+        Some(ProjectionFixedNumericV2_2::Finite(999_999_999))
+    );
+    assert_eq!(
+        geofences.rows[0].value.session_fee_e2,
+        Some(ProjectionFixedNumericV2_2::Finite(-99_999_999_999_999))
+    );
+    assert_eq!(geofences.rows[0].value.inserted_at_pg_us, i64::MIN);
+    assert_eq!(geofences.rows[0].value.updated_at_pg_us, i64::MAX);
     assert_eq!(
         admin
             .query_one("SELECT COUNT(*)::bigint AS count FROM public.updates", &[])
@@ -1380,6 +1487,20 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
             2
         );
     }
+    for table in ["addresses", "geofences"] {
+        assert_eq!(
+            admin
+                .query_one(
+                    &format!("SELECT COUNT(*)::bigint AS count FROM public.{table}"),
+                    &[]
+                )
+                .await
+                .expect("source location relation count")
+                .try_get::<_, i64>("count")
+                .expect("source location relation count value"),
+            3
+        );
+    }
     assert_eq!(
         admin
             .query_one("SELECT COUNT(*)::bigint AS count FROM public.states", &[])
@@ -1399,7 +1520,7 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
         &password,
         1,
         TeslaMateReadLimits {
-            maximum_rows: 8,
+            maximum_rows: 10,
             ..limits
         },
         &cap_dir,
@@ -1407,7 +1528,7 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
     .await;
     assert!(matches!(
         cap_failure,
-        Err(TeslaMateReaderError::MaximumRowsExceeded { maximum: 8 })
+        Err(TeslaMateReaderError::MaximumRowsExceeded { maximum: 10 })
     ));
     let capped_stages = std::fs::read_dir(cap_dir.join(".staging"))
         .expect("cap failure staging directory")

@@ -674,6 +674,62 @@ ORDER BY source.id ASC
 LIMIT $2
 "#;
 
+const ADDRESSES_V2_2_SQL: &str = r#"
+SELECT
+  source.id, source.display_name,
+  source.latitude::text AS latitude,
+  source.longitude::text AS longitude,
+  source.name, source.house_number, source.road, source.neighbourhood,
+  source.city, source.county, source.postcode, source.state,
+  source.state_district, source.country,
+  source.inserted_at, source.updated_at, source.osm_id, source.osm_type
+FROM public.addresses AS source
+INNER JOIN (
+  SELECT drive.start_address_id AS id
+  FROM public.drives AS drive
+  WHERE drive.car_id = $3 AND drive.start_address_id IS NOT NULL
+  UNION
+  SELECT drive.end_address_id AS id
+  FROM public.drives AS drive
+  WHERE drive.car_id = $3 AND drive.end_address_id IS NOT NULL
+  UNION
+  SELECT process.address_id AS id
+  FROM public.charging_processes AS process
+  WHERE process.car_id = $3 AND process.address_id IS NOT NULL
+) AS related ON related.id = source.id
+WHERE ($1::integer IS NULL OR source.id > $1)
+ORDER BY source.id ASC
+LIMIT $2
+"#;
+
+const GEOFENCES_V2_2_SQL: &str = r#"
+SELECT
+  source.id, source.name,
+  source.latitude::text AS latitude,
+  source.longitude::text AS longitude,
+  source.radius, source.billing_type::text AS billing_type,
+  source.cost_per_unit::text AS cost_per_unit,
+  source.session_fee::text AS session_fee,
+  source.inserted_at, source.updated_at
+FROM public.geofences AS source
+INNER JOIN (
+  SELECT drive.start_geofence_id AS id
+  FROM public.drives AS drive
+  WHERE drive.car_id = $3 AND drive.start_geofence_id IS NOT NULL
+  UNION
+  SELECT drive.end_geofence_id AS id
+  FROM public.drives AS drive
+  WHERE drive.car_id = $3 AND drive.end_geofence_id IS NOT NULL
+  UNION
+  SELECT process.geofence_id AS id
+  FROM public.charging_processes AS process
+  WHERE process.car_id = $3 AND process.geofence_id IS NOT NULL
+) AS related ON related.id = source.id
+WHERE ($1::integer IS NULL OR source.id > $1)
+ORDER BY source.id ASC
+LIMIT $2
+"#;
+
 const STATES_V2_2_SQL: &str = r#"
 SELECT
   source.id,

@@ -38,6 +38,82 @@ fn schema_2_2_geofence_contract_hash_and_ddl_are_pinned() {
         .unwrap();
     verify_projection_table_ddl(&connection, "geofences", THP2_2_GEOFENCES_SQLITE_DDL)
         .expect("canonical geofence DDL must verify");
+    connection
+        .execute_batch(
+            "INSERT INTO geofences (
+                id, name, latitude_e6, latitude_e6_is_nan,
+                longitude_e6, longitude_e6_is_nan, radius, billing_type,
+                cost_per_unit_e4, cost_per_unit_e4_is_nan,
+                session_fee_e2, session_fee_e2_is_nan,
+                inserted_at_pg_us, updated_at_pg_us
+             ) VALUES
+                (1, 'minimum', 0, 0, 0, 0, -32768, 'per_kwh',
+                 -999999999, 0, -99999999999999, 0, 0, 0),
+                (2, 'maximum', 0, 0, 0, 0, 32767, 'per_minute',
+                 999999999, 0, 99999999999999, 0, 0, 0);",
+        )
+        .expect("source numeric boundaries must fit canonical geofence DDL");
+    for (id, cost_per_unit_e4, session_fee_e2) in [
+        (3, 1_000_000_000_i64, 0_i64),
+        (4, 0_i64, 100_000_000_000_000_i64),
+    ] {
+        assert!(
+            connection
+                .execute(
+                    "INSERT INTO geofences (
+                        id, name, latitude_e6, latitude_e6_is_nan,
+                        longitude_e6, longitude_e6_is_nan, radius, billing_type,
+                        cost_per_unit_e4, cost_per_unit_e4_is_nan,
+                        session_fee_e2, session_fee_e2_is_nan,
+                        inserted_at_pg_us, updated_at_pg_us
+                     ) VALUES (?1, 'overflow', 0, 0, 0, 0, 0, 'per_kwh',
+                               ?2, 0, ?3, 0, 0, 0)",
+                    params![id, cost_per_unit_e4, session_fee_e2],
+                )
+                .is_err(),
+            "one-overflow geofence numeric must fail canonical DDL"
+        );
+    }
+
+    for (cost_per_unit_e4, session_fee_e2) in [
+        (-999_999_999_i64, -99_999_999_999_999_i64),
+        (999_999_999_i64, 99_999_999_999_999_i64),
+    ] {
+        let mut boundary = snapshot_v2_2();
+        boundary.geofences[0].cost_per_unit_e4 =
+            Some(ProjectionFixedNumericV2_2::Finite(cost_per_unit_e4));
+        boundary.geofences[0].session_fee_e2 =
+            Some(ProjectionFixedNumericV2_2::Finite(session_fee_e2));
+        assert!(
+            validate_request_v2_2(&request_v2_2(&boundary), ProtocolLimits::default()).is_ok(),
+            "source geofence numeric boundary must validate"
+        );
+    }
+    for (field, value, expected) in [
+        (
+            "cost",
+            1_000_000_000_i64,
+            "geofence.cost_per_unit_e4 is outside its pinned source range",
+        ),
+        (
+            "session",
+            100_000_000_000_000_i64,
+            "geofence.session_fee_e2 is outside its pinned source range",
+        ),
+    ] {
+        let mut overflow = snapshot_v2_2();
+        if field == "cost" {
+            overflow.geofences[0].cost_per_unit_e4 =
+                Some(ProjectionFixedNumericV2_2::Finite(value));
+        } else {
+            overflow.geofences[0].session_fee_e2 =
+                Some(ProjectionFixedNumericV2_2::Finite(value));
+        }
+        assert!(matches!(
+            validate_request_v2_2(&request_v2_2(&overflow), ProtocolLimits::default()),
+            Err(ProjectionPackError::Invalid(message)) if message == expected
+        ));
+    }
 
     let unchecked = THP2_2_GEOFENCES_SQLITE_DDL
         .replace(" CHECK(id BETWEEN -2147483648 AND 2147483647)", "")

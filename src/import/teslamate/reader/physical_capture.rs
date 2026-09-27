@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-/// Capture bounded, source-shaped roots, drives, positions, charging processes,
-/// charges, states, and update rows for the physical V3 source slice. This is deliberately unlinked from the
+/// Capture bounded, source-shaped roots and selected-car relation rows for the
+/// physical V3 source slice. This is deliberately unlinked from the
 /// importer and catalogue: callers receive one private sealed stage and must
 /// either consume or discard it explicitly.
 pub async fn capture_physical_v3_to_stage(
@@ -226,7 +226,33 @@ async fn capture_physical_v3_from_exported_snapshot(
         }
         Err(error) => Err(error),
     };
-    let states = match charges {
+    let addresses = match charges {
+        Ok(()) => {
+            capture_physical_address_pages(
+                lane.client(),
+                selected_car_id,
+                limits,
+                &mut retained_rows,
+                stage,
+            )
+            .await
+        }
+        Err(error) => Err(error),
+    };
+    let geofences = match addresses {
+        Ok(()) => {
+            capture_physical_geofence_pages(
+                lane.client(),
+                selected_car_id,
+                limits,
+                &mut retained_rows,
+                stage,
+            )
+            .await
+        }
+        Err(error) => Err(error),
+    };
+    let states = match geofences {
         Ok(()) => {
             capture_physical_state_pages(
                 lane.client(),
@@ -257,6 +283,70 @@ async fn capture_physical_v3_from_exported_snapshot(
         (Err(error), _) => Err(error),
         (Ok(()), Ok(())) => Ok(()),
         (Ok(()), Err(error)) => Err(error),
+    }
+}
+
+async fn capture_physical_address_pages(
+    client: &Client,
+    selected_car_id: i16,
+    limits: TeslaMateReadLimits,
+    retained_rows: &mut usize,
+    stage: &mut TeslaMateStage,
+) -> Result<(), TeslaMateReaderError> {
+    let page_size = i64::from(limits.page_size);
+    let mut last_id = None::<i32>;
+    loop {
+        let rows = client
+            .query(
+                ADDRESSES_V2_2_SQL,
+                &[&last_id, &page_size, &selected_car_id],
+            )
+            .await?;
+        let page_len = rows.len();
+        let mut decoded = Vec::with_capacity(page_len);
+        for row in rows {
+            let id = required_i32(&row, "addresses", "id")?;
+            last_id = advance_signed_v2_2_cursor(last_id, id, "addresses")?;
+            require_positive_physical_id("addresses", i64::from(id))?;
+            retain_row(retained_rows, limits.maximum_rows)?;
+            decoded.push((i64::from(id), decode_address_v2_2(&row)?));
+        }
+        stage.insert_page_parallel(TeslaMateStageTable::Addresses, decoded)?;
+        if page_len < limits.page_size as usize {
+            return Ok(());
+        }
+    }
+}
+
+async fn capture_physical_geofence_pages(
+    client: &Client,
+    selected_car_id: i16,
+    limits: TeslaMateReadLimits,
+    retained_rows: &mut usize,
+    stage: &mut TeslaMateStage,
+) -> Result<(), TeslaMateReaderError> {
+    let page_size = i64::from(limits.page_size);
+    let mut last_id = None::<i32>;
+    loop {
+        let rows = client
+            .query(
+                GEOFENCES_V2_2_SQL,
+                &[&last_id, &page_size, &selected_car_id],
+            )
+            .await?;
+        let page_len = rows.len();
+        let mut decoded = Vec::with_capacity(page_len);
+        for row in rows {
+            let id = required_i32(&row, "geofences", "id")?;
+            last_id = advance_signed_v2_2_cursor(last_id, id, "geofences")?;
+            require_positive_physical_id("geofences", i64::from(id))?;
+            retain_row(retained_rows, limits.maximum_rows)?;
+            decoded.push((i64::from(id), decode_geofence_v2_2(&row)?));
+        }
+        stage.insert_page_parallel(TeslaMateStageTable::Geofences, decoded)?;
+        if page_len < limits.page_size as usize {
+            return Ok(());
+        }
     }
 }
 

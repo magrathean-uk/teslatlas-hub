@@ -8,9 +8,9 @@ use tempfile::tempdir;
 use super::*;
 use crate::{
     hub_pack::{
-        ProjectionFixedNumericV2_2, ProjectionFloat64BitsV2_2, ProjectionPreferredRangeV2_2,
-        ProjectionStateStatusV2_2, ProjectionUnitOfLengthV2_2, ProjectionUnitOfPressureV2_2,
-        ProjectionUnitOfTemperatureV2_2,
+        GeofenceBillingType, ProjectionFixedNumericV2_2, ProjectionFloat64BitsV2_2,
+        ProjectionPreferredRangeV2_2, ProjectionStateStatusV2_2, ProjectionUnitOfLengthV2_2,
+        ProjectionUnitOfPressureV2_2, ProjectionUnitOfTemperatureV2_2,
     },
     protocol::MirrorTable,
     storage::db::HubStore,
@@ -284,6 +284,44 @@ fn physical_charge(id: i32, charging_process_id: i32) -> TeslaMateChargePhysical
     }
 }
 
+fn physical_address(id: i32) -> TeslaMateAddressPhysicalV2_2 {
+    TeslaMateAddressPhysicalV2_2 {
+        id,
+        display_name: Some(String::new()),
+        latitude_e6: Some(ProjectionFixedNumericV2_2::NaN),
+        longitude_e6: Some(ProjectionFixedNumericV2_2::Finite(-1)),
+        name: Some(format!("address-{id}")),
+        house_number: None,
+        road: None,
+        neighbourhood: None,
+        city: None,
+        county: None,
+        postcode: None,
+        state: None,
+        state_district: None,
+        country: None,
+        inserted_at_pg_us: i64::MIN,
+        updated_at_pg_us: i64::MAX,
+        osm_id: Some(i64::MIN),
+        osm_type: Some(String::new()),
+    }
+}
+
+fn physical_geofence(id: i32) -> TeslaMateGeofencePhysicalV2_2 {
+    TeslaMateGeofencePhysicalV2_2 {
+        id,
+        name: format!("geofence-{id}"),
+        latitude_e6: ProjectionFixedNumericV2_2::NaN,
+        longitude_e6: ProjectionFixedNumericV2_2::Finite(-1),
+        radius: i16::MIN,
+        billing_type: GeofenceBillingType::PerKwh,
+        cost_per_unit_e4: Some(ProjectionFixedNumericV2_2::Finite(999_999_999)),
+        session_fee_e2: Some(ProjectionFixedNumericV2_2::Finite(-99_999_999_999_999)),
+        inserted_at_pg_us: i64::MIN,
+        updated_at_pg_us: i64::MAX,
+    }
+}
+
 fn deterministic_high_entropy_version(id: i32) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut state = (id as u64) ^ 0x9e37_79b9_7f4a_7c15;
@@ -385,10 +423,12 @@ fn physical_writer_requires_an_explicit_sealed_physical_stage() {
 }
 
 #[test]
-fn physical_writer_rejects_unsupported_relations_before_writing_a_chunk() {
-    for (stage_table, expected_table) in [
-        (TeslaMateStageTable::Addresses, "addresses"),
-        (TeslaMateStageTable::Geofences, "geofences"),
+fn physical_relation_preflight_rejects_unreferenced_and_tampered_rows_before_writing() {
+    for invalid in [
+        "address-source",
+        "address-unreferenced",
+        "geofence-source",
+        "geofence-unreferenced",
     ] {
         let temporary = tempdir().expect("temp dir");
         let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
@@ -396,27 +436,75 @@ fn physical_writer_rejects_unsupported_relations_before_writing_a_chunk() {
             TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
                 .expect("physical stage");
         seed_roots(&mut stage);
-        stage
-            .insert(stage_table, 20, &serde_json::json!({"id": 20}))
-            .expect("unsupported physical relation marker");
+        match invalid {
+            "address-source" => stage
+                .insert(TeslaMateStageTable::Addresses, 70, &physical_address(71))
+                .expect("tampered physical address"),
+            "address-unreferenced" => stage
+                .insert(TeslaMateStageTable::Addresses, 70, &physical_address(70))
+                .expect("unreferenced physical address"),
+            "geofence-source" => stage
+                .insert(TeslaMateStageTable::Geofences, 80, &physical_geofence(81))
+                .expect("tampered physical geofence"),
+            "geofence-unreferenced" => stage
+                .insert(TeslaMateStageTable::Geofences, 80, &physical_geofence(80))
+                .expect("unreferenced physical geofence"),
+            _ => unreachable!(),
+        }
         stage.seal().expect("seal physical stage");
 
-        let writer = ProjectionPackWriter::new(store.packs_dir());
         let error = write_staged_physical_updates_snapshot_v3(
             &stage,
-            &writer,
+            &ProjectionPackWriter::new(store.packs_dir()),
             binding(),
             snapshot_id(),
             sequence(),
             &CursorKey::from_bytes([10; 32]),
         )
-        .expect_err("unsupported relation rows");
-        assert!(matches!(
-            error,
-            TeslaMatePhysicalFragmentError::UnsupportedTableRows { table }
-                if table == expected_table
-        ));
+        .expect_err("invalid physical relation row");
+        match invalid {
+            "address-source" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::SourceIdMismatch {
+                    table: "addresses",
+                    stored: 70,
+                    decoded: 71
+                }
+            )),
+            "address-unreferenced" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::UnreferencedRelation {
+                    table: "addresses",
+                    source_id: 70
+                }
+            )),
+            "geofence-source" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::SourceIdMismatch {
+                    table: "geofences",
+                    stored: 80,
+                    decoded: 81
+                }
+            )),
+            "geofence-unreferenced" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::UnreferencedRelation {
+                    table: "geofences",
+                    source_id: 80
+                }
+            )),
+            _ => unreachable!(),
+        }
         assert!(!store.packs_dir().join("sha256").exists());
+        let connection = store.open().expect("catalogue");
+        for table in ["sync_manifests", "sync_packs"] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("catalogue count");
+            assert_eq!(count, 0);
+        }
     }
 }
 
@@ -942,6 +1030,150 @@ fn sealed_physical_stage_streams_relations_in_verified_contiguous_v3_chunks() {
 }
 
 #[test]
+fn referenced_relations_emit_once_with_their_deterministic_first_referrer() {
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let mut stage =
+        TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
+            .expect("physical stage");
+    seed_roots(&mut stage);
+    let mut drive = physical_drive();
+    drive.start_address_id = Some(70);
+    drive.end_address_id = Some(999);
+    drive.start_geofence_id = Some(80);
+    drive.end_geofence_id = Some(999);
+    stage
+        .insert(TeslaMateStageTable::Drives, i64::from(drive.id), &drive)
+        .expect("physical drive");
+    let mut shared_process = physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+    shared_process.address_id = Some(70);
+    shared_process.geofence_id = Some(80);
+    stage
+        .insert(
+            TeslaMateStageTable::ChargingProcesses,
+            i64::from(shared_process.id),
+            &shared_process,
+        )
+        .expect("shared-ref physical process");
+    let mut owned_process = physical_charging_process(51, ProjectionFixedNumericV2_2::Finite(200));
+    owned_process.address_id = Some(71);
+    owned_process.geofence_id = Some(81);
+    stage
+        .insert(
+            TeslaMateStageTable::ChargingProcesses,
+            i64::from(owned_process.id),
+            &owned_process,
+        )
+        .expect("owned-ref physical process");
+    stage
+        .insert(TeslaMateStageTable::Charges, 60, &physical_charge(60, 51))
+        .expect("physical charge");
+    for id in [70, 71] {
+        stage
+            .insert(
+                TeslaMateStageTable::Addresses,
+                id.into(),
+                &physical_address(id),
+            )
+            .expect("physical address");
+    }
+    for id in [80, 81] {
+        stage
+            .insert(
+                TeslaMateStageTable::Geofences,
+                id.into(),
+                &physical_geofence(id),
+            )
+            .expect("physical geofence");
+    }
+    stage.seal().expect("seal physical stage");
+
+    let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding(),
+        snapshot_id(),
+        sequence(),
+        &CursorKey::from_bytes([16; 32]),
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 6,
+            max_projected_json_bytes: 1024 * 1024,
+        },
+    )
+    .expect("physical relation candidate");
+    assert_eq!(candidate.logical_source_rows, 11);
+    assert_eq!(candidate.chunks.len(), 4);
+    assert_eq!(candidate.manifest.total_rows, 21);
+
+    let mut address_ids = Vec::new();
+    let mut geofence_ids = Vec::new();
+    for (ordinal, chunk) in candidate.chunks.iter().enumerate() {
+        let decoded = temporary
+            .path()
+            .join(format!("relation-chunk-{ordinal}.sqlite"));
+        decode_pack(chunk, &decoded);
+        let connection = Connection::open(decoded).expect("decoded SQLite");
+        let mut address_statement = connection
+            .prepare("SELECT id FROM addresses ORDER BY id")
+            .expect("address query");
+        let mut addresses = address_statement
+            .query_map([], |row| row.get::<_, i32>(0))
+            .expect("addresses")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("address ids");
+        let mut geofence_statement = connection
+            .prepare("SELECT id FROM geofences ORDER BY id")
+            .expect("geofence query");
+        let mut geofences = geofence_statement
+            .query_map([], |row| row.get::<_, i32>(0))
+            .expect("geofences")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("geofence ids");
+        for id in &addresses {
+            let referring: i64 = connection
+                .query_row(
+                    "SELECT
+                        (SELECT COUNT(*) FROM drives
+                         WHERE start_address_id = ?1 OR end_address_id = ?1)
+                        +
+                        (SELECT COUNT(*) FROM charging_processes WHERE address_id = ?1)",
+                    [id],
+                    |row| row.get(0),
+                )
+                .expect("same-pack address referrer");
+            assert!(referring >= 1);
+        }
+        for id in &geofences {
+            let referring: i64 = connection
+                .query_row(
+                    "SELECT
+                        (SELECT COUNT(*) FROM drives
+                         WHERE start_geofence_id = ?1 OR end_geofence_id = ?1)
+                        +
+                        (SELECT COUNT(*) FROM charging_processes WHERE geofence_id = ?1)",
+                    [id],
+                    |row| row.get(0),
+                )
+                .expect("same-pack geofence referrer");
+            assert!(referring >= 1);
+        }
+        address_ids.append(&mut addresses);
+        geofence_ids.append(&mut geofences);
+    }
+    assert_eq!(address_ids, vec![70, 71]);
+    assert_eq!(geofence_ids, vec![80, 81]);
+    let connection = store.open().expect("catalogue");
+    for table in ["sync_manifests", "sync_packs"] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("catalogue count");
+        assert_eq!(count, 0);
+    }
+}
+
+#[test]
 fn charge_chunks_repeat_the_parent_across_a_512_row_boundary() {
     const CHARGE_COUNT: i32 = 513;
 
@@ -957,10 +1189,18 @@ fn charge_chunks_repeat_the_parent_across_a_512_row_boundary() {
     )
     .expect("physical stage");
     seed_roots(&mut stage);
-    let process = physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+    let mut process = physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+    process.address_id = Some(70);
+    process.geofence_id = Some(80);
     stage
         .insert(TeslaMateStageTable::ChargingProcesses, 50, &process)
         .expect("physical charging process");
+    stage
+        .insert(TeslaMateStageTable::Addresses, 70, &physical_address(70))
+        .expect("physical address");
+    stage
+        .insert(TeslaMateStageTable::Geofences, 80, &physical_geofence(80))
+        .expect("physical geofence");
     stage
         .insert_page_parallel(
             TeslaMateStageTable::Charges,
@@ -983,11 +1223,11 @@ fn charge_chunks_repeat_the_parent_across_a_512_row_boundary() {
     )
     .expect("physical charge candidate");
 
-    assert_eq!(candidate.logical_source_rows, 517);
+    assert_eq!(candidate.logical_source_rows, 519);
     assert_eq!(candidate.chunks.len(), 2);
-    assert_eq!(candidate.manifest.total_rows, 521);
+    assert_eq!(candidate.manifest.total_rows, 523);
     assert_eq!(candidate.chunks[0].metadata.row_count, 512);
-    assert_eq!(candidate.chunks[1].metadata.row_count, 9);
+    assert_eq!(candidate.chunks[1].metadata.row_count, 11);
     candidate
         .manifest
         .validate_terminal_cursor(&CursorKey::from_bytes([14; 32]))
@@ -995,6 +1235,8 @@ fn charge_chunks_repeat_the_parent_across_a_512_row_boundary() {
 
     let mut charge_ids = Vec::new();
     let mut child_counts = Vec::new();
+    let mut address_counts = Vec::new();
+    let mut geofence_counts = Vec::new();
     for (ordinal, chunk) in candidate.chunks.iter().enumerate() {
         assert_eq!(chunk.metadata.ordinal, ordinal as u32);
         assert_eq!(
@@ -1037,10 +1279,77 @@ fn charge_chunks_repeat_the_parent_across_a_512_row_boundary() {
             .expect("charge ids");
         child_counts.push(child_ids.len());
         charge_ids.extend(child_ids);
+        address_counts.push(
+            connection
+                .query_row("SELECT COUNT(*) FROM addresses", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("address count"),
+        );
+        geofence_counts.push(
+            connection
+                .query_row("SELECT COUNT(*) FROM geofences", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("geofence count"),
+        );
     }
-    assert_eq!(child_counts, vec![508, 5]);
+    assert_eq!(child_counts, vec![506, 7]);
+    assert_eq!(address_counts, vec![1, 0]);
+    assert_eq!(geofence_counts, vec![1, 0]);
     assert_eq!(charge_ids, (1..=CHARGE_COUNT).collect::<Vec<_>>());
 
+    let connection = store.open().expect("catalogue");
+    for table in ["sync_manifests", "sync_packs"] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("catalogue count");
+        assert_eq!(count, 0);
+    }
+}
+
+#[test]
+fn parent_relation_group_must_fit_atomically_before_writing() {
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let mut stage =
+        TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
+            .expect("physical stage");
+    seed_roots(&mut stage);
+    let mut drive = physical_drive();
+    drive.start_address_id = Some(70);
+    drive.start_geofence_id = Some(80);
+    stage
+        .insert(TeslaMateStageTable::Drives, i64::from(drive.id), &drive)
+        .expect("physical drive");
+    stage
+        .insert(TeslaMateStageTable::Addresses, 70, &physical_address(70))
+        .expect("physical address");
+    stage
+        .insert(TeslaMateStageTable::Geofences, 80, &physical_geofence(80))
+        .expect("physical geofence");
+    stage.seal().expect("seal physical stage");
+
+    let error = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding(),
+        snapshot_id(),
+        sequence(),
+        &CursorKey::from_bytes([17; 32]),
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 5,
+            max_projected_json_bytes: 64 * 1024,
+        },
+    )
+    .expect_err("roots, drive, and owned relations exceed five rows");
+    assert!(matches!(
+        error,
+        TeslaMatePhysicalFragmentError::ParentRelationsExceedTarget
+    ));
+    assert!(!store.packs_dir().join("sha256").exists());
     let connection = store.open().expect("catalogue");
     for table in ["sync_manifests", "sync_packs"] {
         let count: i64 = connection
@@ -1106,10 +1415,14 @@ fn failed_later_chunk_removes_created_objects_and_never_touches_the_catalogue() 
         TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
             .expect("physical stage");
     seed_roots(&mut stage);
-    let process = physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+    let mut process = physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+    process.address_id = Some(70);
     stage
         .insert(TeslaMateStageTable::ChargingProcesses, 50, &process)
         .expect("physical charging process");
+    stage
+        .insert(TeslaMateStageTable::Addresses, 70, &physical_address(70))
+        .expect("physical address");
     for id in [60, 61] {
         stage
             .insert(
