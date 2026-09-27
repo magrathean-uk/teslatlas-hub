@@ -51,6 +51,76 @@ use crate::{
 #[path = "tests/fleet_listener.rs"]
 mod fleet_listener;
 
+#[tokio::test]
+async fn physical_pack_verification_buffers_immutable_bytes_from_same_open_descriptor() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let path = temporary.path().join("pack.sqlite.zst");
+    let held_path = temporary.path().join("held.sqlite.zst");
+    let original = b"opened physical pack bytes";
+    fs::write(&path, original).expect("physical pack");
+    let mut opened = open_admitted_physical_pack(&path).expect("open pack");
+    fs::rename(&path, &held_path).expect("rename held pack");
+    fs::write(&path, b"replacement physical pack").expect("replacement pack");
+
+    let verified = read_verified_physical_pack(
+        &mut opened,
+        u64::try_from(original.len()).expect("bounded pack"),
+        Sha256Digest::of_bytes(original),
+    )
+    .await
+    .expect("verify held pack");
+    fs::write(&held_path, vec![b'x'; original.len()]).expect("mutate held inode after verify");
+    assert_eq!(verified.as_ref(), original);
+
+    let symlink = temporary.path().join("pack-link.sqlite.zst");
+    std::os::unix::fs::symlink(&held_path, &symlink).expect("physical pack symlink");
+    assert!(open_admitted_physical_pack(&symlink).is_err());
+}
+
+#[test]
+fn physical_public_admission_gate_enforces_profile_wire_bounds() {
+    const MAX_I_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+    const MAX_PROFILE_PACK_BYTES: u64 = 16 * 1024 * 1024;
+
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let store = HubStore::initialize(temporary.path().join("store")).expect("store");
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let (_, candidate) =
+        crate::import::teslamate::physical_fragments::tests::public_admission_candidate_fixture(
+            &temporary.path().join("candidate"),
+            &store,
+            &CursorKey::from_bytes([97; 32]),
+            1,
+        );
+    let admission = store
+        .stage_pending_physical_v3_admission(&gate, candidate)
+        .expect("physical admission");
+    assert!(crate::db::physical_v3_admission_is_public(&admission));
+
+    let mut boundary = admission.clone();
+    boundary.head_sequence = MAX_I_JSON_INTEGER;
+    boundary.manifest.chunks[0].compressed_bytes = MAX_PROFILE_PACK_BYTES;
+    assert!(crate::db::physical_v3_admission_is_public(&boundary));
+
+    let mut invalid = boundary.clone();
+    invalid.head_sequence = MAX_I_JSON_INTEGER + 1;
+    assert!(!crate::db::physical_v3_admission_is_public(&invalid));
+    invalid = boundary.clone();
+    invalid.manifest.chunks[0].compressed_bytes = MAX_PROFILE_PACK_BYTES + 1;
+    assert!(!crate::db::physical_v3_admission_is_public(&invalid));
+    invalid = boundary.clone();
+    invalid.manifest.chunks[0].compressed_bytes = 0;
+    assert!(!crate::db::physical_v3_admission_is_public(&invalid));
+
+    let pack = boundary.manifest.chunks[0].clone();
+    boundary.manifest.chunks.resize(1_771, pack.clone());
+    assert!(crate::db::physical_v3_admission_is_public(&boundary));
+    boundary.manifest.chunks.push(pack);
+    assert!(!crate::db::physical_v3_admission_is_public(&boundary));
+}
+
 #[test]
 fn tls_identity_reader_rejects_a_fifo_without_waiting_for_a_writer() {
     let temporary = tempfile::tempdir().expect("temporary directory");
@@ -2016,6 +2086,27 @@ fn assert_hub_sync_signature(value: &serde_json::Value, cursor_key: &CursorKey) 
         .expect("hub-sync JCS signature");
 }
 
+fn assert_hub_sync_signature_rejects(value: &serde_json::Value, cursor_key: &CursorKey) {
+    let signature = value["signature"].as_object().expect("signature object");
+    let mut payload = value.clone();
+    payload
+        .as_object_mut()
+        .expect("signed document")
+        .remove("signature");
+    let canonical = serde_jcs::to_vec(&payload).expect("canonical signed payload");
+    let signing = ManifestSigning::from_cursor_key(cursor_key);
+    let verifying_key_bytes: [u8; 32] = hex::decode(signing.verifying_key_hex())
+        .expect("verifying key hex")
+        .try_into()
+        .expect("32-byte verifying key");
+    let verifying_key = VerifyingKey::from_bytes(&verifying_key_bytes).expect("verifying key");
+    let signature_bytes = STANDARD
+        .decode(signature["signature"].as_str().expect("signature base64"))
+        .expect("decode signature");
+    let signature = Signature::from_slice(&signature_bytes).expect("64-byte signature");
+    assert!(verifying_key.verify_strict(&canonical, &signature).is_err());
+}
+
 fn hub_sync_protocol_fixture(name: &str) -> serde_json::Value {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples")
@@ -2255,6 +2346,648 @@ async fn hub_sync_bootstrap_manifest_is_signed_and_resumes_with_one_changed_pack
     assert_eq!(noop["base_receipt_id"], delta.chain_digest.to_string());
     assert_eq!(noop["sequence"], delta.to_sequence);
     assert_hub_sync_signature(&noop, &cursor_key);
+}
+
+#[tokio::test]
+async fn hub_sync_physical_bootstrap_serves_513_chunks_and_continues_with_noop() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let cursor_key = CursorKey::from_bytes([93; 32]);
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let (binding, candidate) =
+        crate::import::teslamate::physical_fragments::tests::public_admission_candidate_fixture(
+            &temp.path().join("primary"),
+            &store,
+            &cursor_key,
+            513,
+        );
+    let admission = store
+        .stage_pending_physical_v3_admission(&gate, candidate)
+        .expect("primary physical admission");
+    let (other_binding, other_candidate) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source(
+            &temp.path().join("secondary"),
+            &store,
+            &cursor_key,
+            1,
+            "physical-v3-other-vehicle",
+        );
+    store
+        .stage_pending_physical_v3_admission(&gate, other_candidate)
+        .expect("secondary physical admission");
+    drop(gate);
+
+    assert_eq!(admission.chunk_count, 513);
+    assert!(
+        store
+            .manifest_for_vehicle(binding.vehicle_id)
+            .expect("generic manifest lookup")
+            .is_none()
+    );
+    for pack in &admission.manifest.chunks {
+        assert!((1..=16 * 1024 * 1024).contains(&pack.compressed_bytes));
+        assert!(
+            store
+                .pack_for_digest(pack.sha256)
+                .expect("generic pack lookup")
+                .is_none()
+        );
+    }
+
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("physical 1.3 bootstrap", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store.clone(), &cursor_key);
+
+    let legacy = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{}/sync/manifest", binding.vehicle_id))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("legacy bootstrap response");
+    assert_eq!(legacy.status(), StatusCode::NOT_FOUND);
+
+    let bootstrap = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{}/sync/manifest", binding.vehicle_id))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .header(SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("physical bootstrap response");
+    assert_eq!(bootstrap.status(), StatusCode::OK);
+    let bootstrap_raw = bootstrap
+        .into_body()
+        .collect()
+        .await
+        .expect("physical bootstrap body")
+        .to_bytes();
+    assert!(bootstrap_raw.len() <= MAX_SYNC_CONTROL_RESPONSE_BYTES);
+    let bootstrap: serde_json::Value =
+        serde_json::from_slice(&bootstrap_raw).expect("physical bootstrap JSON");
+    assert_eq!(bootstrap["manifest_id"], admission.snapshot_id.to_string());
+    assert_eq!(bootstrap["receipt_id"], admission.receipt_id);
+    assert_eq!(bootstrap["vehicle_id"], binding.vehicle_id.to_string());
+    assert_eq!(bootstrap["kind"], "snapshot");
+    assert_eq!(bootstrap["schema_version"], "2.2");
+    assert_eq!(bootstrap["sequence"], admission.head_sequence);
+    let chunks = bootstrap["chunks"].as_array().expect("physical chunks");
+    assert_eq!(chunks.len(), 513);
+    for (index, (chunk, pack)) in chunks.iter().zip(&admission.manifest.chunks).enumerate() {
+        assert_eq!(chunk["chunk_index"], index as u64);
+        assert_eq!(chunk["pack"]["sha256"], pack.sha256.to_string());
+        assert_eq!(chunk["pack"]["compressed_bytes"], pack.compressed_bytes);
+        assert_eq!(
+            chunk["pack"]["object_name"],
+            format!("{}.sqlite.zst", pack.sha256)
+        );
+    }
+    let fixture = hub_sync_protocol_fixture("schema-2-2-multi-chunk-manifest.json");
+    assert_eq!(
+        bootstrap
+            .as_object()
+            .expect("bootstrap object")
+            .keys()
+            .collect::<std::collections::BTreeSet<_>>(),
+        fixture["manifest"]
+            .as_object()
+            .expect("fixture manifest")
+            .keys()
+            .collect::<std::collections::BTreeSet<_>>()
+    );
+    assert_hub_sync_signature(&bootstrap, &cursor_key);
+    assert_hub_sync_signature_rejects(&bootstrap, &CursorKey::from_bytes([94; 32]));
+
+    let first = &admission.manifest.chunks[0];
+    let first_name = format!("{}.sqlite.zst", first.sha256);
+    let unauthorized = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/packs/sha256/{first_name}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("unauthorized physical pack response");
+    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        unauthorized
+            .into_body()
+            .collect()
+            .await
+            .expect("unauthorized physical pack body")
+            .to_bytes()
+            .is_empty()
+    );
+
+    let first_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/packs/sha256/{first_name}"))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("physical pack response");
+    assert_eq!(first_response.status(), StatusCode::OK);
+    assert_eq!(
+        first_response
+            .headers()
+            .get(header::ETAG)
+            .unwrap()
+            .to_str()
+            .expect("physical pack ETag"),
+        format!("\"{}\"", first.sha256)
+    );
+    assert_eq!(
+        first_response
+            .into_body()
+            .collect()
+            .await
+            .expect("physical pack body")
+            .to_bytes()
+            .as_ref(),
+        fs::read(store.packs_dir().join("sha256").join(&first_name))
+            .expect("physical pack bytes")
+            .as_slice()
+    );
+
+    let last = admission.manifest.chunks.last().expect("last chunk");
+    let last_name = format!("{}.sqlite.zst", last.sha256);
+    let last_bytes = fs::read(store.packs_dir().join("sha256").join(&last_name))
+        .expect("last physical pack bytes");
+    let ranged = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/packs/sha256/{last_name}"))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(header::RANGE, "bytes=5-31")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("physical range response");
+    assert_eq!(ranged.status(), StatusCode::PARTIAL_CONTENT);
+    assert_eq!(
+        ranged
+            .into_body()
+            .collect()
+            .await
+            .expect("physical range body")
+            .to_bytes()
+            .as_ref(),
+        &last_bytes[5..=31]
+    );
+
+    let changes_request = |vehicle_id, receipt_id: &str| {
+        Request::builder()
+            .method("POST")
+            .uri(format!("/v1/vehicles/{vehicle_id}/sync/changes-since"))
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&serde_json::json!({
+                    "base_receipt_id": receipt_id,
+                    "base_manifest_schema": "2.2",
+                    "from_sequence": admission.head_sequence,
+                    "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+                }))
+                .expect("changes-since request"),
+            ))
+            .unwrap()
+    };
+    let noop = app
+        .clone()
+        .oneshot(changes_request(binding.vehicle_id, &admission.receipt_id))
+        .await
+        .expect("physical no-op response");
+    assert_eq!(noop.status(), StatusCode::OK);
+    let noop = response_json(noop).await;
+    let fixture = hub_sync_protocol_fixture("sync-noop-signed.json");
+    let mut expected = fixture["receipt"].clone();
+    expected["vehicle_id"] = noop["vehicle_id"].clone();
+    expected["base_receipt_id"] = noop["base_receipt_id"].clone();
+    expected["sequence"] = noop["sequence"].clone();
+    expected["signature"] = noop["signature"].clone();
+    assert_eq!(noop, expected);
+    assert_hub_sync_signature(&noop, &cursor_key);
+
+    for (vehicle_id, receipt) in [
+        (binding.vehicle_id, "pv3_unknown_receipt"),
+        (other_binding.vehicle_id, admission.receipt_id.as_str()),
+    ] {
+        let unknown = app
+            .clone()
+            .oneshot(changes_request(vehicle_id, receipt))
+            .await
+            .expect("unknown physical receipt response");
+        assert_eq!(unknown.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(unknown.headers().get(MANIFEST_SIGNATURE_HEADER).is_none());
+        let unknown = response_json(unknown).await;
+        assert_eq!(
+            unknown,
+            hub_sync_protocol_fixture("changes-since-error-unknown-base-receipt.json")["response"]
+                ["body"]
+        );
+    }
+
+    let unsupported_schema = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/v1/vehicles/{}/sync/changes-since",
+                    binding.vehicle_id
+                ))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "base_receipt_id": admission.receipt_id,
+                        "base_manifest_schema": "2.3",
+                        "from_sequence": admission.head_sequence,
+                        "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+                    }))
+                    .expect("unsupported base schema request"),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("unsupported base schema response");
+    assert_eq!(
+        unsupported_schema.status(),
+        StatusCode::UNPROCESSABLE_ENTITY
+    );
+    assert_eq!(
+        response_json(unsupported_schema).await,
+        serde_json::json!({
+            "code": "invalid_request",
+            "message": "Request body does not match the changes-since schema."
+        })
+    );
+}
+
+#[tokio::test]
+async fn hub_sync_physical_routes_fail_closed_for_retired_rebound_or_tampered_pack() {
+    use std::io::Write as _;
+
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let cursor_key = CursorKey::from_bytes([95; 32]);
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let (binding, candidate) =
+        crate::import::teslamate::physical_fragments::tests::public_admission_candidate_fixture(
+            &temp.path().join("candidate"),
+            &store,
+            &cursor_key,
+            2,
+        );
+    let admission = store
+        .stage_pending_physical_v3_admission(&gate, candidate)
+        .expect("physical admission");
+    drop(gate);
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("physical fail closed", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let request = || {
+        Request::builder()
+            .uri(format!("/v1/vehicles/{}/sync/manifest", binding.vehicle_id))
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+            .header(SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID)
+            .body(Body::empty())
+            .unwrap()
+    };
+    let app = paired_router(store.clone(), &cursor_key);
+    assert_eq!(
+        app.clone()
+            .oneshot(request())
+            .await
+            .expect("initial bootstrap")
+            .status(),
+        StatusCode::OK
+    );
+
+    assert!(
+        store
+            .retire_vehicle(binding.vehicle_id, now_ms + 1)
+            .expect("retire vehicle")
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(request())
+            .await
+            .expect("retired bootstrap")
+            .status(),
+        StatusCode::NOT_FOUND
+    );
+    assert!(
+        store
+            .reactivate_vehicle(binding.vehicle_id)
+            .expect("reactivate vehicle")
+    );
+
+    let connection = store.open().expect("catalogue");
+    connection
+        .execute(
+            "UPDATE sources SET generation = generation + 1
+              WHERE source_id = (
+                    SELECT source_id FROM vehicles WHERE vehicle_id = ?1
+              )",
+            [binding.vehicle_id.to_string()],
+        )
+        .expect("advance source generation");
+    drop(connection);
+    assert_eq!(
+        app.clone()
+            .oneshot(request())
+            .await
+            .expect("rebound bootstrap")
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    let pack = &admission.manifest.chunks[0];
+    let pack_uri = format!("/v1/packs/sha256/{}.sqlite.zst", pack.sha256);
+    assert_eq!(
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .uri(&pack_uri)
+                    .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .expect("rebound pack")
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+
+    let connection = store.open().expect("catalogue");
+    connection
+        .execute(
+            "UPDATE sources SET generation = generation - 1
+              WHERE source_id = (
+                    SELECT source_id FROM vehicles WHERE vehicle_id = ?1
+              )",
+            [binding.vehicle_id.to_string()],
+        )
+        .expect("restore source generation");
+    drop(connection);
+    assert_eq!(
+        app.clone()
+            .oneshot(request())
+            .await
+            .expect("restored bootstrap")
+            .status(),
+        StatusCode::OK
+    );
+
+    let pack_path = store
+        .packs_dir()
+        .join("sha256")
+        .join(format!("{}.sqlite.zst", pack.sha256));
+    let pack_metadata = fs::metadata(&pack_path).expect("pack metadata");
+    let original_size = pack_metadata.len();
+    let original_permissions = pack_metadata.permissions();
+    fs::set_permissions(&pack_path, fs::Permissions::from_mode(0o000))
+        .expect("make pack unreadable sentinel");
+    assert_eq!(
+        app.clone()
+            .oneshot(request())
+            .await
+            .expect("metadata-only bootstrap")
+            .status(),
+        StatusCode::OK
+    );
+    let noop = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/v1/vehicles/{}/sync/changes-since",
+                    binding.vehicle_id
+                ))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "base_receipt_id": admission.receipt_id,
+                        "base_manifest_schema": "2.2",
+                        "from_sequence": admission.head_sequence,
+                        "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+                    }))
+                    .expect("metadata-only no-op request"),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("metadata-only no-op response");
+    assert_eq!(noop.status(), StatusCode::OK);
+    assert_eq!(
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .uri(&pack_uri)
+                    .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                    .body(Body::empty())
+                    .unwrap()
+            )
+            .await
+            .expect("unreadable pack response")
+            .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    fs::set_permissions(&pack_path, original_permissions).expect("restore pack permissions");
+
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .open(&pack_path)
+        .expect("pack file");
+    file.write_all(&[0]).expect("same-length pack tamper");
+    drop(file);
+    assert_eq!(
+        fs::metadata(&pack_path).expect("tampered metadata").len(),
+        original_size
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(request())
+            .await
+            .expect("tampered bootstrap")
+            .status(),
+        StatusCode::OK
+    );
+    assert_eq!(
+        app.oneshot(
+            Request::builder()
+                .uri(pack_uri)
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .body(Body::empty())
+                .unwrap()
+        )
+        .await
+        .expect("tampered pack")
+        .status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+}
+
+#[tokio::test]
+async fn hub_sync_physical_routes_do_not_serve_a_non_public_marker() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let cursor_key = CursorKey::from_bytes([96; 32]);
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let (binding, candidate) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("candidate"),
+            &store,
+            &cursor_key,
+            1,
+            "physical-v3-non-public-sequence",
+            0,
+        );
+    let admission = store
+        .stage_pending_physical_v3_admission(&gate, candidate)
+        .expect("private physical marker");
+    drop(gate);
+    assert_eq!(admission.head_sequence, 0);
+    assert!(!crate::db::physical_v3_admission_is_public(&admission));
+    assert!(
+        store
+            .pending_physical_v3_pack_for_digest(admission.manifest.chunks[0].sha256)
+            .expect("non-public pack lookup")
+            .is_none()
+    );
+
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("non-public physical marker", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store, &cursor_key);
+
+    let bootstrap = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{}/sync/manifest", binding.vehicle_id))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .header(SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("non-public bootstrap response");
+    assert_eq!(bootstrap.status(), StatusCode::NOT_ACCEPTABLE);
+    assert_eq!(
+        bootstrap.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert!(
+        bootstrap
+            .into_body()
+            .collect()
+            .await
+            .expect("non-public bootstrap body")
+            .to_bytes()
+            .is_empty()
+    );
+
+    let pack = &admission.manifest.chunks[0];
+    let pack_response = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/packs/sha256/{}.sqlite.zst", pack.sha256))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("non-public pack response");
+    assert_eq!(pack_response.status(), StatusCode::NOT_FOUND);
+
+    let changes = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri(format!(
+                    "/v1/vehicles/{}/sync/changes-since",
+                    binding.vehicle_id
+                ))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&serde_json::json!({
+                        "base_receipt_id": admission.receipt_id,
+                        "base_manifest_schema": "2.2",
+                        "from_sequence": 0,
+                        "schema_version_range": {"minimum": "2.1", "maximum": "2.2"}
+                    }))
+                    .expect("non-public changes request"),
+                ))
+                .unwrap(),
+        )
+        .await
+        .expect("non-public changes response");
+    assert_eq!(changes.status(), StatusCode::NOT_ACCEPTABLE);
+    assert_eq!(
+        changes.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
 }
 
 #[tokio::test]
@@ -4022,6 +4755,40 @@ async fn paired_schema_22_restart_keeps_exact_noop_and_wrong_key_fails_closed() 
         .expect("paired access");
     let restarted = HubStore::initialize(&store_path).expect("restart store");
     let app = paired_router(restarted.clone(), &cursor_key);
+    let selected = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{}/sync/manifest",
+                    request.binding.vehicle_id
+                ))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", access.access_token.as_bearer()),
+                )
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .header(SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("selected physical bootstrap response");
+    assert_eq!(selected.status(), StatusCode::NOT_ACCEPTABLE);
+    assert_eq!(
+        selected.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert!(
+        selected
+            .into_body()
+            .collect()
+            .await
+            .expect("selected physical bootstrap body")
+            .to_bytes()
+            .is_empty(),
+        "updates-only schema 2.2 publication must not qualify as PhysicalV3"
+    );
     let response = app
         .oneshot(
             Request::builder()

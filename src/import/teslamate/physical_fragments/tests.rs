@@ -423,6 +423,91 @@ fn registered_admission_binding(store: &HubStore) -> ProjectionBinding {
         .expect("physical projection binding")
 }
 
+pub(crate) fn public_admission_candidate_fixture(
+    temporary: &std::path::Path,
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    update_count: u32,
+) -> (ProjectionBinding, StagedPhysicalProjectionV3) {
+    public_admission_candidate_fixture_for_source(
+        temporary,
+        store,
+        cursor_key,
+        update_count,
+        "physical-v3-admission",
+    )
+}
+
+pub(crate) fn public_admission_candidate_fixture_for_source(
+    temporary: &std::path::Path,
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    update_count: u32,
+    source_key: &str,
+) -> (ProjectionBinding, StagedPhysicalProjectionV3) {
+    public_admission_candidate_fixture_for_source_and_sequence(
+        temporary,
+        store,
+        cursor_key,
+        update_count,
+        source_key,
+        sequence().to_inclusive,
+    )
+}
+
+pub(crate) fn public_admission_candidate_fixture_for_source_and_sequence(
+    temporary: &std::path::Path,
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    update_count: u32,
+    source_key: &str,
+    head_sequence: u64,
+) -> (ProjectionBinding, StagedPhysicalProjectionV3) {
+    assert!(update_count > 0);
+    std::fs::create_dir_all(temporary).expect("public admission fixture root");
+    let source = store
+        .register_source(&SourceDescriptor::new("teslamate", source_key), 1_000)
+        .expect("public physical source");
+    let vehicle = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "1"), 1_000)
+        .expect("public physical vehicle");
+    let binding = store
+        .v2_projection_binding(vehicle.vehicle_id)
+        .expect("public physical projection binding");
+    let mut stage = TeslaMateStage::create_physical_v3(
+        temporary.join(format!("public-physical-stage-{source_key}")),
+        TeslaMateStageLimits {
+            max_rows: u64::from(update_count) + 3,
+            max_stage_bytes: 32 * 1024 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("public physical stage");
+    seed_roots(&mut stage);
+    let ids =
+        (10..10 + i32::try_from(update_count).expect("bounded update count")).collect::<Vec<_>>();
+    seed_updates(&mut stage, &ids);
+    stage.seal().expect("sealed public physical stage");
+    let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding.clone(),
+        Uuid::new_v4(),
+        SequenceRange {
+            from_exclusive: head_sequence,
+            to_inclusive: head_sequence,
+        },
+        cursor_key,
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 4,
+            max_projected_json_bytes: 64 * 1024,
+        },
+    )
+    .expect("public physical candidate");
+    assert_eq!(candidate.chunks.len(), update_count as usize);
+    (binding, candidate)
+}
+
 #[test]
 fn physical_writer_requires_an_explicit_sealed_physical_stage() {
     let temporary = tempdir().expect("temp dir");

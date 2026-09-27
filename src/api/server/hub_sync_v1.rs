@@ -107,6 +107,23 @@ struct Manifest21Payload {
 }
 
 #[derive(Serialize)]
+struct Manifest22Payload {
+    manifest_id: String,
+    receipt_id: String,
+    vehicle_id: Uuid,
+    kind: &'static str,
+    schema_version: &'static str,
+    sequence: u64,
+    chunks: Vec<WireChunk>,
+}
+
+#[derive(Serialize)]
+struct WireChunk {
+    chunk_index: u32,
+    pack: WirePack,
+}
+
+#[derive(Serialize)]
 struct RebasePayload {
     kind: &'static str,
     vehicle_id: Uuid,
@@ -188,6 +205,32 @@ pub(super) fn bootstrap_manifest(state: &AppState, vehicle_id: Uuid) -> Response
         tracing::error!(%vehicle_id, "manifest signing key is unavailable");
         return unavailable_bootstrap_manifest();
     };
+    match state
+        .store
+        .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
+    {
+        Ok(Some(admission)) if crate::db::physical_v3_admission_is_public(&admission) => {
+            return signed_control_response(
+                StatusCode::OK,
+                &Manifest22Payload {
+                    manifest_id: admission.snapshot_id.to_string(),
+                    receipt_id: admission.receipt_id,
+                    vehicle_id,
+                    kind: "snapshot",
+                    schema_version: "2.2",
+                    sequence: admission.head_sequence,
+                    chunks: admission.manifest.chunks.iter().map(wire_chunk).collect(),
+                },
+                signing,
+            );
+        }
+        Ok(Some(_)) => return unavailable_bootstrap_manifest(),
+        Ok(None) => {}
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot load admitted physical bootstrap");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    }
     let lineage = match state.store.lineage_manifest_for_vehicle(vehicle_id) {
         Ok(Some(lineage)) => lineage,
         Ok(None) => return unavailable_bootstrap_manifest(),
@@ -388,6 +431,9 @@ fn serve_changes_since(
         tracing::error!(%vehicle_id, "manifest signing key is unavailable");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
+    if request.base_manifest_schema == "2.2" {
+        return serve_physical_changes_since(state, vehicle_id, request, signing);
+    }
     if request.base_manifest_schema != "2.1" {
         return schema_range_unsupported();
     }
@@ -486,6 +532,42 @@ fn serve_changes_since(
     }
 }
 
+fn serve_physical_changes_since(
+    state: &AppState,
+    vehicle_id: Uuid,
+    request: ChangesSinceRequest,
+    signing: &ManifestSigning,
+) -> Response {
+    let admission = match state
+        .store
+        .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
+    {
+        Ok(Some(admission)) if crate::db::physical_v3_admission_is_public(&admission) => admission,
+        Ok(Some(_)) | Ok(None) => return schema_range_unsupported(),
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot load admitted physical checkpoint");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    if request.base_receipt_id != admission.receipt_id
+        || request.from_sequence != admission.head_sequence
+    {
+        return unknown_base_receipt();
+    }
+    signed_control_response(
+        StatusCode::OK,
+        &NoOpPayload {
+            kind: "no_op",
+            vehicle_id,
+            base_receipt_id: request.base_receipt_id,
+            base_manifest_schema: "2.2",
+            sequence: request.from_sequence,
+            manifest_schema: "2.2",
+        },
+        signing,
+    )
+}
+
 fn admitted_schema_21_base(lineage: &LineageManifestV2) -> Option<&crate::protocol::TransportPack> {
     if lineage.schema != HUB_PROJECTION_SCHEMA_V2
         || lineage.base.sequence == 0
@@ -544,6 +626,13 @@ fn wire_pack(pack: &crate::protocol::TransportPack) -> WirePack {
         object_name: format!("{}.sqlite.zst", pack.sha256),
         sha256: pack.sha256.to_string(),
         compressed_bytes: pack.compressed_bytes,
+    }
+}
+
+fn wire_chunk(pack: &crate::protocol::TransportPack) -> WireChunk {
+    WireChunk {
+        chunk_index: pack.ordinal,
+        pack: wire_pack(pack),
     }
 }
 

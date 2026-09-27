@@ -69,6 +69,7 @@ const PACK_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const HTTP_HANDLER_TIMEOUT: Duration = Duration::from_secs(15);
 const READINESS_CACHE_TTL: Duration = Duration::from_secs(1);
 const MAX_SYNC_CONTROL_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_ADMITTED_PHYSICAL_PACK_BYTES: u64 = 16 * 1024 * 1024;
 const HUB_SYNC_PROFILE_ID: &str = "hub-sync-v1@1.3.0";
 const PUBLIC_API_VERSIONS: [&str; 1] = ["1.0"];
 const PUBLIC_BASE_CAPABILITIES: [&str; 2] = ["query.vehicles", "query.current"];
@@ -1860,9 +1861,16 @@ async fn pack(
     let Ok(digest) = digest.parse::<Sha256Digest>() else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    let stored = match state.store.pack_for_digest(digest) {
-        Ok(Some(pack)) => pack,
-        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+    let (stored, verify_digest) = match state.store.pack_for_digest(digest) {
+        Ok(Some(pack)) => (pack, false),
+        Ok(None) => match state.store.pending_physical_v3_pack_for_digest(digest) {
+            Ok(Some(pack)) => (pack, true),
+            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+            Err(error) => {
+                tracing::error!(%error, %digest, "cannot load admitted physical pack");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        },
         Err(crate::db::StoreError::SchemaPublicationUnavailable(_)) => {
             return StatusCode::NOT_ACCEPTABLE.into_response();
         }
@@ -1895,6 +1903,7 @@ async fn pack(
             .and_then(|header| header.to_str().ok()),
         permit,
         device_slot,
+        verify_digest,
     )
     .await
 }
@@ -2101,8 +2110,14 @@ async fn stream_pack(
     range_header: Option<&str>,
     permit: tokio::sync::OwnedSemaphorePermit,
     device_slot: PackDeviceSlot,
+    verify_digest: bool,
 ) -> Response {
-    let mut file = match tokio::fs::File::open(&stored.path).await {
+    let opened = if verify_digest {
+        open_admitted_physical_pack(&stored.path)
+    } else {
+        tokio::fs::File::open(&stored.path).await
+    };
+    let mut file = match opened {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             tracing::error!(digest = %stored.digest, "published pack file is missing");
@@ -2124,12 +2139,24 @@ async fn stream_pack(
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
+    let verified_bytes = if verify_digest {
+        match read_verified_physical_pack(&mut file, stored.compressed_bytes, stored.digest).await {
+            Ok(bytes) => Some(bytes),
+            Err(error) => {
+                tracing::error!(%error, digest = %stored.digest, "cannot verify admitted physical pack");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        }
+    } else {
+        None
+    };
     let range = match parse_single_range(range_header, metadata.len()) {
         Ok(range) => range,
         Err(_) => return range_not_satisfiable(metadata.len()),
     };
-    if let Err(error) =
-        tokio::io::AsyncSeekExt::seek(&mut file, std::io::SeekFrom::Start(range.start)).await
+    if verified_bytes.is_none()
+        && let Err(error) =
+            tokio::io::AsyncSeekExt::seek(&mut file, std::io::SeekFrom::Start(range.start)).await
     {
         tracing::error!(%error, digest = %stored.digest, "cannot seek pack file");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -2166,14 +2193,77 @@ async fn stream_pack(
         };
         response = response.header(header::CONTENT_RANGE, content_range);
     }
-    response
-        .body(pack_stream_body(
+    let body = if let Some(bytes) = verified_bytes {
+        let start = usize::try_from(range.start).expect("physical pack start fits usize");
+        let end = usize::try_from(range.end + 1).expect("physical pack end fits usize");
+        verified_pack_body(bytes.slice(start..end), permit, device_slot)
+    } else {
+        pack_stream_body(
             tokio::io::AsyncReadExt::take(file, range.len()),
             permit,
             device_slot,
             PACK_STREAM_IDLE_TIMEOUT,
-        ))
+        )
+    };
+    response
+        .body(body)
         .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+fn open_admitted_physical_pack(path: &FsPath) -> std::io::Result<tokio::fs::File> {
+    let descriptor = open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        Mode::empty(),
+    )
+    .map_err(|_| std::io::Error::other("admitted physical pack cannot be safely opened"))?;
+    let file: fs::File = descriptor.into();
+    Ok(tokio::fs::File::from_std(file))
+}
+
+async fn read_verified_physical_pack(
+    file: &mut tokio::fs::File,
+    expected_bytes: u64,
+    expected_digest: Sha256Digest,
+) -> std::io::Result<Bytes> {
+    if !(1..=MAX_ADMITTED_PHYSICAL_PACK_BYTES).contains(&expected_bytes) {
+        return Err(std::io::Error::other(
+            "admitted physical pack size is outside the profile",
+        ));
+    }
+    tokio::io::AsyncSeekExt::seek(file, std::io::SeekFrom::Start(0)).await?;
+    let capacity = usize::try_from(expected_bytes)
+        .map_err(|_| std::io::Error::other("admitted physical pack is too large"))?;
+    let mut bytes = Vec::with_capacity(capacity);
+    let mut bounded = tokio::io::AsyncReadExt::take(file, expected_bytes + 1);
+    tokio::io::AsyncReadExt::read_to_end(&mut bounded, &mut bytes).await?;
+    if bytes.len() != capacity || Sha256Digest::of_bytes(&bytes) != expected_digest {
+        return Err(std::io::Error::other(
+            "admitted physical pack bytes do not match the durable marker",
+        ));
+    }
+    Ok(Bytes::from(bytes))
+}
+
+fn verified_pack_body(
+    bytes: Bytes,
+    permit: tokio::sync::OwnedSemaphorePermit,
+    device_slot: PackDeviceSlot,
+) -> Body {
+    Body::from_stream(stream::unfold(
+        (bytes, 0_usize, permit, device_slot),
+        |(bytes, offset, permit, device_slot)| async move {
+            if offset == bytes.len() {
+                return None;
+            }
+            let end = (offset + 64 * 1024).min(bytes.len());
+            let chunk = bytes.slice(offset..end);
+            Some((
+                Ok::<Bytes, std::io::Error>(chunk),
+                (bytes, end, permit, device_slot),
+            ))
+        },
+    ))
 }
 
 fn pack_stream_body<R>(

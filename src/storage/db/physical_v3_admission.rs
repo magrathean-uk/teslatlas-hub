@@ -223,6 +223,24 @@ impl HubStore {
         &self,
         vehicle_id: Uuid,
     ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {
+        self.pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, true)
+    }
+
+    /// Load the currently bound marker and exact pack metadata for a control
+    /// response without reading every pack body. Pack GET verifies its one
+    /// bounded body before serving bytes.
+    pub(crate) fn pending_physical_v3_control_admission_for_vehicle(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {
+        self.pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, false)
+    }
+
+    fn pending_physical_v3_admission_for_vehicle_with_file_digests(
+        &self,
+        vehicle_id: Uuid,
+        verify_file_digests: bool,
+    ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {
         let connection = self.open_read_only_connection()?;
         let row = connection
             .query_row(
@@ -346,14 +364,75 @@ impl HubStore {
             if !metadata.file_type().is_file() || metadata.len() != pack.compressed_bytes {
                 return Err(StoreError::PhysicalV3AdmissionConflict);
             }
-            if sha256_file_hex(&path).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
-                != pack.sha256.to_string()
+            if verify_file_digests
+                && sha256_file_hex(&path).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
+                    != pack.sha256.to_string()
             {
                 return Err(StoreError::PhysicalV3AdmissionConflict);
             }
         }
         Ok(Some(computed))
     }
+
+    /// Resolve one exact pack from a currently valid private physical
+    /// admission without adding it to the generic sync catalogue. The caller
+    /// must still buffer and verify the bounded body before serving those exact
+    /// immutable bytes.
+    pub(crate) fn pending_physical_v3_pack_for_digest(
+        &self,
+        digest: Sha256Digest,
+    ) -> Result<Option<StoredPack>, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        let vehicle_id = connection
+            .query_row(
+                "SELECT admission.vehicle_id
+                   FROM pending_physical_v3_packs AS pack
+                   JOIN pending_physical_v3_admissions AS admission
+                     ON admission.snapshot_id = pack.snapshot_id
+                  WHERE pack.sha256 = ?1",
+                [digest.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        drop(connection);
+        let Some(vehicle_id) = vehicle_id else {
+            return Ok(None);
+        };
+        let vehicle_id = vehicle_id
+            .parse::<Uuid>()
+            .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
+        let admission = self
+            .pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, false)?
+            .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
+        if !physical_v3_admission_is_public(&admission) {
+            return Ok(None);
+        }
+        let pack = admission
+            .manifest
+            .chunks
+            .iter()
+            .find(|pack| pack.sha256 == digest)
+            .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
+        Ok(Some(StoredPack {
+            digest,
+            compressed_bytes: pack.compressed_bytes,
+            path: self
+                .packs_dir
+                .join("sha256")
+                .join(format!("{digest}.sqlite.zst")),
+        }))
+    }
+}
+
+pub(crate) fn physical_v3_admission_is_public(admission: &PendingPhysicalV3Admission) -> bool {
+    (1..=9_007_199_254_740_991).contains(&admission.head_sequence)
+        && (1..=1_771).contains(&admission.manifest.chunks.len())
+        && admission
+            .manifest
+            .chunks
+            .iter()
+            .all(|pack| (1..=16 * 1024 * 1024).contains(&pack.compressed_bytes))
 }
 
 fn physical_v3_admission_from_manifest(

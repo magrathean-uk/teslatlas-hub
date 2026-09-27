@@ -1207,4 +1207,4 @@ pub enum TeslaMatePhysicalFragmentError {
 
 #[cfg(test)]
 #[path = "physical_fragments/tests.rs"]
-mod tests;
+pub(crate) mod tests;
