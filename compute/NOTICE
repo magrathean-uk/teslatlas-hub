@@ -1,5 +1,8 @@
 Teslatlas Compute
-Copyright 2026 Magrathean Technologies Ltd
+Copyright © 2026 MAGRATHEAN UK LTD
+Created by György Bolyki
+
+Licensed under the Apache License, Version 2.0. See LICENSE.
 
 This product includes geometry and canonical CPU tile generation code adapted
 from the Teslatlas App at commit 569ac74867947616632ecb64bb65fb97ab565cb5.
