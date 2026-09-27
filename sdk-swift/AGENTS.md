@@ -15,7 +15,7 @@ independent from protocol authority.
 Follow Swift API Design Guidelines. Keep public types in `PascalCase`, members
 in `camelCase`, and documentation filenames lowercase with hyphens.
 
-Read [docs/development.md](docs/development.md) for commands and test selection. Use
+Read [docs/guides/development.md](docs/guides/development.md) for commands and test selection. Use
 an external SwiftPM scratch path, including for `swift package dump-package`.
 Run the smallest relevant check first, then the fixture suite when changes cross
 products, transports or bindings. Keep live, matrix and Apple consumer journeys
@@ -39,6 +39,10 @@ Do not add product UI, Rust FFI, Hub implementation code, proprietary
 Teslatlas source, hosted automation, or inferred routes to this repository.
 
 Do not issue live vehicle commands or expose public ingress.
+
+Legal files (`LICENSE`, `NOTICE`, `docs/legal/`, contributor terms, copyright and
+attribution strings) are owner-controlled: change them only on the owner's
+explicit instruction.
 
 GitHub is source storage only. Do not add CI workflows, releases, tags,
 package publication, signing, or deployment without explicit owner direction.

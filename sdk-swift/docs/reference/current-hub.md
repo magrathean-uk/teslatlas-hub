@@ -80,11 +80,11 @@ three pages at limit two, three per-page conditional `304` responses, units,
 nulls, zeroes, bearer rotation, old-bearer rejection, invitation replay,
 unsupported zero-I/O behavior, cancellation and a streamed oversized response.
 
-The [2026-09-19 G6 receipt](development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json) records a synthetic, source-built macOS journey for the then-tested inputs. The later [cleanup snapshot](development/PLAN.md) records removal of local artifacts and runtimes. These records do not establish current-source, minimum-OS, installer, App, physical-device or real-data acceptance.
+The [2026-09-19 G6 receipt](../development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json) records a synthetic, source-built macOS journey for the then-tested inputs. The later [cleanup snapshot](../development/archive/PLAN.md) records removal of local artifacts and runtimes. These records do not establish current-source, minimum-OS, installer, App, physical-device or real-data acceptance.
 
 ## External consumer and caller lifecycle
 
-The [external consumer](../Examples/CurrentHubConsumer/README.md) imports `TeslatlasCurrentHub` and demonstrates the caller lifecycle. Follow its guide for configuration and commands. It uses the production transport and an in-memory actor credential store; applications must supply their own durable storage and sign-out policy.
+The [external consumer](../../Examples/CurrentHubConsumer/README.md) imports `TeslatlasCurrentHub` and demonstrates the caller lifecycle. Follow its guide for configuration and commands. It uses the production transport and an in-memory actor credential store; applications must supply their own durable storage and sign-out policy.
 
 Create a new store and client after changing Hub identity. Never carry credentials or cursors between identities.
 
@@ -95,4 +95,4 @@ Cancellation and reconnect remain caller responsibilities around the public
 transport and credential store; a custom store that never returns cannot be
 bounded by the SDK.
 
-The Dockerfile is used by the pinned [platform gate](development/platform-gate-preparation.md). It is not a general live-repository build context or a Hub runtime.
+The Dockerfile is used by the pinned [platform gate](../development/archive/platform-gate-preparation.md). It is not a general live-repository build context or a Hub runtime.

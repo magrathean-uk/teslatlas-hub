@@ -39,12 +39,12 @@ The other Python suites use the same discovery syntax with their own filename. S
 
 ## Live checks
 
-`CurrentHubLiveTests`, `CurrentHubMatrixWorkerTests`, `CurrentHubAppleConsumerTests` and `LiveHubBlackBoxTests` are separate, provisioned journeys. Do not remove exclusions merely to make the command shorter. Current-Hub live tests require private configuration and a suitable reachable Hub; the legacy live test requires the exact historical binding. See the relevant client guide and [consumer example](../Examples/CurrentHubConsumer/README.md).
+`CurrentHubLiveTests`, `CurrentHubMatrixWorkerTests`, `CurrentHubAppleConsumerTests` and `LiveHubBlackBoxTests` are separate, provisioned journeys. Do not remove exclusions merely to make the command shorter. Current-Hub live tests require private configuration and a suitable reachable Hub; the legacy live test requires the exact historical binding. See the relevant client guide and [consumer example](../../Examples/CurrentHubConsumer/README.md).
 
 Use dedicated test credentials and synthetic data for state-changing pairing and rotation checks. Preserve ordinary user credentials and any live service. Never interpret fixture success as live-Hub, installer or physical-device acceptance.
 
 ## Source and platform checks
 
-[Source distribution](source-distribution.md) explains the current-tree handoff. [Platform gates](development/platform-gate-preparation.md) explain the separately pinned historical snapshot used by `tools/platform_gate.py` and the Dockerfile. A platform-gate result for that snapshot does not validate a newer checkout.
+[Source distribution](source-distribution.md) explains the current-tree handoff. [Platform gates](../development/archive/platform-gate-preparation.md) explain the separately pinned historical snapshot used by `tools/platform_gate.py` and the Dockerfile. A platform-gate result for that snapshot does not validate a newer checkout.
 
 GitHub is source storage. Local checks are the validation path; no hosted build or test automation is part of this workflow.

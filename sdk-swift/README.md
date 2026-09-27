@@ -1,4 +1,17 @@
-# Teslatlas Swift SDK
+<p align="center">
+  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/teslatlas.png" width="96" height="96" alt="">
+</p>
+
+<h1 align="center">Teslatlas Swift SDK</h1>
+
+<p align="center">A Swift Package Manager source package for the Teslatlas Hub protocol, command and compatibility surfaces.</p>
+
+<p align="center">
+  <a href="docs/architecture/overview.md">Documentation</a> ·
+  <a href="docs/legal/licensing.md">Licence</a>
+</p>
+
+## Overview
 
 Teslatlas Swift SDK is a Swift Package Manager source package with four public
 products across three contract families. `TeslatlasCommands` builds on the
@@ -49,8 +62,8 @@ For a moving source dependency, select the repository branch explicitly:
 Choose a reviewed source snapshot when reproducibility matters. The calendar
 product version in `VERSION` and `teslatlasProductVersion` is separate from the Swift
 tools version and every wire-contract identity. See
-[product versioning](docs/product-versioning.md) and
-[source distribution](docs/source-distribution.md).
+[product versioning](docs/reference/product-versioning.md) and
+[source distribution](docs/guides/source-distribution.md).
 
 ## Strict protocol client
 
@@ -115,7 +128,7 @@ if let vehicle = vehicles.first {
 
 The compatibility binding is bundled and hash checked. Its provenance and
 deliberately narrow route set are described in
-[Hub v1 compatibility](docs/hub-v1-compatibility.md).
+[Hub v1 compatibility](docs/reference/hub-v1-compatibility.md).
 
 ## Current Hub client
 
@@ -141,7 +154,7 @@ the current-Hub flow and its owner-only input and output files.
 
 ## Verification
 
-See the [development guide](docs/development.md) for the supported local
+See the [development guide](docs/guides/development.md) for the supported local
 verification selection and Linux platform-gate commands. SwiftPM build output
 and caches should use a scratch path outside the checkout.
 
@@ -152,20 +165,23 @@ claims.
 
 ## Documentation and support
 
-- [Architecture](docs/architecture.md)
-- [Current Hub profile](docs/current-hub.md)
-- [Development](docs/development.md)
-- [Protocol dependency gate](docs/protocol-dependency-gate.md)
-- [Source distribution](docs/source-distribution.md)
-- [Support](SUPPORT.md)
-- [Contributing](CONTRIBUTING.md)
-- [Security](SECURITY.md)
-- [Licensing](docs/licensing.md)
+- [Architecture](docs/architecture/overview.md)
+- [Current Hub profile](docs/reference/current-hub.md)
+- [Development](docs/guides/development.md)
+- [Protocol dependency gate](docs/reference/protocol-dependency-gate.md)
+- [Source distribution](docs/guides/source-distribution.md)
+- [Support](.github/SUPPORT.md)
+- [Contributing](.github/CONTRIBUTING.md)
+- [Security](.github/SECURITY.md)
+- [Licensing](docs/legal/licensing.md)
 - [Apache License 2.0 text](LICENSE)
+- [Notice](NOTICE)
 
-## License
+## Licence
 
 This package is licensed under the Apache License 2.0. Preserve the complete
-[LICENSE](LICENSE) text, copyright notices, and grant terms when redistributing
-the source. See the [licensing guide](docs/licensing.md) for package-specific
-attribution guidance.
+[LICENSE](LICENSE) and [NOTICE](NOTICE) text, copyright notices, and grant
+terms when redistributing the source. See the [licensing guide](docs/legal/licensing.md)
+for package-specific attribution guidance.
+
+<sub>© 2026 MAGRATHEAN UK LTD · [Legal](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)</sub>

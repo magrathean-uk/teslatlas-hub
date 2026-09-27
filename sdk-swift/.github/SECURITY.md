@@ -1,5 +1,7 @@
 # Security Policy
 
+Security boundaries and vulnerability reporting for teslatlas-sdk-swift.
+
 ## Scope
 
 This repository contains the public Swift client products for the strict

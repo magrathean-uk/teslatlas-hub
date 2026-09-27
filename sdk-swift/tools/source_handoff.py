@@ -34,13 +34,13 @@ SOURCE_DIRECTORIES = (
     "Examples/CurrentHubConsumer",
 )
 PUBLIC_DOCUMENTS = (
-    "docs/architecture.md",
-    "docs/current-hub.md",
-    "docs/development.md",
-    "docs/hub-v1-compatibility.md",
-    "docs/product-versioning.md",
-    "docs/protocol-dependency-gate.md",
-    "docs/source-distribution.md",
+    "docs/architecture/overview.md",
+    "docs/reference/current-hub.md",
+    "docs/guides/development.md",
+    "docs/reference/hub-v1-compatibility.md",
+    "docs/reference/product-versioning.md",
+    "docs/reference/protocol-dependency-gate.md",
+    "docs/guides/source-distribution.md",
 )
 IGNORED_NAMES = {".DS_Store", ".build", ".swiftpm", "DerivedData", "__pycache__"}
 DIRECTORY_MODE = 0o755

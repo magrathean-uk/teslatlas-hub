@@ -80,5 +80,5 @@ Hub instead of retrying a single-use operation.
 Without drive overrides, the sample expects drive counts `[5, 0, 0]` in the source-defined synthetic time window. Configure a matching fixture Hub before running it. The sample does not create that Hub or provision its invitation. A successful local build or run is
 component evidence and does not establish minimum-platform, iOS, application,
 installer, notarization, package-service, real-data, production, or
-full-platform acceptance. See the package's [current-Hub documentation](../../docs/current-hub.md)
+full-platform acceptance. See the package's [current-Hub documentation](../../docs/reference/current-hub.md)
 for the contract and trust model.
