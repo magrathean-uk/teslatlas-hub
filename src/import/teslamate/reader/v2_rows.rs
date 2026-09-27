@@ -564,6 +564,48 @@ fn decode_charging_process_v2_2(
     })
 }
 
+fn decode_charge_v2_2(row: &Row) -> Result<TeslaMateChargePhysicalV2_2, TeslaMateReaderError> {
+    Ok(TeslaMateChargePhysicalV2_2 {
+        id: required_i32(row, "charges", "id")?,
+        charging_process_id: required_i32(row, "charges", "charging_process_id")?,
+        date_pg_us: required_timestamp_pg_us(row, "charges", "date")?,
+        battery_heater: optional_bool(row, "charges", "battery_heater")?,
+        battery_heater_on: optional_bool(row, "charges", "battery_heater_on")?,
+        battery_heater_no_power: optional_bool(row, "charges", "battery_heater_no_power")?,
+        battery_level: optional_i16(row, "charges", "battery_level")?,
+        usable_battery_level: optional_i16(row, "charges", "usable_battery_level")?,
+        charge_energy_added_e2: required_fixed_numeric_v2_2(
+            row,
+            "charges",
+            "charge_energy_added",
+            2,
+        )?,
+        charger_actual_current: optional_i16(row, "charges", "charger_actual_current")?,
+        charger_phases: optional_i16(row, "charges", "charger_phases")?,
+        charger_pilot_current: optional_i16(row, "charges", "charger_pilot_current")?,
+        charger_power: required_i16(row, "charges", "charger_power")?,
+        charger_voltage: optional_i16(row, "charges", "charger_voltage")?,
+        conn_charge_cable: optional_text(row, "charges", "conn_charge_cable")?,
+        fast_charger_present: optional_bool(row, "charges", "fast_charger_present")?,
+        fast_charger_brand: optional_text(row, "charges", "fast_charger_brand")?,
+        fast_charger_type: optional_text(row, "charges", "fast_charger_type")?,
+        ideal_battery_range_km_e2: required_fixed_numeric_v2_2(
+            row,
+            "charges",
+            "ideal_battery_range_km",
+            2,
+        )?,
+        rated_battery_range_km_e2: optional_fixed_numeric_v2_2(
+            row,
+            "charges",
+            "rated_battery_range_km",
+            2,
+        )?,
+        not_enough_power_to_heat: optional_bool(row, "charges", "not_enough_power_to_heat")?,
+        outside_temp_e1: optional_fixed_numeric_v2_2(row, "charges", "outside_temp", 1)?,
+    })
+}
+
 fn decode_car_settings_row(row: &Row) -> Result<ProjectionCarSettings, TeslaMateReaderError> {
     let defaults = ProjectionCarSettings::default();
     Ok(ProjectionCarSettings {

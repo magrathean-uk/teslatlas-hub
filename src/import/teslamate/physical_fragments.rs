@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Unpublished schema-2.2 drive, position, charging-process, state, and update chunks.
+//! Unpublished schema-2.2 drive, position, charging, state, and update chunks.
 //!
 //! This module proves the bounded stage-to-pack boundary only. It does not
 //! capture PostgreSQL rows and cannot publish a manifest to the Hub catalogue.
@@ -15,12 +15,13 @@ use uuid::Uuid;
 
 use crate::{
     hub_pack::{
-        BuiltProjectionPack, ProjectionBinding, ProjectionPackError, ProjectionPackRequestV2_2,
+        BuiltProjectionPack, ProjectionBinding, ProjectionChargeV2_2,
+        ProjectionChargingProcessV2_2, ProjectionPackError, ProjectionPackRequestV2_2,
         ProjectionPackWriter, ProjectionSnapshotV2_2, signed_full_snapshot_manifest,
     },
     protocol::{CursorKey, ProtocolLimits, SequenceRange, SyncManifest},
     teslamate_projection::{
-        TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2,
+        TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateChargePhysicalV2_2,
         TeslaMateChargingProcessPhysicalV2_2, TeslaMateDrivePhysicalV2_2,
         TeslaMatePositionPhysicalV2_2, TeslaMateSettingsPhysicalV2_2, TeslaMateStatePhysicalV2_2,
         TeslaMateUpdatePhysicalV2_2,
@@ -32,6 +33,7 @@ use crate::{
 };
 
 const STAGE_PAGE_ROWS: u32 = 10_000;
+const CHARGE_STAGE_PAGE_ROWS: u32 = 512;
 const DEFAULT_MAX_ROWS_PER_CHUNK: u64 = 50_000;
 const DEFAULT_MAX_PROJECTED_JSON_BYTES: u64 = 8 * 1024 * 1024;
 const HUB_SYNC_PROFILE_MAX_PACK_BYTES: u64 = 16 * 1024 * 1024;
@@ -92,7 +94,7 @@ impl Drop for StagedPhysicalProjectionV3 {
     }
 }
 
-/// Stream drive, position, charging-process, state, and update rows from one sealed physical stage into
+/// Stream drive, position, charging, state, and update rows from one sealed physical stage into
 /// independently verified V3 SQLite chunks, then sign exactly one manifest
 /// over all chunks. Any other relation-bearing history rejects before the first pack
 /// write. No catalogue method is reachable from this boundary.
@@ -189,7 +191,6 @@ fn write_staged_physical_updates_snapshot_v3_inner(
     for table in [
         TeslaMateStageTable::Addresses,
         TeslaMateStageTable::Geofences,
-        TeslaMateStageTable::Charges,
     ] {
         if !stage
             .page::<serde_json::Value>(table, 0, 1)?
@@ -220,6 +221,8 @@ fn write_staged_physical_updates_snapshot_v3_inner(
     if car.value.settings_id != car_settings.value.id {
         return Err(TeslaMatePhysicalFragmentError::CarSettingsMismatch);
     }
+
+    preflight_charges(stage, binding.selected_car_id)?;
 
     let roots = PhysicalRoots {
         global_settings: settings.value.into(),
@@ -288,31 +291,16 @@ fn write_staged_physical_updates_snapshot_v3_inner(
         return Err(error);
     }
 
-    let charging_processes = for_each_page::<TeslaMateChargingProcessPhysicalV2_2, _>(
+    let charging_processes = stream_charging_processes(
         stage,
-        TeslaMateStageTable::ChargingProcesses,
-        |row| {
-            require_source_id(row.source_id, i64::from(row.value.id), "charging_processes")?;
-            if i64::from(row.value.car_id) != binding.selected_car_id {
-                return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
-            }
-            let projected = row.value.into();
-            let projected_bytes = serialized_bytes(&projected)?;
-            if accumulator.needs_flush(projected_bytes, limits)? {
-                flush_chunk(
-                    writer,
-                    &binding,
-                    snapshot_id,
-                    sequence,
-                    &mut accumulator,
-                    &mut chunks,
-                    fail_before_ordinal,
-                )?;
-            }
-            accumulator.snapshot.charging_processes.push(projected);
-            accumulator.add_payload(projected_bytes)?;
-            Ok(())
-        },
+        writer,
+        &binding,
+        snapshot_id,
+        sequence,
+        limits,
+        &mut accumulator,
+        &mut chunks,
+        fail_before_ordinal,
     );
     if let Err(error) = charging_processes {
         cleanup_chunks(&mut chunks);
@@ -486,6 +474,26 @@ impl PhysicalChunkAccumulator {
         Ok(())
     }
 
+    fn ensure_parent_child_fits(
+        &self,
+        parent_bytes: u64,
+        child_bytes: u64,
+        limits: TeslaMatePhysicalFragmentLimits,
+    ) -> Result<(), TeslaMatePhysicalFragmentError> {
+        let total_bytes = self
+            .projected_json_bytes
+            .checked_add(parent_bytes)
+            .and_then(|value| value.checked_add(child_bytes))
+            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+        if self.payload_rows != 0
+            || limits.max_rows_per_chunk < 5
+            || total_bytes > limits.max_projected_json_bytes
+        {
+            return Err(TeslaMatePhysicalFragmentError::ParentChildExceedsTarget);
+        }
+        Ok(())
+    }
+
     fn take_snapshot(&mut self) -> Result<ProjectionSnapshotV2_2, TeslaMatePhysicalFragmentError> {
         self.payload_rows = 0;
         self.projected_json_bytes = root_serialized_bytes(&self.roots)?;
@@ -597,6 +605,169 @@ where
     }
 }
 
+fn preflight_charges(
+    stage: &TeslaMateStage,
+    selected_car_id: i64,
+) -> Result<(), TeslaMatePhysicalFragmentError> {
+    for_each_page::<TeslaMateChargePhysicalV2_2, _>(stage, TeslaMateStageTable::Charges, |row| {
+        require_source_id(row.source_id, i64::from(row.value.id), "charges")?;
+        let parent_source_id = i64::from(row.value.charging_process_id);
+        let parent = stage
+            .get::<TeslaMateChargingProcessPhysicalV2_2>(
+                TeslaMateStageTable::ChargingProcesses,
+                parent_source_id,
+            )?
+            .ok_or(TeslaMatePhysicalFragmentError::MissingChargingProcess {
+                charge_id: row.value.id,
+                charging_process_id: row.value.charging_process_id,
+            })?;
+        require_source_id(parent_source_id, i64::from(parent.id), "charging_processes")?;
+        if i64::from(parent.car_id) != selected_car_id {
+            return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
+        }
+        Ok(())
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stream_charging_processes(
+    stage: &TeslaMateStage,
+    writer: &ProjectionPackWriter,
+    binding: &ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    limits: TeslaMatePhysicalFragmentLimits,
+    accumulator: &mut PhysicalChunkAccumulator,
+    chunks: &mut Vec<BuiltProjectionPack>,
+    fail_before_ordinal: Option<u32>,
+) -> Result<(), TeslaMatePhysicalFragmentError> {
+    for_each_page::<TeslaMateChargingProcessPhysicalV2_2, _>(
+        stage,
+        TeslaMateStageTable::ChargingProcesses,
+        |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "charging_processes")?;
+            if i64::from(row.value.car_id) != binding.selected_car_id {
+                return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
+            }
+            let process_id = row.value.id;
+            let projected_process: ProjectionChargingProcessV2_2 = row.value.into();
+            let process_bytes = serialized_bytes(&projected_process)?;
+            let mut saw_charge = false;
+            for_each_charge_for_process(stage, process_id, |charge_row| {
+                require_source_id(
+                    charge_row.source_id,
+                    i64::from(charge_row.value.id),
+                    "charges",
+                )?;
+                if charge_row.value.charging_process_id != process_id {
+                    return Err(TeslaMatePhysicalFragmentError::ChargeParentMismatch {
+                        charge_id: charge_row.value.id,
+                        expected: process_id,
+                        actual: charge_row.value.charging_process_id,
+                    });
+                }
+                let projected_charge: ProjectionChargeV2_2 = charge_row.value.into();
+                let charge_bytes = serialized_bytes(&projected_charge)?;
+                if !saw_charge {
+                    if accumulator.payload_rows != 0 {
+                        flush_chunk(
+                            writer,
+                            binding,
+                            snapshot_id,
+                            sequence,
+                            accumulator,
+                            chunks,
+                            fail_before_ordinal,
+                        )?;
+                    }
+                    accumulator.ensure_parent_child_fits(process_bytes, charge_bytes, limits)?;
+                    accumulator
+                        .snapshot
+                        .charging_processes
+                        .push(projected_process.clone());
+                    accumulator.add_payload(process_bytes)?;
+                } else if accumulator.needs_flush(charge_bytes, limits)? {
+                    flush_chunk(
+                        writer,
+                        binding,
+                        snapshot_id,
+                        sequence,
+                        accumulator,
+                        chunks,
+                        fail_before_ordinal,
+                    )?;
+                    accumulator.ensure_parent_child_fits(process_bytes, charge_bytes, limits)?;
+                    accumulator
+                        .snapshot
+                        .charging_processes
+                        .push(projected_process.clone());
+                    accumulator.add_payload(process_bytes)?;
+                }
+                accumulator.snapshot.charges.push(projected_charge);
+                accumulator.add_payload(charge_bytes)?;
+                saw_charge = true;
+                Ok(())
+            })?;
+            if saw_charge {
+                flush_chunk(
+                    writer,
+                    binding,
+                    snapshot_id,
+                    sequence,
+                    accumulator,
+                    chunks,
+                    fail_before_ordinal,
+                )?;
+            } else {
+                if accumulator.needs_flush(process_bytes, limits)? {
+                    flush_chunk(
+                        writer,
+                        binding,
+                        snapshot_id,
+                        sequence,
+                        accumulator,
+                        chunks,
+                        fail_before_ordinal,
+                    )?;
+                }
+                accumulator
+                    .snapshot
+                    .charging_processes
+                    .push(projected_process);
+                accumulator.add_payload(process_bytes)?;
+            }
+            Ok(())
+        },
+    )
+}
+
+fn for_each_charge_for_process<F>(
+    stage: &TeslaMateStage,
+    charging_process_id: i32,
+    mut visit: F,
+) -> Result<(), TeslaMatePhysicalFragmentError>
+where
+    F: FnMut(
+        crate::teslamate_stage::TeslaMateStageRow<TeslaMateChargePhysicalV2_2>,
+    ) -> Result<(), TeslaMatePhysicalFragmentError>,
+{
+    let mut after_id = 0_i64;
+    loop {
+        let page = stage.charge_samples_for_process::<TeslaMateChargePhysicalV2_2>(
+            i64::from(charging_process_id),
+            after_id,
+            CHARGE_STAGE_PAGE_ROWS,
+        )?;
+        for row in page.rows {
+            visit(row)?;
+        }
+        match page.next_after_id {
+            Some(next) => after_id = next,
+            None => return Ok(()),
+        }
+    }
+}
+
 fn require_source_id(
     stored: i64,
     decoded: i64,
@@ -661,6 +832,8 @@ pub enum TeslaMatePhysicalFragmentError {
     RootRowsExceedTarget,
     #[error("one physical V3 source row exceeds the configured chunk target")]
     SingleRowExceedsTarget,
+    #[error("one physical V3 charging parent and child exceed the configured chunk target")]
+    ParentChildExceedsTarget,
     #[error("physical V3 candidate exceeds the Hub chunk ceiling")]
     TooManyChunks,
     #[error("physical V3 pack exceeds the 16 MiB Hub sync profile bound")]
@@ -675,6 +848,17 @@ pub enum TeslaMatePhysicalFragmentError {
         table: &'static str,
         stored: i64,
         decoded: i64,
+    },
+    #[error("physical V3 charge {charge_id} is missing charging process {charging_process_id}")]
+    MissingChargingProcess {
+        charge_id: i32,
+        charging_process_id: i32,
+    },
+    #[error("physical V3 charge {charge_id} expected process {expected}, decoded process {actual}")]
+    ChargeParentMismatch {
+        charge_id: i32,
+        expected: i32,
+        actual: i32,
     },
     #[error("cannot encode physical V3 row: {0}")]
     Serialize(#[from] serde_json::Error),

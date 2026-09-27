@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /// Capture bounded, source-shaped roots, drives, positions, charging processes,
-/// states, and update rows for the physical V3 source slice. This is deliberately unlinked from the
+/// charges, states, and update rows for the physical V3 source slice. This is deliberately unlinked from the
 /// importer and catalogue: callers receive one private sealed stage and must
 /// either consume or discard it explicitly.
 pub async fn capture_physical_v3_to_stage(
@@ -213,7 +213,20 @@ async fn capture_physical_v3_from_exported_snapshot(
         }
         Err(error) => Err(error),
     };
-    let states = match charging_processes {
+    let charges = match charging_processes {
+        Ok(()) => {
+            capture_physical_charge_pages(
+                lane.client(),
+                selected_car_id,
+                limits,
+                &mut retained_rows,
+                stage,
+            )
+            .await
+        }
+        Err(error) => Err(error),
+    };
+    let states = match charges {
         Ok(()) => {
             capture_physical_state_pages(
                 lane.client(),
@@ -244,6 +257,35 @@ async fn capture_physical_v3_from_exported_snapshot(
         (Err(error), _) => Err(error),
         (Ok(()), Ok(())) => Ok(()),
         (Ok(()), Err(error)) => Err(error),
+    }
+}
+
+async fn capture_physical_charge_pages(
+    client: &Client,
+    selected_car_id: i16,
+    limits: TeslaMateReadLimits,
+    retained_rows: &mut usize,
+    stage: &mut TeslaMateStage,
+) -> Result<(), TeslaMateReaderError> {
+    let page_size = i64::from(limits.page_size);
+    let mut last_id = None::<i32>;
+    loop {
+        let rows = client
+            .query(CHARGES_V2_2_SQL, &[&last_id, &page_size, &selected_car_id])
+            .await?;
+        let page_len = rows.len();
+        let mut decoded = Vec::with_capacity(page_len);
+        for row in rows {
+            let id = required_i32(&row, "charges", "id")?;
+            last_id = advance_signed_v2_2_cursor(last_id, id, "charges")?;
+            require_positive_physical_id("charges", i64::from(id))?;
+            retain_row(retained_rows, limits.maximum_rows)?;
+            decoded.push((i64::from(id), decode_charge_v2_2(&row)?));
+        }
+        stage.insert_page_parallel(TeslaMateStageTable::Charges, decoded)?;
+        if page_len < limits.page_size as usize {
+            return Ok(());
+        }
     }
 }
 

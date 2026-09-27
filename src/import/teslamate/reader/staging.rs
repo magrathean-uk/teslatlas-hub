@@ -649,6 +649,31 @@ ORDER BY source.id ASC
 LIMIT $2
 "#;
 
+const CHARGES_V2_2_SQL: &str = r#"
+SELECT
+  source.id, source.charging_process_id, source.date,
+  source.battery_heater, source.battery_heater_on,
+  source.battery_heater_no_power,
+  source.battery_level, source.usable_battery_level,
+  source.charge_energy_added::text AS charge_energy_added,
+  source.charger_actual_current, source.charger_phases,
+  source.charger_pilot_current, source.charger_power,
+  source.charger_voltage, source.conn_charge_cable,
+  source.fast_charger_present, source.fast_charger_brand,
+  source.fast_charger_type,
+  source.ideal_battery_range_km::text AS ideal_battery_range_km,
+  source.rated_battery_range_km::text AS rated_battery_range_km,
+  source.not_enough_power_to_heat,
+  source.outside_temp::text AS outside_temp
+FROM public.charges AS source
+INNER JOIN public.charging_processes AS process
+  ON process.id = source.charging_process_id
+WHERE ($1::integer IS NULL OR source.id > $1)
+  AND process.car_id = $3
+ORDER BY source.id ASC
+LIMIT $2
+"#;
+
 const STATES_V2_2_SQL: &str = r#"
 SELECT
   source.id,

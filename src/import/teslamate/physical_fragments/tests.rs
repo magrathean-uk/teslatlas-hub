@@ -257,6 +257,33 @@ fn seed_charging_processes(stage: &mut TeslaMateStage) {
     }
 }
 
+fn physical_charge(id: i32, charging_process_id: i32) -> TeslaMateChargePhysicalV2_2 {
+    TeslaMateChargePhysicalV2_2 {
+        id,
+        charging_process_id,
+        date_pg_us: i64::from(id),
+        battery_heater: None,
+        battery_heater_on: Some(false),
+        battery_heater_no_power: Some(true),
+        battery_level: Some(10),
+        usable_battery_level: Some(9),
+        charge_energy_added_e2: ProjectionFixedNumericV2_2::NaN,
+        charger_actual_current: Some(i16::MIN),
+        charger_phases: None,
+        charger_pilot_current: Some(i16::MAX),
+        charger_power: i16::MIN,
+        charger_voltage: None,
+        conn_charge_cable: Some(String::new()),
+        fast_charger_present: None,
+        fast_charger_brand: None,
+        fast_charger_type: None,
+        ideal_battery_range_km_e2: ProjectionFixedNumericV2_2::Finite(-999_999),
+        rated_battery_range_km_e2: Some(ProjectionFixedNumericV2_2::NaN),
+        not_enough_power_to_heat: Some(false),
+        outside_temp_e1: Some(ProjectionFixedNumericV2_2::Finite(-1)),
+    }
+}
+
 fn deterministic_high_entropy_version(id: i32) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut state = (id as u64) ^ 0x9e37_79b9_7f4a_7c15;
@@ -362,7 +389,6 @@ fn physical_writer_rejects_unsupported_relations_before_writing_a_chunk() {
     for (stage_table, expected_table) in [
         (TeslaMateStageTable::Addresses, "addresses"),
         (TeslaMateStageTable::Geofences, "geofences"),
-        (TeslaMateStageTable::Charges, "charges"),
     ] {
         let temporary = tempdir().expect("temp dir");
         let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
@@ -543,6 +569,89 @@ fn physical_relation_rows_require_matching_source_identity_and_selected_car() {
             "charging-process-car" => assert!(matches!(
                 error,
                 TeslaMatePhysicalFragmentError::SelectedCarMismatch
+            )),
+            _ => unreachable!(),
+        }
+        assert!(!store.packs_dir().join("sha256").exists());
+        let connection = store.open().expect("catalogue");
+        for table in ["sync_manifests", "sync_packs"] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("catalogue count");
+            assert_eq!(count, 0);
+        }
+    }
+}
+
+#[test]
+fn physical_charge_preflight_rejects_every_invalid_parent_before_writing() {
+    for invalid in ["charge-source", "missing-parent", "parent-source"] {
+        let temporary = tempdir().expect("temp dir");
+        let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+        let mut stage =
+            TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
+                .expect("physical stage");
+        seed_roots(&mut stage);
+        let charge = match invalid {
+            "charge-source" => {
+                let process =
+                    physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+                stage
+                    .insert(TeslaMateStageTable::ChargingProcesses, 50, &process)
+                    .expect("physical charging process");
+                physical_charge(60, 50)
+            }
+            "missing-parent" => physical_charge(60, 999),
+            "parent-source" => {
+                let process =
+                    physical_charging_process(51, ProjectionFixedNumericV2_2::Finite(100));
+                stage
+                    .insert(TeslaMateStageTable::ChargingProcesses, 50, &process)
+                    .expect("mismatched physical charging process");
+                physical_charge(60, 50)
+            }
+            _ => unreachable!(),
+        };
+        let stored_charge_id = if invalid == "charge-source" { 61 } else { 60 };
+        stage
+            .insert(TeslaMateStageTable::Charges, stored_charge_id, &charge)
+            .expect("physical charge");
+        stage.seal().expect("seal physical stage");
+
+        let error = write_staged_physical_updates_snapshot_v3(
+            &stage,
+            &ProjectionPackWriter::new(store.packs_dir()),
+            binding(),
+            snapshot_id(),
+            sequence(),
+            &CursorKey::from_bytes([13; 32]),
+        )
+        .expect_err("invalid charge parent");
+        match invalid {
+            "charge-source" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::SourceIdMismatch {
+                    table: "charges",
+                    stored: 61,
+                    decoded: 60
+                }
+            )),
+            "missing-parent" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::MissingChargingProcess {
+                    charge_id: 60,
+                    charging_process_id: 999
+                }
+            )),
+            "parent-source" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::SourceIdMismatch {
+                    table: "charging_processes",
+                    stored: 50,
+                    decoded: 51
+                }
             )),
             _ => unreachable!(),
         }
@@ -833,6 +942,163 @@ fn sealed_physical_stage_streams_relations_in_verified_contiguous_v3_chunks() {
 }
 
 #[test]
+fn charge_chunks_repeat_the_parent_across_a_512_row_boundary() {
+    const CHARGE_COUNT: i32 = 513;
+
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let mut stage = TeslaMateStage::create_physical_v3(
+        temporary.path().join("imports"),
+        TeslaMateStageLimits {
+            max_rows: 520,
+            max_stage_bytes: 16 * 1024 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("physical stage");
+    seed_roots(&mut stage);
+    let process = physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+    stage
+        .insert(TeslaMateStageTable::ChargingProcesses, 50, &process)
+        .expect("physical charging process");
+    stage
+        .insert_page_parallel(
+            TeslaMateStageTable::Charges,
+            (1..=CHARGE_COUNT).map(|id| (i64::from(id), physical_charge(id, 50))),
+        )
+        .expect("physical charge page");
+    stage.seal().expect("seal physical stage");
+
+    let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding(),
+        snapshot_id(),
+        sequence(),
+        &CursorKey::from_bytes([14; 32]),
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 512,
+            max_projected_json_bytes: 8 * 1024 * 1024,
+        },
+    )
+    .expect("physical charge candidate");
+
+    assert_eq!(candidate.logical_source_rows, 517);
+    assert_eq!(candidate.chunks.len(), 2);
+    assert_eq!(candidate.manifest.total_rows, 521);
+    assert_eq!(candidate.chunks[0].metadata.row_count, 512);
+    assert_eq!(candidate.chunks[1].metadata.row_count, 9);
+    candidate
+        .manifest
+        .validate_terminal_cursor(&CursorKey::from_bytes([14; 32]))
+        .expect("signed manifest cursor");
+
+    let mut charge_ids = Vec::new();
+    let mut child_counts = Vec::new();
+    for (ordinal, chunk) in candidate.chunks.iter().enumerate() {
+        assert_eq!(chunk.metadata.ordinal, ordinal as u32);
+        assert_eq!(
+            chunk.metadata.tables,
+            vec![
+                MirrorTable::Car,
+                MirrorTable::Charge,
+                MirrorTable::ChargeSample
+            ]
+        );
+        assert!(chunk.metadata.compressed_bytes <= HUB_SYNC_PROFILE_MAX_PACK_BYTES);
+        chunk
+            .metadata
+            .verify_reader(
+                File::open(&chunk.path).expect("pack file"),
+                ProtocolLimits::default(),
+            )
+            .expect("verified compressed pack");
+        let decoded = temporary
+            .path()
+            .join(format!("charge-chunk-{ordinal}.sqlite"));
+        decode_pack(chunk, &decoded);
+        let connection = Connection::open(decoded).expect("decoded SQLite");
+        let mut parent_statement = connection
+            .prepare("SELECT id FROM charging_processes ORDER BY id")
+            .expect("parent query");
+        let parent_ids = parent_statement
+            .query_map([], |row| row.get::<_, i32>(0))
+            .expect("parents")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("parent ids");
+        assert_eq!(parent_ids, vec![50]);
+        let mut child_statement = connection
+            .prepare("SELECT id FROM charges ORDER BY id")
+            .expect("charge query");
+        let child_ids = child_statement
+            .query_map([], |row| row.get::<_, i32>(0))
+            .expect("charges")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("charge ids");
+        child_counts.push(child_ids.len());
+        charge_ids.extend(child_ids);
+    }
+    assert_eq!(child_counts, vec![508, 5]);
+    assert_eq!(charge_ids, (1..=CHARGE_COUNT).collect::<Vec<_>>());
+
+    let connection = store.open().expect("catalogue");
+    for table in ["sync_manifests", "sync_packs"] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("catalogue count");
+        assert_eq!(count, 0);
+    }
+}
+
+#[test]
+fn charge_parent_and_child_must_fit_together_before_writing() {
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let mut stage =
+        TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
+            .expect("physical stage");
+    seed_roots(&mut stage);
+    let process = physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+    stage
+        .insert(TeslaMateStageTable::ChargingProcesses, 50, &process)
+        .expect("physical charging process");
+    stage
+        .insert(TeslaMateStageTable::Charges, 60, &physical_charge(60, 50))
+        .expect("physical charge");
+    stage.seal().expect("seal physical stage");
+
+    let error = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding(),
+        snapshot_id(),
+        sequence(),
+        &CursorKey::from_bytes([15; 32]),
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 4,
+            max_projected_json_bytes: 64 * 1024,
+        },
+    )
+    .expect_err("roots, parent, and child exceed four rows");
+    assert!(matches!(
+        error,
+        TeslaMatePhysicalFragmentError::ParentChildExceedsTarget
+    ));
+    assert!(!store.packs_dir().join("sha256").exists());
+    let connection = store.open().expect("catalogue");
+    for table in ["sync_manifests", "sync_packs"] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("catalogue count");
+        assert_eq!(count, 0);
+    }
+}
+
+#[test]
 fn failed_later_chunk_removes_created_objects_and_never_touches_the_catalogue() {
     let temporary = tempdir().expect("temp dir");
     let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
@@ -840,11 +1106,19 @@ fn failed_later_chunk_removes_created_objects_and_never_touches_the_catalogue() 
         TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
             .expect("physical stage");
     seed_roots(&mut stage);
-    seed_states(
-        &mut stage,
-        &[(20, ProjectionStateStatusV2_2::Offline, 123_456, None)],
-    );
-    seed_updates(&mut stage, &[10]);
+    let process = physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+    stage
+        .insert(TeslaMateStageTable::ChargingProcesses, 50, &process)
+        .expect("physical charging process");
+    for id in [60, 61] {
+        stage
+            .insert(
+                TeslaMateStageTable::Charges,
+                id.into(),
+                &physical_charge(id, 50),
+            )
+            .expect("physical charge");
+    }
     stage.seal().expect("seal physical stage");
 
     let writer = ProjectionPackWriter::new(store.packs_dir());
@@ -855,7 +1129,10 @@ fn failed_later_chunk_removes_created_objects_and_never_touches_the_catalogue() 
         snapshot_id(),
         sequence(),
         &CursorKey::from_bytes([9; 32]),
-        chunk_limits(),
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 5,
+            max_projected_json_bytes: 64 * 1024,
+        },
         1,
     )
     .expect_err("injected second chunk failure");

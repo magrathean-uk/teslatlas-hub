@@ -43,12 +43,12 @@ use crate::{
     teslamate::ReadOnlySource,
     teslamate_projection::{
         TeslaMateAddress, TeslaMateCar, TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2,
-        TeslaMateCharge, TeslaMateChargingProcess, TeslaMateChargingProcessPhysicalV2_2,
-        TeslaMateDrive, TeslaMateDrivePhysicalV2_2, TeslaMateGeofence, TeslaMateHistory,
-        TeslaMateOpenSession, TeslaMatePosition, TeslaMatePositionPhysicalV2_2,
-        TeslaMateProjectionError, TeslaMateSettingsPhysicalV2_2, TeslaMateSourceWatermark,
-        TeslaMateSourceWatermarks, TeslaMateState, TeslaMateStatePhysicalV2_2, TeslaMateUpdate,
-        TeslaMateUpdatePhysicalV2_2,
+        TeslaMateCharge, TeslaMateChargePhysicalV2_2, TeslaMateChargingProcess,
+        TeslaMateChargingProcessPhysicalV2_2, TeslaMateDrive, TeslaMateDrivePhysicalV2_2,
+        TeslaMateGeofence, TeslaMateHistory, TeslaMateOpenSession, TeslaMatePosition,
+        TeslaMatePositionPhysicalV2_2, TeslaMateProjectionError, TeslaMateSettingsPhysicalV2_2,
+        TeslaMateSourceWatermark, TeslaMateSourceWatermarks, TeslaMateState,
+        TeslaMateStatePhysicalV2_2, TeslaMateUpdate, TeslaMateUpdatePhysicalV2_2,
     },
     teslamate_schema::{
         ENUM_PROBE_SQL, MAX_VALIDATED_MIGRATION, MIGRATION_VERSIONS_SQL, MIN_SUPPORTED_MIGRATION,
