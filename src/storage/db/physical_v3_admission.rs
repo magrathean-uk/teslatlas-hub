@@ -4,6 +4,20 @@ const HUB_SYNC_V1_1_3_PROFILE: &str = "hub-sync-v1@1.3.0";
 const PHYSICAL_V3_RECEIPT_PREFIX: &str = "pv3_";
 
 impl HubStore {
+    /// Admit one fixture-built physical snapshot through the same private,
+    /// durable production path used by a future source capture. This surface
+    /// is absent from default product builds and exists only for the explicit
+    /// interop example feature.
+    #[cfg(feature = "interop-fixture")]
+    #[doc(hidden)]
+    pub fn stage_interop_physical_v3_admission(
+        &self,
+        candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+    ) -> Result<PendingPhysicalV3Admission, StoreError> {
+        let publication_gate = self.try_acquire_publication_gate()?;
+        self.stage_pending_physical_v3_admission(&publication_gate, candidate)
+    }
+
     /// Stage one complete physical schema-2.2 snapshot behind a private,
     /// durable marker. The generic current-manifest and pack-serving catalogue
     /// remains untouched. The caller must hold this store's publication gate

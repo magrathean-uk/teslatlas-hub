@@ -124,6 +124,10 @@ class ConfigTests(unittest.TestCase):
             options = popen.call_args.kwargs
             self.assertEqual(command[-1], "serve")
             self.assertEqual(options["env"][fixture.DEVELOPMENT_SERVE_ENV], "1")
+            self.assertEqual(
+                options["env"][fixture.DEVELOPMENT_SERVE_MODE_ENV],
+                "fixture",
+            )
             self.assertEqual(options["env"]["TESLATLAS_FIXTURE_PARENT_SENTINEL"], sentinel)
             self.assertIsNot(options["env"], os.environ)
             self.assertEqual(os.environ[fixture.DEVELOPMENT_SERVE_ENV], parent_value)
@@ -212,6 +216,59 @@ class ConfigTests(unittest.TestCase):
             list(range(1026, 1001, -1)),
             [1001],
         ])
+
+    def test_physical_v3_selector_requires_exact_profile_port_and_seed_receipt(self):
+        profile = MODULE.resolve().parents[3] / "teslatlas-protocol/profiles/hub-sync-v1/1.3.0"
+        self.config.update({
+            "scenario_id": fixture.PHYSICAL_V3_SCENARIO_ID,
+            "profile_id": fixture.PHYSICAL_V3_PROFILE_ID,
+            "profile_path": str(profile),
+            "profile_sha256": hashlib.sha256((profile / "SHA256SUMS").read_bytes()).hexdigest(),
+            "port": fixture.PHYSICAL_V3_PORT,
+        })
+
+        loaded = self.load()
+        self.assertEqual(
+            fixture.seed_command(
+                loaded,
+                self.executable,
+                self.root / "new",
+                fixture.PHYSICAL_V3_PORT,
+            )[-2:],
+            ["--scenario", fixture.PHYSICAL_V3_SCENARIO_ID],
+        )
+        descriptor = {
+            "endpoint": "https://127.0.0.1:21445",
+            "vehicle_ids": ["11111111-1111-4111-8111-111111111111"],
+            "physical_v3_admission": {
+                "profile_id": fixture.PHYSICAL_V3_PROFILE_ID,
+                "vehicle_id": "11111111-1111-4111-8111-111111111111",
+                "snapshot_id": fixture.PHYSICAL_V3_SNAPSHOT_ID,
+                "head_sequence": 3,
+                "receipt_id": "pv3_" + "a" * 64,
+                "chunk_count": 513,
+                "logical_source_rows": 1027,
+                "drive_ids": [301],
+                "position_ids": [401, 402],
+                "charging_process_ids": [501],
+                "charge_sample_ids": [601, 602],
+                "address_rows": 0,
+                "geofence_rows": 0,
+                "collector_enabled": False,
+            },
+        }
+        fixture.validate_seeded_descriptor(loaded, descriptor, 21445)
+        descriptor["physical_v3_admission"]["chunk_count"] = 512
+        with self.assertRaisesRegex(ValueError, "admission receipt"):
+            fixture.validate_seeded_descriptor(loaded, descriptor, 21445)
+
+        self.config["port"] = 21443
+        with self.assertRaisesRegex(ValueError, "21445"):
+            self.load()
+        self.config["port"] = 21445
+        self.config["profile_id"] = "hub-http-v1@1.0.0"
+        with self.assertRaisesRegex(ValueError, "profile"):
+            self.load()
 
     def test_unknown_scenario_selector_fails_before_state_creation(self):
         self.config["scenario_id"] = "../../untrusted"

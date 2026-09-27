@@ -30,6 +30,22 @@ use teslatlas_hub::{
         updates_snapshot_v2_2,
     },
 };
+#[cfg(feature = "interop-fixture")]
+use teslatlas_hub::{
+    hub_pack::{
+        ProjectionFixedNumericV2_2, ProjectionFloat64BitsV2_2, ProjectionPreferredRangeV2_2,
+        ProjectionUnitOfLengthV2_2, ProjectionUnitOfPressureV2_2, ProjectionUnitOfTemperatureV2_2,
+    },
+    teslamate_physical_fragments::{
+        TeslaMatePhysicalFragmentLimits, write_staged_physical_updates_snapshot_v3_with_limits,
+    },
+    teslamate_projection::{
+        TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateChargePhysicalV2_2,
+        TeslaMateChargingProcessPhysicalV2_2, TeslaMateDrivePhysicalV2_2,
+        TeslaMatePositionPhysicalV2_2, TeslaMateSettingsPhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
+    },
+    teslamate_stage::{TeslaMateStage, TeslaMateStageLimits, TeslaMateStageTable},
+};
 use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -39,6 +55,7 @@ const OBSERVED_AT_MS: i64 = 1_788_566_400_000;
 pub enum FixtureScenario {
     B1,
     ViewerR1,
+    PhysicalV3Public513,
 }
 
 #[derive(Clone, Copy)]
@@ -56,6 +73,12 @@ const DEFAULT_PRIMARY_VIN: &str = "5YJ3E1EA7KF000001";
 const DEFAULT_SECONDARY_VIN: &str = "5YJ3E1EA7KF000002";
 const DYNAMIC_VIN: &str = "5YJ3E1EA7KF000003";
 const DYNAMIC_CAR_ID: i64 = 11;
+#[cfg(feature = "interop-fixture")]
+const PHYSICAL_V3_PROFILE_ID: &str = "hub-sync-v1@1.3.0";
+#[cfg(feature = "interop-fixture")]
+const PHYSICAL_V3_SNAPSHOT_ID: Uuid = Uuid::from_u128(0x51351351513541358135513513513513);
+#[cfg(feature = "interop-fixture")]
+const PHYSICAL_V3_UPDATE_COUNT: i32 = 1_018;
 
 #[derive(Serialize)]
 pub struct PreparedFixture {
@@ -67,6 +90,26 @@ pub struct PreparedFixture {
     pub source_id: Uuid,
     pub endpoint: String,
     pub vehicle_ids: [Uuid; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub physical_v3_admission: Option<PreparedPhysicalV3Admission>,
+}
+
+#[derive(Serialize)]
+pub struct PreparedPhysicalV3Admission {
+    pub profile_id: &'static str,
+    pub vehicle_id: Uuid,
+    pub snapshot_id: Uuid,
+    pub head_sequence: u64,
+    pub receipt_id: String,
+    pub chunk_count: u32,
+    pub logical_source_rows: u64,
+    pub drive_ids: [i32; 1],
+    pub position_ids: [i32; 2],
+    pub charging_process_ids: [i32; 1],
+    pub charge_sample_ids: [i32; 2],
+    pub address_rows: u8,
+    pub geofence_rows: u8,
+    pub collector_enabled: bool,
 }
 
 #[cfg(feature = "interop-fixture")]
@@ -362,7 +405,7 @@ fn prepare_with_vehicle_identities(
         let mut drives = Vec::new();
         if index == 0 {
             let drive_schedule: Vec<(i64, i64)> = match scenario {
-                FixtureScenario::B1 => vec![
+                FixtureScenario::B1 | FixtureScenario::PhysicalV3Public513 => vec![
                     (101, 500_000),
                     (102, 400_000),
                     (103, 300_000),
@@ -501,20 +544,36 @@ fn prepare_with_vehicle_identities(
             },OBSERVED_AT_MS)?;
         }
     }
+    #[cfg(feature = "interop-fixture")]
+    let physical_v3_admission = if matches!(scenario, FixtureScenario::PhysicalV3Public513) {
+        Some(prepare_physical_v3_public_admission(
+            root,
+            &store,
+            &key,
+            vehicle_ids[0],
+        )?)
+    } else {
+        None
+    };
+    #[cfg(not(feature = "interop-fixture"))]
+    let physical_v3_admission = None;
+
     // Native macOS preflight requires encrypted account material even with
     // collection disabled. These fixed test strings have no provider authority.
-    let tokens = OwnerTokens::from_file_bytes(
-        zeroize::Zeroizing::new(b"interop-not-a-tesla-access-token".to_vec()),
-        zeroize::Zeroizing::new(b"interop-not-a-tesla-refresh-token".to_vec()),
-    )?;
-    let encryption_key = b"interop-local-synthetic-cloak-key";
-    let (access, refresh) = encrypt_legacy_owner_tokens(encryption_key, &tokens)?;
-    replace_key_and_tokens(
-        &data_dir,
-        &store,
-        encryption_key,
-        &TeslaMateLegacyTokenStore::imported(access, refresh)?,
-    )?;
+    if !matches!(scenario, FixtureScenario::PhysicalV3Public513) {
+        let tokens = OwnerTokens::from_file_bytes(
+            zeroize::Zeroizing::new(b"interop-not-a-tesla-access-token".to_vec()),
+            zeroize::Zeroizing::new(b"interop-not-a-tesla-refresh-token".to_vec()),
+        )?;
+        let encryption_key = b"interop-local-synthetic-cloak-key";
+        let (access, refresh) = encrypt_legacy_owner_tokens(encryption_key, &tokens)?;
+        replace_key_and_tokens(
+            &data_dir,
+            &store,
+            encryption_key,
+            &TeslaMateLegacyTokenStore::imported(access, refresh)?,
+        )?;
+    }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_millis() as i64;
@@ -556,12 +615,272 @@ fn prepare_with_vehicle_identities(
         source_id: source.source_id,
         endpoint,
         vehicle_ids,
+        physical_v3_admission,
     };
     write_private(
         &root.join("connection.json"),
         &serde_json::to_vec_pretty(&prepared)?,
     )?;
     Ok(prepared)
+}
+
+/// Build one deterministic, source-physical schema-2.2 fixture and admit it
+/// through the private production marker. Its coordinates are synthetic and
+/// deliberately have no address or geofence rows.
+#[cfg(feature = "interop-fixture")]
+fn prepare_physical_v3_public_admission(
+    root: &Path,
+    store: &HubStore,
+    cursor_key: &teslatlas_hub::protocol::CursorKey,
+    vehicle_id: Uuid,
+) -> Result<PreparedPhysicalV3Admission> {
+    const CAR_ID: i16 = 9;
+    const DRIVE_ID: i32 = 301;
+    const POSITION_IDS: [i32; 2] = [401, 402];
+    const CHARGING_PROCESS_ID: i32 = 501;
+    const CHARGE_IDS: [i32; 2] = [601, 602];
+    const ROOT_ROWS: u64 = 3;
+    const RELATION_ROWS: u64 = 6;
+
+    let binding = store.v2_projection_binding(vehicle_id)?;
+    if binding.selected_car_id != i64::from(CAR_ID) {
+        return Err("physical fixture selected-car binding changed".into());
+    }
+    let mut stage = TeslaMateStage::create_physical_v3(
+        root.join("physical-v3-source"),
+        TeslaMateStageLimits {
+            max_rows: ROOT_ROWS + RELATION_ROWS + u64::try_from(PHYSICAL_V3_UPDATE_COUNT)?,
+            max_stage_bytes: 8 * 1024 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )?;
+    let settings = TeslaMateSettingsPhysicalV2_2 {
+        id: 1,
+        unit_of_length: ProjectionUnitOfLengthV2_2::Kilometers,
+        unit_of_temperature: ProjectionUnitOfTemperatureV2_2::Celsius,
+        unit_of_pressure: ProjectionUnitOfPressureV2_2::Bar,
+        preferred_range: ProjectionPreferredRangeV2_2::Rated,
+        base_url: None,
+        grafana_url: None,
+        language: "en".into(),
+        theme_mode: "system".into(),
+        inserted_at_pg_us: 1_000_000,
+        updated_at_pg_us: 2_000_000,
+    };
+    let car_settings = TeslaMateCarSettingsPhysicalV2_2 {
+        id: i64::from(CAR_ID),
+        suspend_min: 21,
+        suspend_after_idle_min: 15,
+        req_not_unlocked: false,
+        free_supercharging: false,
+        use_streaming_api: true,
+        enabled: true,
+        lfp_battery: false,
+    };
+    let car = TeslaMateCarPhysicalV2_2 {
+        id: CAR_ID,
+        eid: 9,
+        vid: 9,
+        vin: Some(DEFAULT_PRIMARY_VIN.into()),
+        name: Some("Interop physical V3".into()),
+        model: Some("3".into()),
+        efficiency: Some(0.153),
+        trim_badging: None,
+        marketing_name: None,
+        exterior_color: None,
+        wheel_type: None,
+        spoiler_type: None,
+        display_priority: 1,
+        inserted_at_pg_us: 3_000_000,
+        updated_at_pg_us: 4_000_000,
+        settings_id: car_settings.id,
+    };
+    stage.insert(TeslaMateStageTable::GlobalSettings, settings.id, &settings)?;
+    stage.insert(
+        TeslaMateStageTable::CarSettings,
+        car_settings.id,
+        &car_settings,
+    )?;
+    stage.insert(TeslaMateStageTable::Cars, i64::from(car.id), &car)?;
+
+    let drive = TeslaMateDrivePhysicalV2_2 {
+        id: DRIVE_ID,
+        car_id: CAR_ID,
+        start_date_pg_us: 5_000_000,
+        end_date_pg_us: Some(6_000_000),
+        start_position_id: Some(POSITION_IDS[0]),
+        end_position_id: Some(POSITION_IDS[1]),
+        start_address_id: None,
+        end_address_id: None,
+        start_geofence_id: None,
+        end_geofence_id: None,
+        outside_temp_avg_e1: Some(ProjectionFixedNumericV2_2::Finite(125)),
+        inside_temp_avg_e1: Some(ProjectionFixedNumericV2_2::Finite(210)),
+        speed_max: Some(42),
+        power_max: Some(60),
+        power_min: Some(-12),
+        start_ideal_range_km_e2: Some(ProjectionFixedNumericV2_2::Finite(25_000)),
+        end_ideal_range_km_e2: Some(ProjectionFixedNumericV2_2::Finite(24_500)),
+        start_rated_range_km_e2: None,
+        end_rated_range_km_e2: None,
+        start_km: Some(ProjectionFloat64BitsV2_2(10_000.0_f64.to_bits())),
+        end_km: Some(ProjectionFloat64BitsV2_2(10_004.2_f64.to_bits())),
+        distance: Some(ProjectionFloat64BitsV2_2(4.2_f64.to_bits())),
+        duration_min: Some(1),
+        ascent: Some(10),
+        descent: Some(8),
+    };
+    stage.insert(TeslaMateStageTable::Drives, i64::from(drive.id), &drive)?;
+    for (index, id) in POSITION_IDS.into_iter().enumerate() {
+        let position = TeslaMatePositionPhysicalV2_2 {
+            id,
+            car_id: CAR_ID,
+            drive_id: Some(DRIVE_ID),
+            date_pg_us: 5_000_000 + i64::try_from(index)? * 1_000_000,
+            latitude_e6: ProjectionFixedNumericV2_2::Finite(i64::try_from(index)? * 1_000),
+            longitude_e6: ProjectionFixedNumericV2_2::Finite(0),
+            elevation: Some(100 + i16::try_from(index)?),
+            speed: Some(20),
+            power: Some(10),
+            odometer: Some(ProjectionFloat64BitsV2_2(
+                (10_000.0 + index as f64).to_bits(),
+            )),
+            ideal_battery_range_km_e2: None,
+            est_battery_range_km_e2: None,
+            rated_battery_range_km_e2: None,
+            battery_level: Some(70 - i16::try_from(index)?),
+            usable_battery_level: None,
+            battery_heater: None,
+            battery_heater_on: None,
+            battery_heater_no_power: None,
+            outside_temp_e1: None,
+            inside_temp_e1: None,
+            fan_status: None,
+            driver_temp_setting_e1: None,
+            passenger_temp_setting_e1: None,
+            is_climate_on: None,
+            is_rear_defroster_on: None,
+            is_front_defroster_on: None,
+            tpms_pressure_fl_e1: None,
+            tpms_pressure_fr_e1: None,
+            tpms_pressure_rl_e1: None,
+            tpms_pressure_rr_e1: None,
+        };
+        stage.insert(TeslaMateStageTable::Positions, i64::from(id), &position)?;
+    }
+    let process = TeslaMateChargingProcessPhysicalV2_2 {
+        id: CHARGING_PROCESS_ID,
+        car_id: CAR_ID,
+        position_id: POSITION_IDS[1],
+        address_id: None,
+        geofence_id: None,
+        start_date_pg_us: 7_000_000,
+        end_date_pg_us: Some(9_000_000),
+        charge_energy_added_e2: Some(ProjectionFixedNumericV2_2::Finite(1_250)),
+        charge_energy_used_e2: Some(ProjectionFixedNumericV2_2::Finite(1_300)),
+        start_ideal_range_km_e2: None,
+        end_ideal_range_km_e2: None,
+        start_rated_range_km_e2: None,
+        end_rated_range_km_e2: None,
+        start_battery_level: Some(40),
+        end_battery_level: Some(65),
+        duration_min: Some(30),
+        outside_temp_avg_e1: Some(ProjectionFixedNumericV2_2::Finite(130)),
+        cost_e2: Some(ProjectionFixedNumericV2_2::Finite(325)),
+    };
+    stage.insert(
+        TeslaMateStageTable::ChargingProcesses,
+        i64::from(process.id),
+        &process,
+    )?;
+    for (index, id) in CHARGE_IDS.into_iter().enumerate() {
+        let charge = TeslaMateChargePhysicalV2_2 {
+            id,
+            charging_process_id: CHARGING_PROCESS_ID,
+            date_pg_us: 7_000_000 + i64::try_from(index)? * 1_000_000,
+            battery_heater: None,
+            battery_heater_on: Some(false),
+            battery_heater_no_power: None,
+            battery_level: Some(40 + i16::try_from(index)? * 25),
+            usable_battery_level: None,
+            charge_energy_added_e2: ProjectionFixedNumericV2_2::Finite(
+                100 + i64::try_from(index)? * 1_150,
+            ),
+            charger_actual_current: Some(16),
+            charger_phases: Some(3),
+            charger_pilot_current: Some(16),
+            charger_power: 11,
+            charger_voltage: Some(230),
+            conn_charge_cable: Some("IEC".into()),
+            fast_charger_present: Some(false),
+            fast_charger_brand: None,
+            fast_charger_type: None,
+            ideal_battery_range_km_e2: ProjectionFixedNumericV2_2::Finite(20_000),
+            rated_battery_range_km_e2: None,
+            not_enough_power_to_heat: Some(false),
+            outside_temp_e1: Some(ProjectionFixedNumericV2_2::Finite(130)),
+        };
+        stage.insert(TeslaMateStageTable::Charges, i64::from(id), &charge)?;
+    }
+    for id in 1..=PHYSICAL_V3_UPDATE_COUNT {
+        let update = TeslaMateUpdatePhysicalV2_2 {
+            id: 10_000 + id,
+            car_id: CAR_ID,
+            start_date_pg_us: 10_000_000 + i64::from(id) * 1_000_000,
+            end_date_pg_us: None,
+            version: Some(format!("fixture-{id:04}")),
+        };
+        stage.insert(TeslaMateStageTable::Updates, i64::from(update.id), &update)?;
+    }
+    let sealed = stage.seal()?;
+    let head_sequence = store.next_full_snapshot_sequence(vehicle_id)?;
+    let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding,
+        PHYSICAL_V3_SNAPSHOT_ID,
+        SequenceRange {
+            from_exclusive: head_sequence,
+            to_inclusive: head_sequence,
+        },
+        cursor_key,
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 5,
+            max_projected_json_bytes: 64 * 1024,
+        },
+    )?;
+    stage.discard()?;
+    if candidate.chunks.len() != 513
+        || candidate.manifest.chunk_count != 513
+        || candidate.logical_source_rows != sealed.row_count
+    {
+        return Err(format!(
+            "physical fixture must produce exactly 513 chunks (actual {})",
+            candidate.chunks.len()
+        )
+        .into());
+    }
+    let logical_source_rows = candidate.logical_source_rows;
+    let admission = store.stage_interop_physical_v3_admission(candidate)?;
+    if admission.chunk_count != 513 || admission.snapshot_id != PHYSICAL_V3_SNAPSHOT_ID {
+        return Err("physical fixture admission receipt changed".into());
+    }
+    Ok(PreparedPhysicalV3Admission {
+        profile_id: PHYSICAL_V3_PROFILE_ID,
+        vehicle_id,
+        snapshot_id: admission.snapshot_id,
+        head_sequence: admission.head_sequence,
+        receipt_id: admission.receipt_id,
+        chunk_count: admission.chunk_count,
+        logical_source_rows,
+        drive_ids: [DRIVE_ID],
+        position_ids: POSITION_IDS,
+        charging_process_ids: [CHARGING_PROCESS_ID],
+        charge_sample_ids: CHARGE_IDS,
+        address_rows: 0,
+        geofence_rows: 0,
+        collector_enabled: false,
+    })
 }
 
 /// Build the minimal physical schema-2.2 snapshot for one synthetic fixture

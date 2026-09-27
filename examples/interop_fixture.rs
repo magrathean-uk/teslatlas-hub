@@ -3,12 +3,17 @@
 #[path = "../tests/interop/seed.rs"]
 mod seed;
 
-const USAGE: &str = "usage: interop_fixture (--expose-dynamic|--retire-dynamic|--restore-dynamic|--advance) OWNED_FIXTURE_DIRECTORY | --output NEW_ABSOLUTE_DIRECTORY (--port PORT [--source-id UUID --vehicle-id UUID --vin VIN --car-id ID] [--scenario viewer-r1-51-drives] | --scenario empty-edge-binding --source-id UUID --vehicle-id UUID --vin VIN --car-id ID --installation-id ID --lineage ID)";
+const USAGE: &str = "usage: interop_fixture (--expose-dynamic|--retire-dynamic|--restore-dynamic|--advance) OWNED_FIXTURE_DIRECTORY | --output NEW_ABSOLUTE_DIRECTORY (--port PORT [--source-id UUID --vehicle-id UUID --vin VIN --car-id ID] [--scenario viewer-r1-51-drives|physical-v3-public-513] | --scenario empty-edge-binding --source-id UUID --vehicle-id UUID --vin VIN --car-id ID --installation-id ID --lineage ID)";
+
+const PHYSICAL_V3_FIXTURE_PORT: u16 = 21_445;
+const PHYSICAL_V3_FIXTURE_SOURCE_ID: uuid::Uuid =
+    uuid::Uuid::from_u128(0x51300000000040008000000000000513);
 
 #[derive(Clone, Copy)]
 enum Scenario {
     B1,
     ViewerR1,
+    PhysicalV3Public513,
     EmptyEdgeBinding,
 }
 
@@ -62,6 +67,9 @@ fn run(args: &[String]) -> Result<serde_json::Value, Box<dyn std::error::Error>>
             }
             "--lineage" if lineage.is_none() => lineage = Some(value.to_owned()),
             "--scenario" if value == "viewer-r1-51-drives" => scenario = Scenario::ViewerR1,
+            "--scenario" if value == "physical-v3-public-513" => {
+                scenario = Scenario::PhysicalV3Public513
+            }
             "--scenario" if value == "empty-edge-binding" => scenario = Scenario::EmptyEdgeBinding,
             _ => return Err(USAGE.into()),
         }
@@ -86,38 +94,62 @@ fn run(args: &[String]) -> Result<serde_json::Value, Box<dyn std::error::Error>>
             )?;
             Ok(serde_json::to_value(prepared)?)
         }
-        Scenario::B1 | Scenario::ViewerR1 => {
+        Scenario::B1 | Scenario::ViewerR1 | Scenario::PhysicalV3Public513 => {
             let port = port.ok_or(USAGE)?;
+            if matches!(scenario, Scenario::PhysicalV3Public513)
+                && (port != PHYSICAL_V3_FIXTURE_PORT
+                    || source_id.is_some()
+                    || vehicle_id.is_some()
+                    || vin.is_some()
+                    || car_id.is_some())
+            {
+                return Err(USAGE.into());
+            }
             let fixture_scenario = match scenario {
                 Scenario::B1 => seed::FixtureScenario::B1,
                 Scenario::ViewerR1 => seed::FixtureScenario::ViewerR1,
+                Scenario::PhysicalV3Public513 => seed::FixtureScenario::PhysicalV3Public513,
                 Scenario::EmptyEdgeBinding => unreachable!(),
             };
-            let prepared = match (source_id, vehicle_id, vin, car_id) {
-                (None, None, None, None) => match fixture_scenario {
-                    seed::FixtureScenario::B1 => seed::prepare(std::path::Path::new(output), port)?,
-                    seed::FixtureScenario::ViewerR1 => {
-                        seed::prepare_viewer_r1(std::path::Path::new(output), port)?
-                    }
-                },
-                (Some(source_id), None, None, None) => seed::prepare_with_scenario_and_source_id(
+            let prepared = if matches!(scenario, Scenario::PhysicalV3Public513) {
+                seed::prepare_with_scenario_and_source_id(
                     std::path::Path::new(output),
                     port,
                     fixture_scenario,
-                    source_id,
-                )?,
-                (Some(source_id), Some(vehicle_id), Some(vin), Some(car_id)) => {
-                    seed::prepare_with_scenario_source_and_primary_vehicle(
-                        std::path::Path::new(output),
-                        port,
-                        fixture_scenario,
-                        source_id,
-                        vehicle_id,
-                        &vin,
-                        car_id,
-                    )?
+                    PHYSICAL_V3_FIXTURE_SOURCE_ID,
+                )?
+            } else {
+                match (source_id, vehicle_id, vin, car_id) {
+                    (None, None, None, None) => match fixture_scenario {
+                        seed::FixtureScenario::B1 => {
+                            seed::prepare(std::path::Path::new(output), port)?
+                        }
+                        seed::FixtureScenario::ViewerR1 => {
+                            seed::prepare_viewer_r1(std::path::Path::new(output), port)?
+                        }
+                        seed::FixtureScenario::PhysicalV3Public513 => unreachable!(),
+                    },
+                    (Some(source_id), None, None, None) => {
+                        seed::prepare_with_scenario_and_source_id(
+                            std::path::Path::new(output),
+                            port,
+                            fixture_scenario,
+                            source_id,
+                        )?
+                    }
+                    (Some(source_id), Some(vehicle_id), Some(vin), Some(car_id)) => {
+                        seed::prepare_with_scenario_source_and_primary_vehicle(
+                            std::path::Path::new(output),
+                            port,
+                            fixture_scenario,
+                            source_id,
+                            vehicle_id,
+                            &vin,
+                            car_id,
+                        )?
+                    }
+                    _ => return Err(USAGE.into()),
                 }
-                _ => return Err(USAGE.into()),
             };
             // Only paths/public synthetic identities are returned; invitation
             // material remains in an owner-only file.
@@ -175,5 +207,61 @@ mod tests {
         assert_eq!(prepared["installation_id"], "empty-edge-binding");
         assert_eq!(prepared["lineage"], "spool-2");
         assert!(output.join("hub").is_dir());
+    }
+
+    #[test]
+    fn physical_v3_public_fixture_is_fixed_to_loopback_21445_and_513_chunks() {
+        let parent = tempfile::tempdir().unwrap();
+        let rejected = parent.path().join("wrong-port");
+        assert!(
+            run(&[
+                "--output".into(),
+                rejected.to_str().unwrap().into(),
+                "--port".into(),
+                "21443".into(),
+                "--scenario".into(),
+                "physical-v3-public-513".into(),
+            ])
+            .is_err()
+        );
+        assert!(!rejected.exists());
+
+        let output = parent.path().join("physical-v3-public-513");
+        let prepared = run(&[
+            "--output".into(),
+            output.to_str().unwrap().into(),
+            "--port".into(),
+            "21445".into(),
+            "--scenario".into(),
+            "physical-v3-public-513".into(),
+        ])
+        .unwrap();
+
+        let admission = &prepared["physical_v3_admission"];
+        assert_eq!(admission["profile_id"], "hub-sync-v1@1.3.0");
+        assert_eq!(
+            admission["snapshot_id"],
+            "51351351-5135-4135-8135-513513513513"
+        );
+        assert_eq!(admission["chunk_count"], 513);
+        assert_eq!(admission["drive_ids"], serde_json::json!([301]));
+        assert_eq!(admission["position_ids"], serde_json::json!([401, 402]));
+        assert_eq!(admission["charging_process_ids"], serde_json::json!([501]));
+        assert_eq!(
+            admission["charge_sample_ids"],
+            serde_json::json!([601, 602])
+        );
+        assert_eq!(admission["address_rows"], 0);
+        assert_eq!(admission["geofence_rows"], 0);
+        assert_eq!(admission["collector_enabled"], false);
+        assert_eq!(
+            prepared["source_id"],
+            "51300000-0000-4000-8000-000000000513"
+        );
+        assert_eq!(prepared["endpoint"], "https://127.0.0.1:21445");
+        let config = std::fs::read_to_string(prepared["config_path"].as_str().unwrap()).unwrap();
+        assert!(config.contains("bind = \"127.0.0.1:21445\""));
+        assert!(config.contains("[collector]\ninterval_seconds = 0"));
+        assert!(!output.join("hub/secrets/teslamate-encryption.key").exists());
     }
 }

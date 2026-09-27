@@ -30,6 +30,8 @@ import uuid
 
 MAX_CONFIG_BYTES = 64 * 1024
 DEVELOPMENT_SERVE_ENV = "TESLATLAS_HUB_DEVELOPMENT"
+DEVELOPMENT_SERVE_MODE_ENV = "TESLATLAS_HUB_DEVELOPMENT_MODE"
+DEVELOPMENT_SERVE_MODE = "fixture"
 EDGE_PRIMARY_BASE_URL = "https://127.0.0.1:18510/"
 EDGE_DOCKER_BASE_URL = "https://127.0.0.1:19443/"
 EDGE_R1_DOCKER_BASE_URL = "https://127.0.0.1:20443/"
@@ -47,9 +49,14 @@ EDGE_ALLOWED_BASE_URLS = frozenset((
     EDGE_R13_AUTHORIZED_DOCKER_BASE_URL,
 ))
 DEFAULT_SCENARIO_ID = "b1-five-drives"
+PHYSICAL_V3_SCENARIO_ID = "physical-v3-public-513"
+PHYSICAL_V3_PROFILE_ID = "hub-sync-v1@1.3.0"
+PHYSICAL_V3_PORT = 21445
+PHYSICAL_V3_SNAPSHOT_ID = "51351351-5135-4135-8135-513513513513"
 SCENARIO_SOURCES = {
     DEFAULT_SCENARIO_ID: Path(__file__).resolve().parents[2] / "tests/interop/scenario.json",
     "viewer-r1-51-drives": Path(__file__).resolve().parents[2] / "tests/interop/scenario-viewer-r1-51-drives.json",
+    PHYSICAL_V3_SCENARIO_ID: Path(__file__).resolve().parents[2] / "tests/interop/scenario.json",
 }
 EDGE_COLLECTOR_FIELDS = {
     "base_url", "ca_certificate_path", "client_certificate_path",
@@ -97,8 +104,12 @@ def load_config(path):
     allowed = {"binary", "seed_binary", "output_dir", "port", "lifetime_seconds", "profile_id", "profile_path", "profile_sha256", "allowed_origins", "edge_collector", "scenario_id"}
     if not isinstance(config, dict) or set(config) - allowed:
         raise ValueError("unknown config fields")
-    if config.get("profile_id") != "hub-http-v1@1.0.0":
-        raise ValueError("current-Hub profile binding required")
+    scenario_id = config.get("scenario_id", DEFAULT_SCENARIO_ID)
+    expected_profile = (PHYSICAL_V3_PROFILE_ID
+                        if scenario_id == PHYSICAL_V3_SCENARIO_ID
+                        else "hub-http-v1@1.0.0")
+    if config.get("profile_id") != expected_profile:
+        raise ValueError("scenario profile binding required")
     profile_path = config.get("profile_path")
     if not isinstance(profile_path, str) or not Path(profile_path).is_absolute():
         raise ValueError("absolute profile path required")
@@ -126,6 +137,8 @@ def load_config(path):
         raise ValueError("output directory must not already exist")
     if "port" in config and (type(config["port"]) is not int or not 1 <= config["port"] <= 65535):
         raise ValueError("invalid port")
+    if scenario_id == PHYSICAL_V3_SCENARIO_ID and config.get("port") != PHYSICAL_V3_PORT:
+        raise ValueError("physical V3 fixture requires loopback port 21445")
     lifetime = config.setdefault("lifetime_seconds", 3600)
     if type(lifetime) is not int or not 1 <= lifetime <= 86400:
         raise ValueError("invalid lifetime")
@@ -142,6 +155,8 @@ def load_config(path):
             raise ValueError("allowed origins must be exact canonical HTTP origins")
     scenario_source(config)
     if "edge_collector" in config:
+        if scenario_id == PHYSICAL_V3_SCENARIO_ID:
+            raise ValueError("physical V3 fixture keeps collectors disabled")
         config["edge_collector"] = validate_edge_collector(config["edge_collector"])
     return config
 
@@ -316,10 +331,45 @@ def run_pair_command(binary, config_path, invitation_output):
 def start_owned_synthetic_serve(binary, config_path, log):
     environment = os.environ.copy()
     environment[DEVELOPMENT_SERVE_ENV] = "1"
+    environment[DEVELOPMENT_SERVE_MODE_ENV] = DEVELOPMENT_SERVE_MODE
     return subprocess.Popen(
         [str(binary), "--config", str(config_path), "serve"],
         env=environment, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
     )
+
+
+def validate_seeded_descriptor(config, descriptor, port):
+    if descriptor.get("endpoint") != "https://127.0.0.1:%d" % port:
+        raise ValueError("seeded endpoint mismatch")
+    if config.get("scenario_id", DEFAULT_SCENARIO_ID) != PHYSICAL_V3_SCENARIO_ID:
+        return
+    admission = descriptor.get("physical_v3_admission")
+    expected_keys = {
+        "profile_id", "vehicle_id", "snapshot_id", "head_sequence", "receipt_id",
+        "chunk_count", "logical_source_rows", "drive_ids", "position_ids",
+        "charging_process_ids", "charge_sample_ids", "address_rows", "geofence_rows",
+        "collector_enabled",
+    }
+    if not isinstance(admission, dict) or set(admission) != expected_keys:
+        raise ValueError("physical V3 admission receipt is missing")
+    if (admission["profile_id"] != PHYSICAL_V3_PROFILE_ID
+            or admission["snapshot_id"] != PHYSICAL_V3_SNAPSHOT_ID
+            or admission["chunk_count"] != 513
+            or admission["drive_ids"] != [301]
+            or admission["position_ids"] != [401, 402]
+            or admission["charging_process_ids"] != [501]
+            or admission["charge_sample_ids"] != [601, 602]
+            or admission["address_rows"] != 0
+            or admission["geofence_rows"] != 0
+            or admission["collector_enabled"] is not False
+            or admission["vehicle_id"] != descriptor.get("vehicle_ids", [None])[0]
+            or type(admission["head_sequence"]) is not int
+            or not 1 <= admission["head_sequence"] <= 9007199254740991
+            or type(admission["logical_source_rows"]) is not int
+            or admission["logical_source_rows"] <= 0
+            or not isinstance(admission["receipt_id"], str)
+            or not re.fullmatch(r"pv3_[0-9a-f]{64}", admission["receipt_id"])):
+        raise ValueError("physical V3 admission receipt changed")
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -387,8 +437,7 @@ def run(config):
                 raise RuntimeError("synthetic seed failed (%s)" % seeded["termination"])
         root = Path(config["output_dir"])
         descriptor = read_private_json(root / "connection.json")
-        if descriptor["endpoint"] != "https://127.0.0.1:%d" % port:
-            raise ValueError("seeded endpoint mismatch")
+        validate_seeded_descriptor(config, descriptor, port)
         configure_seeded_config(descriptor["config_path"], config)
         # Supported product CLI is the invitation authority for native runs.
         invitation_path = root / "cli-invitation.json"
