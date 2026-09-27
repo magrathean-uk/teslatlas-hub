@@ -1,48 +1,44 @@
-# GNU AGPL version 3 section 7 terms
+# Additional terms under section 7 of the GNU Affero General Public License
 
-These terms apply only to material for which MAGRATHEAN UK LTD owns or is authorised to license the relevant copyright. They supplement GNU AGPL version 3 under section 7 and do not alter the canonical text in `LICENSE`.
+These terms supplement the GNU Affero General Public License, version 3 (the
+**Licence**), as section 7 of the Licence permits. They apply to material in
+Teslatlas Hub whose copyright belongs to MAGRATHEAN UK LTD (**we**, **us**).
+They do not apply to third-party material.
 
-## 1. Preservation of reasonable attribution
+## 1. Attribution — section 7(b)
 
-Under section 7(b), preserve this notice in source distributions of applicable material:
+You must keep the following notice, unchanged, in every copy of the source
+code. You must also keep it in the Appropriate Legal Notices of any work that
+contains our material, such as an About or Legal screen, a `legal` command or
+`--version` output:
 
 > Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
 
-Where a covered work already provides an About, Legal, Credits, `--version`, `legal` or equivalent appropriate-legal-notices facility, preserve the notice in that facility.
+You do not need to add a splash screen, advertisement or start-up message.
 
-No new splash screen, start-up delay, advertising panel or promotional placement is required.
+## 2. Modified versions — section 7(c)
 
-## 2. Modified-version notice
+If you convey a modified version, you must mark it clearly as modified and
+state the date of your changes. You must not present it as an original or
+official release.
 
-Under section 7(c), a person conveying a modified version must mark it reasonably and prominently as modified and identify the relevant modification date.
+## 3. Origin — section 7(c)
 
-A modified distribution must not describe itself as an official Magrathean release without written authority.
+You must not misrepresent the origin of our material.
 
-## 3. Origin and endorsement
+## 4. Names — sections 7(d) and 7(e)
 
-Under sections 7(c) and 7(d):
+The Licence grants no right to use the names "Teslatlas", "Teslatlas Hub",
+"Magrathean" or "György Bolyki", or any related logo. You may use them only:
 
-- do not misrepresent the origin of Magrathean-owned material; and
-- do not use `MAGRATHEAN UK LTD`, `Magrathean`, `Teslatlas`, `Teslatlas Hub` or `György Bolyki` to imply sponsorship, certification or endorsement of a modified product without permission.
+- to give the attribution in term 1; and
+- to make truthful statements about origin or compatibility.
 
-Truthful preservation of attribution, copyright and compatibility notices is permitted.
+In particular, you may not use them to suggest that we or the author sponsor,
+endorse or support your version. See [Trade marks](trademarks.md).
 
-## 4. Trade marks
+## 5. Nothing further
 
-Under section 7(e), no trade mark, passing-off or unfair-competition right is licensed for Magrathean or Teslatlas names, logos or get-up.
-
-This does not restrict nominative or descriptive use permitted by law.
-
-## 5. No further restrictions
-
-These terms do not:
-
-- prohibit commercial use or competition;
-- prohibit use by TeslaMate or another organisation;
-- prohibit proprietary clients or ordinary interoperability;
-- require notification, royalties, revenue sharing or marketing;
-- restrict fields of use;
-- alter source-code obligations; or
-- apply to third-party material for which Magrathean cannot grant rights.
-
-Any interpretation that would create a further restriction prohibited by GNU AGPL section 10 is rejected. The GNU AGPL controls.
+These terms add no restriction beyond those section 7 permits. If any of them
+is held to be a further restriction under section 10 of the Licence, that term
+alone is disregarded and the rest remain in force.

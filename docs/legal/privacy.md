@@ -4,7 +4,7 @@
 
 Teslatlas Hub is intended to run under the operator's control. It can process precise location, journeys, charging, vehicle identifiers, account tokens, network information and security logs.
 
-The public source code does not make MAGRATHEAN UK LTD controller or processor for data that never reaches Magrathean.
+The public source code does not make MAGRATHEAN UK LTD (**Magrathean**) a controller or processor of data that never reaches it.
 
 ## Operator responsibility
 
@@ -20,16 +20,11 @@ A person or organisation deciding why and how deployment data is processed ordin
 
 ## Magrathean processing
 
-MAGRATHEAN UK LTD is responsible for personal data it actually receives for its own purposes, including support, website, security reports, commercial services or hosted infrastructure.
+Magrathean is responsible for personal data it actually receives for its own purposes, including support, website, security reports, commercial services or hosted infrastructure.
 
 Before submitting diagnostics, support material, security reports, or other
 personal data, read the live [Magrathean privacy notice](https://teslatlas.eu/privacy/).
-That notice must describe the actual flow.
-
-Before an official beta is published, the external notice must be verified as
-consistent with this repository's disclosed support, geocoder, and terrain flows.
-Any contradiction or missing disclosure on `teslatlas.eu` is an external
-publication blocker; changing this repository does not update that website.
+That notice must describe these flows accurately.
 
 ## Optional geocoder-provider disclosure
 

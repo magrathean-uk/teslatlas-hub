@@ -1,39 +1,33 @@
-# Notices
+Teslatlas Hub
+Copyright © 2026 MAGRATHEAN UK LTD
+Created by György Bolyki
 
-## Teslatlas Hub
+Teslatlas Hub is free software. You can redistribute and modify it under the
+terms of the GNU Affero General Public License, version 3 only, as published
+by the Free Software Foundation (SPDX: AGPL-3.0-only). Additional terms apply
+under section 7 of that licence. They are in docs/legal/additional-terms.md,
+or ADDITIONAL_TERMS.md in an installed package. The software is distributed
+WITHOUT ANY WARRANTY; see the licence in LICENSE.
 
-Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors,
-each as applicable to material they own.
+Required attribution
+--------------------
+The additional terms require this notice to be kept:
 
-Portions copyright their respective contributors and third-party rightsholders.
+  Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
 
-Required attribution:
+Independence
+------------
+Teslatlas Hub is independent. It is not affiliated with, endorsed by or
+supported by Tesla, Inc., the TeslaMate project, or the makers of any other
+software it works with.
 
-> Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
+Third-party components
+----------------------
+Third-party components are under their own licences. See
+docs/legal/third-party-notices.md, or THIRD_PARTY_NOTICES.md in an installed
+package.
 
-Licence: GNU Affero General Public License version 3 only (`AGPL-3.0-only`).
-
-## TeslaMate compatibility
-
-Optional migration and compatibility modules were developed with reference to publicly available TeslaMate source, schema, migrations, documentation and observable behaviour.
-
-Reviewed upstream revision recorded by the project:
-
-`7054517c10475f39f480edeae8f90c6f717985a3`
-
-Upstream: https://github.com/teslamate-org/teslamate
-
-Copyright in TeslaMate belongs to its contributors and applicable rightsholders. Their rights apply to material they own.
-
-**Teslatlas Hub is an unofficial community tool and is not affiliated with, endorsed by or supported by the official TeslaMate project.**
-
-## Third-party material
-
-Source checkouts provide `docs/legal/third-party-notices.md`; installed packages
-provide the same document as `THIRD_PARTY_NOTICES.md`. Also see the
-release-generated dependency notice bundle.
-
-## Trade marks
-
-No trade mark licence is granted. See `docs/legal/trademarks.md` in source or
-`TRADEMARKS.md` in an installed package.
+Names
+-----
+The licence grants no right to use the names Teslatlas or Magrathean. See
+docs/legal/trademarks.md, or TRADEMARKS.md in an installed package.

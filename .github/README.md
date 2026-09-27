@@ -80,15 +80,23 @@ post tokens, invitations, VINs, locations, or private databases in issues. Read
 the [privacy guidance](../docs/legal/privacy.md), [security model](../docs/architecture/security-model.md),
 and [security policy](SECURITY.md).
 
-## Licence and attribution
+## Licence
 
-Teslatlas Hub was created by **György Bolyki** and is published and maintained by
-**MAGRATHEAN UK LTD**. It is an independent, unofficial project and is not
-affiliated with, endorsed by, or supported by Tesla, Inc. or the official TeslaMate
-project. Third-party names and marks belong to their respective owners.
-
-The Hub is licensed under the [GNU AGPL version 3 only](../LICENSE). The project
-uses the permitted section 7 terms in [additional terms](../docs/legal/additional-terms.md).
+Teslatlas Hub is free software under the [GNU AGPL version 3 only](../LICENSE),
+with [attribution terms](../docs/legal/additional-terms.md) under its section 7.
 See [NOTICE](../NOTICE), [third-party notices](../docs/legal/third-party-notices.md),
-[Corresponding Source](../docs/legal/source-availability.md), and
-[citation metadata](../CITATION.cff) for attribution and source obligations.
+[Corresponding Source](../docs/legal/source-availability.md) and
+[citation metadata](../CITATION.cff).
+
+- Use it for any purpose, including commercially.
+- Apps that talk to the Hub through its API are separate programs and may use
+  any licence. The SDKs and protocol are Apache-2.0.
+- If you distribute a changed Hub, or run one for others over a network,
+  publish your source under the same licence, keep the attribution and use
+  your own name.
+- Only the maintainer changes the official Hub, through reviewed pull
+  requests. See [CONTRIBUTING](CONTRIBUTING.md).
+
+Teslatlas Hub was created by György Bolyki and is published by MAGRATHEAN UK
+LTD. It is independent and not affiliated with Tesla, Inc., the TeslaMate
+project, or the makers of any other software it works with.

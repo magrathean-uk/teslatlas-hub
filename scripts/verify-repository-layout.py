@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 from pathlib import Path, PurePosixPath
 import posixpath
@@ -66,6 +67,9 @@ RUST_NAME_RE = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.rs$")
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 HTML_LINK_RE = re.compile(r'(?:href|src)="([^"]+)"')
 REMOTE_PREFIXES = ("#", "http://", "https://", "mailto:")
+# Owner-controlled legal files and their approved SHA-256 digests (owner, 2026-09-27).
+LEGAL_LOCK = "docs/legal/owner-controlled-files.sha256"
+LEGAL_LOCK_ENTRY_RE = re.compile(r"^([0-9a-f]{64})  (\S+)$")
 
 
 class LayoutError(RuntimeError):
@@ -158,6 +162,39 @@ def verify_links(repo: Path, paths: set[str]) -> list[str]:
     return errors
 
 
+def verify_legal_lock(repo: Path, paths: set[str]) -> list[str]:
+    """Owner-controlled legal files must match their owner-approved digests."""
+    if LEGAL_LOCK not in paths:
+        return []
+    try:
+        lines = regular_file(repo, LEGAL_LOCK).read_text(encoding="utf-8", errors="strict").splitlines()
+    except (LayoutError, OSError, UnicodeError):
+        return [f"legal lock is unreadable: {LEGAL_LOCK}"]
+    errors: list[str] = []
+    for number, line in enumerate(lines, 1):
+        if not line.strip() or line.startswith("#"):
+            continue
+        match = LEGAL_LOCK_ENTRY_RE.fullmatch(line)
+        if match is None:
+            errors.append(f"malformed legal lock entry: {LEGAL_LOCK}:{number}")
+            continue
+        digest, relative = match.groups()
+        if relative not in paths:
+            errors.append(f"owner-controlled legal file is not tracked: {relative}")
+            continue
+        try:
+            actual = hashlib.sha256(regular_file(repo, relative).read_bytes()).hexdigest()
+        except (LayoutError, OSError):
+            errors.append(f"owner-controlled legal file is unreadable: {relative}")
+            continue
+        if actual != digest:
+            errors.append(
+                f"owner-controlled legal file changed: {relative}; change it, "
+                f"and {LEGAL_LOCK}, only on the owner's explicit instruction"
+            )
+    return errors
+
+
 def verify(repo: Path, source_paths: set[str] | None = None) -> None:
     paths = source_paths if source_paths is not None else tracked_paths(repo)
     errors: list[str] = []
@@ -230,6 +267,7 @@ def verify(repo: Path, source_paths: set[str] | None = None) -> None:
         except LayoutError as exc:
             errors.append(str(exc))
     errors.extend(verify_links(repo, paths))
+    errors.extend(verify_legal_lock(repo, paths))
     if errors:
         raise LayoutError("\n".join(errors))
     markdown_count = sum(path.endswith(".md") for path in paths)

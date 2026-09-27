@@ -1,56 +1,70 @@
 # Governance
 
-Teslatlas Hub was created by **György Bolyki**, who is the original architect
-and lead developer. **MAGRATHEAN UK LTD** is the initial project steward,
-publisher and official release authority.
+MAGRATHEAN UK LTD (**Magrathean**) owns Teslatlas Hub and publishes its
+official releases. György Bolyki, who created Teslatlas, is the Hub's
+maintainer.
+
+## The maintainer
+
+The maintainer alone:
+
+- changes the official repository and decides which contributions to accept;
+- sets the Hub's technical direction; and
+- approves each official release.
+
+Only the maintainer has write access to the repository. Everyone else proposes
+changes by pull request, under the terms in
+[CONTRIBUTING](../../.github/CONTRIBUTING.md).
 
 ## Priorities
 
-1. safety and credential protection;
-2. licence and legal compliance;
-3. data integrity and recovery;
-4. protocol stability;
-5. security and least privilege;
-6. operability and rollback; and
+Where goals conflict, the maintainer weighs them in this order:
+
+1. safety and protection of credentials;
+2. legal and licence compliance;
+3. integrity and recoverability of data;
+4. stability of the sync protocol;
+5. security;
+6. ease of operation and rollback;
 7. maintainability and portability.
 
-## Technical direction
+## Ownership
 
-The lead developer sets project architecture and technical direction after
-reviewing compatibility, security, data and operational impact. Accepted
-contributions remain credited and are reviewed on their merits; project
-leadership does not erase contributor or third-party rights.
+György Bolyki made every commit up to 27 September 2026, and assigned all
+rights in Teslatlas to Magrathean by an assignment agreement dated
+27 September 2026. Those commits carry no sign-off line. None is needed for the
+owner's own work, and published history is not rewritten.
 
-## Reserved decisions
+Outside contributions become Magrathean's under the assignment agreement for
+[individuals](individual-contributor-assignment-agreement.md) or
+[organisations](corporate-contributor-assignment-agreement.md). Signed
+agreements are kept privately.
 
-Only authorised Company maintainers may:
+## Licence
 
-- publish or sign an official release;
-- alter licensing or contribution policy;
-- accept contributor assignments;
-- grant trade-mark permission;
-- issue a legal counter-notice or settle an IP claim; or
-- approve movement between Hub and the proprietary Teslatlas codebase.
+Since 17 August 2026, new versions have been released under the GNU Affero
+General Public License, version 3 only:
 
-## Rights and relicensing
+- the licence requires anyone who distributes a changed Hub, or runs one for
+  others over a network, to publish their changes; and
+- "only" avoids offering the Hub under future licence versions that do not
+  yet exist.
 
-The Company may relicense only material for which it controls sufficient rights.
-Open-source grants already made remain effective. Every public/proprietary code
-movement requires a provenance record and rights check; shared protocol facts
-do not make implementation automatically transferable.
+Versions released earlier under "AGPL-3.0-or-later" keep that licence.
 
-## Policy set
+Magrathean may license material it owns on other terms, including commercial
+terms. It cannot relicense material it does not own. Only Magrathean may
+change the licence, this policy or the contributor terms.
 
-- [Authorship and stewardship](authorship-and-stewardship.md)
-- [Contributor rights policy](cla-policy.md) and
-  [DCO and assignment process](contributor-agreement-process.md)
-- [Founder contributions](founder-contribution-policy.md) and
-  [Company-covered contributions](owner-contributions.md)
-- [Historical contribution record](historical-contributions.md)
-- [Licence-version decision](licence-version-decision.md)
-- [Name and brand decision](name-and-brand-decision.md)
+## Enforcement
 
-## Conflicts
+Magrathean enforces the licence and its [additional terms](../legal/additional-terms.md)
+to secure compliance, which means:
 
-A maintainer must disclose a material conflict and obtain independent review
-where reasonably practicable.
+- complete source code;
+- notices and attribution kept;
+- modifications marked; and
+- a distinct name for any modified version.
+
+It first asks the person concerned to put things right, and it honours the
+cure and reinstatement provisions in section 8 of the licence.

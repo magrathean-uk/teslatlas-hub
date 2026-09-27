@@ -1,41 +1,43 @@
-# Trade marks and branding
+# Trade marks
 
-## Project identity
+"Teslatlas", "Teslatlas Hub", "Magrathean" and their logos are trade marks of
+MAGRATHEAN UK LTD (**we**). The software licence is a copyright licence and
+grants no right to use them.
 
-MAGRATHEAN UK LTD uses the names and visual identity **Magrathean**,
-**Teslatlas** and **Teslatlas Hub**, subject to applicable law and earlier
-rights. The AGPL is a copyright licence and does not grant a trade-mark licence.
+## Use that needs no permission
 
-## Factual use
+You may, without asking:
 
-Without separate permission, a person may normally:
+- redistribute an unmodified copy of Teslatlas Hub under its name;
+- keep the notices and attribution the licence requires;
+- state truthfully that your product works with, imports from or is
+  compatible with Teslatlas Hub; and
+- describe an app as "for Teslatlas", provided your own product name is more
+  prominent.
 
-- preserve legal and creator notices;
-- identify an unmodified release truthfully;
-- state truthful origin or compatibility; and
-- use a name nominatively or descriptively where law permits.
+## Use that needs our written permission
 
-## Modified distributions
+Ask us first before you:
 
-A materially modified distribution should use a distinct primary name and
-visual identity, identify its changes, and state that it is independently
-distributed. Written permission is required to:
+- use a Teslatlas or Magrathean name or logo as the name or logo of a modified
+  version, fork or other product;
+- suggest that we made, endorse, certify or support your product or service; or
+- use a name, domain, account or design that could be confused with ours.
 
-- use a Magrathean or Teslatlas logo as the primary identity of a fork;
-- imply official status, certification, partnership, support or endorsement;
-- market a modified build as an official Magrathean release; or
-- use a confusingly similar account, domain, product name or presentation.
+A modified version must have its own name. It may say that it is "based on
+Teslatlas Hub".
 
-These brand rules do not restrict use, modification or distribution of the code
-under the AGPL. They govern only separate name, logo and origin-representation
-rights.
+## Correct forms
 
-## Third-party marks
+Write "Teslatlas" and "Teslatlas Hub" exactly as shown. Use `teslatlas` and
+`teslatlas-hub` only where a technical identifier needs lower case.
 
-Tesla and its vehicle, product and charging names are marks of their owners.
-TeslaMate and its visual identity are associated with the TeslaMate project.
-Apple, PostgreSQL, Cloudflare, OpenStreetMap and other marks belong to their
-owners.
+## Other names
 
-References in this repository are factual compatibility or attribution
-statements only. No affiliation, sponsorship or support is claimed.
+- Tesla and its product names are trade marks of Tesla, Inc.
+- TeslaMate is the name of an independent open-source project.
+- Apple, PostgreSQL and other names belong to their owners.
+
+We use these names only to describe compatibility. Teslatlas is not affiliated
+with, endorsed by or supported by Tesla, Inc., the TeslaMate project, or the
+makers of any other software it works with.

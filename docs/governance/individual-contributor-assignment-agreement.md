@@ -1,80 +1,105 @@
-# Individual contributor copyright assignment agreement
+# Contributor assignment agreement — individual
 
-This agreement is between the individual in the signature block (the **Contributor**) and MAGRATHEAN UK LTD (the **Company**).
+This agreement is between:
 
-Keep the signed copy private. Do not commit personal signatures or addresses.
+- the individual who signs below (**you**); and
+- MAGRATHEAN UK LTD, a company registered in England and Wales with company
+  number 16955343 (**Magrathean**).
 
-## 1. Contribution
+Magrathean keeps signed copies private and never publishes them.
 
-**Contribution** means original code, documentation, tests, designs or other material intentionally submitted by the Contributor for inclusion in Teslatlas Hub.
+## 1. Contributions
+
+**Contribution** means any code, documentation, test, design or other material
+that you submit to Magrathean for Teslatlas Hub and that Magrathean accepts.
 
 ## 2. Assignment
 
-The Contributor assigns to the Company absolutely all present copyright, database right, design right and analogous rights in each accepted Contribution for the entire term and worldwide, including rights of action.
+2.1 You assign to Magrathean, with full title guarantee, all copyright,
+database rights, design rights and similar rights anywhere in the world in
+each Contribution. The assignment is for the full term of those rights and
+includes the right to sue for past infringement.
 
-The Contributor assigns by way of present assignment all future copyright arising in an accepted Contribution. If a right cannot vest immediately, the Contributor holds it on trust for the Company and grants an exclusive, irrevocable, transferable, sublicensable licence pending assignment.
+2.2 For Contributions you make after signing, this agreement assigns the
+future copyright and other future rights in them.
+
+2.3 If any right does not pass to Magrathean under this agreement:
+
+- you hold it on trust for Magrathean until it is assigned; and
+- until then, you grant Magrathean an exclusive, irrevocable, worldwide,
+  royalty-free licence of it, with the right to sublicense.
 
 ## 3. Licence back
 
-The Company grants the Contributor a perpetual, worldwide, non-exclusive, royalty-free licence to use, modify and distribute the Contributor's own Contribution, subject to:
+Magrathean grants you a perpetual, worldwide, non-exclusive, royalty-free
+licence to use, modify and distribute your own Contributions for any purpose.
+The licence does not cover Magrathean's trade marks or confidential
+information.
 
-- the public Project licence for copies taken from the Project;
-- third-party rights;
-- no Company confidential information;
-- no trade mark or endorsement right.
+## 4. Licensing and credit
 
-## 4. Company licensing
+4.1 Magrathean may license your Contributions on any terms, including the GNU
+Affero General Public License and commercial terms. Open-source licences
+already granted to recipients stay in force.
 
-The Company may license the Contribution under GNU AGPL version 3, another authorised open-source licence, or a proprietary licence, and may combine it with other products.
+4.2 Magrathean will credit you as the author of your Contributions in the
+project's Git history and release notes.
 
-An open-source licence already granted to a recipient remains irrevocable according to its terms.
+## 5. Patents
 
-## 5. Patent licence
-
-The Contributor grants the Company and Project recipients a perpetual, worldwide, royalty-free patent licence under claims controlled by the Contributor that are necessarily infringed by the Contribution as submitted.
+You grant Magrathean, and every recipient of Teslatlas Hub, a perpetual,
+worldwide, royalty-free, irrevocable licence under any patent you control that
+a Contribution, as you submitted it, necessarily infringes.
 
 ## 6. Moral rights
 
-The Contributor waives moral rights to the fullest lawful extent and otherwise consents to modification, combination, translation, omission of credit from constrained interfaces and licensing by the Company.
+You waive any moral rights in your Contributions to the extent the law allows.
+This does not affect the credit promised in clause 4.2.
 
-## 7. Representations
+## 7. Your promises
 
-The Contributor represents that:
+You confirm that:
 
-- the Contributor has authority to sign;
-- the Contribution is original except disclosed material;
-- all third-party material and licence obligations are identified;
-- no employer or client right prevents the assignment;
-- no confidential information, credential, personal data or malicious code is included;
-- generated/AI-assisted material is disclosed;
-- the Contributor is not knowingly hiding a patent encumbrance.
+(a) you are entitled to sign this agreement. Either no employer or client has
+rights in your Contributions, or they have agreed in writing to this
+assignment;
 
-## 8. No obligation or warranty
+(b) each Contribution is your own work, except material you identify, with its
+source and licence, when you submit it; and
 
-The Company need not accept or retain a Contribution. Except for express representations, the Contribution is supplied without warranty.
+(c) your Contributions contain no confidential information, credentials,
+personal data or malicious code.
 
-## 9. Public records
+## 8. No obligation
 
-The Contributor permits publication and indefinite retention of the contribution name, account, commits and DCO sign-off. The signed agreement remains private.
+Magrathean need not accept, use or keep any Contribution. Apart from the
+promises in clause 7, you provide your Contributions "as is".
 
-## 10. Law
+## 9. Law
 
-English law applies and the courts of England and Wales have exclusive jurisdiction, subject to mandatory law.
+This agreement is governed by the law of England and Wales. The courts of
+England and Wales have exclusive jurisdiction.
 
-## Signature
+## Signatures
 
-Contributor legal name: ______________________________
+You may sign electronically.
 
-Public account/name: __________________________________
+**Contributor**
 
-Email: _______________________________________________
+Full name: _______________________________
 
-Signature: ___________________________________________
+GitHub account: _______________________________
 
-Date: ________________________________________________
+Email: _______________________________
 
-Accepted for MAGRATHEAN UK LTD:
+Signature: _______________________________
 
-Name/capacity: _______________________________________
+Date: _______________________________
 
-Signature/date: _______________________________________
+**For MAGRATHEAN UK LTD**
+
+Name and position: _______________________________
+
+Signature: _______________________________
+
+Date: _______________________________

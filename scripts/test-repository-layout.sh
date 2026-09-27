@@ -84,4 +84,19 @@ if python3 "$VERIFIER" --repo "$TMP/oversized-source" >/dev/null 2>&1; then
     exit 1
 fi
 
+cp -R "$TMP/valid" "$TMP/legal-lock"
+mkdir -p "$TMP/legal-lock/docs/legal"
+printf '%s\n' 'Approved notice' >"$TMP/legal-lock/NOTICE"
+digest=$(python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' \
+    "$TMP/legal-lock/NOTICE")
+printf '%s\n' '# Owner-controlled legal files' "$digest  NOTICE" \
+    >"$TMP/legal-lock/docs/legal/owner-controlled-files.sha256"
+git -C "$TMP/legal-lock" add NOTICE docs/legal/owner-controlled-files.sha256
+python3 "$VERIFIER" --repo "$TMP/legal-lock" >/dev/null
+printf '%s\n' 'Changed notice' >"$TMP/legal-lock/NOTICE"
+if python3 "$VERIFIER" --repo "$TMP/legal-lock" >/dev/null 2>&1; then
+    echo 'repository layout test: changed owner-controlled legal file was accepted' >&2
+    exit 1
+fi
+
 echo 'repository layout tests passed'

@@ -103,7 +103,7 @@ pub fn legal_notice() -> String {
     });
     format!(
         "Teslatlas Hub {BUILD_VERSION}\n\
-         Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD, and identified contributors, each for material they own\n\
+         Copyright © 2026 MAGRATHEAN UK LTD\n\
          License: AGPL-3.0-only\n\
          Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: {SOURCE_URL}\n\
          Corresponding Source: {corresponding_source}\n\
@@ -182,7 +182,7 @@ mod legal_notice_tests {
             "notice must not offer or-later: {notice}"
         );
         assert!(
-            notice.contains("Copyright © 2026 György Bolyki, MAGRATHEAN UK LTD"),
+            notice.contains("Copyright © 2026 MAGRATHEAN UK LTD\n"),
             "notice must name the company copyright: {notice}"
         );
         assert!(

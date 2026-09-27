@@ -4,6 +4,22 @@ This file records material changes to licensing, attribution, provenance, privac
 Historical entries describe what the documents asserted at that time; they are
 not evidence that a private instrument exists or remains sufficient.
 
+## 2026-09-27 — Legal documents consolidated
+
+- Magrathean owns Teslatlas under the founder's assignment agreement dated
+  27 September 2026; the notices name one copyright owner.
+- Sixteen overlapping documents were merged into NOTICE, the legal notice,
+  the additional terms, trade marks, governance and CONTRIBUTING. The licence
+  (AGPL-3.0-only) and the required attribution are unchanged.
+- The legal documents name TeslaMate only in the statement of independence.
+- Contributor terms: pull requests only; sign-off; an assignment for
+  substantial contributions; guaranteed credit; no rights claimed in issues or
+  comments.
+- Added an express statement that apps using the Hub's network interfaces are
+  separate works.
+- Owner-controlled legal files are locked by checksum in
+  `docs/legal/owner-controlled-files.sha256`; the layout gate enforces the lock.
+
 ## 2026-08-31 — v1.0.0 source release
 
 - promoted the package and documentation version to v1.0.0;

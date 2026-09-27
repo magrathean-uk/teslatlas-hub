@@ -77,3 +77,14 @@ The macOS app omits its Corresponding Source menu item when unbound.
 
 An operator who modifies or hosts Hub must offer the source of the version
 actually running, not an unrelated tag or a newer `main` checkout.
+
+## If you distribute or host a modified Hub
+
+- Give recipients the complete Corresponding Source for the exact version you
+  distribute, including build and installation scripts, lockfiles and
+  interface definitions. A link to a moving branch is not enough.
+- If people use your modified Hub over a network, offer them the Corresponding
+  Source of the version actually running (section 13 of the licence). The
+  `legal` and `source` commands or an About screen can do this.
+- Keep the licence, notices and attribution, and mark your changes with the
+  date.

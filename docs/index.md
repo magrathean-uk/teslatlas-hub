@@ -69,13 +69,14 @@ If something fails, start with [Troubleshooting](guides/troubleshooting.md).
 
 ## Legal and project policies
 
-- [Authorship and stewardship](governance/authorship-and-stewardship.md)
+- [Governance](governance/governance.md)
 - [Citation metadata](../CITATION.cff)
-- [Legal framework](legal/overview.md)
+- [Legal notice](legal/overview.md)
 - [Licence](../LICENSE)
 - [Additional terms](legal/additional-terms.md)
 - [Notices](../NOTICE)
 - [Third-party notices](legal/third-party-notices.md)
+- [Trade marks](legal/trademarks.md)
 - [Privacy](legal/privacy.md)
 - [Security policy](../.github/SECURITY.md)
 - [Support](../.github/SUPPORT.md)
@@ -84,8 +85,6 @@ If something fails, start with [Troubleshooting](guides/troubleshooting.md).
 
 ## Maintainer and governance material
 
-- [Governance](governance/governance.md)
-- [Contributor agreement process](governance/contributor-agreement-process.md)
 - [Dependency policy](legal/dependency-policy.md)
 - [Branding guidelines](brand/branding-guidelines.md)
 - [Repository settings](maintainers/github-repository-settings.md)

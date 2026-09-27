@@ -8,15 +8,12 @@ This file records sources and treatment. It is **not** a blanket clean-room decl
 
 Teslatlas Hub is a Rust self-hosted collector, local store, sync service, CLI and platform controller maintained by MAGRATHEAN UK LTD.
 
-## TeslaMate reference material
+## Interoperability modules
 
-Compatibility work consulted public TeslaMate material, including source, schema, migrations, documentation, fixtures and observable behaviour.
-
-Reviewed compatibility revision:
-
-`7054517c10475f39f480edeae8f90c6f717985a3`
-
-The repository contains TeslaMate-specific facts, names, schema mappings, fingerprints, behavioural compatibility and fixtures. It must not claim that no TeslaMate material or influence exists.
+Modules that import from other vehicle-data software read that software's
+PostgreSQL database through the standard database interface and handle its
+published data formats. The manifest classifies them as
+`TESLAMATE-COMPATIBILITY`, and they are reviewed before each release.
 
 ## Tesla Auth reference material
 
@@ -145,7 +142,7 @@ does not attest those facts.
 
 ## Protectable expression
 
-A file containing copied, adapted or closely translated protectable TeslaMate expression must preserve applicable upstream rights and notices and remain under a compatible licence.
+A file containing copied or adapted third-party code must keep that code's notices and licence.
 
 Facts, methods, protocols and interfaces are assessed separately from expression. Compatibility alone is not a legal conclusion either way.
 
@@ -162,7 +159,7 @@ Record tool version, inputs, hashes, exclusions and adjudication.
 
 ## High-priority paths
 
-Review all `teslamate*`, legacy authentication, Owner API, streaming and TeslaMate fixture paths before each release.
+Review all interoperability, legacy authentication, Owner API, streaming and fixture paths before each release.
 
 ## Proprietary app boundary
 
