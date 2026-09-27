@@ -536,6 +536,20 @@ impl Default for ProtocolLimits {
     }
 }
 
+impl ProtocolLimits {
+    /// Exact pack-count and compressed-object bounds selected by
+    /// `hub-sync-v1@1.3.0` for a schema-2.2 full snapshot. The remaining
+    /// fields retain the Hub's internal validation ceilings; legacy callers
+    /// continue to use [`Self::default`].
+    pub fn hub_sync_v1_1_3_schema_2_2() -> Self {
+        Self {
+            max_chunks: 1_771,
+            max_compressed_pack_bytes: 16 * 1024 * 1024,
+            ..Self::default()
+        }
+    }
+}
+
 /// Complete description of either a staged snapshot or an incremental range.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

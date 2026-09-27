@@ -357,6 +357,62 @@ fn rejects_pack_sizes_outside_limits() {
     ));
 }
 
+#[test]
+fn hub_sync_1_3_schema_2_2_limits_accept_1771_chunks_and_reject_1772() {
+    let legacy = ProtocolLimits::default();
+    let limits = ProtocolLimits::hub_sync_v1_1_3_schema_2_2();
+    assert_eq!(legacy.max_chunks, 512);
+    assert_eq!(legacy.max_compressed_pack_bytes, 64 * 1024 * 1024);
+    assert_eq!(limits.max_chunks, 1_771);
+    assert_eq!(limits.max_compressed_pack_bytes, 16 * 1024 * 1024);
+    assert_eq!(
+        limits.max_uncompressed_pack_bytes,
+        legacy.max_uncompressed_pack_bytes
+    );
+    assert_eq!(limits.max_rows_per_pack, legacy.max_rows_per_pack);
+
+    let sequence = SequenceRange {
+        from_exclusive: 40,
+        to_inclusive: 80,
+    };
+    let chunks = (0..1_771)
+        .map(|ordinal| {
+            hub_projection_pack(
+                HUB_PROJECTION_SCHEMA_V3,
+                ordinal,
+                sequence,
+                vec![MirrorTable::Car],
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut at_limit =
+        hub_projection_manifest(HUB_PROJECTION_SCHEMA_V3, TransferMode::FullSnapshot, chunks);
+    assert!(matches!(
+        at_limit.validate(),
+        Err(ProtocolError::InvalidChunkCount { .. })
+    ));
+    at_limit
+        .validate_with_limits(limits)
+        .expect("schema 2.2 profile accepts 1771 chunks");
+
+    let mut extra = hub_projection_pack(
+        HUB_PROJECTION_SCHEMA_V3,
+        1_771,
+        sequence,
+        vec![MirrorTable::Car],
+    );
+    extra.snapshot_id = at_limit.snapshot_id;
+    at_limit.total_compressed_bytes += extra.compressed_bytes;
+    at_limit.total_uncompressed_bytes += extra.uncompressed_bytes;
+    at_limit.total_rows += extra.row_count;
+    at_limit.chunks.push(extra);
+    at_limit.chunk_count += 1;
+    assert!(matches!(
+        at_limit.validate_with_limits(limits),
+        Err(ProtocolError::InvalidChunkCount { .. })
+    ));
+}
+
 fn sqlite_transport_file(schema: SchemaVersion) -> Vec<u8> {
     let mut bytes = vec![0_u8; 4_096];
     for (index, byte) in bytes[SQLITE_HEADER_BYTES..].iter_mut().enumerate() {

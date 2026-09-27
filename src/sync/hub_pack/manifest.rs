@@ -16,6 +16,29 @@ pub fn signed_full_snapshot_manifest(
     total_rows: u64,
     cursor_key: &CursorKey,
 ) -> Result<SyncManifest, ProjectionPackError> {
+    signed_full_snapshot_manifest_with_limits(
+        binding,
+        snapshot_id,
+        sequence,
+        chunks,
+        total_rows,
+        cursor_key,
+        ProtocolLimits::default(),
+    )
+}
+
+/// As [`signed_full_snapshot_manifest`], validated against one explicitly
+/// selected receiver profile. This is required for schema-2.2 snapshot
+/// manifests whose 1.3 chunk bound is larger than the legacy Hub default.
+pub fn signed_full_snapshot_manifest_with_limits(
+    binding: &ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    chunks: &[BuiltProjectionPack],
+    total_rows: u64,
+    cursor_key: &CursorKey,
+    limits: ProtocolLimits,
+) -> Result<SyncManifest, ProjectionPackError> {
     if chunks
         .first()
         .is_some_and(|built| built.metadata.schema == HUB_PROJECTION_SCHEMA_V3)
@@ -103,7 +126,7 @@ pub fn signed_full_snapshot_manifest(
         chunks: metadata,
         terminal_cursor,
     };
-    manifest.validate()?;
+    manifest.validate_with_limits(limits)?;
     manifest.validate_terminal_cursor(cursor_key)?;
     Ok(manifest)
 }
@@ -148,6 +171,15 @@ impl BuiltProjectionPack {
 
     pub fn cleanup_state(&self) -> ProjectionPackCleanupState {
         self.cleanup_state
+    }
+
+    /// Re-verify the immutable object against an explicitly selected receiver
+    /// profile before it crosses a publication boundary.
+    pub fn verify_with_limits(
+        &self,
+        limits: ProtocolLimits,
+    ) -> Result<VerifiedTransportPack, ProjectionPackError> {
+        verify_file(&self.metadata, &self.path, limits)
     }
 
     /// Candidate cleanup has a deletion right only for a newly linked pack.

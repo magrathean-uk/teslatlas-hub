@@ -18,7 +18,7 @@ use crate::{
         BuiltProjectionPack, ProjectionAddressV2_2, ProjectionBinding, ProjectionChargeV2_2,
         ProjectionChargingProcessV2_2, ProjectionGeofenceV2_2, ProjectionPackError,
         ProjectionPackRequestV2_2, ProjectionPackWriter, ProjectionSnapshotV2_2,
-        signed_full_snapshot_manifest,
+        signed_full_snapshot_manifest_with_limits,
     },
     protocol::{CursorKey, ProtocolLimits, SequenceRange, SyncManifest},
     teslamate_projection::{
@@ -37,11 +37,6 @@ const STAGE_PAGE_ROWS: u32 = 10_000;
 const CHARGE_STAGE_PAGE_ROWS: u32 = 512;
 const DEFAULT_MAX_ROWS_PER_CHUNK: u64 = 50_000;
 const DEFAULT_MAX_PROJECTED_JSON_BYTES: u64 = 8 * 1024 * 1024;
-const HUB_SYNC_PROFILE_MAX_PACK_BYTES: u64 = 16 * 1024 * 1024;
-// This unpublished writer intentionally retains the Hub's current internal
-// ceiling. Public hub-sync-v1@1.3.0 admission up to 1771 chunks requires a
-// separate profile-specific manifest and response-size proof.
-const PHYSICAL_CANDIDATE_MAX_CHUNKS: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TeslaMatePhysicalFragmentLimits {
@@ -371,13 +366,14 @@ fn write_staged_physical_updates_snapshot_v3_inner(
             .checked_add(chunk.metadata.row_count)
             .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)
     })?;
-    let manifest = match signed_full_snapshot_manifest(
+    let manifest = match signed_full_snapshot_manifest_with_limits(
         &binding,
         snapshot_id,
         sequence,
         &chunks,
         total_rows,
         cursor_key,
+        ProtocolLimits::hub_sync_v1_1_3_schema_2_2(),
     ) {
         Ok(manifest) => manifest,
         Err(error) => {
@@ -549,7 +545,8 @@ fn flush_chunk(
     chunks: &mut Vec<BuiltProjectionPack>,
     fail_before_ordinal: Option<u32>,
 ) -> Result<(), TeslaMatePhysicalFragmentError> {
-    if chunks.len() >= PHYSICAL_CANDIDATE_MAX_CHUNKS {
+    let profile_limits = ProtocolLimits::hub_sync_v1_1_3_schema_2_2();
+    if chunks.len() >= profile_limits.max_chunks {
         return Err(TeslaMatePhysicalFragmentError::TooManyChunks);
     }
     let ordinal =
@@ -576,13 +573,18 @@ fn flush_chunk(
     let built = writer.write_full_snapshot_2_2(&request)?;
     #[cfg(test)]
     eprintln!(
-        "physical candidate chunk: ordinal={ordinal}, compressed_bytes={}, profile_limit_bytes={HUB_SYNC_PROFILE_MAX_PACK_BYTES}",
-        built.metadata.compressed_bytes
+        "physical candidate chunk: ordinal={ordinal}, compressed_bytes={}, profile_limit_bytes={}",
+        built.metadata.compressed_bytes, profile_limits.max_compressed_pack_bytes
     );
-    if built.metadata.compressed_bytes > HUB_SYNC_PROFILE_MAX_PACK_BYTES {
+    if built.metadata.compressed_bytes > profile_limits.max_compressed_pack_bytes {
         let mut rejected = vec![built];
         cleanup_chunks(&mut rejected);
         return Err(TeslaMatePhysicalFragmentError::PackExceedsProfileLimit);
+    }
+    if let Err(error) = built.verify_with_limits(profile_limits) {
+        let mut rejected = vec![built];
+        cleanup_chunks(&mut rejected);
+        return Err(error.into());
     }
     chunks.push(built);
     Ok(())

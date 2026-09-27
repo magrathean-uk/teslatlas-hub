@@ -818,7 +818,10 @@ fn sealed_physical_stage_streams_relations_in_verified_contiguous_v3_chunks() {
         );
         assert_eq!(chunk.metadata.snapshot_id, snapshot_id());
         assert_eq!(chunk.metadata.sequence, sequence());
-        assert!(chunk.metadata.compressed_bytes <= HUB_SYNC_PROFILE_MAX_PACK_BYTES);
+        assert!(
+            chunk.metadata.compressed_bytes
+                <= ProtocolLimits::hub_sync_v1_1_3_schema_2_2().max_compressed_pack_bytes
+        );
         assert_eq!(
             chunk.metadata.tables,
             match ordinal {
@@ -1247,7 +1250,10 @@ fn charge_chunks_repeat_the_parent_across_a_512_row_boundary() {
                 MirrorTable::ChargeSample
             ]
         );
-        assert!(chunk.metadata.compressed_bytes <= HUB_SYNC_PROFILE_MAX_PACK_BYTES);
+        assert!(
+            chunk.metadata.compressed_bytes
+                <= ProtocolLimits::hub_sync_v1_1_3_schema_2_2().max_compressed_pack_bytes
+        );
         chunk
             .metadata
             .verify_reader(
@@ -1538,10 +1544,9 @@ fn compressed_profile_limit_removes_the_oversize_pack_and_prior_chunk() {
 }
 
 #[test]
-fn unpublished_physical_candidate_keeps_the_internal_chunk_ceiling() {
-    assert_eq!(PHYSICAL_CANDIDATE_MAX_CHUNKS, 512);
-    assert_eq!(
-        PHYSICAL_CANDIDATE_MAX_CHUNKS,
-        ProtocolLimits::default().max_chunks
-    );
+fn unpublished_physical_candidate_uses_only_the_schema_2_2_profile_ceiling() {
+    assert_eq!(ProtocolLimits::default().max_chunks, 512);
+    let physical = ProtocolLimits::hub_sync_v1_1_3_schema_2_2();
+    assert_eq!(physical.max_chunks, 1_771);
+    assert_eq!(physical.max_compressed_pack_bytes, 16 * 1024 * 1024);
 }
