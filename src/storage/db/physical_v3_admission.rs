@@ -559,6 +559,57 @@ impl HubStore {
         self.pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, true, false)
     }
 
+    /// Resolve the exact private publication state while rechecking every
+    /// current and retained object. A blocked successor is returned only with
+    /// its one unexpired prior receipt so a production caller can finish the
+    /// already-committed rotation instead of attempting a third head.
+    pub(crate) fn physical_v3_publication_state_for_vehicle_at(
+        &self,
+        vehicle_id: Uuid,
+        now_ms: i64,
+    ) -> Result<PhysicalV3PublicationState, StoreError> {
+        let Some(current) = self.pending_physical_v3_admission_for_vehicle(vehicle_id)? else {
+            return Ok(PhysicalV3PublicationState::Empty);
+        };
+        let connection = self.open_read_only_connection()?;
+        let serve_state: String = connection
+            .query_row(
+                "SELECT serve_state FROM pending_physical_v3_admissions
+                  WHERE vehicle_id = ?1 AND snapshot_id = ?2",
+                params![vehicle_id.to_string(), current.snapshot_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        match serve_state.as_str() {
+            "public_first" => Ok(PhysicalV3PublicationState::Public(current)),
+            "blocked_rotation" => {
+                let receipt_ids = connection
+                    .prepare(
+                        "SELECT receipt_id FROM retained_physical_v3_admissions
+                          WHERE vehicle_id = ?1 ORDER BY receipt_id",
+                    )
+                    .map_err(StoreError::Query)?
+                    .query_map([vehicle_id.to_string()], |row| row.get::<_, String>(0))
+                    .map_err(StoreError::Query)?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(StoreError::Query)?;
+                if receipt_ids.len() != 1 {
+                    return Err(StoreError::PhysicalV3AdmissionConflict);
+                }
+                let retained = self
+                    .retained_physical_v3_admission_for_receipt_at(
+                        vehicle_id,
+                        &receipt_ids[0],
+                        now_ms,
+                        true,
+                    )?
+                    .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
+                Ok(PhysicalV3PublicationState::Blocked { current, retained })
+            }
+            _ => Err(StoreError::PhysicalV3AdmissionConflict),
+        }
+    }
+
     /// Load the currently bound marker and exact pack metadata for a control
     /// response without reading every pack body. Pack GET verifies its one
     /// bounded body before serving bytes.

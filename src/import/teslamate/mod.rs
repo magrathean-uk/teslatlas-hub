@@ -7,6 +7,7 @@ pub mod fragments;
 pub mod importer;
 pub mod parity;
 pub mod physical_fragments;
+pub mod physical_publication;
 pub mod progress;
 pub mod projection;
 pub mod projection_state;

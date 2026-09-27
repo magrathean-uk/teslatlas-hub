@@ -20,7 +20,7 @@ use crate::{
     teslamate_stage::TeslaMateStageLimits,
 };
 
-fn stage_limits() -> TeslaMateStageLimits {
+pub(crate) fn stage_limits() -> TeslaMateStageLimits {
     TeslaMateStageLimits {
         max_rows: 32,
         max_stage_bytes: 2 * 1024 * 1024,
@@ -49,7 +49,7 @@ fn sequence() -> SequenceRange {
     }
 }
 
-fn seed_roots(stage: &mut TeslaMateStage) {
+pub(crate) fn seed_roots(stage: &mut TeslaMateStage) {
     let settings = TeslaMateSettingsPhysicalV2_2 {
         id: 1,
         unit_of_length: ProjectionUnitOfLengthV2_2::Kilometers,
@@ -106,7 +106,7 @@ fn seed_roots(stage: &mut TeslaMateStage) {
         .expect("car root");
 }
 
-fn seed_updates(stage: &mut TeslaMateStage, ids: &[i32]) {
+pub(crate) fn seed_updates(stage: &mut TeslaMateStage, ids: &[i32]) {
     for id in ids {
         let update = TeslaMateUpdatePhysicalV2_2 {
             id: *id,
@@ -408,7 +408,7 @@ fn two_chunk_physical_candidate(
     .expect("two-chunk physical candidate")
 }
 
-fn registered_admission_binding(store: &HubStore) -> ProjectionBinding {
+pub(crate) fn registered_admission_binding(store: &HubStore) -> ProjectionBinding {
     let source = store
         .register_source(
             &SourceDescriptor::new("teslamate", "physical-v3-admission"),

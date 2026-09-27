@@ -25,8 +25,11 @@ use rustix::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use uuid::Uuid;
+
+use crate::protocol::Sha256Digest;
 
 const STAGING_DIRECTORY: &str = ".staging";
 const STAGE_FILE_EXTENSION: &str = "sqlite";
@@ -67,6 +70,20 @@ pub enum TeslaMateStageTable {
 }
 
 impl TeslaMateStageTable {
+    pub const PHYSICAL_V3_ALL: [Self; 11] = [
+        Self::GlobalSettings,
+        Self::CarSettings,
+        Self::Cars,
+        Self::Drives,
+        Self::Positions,
+        Self::ChargingProcesses,
+        Self::Charges,
+        Self::Addresses,
+        Self::Geofences,
+        Self::States,
+        Self::Updates,
+    ];
+
     pub const ALL: [Self; 9] = [
         Self::Cars,
         Self::Drives,
@@ -480,6 +497,63 @@ impl TeslaMateStage {
             payload_bytes,
             limits,
         })
+    }
+
+    /// Hash the logical contents of one sealed stage independently of its
+    /// SQLite page layout. Every PhysicalV3 table contributes its name, row
+    /// count, ordered source IDs, and exact persisted JSON bytes, including
+    /// empty tables. Callers bind this digest to the installation/source/
+    /// vehicle identity before deriving a stable publication snapshot ID.
+    pub(crate) fn sealed_content_digest(&self) -> Result<Sha256Digest, TeslaMateStageError> {
+        let stats = self.stats()?;
+        if stats.state != TeslaMateStageState::Sealed {
+            return Err(TeslaMateStageError::StageNotSealed);
+        }
+        self.verify_integrity()?;
+        self.verify_accounting(stats)?;
+
+        let mut digest = Sha256::new();
+        digest.update(b"teslatlas-hub/teslamate-stage/logical-content/v1\0");
+        digest.update(self.format.as_str().as_bytes());
+        digest.update(stats.row_count.to_be_bytes());
+        digest.update(stats.payload_bytes.to_be_bytes());
+        for table in TeslaMateStageTable::PHYSICAL_V3_ALL {
+            let table_name = table.as_str().as_bytes();
+            digest.update(
+                u32::try_from(table_name.len())
+                    .expect("fixed table name length fits u32")
+                    .to_be_bytes(),
+            );
+            digest.update(table_name);
+            let row_count: i64 = self.connection.query_row(
+                "SELECT COUNT(*) FROM stage_rows WHERE table_name = ?1",
+                [table.as_str()],
+                |row| row.get(0),
+            )?;
+            digest.update(
+                u64::try_from(row_count)
+                    .map_err(|_| TeslaMateStageError::InvalidStoredAccounting)?
+                    .to_be_bytes(),
+            );
+            let mut statement = self.connection.prepare(
+                "SELECT source_id, row_json FROM stage_rows
+                  WHERE table_name = ?1 ORDER BY source_id ASC",
+            )?;
+            let rows = statement.query_map([table.as_str()], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (source_id, json) = row?;
+                digest.update(source_id.to_be_bytes());
+                digest.update(
+                    u64::try_from(json.len())
+                        .map_err(|_| TeslaMateStageError::InvalidStoredAccounting)?
+                        .to_be_bytes(),
+                );
+                digest.update(json.as_bytes());
+            }
+        }
+        Ok(Sha256Digest::from_bytes(digest.finalize().into()))
     }
 
     /// Return the persisted row contract. Stages created before this marker

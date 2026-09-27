@@ -242,6 +242,16 @@ pub(crate) struct RetainedPhysicalV3Admission {
     pub expires_at_ms: i64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PhysicalV3PublicationState {
+    Empty,
+    Public(PendingPhysicalV3Admission),
+    Blocked {
+        current: PendingPhysicalV3Admission,
+        retained: RetainedPhysicalV3Admission,
+    },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamFaultPoint {
     RawInsert,

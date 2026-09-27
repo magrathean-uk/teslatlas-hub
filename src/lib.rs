@@ -35,10 +35,10 @@ pub use geo::{geocoder, gpx, location, terrain, terrain_cache};
 pub use import::teslamate::{
     direct as teslamate_direct, fragments as teslamate_fragments, importer as teslamate_import,
     parity as teslamate_parity, physical_fragments as teslamate_physical_fragments,
-    progress as teslamate_progress, projection as teslamate_projection,
-    projection_state as teslamate_projection_state, reader as teslamate_reader,
-    schema as teslamate_schema, source as teslamate, stage as teslamate_stage,
-    writeback as teslamate_writeback,
+    physical_publication as teslamate_physical_publication, progress as teslamate_progress,
+    projection as teslamate_projection, projection_state as teslamate_projection_state,
+    reader as teslamate_reader, schema as teslamate_schema, source as teslamate,
+    stage as teslamate_stage, writeback as teslamate_writeback,
 };
 #[cfg(unix)]
 #[doc(hidden)]
