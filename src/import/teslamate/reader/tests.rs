@@ -4,7 +4,7 @@ use super::*;
 use crate::{
     teslamate_projection::{
         TeslaMateCar, TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2,
-        TeslaMateSettingsPhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
+        TeslaMateSettingsPhysicalV2_2, TeslaMateStatePhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
     },
     teslamate_stage::{
         TeslaMateStageFormat, TeslaMateStageLimits, TeslaMateStageState, TeslaMateStageTable,
@@ -943,21 +943,25 @@ fn physical_v3_root_queries_keep_car_and_car_settings_separate() {
 }
 
 #[test]
-fn physical_update_query_uses_a_nullable_initial_cursor() {
-    assert!(UPDATES_V2_2_SQL.contains("$1::integer IS NULL OR source.id > $1"));
-    assert!(UPDATES_V2_2_SQL.contains("source.car_id = $3"));
-    assert!(UPDATES_V2_2_SQL.contains("ORDER BY source.id ASC"));
-    assert!(UPDATES_V2_2_SQL.contains("LIMIT $2"));
-    assert!(!UPDATES_V2_2_SQL.contains("private.tokens"));
+fn physical_state_and_update_queries_use_nullable_initial_cursors() {
+    for (table, sql) in [("states", STATES_V2_2_SQL), ("updates", UPDATES_V2_2_SQL)] {
+        assert!(sql.contains("$1::integer IS NULL OR source.id > $1"));
+        assert!(sql.contains("source.car_id = $3"));
+        assert!(sql.contains("ORDER BY source.id ASC"));
+        assert!(sql.contains("LIMIT $2"));
+        assert!(sql.contains(&format!("FROM public.{table} AS source")));
+        assert!(!sql.contains("private.tokens"));
+    }
+    assert!(STATES_V2_2_SQL.contains("source.state::text AS state"));
 
     assert_eq!(
-        advance_signed_v2_2_cursor(None, -7, "updates").expect("nullable first cursor"),
+        advance_signed_v2_2_cursor(None, -7, "states").expect("nullable first cursor"),
         Some(-7)
     );
     assert!(matches!(
-        require_positive_physical_id("updates", -7),
+        require_positive_physical_id("states", -7),
         Err(TeslaMateReaderError::PhysicalSourceIdNotPositive {
-            table: "updates",
+            table: "states",
             id: -7
         })
     ));
@@ -1066,16 +1070,21 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
              VALUES (
                  10, TIMESTAMP '2000-01-01 00:00:00.123456', NULL,
                  'pre-export', 1
+             );
+             INSERT INTO public.states(id, car_id, state, start_date, end_date)
+             VALUES (
+                 20, 1, 'online', TIMESTAMP '2000-01-01 00:00:00.234567',
+                 'infinity'::timestamp
              );",
         )
         .await
-        .expect("synthetic physical roots and pre-export update");
+        .expect("synthetic physical roots and pre-export relations");
 
     let temporary = tempfile::tempdir().expect("private capture root");
     let imports_dir = temporary.path().join("success");
     let limits = TeslaMateReadLimits {
         page_size: 1,
-        maximum_rows: 8,
+        maximum_rows: 5,
         maximum_stage_bytes: 256 * 1024,
         minimum_free_bytes: 0,
         parallel_copy_lanes: 1,
@@ -1089,14 +1098,18 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
         &imports_dir,
         || async {
             admin
-                .execute(
+                .batch_execute(
                     "INSERT INTO public.updates(
                          id, start_date, end_date, version, car_id
                      ) VALUES (
                          11, TIMESTAMP '2000-01-01 00:00:00.654321', NULL,
                          'post-export', 1
-                     )",
-                    &[],
+                     );
+                     INSERT INTO public.states(id, car_id, state, start_date, end_date)
+                     VALUES (
+                         21, 1, 'offline',
+                         TIMESTAMP '2000-01-01 00:00:00.765432', NULL
+                     );",
                 )
                 .await?;
             Ok(())
@@ -1111,7 +1124,7 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
     );
     let stats = stage.stats().expect("stage stats");
     assert_eq!(stats.state, TeslaMateStageState::Sealed);
-    assert_eq!(stats.row_count, 4);
+    assert_eq!(stats.row_count, 5);
     let settings = stage
         .get::<TeslaMateSettingsPhysicalV2_2>(TeslaMateStageTable::GlobalSettings, 100)
         .expect("settings lookup")
@@ -1139,6 +1152,17 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
     assert_eq!(updates.rows[0].source_id, 10);
     assert_eq!(updates.rows[0].value.version.as_deref(), Some("pre-export"));
     assert_eq!(updates.rows[0].value.start_date_pg_us, 123_456);
+    let states = stage
+        .page::<TeslaMateStatePhysicalV2_2>(TeslaMateStageTable::States, 0, 10)
+        .expect("states page");
+    assert_eq!(states.rows.len(), 1);
+    assert_eq!(states.rows[0].source_id, 20);
+    assert_eq!(
+        states.rows[0].value.state,
+        ProjectionStateStatusV2_2::Online
+    );
+    assert_eq!(states.rows[0].value.start_date_pg_us, 234_567);
+    assert_eq!(states.rows[0].value.end_date_pg_us, Some(i64::MAX));
     assert_eq!(
         admin
             .query_one("SELECT COUNT(*)::bigint AS count FROM public.updates", &[])
@@ -1148,9 +1172,47 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
             .expect("source update count value"),
         2
     );
+    assert_eq!(
+        admin
+            .query_one("SELECT COUNT(*)::bigint AS count FROM public.states", &[])
+            .await
+            .expect("source state count")
+            .try_get::<_, i64>("count")
+            .expect("source state count value"),
+        2
+    );
     let stage_path = stage.path().to_path_buf();
     stage.discard().expect("discard successful test stage");
     assert!(!stage_path.exists());
+
+    let cap_dir = temporary.path().join("cap-failure");
+    let cap_failure = capture_physical_v3_to_stage(
+        &source,
+        &password,
+        1,
+        TeslaMateReadLimits {
+            maximum_rows: 4,
+            ..limits
+        },
+        &cap_dir,
+    )
+    .await;
+    assert!(matches!(
+        cap_failure,
+        Err(TeslaMateReaderError::MaximumRowsExceeded { maximum: 4 })
+    ));
+    let capped_stages = std::fs::read_dir(cap_dir.join(".staging"))
+        .expect("cap failure staging directory")
+        .map(|entry| entry.expect("cap failure staging entry").path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension == "sqlite")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        capped_stages.is_empty(),
+        "retained stages: {capped_stages:?}"
+    );
 
     let failure_dir = temporary.path().join("failure");
     let failure = capture_physical_v3_to_stage_with_post_export(

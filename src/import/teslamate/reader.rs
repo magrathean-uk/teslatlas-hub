@@ -37,7 +37,8 @@ use crate::{
     hub_pack::{
         GeofenceBillingType, POSTGRES_TIMESTAMP_FINITE_END_EXCLUSIVE_US,
         POSTGRES_TIMESTAMP_FINITE_MIN_US, ProjectionCarSettings, ProjectionPreferredRangeV2_2,
-        ProjectionUnitOfLengthV2_2, ProjectionUnitOfPressureV2_2, ProjectionUnitOfTemperatureV2_2,
+        ProjectionStateStatusV2_2, ProjectionUnitOfLengthV2_2, ProjectionUnitOfPressureV2_2,
+        ProjectionUnitOfTemperatureV2_2,
     },
     teslamate::ReadOnlySource,
     teslamate_projection::{
@@ -45,7 +46,7 @@ use crate::{
         TeslaMateCharge, TeslaMateChargingProcess, TeslaMateDrive, TeslaMateGeofence,
         TeslaMateHistory, TeslaMateOpenSession, TeslaMatePosition, TeslaMateProjectionError,
         TeslaMateSettingsPhysicalV2_2, TeslaMateSourceWatermark, TeslaMateSourceWatermarks,
-        TeslaMateState, TeslaMateUpdate, TeslaMateUpdatePhysicalV2_2,
+        TeslaMateState, TeslaMateStatePhysicalV2_2, TeslaMateUpdate, TeslaMateUpdatePhysicalV2_2,
     },
     teslamate_schema::{
         ENUM_PROBE_SQL, MAX_VALIDATED_MIGRATION, MIGRATION_VERSIONS_SQL, MIN_SUPPORTED_MIGRATION,

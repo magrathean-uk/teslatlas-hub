@@ -340,6 +340,22 @@ fn decode_update_v2_2(row: &Row) -> Result<TeslaMateUpdatePhysicalV2_2, TeslaMat
     })
 }
 
+fn decode_state_v2_2(row: &Row) -> Result<TeslaMateStatePhysicalV2_2, TeslaMateReaderError> {
+    let state = match required_text(row, "states", "state")?.as_str() {
+        "online" => ProjectionStateStatusV2_2::Online,
+        "offline" => ProjectionStateStatusV2_2::Offline,
+        "asleep" => ProjectionStateStatusV2_2::Asleep,
+        _ => return Err(TeslaMateReaderError::InvalidStateStatus),
+    };
+    Ok(TeslaMateStatePhysicalV2_2 {
+        id: required_i32(row, "states", "id")?,
+        car_id: required_i16(row, "states", "car_id")?,
+        state,
+        start_date_pg_us: required_timestamp_pg_us(row, "states", "start_date")?,
+        end_date_pg_us: optional_timestamp_pg_us(row, "states", "end_date")?,
+    })
+}
+
 fn decode_car_settings_row(row: &Row) -> Result<ProjectionCarSettings, TeslaMateReaderError> {
     let defaults = ProjectionCarSettings::default();
     Ok(ProjectionCarSettings {

@@ -577,6 +577,20 @@ LIMIT $2
 // They deliberately do not reuse legacy COPY readers or compatibility epoch-ms
 // decoders: PostgreSQL timestamp binary i64 microseconds remain raw, including
 // the source infinity sentinels.
+const STATES_V2_2_SQL: &str = r#"
+SELECT
+  source.id,
+  source.car_id,
+  source.state::text AS state,
+  source.start_date,
+  source.end_date
+FROM public.states AS source
+WHERE ($1::integer IS NULL OR source.id > $1)
+  AND source.car_id = $3
+ORDER BY source.id ASC
+LIMIT $2
+"#;
+
 #[allow(dead_code)] // local candidate only; import/publication wiring is deliberately absent.
 const UPDATES_V2_2_SQL: &str = r#"
 SELECT
