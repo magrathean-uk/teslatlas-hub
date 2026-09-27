@@ -1,5 +1,7 @@
 # Security policy
 
+How to report a vulnerability in this integration privately, and the trust boundaries a change must preserve.
+
 ## Report privately
 
 Email [contact@magrathean.uk](mailto:contact@magrathean.uk) with subject `SECURITY: teslatlas-home-assistant`. This route is published in the [organisation security policy](https://github.com/magrathean-uk/.github/blob/main/SECURITY.md), which also describes handling and disclosure. Use GitHub's private vulnerability reporting option only if it is available for this repository.

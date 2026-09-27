@@ -1,5 +1,7 @@
 # Support
 
+First checks for setup and connection problems, and where to report a bug.
+
 This is a custom integration candidate. The recorded development baseline is Home Assistant `2026.8.3`; historical synthetic test results do not establish production support or compatibility with every Home Assistant release.
 
 ## First checks
@@ -14,7 +16,7 @@ This is a custom integration candidate. The recorded development baseline is Hom
 | Unknown value | The current profile may not supply that field or observation. Missing values are not converted to zero. |
 | Unavailable entities | Check Hub reachability and whether the vehicle is still listed. Retries use bounded backoff. |
 
-For certificate trust in a Container, see the [Container guide](docs/docker.md). Use Home Assistant's reconfigure flow for endpoint changes and keep the same Hub identity.
+For certificate trust in a Container, see the [Container guide](../docs/guides/docker.md). Use Home Assistant's reconfigure flow for endpoint changes and keep the same Hub identity.
 
 ## Report a bug
 

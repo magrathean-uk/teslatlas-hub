@@ -16,9 +16,9 @@ def test_current_docs_bind_the_checked_profile_and_pending_boundary() -> None:
         _read(path)
         for path in (
             "README.md",
-            "docs/architecture.md",
-            "docs/protocol-readiness.md",
-            "docs/product-versioning.md",
+            "docs/architecture/overview.md",
+            "docs/reference/protocol-readiness.md",
+            "docs/reference/product-versioning.md",
         )
     )
 
@@ -30,8 +30,8 @@ def test_current_docs_bind_the_checked_profile_and_pending_boundary() -> None:
 
 def test_historical_designs_are_marked_and_point_to_current_guidance() -> None:
     for path in (
-        "docs/plans/2026-08-30-foundation.md",
-        "docs/superpowers/specs/2026-08-30-hacs-local-push-foundation-design.md",
+        "docs/development/archive/2026-08-30-foundation.md",
+        "docs/development/archive/2026-08-30-hacs-local-push-foundation-design.md",
     ):
         document = _read(path)
         assert "Status: Superseded" in document
@@ -40,7 +40,7 @@ def test_historical_designs_are_marked_and_point_to_current_guidance() -> None:
 
 def test_container_candidate_and_manual_install_boundaries_stay_explicit() -> None:
     compose = _read("compose.yaml")
-    docker = _read("docs/docker.md")
+    docker = _read("docs/guides/docker.md")
     readme = _read("README.md")
 
     assert "ghcr.io/home-assistant/home-assistant:2026.8.3" in compose
@@ -59,7 +59,7 @@ def test_container_candidate_and_manual_install_boundaries_stay_explicit() -> No
 
 def test_mac4_handoff_pins_private_route_tls_and_headed_lifecycle() -> None:
     """Keep the prepared Mac-hosted ordinary-user journey concrete and scoped."""
-    handoff = _read("docs/development/MAC4_RUNTIME_HANDOFF.md")
+    handoff = _read("docs/development/archive/MAC4_RUNTIME_HANDOFF.md")
     normalized = " ".join(handoff.split())
 
     assert "https://127.0.0.1:18443" in handoff

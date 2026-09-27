@@ -10,10 +10,11 @@ This repository owns `custom_components/teslatlas_hub`, a read-only Home Assista
 - Preserve existing work and the independent `main` checkout. Do not create branches, worktrees or stashes in the owner's coordinated workspace. Commits follow the current task's authority; pushes require an explicit instruction.
 - GitHub is source storage only. Do not add CI, release, artifact-upload, Dependabot or HACS automation. Publication, public ingress and real-vehicle work require explicit task authority.
 - Keep credentials, locations, private fixture paths and local account details out of Git and reports.
+- Legal files (`LICENSE`, `NOTICE`, `docs/legal/`, contributor terms, copyright and attribution strings) are owner-controlled: change them only on the owner's explicit instruction.
 
 ## Checks
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the pinned environment and format scope. With that environment already prepared, run the checks that cover the changed behavior. These are standalone command forms; apply the parent execution rules when working in the coordinated workspace:
+See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the pinned environment and format scope. With that environment already prepared, run the checks that cover the changed behavior. These are standalone command forms; apply the parent execution rules when working in the coordinated workspace:
 
 ```sh
 uv run --locked pytest tests/test_config_flow.py tests/test_coordinator.py tests/test_diagnostics.py
@@ -28,6 +29,6 @@ Use `codebase-memory-mcp` for indexed code navigation when available, and confir
 
 Keep local unit tests, synthetic fixtures, installed UI behavior and real-Hub acceptance distinct. Record the exact source, invocation and result. Do not turn an old receipt into a current runtime claim.
 
-When this checkout is inside the owner's multi-repository workspace, follow the applicable parent instructions and current master plan. Local `docs/development/PLAN.md`, `STATUS.json` and old handoffs are historical evidence, not independent permission to resume a runtime. The current task controls allowed actions and output locations.
+When this checkout is inside the owner's multi-repository workspace, follow the applicable parent instructions and current master plan. Archived `docs/development/archive/PLAN.md`, `STATUS.json` and old handoffs are historical evidence, not independent permission to resume a runtime. The current task controls allowed actions and output locations.
 
-Read [architecture](docs/architecture.md), [protocol binding](docs/protocol-readiness.md) and [security](SECURITY.md) when touching those boundaries. Use a bounded independent worker only when its benefit exceeds the overhead; give it fresh context, a distinct scope and a clear stop condition.
+Read [architecture](docs/architecture/overview.md), [protocol binding](docs/reference/protocol-readiness.md) and [security](.github/SECURITY.md) when touching those boundaries. Use a bounded independent worker only when its benefit exceeds the overhead; give it fresh context, a distinct scope and a clear stop condition.

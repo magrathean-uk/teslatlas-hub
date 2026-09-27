@@ -1,8 +1,8 @@
 # Home Assistant Container
 
-[compose.yaml](../compose.yaml) is a minimal Linux Container example. It pins `ghcr.io/home-assistant/home-assistant:2026.8.3`, persists `ha-config`, mounts the component read-only and allows 60 seconds for shutdown. It is intended for isolated evaluation of this candidate.
+[compose.yaml](../../compose.yaml) is a minimal Linux Container example. It pins `ghcr.io/home-assistant/home-assistant:2026.8.3`, persists `ha-config`, mounts the component read-only and allows 60 seconds for shutdown. It is intended for isolated evaluation of this candidate.
 
-The selected Debian 13 ARM64 lane has historical synthetic acceptance evidence, which is not a general support claim. The [later status record](development/STATUS.json) says the former runtime was removed. These instructions do not imply that it still exists.
+The selected Debian 13 ARM64 lane has historical synthetic acceptance evidence, which is not a general support claim. The [later status record](../development/archive/STATUS.json) says the former runtime was removed. These instructions do not imply that it still exists.
 
 ## Prepare an isolated installation
 

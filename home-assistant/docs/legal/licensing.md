@@ -4,7 +4,7 @@
 
 The controlling grant is the complete [Apache License 2.0](../../LICENSE) at the repository root. [pyproject.toml](../../pyproject.toml) identifies the project as `Apache-2.0`. This explanation adds no licence conditions and does not replace that text or any valid earlier grant.
 
-Preserve existing copyright, licence and attribution notices when copying or redistributing material. Follow the licence's requirements for modified files and any applicable NOTICE material. The repository does not contain a separate project NOTICE file or a separate commercial licence grant.
+Preserve existing copyright, licence and attribution notices when copying or redistributing material. Follow the licence's requirements for modified files and any applicable NOTICE material. [NOTICE](../../NOTICE) records the copyright holder; it adds no licence conditions beyond Apache-2.0. The repository does not contain a separate commercial licence grant.
 
 ## Protocol and third-party material
 
