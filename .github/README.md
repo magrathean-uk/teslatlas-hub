@@ -16,7 +16,7 @@
 Teslatlas Hub collects vehicle telemetry, stores history locally, and synchronises
 it with the separately distributed Teslatlas client. The repository contains the
 Rust Hub service, a native macOS control app, packaging helpers, and interoperability
-fixtures. New installations do not require TeslaMate, Grafana, or MQTT.
+fixtures. Hub runs as a standalone service with direct collection and local storage.
 
 ## Distribution and candidate targets
 
@@ -37,7 +37,7 @@ environment.
 
 - Local SQLite-backed vehicle history and resident credential handling.
 - Multiple-vehicle status and supported vehicle controls.
-- Guided TeslaMate history migration over SSH without modifying the source database.
+- Guided history import over SSH without modifying the source database.
 - Diagnostics, health endpoints, logs, backup, and recovery commands.
 - Pairing for the separate Teslatlas client.
 - Optional Fleet Telemetry and source-built companion components.
@@ -49,7 +49,7 @@ Hub; use its stop control or the documented service commands when pausing collec
 
 1. Choose a host and build the source package.
 2. Follow [Getting started](../docs/guides/getting-started.md) and the host guide.
-3. Configure a new collection or import supported TeslaMate history.
+3. Configure collection or import supported vehicle history.
 4. Complete diagnostics and confirm fresh activity for the intended vehicles.
 5. Pair the client using the [client pairing guide](../docs/guides/getting-started.md#pair-your-client).
 6. Create and test a recovery copy using [backup and recovery](../docs/operations/backup-and-recovery.md).
