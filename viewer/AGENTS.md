@@ -45,11 +45,11 @@ supersede it.
 
 ## When work resumes
 
-Read [README.md](README.md), [the architecture](docs/architecture.md), and
-[privacy guidance](docs/privacy.md) before changing the client boundary. Check
+Read [README.md](README.md), [the architecture](docs/architecture/overview.md), and
+[privacy guidance](docs/legal/privacy.md) before changing the client boundary. Check
 the relevant `package.json` scripts before running them. The relevant commands are `npm run sdk:verify`, `npm run typecheck`,
 `npm test -- --run`, `npm run test:cli`, and `npm run build`. The SDK verifier
-runs before type checking, unit tests, and builds. See [verification](docs/verification.md)
+runs before type checking, unit tests, and builds. See [verification](docs/reference/verification.md)
 for prerequisites, side effects, and narrower checks. Historical test results
 do not prove today's source or an ordinary installed user path.
 
@@ -67,6 +67,10 @@ optional and is not configured by this repository guidance.
 
 Keep public documentation free of credentials, private infrastructure details,
 location data, internal account information, and unredacted receipts. The
-[security policy](SECURITY.md) describes the currently documented reporting
+[security policy](.github/SECURITY.md) describes the currently documented reporting
 position. The root [LICENSE](LICENSE) controls the legal grant; see
 [licensing notes](docs/legal/licensing.md) for repository-specific context.
+
+Legal files (`LICENSE`, `NOTICE`, `docs/legal/`, contributor terms, copyright and
+attribution strings) are owner-controlled: change them only on the owner's explicit
+instruction.

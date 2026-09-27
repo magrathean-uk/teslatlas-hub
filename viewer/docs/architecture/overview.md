@@ -112,6 +112,6 @@ The viewer uses public protocol concepts only. It cannot call an undocumented
 Hub route. It contains no Hub implementation, proprietary Teslatlas source,
 command dashboard, cloud deployment, or persisted credential policy.
 
-See [verification](verification.md) for the distinct fixture, installed-browser,
+See [verification](../reference/verification.md) for the distinct fixture, installed-browser,
 and container evidence boundaries. Development status is recorded in the
-[development note](development/PLAN.md).
+[development note](../development/PLAN.md).

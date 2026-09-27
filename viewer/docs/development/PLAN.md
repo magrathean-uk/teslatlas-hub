@@ -6,4 +6,4 @@ Within the Teslatlas service workspace, the parent `docs/development/MASTER_PLAN
 
 The source contains a fixture UI, public SDK adapter, static CLI, Docker source, and bounded historical B1, R1, and D1 evidence. Compatibility remains a candidate. The interrupted Mac work does not establish current-state, history, or native lifecycle acceptance.
 
-[STATUS.json](STATUS.json), component handoffs, and [receipts](receipts/) preserve the earlier record. Their model choices, local paths, environments, work queues, and permissions are historical. Do not replay their commands or promote their results to the current checkout. See [verification](../verification.md) for the evidence boundaries.
+[STATUS.json](STATUS.json), component handoffs, and [receipts](receipts/) preserve the earlier record. Their model choices, local paths, environments, work queues, and permissions are historical. Do not replay their commands or promote their results to the current checkout. See [verification](../reference/verification.md) for the evidence boundaries.

@@ -1,10 +1,10 @@
 # Viewer verification
 
-These commands are documented from the source. They were not executed during the documentation refresh. Viewer development remains deferred; follow [AGENTS.md](../AGENTS.md) before running checks.
+These commands are documented from the source. They were not executed during the documentation refresh. Viewer development remains deferred; follow [AGENTS.md](../../AGENTS.md) before running checks.
 
 ## Source checks
 
-Prepare the pinned SDK archive and install development dependencies using the [README](../README.md#build-from-source). Run only checks relevant to an authorized change.
+Prepare the pinned SDK archive and install development dependencies using the [README](../../README.md#build-from-source). Run only checks relevant to an authorized change.
 
 | Command | What it checks |
 | --- | --- |
@@ -49,15 +49,15 @@ The preserved receipts describe specific past runs:
 
 | Receipt | Scope recorded |
 | --- | --- |
-| [B1 installed browser](development/receipts/2026-09-08-b1-installed-browser-r3.json) | Pairing, five drives, empty vehicle, refresh, and local session clearing on Debian ARM64 |
-| [R1 recovery](development/receipts/2026-09-09-r1-installed-recovery7.json) | 51-drive paging, outage recovery, operator revocation, and re-pairing |
-| [R1 data state](development/receipts/2026-09-09-r1-installed-data-state.json) | Conditional revalidation, unsupported resources, partial failure, and cancellation |
-| [D1 container](development/receipts/2026-09-09-d1-container-source.json) | One Debian ARM64 container's build, liveness, HTTP, restart, and cleanup |
+| [B1 installed browser](../development/receipts/2026-09-08-b1-installed-browser-r3.json) | Pairing, five drives, empty vehicle, refresh, and local session clearing on Debian ARM64 |
+| [R1 recovery](../development/receipts/2026-09-09-r1-installed-recovery7.json) | 51-drive paging, outage recovery, operator revocation, and re-pairing |
+| [R1 data state](../development/receipts/2026-09-09-r1-installed-data-state.json) | Conditional revalidation, unsupported resources, partial failure, and cancellation |
+| [D1 container](../development/receipts/2026-09-09-d1-container-source.json) | One Debian ARM64 container's build, liveness, HTTP, restart, and cleanup |
 
-These records do not verify today's dirty checkout, a different package, a different browser, or a complete compatibility matrix. The [compatibility manifest](../compatibility/hub.json) still says `candidate` and has no accepted Hub-version or receipt entries. Native package and macOS lifecycle acceptance are not established here.
+These records do not verify today's dirty checkout, a different package, a different browser, or a complete compatibility matrix. The [compatibility manifest](../../compatibility/hub.json) still says `candidate` and has no accepted Hub-version or receipt entries. Native package and macOS lifecycle acceptance are not established here.
 
 ## Container boundary
 
-[Dockerfile](../Dockerfile) builds with `node:26.8.1-bookworm-slim`. The SDK archive must exist before its build. The runtime serves static assets as the non-root `node` user. [Compose](../compose.yaml) maps port 4173 to host loopback, uses `unless-stopped`, and declares no volume.
+[Dockerfile](../../Dockerfile) builds with `node:26.8.1-bookworm-slim`. The SDK archive must exist before its build. The runtime serves static assets as the non-root `node` user. [Compose](../../compose.yaml) maps port 4173 to host loopback, uses `unless-stopped`, and declares no volume.
 
 For an authorized container task, `docker compose config` inspects configuration, `docker compose up --build -d` builds and starts the service, and `docker compose down` stops it. The health probe checks HTTP 200 at the static root only. It does not test Hub readiness, pairing, browser trust, or CORS. A running container is not an installed user-path acceptance result.

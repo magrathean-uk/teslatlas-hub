@@ -1,4 +1,17 @@
-# Teslatlas viewer
+<p align="center">
+  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/teslatlas.png" width="96" height="96" alt="">
+</p>
+
+<h1 align="center">Teslatlas Viewer</h1>
+
+<p align="center">A small open-source reference client for the public Teslatlas Hub SDK.</p>
+
+<p align="center">
+  <a href="docs/architecture/overview.md">Documentation</a> ·
+  <a href="docs/legal/privacy.md">Privacy</a>
+</p>
+
+## Overview
 
 Teslatlas viewer is a small open-source reference client for the public Teslatlas Hub SDK. It demonstrates discovery, pairing, Hub health, vehicles, current state, recent sessions, data quality, collector freshness, and paired-device management. It is a protocol proof, not Teslatlas feature parity or a replacement for the Hub, protocol, or SDK.
 
@@ -93,25 +106,27 @@ npm run test:container:source
 npm run test:e2e -- e2e/viewer.spec.ts
 ```
 
-The Playwright command above selects the fixture Viewer spec. Existing accessibility tests remain in the source, but current workspace scope excludes accessibility work. `npm run test:e2e` also discovers the installed recovery and data-state files, which require a Hub-owned handoff and are not standalone fixture checks. The live scripts require a disposable Hub, normal browser trust, private coordinator inputs, and evidence paths. They must not be run as an ad hoc environment-variable recipe. See [verification](docs/verification.md) for the evidence boundaries and [browser support](docs/browser-support.md) for current browser claims.
+The Playwright command above selects the fixture Viewer spec. Existing accessibility tests remain in the source, but current workspace scope excludes accessibility work. `npm run test:e2e` also discovers the installed recovery and data-state files, which require a Hub-owned handoff and are not standalone fixture checks. The live scripts require a disposable Hub, normal browser trust, private coordinator inputs, and evidence paths. They must not be run as an ad hoc environment-variable recipe. See [verification](docs/reference/verification.md) for the evidence boundaries and [browser support](docs/reference/browser-support.md) for current browser claims.
 
 ## Read next
 
-- [Architecture](docs/architecture.md)
-- [Protocol learning guide](docs/protocol-learning-guide.md)
-- [Privacy](docs/privacy.md)
-- [Browser support](docs/browser-support.md)
-- [Product versioning](docs/product-versioning.md)
-- [Verification](docs/verification.md)
+- [Architecture](docs/architecture/overview.md)
+- [Protocol learning guide](docs/guides/protocol-learning-guide.md)
+- [Privacy](docs/legal/privacy.md)
+- [Browser support](docs/reference/browser-support.md)
+- [Product versioning](docs/reference/product-versioning.md)
+- [Verification](docs/reference/verification.md)
 - [Development status](docs/development/PLAN.md)
-- [Contributing](CONTRIBUTING.md)
-- [Support](SUPPORT.md)
-- [Security](SECURITY.md)
+- [Contributing](.github/CONTRIBUTING.md)
+- [Support](.github/SUPPORT.md)
+- [Security](.github/SECURITY.md)
 
 ## Non-goals
 
 The viewer does not provide vehicle commands, advanced maps, proprietary analytics, embedded Grafana, an operator console, hosted deployment, or commercial Teslatlas styling. It does not implement the Hub or private Hub routes.
 
-## License
+## Licence
 
 This project is licensed under the [Apache License, Version 2.0](LICENSE). The complete license text is preserved. See [licensing](docs/legal/licensing.md) for attribution and dependency boundaries.
+
+<sub>© 2026 MAGRATHEAN UK LTD · [Legal](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)</sub>

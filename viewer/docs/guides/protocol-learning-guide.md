@@ -39,8 +39,8 @@ The live adapter:
 Do not retrofit fixture property names into that adapter. The public SDK contract is
 authoritative even when its names differ.
 
-See [verification](verification.md) for artifact and evidence checks, and
-[architecture](architecture.md) for the adapter boundary.
+See [verification](../reference/verification.md) for artifact and evidence checks, and
+[architecture](../architecture/overview.md) for the adapter boundary.
 
 ## Fixture scenarios
 

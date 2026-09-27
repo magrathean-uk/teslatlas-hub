@@ -31,7 +31,7 @@ respective owners.
 Report a plausible issue that could expose pairing material or credentials,
 escape the static server's asset root, bypass endpoint, Hub identity, or
 TLS-identity checks, access Hub data without
-the expected authorization, or cause the Viewer to misrepresent the state or
+the expected authorisation, or cause the Viewer to misrepresent the state or
 freshness of live data. Include a minimal reproduction and the affected source
 revision when safe to do so.
 
@@ -39,7 +39,7 @@ revision when safe to do so.
 
 This repository-specific policy supplements the
 [Magrathean UK security policy](https://github.com/magrathean-uk/.github/blob/main/SECURITY.md).
-The organization policy supplies the reporting, research-scope, safe-harbour,
+The organisation policy supplies the reporting, research-scope, safe-harbour,
 excluded-activity, and disclosure terms that apply here unless this policy says
 otherwise.
 
@@ -56,7 +56,7 @@ the affected component and revision, deployment context and permissions,
 reproduction or a minimal proof of concept, expected impact, and a safe contact
 route for follow-up.
 
-The organization policy describes good-faith research and its safe-harbour
+The organisation policy describes good-faith research and its safe-harbour
 position. It does not promise a bounty, payment, response time, remediation
 time, or fixed service level.
 

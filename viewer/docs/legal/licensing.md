@@ -9,13 +9,13 @@ only and does not change or add to that grant.
 
 At the reviewed source revision, the root `LICENSE` contains the complete
 Apache License 2.0 text. `package.json` identifies the package as private and
-does not state a different licence expression. No root `NOTICE` file,
-file-level SPDX identifier, or repository-specific copyright notice was found
-in the reviewed Viewer tree.
+does not state a different licence expression. The root [NOTICE](../../NOTICE)
+file records the copyright holder. No file-level SPDX identifier was found in
+the reviewed Viewer tree.
 
-Do not infer copyright ownership, contributor agreements, trade-mark rights, a
-commercial licence, or a separate permission from repository location, package
-metadata, or Git history. None is established by this page.
+Do not infer contributor agreements, trade-mark rights, a commercial licence,
+or a separate permission from repository location, package metadata, or Git
+history. None is established by this page.
 
 ## Distribution and dependencies
 
