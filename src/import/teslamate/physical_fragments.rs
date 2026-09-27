@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Unpublished schema-2.2 update chunks from a sealed physical TeslaMate stage.
+//! Unpublished schema-2.2 state and update chunks from a sealed physical TeslaMate stage.
 //!
 //! This module proves the bounded stage-to-pack boundary only. It does not
 //! capture PostgreSQL rows and cannot publish a manifest to the Hub catalogue.
-//! Relation-bearing history remains fail-closed until a later slice groups
+//! Other relation-bearing history remains fail-closed until a later slice groups
 //! each child with the physical parents required by the V3 validator.
 
 use std::{fs, mem};
@@ -21,7 +21,7 @@ use crate::{
     protocol::{CursorKey, ProtocolLimits, SequenceRange, SyncManifest},
     teslamate_projection::{
         TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateSettingsPhysicalV2_2,
-        TeslaMateUpdatePhysicalV2_2,
+        TeslaMateStatePhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
     },
     teslamate_stage::{
         TeslaMateStage, TeslaMateStageError, TeslaMateStageFormat, TeslaMateStageState,
@@ -33,6 +33,10 @@ const STAGE_PAGE_ROWS: u32 = 10_000;
 const DEFAULT_MAX_ROWS_PER_CHUNK: u64 = 50_000;
 const DEFAULT_MAX_PROJECTED_JSON_BYTES: u64 = 8 * 1024 * 1024;
 const HUB_SYNC_PROFILE_MAX_PACK_BYTES: u64 = 16 * 1024 * 1024;
+// This unpublished writer intentionally retains the Hub's current internal
+// ceiling. Public hub-sync-v1@1.3.0 admission up to 1771 chunks requires a
+// separate profile-specific manifest and response-size proof.
+const PHYSICAL_CANDIDATE_MAX_CHUNKS: usize = 512;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TeslaMatePhysicalFragmentLimits {
@@ -86,9 +90,9 @@ impl Drop for StagedPhysicalProjectionV3 {
     }
 }
 
-/// Stream the update rows from one complete, sealed physical source stage into
+/// Stream the state and update rows from one complete, sealed physical source stage into
 /// independently verified V3 SQLite chunks, then sign exactly one manifest
-/// over all chunks. Any relation-bearing history rejects before the first pack
+/// over all chunks. Any other relation-bearing history rejects before the first pack
 /// write. No catalogue method is reachable from this boundary.
 pub fn write_staged_physical_updates_snapshot_v3(
     stage: &TeslaMateStage,
@@ -187,7 +191,6 @@ fn write_staged_physical_updates_snapshot_v3_inner(
         TeslaMateStageTable::Positions,
         TeslaMateStageTable::ChargingProcesses,
         TeslaMateStageTable::Charges,
-        TeslaMateStageTable::States,
     ] {
         if !stage
             .page::<serde_json::Value>(table, 0, 1)?
@@ -227,11 +230,42 @@ fn write_staged_physical_updates_snapshot_v3_inner(
     let mut accumulator = PhysicalChunkAccumulator::new(roots, limits)?;
     let mut chunks = Vec::new();
 
-    let result = for_each_page::<TeslaMateUpdatePhysicalV2_2, _>(
+    let states =
+        for_each_page::<TeslaMateStatePhysicalV2_2, _>(stage, TeslaMateStageTable::States, |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "states")?;
+            if i64::from(row.value.car_id) != binding.selected_car_id {
+                return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
+            }
+            let projected = row.value.into();
+            let projected_bytes = serialized_bytes(&projected)?;
+            if accumulator.needs_flush(projected_bytes, limits)? {
+                flush_chunk(
+                    writer,
+                    &binding,
+                    snapshot_id,
+                    sequence,
+                    &mut accumulator,
+                    &mut chunks,
+                    fail_before_ordinal,
+                )?;
+            }
+            accumulator.snapshot.states.push(projected);
+            accumulator.add_payload(projected_bytes)?;
+            Ok(())
+        });
+    if let Err(error) = states {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
+    }
+
+    let updates = for_each_page::<TeslaMateUpdatePhysicalV2_2, _>(
         stage,
         TeslaMateStageTable::Updates,
         |row| {
             require_source_id(row.source_id, i64::from(row.value.id), "updates")?;
+            if i64::from(row.value.car_id) != binding.selected_car_id {
+                return Err(TeslaMatePhysicalFragmentError::SelectedCarMismatch);
+            }
             let projected = row.value.into();
             let projected_bytes = serialized_bytes(&projected)?;
             if accumulator.needs_flush(projected_bytes, limits)? {
@@ -250,7 +284,7 @@ fn write_staged_physical_updates_snapshot_v3_inner(
             Ok(())
         },
     );
-    if let Err(error) = result {
+    if let Err(error) = updates {
         cleanup_chunks(&mut chunks);
         return Err(error);
     }
@@ -398,7 +432,7 @@ fn flush_chunk(
     chunks: &mut Vec<BuiltProjectionPack>,
     fail_before_ordinal: Option<u32>,
 ) -> Result<(), TeslaMatePhysicalFragmentError> {
-    if chunks.len() >= ProtocolLimits::default().max_chunks {
+    if chunks.len() >= PHYSICAL_CANDIDATE_MAX_CHUNKS {
         return Err(TeslaMatePhysicalFragmentError::TooManyChunks);
     }
     let ordinal =
@@ -423,6 +457,11 @@ fn flush_chunk(
         snapshot: &snapshot,
     };
     let built = writer.write_full_snapshot_2_2(&request)?;
+    #[cfg(test)]
+    eprintln!(
+        "physical candidate chunk: ordinal={ordinal}, compressed_bytes={}, profile_limit_bytes={HUB_SYNC_PROFILE_MAX_PACK_BYTES}",
+        built.metadata.compressed_bytes
+    );
     if built.metadata.compressed_bytes > HUB_SYNC_PROFILE_MAX_PACK_BYTES {
         let mut rejected = vec![built];
         cleanup_chunks(&mut rejected);
@@ -521,7 +560,7 @@ pub enum TeslaMatePhysicalFragmentError {
     StageNotSealed,
     #[error("physical V3 writer requires a physical-v3 stage")]
     WrongStageFormat,
-    #[error("physical V3 updates writer does not yet support nonempty {table} rows")]
+    #[error("physical V3 states/updates writer does not yet support nonempty {table} rows")]
     UnsupportedTableRows { table: &'static str },
     #[error("physical V3 stage must contain exactly one {table} root row")]
     RootCardinality { table: &'static str },

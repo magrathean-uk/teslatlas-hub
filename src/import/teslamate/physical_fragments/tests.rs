@@ -8,9 +8,10 @@ use tempfile::tempdir;
 use super::*;
 use crate::{
     hub_pack::{
-        ProjectionPreferredRangeV2_2, ProjectionUnitOfLengthV2_2, ProjectionUnitOfPressureV2_2,
-        ProjectionUnitOfTemperatureV2_2,
+        ProjectionPreferredRangeV2_2, ProjectionStateStatusV2_2, ProjectionUnitOfLengthV2_2,
+        ProjectionUnitOfPressureV2_2, ProjectionUnitOfTemperatureV2_2,
     },
+    protocol::MirrorTable,
     storage::db::HubStore,
     teslamate_stage::TeslaMateStageLimits,
 };
@@ -116,6 +117,66 @@ fn seed_updates(stage: &mut TeslaMateStage, ids: &[i32]) {
     }
 }
 
+fn seed_states(
+    stage: &mut TeslaMateStage,
+    values: &[(i32, ProjectionStateStatusV2_2, i64, Option<i64>)],
+) {
+    for (id, state, start_date_pg_us, end_date_pg_us) in values {
+        let state = TeslaMateStatePhysicalV2_2 {
+            id: *id,
+            car_id: 1,
+            state: *state,
+            start_date_pg_us: *start_date_pg_us,
+            end_date_pg_us: *end_date_pg_us,
+        };
+        stage
+            .insert(TeslaMateStageTable::States, i64::from(*id), &state)
+            .expect("physical state");
+    }
+}
+
+fn deterministic_high_entropy_version(id: i32) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut state = (id as u64) ^ 0x9e37_79b9_7f4a_7c15;
+    let mut value = String::with_capacity(255);
+    for _ in 0..255 {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let alphabet_index = usize::try_from(state & 63).expect("bounded alphabet index");
+        value.push(char::from(ALPHABET[alphabet_index]));
+    }
+    value
+}
+
+fn seed_profile_limit_updates(stage: &mut TeslaMateStage, rows_per_chunk: i32) {
+    const PAGE_ROWS: i32 = 2_000;
+    let total_rows = rows_per_chunk * 2;
+    let mut first_id = 1_i32;
+    while first_id <= total_rows {
+        let last_id = (first_id + PAGE_ROWS - 1).min(total_rows);
+        let page = (first_id..=last_id).map(|id| {
+            let version = if id <= rows_per_chunk {
+                "x".repeat(255)
+            } else {
+                deterministic_high_entropy_version(id)
+            };
+            let update = TeslaMateUpdatePhysicalV2_2 {
+                id,
+                car_id: 1,
+                start_date_pg_us: i64::from(id),
+                end_date_pg_us: None,
+                version: Some(version),
+            };
+            (i64::from(id), update)
+        });
+        stage
+            .insert_page_parallel(TeslaMateStageTable::Updates, page)
+            .expect("profile-limit update page");
+        first_id = last_id + 1;
+    }
+}
+
 fn chunk_limits() -> TeslaMatePhysicalFragmentLimits {
     TeslaMatePhysicalFragmentLimits {
         max_rows_per_chunk: 4,
@@ -175,7 +236,7 @@ fn physical_writer_requires_an_explicit_sealed_physical_stage() {
 }
 
 #[test]
-fn physical_updates_writer_rejects_unsupported_relations_before_writing_a_chunk() {
+fn physical_states_updates_writer_rejects_unsupported_relations_before_writing_a_chunk() {
     let temporary = tempdir().expect("temp dir");
     let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
     let mut stage =
@@ -184,11 +245,11 @@ fn physical_updates_writer_rejects_unsupported_relations_before_writing_a_chunk(
     seed_roots(&mut stage);
     stage
         .insert(
-            TeslaMateStageTable::States,
+            TeslaMateStageTable::Positions,
             20,
             &serde_json::json!({"id": 20}),
         )
-        .expect("unsupported physical state marker");
+        .expect("unsupported physical position marker");
     stage.seal().expect("seal physical stage");
 
     let writer = ProjectionPackWriter::new(store.packs_dir());
@@ -203,20 +264,93 @@ fn physical_updates_writer_rejects_unsupported_relations_before_writing_a_chunk(
     .expect_err("unsupported relation rows");
     assert!(matches!(
         error,
-        TeslaMatePhysicalFragmentError::UnsupportedTableRows { table: "states" }
+        TeslaMatePhysicalFragmentError::UnsupportedTableRows { table: "positions" }
     ));
     assert!(!store.packs_dir().join("sha256").exists());
 }
 
 #[test]
-fn sealed_physical_stage_streams_verified_contiguous_v3_chunks_without_catalogue_rows() {
+fn physical_state_rows_require_matching_source_identity_and_selected_car() {
+    for (stored_id, decoded_id, car_id, mismatch) in [
+        (21_i64, 20_i32, 1_i16, "source"),
+        (20_i64, 20_i32, 2_i16, "car"),
+    ] {
+        let temporary = tempdir().expect("temp dir");
+        let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+        let mut stage =
+            TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
+                .expect("physical stage");
+        seed_roots(&mut stage);
+        let state = TeslaMateStatePhysicalV2_2 {
+            id: decoded_id,
+            car_id,
+            state: ProjectionStateStatusV2_2::Online,
+            start_date_pg_us: 123_456,
+            end_date_pg_us: None,
+        };
+        stage
+            .insert(TeslaMateStageTable::States, stored_id, &state)
+            .expect("physical state");
+        stage.seal().expect("seal physical stage");
+
+        let error = write_staged_physical_updates_snapshot_v3(
+            &stage,
+            &ProjectionPackWriter::new(store.packs_dir()),
+            binding(),
+            snapshot_id(),
+            sequence(),
+            &CursorKey::from_bytes([11; 32]),
+        )
+        .expect_err("invalid physical state");
+        match mismatch {
+            "source" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::SourceIdMismatch {
+                    table: "states",
+                    stored: 21,
+                    decoded: 20
+                }
+            )),
+            "car" => assert!(matches!(
+                error,
+                TeslaMatePhysicalFragmentError::SelectedCarMismatch
+            )),
+            _ => unreachable!(),
+        }
+        assert!(!store.packs_dir().join("sha256").exists());
+        let connection = store.open().expect("catalogue");
+        for table in ["sync_manifests", "sync_packs"] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("catalogue count");
+            assert_eq!(count, 0);
+        }
+    }
+}
+
+#[test]
+fn sealed_physical_stage_streams_states_then_updates_in_verified_contiguous_v3_chunks() {
     let temporary = tempdir().expect("temp dir");
     let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
     let mut stage =
         TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
             .expect("physical stage");
     seed_roots(&mut stage);
-    seed_updates(&mut stage, &[10, 11, 12]);
+    seed_states(
+        &mut stage,
+        &[
+            (21, ProjectionStateStatusV2_2::Asleep, i64::MIN, None),
+            (
+                20,
+                ProjectionStateStatusV2_2::Online,
+                234_567,
+                Some(i64::MAX),
+            ),
+        ],
+    );
+    seed_updates(&mut stage, &[11, 10]);
     stage.seal().expect("seal physical stage");
 
     let writer = ProjectionPackWriter::new(store.packs_dir());
@@ -232,20 +366,36 @@ fn sealed_physical_stage_streams_verified_contiguous_v3_chunks_without_catalogue
     )
     .expect("physical candidate");
 
-    assert_eq!(candidate.chunks.len(), 3);
-    assert_eq!(candidate.manifest.chunks.len(), 3);
-    assert_eq!(candidate.logical_source_rows, 6);
-    assert_eq!(candidate.manifest.total_rows, 12);
+    assert_eq!(candidate.chunks.len(), 4);
+    assert_eq!(candidate.manifest.chunks.len(), 4);
+    assert_eq!(candidate.logical_source_rows, 7);
+    assert_eq!(candidate.manifest.total_rows, 16);
     candidate
         .manifest
         .validate_terminal_cursor(&cursor_key)
         .expect("signed manifest cursor");
     let mut update_ids = Vec::new();
+    let mut state_rows = Vec::new();
     for (ordinal, chunk) in candidate.chunks.iter().enumerate() {
         assert_eq!(chunk.metadata.ordinal, ordinal as u32);
+        assert_eq!(
+            chunk.metadata.pack_id,
+            Uuid::new_v5(
+                &snapshot_id(),
+                format!("teslatlas-hub/schema-2.2/chunk/{ordinal}").as_bytes()
+            )
+        );
         assert_eq!(chunk.metadata.snapshot_id, snapshot_id());
         assert_eq!(chunk.metadata.sequence, sequence());
         assert!(chunk.metadata.compressed_bytes <= HUB_SYNC_PROFILE_MAX_PACK_BYTES);
+        assert_eq!(
+            chunk.metadata.tables,
+            if ordinal < 2 {
+                vec![MirrorTable::Car, MirrorTable::State]
+            } else {
+                vec![MirrorTable::Car, MirrorTable::Update]
+            }
+        );
         chunk
             .metadata
             .verify_reader(
@@ -266,6 +416,23 @@ fn sealed_physical_stage_streams_verified_contiguous_v3_chunks_without_catalogue
             assert_eq!(count, 1, "{table} root must repeat in every chunk");
         }
         let mut statement = connection
+            .prepare("SELECT id, state, start_date_pg_us, end_date_pg_us FROM states ORDER BY id")
+            .expect("state query");
+        state_rows.extend(
+            statement
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, i32>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, i64>(2)?,
+                        row.get::<_, Option<i64>>(3)?,
+                    ))
+                })
+                .expect("states")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("state rows"),
+        );
+        let mut statement = connection
             .prepare("SELECT id FROM updates ORDER BY id")
             .expect("update query");
         update_ids.extend(
@@ -276,7 +443,14 @@ fn sealed_physical_stage_streams_verified_contiguous_v3_chunks_without_catalogue
                 .expect("update ids"),
         );
     }
-    assert_eq!(update_ids, vec![10, 11, 12]);
+    assert_eq!(
+        state_rows,
+        vec![
+            (20, "online".to_owned(), 234_567, Some(i64::MAX)),
+            (21, "asleep".to_owned(), i64::MIN, None),
+        ]
+    );
+    assert_eq!(update_ids, vec![10, 11]);
 
     let connection = store.open().expect("catalogue");
     for table in ["sync_manifests", "sync_packs"] {
@@ -297,7 +471,11 @@ fn failed_later_chunk_removes_created_objects_and_never_touches_the_catalogue() 
         TeslaMateStage::create_physical_v3(temporary.path().join("imports"), stage_limits())
             .expect("physical stage");
     seed_roots(&mut stage);
-    seed_updates(&mut stage, &[10, 11]);
+    seed_states(
+        &mut stage,
+        &[(20, ProjectionStateStatusV2_2::Offline, 123_456, None)],
+    );
+    seed_updates(&mut stage, &[10]);
     stage.seal().expect("seal physical stage");
 
     let writer = ProjectionPackWriter::new(store.packs_dir());
@@ -332,4 +510,79 @@ fn failed_later_chunk_removes_created_objects_and_never_touches_the_catalogue() 
             .expect("catalogue count");
         assert_eq!(count, 0);
     }
+}
+
+#[test]
+fn compressed_profile_limit_removes_the_oversize_pack_and_prior_chunk() {
+    const ROWS_PER_CHUNK: i32 = 110_000;
+
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let mut stage = TeslaMateStage::create_physical_v3(
+        temporary.path().join("imports"),
+        TeslaMateStageLimits {
+            max_rows: u64::try_from(ROWS_PER_CHUNK * 2 + 3).expect("bounded rows"),
+            max_stage_bytes: 128 * 1024 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("physical stage");
+    seed_roots(&mut stage);
+    seed_profile_limit_updates(&mut stage, ROWS_PER_CHUNK);
+    stage.seal().expect("seal physical stage");
+    let stats = stage.stats().expect("stage stats");
+    let stage_file_bytes = std::fs::metadata(stage.path())
+        .expect("stage metadata")
+        .len();
+    eprintln!(
+        "physical profile-limit fixture: rows={}, payload_bytes={}, file_bytes={}, cap_bytes={}",
+        stats.row_count, stats.payload_bytes, stage_file_bytes, stats.limits.max_stage_bytes
+    );
+    assert!(stage_file_bytes <= stats.limits.max_stage_bytes);
+
+    let error = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding(),
+        snapshot_id(),
+        sequence(),
+        &CursorKey::from_bytes([12; 32]),
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: u64::try_from(ROWS_PER_CHUNK + 3).expect("bounded rows"),
+            max_projected_json_bytes: 128 * 1024 * 1024,
+        },
+    )
+    .expect_err("second chunk must exceed the compressed profile bound");
+    assert!(matches!(
+        error,
+        TeslaMatePhysicalFragmentError::PackExceedsProfileLimit
+    ));
+
+    let content = store.packs_dir().join("sha256");
+    let remaining = std::fs::read_dir(content)
+        .expect("content directory from attempted chunks")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("content entries");
+    assert!(
+        remaining.is_empty(),
+        "oversize pack or prior chunk survived: {remaining:?}"
+    );
+    let connection = store.open().expect("catalogue");
+    for table in ["sync_manifests", "sync_packs"] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("catalogue count");
+        assert_eq!(count, 0);
+    }
+}
+
+#[test]
+fn unpublished_physical_candidate_keeps_the_internal_chunk_ceiling() {
+    assert_eq!(PHYSICAL_CANDIDATE_MAX_CHUNKS, 512);
+    assert_eq!(
+        PHYSICAL_CANDIDATE_MAX_CHUNKS,
+        ProtocolLimits::default().max_chunks
+    );
 }
