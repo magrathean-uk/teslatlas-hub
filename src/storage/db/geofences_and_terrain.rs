@@ -1291,6 +1291,12 @@ impl HubStore {
                 params![retired_cleanup_cutoff],
             )
             .map_err(StoreError::LineageCatalog)?;
+        connection
+            .execute(
+                "DELETE FROM retained_physical_v3_admissions WHERE expires_at_ms <= ?1",
+                params![retired_cleanup_cutoff],
+            )
+            .map_err(StoreError::LineageCatalog)?;
 
         Ok(RepairReport {
             status: "ok".to_owned(),

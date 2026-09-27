@@ -2655,6 +2655,89 @@ async fn hub_sync_physical_bootstrap_serves_513_chunks_and_continues_with_noop()
 }
 
 #[tokio::test]
+async fn hub_sync_physical_rotation_stays_fail_closed_until_rebase_is_available() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let cursor_key = CursorKey::from_bytes([94; 32]);
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let (binding, first) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("first"),
+            &store,
+            &cursor_key,
+            1,
+            "physical-v3-admission",
+            1,
+        );
+    let prior = store
+        .stage_pending_physical_v3_admission(&gate, first)
+        .expect("first physical admission");
+    let (_, second) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("second"),
+            &store,
+            &cursor_key,
+            1,
+            "physical-v3-admission",
+            2,
+        );
+    let current = store
+        .rotate_pending_physical_v3_admission_at(&gate, second, 1_000)
+        .expect("rotated physical admission");
+    drop(gate);
+
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("blocked physical rotation", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer().to_owned();
+    let app = paired_router(store, &cursor_key);
+    let bootstrap = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/vehicles/{}/sync/manifest", binding.vehicle_id))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+                .header(SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_ID)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("blocked bootstrap response");
+    assert_eq!(bootstrap.status(), StatusCode::SERVICE_UNAVAILABLE);
+    for pack in prior
+        .manifest
+        .chunks
+        .iter()
+        .chain(current.manifest.chunks.iter())
+    {
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(&pack.relative_path)
+                    .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("blocked pack response");
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+}
+
+#[tokio::test]
 async fn hub_sync_physical_routes_fail_closed_for_retired_rebound_or_tampered_pack() {
     use std::io::Write as _;
 

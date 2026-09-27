@@ -229,6 +229,8 @@ pub enum StoreError {
     PhysicalV3SecondHeadUnsupported(Uuid),
     #[error("physical schema 2.2 admission catalogue is inconsistent")]
     PhysicalV3AdmissionConflict,
+    #[error("physical schema 2.2 retention window is invalid")]
+    PhysicalV3RetentionInvalid,
     #[error("cannot access import generation: {0}")]
     ImportGeneration(rusqlite::Error),
     #[error("import generation is invalid")]

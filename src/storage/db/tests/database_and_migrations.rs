@@ -106,10 +106,14 @@ fn remove_v50_current_observation_schema(connection: &Connection) {
 
 fn remove_v55_fleet_schema(connection: &Connection) {
     // Fixtures that mark a catalogue as pre-v55 must also remove the later
-    // v60/v61 shape before replaying the real migration sequence.
+    // post-v55 shape before replaying the real migration sequence.
     connection
         .execute_batch(
-            "DROP TABLE paired_device_token_grace;
+            "DROP TABLE retained_physical_v3_packs;
+                 DROP TABLE retained_physical_v3_admissions;
+                 DROP TABLE pending_physical_v3_packs;
+                 DROP TABLE pending_physical_v3_admissions;
+                 DROP TABLE paired_device_token_grace;
                  ALTER TABLE vehicles DROP COLUMN retired_at_ms;
                  DROP TABLE fleet_refresh_input_fences;
                  DROP INDEX fleet_refresh_receipt_output_generation;
@@ -212,7 +216,11 @@ fn schema_59_upgrade_adds_null_vehicle_retirement_state() {
     let connection = store.open().expect("migration connection");
     connection
         .execute_batch(
-            "ALTER TABLE vehicles DROP COLUMN retired_at_ms;
+            "DROP TABLE retained_physical_v3_packs;
+             DROP TABLE retained_physical_v3_admissions;
+             DROP TABLE pending_physical_v3_packs;
+             DROP TABLE pending_physical_v3_admissions;
+             ALTER TABLE vehicles DROP COLUMN retired_at_ms;
              PRAGMA user_version = 59;",
         )
         .expect("downgrade test catalogue shape");
@@ -246,7 +254,11 @@ fn schema_60_upgrade_keeps_paired_bearers_and_adds_rotation_grace() {
     let connection = store.open().expect("migration connection");
     connection
         .execute_batch(
-            "DROP TABLE paired_device_token_grace;
+            "DROP TABLE retained_physical_v3_packs;
+             DROP TABLE retained_physical_v3_admissions;
+             DROP TABLE pending_physical_v3_packs;
+             DROP TABLE pending_physical_v3_admissions;
+             DROP TABLE paired_device_token_grace;
              PRAGMA user_version = 60;",
         )
         .expect("restore schema 60 shape");
@@ -277,7 +289,9 @@ fn schema_61_upgrade_adds_physical_v3_admission_marker() {
     let connection = store.open().expect("migration connection");
     connection
         .execute_batch(
-            "DROP TABLE pending_physical_v3_packs;
+            "DROP TABLE retained_physical_v3_packs;
+             DROP TABLE retained_physical_v3_admissions;
+             DROP TABLE pending_physical_v3_packs;
              DROP TABLE pending_physical_v3_admissions;
              PRAGMA user_version = 61;",
         )
@@ -307,6 +321,7 @@ fn schema_61_upgrade_adds_physical_v3_admission_marker() {
             "ordered_chunks_sha256",
             "receipt_id",
             "manifest_json",
+            "serve_state",
         ]
     );
     let pack_columns: Vec<String> = connection
@@ -327,6 +342,73 @@ fn schema_61_upgrade_adds_physical_v3_admission_marker() {
             "uncompressed_bytes",
         ]
     );
+    let retained_columns: Vec<String> = connection
+        .prepare("SELECT name FROM pragma_table_info('retained_physical_v3_admissions') ORDER BY cid")
+        .expect("retained admission columns")
+        .query_map([], |row| row.get(0))
+        .expect("retained admission rows")
+        .collect::<Result<_, _>>()
+        .expect("retained admission column values");
+    assert_eq!(
+        retained_columns,
+        [
+            "vehicle_id",
+            "snapshot_id",
+            "installation_id",
+            "account_id",
+            "generation",
+            "selected_car_id",
+            "profile",
+            "head_sequence",
+            "chunk_count",
+            "manifest_sha256",
+            "ordered_chunks_sha256",
+            "receipt_id",
+            "retained_at_ms",
+            "expires_at_ms",
+            "manifest_json",
+        ]
+    );
+}
+
+#[test]
+fn schema_62_upgrade_adds_physical_v3_rotation_retention() {
+    let temporary = crate::private_tempdir().expect("temporary database");
+    let store = HubStore::initialize(temporary.path()).expect("current store");
+    let connection = store.open().expect("migration connection");
+    connection
+        .execute_batch(
+            "DROP TABLE retained_physical_v3_packs;
+             DROP TABLE retained_physical_v3_admissions;
+             ALTER TABLE pending_physical_v3_admissions DROP COLUMN serve_state;
+             PRAGMA user_version = 62;",
+        )
+        .expect("restore schema 62 shape");
+
+    migrate(&connection).expect("migrate schema 62");
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
+    let serve_state: String = connection
+        .query_row(
+            "SELECT dflt_value FROM pragma_table_info('pending_physical_v3_admissions')
+              WHERE name = 'serve_state'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("serve-state default");
+    assert_eq!(serve_state, "'public_first'");
+    for table in [
+        "retained_physical_v3_admissions",
+        "retained_physical_v3_packs",
+    ] {
+        let exists: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = ?1",
+                [table],
+                |row| row.get(0),
+            )
+            .expect("retained table exists");
+        assert_eq!(exists, 1, "missing {table}");
+    }
 }
 
 #[test]

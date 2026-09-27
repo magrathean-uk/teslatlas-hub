@@ -2127,6 +2127,70 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 62;
     }
 
+    if version == 62 {
+        connection
+            .execute_batch(
+                "
+                BEGIN IMMEDIATE;
+                ALTER TABLE pending_physical_v3_admissions
+                    ADD COLUMN serve_state TEXT NOT NULL DEFAULT 'public_first'
+                    CHECK(serve_state IN ('public_first', 'blocked_rotation'));
+                CREATE TABLE retained_physical_v3_admissions (
+                    vehicle_id TEXT PRIMARY KEY NOT NULL,
+                    snapshot_id TEXT NOT NULL UNIQUE,
+                    installation_id TEXT NOT NULL,
+                    account_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL
+                        CHECK(generation BETWEEN 1 AND 9007199254740991),
+                    selected_car_id INTEGER NOT NULL
+                        CHECK(selected_car_id BETWEEN -32768 AND 32767),
+                    profile TEXT NOT NULL
+                        CHECK(profile = 'hub-sync-v1@1.3.0'),
+                    head_sequence INTEGER NOT NULL
+                        CHECK(head_sequence BETWEEN 1 AND 9007199254740991),
+                    chunk_count INTEGER NOT NULL
+                        CHECK(chunk_count BETWEEN 1 AND 1771),
+                    manifest_sha256 TEXT NOT NULL
+                        CHECK(length(manifest_sha256) = 64),
+                    ordered_chunks_sha256 TEXT NOT NULL
+                        CHECK(length(ordered_chunks_sha256) = 64),
+                    receipt_id TEXT NOT NULL UNIQUE
+                        CHECK(length(receipt_id) = 68),
+                    retained_at_ms INTEGER NOT NULL
+                        CHECK(retained_at_ms BETWEEN 0 AND 9007199254740991),
+                    expires_at_ms INTEGER NOT NULL
+                        CHECK(expires_at_ms BETWEEN 1 AND 9007199254740991),
+                    manifest_json BLOB NOT NULL
+                        CHECK(length(manifest_json) BETWEEN 2 AND 2097152),
+                    CHECK(expires_at_ms > retained_at_ms),
+                    CHECK(length(vehicle_id) = 36),
+                    CHECK(length(snapshot_id) = 36),
+                    CHECK(length(installation_id) = 36),
+                    CHECK(length(account_id) = 36)
+                ) STRICT;
+                CREATE TABLE retained_physical_v3_packs (
+                    receipt_id TEXT NOT NULL
+                        REFERENCES retained_physical_v3_admissions(receipt_id)
+                        ON DELETE CASCADE,
+                    ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 1770),
+                    sha256 TEXT NOT NULL CHECK(length(sha256) = 64),
+                    relative_path TEXT NOT NULL,
+                    compressed_bytes INTEGER NOT NULL
+                        CHECK(compressed_bytes BETWEEN 1 AND 16777216),
+                    uncompressed_bytes INTEGER NOT NULL CHECK(uncompressed_bytes >= 100),
+                    PRIMARY KEY(receipt_id, ordinal),
+                    UNIQUE(receipt_id, sha256)
+                ) STRICT, WITHOUT ROWID;
+                CREATE INDEX retained_physical_v3_expiry
+                    ON retained_physical_v3_admissions(expires_at_ms, vehicle_id);
+                PRAGMA user_version = 63;
+                COMMIT;
+                ",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 63;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {

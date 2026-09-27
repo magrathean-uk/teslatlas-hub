@@ -508,6 +508,46 @@ pub(crate) fn public_admission_candidate_fixture_for_source_and_sequence(
     (binding, candidate)
 }
 
+fn public_admission_candidate_for_binding(
+    temporary: &std::path::Path,
+    store: &HubStore,
+    binding: ProjectionBinding,
+    snapshot_id: Uuid,
+    head_sequence: u64,
+    cursor_byte: u8,
+) -> StagedPhysicalProjectionV3 {
+    std::fs::create_dir_all(temporary).expect("bound admission fixture root");
+    let mut stage = TeslaMateStage::create_physical_v3(
+        temporary.join(format!("physical-stage-{snapshot_id}")),
+        TeslaMateStageLimits {
+            max_rows: 5,
+            max_stage_bytes: 32 * 1024 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("bound physical stage");
+    seed_roots(&mut stage);
+    seed_updates(&mut stage, &[10, 11]);
+    stage.seal().expect("sealed bound physical stage");
+    let cursor_key = CursorKey::from_bytes([cursor_byte; 32]);
+    write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding,
+        snapshot_id,
+        SequenceRange {
+            from_exclusive: head_sequence,
+            to_inclusive: head_sequence,
+        },
+        &cursor_key,
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 4,
+            max_projected_json_bytes: 64 * 1024,
+        },
+    )
+    .expect("bound physical candidate")
+}
+
 #[test]
 fn physical_writer_requires_an_explicit_sealed_physical_stage() {
     let temporary = tempdir().expect("temp dir");
@@ -2034,6 +2074,262 @@ fn pending_physical_v3_lookup_rechecks_active_projection_binding() {
     assert!(matches!(
         store.pending_physical_v3_admission_for_vehicle(expected_binding.vehicle_id),
         Err(crate::storage::db::StoreError::PhysicalV3AdmissionInvalid)
+    ));
+}
+
+#[test]
+fn physical_v3_rotation_retains_prior_across_restart_and_backup_but_stays_unservable() {
+    let temporary = tempdir().expect("temp dir");
+    let root = temporary.path().join("hub");
+    let store = HubStore::initialize(&root).expect("store");
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let binding = registered_admission_binding(&store);
+    let first = public_admission_candidate_for_binding(
+        &temporary.path().join("first"),
+        &store,
+        binding.clone(),
+        Uuid::from_u128(0x91919191_9191_4191_8191_919191919191),
+        1,
+        91,
+    );
+    let first_paths = first
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    let prior = store
+        .stage_pending_physical_v3_admission(&gate, first)
+        .expect("first head");
+    let second = public_admission_candidate_for_binding(
+        &temporary.path().join("second"),
+        &store,
+        binding.clone(),
+        Uuid::from_u128(0x92929292_9292_4292_8292_929292929292),
+        2,
+        92,
+    );
+    let second_paths = second
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    let retained_at_ms = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("current time")
+            .as_millis(),
+    )
+    .expect("current milliseconds");
+    let current = store
+        .rotate_pending_physical_v3_admission_at(&gate, second, retained_at_ms)
+        .expect("rotate physical head");
+    assert_eq!(current.head_sequence, 2);
+    assert_eq!(current.vehicle_id, prior.vehicle_id);
+    let retained = store
+        .retained_physical_v3_admission_for_receipt_at(
+            binding.vehicle_id,
+            &prior.receipt_id,
+            retained_at_ms,
+            true,
+        )
+        .expect("retained lookup")
+        .expect("prior retained");
+    assert_eq!(retained.admission, prior);
+    assert_eq!(retained.retained_at_ms, retained_at_ms);
+    assert_eq!(
+        retained.expires_at_ms,
+        retained_at_ms + crate::storage::db::RETIRED_LINEAGE_PACK_RETENTION_MS
+    );
+    assert!(matches!(
+        store.pending_physical_v3_control_admission_for_vehicle(binding.vehicle_id),
+        Err(crate::storage::db::StoreError::PhysicalV3SecondHeadUnsupported(vehicle_id))
+            if vehicle_id == binding.vehicle_id
+    ));
+    for pack in &current.manifest.chunks {
+        assert!(
+            store
+                .pending_physical_v3_pack_for_digest(pack.sha256)
+                .expect("blocked pack lookup")
+                .is_none()
+        );
+    }
+    assert_eq!(
+        store
+            .runtime_inventory()
+            .expect("runtime inventory")
+            .referenced_packs,
+        4
+    );
+    let third = public_admission_candidate_for_binding(
+        &temporary.path().join("third"),
+        &store,
+        binding.clone(),
+        Uuid::from_u128(0x93939393_9393_4393_8393_939393939393),
+        3,
+        93,
+    );
+    let third_paths = third
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        store.rotate_pending_physical_v3_admission_at(&gate, third, retained_at_ms + 1),
+        Err(crate::storage::db::StoreError::PhysicalV3SecondHeadUnsupported(vehicle_id))
+            if vehicle_id == binding.vehicle_id
+    ));
+    assert!(third_paths.iter().all(|path| !path.exists()));
+    drop(gate);
+
+    let backup_root = temporary.path().join("backup");
+    store.backup_to(&backup_root).expect("rotation backup");
+    drop(store);
+    let reopened = HubStore::initialize(&root).expect("reopened store");
+    assert_eq!(
+        reopened
+            .pending_physical_v3_admission_for_vehicle(binding.vehicle_id)
+            .expect("current after restart")
+            .expect("current retained"),
+        current
+    );
+    assert_eq!(
+        reopened
+            .retained_physical_v3_admission_for_receipt_at(
+                binding.vehicle_id,
+                &prior.receipt_id,
+                retained_at_ms,
+                true,
+            )
+            .expect("prior after restart")
+            .expect("prior retained after restart")
+            .admission,
+        prior
+    );
+    assert!(first_paths.iter().all(|path| path.is_file()));
+    assert!(second_paths.iter().all(|path| path.is_file()));
+
+    let restored = HubStore::initialize(&backup_root).expect("restored rotation backup");
+    assert_eq!(
+        restored
+            .retained_physical_v3_admission_for_receipt_at(
+                binding.vehicle_id,
+                &prior.receipt_id,
+                retained_at_ms,
+                true,
+            )
+            .expect("restored prior lookup")
+            .expect("restored prior")
+            .admission,
+        prior
+    );
+}
+
+#[test]
+fn physical_v3_rotation_faults_are_atomic_and_expired_prior_objects_are_repaired() {
+    use crate::durability_fault::{DurabilityFaultPoint, inject};
+
+    let temporary = tempdir().expect("temp dir");
+    let root = temporary.path().join("hub");
+    let store = HubStore::initialize(&root).expect("store");
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let binding = registered_admission_binding(&store);
+    let first = public_admission_candidate_for_binding(
+        &temporary.path().join("first"),
+        &store,
+        binding.clone(),
+        Uuid::from_u128(0xa1a1a1a1_a1a1_41a1_81a1_a1a1a1a1a1a1),
+        1,
+        101,
+    );
+    let first_paths = first
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    let prior = store
+        .stage_pending_physical_v3_admission(&gate, first)
+        .expect("first head");
+    let failed = public_admission_candidate_for_binding(
+        &temporary.path().join("failed"),
+        &store,
+        binding.clone(),
+        Uuid::from_u128(0xa2a2a2a2_a2a2_42a2_82a2_a2a2a2a2a2a2),
+        2,
+        102,
+    );
+    let failed_paths = failed
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    let fault = inject(DurabilityFaultPoint::CatalogueBeforeCommit);
+    assert!(matches!(
+        store.rotate_pending_physical_v3_admission_at(&gate, failed, 1),
+        Err(crate::storage::db::StoreError::CatalogueDurability(_))
+    ));
+    drop(fault);
+    assert!(failed_paths.iter().all(|path| !path.exists()));
+    assert_eq!(
+        store
+            .pending_physical_v3_admission_for_vehicle(binding.vehicle_id)
+            .expect("current after failed rotation")
+            .expect("prior remains current"),
+        prior
+    );
+    assert!(
+        store
+            .retained_physical_v3_admission_for_receipt_at(
+                binding.vehicle_id,
+                &prior.receipt_id,
+                1,
+                true,
+            )
+            .expect("no retained row after failed rotation")
+            .is_none()
+    );
+
+    let committed = public_admission_candidate_for_binding(
+        &temporary.path().join("committed"),
+        &store,
+        binding.clone(),
+        Uuid::from_u128(0xa3a3a3a3_a3a3_43a3_83a3_a3a3a3a3a3a3),
+        3,
+        103,
+    );
+    let committed_paths = committed
+        .chunks
+        .iter()
+        .map(|chunk| chunk.path.clone())
+        .collect::<Vec<_>>();
+    let after_fault = inject(DurabilityFaultPoint::CatalogueAfterCommit);
+    let current = store
+        .rotate_pending_physical_v3_admission_at(&gate, committed, 1)
+        .expect("post-commit rotation reconciles");
+    drop(after_fault);
+    assert_eq!(current.head_sequence, 3);
+    assert!(committed_paths.iter().all(|path| path.is_file()));
+    drop(gate);
+
+    store.repair().expect("repair expired physical retention");
+    assert!(first_paths.iter().all(|path| !path.exists()));
+    assert!(committed_paths.iter().all(|path| path.is_file()));
+    let connection = store.open().expect("catalogue after repair");
+    let retained_rows: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM retained_physical_v3_admissions",
+            [],
+            |row| row.get(0),
+        )
+        .expect("retained rows after repair");
+    assert_eq!(retained_rows, 0);
+    assert!(matches!(
+        store.pending_physical_v3_control_admission_for_vehicle(binding.vehicle_id),
+        Err(crate::storage::db::StoreError::PhysicalV3SecondHeadUnsupported(vehicle_id))
+            if vehicle_id == binding.vehicle_id
     ));
 }
 

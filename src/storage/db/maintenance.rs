@@ -1166,6 +1166,14 @@ impl HubStore {
                 "SELECT COUNT(*) FROM (
                     SELECT sha256 AS digest FROM sync_packs
                     UNION
+                    SELECT sha256 AS digest FROM pending_physical_v3_packs
+                    UNION
+                    SELECT packs.sha256 AS digest
+                      FROM retained_physical_v3_packs AS packs
+                      JOIN retained_physical_v3_admissions AS admission
+                        ON admission.receipt_id = packs.receipt_id
+                     WHERE admission.expires_at_ms > ?1
+                    UNION
                     SELECT packs.pack_digest AS digest
                       FROM sync_retired_lineage_packs AS packs
                       JOIN sync_retired_lineages AS lineage

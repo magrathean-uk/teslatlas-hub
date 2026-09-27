@@ -56,7 +56,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 62;
+pub const SCHEMA_VERSION: i32 = 63;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -232,6 +232,14 @@ pub struct PendingPhysicalV3Admission {
     pub ordered_chunks_sha256: Sha256Digest,
     pub receipt_id: String,
     pub manifest: SyncManifest,
+}
+
+/// One exact prior PhysicalV3 checkpoint retained for a bounded rebase window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RetainedPhysicalV3Admission {
+    pub admission: PendingPhysicalV3Admission,
+    pub retained_at_ms: i64,
+    pub expires_at_ms: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

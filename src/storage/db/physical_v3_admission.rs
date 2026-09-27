@@ -86,55 +86,116 @@ impl HubStore {
                 admission.vehicle_id,
             ));
         }
-        let manifest_json =
-            serde_json::to_vec(&admission.manifest).map_err(StoreError::SerializeManifest)?;
-        transaction
-            .execute(
-                "INSERT INTO pending_physical_v3_admissions(
-                    vehicle_id, snapshot_id, installation_id, account_id,
-                    selected_car_id, profile,
-                    head_sequence, chunk_count, manifest_sha256,
-                    ordered_chunks_sha256, receipt_id, manifest_json
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-                params![
-                    admission.vehicle_id.to_string(),
-                    admission.snapshot_id.to_string(),
-                    admission.installation_id.to_string(),
-                    admission.account_id.to_string(),
-                    admission.selected_car_id,
-                    HUB_SYNC_V1_1_3_PROFILE,
-                    i64::try_from(admission.head_sequence)
-                        .map_err(|_| StoreError::SequenceTooLarge)?,
-                    i64::from(admission.chunk_count),
-                    admission.manifest_sha256.to_string(),
-                    admission.ordered_chunks_sha256.to_string(),
-                    admission.receipt_id.as_str(),
-                    manifest_json,
-                ],
-            )
-            .map_err(StoreError::PublishManifest)?;
-        for pack in &admission.manifest.chunks {
-            transaction
-                .execute(
-                    "INSERT INTO pending_physical_v3_packs(
-                        sha256, snapshot_id, ordinal, relative_path,
-                        compressed_bytes, uncompressed_bytes
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![
-                        pack.sha256.to_string(),
-                        admission.snapshot_id.to_string(),
-                        i64::from(pack.ordinal),
-                        pack.relative_path,
-                        i64::try_from(pack.compressed_bytes)
-                            .map_err(|_| StoreError::PackSizeTooLarge)?,
-                        i64::try_from(pack.uncompressed_bytes)
-                            .map_err(|_| StoreError::PackSizeTooLarge)?,
-                    ],
-                )
-                .map_err(StoreError::PublishManifest)?;
-        }
+        insert_pending_physical_v3_admission(&transaction, &admission, "public_first")?;
         self.commit_physical_v3_admission(transaction, &admission)?;
         Ok(admission)
+    }
+
+    /// Atomically replace the first admitted physical head while retaining its
+    /// exact signed checkpoint for a bounded future rebase response. The new
+    /// head is deliberately blocked from public control and pack routes until
+    /// the retained-prior 409 adapter is installed in a later cut.
+    pub(crate) fn rotate_pending_physical_v3_admission_at(
+        &self,
+        publication_gate: &PublicationGate,
+        mut candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        retained_at_ms: i64,
+    ) -> Result<PendingPhysicalV3Admission, StoreError> {
+        let result = self.rotate_pending_physical_v3_admission_inner(&candidate, retained_at_ms);
+        candidate.retain_catalogued_objects();
+        match result {
+            Ok(admission) => Ok(admission),
+            Err(error) => {
+                let mut cleanup_error = None;
+                for chunk in &candidate.chunks {
+                    if chunk.ownership()
+                        == crate::hub_pack::ProjectionPackOwnership::Created
+                    {
+                        if let Err(source) = self.remove_unretained_pack(
+                            publication_gate,
+                            chunk.metadata.sha256,
+                            &chunk.path,
+                        ) && cleanup_error.is_none()
+                        {
+                            cleanup_error = Some(source);
+                        }
+                    }
+                }
+                Err(cleanup_error.unwrap_or(error))
+            }
+        }
+    }
+
+    fn rotate_pending_physical_v3_admission_inner(
+        &self,
+        candidate: &crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        retained_at_ms: i64,
+    ) -> Result<PendingPhysicalV3Admission, StoreError> {
+        let expires_at_ms = retained_at_ms
+            .checked_add(RETIRED_LINEAGE_PACK_RETENTION_MS)
+            .filter(|expires| {
+                retained_at_ms >= 0
+                    && *expires > retained_at_ms
+                    && *expires <= 9_007_199_254_740_991
+            })
+            .ok_or(StoreError::PhysicalV3RetentionInvalid)?;
+        let next = self.validate_physical_v3_candidate(candidate)?;
+        let prior = self
+            .pending_physical_v3_admission_for_vehicle(next.vehicle_id)?
+            .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
+        if next == prior {
+            return Ok(prior);
+        }
+        if next.installation_id != prior.installation_id
+            || next.account_id != prior.account_id
+            || next.vehicle_id != prior.vehicle_id
+            || next.selected_car_id != prior.selected_car_id
+            || next.manifest.generation != prior.manifest.generation
+            || next.head_sequence <= prior.head_sequence
+        {
+            return Err(StoreError::PhysicalV3AdmissionInvalid);
+        }
+
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        if retained_physical_v3_row_exists(&transaction, next.vehicle_id)? {
+            return Err(StoreError::PhysicalV3SecondHeadUnsupported(next.vehicle_id));
+        }
+        let stored_snapshot: Option<String> = transaction
+            .query_row(
+                "SELECT snapshot_id FROM pending_physical_v3_admissions
+                  WHERE vehicle_id = ?1 AND serve_state = 'public_first'",
+                [next.vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        if stored_snapshot.as_deref() != Some(prior.snapshot_id.to_string().as_str()) {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
+        insert_retained_physical_v3_admission(
+            &transaction,
+            &prior,
+            retained_at_ms,
+            expires_at_ms,
+        )?;
+        transaction
+            .execute(
+                "DELETE FROM pending_physical_v3_admissions WHERE vehicle_id = ?1",
+                [next.vehicle_id.to_string()],
+            )
+            .map_err(StoreError::PublishManifest)?;
+        insert_pending_physical_v3_admission(&transaction, &next, "blocked_rotation")?;
+        self.commit_physical_v3_rotation(
+            transaction,
+            &prior,
+            &next,
+            retained_at_ms,
+            expires_at_ms,
+        )?;
+        Ok(next)
     }
 
     fn validate_physical_v3_candidate(
@@ -233,11 +294,99 @@ impl HubStore {
         }
     }
 
+    fn commit_physical_v3_rotation(
+        &self,
+        transaction: Transaction<'_>,
+        prior: &PendingPhysicalV3Admission,
+        next: &PendingPhysicalV3Admission,
+        retained_at_ms: i64,
+        expires_at_ms: i64,
+    ) -> Result<(), StoreError> {
+        if let Err(source) = crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::CatalogueBeforeCommit,
+        ) {
+            drop(transaction);
+            return match self.physical_v3_rotation_commit_state(
+                prior,
+                next,
+                retained_at_ms,
+                expires_at_ms,
+            )? {
+                ManifestCommitState::Absent => Err(StoreError::CatalogueDurability(source)),
+                ManifestCommitState::Exact | ManifestCommitState::Conflicting => {
+                    Err(StoreError::PhysicalV3AdmissionConflict)
+                }
+            };
+        }
+        if transaction.commit().is_err() {
+            return match self.physical_v3_rotation_commit_state(
+                prior,
+                next,
+                retained_at_ms,
+                expires_at_ms,
+            )? {
+                ManifestCommitState::Exact => Ok(()),
+                ManifestCommitState::Absent | ManifestCommitState::Conflicting => {
+                    Err(StoreError::PhysicalV3AdmissionConflict)
+                }
+            };
+        }
+        if crate::durability_fault::check(
+            crate::durability_fault::DurabilityFaultPoint::CatalogueAfterCommit,
+        )
+        .is_err()
+        {
+            return match self.physical_v3_rotation_commit_state(
+                prior,
+                next,
+                retained_at_ms,
+                expires_at_ms,
+            )? {
+                ManifestCommitState::Exact => Ok(()),
+                ManifestCommitState::Absent | ManifestCommitState::Conflicting => {
+                    Err(StoreError::PhysicalV3AdmissionConflict)
+                }
+            };
+        }
+        Ok(())
+    }
+
+    fn physical_v3_rotation_commit_state(
+        &self,
+        prior: &PendingPhysicalV3Admission,
+        next: &PendingPhysicalV3Admission,
+        retained_at_ms: i64,
+        expires_at_ms: i64,
+    ) -> Result<ManifestCommitState, StoreError> {
+        let current = self.pending_physical_v3_admission_for_vehicle(next.vehicle_id);
+        let retained = self.retained_physical_v3_admission_for_receipt_at(
+            next.vehicle_id,
+            &prior.receipt_id,
+            retained_at_ms,
+            true,
+        );
+        match (current, retained) {
+            (Ok(Some(current)), Ok(Some(retained)))
+                if current == *next
+                    && retained.admission == *prior
+                    && retained.retained_at_ms == retained_at_ms
+                    && retained.expires_at_ms == expires_at_ms =>
+            {
+                Ok(ManifestCommitState::Exact)
+            }
+            (Ok(Some(current)), Ok(None)) if current == *prior => {
+                Ok(ManifestCommitState::Absent)
+            }
+            (Err(error), _) | (_, Err(error)) => Err(error),
+            _ => Ok(ManifestCommitState::Conflicting),
+        }
+    }
+
     pub(crate) fn pending_physical_v3_admission_for_vehicle(
         &self,
         vehicle_id: Uuid,
     ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {
-        self.pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, true)
+        self.pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, true, false)
     }
 
     /// Load the currently bound marker and exact pack metadata for a control
@@ -247,13 +396,14 @@ impl HubStore {
         &self,
         vehicle_id: Uuid,
     ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {
-        self.pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, false)
+        self.pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, false, true)
     }
 
     fn pending_physical_v3_admission_for_vehicle_with_file_digests(
         &self,
         vehicle_id: Uuid,
         verify_file_digests: bool,
+        require_public_first: bool,
     ) -> Result<Option<PendingPhysicalV3Admission>, StoreError> {
         let connection = self.open_read_only_connection()?;
         let row = connection
@@ -263,7 +413,8 @@ impl HubStore {
                         admission.profile,
                         admission.head_sequence, admission.chunk_count,
                         admission.manifest_sha256, admission.ordered_chunks_sha256,
-                        admission.receipt_id, admission.manifest_json
+                        admission.receipt_id, admission.manifest_json,
+                        admission.serve_state
                    FROM pending_physical_v3_admissions AS admission
                   WHERE admission.vehicle_id = ?1",
                 [vehicle_id.to_string()],
@@ -280,6 +431,7 @@ impl HubStore {
                         row.get::<_, String>(8)?,
                         row.get::<_, String>(9)?,
                         row.get::<_, Vec<u8>>(10)?,
+                        row.get::<_, String>(11)?,
                     ))
                 },
             )
@@ -297,10 +449,17 @@ impl HubStore {
             ordered_chunks_sha256,
             receipt_id,
             manifest_json,
+            serve_state,
         )) = row
         else {
             return Ok(None);
         };
+        if require_public_first && serve_state != "public_first" {
+            return Err(StoreError::PhysicalV3SecondHeadUnsupported(vehicle_id));
+        }
+        if serve_state != "public_first" && serve_state != "blocked_rotation" {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
         let manifest: SyncManifest = serde_json::from_slice(&manifest_json)
             .map_err(StoreError::DeserializeManifest)?;
         validate_pending_physical_v3_manifest(&manifest)?;
@@ -400,10 +559,11 @@ impl HubStore {
         let vehicle_id = connection
             .query_row(
                 "SELECT admission.vehicle_id
-                   FROM pending_physical_v3_packs AS pack
+                  FROM pending_physical_v3_packs AS pack
                    JOIN pending_physical_v3_admissions AS admission
                      ON admission.snapshot_id = pack.snapshot_id
-                  WHERE pack.sha256 = ?1",
+                  WHERE pack.sha256 = ?1
+                    AND admission.serve_state = 'public_first'",
                 [digest.to_string()],
                 |row| row.get::<_, String>(0),
             )
@@ -417,7 +577,7 @@ impl HubStore {
             .parse::<Uuid>()
             .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
         let admission = self
-            .pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, false)?
+            .pending_physical_v3_admission_for_vehicle_with_file_digests(vehicle_id, false, true)?
             .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
         if !physical_v3_admission_is_public(&admission) {
             return Ok(None);
@@ -437,6 +597,289 @@ impl HubStore {
                 .join(format!("{digest}.sqlite.zst")),
         }))
     }
+
+    pub(crate) fn retained_physical_v3_admission_for_receipt_at(
+        &self,
+        vehicle_id: Uuid,
+        receipt_id: &str,
+        now_ms: i64,
+        verify_file_digests: bool,
+    ) -> Result<Option<RetainedPhysicalV3Admission>, StoreError> {
+        if now_ms < 0 || now_ms > 9_007_199_254_740_991 {
+            return Err(StoreError::PhysicalV3RetentionInvalid);
+        }
+        let connection = self.open_read_only_connection()?;
+        let row = connection
+            .query_row(
+                "SELECT snapshot_id, installation_id, account_id, generation,
+                        selected_car_id, profile, head_sequence, chunk_count,
+                        manifest_sha256, ordered_chunks_sha256,
+                        retained_at_ms, expires_at_ms, manifest_json
+                   FROM retained_physical_v3_admissions
+                  WHERE vehicle_id = ?1 AND receipt_id = ?2 AND expires_at_ms > ?3",
+                params![vehicle_id.to_string(), receipt_id, now_ms],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, i64>(4)?,
+                        row.get::<_, String>(5)?,
+                        row.get::<_, i64>(6)?,
+                        row.get::<_, i64>(7)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, String>(9)?,
+                        row.get::<_, i64>(10)?,
+                        row.get::<_, i64>(11)?,
+                        row.get::<_, Vec<u8>>(12)?,
+                    ))
+                },
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        let Some((
+            snapshot_id,
+            installation_id,
+            account_id,
+            generation,
+            selected_car_id,
+            profile,
+            head_sequence,
+            chunk_count,
+            manifest_sha256,
+            ordered_chunks_sha256,
+            retained_at_ms,
+            expires_at_ms,
+            manifest_json,
+        )) = row
+        else {
+            return Ok(None);
+        };
+        let manifest: SyncManifest = serde_json::from_slice(&manifest_json)
+            .map_err(StoreError::DeserializeManifest)?;
+        validate_pending_physical_v3_manifest(&manifest)?;
+        let computed = physical_v3_admission_from_manifest(&manifest, selected_car_id)?;
+        if profile != HUB_SYNC_V1_1_3_PROFILE
+            || vehicle_id != computed.vehicle_id
+            || receipt_id != computed.receipt_id
+            || snapshot_id != computed.snapshot_id.to_string()
+            || installation_id != computed.installation_id.to_string()
+            || account_id != computed.account_id.to_string()
+            || u64::try_from(generation).ok() != Some(computed.manifest.generation)
+            || u64::try_from(head_sequence).ok() != Some(computed.head_sequence)
+            || u32::try_from(chunk_count).ok() != Some(computed.chunk_count)
+            || manifest_sha256 != computed.manifest_sha256.to_string()
+            || ordered_chunks_sha256 != computed.ordered_chunks_sha256.to_string()
+            || retained_at_ms < 0
+            || expires_at_ms <= retained_at_ms
+        {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
+        let current_binding = self
+            .v2_projection_binding(vehicle_id)
+            .map_err(|_| StoreError::PhysicalV3AdmissionInvalid)?;
+        if self.installation_id()? != computed.installation_id
+            || !self.vehicle_is_active(vehicle_id)?
+            || current_binding
+                != (ProjectionBinding {
+                    installation_id: computed.installation_id,
+                    account_id: computed.account_id,
+                    vehicle_id: computed.vehicle_id,
+                    generation: computed.manifest.generation,
+                    selected_car_id: computed.selected_car_id,
+                })
+        {
+            return Err(StoreError::PhysicalV3AdmissionInvalid);
+        }
+        let pack_rows = connection
+            .prepare(
+                "SELECT ordinal, sha256, relative_path,
+                        compressed_bytes, uncompressed_bytes
+                   FROM retained_physical_v3_packs
+                  WHERE receipt_id = ?1 ORDER BY ordinal",
+            )
+            .map_err(StoreError::Query)?
+            .query_map([receipt_id], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)?;
+        if pack_rows.len() != manifest.chunks.len() {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
+        for (stored, pack) in pack_rows.iter().zip(&manifest.chunks) {
+            let expected = (
+                i64::from(pack.ordinal),
+                pack.sha256.to_string(),
+                pack.relative_path.clone(),
+                i64::try_from(pack.compressed_bytes).map_err(|_| StoreError::PackSizeTooLarge)?,
+                i64::try_from(pack.uncompressed_bytes)
+                    .map_err(|_| StoreError::PackSizeTooLarge)?,
+            );
+            if stored != &expected {
+                return Err(StoreError::PhysicalV3AdmissionConflict);
+            }
+            let path = self
+                .packs_dir
+                .join("sha256")
+                .join(format!("{}.sqlite.zst", pack.sha256));
+            let metadata = fs::symlink_metadata(&path)
+                .map_err(|_| StoreError::PhysicalV3AdmissionConflict)?;
+            if !metadata.file_type().is_file() || metadata.len() != pack.compressed_bytes {
+                return Err(StoreError::PhysicalV3AdmissionConflict);
+            }
+            if verify_file_digests
+                && sha256_file_hex(&path).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
+                    != pack.sha256.to_string()
+            {
+                return Err(StoreError::PhysicalV3AdmissionConflict);
+            }
+        }
+        Ok(Some(RetainedPhysicalV3Admission {
+            admission: computed,
+            retained_at_ms,
+            expires_at_ms,
+        }))
+    }
+}
+
+fn retained_physical_v3_row_exists(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+) -> Result<bool, StoreError> {
+    transaction
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM retained_physical_v3_admissions WHERE vehicle_id = ?1
+             )",
+            [vehicle_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)
+}
+
+fn insert_pending_physical_v3_admission(
+    transaction: &Transaction<'_>,
+    admission: &PendingPhysicalV3Admission,
+    serve_state: &'static str,
+) -> Result<(), StoreError> {
+    let manifest_json =
+        serde_json::to_vec(&admission.manifest).map_err(StoreError::SerializeManifest)?;
+    transaction
+        .execute(
+            "INSERT INTO pending_physical_v3_admissions(
+                vehicle_id, snapshot_id, installation_id, account_id,
+                selected_car_id, profile, head_sequence, chunk_count,
+                manifest_sha256, ordered_chunks_sha256, receipt_id,
+                manifest_json, serve_state
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                admission.vehicle_id.to_string(),
+                admission.snapshot_id.to_string(),
+                admission.installation_id.to_string(),
+                admission.account_id.to_string(),
+                admission.selected_car_id,
+                HUB_SYNC_V1_1_3_PROFILE,
+                i64::try_from(admission.head_sequence)
+                    .map_err(|_| StoreError::SequenceTooLarge)?,
+                i64::from(admission.chunk_count),
+                admission.manifest_sha256.to_string(),
+                admission.ordered_chunks_sha256.to_string(),
+                admission.receipt_id.as_str(),
+                manifest_json,
+                serve_state,
+            ],
+        )
+        .map_err(StoreError::PublishManifest)?;
+    for pack in &admission.manifest.chunks {
+        transaction
+            .execute(
+                "INSERT INTO pending_physical_v3_packs(
+                    sha256, snapshot_id, ordinal, relative_path,
+                    compressed_bytes, uncompressed_bytes
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    pack.sha256.to_string(),
+                    admission.snapshot_id.to_string(),
+                    i64::from(pack.ordinal),
+                    pack.relative_path,
+                    i64::try_from(pack.compressed_bytes)
+                        .map_err(|_| StoreError::PackSizeTooLarge)?,
+                    i64::try_from(pack.uncompressed_bytes)
+                        .map_err(|_| StoreError::PackSizeTooLarge)?,
+                ],
+            )
+            .map_err(StoreError::PublishManifest)?;
+    }
+    Ok(())
+}
+
+fn insert_retained_physical_v3_admission(
+    transaction: &Transaction<'_>,
+    admission: &PendingPhysicalV3Admission,
+    retained_at_ms: i64,
+    expires_at_ms: i64,
+) -> Result<(), StoreError> {
+    let manifest_json =
+        serde_json::to_vec(&admission.manifest).map_err(StoreError::SerializeManifest)?;
+    transaction
+        .execute(
+            "INSERT INTO retained_physical_v3_admissions(
+                vehicle_id, snapshot_id, installation_id, account_id,
+                generation, selected_car_id, profile, head_sequence,
+                chunk_count, manifest_sha256, ordered_chunks_sha256,
+                receipt_id, retained_at_ms, expires_at_ms, manifest_json
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            params![
+                admission.vehicle_id.to_string(),
+                admission.snapshot_id.to_string(),
+                admission.installation_id.to_string(),
+                admission.account_id.to_string(),
+                i64::try_from(admission.manifest.generation)
+                    .map_err(|_| StoreError::SequenceTooLarge)?,
+                admission.selected_car_id,
+                HUB_SYNC_V1_1_3_PROFILE,
+                i64::try_from(admission.head_sequence)
+                    .map_err(|_| StoreError::SequenceTooLarge)?,
+                i64::from(admission.chunk_count),
+                admission.manifest_sha256.to_string(),
+                admission.ordered_chunks_sha256.to_string(),
+                admission.receipt_id.as_str(),
+                retained_at_ms,
+                expires_at_ms,
+                manifest_json,
+            ],
+        )
+        .map_err(StoreError::PublishManifest)?;
+    for pack in &admission.manifest.chunks {
+        transaction
+            .execute(
+                "INSERT INTO retained_physical_v3_packs(
+                    receipt_id, ordinal, sha256, relative_path,
+                    compressed_bytes, uncompressed_bytes
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    admission.receipt_id.as_str(),
+                    i64::from(pack.ordinal),
+                    pack.sha256.to_string(),
+                    pack.relative_path,
+                    i64::try_from(pack.compressed_bytes)
+                        .map_err(|_| StoreError::PackSizeTooLarge)?,
+                    i64::try_from(pack.uncompressed_bytes)
+                        .map_err(|_| StoreError::PackSizeTooLarge)?,
+                ],
+            )
+            .map_err(StoreError::PublishManifest)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn physical_v3_admission_is_public(admission: &PendingPhysicalV3Admission) -> bool {
