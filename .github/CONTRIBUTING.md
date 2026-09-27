@@ -11,6 +11,10 @@ logs or production databases. Describe the user-visible problem, keep the scope
 small and preserve unrelated work. In the owner's workspace, follow its local
 agent guidance and single-branch policy.
 
+In that workspace, develop locally on the existing `main` checkout and leave routine
+changes uncommitted. Identify tested edits by base commit plus dirty-file digest.
+Commit and push only when the owner requests a source checkpoint or push.
+
 Sign off each commit under DCO 1.1 with `git commit -s`. Non-trivial external
 contributions require a signed individual or corporate copyright assignment
 before merge. A maintainer arranges that privately when acceptance is likely;
