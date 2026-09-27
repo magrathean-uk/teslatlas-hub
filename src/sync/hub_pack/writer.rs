@@ -287,6 +287,27 @@ impl ProjectionPackWriter {
         &self,
         request: &ProjectionPackRequestV2_2<'_>,
     ) -> Result<BuiltProjectionPack, ProjectionPackError> {
+        self.write_full_snapshot_2_2_with_purpose(request, ProjectionPackPurposeV2_2::DraftLocal)
+    }
+
+    /// Write and locally verify one publication-ready physical schema-2.2
+    /// fragment for `hub-sync-v1@1.3.0`. This does not catalogue the object;
+    /// complete-snapshot admission remains a separate durable store boundary.
+    pub fn write_physical_snapshot_2_2_for_hub_sync_v1_1_3(
+        &self,
+        request: &ProjectionPackRequestV2_2<'_>,
+    ) -> Result<BuiltProjectionPack, ProjectionPackError> {
+        self.write_full_snapshot_2_2_with_purpose(
+            request,
+            ProjectionPackPurposeV2_2::HubSyncV1_1_3Physical,
+        )
+    }
+
+    fn write_full_snapshot_2_2_with_purpose(
+        &self,
+        request: &ProjectionPackRequestV2_2<'_>,
+        purpose: ProjectionPackPurposeV2_2,
+    ) -> Result<BuiltProjectionPack, ProjectionPackError> {
         let row_count = validate_request_v2_2(request, self.limits)?;
         self.ensure_free_bytes(
             self.transient_write_bytes()?
@@ -304,8 +325,8 @@ impl ProjectionPackWriter {
         })?;
 
         let sqlite_temp = StagedFile::create(&staging_dir, "projection-2-2.sqlite")?;
-        write_projection_sqlite_2_2(sqlite_temp.path(), request, self.limits, row_count)?;
-        verify_projection_sqlite_2_2(sqlite_temp.path(), request, row_count)?;
+        write_projection_sqlite_2_2(sqlite_temp.path(), request, self.limits, row_count, purpose)?;
+        verify_projection_sqlite_2_2(sqlite_temp.path(), request, row_count, purpose)?;
         let uncompressed_bytes = fs::metadata(sqlite_temp.path())
             .map_err(|source| ProjectionPackError::Metadata {
                 path: sqlite_temp.path().to_path_buf(),

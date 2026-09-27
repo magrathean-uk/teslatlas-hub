@@ -4,6 +4,7 @@ fn verify_projection_sqlite_2_2(
     path: &Path,
     request: &ProjectionPackRequestV2_2<'_>,
     row_count: u64,
+    purpose: ProjectionPackPurposeV2_2,
 ) -> Result<(), ProjectionPackError> {
     let connection = Connection::open_with_flags(
         path,
@@ -376,8 +377,8 @@ fn verify_projection_sqlite_2_2(
         ("ordinal", request.ordinal.to_string()),
         ("mode", "full_snapshot".to_owned()),
         ("schema_support", "full_snapshot_only".to_owned()),
-        ("publication_scope", "local_validation_only".to_owned()),
-        ("ledger_state", "draft_blocked".to_owned()),
+        ("publication_scope", purpose.publication_scope().to_owned()),
+        ("ledger_state", purpose.ledger_state().to_owned()),
         (
             "ledger_slice",
             "settings+car_settings+cars+drives+positions+charging_processes+charges+addresses+geofences+states+updates".to_owned(),
@@ -448,7 +449,7 @@ fn verify_projection_sqlite_2_2(
         ),
         ("states_slice_sha256", thp2_2_states_slice_sha256()),
         ("updates_slice_sha256", thp2_2_updates_slice_sha256()),
-        ("reconciliation", "not_run".to_owned()),
+        ("reconciliation", purpose.reconciliation().to_owned()),
         (
             "installation_id",
             request.binding.installation_id.to_string(),

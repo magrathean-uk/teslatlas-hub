@@ -1658,7 +1658,7 @@ fn schema_2_2_full_snapshot_has_exact_physical_rows_and_full_only_metadata() {
         "UPDATE geofences SET id = 2147483648 WHERE id = 200",
         "UPDATE geofences SET name = replace(hex(zeroblob(256)), '00', 'x') WHERE id = 200",
         "UPDATE geofences SET latitude_e6 = 100000000 WHERE id = 200",
-        "UPDATE geofences SET cost_per_unit_e4 = 1000000 WHERE id = 200",
+        "UPDATE geofences SET cost_per_unit_e4 = 1000000000 WHERE id = 200",
         "UPDATE geofences SET inserted_at_pg_us = 1 WHERE id = 200",
         "UPDATE geofences SET updated_at_pg_us = -9223372036854775807 WHERE id = 200",
     ] {
@@ -1707,4 +1707,66 @@ fn schema_2_2_full_snapshot_has_exact_physical_rows_and_full_only_metadata() {
     assert!(!drive_columns.contains(&"end_address".into()));
     assert!(!drive_columns.contains(&"start_geofence".into()));
     assert!(!drive_columns.contains(&"end_geofence".into()));
+}
+
+#[test]
+fn schema_2_2_draft_and_physical_publication_metadata_are_not_interchangeable() {
+    let temporary = crate::private_tempdir().expect("temporary root");
+    let source = snapshot_v2_2();
+    let request = request_v2_2(&source);
+    let row_count = source.row_count().expect("bounded rows");
+    let draft = ProjectionPackWriter::new(temporary.path().join("draft-packs"))
+        .write_full_snapshot_2_2(&request)
+        .expect("draft schema 2.2 pack");
+    let physical = ProjectionPackWriter::new(temporary.path().join("physical-packs"))
+        .write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&request)
+        .expect("physical schema 2.2 pack");
+    assert_ne!(draft.metadata.sha256, physical.metadata.sha256);
+
+    for (name, built, expected, rejected) in [
+        (
+            "draft",
+            &draft,
+            ProjectionPackPurposeV2_2::DraftLocal,
+            ProjectionPackPurposeV2_2::HubSyncV1_1_3Physical,
+        ),
+        (
+            "physical",
+            &physical,
+            ProjectionPackPurposeV2_2::HubSyncV1_1_3Physical,
+            ProjectionPackPurposeV2_2::DraftLocal,
+        ),
+    ] {
+        let sqlite = zstd::stream::decode_all(File::open(&built.path).expect("pack file"))
+            .expect("decoded pack");
+        let path = temporary.path().join(format!("{name}.sqlite"));
+        fs::write(&path, sqlite).expect("inspect SQLite");
+        verify_projection_sqlite_2_2(&path, &request, row_count, expected)
+            .expect("matching purpose verifies");
+        assert!(matches!(
+            verify_projection_sqlite_2_2(&path, &request, row_count, rejected),
+            Err(ProjectionPackError::Invalid(message))
+                if message == "schema 2.2 metadata key/value set is invalid"
+        ));
+
+        let connection = Connection::open(path).expect("metadata SQLite");
+        let values = ["publication_scope", "ledger_state", "reconciliation"]
+            .map(|key| {
+                connection
+                    .query_row(
+                        "SELECT value FROM hub_pack_metadata WHERE key = ?1",
+                        [key],
+                        |row| row.get::<_, String>(0),
+                    )
+                    .expect("metadata value")
+            });
+        assert_eq!(
+            values,
+            [
+                expected.publication_scope().to_owned(),
+                expected.ledger_state().to_owned(),
+                expected.reconciliation().to_owned(),
+            ]
+        );
+    }
 }

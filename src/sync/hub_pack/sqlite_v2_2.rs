@@ -1,9 +1,39 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProjectionPackPurposeV2_2 {
+    DraftLocal,
+    HubSyncV1_1_3Physical,
+}
+
+impl ProjectionPackPurposeV2_2 {
+    const fn publication_scope(self) -> &'static str {
+        match self {
+            Self::DraftLocal => "local_validation_only",
+            Self::HubSyncV1_1_3Physical => "hub_sync_v1_1_3_physical",
+        }
+    }
+
+    const fn ledger_state(self) -> &'static str {
+        match self {
+            Self::DraftLocal => "draft_blocked",
+            Self::HubSyncV1_1_3Physical => "sealed_physical_source",
+        }
+    }
+
+    const fn reconciliation(self) -> &'static str {
+        match self {
+            Self::DraftLocal => "not_run",
+            Self::HubSyncV1_1_3Physical => "source_exact",
+        }
+    }
+}
+
 fn insert_metadata_v2_2(
     transaction: &rusqlite::Transaction<'_>,
     request: &ProjectionPackRequestV2_2<'_>,
     row_count: u64,
+    purpose: ProjectionPackPurposeV2_2,
 ) -> Result<(), ProjectionPackError> {
     let values = [
         ("protocol", "teslatlas-sync".to_owned()),
@@ -15,8 +45,8 @@ fn insert_metadata_v2_2(
         ("ordinal", request.ordinal.to_string()),
         ("mode", "full_snapshot".to_owned()),
         ("schema_support", "full_snapshot_only".to_owned()),
-        ("publication_scope", "local_validation_only".to_owned()),
-        ("ledger_state", "draft_blocked".to_owned()),
+        ("publication_scope", purpose.publication_scope().to_owned()),
+        ("ledger_state", purpose.ledger_state().to_owned()),
         (
             "ledger_slice",
             "settings+car_settings+cars+drives+positions+charging_processes+charges+addresses+geofences+states+updates".to_owned(),
@@ -87,7 +117,7 @@ fn insert_metadata_v2_2(
         ),
         ("states_slice_sha256", thp2_2_states_slice_sha256()),
         ("updates_slice_sha256", thp2_2_updates_slice_sha256()),
-        ("reconciliation", "not_run".to_owned()),
+        ("reconciliation", purpose.reconciliation().to_owned()),
         (
             "installation_id",
             request.binding.installation_id.to_string(),

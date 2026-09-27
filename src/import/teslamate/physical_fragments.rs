@@ -570,7 +570,7 @@ fn flush_chunk(
         sequence,
         snapshot: &snapshot,
     };
-    let built = writer.write_full_snapshot_2_2(&request)?;
+    let built = writer.write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&request)?;
     #[cfg(test)]
     eprintln!(
         "physical candidate chunk: ordinal={ordinal}, compressed_bytes={}, profile_limit_bytes={}",

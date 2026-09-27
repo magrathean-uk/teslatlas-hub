@@ -1029,7 +1029,13 @@ fn schema_2_2_verifier_rejects_table_metadata_and_foreign_key_tampering() {
             .unwrap();
         drop(connection);
         assert!(
-            verify_projection_sqlite_2_2(&inspect, &request, built.metadata.row_count).is_err(),
+            verify_projection_sqlite_2_2(
+                &inspect,
+                &request,
+                built.metadata.row_count,
+                ProjectionPackPurposeV2_2::DraftLocal,
+            )
+            .is_err(),
             "verifier accepted a changed {table} table"
         );
     }
@@ -1055,7 +1061,13 @@ fn schema_2_2_verifier_rejects_table_metadata_and_foreign_key_tampering() {
         .unwrap();
     drop(connection);
     assert!(
-        verify_projection_sqlite_2_2(&inspect, &request, built.metadata.row_count).is_err(),
+        verify_projection_sqlite_2_2(
+            &inspect,
+            &request,
+            built.metadata.row_count,
+            ProjectionPackPurposeV2_2::DraftLocal,
+        )
+        .is_err(),
         "verifier accepted an extra metadata key"
     );
 
