@@ -4,7 +4,7 @@ This guide covers the public HTTP surface implemented by a current Teslatlas
 Hub. Run the shell blocks in one session, in order, with the private directory
 and validated endpoint produced by the earlier blocks. The wire contract is
 `hub-http-v1@1.1.0` in
-[`profiles/hub-http-v1/1.1.0/`](../profiles/hub-http-v1/1.1.0/). Copy the whole
+[`profiles/hub-http-v1/1.1.0/`](../../profiles/hub-http-v1/1.1.0/). Copy the whole
 directory when distributing the contract: its OpenAPI 3.1.0 document resolves
 schemas from the adjacent profile files.
 
@@ -639,7 +639,7 @@ no-op that is unavailable returns an unsigned, empty `406` with
 `Cache-Control: no-store`; it is never a signed `503` or an invented snapshot.
 
 For the full route schemas, examples, and conformance vectors, use the profile
-directory and [`docs/conformance.md`](conformance.md). The native acceptance
+directory and [`docs/conformance.md`](../guides/conformance.md). The native acceptance
 adapter requires a private fixture descriptor and a same-host owned Hub; a
 reference adapter or a successful schema check is not installed-product
 acceptance.

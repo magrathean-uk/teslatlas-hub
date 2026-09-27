@@ -7,7 +7,7 @@ apply consistently.
 
 For the current Hub HTTP surface, use
 [`docs/current-hub.md`](current-hub.md) and the complete
-[`hub-http-v1@1.1.0` bundle](../profiles/hub-http-v1/1.1.0/). That profile's
+[`hub-http-v1@1.1.0` bundle](../../profiles/hub-http-v1/1.1.0/). That profile's
 OpenAPI is 3.1.0 and resolves adjacent schema files. It has different
 discovery, authentication, error, cache, and limit rules: it does not use
 `Teslatlas-Protocol-Version`, `application/problem+json`, SSE, commands, or

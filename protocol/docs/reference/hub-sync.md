@@ -1,6 +1,6 @@
 # Hub changes-since contract
 
-[`hub-sync-v1@1.3.0`](../profiles/hub-sync-v1/1.3.0/) is the candidate,
+[`hub-sync-v1@1.3.0`](../../profiles/hub-sync-v1/1.3.0/) is the candidate,
 source-neutral successor to retained `hub-sync-v1@1.0.0`, `1.1.0`, and `1.2.0` candidates. It
 has no exact Hub product-version pin. A client selects its bootstrap
 representation with both `x-teslatlas-sync-profile: hub-sync-v1@1.3.0` and
@@ -57,7 +57,7 @@ Hub channel. The returned `vehicle_id` MUST match the route. Every stable
 `Cache-Control: no-store` header. Key rotation publishes a key before first
 use and retains retired keys while old signed objects remain valid.
 
-[`fixture-signing-keys.json`](../profiles/hub-sync-v1/1.3.0/fixture-signing-keys.json)
+[`fixture-signing-keys.json`](../../profiles/hub-sync-v1/1.3.0/fixture-signing-keys.json)
 uses the same binding and identifier rules for the public test key. It is a
 test trust anchor only. Clients reject a vehicle mismatch, unstable or unknown
 key identifier, digest mismatch, or invalid signature.
@@ -105,9 +105,9 @@ changed months, media type, compressed and uncompressed sizes, and the SHA-256
 of one `.sqlite.zst` pack.
 Snapshot schemas 2.1 and 2.2 remain separate and do not contain prepared rows.
 
-[`prepared-pack-v1-contract.json`](../profiles/hub-sync-v1/1.3.0/prepared-pack-v1-contract.json)
+[`prepared-pack-v1-contract.json`](../../profiles/hub-sync-v1/1.3.0/prepared-pack-v1-contract.json)
 is the machine-readable content contract and
-[`prepared-pack-v1.sql`](../profiles/hub-sync-v1/1.3.0/prepared-pack-v1.sql)
+[`prepared-pack-v1.sql`](../../profiles/hub-sync-v1/1.3.0/prepared-pack-v1.sql)
 is its exact SQLite schema. Admission checks the signed receipt, compressed
 size and digest, declared Zstandard content size, then opens SQLite read-only
 with `trusted_schema` disabled and `query_only` enabled. It compares the exact

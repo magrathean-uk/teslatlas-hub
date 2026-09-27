@@ -24,10 +24,16 @@ ROOT_FILES = (
     "Dockerfile",
     "LICENSE",
     "README.md",
-    "THIRD-PARTY-NOTICES.md",
+    "docs/legal/third-party-notices.md",
     "VERSION",
     "pyproject.toml",
     "uv.lock",
+)
+DOCS_ROOTS = (
+    "architecture",
+    "guides",
+    "legal",
+    "reference",
 )
 TREE_ROOTS = (
     "compatibility",
@@ -44,7 +50,7 @@ TREE_ROOTS = (
 REQUIRED_PATHS = (
     "LICENSE",
     "README.md",
-    "THIRD-PARTY-NOTICES.md",
+    "docs/legal/third-party-notices.md",
     "VERSION",
     "pyproject.toml",
     "uv.lock",
@@ -59,7 +65,7 @@ REQUIRED_PATHS = (
     "conformance/run",
     "tools/check",
     "tools/developer_bundle.py",
-    "docs/developer-bundle.md",
+    "docs/guides/developer-bundle.md",
 )
 GENERATED_PATHS = ("BUNDLE-MANIFEST.json", "BUNDLE-SHA256SUMS")
 IGNORED_NAMES = {"__pycache__", ".DS_Store"}
@@ -104,7 +110,8 @@ def payload_paths(repo: Path = REPO) -> list[Path]:
     for relative in ROOT_FILES:
         paths.append(repo / relative)
     docs = repo / "docs"
-    paths.extend(path for path in docs.glob("*.md") if path.is_file())
+    for docs_root in DOCS_ROOTS:
+        paths.extend(path for path in (docs / docs_root).rglob("*.md") if path.is_file())
     for relative in TREE_ROOTS:
         root = repo / relative
         paths.extend(path for path in root.rglob("*") if path.is_file() and not is_ignored(path.relative_to(repo)))

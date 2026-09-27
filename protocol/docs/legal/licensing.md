@@ -1,8 +1,14 @@
 # Licensing
 
-The controlling licence for Teslatlas Protocol is the unmodified Apache License
-2.0 in the repository root [`LICENSE`](../LICENSE). The project documents this
-as `Apache-2.0`; this guide does not modify the grant or add terms.
+Teslatlas Protocol is licensed under the Apache License, Version 2.0.
+
+The controlling licence text is the unmodified Apache License 2.0 in the
+repository root [`LICENSE`](../../LICENSE). This guide does not modify the
+grant or add terms. Copyright and attribution are recorded in
+[`NOTICE`](../../NOTICE); MAGRATHEAN UK LTD holds the copyright. See the
+[company's legal page](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)
+for the licensing, trade mark and contribution terms that apply across
+Magrathean repositories.
 
 The protocol contains source-neutral schemas, specifications, fixtures, and
 independently authored examples. It does not include Teslatlas Hub
@@ -16,7 +22,7 @@ Redistributors must comply with Apache-2.0, including carrying the licence and
 preserving applicable copyright, patent, trademark, and attribution notices.
 Apache-2.0 does not grant trademark permission except as its terms allow.
 
-[`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md) is an informational
+[`third-party-notices.md`](third-party-notices.md) is an informational
 dependency list. The three entries added to close the previous inventory gap
 were checked against the licence files in the exact installed distributions
 and the matching tagged upstream sources:
@@ -37,10 +43,9 @@ substitute for the licence files supplied with an artifact. Before
 redistributing a dependency, inspect that exact artifact and preserve every
 licence, notice, attribution, and other required material it ships.
 
-## Contributions and ownership
+## Contributions
 
-No contributor agreement, copyright-owner register, dual-licence grant, or
-commercial licensing programme was identified in the reviewed source. Do not
-infer any of them from repository location, history, or the Teslatlas Hub
-project. Obtain the necessary rights-holder decision before changing the
-licence, adding custom terms, or making ownership claims.
+Public repositories under a permissive licence accept pull requests under the
+terms in [CONTRIBUTING](../../.github/CONTRIBUTING.md). Do not copy Hub
+implementation code or proprietary application code into this repository.
+Record the origin and licence of any third-party material you propose to add.

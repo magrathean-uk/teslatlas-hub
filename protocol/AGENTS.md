@@ -17,6 +17,9 @@ This repository owns public contracts, not Hub implementation.
 - Preserve semantic versioning, capability negotiation, opaque cursors, UTC timestamps, ETags, and stable errors.
 - Fixtures must be deterministic and redacted.
 - Do not copy AGPL Hub implementation or proprietary Teslatlas source here.
+- Legal files (`LICENSE`, `NOTICE`, `docs/legal/`, contributor terms, copyright
+  and attribution strings) are owner-controlled: change them only on the
+  owner's explicit instruction.
 
 ## Contract discipline
 

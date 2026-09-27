@@ -18,7 +18,7 @@ receipt verification; or make unsafe public test data appear valid.
   must not contain real identifiers, credentials, secrets, raw provider data,
   or precise locations.
 - Authenticated data, cursors, ETags, and event replay must remain bound to
-  the authorized principal described by the applicable profile.
+  the authorised principal described by the applicable profile.
 - Current-Hub conformance inputs containing credentials or private evidence
   must be owner-only, bounded, and excluded from logs and public artifacts.
 - Protocol profiles must reject malformed, oversized, conflicting, or

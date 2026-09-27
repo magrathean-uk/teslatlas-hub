@@ -103,8 +103,8 @@ until the Hub runner writes an identity-matched `accepted/close_completed`
 acknowledgement; only then may it close and exit zero. Missing or stale files,
 changed hashes, a wrong session/nonce, a rejected acknowledgement, or an
 unavailable contract fails closed. The inert case manifest and pure semantic
-predicate are [`tools/matrix-contract.json`](../tools/matrix-contract.json) and
-[`tools/matrix_contract.py`](../tools/matrix_contract.py); they describe the
+predicate are [`tools/matrix-contract.json`](../../tools/matrix-contract.json) and
+[`tools/matrix_contract.py`](../../tools/matrix_contract.py); they describe the
 adapter-owned contract and do not themselves establish an installed row.
 
 Native mode exercises discovery, readiness, claim/replay, vehicle/current

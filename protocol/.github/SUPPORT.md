@@ -1,8 +1,9 @@
 # Support
 
-For protocol questions, start with the [README](README.md), select the relevant
-profile, and read its guide. A profile version describes a contract; it does
-not establish that a particular Hub, SDK, or installed product implements it.
+For protocol questions, start with the [README](../README.md), select the
+relevant profile, and read its guide. A profile version describes a contract;
+it does not establish that a particular Hub, SDK, or installed product
+implements it.
 
 For a reproducible documentation or contract issue, use the
 [repository issue tracker](https://github.com/magrathean-uk/teslatlas-protocol/issues).
@@ -18,7 +19,7 @@ descriptors, and raw response bodies before posting. Report suspected
 vulnerabilities privately using the organisation reporting route in
 [SECURITY.md](SECURITY.md), not through public issues.
 
-Implementation-specific behavior belongs with the Hub, SDK, or integration
+Implementation-specific behaviour belongs with the Hub, SDK, or integration
 that produced it. A passing Protocol reference adapter checks the harness and
 vectors; it does not diagnose an installed service. No response-time or
 supported-release commitment is published here.

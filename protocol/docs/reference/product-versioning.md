@@ -23,7 +23,7 @@ directory by its manifest digest.
 the accepted record does not bind its manifest.
 Its tested Hub version, content-bound source fingerprints, and G4/G5/G6 receipt
 paths were admitted by
-[`g3-compatibility-admission-2026-09-19-r2.json`](development/g3-compatibility-admission-2026-09-19-r2.json).
+[`g3-compatibility-admission-2026-09-19-r2.json`](../development/g3-compatibility-admission-2026-09-19-r2.json).
 That metadata acceptance retains each receipt's synthetic runtime and platform
 limits; it is not installed-service, publication, real-data, App, or full-matrix
 acceptance.

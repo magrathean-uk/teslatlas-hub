@@ -4,7 +4,7 @@ The Protocol contracts and local tooling are Apache-2.0 licensed; see
 `LICENSE`. The local development gate uses the exact dependency versions in
 `uv.lock`. Those packages are not redistributed in the developer source
 bundle. The existing declared licence identifiers are retained below for
-operator review. See [licensing](docs/licensing.md) for the evidence boundary
+operator review. See [licensing](licensing.md) for the evidence boundary
 and the checks required before redistributing those dependencies.
 
 | Package | Locked version | Declared licence |

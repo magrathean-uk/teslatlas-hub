@@ -12,7 +12,7 @@ current installed Hub, SDK, or App implements it.
 | Contract | Recorded position |
 | --- | --- |
 | Rich semantic HTTP and events | The local gate covers `1.0.0`, `1.1.0`, and `1.2.0`. |
-| Current-Hub HTTP `hub-http-v1@1.0.0` | Historical accepted binding retained below and in [`compatibility/hub.json`](../compatibility/hub.json). |
+| Current-Hub HTTP `hub-http-v1@1.0.0` | Historical accepted binding retained below and in [`compatibility/hub.json`](../../compatibility/hub.json). |
 | Current-Hub HTTP `hub-http-v1@1.1.0` | Candidate successor; the earlier acceptance record does not admit it. |
 | Hub sync `hub-sync-v1@1.3.0` | Candidate changes-since contract with 64 deterministic conformance cases; Hub and App runtime admission remains open. |
 | Edge delivery `edge-delivery-v2@2.0.0` | Separate delivery contract with bounded historical synthetic evidence. |
@@ -28,7 +28,7 @@ current installed Hub, SDK, or App implements it.
 G3 r2 admitted and read back the five active compatibility records for
 `hub-http-v1@1.0.0`; it does not admit the `1.1.0` candidate. The receipt
 is
-[`g3-compatibility-admission-2026-09-19-r2.json`](development/g3-compatibility-admission-2026-09-19-r2.json)
+[`g3-compatibility-admission-2026-09-19-r2.json`](../development/g3-compatibility-admission-2026-09-19-r2.json)
 (SHA-256
 `5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865`).
 The focused six-case checker proved active-product-only operation, idempotence,

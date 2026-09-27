@@ -1,44 +1,48 @@
-# Teslatlas protocol
+<h1 align="center">Teslatlas Protocol</h1>
 
-Public, source-neutral protocol contracts for Teslatlas Hub clients and integrations.
+<p align="center">Public, source-neutral protocol contracts for Teslatlas Hub clients and integrations.</p>
 
-## Status
+<p align="center">
+  <a href="docs/legal/licensing.md">Licence</a> ·
+  <a href="AGENTS.md">Agent guidance</a>
+</p>
 
-This repository carries four distinct contract families with different
-identities:
+## Overview
+
+This repository owns the stable public boundary between Teslatlas Hub and
+Teslatlas, public SDKs, open reference clients, Home Assistant, user-operated
+edge receivers, and future third-party integrations. The protocol is
+implementable from this repository alone: a client does not need Hub Rust or
+proprietary Teslatlas source.
+
+It carries four distinct contract families with different identities:
 
 - Candidate current-Hub HTTP: `hub-http-v1@1.1.0`, documented in
-  [`docs/current-hub.md`](docs/current-hub.md). It describes discovery,
-  pairing, authenticated vehicle/current/drives reads, and credential
-  rotation.
+  [`docs/reference/current-hub.md`](docs/reference/current-hub.md). It
+  describes discovery, pairing, authenticated vehicle/current/drives reads,
+  and credential rotation.
 - Candidate Hub changes-since: `hub-sync-v1@1.3.0`, documented in
-  [`docs/hub-sync.md`](docs/hub-sync.md). It defines bootstrap checkpoints,
-  signed changed-set and no-op receipts, vehicle-bound signing-key discovery,
-  and a multi-chunk rebase after compaction without a product-version pin.
-- Rich semantic HTTP and event profiles: `1.0.0`, `1.1.0`, and `1.2.0`.
-  The local conformance gate covers the current minor and its two predecessors.
-  Their walkthrough is [`docs/client-quickstart.md`](docs/client-quickstart.md)
-  and includes version negotiation, SSE, commands, and metadata.
+  [`docs/reference/hub-sync.md`](docs/reference/hub-sync.md). It defines
+  bootstrap checkpoints, signed changed-set and no-op receipts, vehicle-bound
+  signing-key discovery, and a multi-chunk rebase after compaction without a
+  product-version pin.
+- Rich semantic HTTP and event profiles: `1.0.0`, `1.1.0`, and `1.2.0`. The
+  local conformance gate covers the current minor and its two predecessors.
+  Their walkthrough is
+  [`docs/guides/client-quickstart.md`](docs/guides/client-quickstart.md) and
+  includes version negotiation, SSE, commands, and metadata.
 - Edge delivery: `profiles/edge-delivery-v2/2.0.0/`, with its own pull and
   acknowledgement contract.
 
 These are protocol profiles, not claims about a deployed Hub or SDK release.
-
 This repository contains no Hub implementation, generated SDK, or proprietary
 Teslatlas source.
-
-## Purpose
-
-This repository owns the stable public boundary between Teslatlas Hub and Teslatlas, public SDKs, open reference clients, Home Assistant, user-operated edge receivers, and future third-party integrations.
-
-The protocol is implementable from this repository alone. A client does not
-need Hub Rust or proprietary Teslatlas source.
 
 ## Contract discipline
 
 This repository is source-neutral. Public files must be sufficient for an
-unaffiliated client to implement the contract without Hub Rust, proprietary App
-source, or private deployment knowledge. `MUST`, `MUST NOT`, `REQUIRED`,
+unaffiliated client to implement the contract without Hub Rust, proprietary
+App source, or private deployment knowledge. `MUST`, `MUST NOT`, `REQUIRED`,
 `SHOULD`, `SHOULD NOT`, and `MAY` are normative terms as defined by RFC 2119
 and RFC 8174 when written in uppercase.
 
@@ -48,37 +52,12 @@ conformance cases; an unresolved conflict blocks release. A contract change
 updates every affected artifact, example, fixture, profile, generated output,
 and test, with the local gate as the release check.
 
-## Goals and non-goals
-
 Goal: publish stable, versioned, implementation-neutral contracts and
-executable evidence for independent clients.
+executable evidence for independent clients. Non-goals: Hub internals,
+proprietary App behaviour, generated SDK implementations, hosted automation,
+or deployment instructions.
 
-Non-goals: Hub internals, proprietary App behavior, generated SDK
-implementations, hosted automation, or deployment instructions.
-
-## Validate locally
-
-Python 3.11 or later and [uv](https://docs.astral.sh/uv/) are required. From the
-repository root, install the locked environment and run the complete local gate:
-
-```sh
-uv sync --locked
-./tools/check
-```
-
-The gate validates generated profiles, every JSON Schema, OpenAPI, SSE example,
-valid and invalid example, deterministic fixture, conformance vector, and all
-three compatibility profiles. It then runs the unit suite and bundled
-conformance adapter. This is local contract evidence, not installed-Hub,
-product, real-data, or release acceptance. It uses no hosted CI.
-
-To build and verify the deterministic, unpublished source bundle, follow
-[`docs/developer-bundle.md`](docs/developer-bundle.md). The bundle includes the
-exact dependency lock and public contract resources but does not claim a
-service, release, cold-cache offline dependency install, or downstream product
-acceptance.
-
-## Artifacts
+## Features
 
 - `openapi/teslatlas-v1.openapi.json` — self-contained OpenAPI 3.1.1 rich query API.
 - `schemas/` — canonical JSON Schema 2020-12 contracts.
@@ -96,35 +75,59 @@ acceptance.
   sequence/gap, acknowledgement, and durable-consumer disposition contract.
 - `conformance/` — JSONL adapter protocol, executable cases, and runner.
 
-## Read next
+## Getting started
 
-- [Product versioning](docs/product-versioning.md)
-- [Architecture](docs/architecture.md)
-- [Current-Hub walkthrough](docs/current-hub.md)
-- [Hub changes-since contract](docs/hub-sync.md)
-- [Docker checker and read-only smoke](docs/docker.md)
-- [Deterministic developer bundle](docs/developer-bundle.md)
-- [Compatibility record](docs/compatibility.md)
-- [Verification status](docs/verification.md)
-- [Rich-profile client walkthrough](docs/client-quickstart.md)
-- [Rich-profile HTTP contract](docs/http.md)
-- [Canonical data model](docs/data-model.md)
-- [Event stream](docs/events.md)
-- [Commands and metadata](docs/commands-and-metadata.md)
-- [Conformance](docs/conformance.md)
-- [Normative references](docs/standards.md)
-- [Foundation plan](docs/plans/2026-08-30-foundation.md)
+Python 3.11 or later and [uv](https://docs.astral.sh/uv/) are required. From
+the repository root, install the locked environment and run the complete
+local gate:
 
-## Contributing and support
+```sh
+uv sync --locked
+./tools/check
+```
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing a contract. Use
-[SUPPORT.md](SUPPORT.md) for questions and [SECURITY.md](SECURITY.md) for
-sensitive reports. GitHub is source storage for this project; validation runs
-locally.
+The gate validates generated profiles, every JSON Schema, OpenAPI, SSE
+example, valid and invalid example, deterministic fixture, conformance
+vector, and all three compatibility profiles. It then runs the unit suite and
+bundled conformance adapter. This is local contract evidence, not
+installed-Hub, product, real-data, or release acceptance. It uses no hosted
+CI.
 
-## Licence and notices
+To build and verify the deterministic, unpublished source bundle, follow
+[`docs/guides/developer-bundle.md`](docs/guides/developer-bundle.md). The
+bundle includes the exact dependency lock and public contract resources but
+does not claim a service, release, cold-cache offline dependency install, or
+downstream product acceptance.
 
-The repository is licensed under the [Apache License 2.0](LICENSE). Existing
-third-party notices, their coverage limits, and redistribution guidance are in
-[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). See the
-[licensing guide](docs/licensing.md) for project and third-party boundaries.
+## Documentation
+
+- [Product versioning](docs/reference/product-versioning.md)
+- [Architecture](docs/architecture/overview.md)
+- [Current-Hub walkthrough](docs/reference/current-hub.md)
+- [Hub changes-since contract](docs/reference/hub-sync.md)
+- [Docker checker and read-only smoke](docs/guides/docker.md)
+- [Deterministic developer bundle](docs/guides/developer-bundle.md)
+- [Compatibility record](docs/reference/compatibility.md)
+- [Verification status](docs/reference/verification.md)
+- [Rich-profile client walkthrough](docs/guides/client-quickstart.md)
+- [Rich-profile HTTP contract](docs/reference/http.md)
+- [Canonical data model](docs/reference/data-model.md)
+- [Event stream](docs/reference/events.md)
+- [Commands and metadata](docs/reference/commands-and-metadata.md)
+- [Conformance](docs/guides/conformance.md)
+- [Normative references](docs/reference/standards.md)
+
+Read [CONTRIBUTING](.github/CONTRIBUTING.md) before changing a contract. Use
+[SUPPORT](.github/SUPPORT.md) for questions and [SECURITY](.github/SECURITY.md)
+for sensitive reports. GitHub is source storage for this project; validation
+runs locally.
+
+## Licence
+
+Teslatlas Protocol is licensed under the Apache License 2.0. See
+[LICENSE](LICENSE) and [NOTICE](NOTICE). Third-party dependency notices are in
+[`docs/legal/third-party-notices.md`](docs/legal/third-party-notices.md); the
+project/dependency licensing boundary is explained in the
+[licensing guide](docs/legal/licensing.md).
+
+<sub>© 2026 MAGRATHEAN UK LTD · [Legal](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)</sub>

@@ -1,6 +1,6 @@
 # Compatibility record
 
-[`compatibility/hub.json`](../compatibility/hub.json) is the machine-readable
+[`compatibility/hub.json`](../../compatibility/hub.json) is the machine-readable
 historical record for this repository's current-Hub HTTP claim. G3 r2 accepted
 the record
 for product `2026.36.2`, profile `hub-http-v1@1.0.0`, and manifest SHA-256
@@ -34,7 +34,7 @@ edit sibling pins or infer a broad supported-version range from one product
 cohort.
 
 The retained metadata-admission evidence is
-[`g3-compatibility-admission-2026-09-19-r2.json`](development/g3-compatibility-admission-2026-09-19-r2.json)
+[`g3-compatibility-admission-2026-09-19-r2.json`](../development/g3-compatibility-admission-2026-09-19-r2.json)
 (SHA-256
 `5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865`).
 It is metadata admission, not a new runtime. Its accepted scope is the recorded

@@ -3,7 +3,7 @@
 This repository has no server daemon. The image is a small, outbound-only
 checker for the existing `hub-http-v1@1.1.0` profile. Its pinned Python 3.13.13
 and uv 0.12.9 image references are selected by digest in the
-[`Dockerfile`](../Dockerfile). The image installs the locked development group,
+[`Dockerfile`](../../Dockerfile). The image installs the locked development group,
 then runs with `UV_OFFLINE=1`; the local gate cannot fetch packages at runtime.
 
 Build and run the local, offline Protocol gate from the repository root:

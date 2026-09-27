@@ -75,4 +75,4 @@ OpenAPI 3.1 tooling does not need a custom URN resolver.
 `tools/build_openapi.py --check` proves those copies match the canonical schema
 files. The current-Hub OpenAPI 3.1.0 document instead references adjacent
 files; distribute and bind the complete profile bundle as described in
-[`current-hub.md`](current-hub.md).
+[`current-hub.md`](../reference/current-hub.md).
