@@ -41,6 +41,19 @@ release notice bundle.
 > OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 > SOFTWARE.
 
+## Teslatlas Compute
+
+Upstream: https://github.com/magrathean-uk/teslatlas-compute
+
+Locked revision: the commit recorded for `teslatlas-compute` in `Cargo.lock`
+
+Licence: Apache License 2.0
+
+Hub links this library into its executable. The library's `LICENSE` and
+`NOTICE` apply to it and are carried in the generated release notices. The
+section "Teslatlas Compute" of `docs/legal/source-availability.md` explains how
+it forms part of the Corresponding Source.
+
 ## Dependencies
 
 For every dependency record:
@@ -65,13 +78,14 @@ Licence: Apache License 2.0
 
 The macOS service includes the upstream `cmd/tesla-http-proxy` executable as a
 separate process. It is built from the pinned upstream source for arm64 with a
-macOS 13 deployment target. A tracked patch adds the reviewed Go 1.27 runtime
-default and a dated Apache change notice to the private build copy of `go.mod`;
-the patch and original module sources are included in release evidence. No Tesla command private key, TLS private key,
+macOS 13 deployment target. A tracked patch updates the module requirements in
+the private build copy of `go.mod` and `go.sum`, and adds the reviewed Go 1.27
+runtime default and a dated Apache change notice to `go.mod`; the patch and
+original module sources are included in release evidence. No Tesla command private key, TLS private key,
 OAuth token, or session cache is included in the application or package.
 
 The upstream `LICENSE` file applies to this component. Its Go module graph is
-fixed by the upstream `go.mod` and `go.sum`; the exact source revision and
+fixed by the patched `go.mod` and `go.sum`; the exact source revision and
 build inputs, overlay checksum, and modified-file checksum are recorded in
 `docs/legal/provenance.md`.
 
@@ -89,7 +103,8 @@ The macOS service package and optional Debian Fleet package include a separately
 executed receiver built from the pinned upstream source with a Teslatlas patch. The patch adds a strict
 loopback HTTP dispatcher: decoded vehicle and connectivity records are sent to
 Hub with a private bearer, and reliable vehicle-record acknowledgement waits
-for Hub's successful commit. The packaged runtime configuration selects no
+for Hub's successful commit. The build replaces the upstream `go.mod` and
+`go.sum` with tracked files that update the module requirements. The packaged runtime configuration selects no
 message-queue dispatcher; the CGO-only Kafka and ZMQ integrations are
 unavailable in this build.
 

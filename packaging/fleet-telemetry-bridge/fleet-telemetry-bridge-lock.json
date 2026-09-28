@@ -12,7 +12,7 @@
     "patch_sha256": "cfc6831c9686af759781edd647d7c6e10c56b567af4eadf569c14586c2cfbec3",
     "module_graph": {
       "go_mod": "module-graph/go.mod",
-      "go_mod_sha256": "44e17677bbb1e14b93e414818dc16ab23bc9e6ab34ab5746a53c3f6026b9dfc4",
+      "go_mod_sha256": "77d4b41b52532ae27118e2fe73bdd2214e678db5bfbf3cdaf3c134873bf0318c",
       "go_sum": "module-graph/go.sum",
       "go_sum_sha256": "e0a1c9ba5d8d53fe3be4e9b949350ebb92242a22b4f1b9778b8a5698ab8037c7"
     }

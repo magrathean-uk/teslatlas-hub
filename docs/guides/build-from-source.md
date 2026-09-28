@@ -24,6 +24,30 @@ change affects shared behaviour. The maintained Teslatlas workspace has its own
 runner and heavy-build coordination; use those existing controls when working
 there instead of these standalone commands. The workspace pins Rust 1.98.1.
 
+## Teslatlas Compute
+
+Hub uses the Teslatlas Compute library (`teslatlas-compute`, Apache-2.0) from
+<https://github.com/magrathean-uk/teslatlas-compute>. `Cargo.toml` pins it to
+one full commit and `Cargo.lock` records that commit, so a Hub clone builds
+without a separate library checkout. Cargo fetches the library with the other
+locked dependencies; `cargo fetch --locked` also fetches it for offline builds.
+
+To test Hub against a local library checkout beside the Hub checkout, add a
+Cargo path override to the command. The override leaves `Cargo.lock` unchanged
+and is never committed:
+
+```sh
+cargo check --locked --config 'paths=["../teslatlas-compute"]'
+```
+
+The override applies only to that command. Do not use it for a source-bound or
+distributed build; the Rust source-evidence gate fails while one is configured.
+To adopt a new library commit, push that commit to the library's `main`, set
+`rev` in `Cargo.toml` to the full commit and run
+`cargo update -p teslatlas-compute`.
+
+## Source identity
+
 An ordinary development build has no distributable source identity. Without
 `TESLATLAS_HUB_SOURCE_COMMIT`, discovery identifies the source repository but
 `teslatlas-hub source` fails. Do not present that binary as a source-bound release.
@@ -42,8 +66,9 @@ git cat-file -e "${HUB_SOURCE_COMMIT}^{commit}"
 git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
 ```
 
-Keep the commit, toolchain versions and artifact checksums with your build
-record. Build identity does not confer signing, notarisation or support.
+The Hub commit's `Cargo.lock` fixes the Teslatlas Compute commit. Keep the
+commit, toolchain versions and artifact checksums with your build record.
+Build identity does not confer signing, notarisation or support.
 
 ## macOS app and combined installer
 
@@ -60,11 +85,12 @@ current absolute `buildRoot` from the JSON emitted by
 root's managed Hub directory.
 Do not hard-code a cache path or set Cargo's target directory around the runner.
 
-The current proxy subject lock still records the prior Go 1.27.0 build and its
-reviewed Xcode 27.0 host. It must be refreshed from a Go 1.27.1 build before new
-proxy evidence can be accepted. Earlier confirmation from two clean matching
-builds applies only to the Go 1.27.0 subject and covers the proxy component,
-not a working combined package or installed Hub.
+`scripts/tesla-proxy-lock.json` records the Go 1.27.1 command-proxy subjects
+and the reviewed build host: the selected Go executable and its binary, Xcode
+27.0, its Apple Clang toolchain and the macOS 27.0 SDK. `TESLATLAS_GO` may
+select only a Go executable recorded there; another Go 1.27.1 installation is
+insufficient. The lock covers the proxy component only. It does not establish a
+working combined package or installed Hub.
 
 The packaging source checks select exactly the maintained Rust 1.98.1 toolchain
 for `Cargo.toml`'s `1.98` minimum and reject incompatible minimum changes. That

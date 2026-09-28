@@ -27,8 +27,14 @@ INVENTORY_NAME = "rust-source-inventory.json"
 MANIFEST_NAME = "rust-source-evidence-manifest.json"
 FILES = (ARCHIVE_NAME, INVENTORY_NAME, MANIFEST_NAME)
 CRATE_ARCHIVE_DIRECTORY = "crate-archives"
+GIT_COMMIT_DIRECTORY = "git-commits"
 CRATES_IO_SOURCE = "registry+https://github.com/rust-lang/crates.io-index"
-VENDOR_CONFIG = b'''[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "vendor"\n\n[net]\noffline = true\n'''
+# A Git dependency is accepted only when Cargo.lock pins an exact public HTTPS
+# commit. Its evidence carries the raw commit object, so verification binds the
+# vendored tree to that commit without network access or a Git installation.
+GIT_URL_RE = re.compile(r"^https://[A-Za-z0-9.-]+(?:/[A-Za-z0-9._~-]+)+$")
+GIT_SOURCE_RE = re.compile(r"^git\+([^?#\s\"\\]+)\?rev=([0-9a-f]{40})#([0-9a-f]{40})$")
+GIT_MAX_OBJECT_BYTES = 1024 * 1024
 MAX_LOCK_BYTES = 8 * 1024 * 1024
 MAX_INVENTORY_BYTES = 8 * 1024 * 1024
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
@@ -168,6 +174,217 @@ def validate_identity(name: object, version: object, label: str) -> tuple[str, s
     return name, version
 
 
+def git_source(source: object) -> tuple[str, str] | None:
+    """Return (url, commit) for an exact-commit Git source, or None otherwise."""
+    if not isinstance(source, str) or not source.startswith("git+"):
+        return None
+    match = GIT_SOURCE_RE.fullmatch(source)
+    if match is None or match.group(2) != match.group(3):
+        raise GateError(f"Git dependency is not pinned to one exact commit: {source}")
+    url = match.group(1)
+    if GIT_URL_RE.fullmatch(url) is None:
+        raise GateError(f"Git dependency URL is not an accepted source: {source}")
+    return url, match.group(2)
+
+
+def vendor_config(packages: list[dict[str, Any]], directory: str = "vendor") -> bytes:
+    """Build the offline source-replacement configuration for the locked graph."""
+    sections = ['[source.crates-io]\nreplace-with = "vendored-sources"\n']
+    for source in sorted({item["source"] for item in packages if item["checksum"] is None}):
+        parsed = git_source(source)
+        assert parsed is not None
+        url, commit = parsed
+        name = source.split("#", 1)[0]
+        sections.append(
+            f'[source."{name}"]\ngit = "{url}"\nrev = "{commit}"\n'
+            'replace-with = "vendored-sources"\n'
+        )
+    escaped = directory.replace("\\", "\\\\").replace('"', '\\"')
+    sections.append(f'[source.vendored-sources]\ndirectory = "{escaped}"\n')
+    sections.append("[net]\noffline = true\n")
+    return "\n".join(sections).encode()
+
+
+def git_object_id(kind: bytes, data: bytes) -> str:
+    return hashlib.sha1(kind + b" " + str(len(data)).encode() + b"\0" + data).hexdigest()
+
+
+def git_tree_id(files: dict[str, bytes], executable: set[str]) -> str:
+    """Compute the Git tree ID of regular files, without invoking Git."""
+    root: dict[str, Any] = {}
+    for relative, data in files.items():
+        parts = relative.split("/")
+        node = root
+        for part in parts[:-1]:
+            child = node.setdefault(part, {})
+            if not isinstance(child, dict):
+                raise GateError(f"Git source path conflicts with a file: {relative}")
+            node = child
+        if parts[-1] in node:
+            raise GateError(f"Git source path conflicts with a directory: {relative}")
+        mode = b"100755" if relative in executable else b"100644"
+        node[parts[-1]] = (mode, bytes.fromhex(git_object_id(b"blob", data)))
+
+    def tree(node: dict[str, Any]) -> bytes:
+        entries = []
+        for name, value in node.items():
+            if isinstance(value, dict):
+                entries.append((name.encode() + b"/", b"40000", name.encode(), bytes.fromhex(tree_id(value))))
+            else:
+                entries.append((name.encode(), value[0], name.encode(), value[1]))
+        entries.sort(key=lambda entry: entry[0])
+        return b"".join(mode + b" " + name + b"\0" + digest for _, mode, name, digest in entries)
+
+    def tree_id(node: dict[str, Any]) -> str:
+        return git_object_id(b"tree", tree(node))
+
+    return tree_id(root)
+
+
+def commit_tree(commit_data: bytes, commit: str, label: str) -> str:
+    if git_object_id(b"commit", commit_data) != commit:
+        raise GateError(f"Git commit object does not match Cargo.lock: {label}")
+    first_line = commit_data.split(b"\n", 1)[0]
+    match = re.fullmatch(rb"tree ([0-9a-f]{40})", first_line)
+    if match is None:
+        raise GateError(f"Git commit object has no tree: {label}")
+    return match.group(1).decode()
+
+
+def materialize_git_package(
+    files: dict[str, bytes],
+    executable: set[str],
+    commit_data: bytes,
+    item: dict[str, Any],
+    vendor: Path,
+) -> dict[str, Any]:
+    """Write a vendored Git package after proving it is the locked commit's tree."""
+    parsed = git_source(item["source"])
+    if parsed is None or item["checksum"] is not None:
+        raise GateError(f"Git package identity is invalid: {item['name']}")
+    _, commit = parsed
+    prefix = f"{item['name']}-{item['version']}"
+    tree = commit_tree(commit_data, commit, prefix)
+    if not files or "Cargo.toml" not in files or not executable <= set(files):
+        raise GateError(f"Git package source is incomplete: {prefix}")
+    if len(files) > MAX_CRATE_FILES:
+        raise GateError(f"Git package member count is invalid: {prefix}")
+    folded: set[str] = set()
+    for relative in files:
+        safe_relative(relative, f"Git package {prefix}")
+        if relative == ".cargo-checksum.json" or relative.casefold() in folded:
+            raise GateError(f"Git package has a reserved, duplicate or case-colliding path: {prefix}")
+        folded.add(relative.casefold())
+    if git_tree_id(files, executable) != tree:
+        raise GateError(f"Git package source differs from the locked commit: {prefix}")
+    expanded = sum(len(data) for data in files.values())
+    if expanded > MAX_PACKAGE_EXPANDED:
+        raise GateError(f"Git package expands beyond the safety limit: {prefix}")
+    destination = vendor / prefix
+    destination.mkdir(mode=0o755)
+    digests: dict[str, str] = {}
+    for relative in sorted(files):
+        digests[relative] = sha256_bytes(files[relative])
+        write_new(destination / relative, files[relative])
+    checksum = json_bytes({"files": dict(sorted(digests.items())), "package": None})
+    write_new(destination / ".cargo-checksum.json", checksum)
+    return {
+        **item,
+        "vendor_path": prefix,
+        "git_commit": commit,
+        "git_tree": tree,
+        "executable_files": sorted(executable),
+        "file_count": len(files),
+        "expanded_size": expanded,
+        "tree_sha256": tree_hash(digests),
+        "cargo_checksum_sha256": sha256_bytes(checksum),
+    }
+
+
+def git_environment() -> dict[str, str]:
+    return {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": os.environ.get("HOME", ""),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_TERMINAL_PROMPT": "0",
+        "LC_ALL": "C",
+    }
+
+
+def git_bytes(database: Path, arguments: list[str]) -> bytes | None:
+    git = shutil.which("git")
+    if git is None:
+        raise GateError("git is required to read a locked Git dependency")
+    try:
+        result = subprocess.run(
+            [git, f"--git-dir={database}", *arguments],
+            env=git_environment(),
+            capture_output=True,
+            check=False,
+            timeout=600,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise GateError("cannot read the Cargo Git database") from exc
+    return result.stdout if result.returncode == 0 else None
+
+
+def git_package_source(
+    cargo_home: Path, item: dict[str, Any]
+) -> tuple[bytes, dict[str, bytes], set[str]]:
+    """Read the locked commit from Cargo's offline Git database."""
+    parsed = git_source(item["source"])
+    assert parsed is not None
+    _, commit = parsed
+    databases = child_directory(cargo_home, ("git", "db"), "Cargo Git database")
+    label = f"{item['name']} {commit}"
+    for entry in sorted(os.scandir(databases), key=lambda value: value.name):
+        if entry.is_symlink():
+            raise GateError("Cargo Git database contains an unsafe entry")
+        if not entry.is_dir(follow_symlinks=False):
+            continue
+        database = Path(entry.path)
+        commit_data = git_bytes(database, ["cat-file", "commit", commit])
+        if commit_data is None:
+            continue
+        if len(commit_data) > GIT_MAX_OBJECT_BYTES:
+            raise GateError(f"Git commit object is oversized: {label}")
+        commit_tree(commit_data, commit, label)
+        listing = git_bytes(database, ["ls-tree", "-r", "-z", "--full-tree", commit])
+        if listing is None:
+            raise GateError(f"cannot list the locked Git tree: {label}")
+        files: dict[str, bytes] = {}
+        executable: set[str] = set()
+        total = 0
+        for record in listing.split(b"\0"):
+            if not record:
+                continue
+            header, _, raw_path = record.partition(b"\t")
+            fields = header.split(b" ")
+            if len(fields) != 3 or not raw_path:
+                raise GateError(f"Git tree listing is invalid: {label}")
+            mode, kind, object_id = (value.decode("ascii") for value in fields)
+            try:
+                relative = raw_path.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise GateError(f"Git tree path is not UTF-8: {label}") from exc
+            if kind != "blob" or mode not in ("100644", "100755"):
+                raise GateError(
+                    f"Git dependency contains an unsupported entry ({mode} {kind}): {relative}"
+                )
+            data = git_bytes(database, ["cat-file", "blob", object_id])
+            if data is None or git_object_id(b"blob", data) != object_id:
+                raise GateError(f"cannot read the locked Git blob: {relative}")
+            total += len(data)
+            if len(data) > MAX_FILE_BYTES or total > MAX_PACKAGE_EXPANDED:
+                raise GateError(f"Git dependency expands beyond the safety limit: {label}")
+            files[relative] = data
+            if mode == "100755":
+                executable.add(relative)
+        return commit_data, files, executable
+    raise GateError(f"locked Git commit is unavailable offline: {label}")
+
+
 def strict_toml_text(data: bytes, label: str) -> str:
     try:
         text = data.decode("utf-8")
@@ -272,10 +489,11 @@ def parse_root_manifest_identity(data: bytes) -> tuple[str, str]:
     return validate_identity(fields.get("name"), fields.get("version"), "root Cargo package")
 
 
-def load_lock(repo: Path) -> tuple[bytes, list[dict[str, str]], list[tuple[str, str]]]:
+def load_lock(repo: Path) -> tuple[bytes, list[dict[str, Any]], list[tuple[str, str]]]:
+    """Return the lock bytes, locked crates.io and exact-commit Git packages, and the root."""
     data = regular_bytes(repo / "Cargo.lock", "Cargo.lock", MAX_LOCK_BYTES)
     packages = parse_lock_toml(data)
-    registry: list[dict[str, str]] = []
+    registry: list[dict[str, Any]] = []
     workspace: list[tuple[str, str]] = []
     seen: set[tuple[str, str, str | None]] = set()
     for index, candidate in enumerate(packages):
@@ -289,6 +507,11 @@ def load_lock(repo: Path) -> tuple[bytes, list[dict[str, str]], list[tuple[str, 
             if "checksum" in candidate:
                 raise GateError("workspace Cargo.lock package unexpectedly has a checksum")
             workspace.append((name, version))
+            continue
+        if git_source(source) is not None:
+            if "checksum" in candidate:
+                raise GateError(f"Git Cargo.lock package unexpectedly has a checksum: {name}")
+            registry.append({"name": name, "version": version, "source": source, "checksum": None})
             continue
         if source != CRATES_IO_SOURCE:
             raise GateError(f"unsupported non-crates.io dependency source: {source}")
@@ -363,7 +586,7 @@ def metadata_set(repo: Path, cargo: Path, cargo_home: Path) -> set[tuple[str, st
             raise GateError("Cargo metadata package is invalid")
         name, version = validate_identity(item.get("name"), item.get("version"), f"metadata package {index}")
         source = item.get("source")
-        if source is not None and source != CRATES_IO_SOURCE:
+        if source is not None and source != CRATES_IO_SOURCE and git_source(source) is None:
             raise GateError(f"Cargo metadata contains unsupported source: {source}")
         if source is None:
             manifest_path = item.get("manifest_path")
@@ -542,6 +765,24 @@ def scan_vendor_package(root: Path, item: dict[str, Any]) -> tuple[int, int]:
     return len(actual_files), size
 
 
+def vendored_package_files(package: Path, label: str) -> dict[str, bytes]:
+    """Read a vendored package's files, excluding Cargo's checksum record."""
+    package = real_directory(package, f"vendor package {label}")
+    values: dict[str, bytes] = {}
+    for current, directories, filenames in os.walk(package, topdown=True, followlinks=False):
+        current_path = Path(current)
+        for name in directories:
+            if stat.S_ISLNK(os.lstat(current_path / name).st_mode):
+                raise GateError(f"vendor tree contains a symlink: {current_path / name}")
+        for name in filenames:
+            path = current_path / name
+            relative = path.relative_to(package).as_posix()
+            if relative == ".cargo-checksum.json":
+                continue
+            values[relative] = regular_bytes(path, f"vendor file {relative}", MAX_FILE_BYTES, True)
+    return values
+
+
 def archive_files(root: Path) -> list[tuple[str, Path]]:
     values: list[tuple[str, Path]] = []
     for current, directories, filenames in os.walk(root, topdown=True, followlinks=False):
@@ -645,7 +886,7 @@ def compare_trees(expected: Path, actual: Path, label: str) -> None:
             raise GateError(f"{label} differs from locked crate reconstruction: {name}")
 
 
-def validate_inventory(value: object, lock_data: bytes, registry: list[dict[str, str]]) -> dict[str, Any]:
+def validate_inventory(value: object, lock_data: bytes, registry: list[dict[str, Any]]) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) != {
         "schema", "cargo_lock_sha256", "dependency_count", "packages"
     }:
@@ -659,18 +900,43 @@ def validate_inventory(value: object, lock_data: bytes, registry: list[dict[str,
         "name", "version", "source", "checksum", "vendor_path", "crate_size",
         "file_count", "expanded_size", "tree_sha256", "cargo_checksum_sha256",
     }
+    git_keys = {
+        "name", "version", "source", "checksum", "vendor_path", "git_commit", "git_tree",
+        "executable_files", "file_count", "expanded_size", "tree_sha256",
+        "cargo_checksum_sha256",
+    }
     for index, item in enumerate(packages):
-        if not isinstance(item, dict) or set(item) != keys:
+        if not isinstance(item, dict):
+            raise GateError(f"Rust source inventory package {index} schema is invalid")
+        parsed = git_source(item.get("source"))
+        if set(item) != (git_keys if parsed is not None else keys):
             raise GateError(f"Rust source inventory package {index} schema is invalid")
         validate_identity(item["name"], item["version"], f"inventory package {index}")
-        if item["source"] != CRATES_IO_SOURCE:
+        if parsed is not None:
+            executable = item["executable_files"]
+            if (
+                item["checksum"] is not None
+                or item["git_commit"] != parsed[1]
+                or not isinstance(item["git_tree"], str)
+                or re.fullmatch(r"[0-9a-f]{40}", item["git_tree"]) is None
+                or not isinstance(executable, list)
+                or not all(isinstance(path, str) for path in executable)
+                or executable != sorted(set(executable))
+            ):
+                raise GateError("Rust source inventory Git identity is invalid")
+            hashes: tuple[str, ...] = ("tree_sha256", "cargo_checksum_sha256")
+            sizes: tuple[str, ...] = ("file_count", "expanded_size")
+        elif item["source"] != CRATES_IO_SOURCE:
             raise GateError("Rust source inventory has an unsupported source")
-        for field in ("checksum", "tree_sha256", "cargo_checksum_sha256"):
+        else:
+            hashes = ("checksum", "tree_sha256", "cargo_checksum_sha256")
+            sizes = ("crate_size", "file_count", "expanded_size")
+        for field in hashes:
             if not isinstance(item[field], str) or SHA256_RE.fullmatch(item[field]) is None:
                 raise GateError(f"Rust source inventory {field} is invalid")
         if item["vendor_path"] != f"{item['name']}-{item['version']}":
             raise GateError("Rust source inventory vendor path is invalid")
-        for field in ("crate_size", "file_count", "expanded_size"):
+        for field in sizes:
             if not isinstance(item[field], int) or item[field] <= 0:
                 raise GateError(f"Rust source inventory {field} is invalid")
     identities = [
@@ -682,15 +948,17 @@ def validate_inventory(value: object, lock_data: bytes, registry: list[dict[str,
     return value
 
 
-def build_receipt(repo: Path, cargo: Path, vendor_root: Path, binary: str, work: Path) -> dict[str, Any]:
+def build_receipt(
+    repo: Path,
+    cargo: Path,
+    vendor_root: Path,
+    binary: str,
+    work: Path,
+    packages: list[dict[str, Any]],
+) -> dict[str, Any]:
     cargo_home = work / "offline-cargo-home"
     (cargo_home / ".cargo-placeholder").parent.mkdir(parents=True, exist_ok=True)
-    config = (
-        '[source.crates-io]\nreplace-with = "vendored-sources"\n\n'
-        '[source.vendored-sources]\ndirectory = "'
-        + str(vendor_root / "vendor").replace("\\", "\\\\").replace('"', '\\"')
-        + '"\n\n[net]\noffline = true\n'
-    ).encode()
+    config = vendor_config(packages, str(vendor_root / "vendor"))
     write_new(cargo_home / "config.toml", config, 0o600)
     target = work / "offline-target"
     env = cargo_environment(cargo_home)
@@ -783,22 +1051,43 @@ def validate_directory(repo: Path, directory: Path, rebuild: bool = False) -> di
         extracted.mkdir()
         extract_archive(archive_data, extracted)
         config = regular_bytes(extracted / ".cargo" / "config.toml", "vendored Cargo config", MAX_MANIFEST_BYTES)
-        if config != VENDOR_CONFIG:
+        if config != vendor_config(registry):
             raise GateError("vendored Cargo config is not the reviewed offline replacement")
         vendor = real_directory(extracted / "vendor", "vendored Rust dependency source")
-        crate_archives = real_directory(
-            extracted / CRATE_ARCHIVE_DIRECTORY, "locked Rust crate archives"
-        )
         expected_dirs = {item["vendor_path"] for item in inventory["packages"]}
         actual_dirs = {entry.name for entry in vendor.iterdir()}
         if actual_dirs != expected_dirs:
             raise GateError("vendored Rust dependency directory set is invalid")
         expected_crates = {
-            f"{item['name']}-{item['version']}.crate" for item in registry
+            f"{item['name']}-{item['version']}.crate"
+            for item in registry
+            if item["checksum"] is not None
         }
-        actual_crates = {entry.name for entry in crate_archives.iterdir()}
-        if actual_crates != expected_crates:
-            raise GateError("locked Rust crate archive file set is invalid")
+        expected_commits = {
+            f"{item['name']}-{item['version']}.commit"
+            for item in registry
+            if item["checksum"] is None
+        }
+        for directory_name, expected_names, label in (
+            (CRATE_ARCHIVE_DIRECTORY, expected_crates, "locked Rust crate archive"),
+            (GIT_COMMIT_DIRECTORY, expected_commits, "locked Git commit object"),
+        ):
+            if expected_names:
+                actual_names = {
+                    entry.name
+                    for entry in real_directory(extracted / directory_name, label).iterdir()
+                }
+            elif os.path.lexists(extracted / directory_name):
+                actual_names = {"unexpected"}
+            else:
+                actual_names = set()
+            if actual_names != expected_names:
+                raise GateError(f"{label} file set is invalid")
+        top_level = {entry.name for entry in extracted.iterdir()}
+        if not top_level <= {".cargo", "vendor", CRATE_ARCHIVE_DIRECTORY, GIT_COMMIT_DIRECTORY}:
+            raise GateError("Rust vendor source archive has unexpected top-level content")
+        crate_archives = extracted / CRATE_ARCHIVE_DIRECTORY
+        git_commits = extracted / GIT_COMMIT_DIRECTORY
         reconstructed = work / "locked-reconstruction"
         reconstructed_vendor = reconstructed / "vendor"
         reconstructed_vendor.mkdir(parents=True)
@@ -807,6 +1096,27 @@ def validate_directory(repo: Path, directory: Path, rebuild: bool = False) -> di
         if len(registry) != len(inventory["packages"]):
             raise GateError("Rust source inventory dependency count differs from Cargo.lock")
         for locked, inventoried in zip(registry, inventory["packages"]):
+            if locked["checksum"] is None:
+                prefix = f"{locked['name']}-{locked['version']}"
+                commit_data = regular_bytes(
+                    git_commits / f"{prefix}.commit",
+                    f"locked Git commit object {prefix}",
+                    GIT_MAX_OBJECT_BYTES,
+                )
+                package_files = vendored_package_files(vendor / prefix, prefix)
+                independently_derived = materialize_git_package(
+                    package_files,
+                    set(inventoried["executable_files"]),
+                    commit_data,
+                    locked,
+                    reconstructed_vendor,
+                )
+                if independently_derived != inventoried:
+                    raise GateError(f"Rust source inventory is not derived from Cargo.lock: {prefix}")
+                count, size = scan_vendor_package(vendor, independently_derived)
+                files += count
+                expanded += size
+                continue
             crate_name = f"{locked['name']}-{locked['version']}.crate"
             crate_data = regular_bytes(
                 crate_archives / crate_name,
@@ -838,6 +1148,7 @@ def validate_directory(repo: Path, directory: Path, rebuild: bool = False) -> di
                 reconstructed,
                 receipt["artifact_name"],
                 work / "verification-build",
+                registry,
             )
             if rebuilt_receipt["artifact_name"] != receipt["artifact_name"]:
                 raise GateError("Rust offline rebuild did not reproduce the requested binary")
@@ -864,12 +1175,26 @@ def generate(repo: Path, cargo: Path, cargo_home: Path, output: Path, binary: st
         crate_archives = source / CRATE_ARCHIVE_DIRECTORY
         (source / ".cargo").mkdir(parents=True)
         vendor.mkdir()
-        crate_archives.mkdir()
-        write_new(source / ".cargo" / "config.toml", VENDOR_CONFIG)
+        write_new(source / ".cargo" / "config.toml", vendor_config(registry))
         packages: list[dict[str, Any]] = []
         total_files = 0
         total_expanded = 0
         for item in registry:
+            if item["checksum"] is None:
+                commit_data, package_files, executable = git_package_source(cargo_home, item)
+                write_new(
+                    source / GIT_COMMIT_DIRECTORY / f"{item['name']}-{item['version']}.commit",
+                    commit_data,
+                )
+                package = materialize_git_package(
+                    package_files, executable, commit_data, item, vendor
+                )
+                packages.append(package)
+                total_files += package["file_count"]
+                total_expanded += package["expanded_size"]
+                if total_files > MAX_TOTAL_FILES or total_expanded > MAX_TOTAL_EXPANDED:
+                    raise GateError("locked Rust dependencies exceed evidence limits")
+                continue
             data = crate_archive(cargo_home, item)
             write_new(
                 crate_archives / f"{item['name']}-{item['version']}.crate",
@@ -883,7 +1208,7 @@ def generate(repo: Path, cargo: Path, cargo_home: Path, output: Path, binary: st
                 raise GateError("locked Rust dependencies exceed evidence limits")
         for item in packages:
             scan_vendor_package(vendor, item)
-        receipt = build_receipt(repo, cargo, source, binary, work)
+        receipt = build_receipt(repo, cargo, source, binary, work, registry)
         for item in packages:
             scan_vendor_package(vendor, item)
         inventory = {

@@ -197,6 +197,20 @@
       }
     },
     {
+      "id": "fleet-telemetry-module-graph",
+      "class": "THIRD-PARTY",
+      "rationale": "Replacement go.mod and go.sum that the Fleet Telemetry bridge build copies over the upstream files to select the locked Go module graph.",
+      "paths": [
+        "packaging/fleet-telemetry-bridge/module-graph/go.mod",
+        "packaging/fleet-telemetry-bridge/module-graph/go.sum"
+      ],
+      "exception": {
+        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, go.mod and go.sum, with the go directive and module requirements updated for the Teslatlas Go 1.27.1 build. packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json records the SHA-256 of each file.",
+        "licensing": "Apache-2.0 for the upstream files and the distributed modified receiver. The go.sum lines are checksum facts about the named modules.",
+        "release_treatment": "Ship both files with the patch, pinned upstream identity, Apache-2.0 text, notices and source evidence. Add a prominent change notice to the modified go.mod before a modified receiver is distributed."
+      }
+    },
+    {
       "id": "generated-cargo-lock",
       "class": "GENERATED",
       "rationale": "Cargo resolver output pinned from Cargo.toml and dependency metadata.",
@@ -371,9 +385,7 @@
         "src/auth/legacy_auth.rs",
         "src/auth/teslamate_credentials.rs",
         "src/auth/teslamate_token.rs",
-        "src/collection/fake_tesla.rs",
-        "src/import/teslamate/prepared_pack_v1.sql",
-        "src/import/teslamate/physical_delta_pack_v1.sql"
+        "src/collection/fake_tesla.rs"
       ],
       "globs": [
         "src/auth/legacy_auth/*.rs",
@@ -381,6 +393,15 @@
         "src/collection/fake_tesla/*.rs",
         "src/import/teslamate/*.rs",
         "src/import/teslamate/*/*.rs"
+      ]
+    },
+    {
+      "id": "teslatlas-protocol-pack-contracts",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Pack schemas reproduced verbatim, apart from their header comments, from the Apache-2.0 Teslatlas Protocol hub-sync-v1 contracts: physical-delta-pack-v1.sql from profile 1.4.0 and prepared-pack-v1.sql from profile 1.3.0. They are source-neutral protocol material, not TeslaMate-derived expression. This treatment does not prove chain of title.",
+      "paths": [
+        "src/import/teslamate/physical_delta_pack_v1.sql",
+        "src/import/teslamate/prepared_pack_v1.sql"
       ]
     },
     {

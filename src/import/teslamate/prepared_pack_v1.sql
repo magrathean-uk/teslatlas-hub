@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
+-- Reproduces the Teslatlas Protocol hub-sync-v1@1.3.0 contract prepared-pack-v1.sql, published under Apache-2.0.
 
 CREATE TABLE prepared_metadata (
     singleton INTEGER NOT NULL PRIMARY KEY CHECK (singleton = 1),

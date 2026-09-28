@@ -4,6 +4,19 @@ This file records material changes to licensing, attribution, provenance, privac
 Historical entries describe what the documents asserted at that time; they are
 not evidence that a private instrument exists or remains sufficient.
 
+## 2026-09-28 — Teslatlas Compute source and dependency update
+
+- Hub takes Teslatlas Compute (Apache-2.0) from its public repository at one
+  full commit recorded in `Cargo.lock`. The Corresponding Source statement,
+  build guide and third-party notices name it, and Rust source evidence carries
+  its commit object and source tree.
+- The two SQL pack schemas reproduced from the Teslatlas Protocol are
+  classified as original protocol material, not TeslaMate-compatibility
+  material, and each names the protocol contract it reproduces.
+- Provenance and notices record the Go 1.27.1 command-proxy overlay and the
+  tracked Fleet Telemetry module graph that replaces the upstream `go.mod`
+  and `go.sum`; the replacement `go.mod` carries a change notice.
+
 ## 2026-09-27 — Legal documents consolidated
 
 - Magrathean owns Teslatlas under the founder's assignment agreement dated

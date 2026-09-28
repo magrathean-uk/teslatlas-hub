@@ -29,7 +29,7 @@ edge-test-faults = []
 interop-fixture = []
 
 [dependencies]
-teslatlas-compute = { path = "../teslatlas-compute" }
+teslatlas-compute = { git = "https://github.com/magrathean-uk/teslatlas-compute", rev = "7be548ba597d679b948ce2856ad6da6f1a2e43a4" }
 getrandom = "0.4.3"
 aes-gcm = "0.11.1"
 axum = "0.8.9"

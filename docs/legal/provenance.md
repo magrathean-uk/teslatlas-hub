@@ -30,14 +30,14 @@ The macOS service and optional Debian Fleet package separately bundle Tesla's
 official `tesla-http-proxy` from
 `https://github.com/teslamotors/vehicle-command`, release `v0.4.1`, revision
 `49977a18fd68567501d59e16a6c9e4a8b9348544`. It is Apache-2.0 licensed and is
-built from the pinned upstream `go.mod`/`go.sum` with Go 1.27.0 exactly. A
-private source copy receives the tracked
+built with Go 1.27.1 exactly. A private source copy receives the tracked
 `packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch`
 (SHA-256
-`0eb6a95f175ebdde51b18485a7ccd19c5e23aeb009a6f989b4512eb12b843a16`).
-The patch adds a dated file-level change notice and
-`godebug default=go1.27`; the resulting `go.mod` SHA-256 is
-`7459a52ecd7758154ae58d6ec85ac621293aad7d942055f239206ea082e00c3e`.
+`93a464c0e3a276d6c2c379ac33bb92ab10301cda7ddfb13cd7b155c7da8f87bc`).
+The patch updates the module requirements in `go.mod` and `go.sum`, and adds a
+dated file-level change notice and `godebug default=go1.27` to `go.mod`; the
+resulting `go.mod` SHA-256 is
+`8f7bb08108b8080cf0e9c361405405f3701cabc54f8bcb13e5c960080759781f`.
 The
 macOS build uses `CGO_ENABLED=1`, `GOOS=darwin`, `GOARCH=arm64`, and
 `MACOSX_DEPLOYMENT_TARGET=13.0`; Debian amd64 and ARM64 builds use
@@ -83,13 +83,19 @@ to a temporary private source copy. That patch adds only the bounded Teslatlas
 loopback dispatcher and its configuration. It forwards decoded `V` and
 connectivity records to
 `http://127.0.0.1:8080/v1/internal/fleet-telemetry`; vehicle records are
-acknowledged only after Hub accepts them. The bridge is built with Go 1.27.0
-exactly, `CGO_ENABLED=0`, `-trimpath`, and stripped symbols for Darwin amd64 and
+acknowledged only after Hub accepts them. The build then replaces the upstream
+`go.mod` and `go.sum` with the tracked
+`packaging/fleet-telemetry-bridge/module-graph/go.mod` (SHA-256
+`77d4b41b52532ae27118e2fe73bdd2214e678db5bfbf3cdaf3c134873bf0318c`) and
+`go.sum` (SHA-256
+`e0a1c9ba5d8d53fe3be4e9b949350ebb92242a22b4f1b9778b8a5698ab8037c7`), which
+update the module requirements; the replacement `go.mod` carries a change notice. The bridge lock records both digests. The
+bridge is built with Go 1.27.1 exactly, `CGO_ENABLED=0`, `-trimpath`, and stripped symbols for Darwin amd64 and
 ARM64 plus Linux amd64 and ARM64. The CGO-only Kafka and ZMQ integrations are
 unavailable in this build; the Teslatlas runtime configuration selects only the
 fixed loopback dispatcher.
 
-Every patched Go file carries a dated Teslatlas change notice. Release Fleet
+Every Go source file the patch changes carries a dated Teslatlas change notice. Release Fleet
 evidence includes the exact upstream archive and the exact source zip and
 `go.mod` for every locked runtime module, including the EPL-2.0 Paho MQTT
 component, with directions in the generated third-party notice.

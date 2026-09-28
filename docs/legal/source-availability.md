@@ -14,6 +14,20 @@ The final command should print nothing. The tag contains the Hub source,
 platform packaging, lockfiles, interface definitions, licence texts, notices,
 and the inputs needed by the documented build helpers.
 
+## Teslatlas Compute
+
+Current `main` links the Teslatlas Compute library (`teslatlas-compute`),
+licensed under Apache-2.0 and published at
+<https://github.com/magrathean-uk/teslatlas-compute>. `Cargo.toml` names it as
+a Git dependency at one full commit, and `Cargo.lock` records that commit in the
+package source. A Hub commit therefore identifies the exact library source, in
+the same way as every other locked dependency.
+
+The Corresponding Source of a Hub build that links the library includes the
+library source at the commit locked in that build's `Cargo.lock`. Keep the
+library's `LICENSE` and `NOTICE` with any distribution. Tag `v2026.36.1`
+predates this dependency.
+
 ## Distribution status
 
 Hub is now source-only. GitHub release pages and binary assets were withdrawn
@@ -57,7 +71,18 @@ python3 scripts/legal-bundle.py --repo . \
 Fleet evidence includes the pinned upstream source and the source ZIP plus
 `go.mod` for each locked runtime module. Go command-proxy evidence includes the
 locked upstream module sources and tracked overlay. Rust dependency evidence is
-generated with `scripts/rust-source-evidence.py` from `Cargo.lock`.
+generated with `scripts/rust-source-evidence.py` from `Cargo.lock`. It holds
+every locked crate archive and, for a Git dependency such as Teslatlas Compute,
+the locked commit object and the source tree of that commit. Verification checks
+the tree against the commit without network access.
+
+```sh
+cargo fetch --locked
+python3 scripts/rust-source-evidence.py --repo . \
+  --output-dir dist/rust-source-evidence
+python3 scripts/rust-source-evidence.py --repo . \
+  --verify-dir dist/rust-source-evidence
+```
 
 ## Runtime source route
 
@@ -70,7 +95,8 @@ teslatlas-hub source
 ```
 
 For a bound build, `source` and the macOS menu identify the exact
-`/tree/<40-hex-commit>` URL embedded by the build. An unbound developer build
+`/tree/<40-hex-commit>` URL embedded by the build. The `Cargo.lock` in that
+tree pins the Teslatlas Compute commit the build uses. An unbound developer build
 keeps the discovery schema valid by reporting the repository root, but the
 `source` command fails and the legal notice marks the build non-distributable.
 The macOS app omits its Corresponding Source menu item when unbound.

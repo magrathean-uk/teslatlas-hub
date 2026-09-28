@@ -100,3 +100,5 @@ See [NOTICE](../NOTICE), [third-party notices](../docs/legal/third-party-notices
 Teslatlas Hub was created by György Bolyki and is published by MAGRATHEAN UK
 LTD. It is independent and not affiliated with Tesla, Inc., the TeslaMate
 project, or the makers of any other software it works with.
+
+<sub>© 2026 MAGRATHEAN UK LTD · [Legal](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)</sub>
