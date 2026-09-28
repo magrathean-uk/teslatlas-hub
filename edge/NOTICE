@@ -10,7 +10,8 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY
 WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
 PARTICULAR PURPOSE. See the GNU Affero General Public License, in LICENSE, for details.
 
-Third-party components: the optional Fleet Telemetry sidecar is a patched build of
-Tesla's fleet-telemetry (Apache-2.0). See docs/legal/third-party-notices.md.
+Third-party components are listed in docs/legal/third-party-notices.md: the Rust
+crates, under their own permissive licences, and the optional Fleet Telemetry sidecar,
+a patched build of Tesla's fleet-telemetry (Apache-2.0).
 
 Teslatlas is independent. It is not affiliated with, endorsed by or supported by Tesla, Inc.

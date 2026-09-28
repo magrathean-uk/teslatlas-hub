@@ -1,17 +1,17 @@
 # Licensing
 
-This page explains the repository's licence and third-party notice; it does not alter either.
+Teslatlas Edge is licensed under the GNU Affero General Public License version 3 only
+(`AGPL-3.0-only`).
 
 ## Controlling licence
 
 The repository's root [LICENSE](../../LICENSE) is the complete, unmodified GNU
 Affero General Public License version 3 text. The Rust package metadata declares
-`AGPL-3.0-only`. [NOTICE](../../NOTICE) names the copyright holder. This document
-explains the repository material and does not alter the root licence or add terms.
+`AGPL-3.0-only`. [NOTICE](../../NOTICE) names the copyright holder.
 
 Keep the root licence text intact when copying or distributing the project. Do
 not replace it with this summary or use this summary to infer an `or-later`,
-commercial, proprietary, dual-licence, contributor-assignment, trademark, or
+commercial, proprietary, dual-licence, contributor-assignment, trade mark or
 ownership grant.
 
 ## Tesla Fleet Telemetry sidecar
@@ -31,9 +31,12 @@ patch digests. The sidecar's Apache licence remains its own grant.
 
 ## Other dependencies and release material
 
-`Cargo.lock` fixes the Rust dependency graph, but it is not a dependency
-licence-notice inventory. Before distributing a binary or package, prepare and
-verify notices for the exact locked dependency graph and delivered artifacts.
+`Cargo.lock` fixes the Rust dependency graph. The
+[third-party notices](third-party-notices.md) list each crate in the Edge's
+normal dependency graph with its locked version and declared licence. Before
+distributing a binary or package, check that list against the exact
+`Cargo.lock` you build from and ship the licence and notice files of each crate
+at that version.
 Keep those notices separate from the project licence and the sidecar notice.
 
 The current repository evidence does not identify a separate commercial,
@@ -42,5 +45,5 @@ ownership assertion, or contributor-rights policy requires an owner decision
 and appropriate legal review. Earlier valid grants must not be represented as
 withdrawn.
 
-See [third-party notices](third-party-notices.md) for the existing receiver
-attribution and distribution notice.
+See [third-party notices](third-party-notices.md) for the crate inventory and
+the receiver attribution and distribution notice.

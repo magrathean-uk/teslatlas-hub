@@ -20,7 +20,7 @@ Edge does not store Tesla account credentials, expose vehicle-command paths, or 
 ## Current source status
 
 The Cargo package version is `2026.36.2`. [Cargo.toml](Cargo.toml) declares
-Rust 1.98 as the minimum compiler version and `AGPL-3.0-only` as the license.
+Rust 1.98 as the minimum compiler version and `AGPL-3.0-only` as the licence.
 Wire versions 1 and 2 are implemented; the spool format is 3. Read the
 [upgrade guide](docs/operations/upgrade-backup-recovery.md) before opening an
 older spool with this version.
@@ -68,7 +68,8 @@ or release publishing is part of the development workflow.
 
 Teslatlas Edge is free software under the GNU AGPL, version 3 only. See
 [LICENSE](LICENSE) and [NOTICE](NOTICE). The optional Tesla receiver sidecar
-retains its upstream Apache-2.0 terms and modification notices. See
+retains its upstream Apache-2.0 terms and modification notices. The Rust crates
+the Edge is built from keep their own permissive licences. See
 [licensing](docs/legal/licensing.md), [third-party notices](docs/legal/third-party-notices.md)
 and the bundled [Apache License 2.0](docs/legal/Apache-2.0-fleet-telemetry.txt).
 
