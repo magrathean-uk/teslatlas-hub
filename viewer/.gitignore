@@ -7,4 +7,5 @@ test-results/
 .DS_Store
 *.tsbuildinfo
 artifacts/*.tgz
+!artifacts/teslatlas-sdk-*.tgz
 tools/__pycache__/

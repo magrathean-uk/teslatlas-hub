@@ -34,7 +34,7 @@ Viewer feature development is deferred. The dependency update of 28 September 20
 
 For a source checkout, use Node.js 26.x, npm 12.x, and `tar`. The package manifest accepts Node `>=26.0.0` and npm `>=11.0.0`; the reproducible local toolchain is pinned to Node `26.10.0` and npm `12.1.0`. Recreating the pinned SDK archive also requires the SDK source commit recorded in `artifacts/teslatlas-sdk.json`.
 
-`npm ci` installs the SDK from the project-relative archive `artifacts/teslatlas-sdk-2026.36.2.tgz`. That archive is tracked in Git, although `.gitignore` also matches `artifacts/*.tgz`. `npm run sdk:prepare` regenerates it from an SDK source checkout with the exact Node and npm executables, and `npm run sdk:verify` checks the archive and the installed package against `artifacts/teslatlas-sdk.json`.
+`npm ci` installs the SDK from the project-relative archive `artifacts/teslatlas-sdk-2026.36.2.tgz`. That archive is tracked in Git; `.gitignore` ignores other archives in `artifacts/`. `npm run sdk:prepare` regenerates it from an SDK source checkout with the exact Node and npm executables, and `npm run sdk:verify` checks the archive and the installed package against `artifacts/teslatlas-sdk.json`.
 
 ## Build from source
 

@@ -3,11 +3,11 @@
   "package_name": "@teslatlas/sdk",
   "package_version": "2026.36.2",
   "tarball": "artifacts/teslatlas-sdk-2026.36.2.tgz",
-  "tarball_sha256": "138d1e6924828e655f3fc8c58731467983a3a0e0086ec927c182b7cdd7a09340",
-  "installed_content_manifest_sha256": "dc3b8cf27fdd514474b048dda0587a60f094e32e1ab9cab185608695dd7b5ea4",
+  "tarball_sha256": "1e62303c17d558002001de0aeccb90e50c3644c76f46ced4e492b2960ec6f4da",
+  "installed_content_manifest_sha256": "853cd8fc6bc5b1d063b599cdf26c7543c8d41f4bcf0ab3c84fa90c1bd8002cf8",
   "installed_member_count": 88,
   "source": {
-    "commit": "5662abf8cabbd078f3512b2fb8aa02d22da6b5cf",
+    "commit": "2afc5f99ab1a58662570c695618512d4e8e975d8",
     "node_version": "v26.10.0",
     "npm_version": "12.1.0"
   },

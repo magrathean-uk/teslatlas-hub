@@ -10,7 +10,7 @@ import { prepareSdkArtifact } from './prepare-sdk-artifact.mjs';
 
 const sdkSource = process.env.TESLATLAS_SDK_SOURCE;
 const nodeExecutable = process.env.TESLATLAS_SDK_NODE;
-const archiveSha256 = '138d1e6924828e655f3fc8c58731467983a3a0e0086ec927c182b7cdd7a09340';
+const archiveSha256 = '1e62303c17d558002001de0aeccb90e50c3644c76f46ced4e492b2960ec6f4da';
 
 const packReport = {
   name: '@teslatlas/sdk',
@@ -47,7 +47,7 @@ test('builds the pinned SDK archive from clean source without a checked-in tarba
       tarball_sha256: archiveSha256,
       installed_member_count: 88,
       source: {
-        commit: '5662abf8cabbd078f3512b2fb8aa02d22da6b5cf',
+        commit: '2afc5f99ab1a58662570c695618512d4e8e975d8',
         node_version: 'v26.10.0',
         npm_version: '12.1.0',
       },
@@ -63,7 +63,7 @@ test('builds the pinned SDK archive from clean source without a checked-in tarba
     assert.equal(result.tarballSha256, archiveSha256);
     assert.equal(result.memberCount, 88);
     const tarball = join(projectRoot, 'artifacts/teslatlas-sdk-2026.36.2.tgz');
-    assert.equal((await readFile(tarball)).byteLength, 285_000);
+    assert.equal((await readFile(tarball)).byteLength, 285_013);
     assert.equal(
       execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' })
         .trim()

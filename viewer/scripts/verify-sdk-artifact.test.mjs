@@ -13,11 +13,11 @@ test('admits the exact vendored and installed SDK contents', async () => {
 
   assert.equal(
     result.tarballSha256,
-    '138d1e6924828e655f3fc8c58731467983a3a0e0086ec927c182b7cdd7a09340',
+    '1e62303c17d558002001de0aeccb90e50c3644c76f46ced4e492b2960ec6f4da',
   );
   assert.equal(
     result.installedContentManifestSha256,
-    'dc3b8cf27fdd514474b048dda0587a60f094e32e1ab9cab185608695dd7b5ea4',
+    '853cd8fc6bc5b1d063b599cdf26c7543c8d41f4bcf0ab3c84fa90c1bd8002cf8',
   );
   assert.equal(result.installedMemberCount, 88);
 });
