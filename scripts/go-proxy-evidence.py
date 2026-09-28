@@ -55,7 +55,7 @@ ALLOWED_LICENSES = {
     "MIT AND BSD-3-Clause",
 }
 TOOLCHAIN_POLICY = {
-    "go_version": "go1.27.0",
+    "go_version": "go1.27.1",
     "trimpath": True,
     "buildvcs": False,
     "ldflags": "-s -w",
@@ -154,8 +154,8 @@ MAIN_POLICY = {
 }
 OVERLAY_POLICY = {
     "path": "packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch",
-    "sha256": "0eb6a95f175ebdde51b18485a7ccd19c5e23aeb009a6f989b4512eb12b843a16",
-    "modified_go_mod_sha256": "7459a52ecd7758154ae58d6ec85ac621293aad7d942055f239206ea082e00c3e",
+    "sha256": "93a464c0e3a276d6c2c379ac33bb92ab10301cda7ddfb13cd7b155c7da8f87bc",
+    "modified_go_mod_sha256": "8f7bb08108b8080cf0e9c361405405f3701cabc54f8bcb13e5c960080759781f",
 }
 
 
@@ -541,6 +541,8 @@ def toolchain_identity(
     goroot = run([go, "env", "GOROOT"], cwd=cwd, env=environment).stdout.strip()
     if not goroot:
         raise GateError("Go reported an empty GOROOT")
+    go_binary_path = (Path(goroot) / "bin" / "go").resolve()
+    go_binary_data = regular_bytes(go_binary_path, "Go toolchain binary", MAX_TOOL_BYTES)
 
     clang_path_text = run(
         ["/usr/bin/xcrun", "--find", "clang"], cwd=cwd, env=environment
@@ -575,6 +577,8 @@ def toolchain_identity(
             "path": str(go_path),
             "sha256": sha256_bytes(go_data),
             "goroot": goroot,
+            "binary_path": str(go_binary_path),
+            "binary_sha256": sha256_bytes(go_binary_data),
         },
         "compiler": {
             "path": str(clang_path),
@@ -1430,14 +1434,22 @@ def write_output(path: Path, data: bytes) -> None:
 
 
 def validate_go_host(value: object, label: str) -> dict[str, Any]:
-    go = require_keys(value, {"path", "sha256", "goroot"}, label)
-    for field in ("path", "goroot"):
+    fields = {"path", "sha256", "goroot"}
+    if isinstance(value, dict) and ("binary_path" in value or "binary_sha256" in value):
+        fields |= {"binary_path", "binary_sha256"}
+    go = require_keys(value, fields, label)
+    path_fields = ("path", "goroot")
+    if "binary_path" in go:
+        path_fields += ("binary_path",)
+    for field in path_fields:
         text = require_string(go[field], f"{label}.{field}")
         if not Path(text).is_absolute() or any(
             ord(character) < 32 or ord(character) == 127 for character in text
         ):
             raise GateError(f"{label}.{field} must be a safe absolute path")
     validate_sha(go["sha256"], f"{label}.sha256")
+    if "binary_sha256" in go:
+        validate_sha(go["binary_sha256"], f"{label}.binary_sha256")
     return go
 
 
@@ -1465,7 +1477,12 @@ def validate_build_host_policy(value: object) -> dict[str, Any]:
     for index, candidate in enumerate(allowed_go):
         validate_go_host(candidate, f"Go build host policy.go[{index}]")
     identities = [
-        (candidate["path"], candidate["sha256"], candidate["goroot"])
+        (
+            candidate["path"],
+            candidate["sha256"],
+            candidate["goroot"],
+            candidate.get("binary_path", ""), candidate.get("binary_sha256", ""),
+        )
         for candidate in allowed_go
     ]
     if len(identities) != len(set(identities)):

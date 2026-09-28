@@ -781,7 +781,10 @@ fn valid_digest(value: &str) -> bool {
 }
 
 fn canonical(value: &Value) -> Result<Vec<u8>, EdgeDeliveryError> {
-    serde_jcs::to_vec(value).map_err(|_| EdgeDeliveryError::InvalidIdentity)
+    // The Edge record-id contract predates serde_jcs 0.2's RFC 8785 UTF-16
+    // property ordering. Keep its established UTF-8 ordering for incoming IDs,
+    // payload digests, and the bytes persisted for accumulator replay.
+    serde_jcs_legacy::to_vec(value).map_err(|_| EdgeDeliveryError::InvalidIdentity)
 }
 
 fn read_bounded_file(
@@ -892,6 +895,51 @@ mod tests {
             verify_gap(&batch.gaps[0]).unwrap(),
             VerifiedEdgeItem::Gap(_)
         ));
+    }
+
+    #[test]
+    fn edge_canonicalization_preserves_legacy_non_ascii_key_order() {
+        let value: Value = serde_json::from_str(r#"{"\uE000":1,"\uD800\uDC00":2}"#)
+            .expect("valid Unicode object keys");
+        let old = canonical(&value).expect("legacy Edge canonicalization");
+        let current = serde_jcs::to_vec(&value).expect("RFC 8785 canonicalization");
+
+        assert_eq!(old, "{\"\u{e000}\":1,\"\u{10000}\":2}".as_bytes());
+        assert_eq!(current, "{\"\u{10000}\":2,\"\u{e000}\":1}".as_bytes());
+    }
+
+    #[test]
+    fn edge_record_with_legacy_unicode_order_keeps_golden_wire_identities() {
+        let envelope: Value = serde_json::from_str(
+            r#"{"version":1,"vin":"5YJ3E1EA7KF000001","txid":"legacy-unicode-order-1","tx_type":"V","received_at_ms":1788566400000,"timestamp_ms":1788566399000,"payload":{"vin":"5YJ3E1EA7KF000001","metadata":{"\uE000":1,"\uD800\uDC00":2}}}"#,
+        )
+        .expect("valid Edge envelope");
+        let record = BatchRecord {
+            record_id: "3fcd5b7e956c87d20cb712b1e17b2385f13b77fef2ef75158b71152f851ed570"
+                .to_owned(),
+            legacy_record_id: "90d465c51098ec87d78824deb6c487eb2d7bb3ae968590c62bb0c8e1ac4b8ddc"
+                .to_owned(),
+            spool_seq: 1,
+            received_at_ms: 1_788_566_400_000,
+            envelope,
+        };
+
+        let verified = verify_record(&record, "5YJ3E1EA7KF000001")
+            .expect("old Edge v1/v2 identities remain accepted");
+        let VerifiedEdgeItem::Record(verified) = verified else {
+            panic!("expected Edge record");
+        };
+        assert_eq!(verified.stable_record_id, record.record_id);
+        assert_eq!(verified.legacy_record_id, record.legacy_record_id);
+        assert_eq!(
+            verified.payload_sha256,
+            "8e681be9bedc53171527e39a4955bbab395eafea32ffa1e425672bd4942dd31b"
+        );
+        assert!(
+            String::from_utf8(verified.envelope_json)
+                .expect("canonical envelope is UTF-8")
+                .contains("\"metadata\":{\"\u{e000}\":1,\"\u{10000}\":2}")
+        );
     }
 
     #[test]

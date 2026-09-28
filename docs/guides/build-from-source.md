@@ -54,18 +54,17 @@ workspace runner, external output locations and a reviewed Go host identity.
 A standalone clone does not contain that runner. There is no complete portable
 Mac installer recipe in this checkout.
 
-The packager checks Xcode, XcodeGen, rustup and exactly Go 1.27.0. It reads the
+The packager checks Xcode, XcodeGen, rustup and exactly Go 1.27.1. It reads the
 current absolute `buildRoot` from the JSON emitted by
 `clean-development status --json` and accepts Cargo output only under that
 root's managed Hub directory.
 Do not hard-code a cache path or set Cargo's target directory around the runner.
 
-The reviewed Darwin proxy identity in `scripts/tesla-proxy-lock.json` binds the
-selected Go executable to Xcode 27.0, its Apple Clang toolchain and the macOS
-27.0 SDK. `TESLATLAS_GO` may select one of the recorded absolute Go paths; an
-arbitrary Go 1.27.0 installation is insufficient. The relocked proxy subject was
-confirmed by two clean matching builds, but that evidence covers the proxy
-component only. It does not establish a working combined package or installed Hub.
+The current proxy subject lock still records the prior Go 1.27.0 build and its
+reviewed Xcode 27.0 host. It must be refreshed from a Go 1.27.1 build before new
+proxy evidence can be accepted. Earlier confirmation from two clean matching
+builds applies only to the Go 1.27.0 subject and covers the proxy component,
+not a working combined package or installed Hub.
 
 The packaging source checks select exactly the maintained Rust 1.98.1 toolchain
 for `Cargo.toml`'s `1.98` minimum and reject incompatible minimum changes. That

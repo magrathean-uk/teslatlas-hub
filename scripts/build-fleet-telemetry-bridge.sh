@@ -21,7 +21,7 @@ COMMIT=d64c73ab65e7c5fb5fc12b35fe507e2c6054227b
 ARCHIVE_URL=https://codeload.github.com/teslamotors/fleet-telemetry/tar.gz/d64c73ab65e7c5fb5fc12b35fe507e2c6054227b
 ARCHIVE_SHA256=a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9
 PATCH_SHA256=cfc6831c9686af759781edd647d7c6e10c56b567af4eadf569c14586c2cfbec3
-GO_VERSION=go1.27.0
+GO_VERSION=go1.27.1
 
 die() {
     printf '%s\n' "build-fleet-telemetry-bridge: $*" >&2
@@ -110,8 +110,17 @@ script_directory=$(CDPATH='' cd "$(dirname "$0")" && pwd -P)
 repository_root=$(CDPATH='' cd "$script_directory/.." && pwd -P)
 lock_file="$repository_root/packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json"
 overlay_patch="$repository_root/packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch"
+module_graph_directory="$repository_root/packaging/fleet-telemetry-bridge/module-graph"
+module_graph_go_mod="$module_graph_directory/go.mod"
+module_graph_go_sum="$module_graph_directory/go.sum"
 [ -f "$lock_file" ] && [ ! -L "$lock_file" ] || die "lock file is missing or unsafe"
 [ -f "$overlay_patch" ] && [ ! -L "$overlay_patch" ] || die "overlay patch is missing or unsafe"
+[ -d "$module_graph_directory" ] && [ ! -L "$module_graph_directory" ] \
+    || die "module graph overlay directory is missing or unsafe"
+[ -f "$module_graph_go_mod" ] && [ ! -L "$module_graph_go_mod" ] \
+    || die "module graph go.mod is missing or unsafe"
+[ -f "$module_graph_go_sum" ] && [ ! -L "$module_graph_go_sum" ] \
+    || die "module graph go.sum is missing or unsafe"
 
 PYTHON=$(command -v python3) || die "python3 is required"
 GO_TOOLCHAIN_HELPER="$repository_root/scripts/go_toolchain.py"
@@ -173,6 +182,9 @@ actual = {
     "go_version": lock.get("toolchain", {}).get("go_version"),
     "cgo_enabled": lock.get("toolchain", {}).get("cgo_enabled"),
 }
+module_graph = lock.get("overlay", {}).get("module_graph", {})
+if module_graph.get("go_mod") != "module-graph/go.mod" or module_graph.get("go_sum") != "module-graph/go.sum":
+    raise SystemExit("fleet telemetry module graph overlay paths are invalid")
 if actual != expected:
     raise SystemExit("fleet telemetry bridge lock does not match the build script")
 if lock.get("targets") != ["darwin-arm64", "darwin-amd64", "linux-arm64", "linux-amd64"]:
@@ -182,6 +194,19 @@ if target not in lock["targets"]:
 PY
 
 [ "$(sha256_file "$overlay_patch")" = "$PATCH_SHA256" ] || die "overlay patch checksum mismatch"
+module_graph_hashes=$($PYTHON - "$lock_file" <<'PY'
+import json
+import sys
+with open(sys.argv[1], "rb") as source:
+    lock = json.load(source)
+graph = lock.get("overlay", {}).get("module_graph", {})
+print(graph.get("go_mod_sha256", ""), graph.get("go_sum_sha256", ""))
+PY
+)
+set -- $module_graph_hashes
+[ "$#" -eq 2 ] || die "module graph checksums are missing"
+[ "$(sha256_file "$module_graph_go_mod")" = "$1" ] || die "module graph go.mod checksum mismatch"
+[ "$(sha256_file "$module_graph_go_sum")" = "$2" ] || die "module graph go.sum checksum mismatch"
 
 output_parent=$(dirname "$output")
 [ -d "$output_parent" ] || die "output directory does not exist: $output_parent"
@@ -254,6 +279,14 @@ archive_root=$("$TAR" -tzf "$archive" | /usr/bin/awk -F/ 'NF {print $1}' | /usr/
     cd "$source_directory"
     "$PATCH" -p1 --batch --forward <"$overlay_patch"
 ) || die "cannot apply Teslatlas overlay"
+/bin/cp "$module_graph_go_mod" "$source_directory/go.mod" \
+    || die "cannot apply locked Go module graph go.mod"
+/bin/cp "$module_graph_go_sum" "$source_directory/go.sum" \
+    || die "cannot apply locked Go module graph go.sum"
+[ "$(sha256_file "$source_directory/go.mod")" = "$1" ] \
+    || die "applied Go module graph go.mod checksum mismatch"
+[ "$(sha256_file "$source_directory/go.sum")" = "$2" ] \
+    || die "applied Go module graph go.sum checksum mismatch"
 
 (
     cd "$source_directory"

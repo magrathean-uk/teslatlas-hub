@@ -50,7 +50,9 @@ rusqlite = { version = "0.40.2", features = ["backup", "bundled"] }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_jcs = "0.1"
+serde_jcs = "0.2"
+# Edge record IDs and persisted envelope hashes use the original ordering contract.
+serde_jcs_legacy = { package = "serde_jcs", version = "=0.1.0" }
 tempfile = "3"
 sha2 = "0.11.0"
 thiserror = "2"
@@ -68,7 +70,7 @@ time = { version = "0.3.55", features = ["formatting"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4", "v5"] }
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
-zstd = { version = "0.13", features = ["zstdmt"] }
+zstd = { version = "0.14", features = ["zstdmt"] }
 zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]

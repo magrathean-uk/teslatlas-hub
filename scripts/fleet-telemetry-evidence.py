@@ -256,7 +256,14 @@ def validate_bridge_lock(value: object) -> dict[str, Any]:
         "Fleet Telemetry bridge lock.upstream",
     )
     overlay = require_keys(
-        lock["overlay"], {"patch", "patch_sha256"}, "Fleet Telemetry bridge lock.overlay"
+        lock["overlay"],
+        {"patch", "patch_sha256", "module_graph"},
+        "Fleet Telemetry bridge lock.overlay",
+    )
+    module_graph = require_keys(
+        overlay["module_graph"],
+        {"go_mod", "go_mod_sha256", "go_sum", "go_sum_sha256"},
+        "Fleet Telemetry bridge lock.overlay.module_graph",
     )
     bridge = require_keys(
         lock["bridge"],
@@ -283,13 +290,17 @@ def validate_bridge_lock(value: object) -> dict[str, Any]:
         or not upstream["archive_url"].startswith("https://codeload.github.com/teslamotors/fleet-telemetry/")
         or overlay["patch"] != "0001-teslatlas-http-dispatcher.patch"
         or bridge["endpoint"] != "http://127.0.0.1:8080/v1/internal/fleet-telemetry"
-        or toolchain != {"go_version": "go1.27.0", "cgo_enabled": False}
+        or toolchain != {"go_version": "go1.27.1", "cgo_enabled": False}
         or lock["targets"]
         != ["darwin-arm64", "darwin-amd64", "linux-arm64", "linux-amd64"]
     ):
         raise GateError("Fleet Telemetry bridge lock is not the reviewed build policy")
     validate_sha(upstream["archive_sha256"], "Fleet Telemetry bridge archive SHA-256")
     validate_sha(overlay["patch_sha256"], "Fleet Telemetry bridge patch SHA-256")
+    if module_graph["go_mod"] != "module-graph/go.mod" or module_graph["go_sum"] != "module-graph/go.sum":
+        raise GateError("Fleet Telemetry module graph overlay paths are not reviewed")
+    validate_sha(module_graph["go_mod_sha256"], "Fleet Telemetry module graph go.mod SHA-256")
+    validate_sha(module_graph["go_sum_sha256"], "Fleet Telemetry module graph go.sum SHA-256")
     for key in ("bearer_file_env",):
         require_string(bridge[key], f"Fleet Telemetry bridge lock.bridge.{key}")
     for key in (
@@ -384,6 +395,70 @@ def validate_legal_lock(value: object, bridge: dict[str, Any], bridge_bytes: byt
         raise GateError("Fleet Telemetry legal lock runtime modules are not sorted")
     lock["modules"] = normalized
     return lock
+
+
+def validate_binary_modules(info: object, legal: dict[str, Any]) -> None:
+    """Require the receiver's compiled module closure to match reviewed source locks."""
+    if not isinstance(info, dict):
+        raise GateError("Fleet Telemetry Go build information is not an object")
+    main = info.get("Main")
+    if not isinstance(main, dict) or main.get("Path") != legal["main"]["path"]:
+        raise GateError("Fleet Telemetry binary has an unexpected main module")
+    dependencies = info.get("Deps")
+    if not isinstance(dependencies, list):
+        raise GateError("Fleet Telemetry binary has no dependency list")
+
+    actual: list[dict[str, Any]] = []
+    for dependency in dependencies:
+        if not isinstance(dependency, dict):
+            raise GateError("Fleet Telemetry binary has an invalid dependency record")
+        item = {
+            "path": dependency.get("Path"),
+            "version": dependency.get("Version"),
+            "sum": dependency.get("Sum"),
+        }
+        replacement = dependency.get("Replace")
+        if replacement is not None:
+            if not isinstance(replacement, dict):
+                raise GateError("Fleet Telemetry binary has an invalid replacement record")
+            item["replacement"] = {
+                "path": replacement.get("Path"),
+                "version": replacement.get("Version"),
+                "sum": replacement.get("Sum"),
+            }
+        actual.append(item)
+    expected = [
+        {"path": item["path"], "version": item["version"], "sum": item["sum"]}
+        for item in legal["modules"]
+    ]
+    if actual != expected:
+        raise GateError("Fleet Telemetry binary modules do not match the exact legal lock")
+
+
+def verify_binary_modules(binary: Path, legal: dict[str, Any], go_version: str) -> None:
+    go = configured_go_override()
+    if go is None:
+        try:
+            go = select_go("go1.27.1")
+        except RuntimeError as exc:
+            raise GateError(f"cannot select Go to inspect Fleet Telemetry binary: {exc}") from exc
+    environment = os.environ.copy()
+    environment.update({"GOENV": "off", "GOWORK": "off", "GOTOOLCHAIN": "local"})
+    try:
+        result = subprocess.run(
+            [go, "version", "-m", "-json", str(binary)],
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise GateError("cannot read Fleet Telemetry binary Go build information") from exc
+    info = parse_json(result.stdout.encode(), "Fleet Telemetry Go build information")
+    if not isinstance(info, dict) or info.get("GoVersion") != go_version:
+        raise GateError("Fleet Telemetry binary Go version does not match the bridge lock")
+    validate_binary_modules(info, legal)
 
 
 def go_hash(entries: dict[str, bytes]) -> str:
@@ -1032,7 +1107,7 @@ def write_file(path: Path, data: bytes) -> None:
 
 def configured_go_override() -> str | None:
     try:
-        return select_configured_go("go1.27.0")
+        return select_configured_go("go1.27.1")
     except RuntimeError as exc:
         raise GateError(str(exc)) from exc
 
@@ -1044,7 +1119,7 @@ def default_module_cache() -> Path:
         return Path(os.path.abspath(configured))
     if go is None:
         try:
-            go = select_go("go1.27.0")
+            go = select_go("go1.27.1")
         except RuntimeError as exc:
             raise GateError(str(exc)) from exc
     environment = {
@@ -1082,6 +1157,7 @@ def generate(
     bridge_path = repo / "packaging" / "fleet-telemetry-bridge" / BRIDGE_LOCK_NAME
     legal_path = repo / "packaging" / "fleet-telemetry-bridge" / LEGAL_LOCK_NAME
     patch_path = repo / "packaging" / "fleet-telemetry-bridge" / "0001-teslatlas-http-dispatcher.patch"
+    module_graph_directory = repo / "packaging" / "fleet-telemetry-bridge" / "module-graph"
     bridge_bytes = regular_bytes(bridge_path, "Fleet Telemetry bridge lock", MAX_LOCK_BYTES)
     legal_bytes = regular_bytes(legal_path, "Fleet Telemetry legal lock", MAX_LOCK_BYTES)
     bridge = validate_bridge_lock(parse_json(bridge_bytes, "Fleet Telemetry bridge lock"))
@@ -1091,7 +1167,19 @@ def generate(
     patch_bytes = regular_bytes(patch_path, "Fleet Telemetry bridge patch", MAX_LOCK_BYTES)
     if sha256_bytes(patch_bytes) != bridge["overlay"]["patch_sha256"]:
         raise GateError("Fleet Telemetry bridge patch does not match the bridge lock")
+    for field, filename, maximum in (
+        ("go_mod", "go.mod", MAX_GO_MOD_BYTES),
+        ("go_sum", "go.sum", MAX_SOURCE_ARCHIVE_BYTES),
+    ):
+        graph_data = regular_bytes(
+            module_graph_directory / filename,
+            f"Fleet Telemetry module graph {filename}",
+            maximum,
+        )
+        if sha256_bytes(graph_data) != bridge["overlay"]["module_graph"][f"{field}_sha256"]:
+            raise GateError(f"Fleet Telemetry module graph {filename} does not match the bridge lock")
     binary = regular_bytes(receiver_path, "Fleet Telemetry receiver", MAX_BINARY_BYTES)
+    verify_binary_modules(receiver_path, legal, bridge["toolchain"]["go_version"])
     source_data = regular_bytes(source_path, "Fleet Telemetry source archive", MAX_SOURCE_ARCHIVE_BYTES)
     if sha256_bytes(source_data) != legal["main"]["archive_sha256"]:
         raise GateError("Fleet Telemetry source archive does not match the legal lock")
@@ -1149,7 +1237,7 @@ def main() -> int:
         ) or args.target != "darwin-arm64":
             raise GateError("--check-go-toolchain cannot be combined with evidence inputs")
         try:
-            print(select_go("go1.27.0"))
+            print(select_go("go1.27.1"))
         except RuntimeError as exc:
             raise GateError(str(exc)) from exc
         return 0

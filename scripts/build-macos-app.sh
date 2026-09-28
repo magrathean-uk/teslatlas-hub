@@ -65,7 +65,7 @@ GO_TOOLCHAIN_HELPER="$ROOT/scripts/go_toolchain.py"
 [ -f "$GO_TOOLCHAIN_HELPER" ] && [ ! -L "$GO_TOOLCHAIN_HELPER" ] \
     || die "Go toolchain selector is missing or unsafe"
 TESLATLAS_GO=$(/usr/bin/python3 "$GO_TOOLCHAIN_HELPER" \
-    --expected-version go1.27.0) \
+    --expected-version go1.27.1) \
     || die "cannot select the pinned Go toolchain"
 export TESLATLAS_GO
 

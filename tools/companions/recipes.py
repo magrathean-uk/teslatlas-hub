@@ -194,10 +194,10 @@ def check_recipe_environment(name: str, context: RecipeContext) -> dict[str, str
         cargo_version = _version([cargo, "--version"], context)
         rust_version = _version([rustc, "--version"], context)
         go_version = _version([go, "version"], context)
-        if not rust_version.startswith("rustc 1.98.0 ") or " go1.27.0 " not in (
+        if not rust_version.startswith("rustc 1.98.1 ") or " go1.27.1 " not in (
             f" {go_version} "
         ):
-            raise _bootstrap_error("Edge requires Rust 1.98.0 and Go 1.27.0")
+            raise _bootstrap_error("Edge requires Rust 1.98.1 and Go 1.27.1")
         result = {"cargo": cargo_version, "rustc": rust_version, "go": go_version}
         if context.edge_go_binary is not None:
             binary, root = _edge_toolchain_override(context)

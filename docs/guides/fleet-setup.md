@@ -192,7 +192,7 @@ without terminating TLS. If the receiver JSON is absent, Hub runs alone.
 For an official Debian package, generate both pinned Linux sidecars and their
 paired Go/Fleet evidence on the approved Apple-silicon macOS release host by
 following the [release runbook](../releases/releasing.md). Go evidence generation requires its
-locked Go 1.27.0/Xcode host and records the clean target rebuild. On Debian,
+locked Go 1.27.1/Xcode host and records the clean target rebuild. On Debian,
 `--verify-dir` validates that evidence but does not rebuild it; Fleet evidence
 binds its receiver subject and complete source/legal corpus without claiming a
 clean receiver rebuild. Native Debian proof additionally binds the tagged

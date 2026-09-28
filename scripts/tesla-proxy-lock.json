@@ -4,36 +4,28 @@
   "subjects": {
     "darwin-arm64": {
       "name": "tesla-http-proxy",
-      "sha256": "7ff7c45fc8cb3d3900a54b24010d8cd86fcbcba34ed639572af09a0885705222",
-      "size": 12666818
+      "sha256": "f3243ee333d2b6668e4e8655fc7818529f0a3ea391f4f2b6495031b1aebdb0a3",
+      "size": 10579122
     },
     "linux-amd64": {
       "name": "tesla-http-proxy",
-      "sha256": "6f8bf205479b577f4d84f1aab23b3d3435198293faa4bd04ba883169bf739edc",
-      "size": 13574304
+      "sha256": "12bce532d96a316f98c83b3c6871a48ab3928fdd756fd694905bbbd2893d8b09",
+      "size": 11288736
     },
     "linux-arm64": {
       "name": "tesla-http-proxy",
-      "sha256": "12dc00a2547de67908501e47f56c4fab8f8d9ab315886d405987bcb08a21c64c",
-      "size": 12779680
+      "sha256": "38092d34c0647e48641a3abe4b4f5d19abaf1de866c4b47cee745228d5011934",
+      "size": 10551456
     }
   },
   "build_host": {
     "go": [
       {
-        "path": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64/bin/go",
-        "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
-        "goroot": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64"
-      },
-      {
-        "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
-        "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
-        "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64"
-      },
-      {
-        "path": "/opt/homebrew/Cellar/go/1.27.0/libexec/bin/go",
-        "sha256": "71c4991041d8e44975c882e4f72005719c958013d3340dc665a3808b72ddf702",
-        "goroot": "/opt/homebrew/Cellar/go/1.27.0/libexec"
+        "path": "/Users/bolyki/Library/Application Support/clean-development/bin/go",
+        "sha256": "8f891adac45a0340c54d32475d8e4dfb00721d02ea9452fdf507a329b658c76c",
+        "goroot": "/opt/homebrew/Cellar/go/1.27.1/libexec",
+        "binary_path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
+        "binary_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b"
       }
     ],
     "compiler": {
@@ -52,7 +44,7 @@
     }
   },
   "toolchain": {
-    "go_version": "go1.27.0",
+    "go_version": "go1.27.1",
     "trimpath": true,
     "buildvcs": false,
     "ldflags": "-s -w",
@@ -144,8 +136,8 @@
   },
   "overlay": {
     "path": "packaging/tesla-command-proxy/0001-go-1.27-runtime-defaults.patch",
-    "sha256": "0eb6a95f175ebdde51b18485a7ccd19c5e23aeb009a6f989b4512eb12b843a16",
-    "modified_go_mod_sha256": "7459a52ecd7758154ae58d6ec85ac621293aad7d942055f239206ea082e00c3e"
+    "sha256": "93a464c0e3a276d6c2c379ac33bb92ab10301cda7ddfb13cd7b155c7da8f87bc",
+    "modified_go_mod_sha256": "8f7bb08108b8080cf0e9c361405405f3701cabc54f8bcb13e5c960080759781f"
   },
   "main": {
     "path": "github.com/teslamotors/vehicle-command",
@@ -193,7 +185,7 @@
     },
     {
       "path": "github.com/JuulLabs-OSS/cbgo",
-      "version": "v0.0.1",
+      "version": "v0.0.2",
       "sum": null,
       "effective_path": "github.com/tinygo-org/cbgo",
       "effective_version": "v0.0.4",
@@ -230,13 +222,13 @@
     },
     {
       "path": "github.com/dvsekhvalnov/jose2go",
-      "version": "v1.7.0",
-      "sum": "h1:bnQc8+GMnidJZA8zc6lLEAb4xNrIqHwO+9TzqvtQZPo=",
+      "version": "v1.11.0",
+      "sum": "h1:9pnsV1/CLWFYSxMilqtiY1Fb4JZOxfDk/q0/CQiUMYw=",
       "effective_path": "github.com/dvsekhvalnov/jose2go",
-      "effective_version": "v1.7.0",
-      "effective_sum": "h1:bnQc8+GMnidJZA8zc6lLEAb4xNrIqHwO+9TzqvtQZPo=",
+      "effective_version": "v1.11.0",
+      "effective_sum": "h1:9pnsV1/CLWFYSxMilqtiY1Fb4JZOxfDk/q0/CQiUMYw=",
       "go_mod_sum": "h1:QsHjhyTlD/lAVqn/NSbVZmSCGeDehTB/mPZadG+mhXU=",
-      "zip_sha256": "99ca0fb985cea6c42221142f29f728abbac66ec0bdbc4345dbb587574e1ebd93",
+      "zip_sha256": "d764038ce89006280edfb249349fedbfa4c55567d5449cadfe7f1cde1c70006b",
       "go_mod_sha256": "6e179ed1a50b16dbb8cf9492d4c5036f068e5e13df953df9e3a1f1712ffb662e",
       "license_expression": "MIT",
       "license_files": [
@@ -275,14 +267,14 @@
     },
     {
       "path": "github.com/golang-jwt/jwt/v5",
-      "version": "v5.2.2",
-      "sum": "h1:Rl4B7itRWVtYIHFrSNd7vhTiz9UpLdi6gZhZ3wEeDy8=",
+      "version": "v5.3.1",
+      "sum": "h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=",
       "effective_path": "github.com/golang-jwt/jwt/v5",
-      "effective_version": "v5.2.2",
-      "effective_sum": "h1:Rl4B7itRWVtYIHFrSNd7vhTiz9UpLdi6gZhZ3wEeDy8=",
-      "go_mod_sum": "h1:pqrtFR0X4osieyHYxtmOUWsAWrfe1Q5UVIyoH402zdk=",
-      "zip_sha256": "278980d9e52498b7c54baf21fed203b942aa1d08b7f62eec494110b61b6fd3c9",
-      "go_mod_sha256": "3ea9a4810104feb6bfc26ee805e7e427a018ee497065e7b1b117c0131e4ee30a",
+      "effective_version": "v5.3.1",
+      "effective_sum": "h1:kYf81DTWFe7t+1VvL7eS+jKFVWaUnK9cB1qbwn63YCY=",
+      "go_mod_sum": "h1:fxCRLWMO43lRc8nhHWY6LGqRcf+1gQWArsqaEUEa5bE=",
+      "zip_sha256": "5c9a74494e2bc746cee56558b5473252af5767f7ea4044caa9ea0fa2a056fec7",
+      "go_mod_sha256": "ce98fa479154259db056ded8254a6ae9c66f2b42e613e76ba0f026699b5e542f",
       "license_expression": "MIT",
       "license_files": [
         "LICENSE"
@@ -305,14 +297,14 @@
     },
     {
       "path": "github.com/mattn/go-colorable",
-      "version": "v0.1.6",
-      "sum": "h1:6Su7aK7lXmJ/U79bYtBjLNaha4Fs1Rg9plHpcH+vvnE=",
+      "version": "v0.1.15",
+      "sum": "h1:+u9SLTRGnXv73cEsnsmoZBom+dMU88B2M0aDcWy0/jY=",
       "effective_path": "github.com/mattn/go-colorable",
-      "effective_version": "v0.1.6",
-      "effective_sum": "h1:6Su7aK7lXmJ/U79bYtBjLNaha4Fs1Rg9plHpcH+vvnE=",
-      "go_mod_sum": "h1:u6P/XSegPjTcexA+o6vUJrdnUu04hMope9wVRipJSqc=",
-      "zip_sha256": "0da5d3779775f6fe5d007e7ec8e0afc136c4bd7b8c9b5cd73254db26773cf4dc",
-      "go_mod_sha256": "adff3e24384bcd2ecf0c6d6a1a9e4e31065401e9b5d29ce6a120255ab3c02313",
+      "effective_version": "v0.1.15",
+      "effective_sum": "h1:+u9SLTRGnXv73cEsnsmoZBom+dMU88B2M0aDcWy0/jY=",
+      "go_mod_sum": "h1:6LmQG8QLFO4G5z1gPvYEzlUgJ2wF+stgPZH1UqBm1s8=",
+      "zip_sha256": "221144f51cc5eeda0a72bd7b5832181b94240c1d760bde0b3428895e63e63339",
+      "go_mod_sha256": "c199aee551968c8290b917524e0b232a862790a4831b0ed4cb43687e8c08aa18",
       "license_expression": "MIT",
       "license_files": [
         "LICENSE"
@@ -320,14 +312,14 @@
     },
     {
       "path": "github.com/mattn/go-isatty",
-      "version": "v0.0.12",
-      "sum": "h1:wuysRhFDzyxgEmMf5xjvJ2M9dZoWAXNNr5LSBS7uHXY=",
+      "version": "v0.0.24",
+      "sum": "h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=",
       "effective_path": "github.com/mattn/go-isatty",
-      "effective_version": "v0.0.12",
-      "effective_sum": "h1:wuysRhFDzyxgEmMf5xjvJ2M9dZoWAXNNr5LSBS7uHXY=",
-      "go_mod_sum": "h1:cbi8OIDigv2wuxKPP5vlRcQ1OAZbq2CE4Kysco4FUpU=",
-      "zip_sha256": "07941d24e0894c29dc42bcd29d644815cd7b5ee84e3c14bbe6d51ad13efcbf07",
-      "go_mod_sha256": "1a062e56c0266d004bea51115acf8c2b597d1407ca55ad56cce01e97ada3da4b",
+      "effective_version": "v0.0.24",
+      "effective_sum": "h1:tGZZoVgT/KiqK1c8ocVLeDS8BSWMRd47J3Lbz7vsReI=",
+      "go_mod_sum": "h1:nMCL3Zebbrt45jsMDgnfIwz6ydEQApk5oEI3HqDio6A=",
+      "zip_sha256": "4fcffec0bae0ad4af7bf96e2497a817d85de64af19ffe31d82bda362148234b8",
+      "go_mod_sha256": "41b885f68c2fa4dfb26a8ffa30d095a931b27699b6b2b1974af3949400dc060f",
       "license_expression": "MIT",
       "license_files": [
         "LICENSE"
@@ -335,13 +327,13 @@
     },
     {
       "path": "github.com/mgutz/ansi",
-      "version": "v0.0.0-20170206155736-9520e82c474b",
-      "sum": "h1:j7+1HpAFS1zy5+Q4qx1fWh90gTKwiN4QCGoY9TWyyO4=",
+      "version": "v0.0.0-20200706080929-d51e80ef957d",
+      "sum": "h1:5PJl274Y63IEHC+7izoQE9x6ikvDFZS2mDVS3drnohI=",
       "effective_path": "github.com/mgutz/ansi",
-      "effective_version": "v0.0.0-20170206155736-9520e82c474b",
-      "effective_sum": "h1:j7+1HpAFS1zy5+Q4qx1fWh90gTKwiN4QCGoY9TWyyO4=",
+      "effective_version": "v0.0.0-20200706080929-d51e80ef957d",
+      "effective_sum": "h1:5PJl274Y63IEHC+7izoQE9x6ikvDFZS2mDVS3drnohI=",
       "go_mod_sum": "h1:01TrycV0kFyexm33Z7vhZRXopbI8J3TDReVlkTgMUxE=",
-      "zip_sha256": "d7c0ff88c53dfca384bb82108a6e5fdc9e11b358d68b67144ff6a285be20a16a",
+      "zip_sha256": "2e0c063f9597cb225904292981732f10298e95aa22a1b815297e318ba103dc1d",
       "go_mod_sha256": "12e14b97ea604f1fcb9f7fcc85ee93d9ba7f858a03469ee29e929a07d55d0a4d",
       "license_expression": "MIT",
       "license_files": [
@@ -380,13 +372,13 @@
     },
     {
       "path": "github.com/pkg/errors",
-      "version": "v0.8.1",
-      "sum": "h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=",
+      "version": "v0.9.1",
+      "sum": "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=",
       "effective_path": "github.com/pkg/errors",
-      "effective_version": "v0.8.1",
-      "effective_sum": "h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=",
+      "effective_version": "v0.9.1",
+      "effective_sum": "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=",
       "go_mod_sum": "h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=",
-      "zip_sha256": "4e47d021340b7396a7dee454f527552faf7360a9fc34038b1dc32ba3b5a951d8",
+      "zip_sha256": "d4c36b8bcd0616290a3913215e0f53b931bd6e00670596f2960df1b44af2bd07",
       "go_mod_sha256": "df28c6a823f181d76179697177c0c5943c6ffb38f3c10b2dc53be360ee7d4589",
       "license_expression": "BSD-2-Clause",
       "license_files": [
@@ -395,13 +387,13 @@
     },
     {
       "path": "github.com/raff/goble",
-      "version": "v0.0.0-20190909174656-72afc67d6a99",
-      "sum": "h1:JtoVdxWJ3tgyqtnPq3r4hJ9aULcIDDnPXBWxZsdmqWU=",
+      "version": "v0.0.0-20200327175727-d63360dcfd80",
+      "sum": "h1:IZkjNgPZXcE4USkGzmJQyHco3KFLmhcLyFdxCOiY6cQ=",
       "effective_path": "github.com/raff/goble",
-      "effective_version": "v0.0.0-20190909174656-72afc67d6a99",
-      "effective_sum": "h1:JtoVdxWJ3tgyqtnPq3r4hJ9aULcIDDnPXBWxZsdmqWU=",
+      "effective_version": "v0.0.0-20200327175727-d63360dcfd80",
+      "effective_sum": "h1:IZkjNgPZXcE4USkGzmJQyHco3KFLmhcLyFdxCOiY6cQ=",
       "go_mod_sum": "h1:CxaUhijgLFX0AROtH5mluSY71VqpjQBw9JXE2UKZmc4=",
-      "zip_sha256": "ef5dde1af55d451c37ddf13e17ae339d299903cb7e67567fc6d1e69688a789e1",
+      "zip_sha256": "90a97bbdb78923fc277156c53fe949969cc632ecc5c840bdf3d35f2089456a75",
       "go_mod_sha256": "84b4c4622d2a6accd56bf6fce2c99e7482a7d28d53f8a385d6d4569017e1b251",
       "license_expression": "MIT",
       "license_files": [
@@ -410,14 +402,14 @@
     },
     {
       "path": "github.com/sirupsen/logrus",
-      "version": "v1.5.0",
-      "sum": "h1:1N5EYkVAPEywqZRJd7cwnRtCb6xJx7NH3T3WUTF980Q=",
+      "version": "v1.10.2",
+      "sum": "h1:G2SED73/qrAu6YwbdxOD6peLkCBI3z7L+ykJFTXJBBo=",
       "effective_path": "github.com/sirupsen/logrus",
-      "effective_version": "v1.5.0",
-      "effective_sum": "h1:1N5EYkVAPEywqZRJd7cwnRtCb6xJx7NH3T3WUTF980Q=",
-      "go_mod_sum": "h1:+F7Ogzej0PZc/94MaYx/nvG9jOFMD2osvC3s+Squfpo=",
-      "zip_sha256": "1eb4c85b8010fb19864681ff1129ba1794977c131cf1e8b3fc520f77796a1e7a",
-      "go_mod_sha256": "0c5da2d19f4423139899f3b24e84deae1753eae6a46d49db34685030b44bf154",
+      "effective_version": "v1.10.2",
+      "effective_sum": "h1:G2SED73/qrAu6YwbdxOD6peLkCBI3z7L+ykJFTXJBBo=",
+      "go_mod_sum": "h1:SLEg8TqYulVKKfIGHldVp2K2aYz2DKSVBq4g/H5bR7Q=",
+      "zip_sha256": "73a40737da86682dd536ec2c87dff0f589eeeed81873362b08ed009818747b52",
+      "go_mod_sha256": "0ae1e8f2e690807fd54e3c2e3cb8326815baa54dbb2b0bf7798c73f3ec061c48",
       "license_expression": "MIT",
       "license_files": [
         "LICENSE"
@@ -425,14 +417,14 @@
     },
     {
       "path": "golang.org/x/sys",
-      "version": "v0.8.0",
-      "sum": "h1:EBmGv8NaZBZTWvrbjNoL6HVt+IVy3QDQpJs7VRIw3tU=",
+      "version": "v0.48.0",
+      "sum": "h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=",
       "effective_path": "golang.org/x/sys",
-      "effective_version": "v0.8.0",
-      "effective_sum": "h1:EBmGv8NaZBZTWvrbjNoL6HVt+IVy3QDQpJs7VRIw3tU=",
-      "go_mod_sum": "h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=",
-      "zip_sha256": "2588b3a645838390e341f1007f8679f5e1117b5d5ac9467ef832d148b2219a38",
-      "go_mod_sha256": "f033333096fe198f3151deed93f2deba74e50bbfe7739134045bc3b7ce4a5024",
+      "effective_version": "v0.48.0",
+      "effective_sum": "h1:bbX/i/6MgT9BVLM9RT1thmxL04yeTAhbEz4SyadbXoo=",
+      "go_mod_sum": "h1:hNLxWAXmnKAxqDtdwIYC4bM9oQPEecfsnNMuSxOs3og=",
+      "zip_sha256": "3a47e06431ba1e24d5b2aca3a7ce31fd13faff34df3e5d8e63f105ff9d0c1786",
+      "go_mod_sha256": "9522f4c9806d1c26586ea80fa56292929bd295865e71981927f52996c6b1c831",
       "license_expression": "BSD-3-Clause",
       "license_files": [
         "LICENSE"
@@ -440,14 +432,14 @@
     },
     {
       "path": "golang.org/x/term",
-      "version": "v0.5.0",
-      "sum": "h1:n2a8QNdAb0sZNpU9R1ALUXBbY+w51fCQDN+7EdxNBsY=",
+      "version": "v0.46.0",
+      "sum": "h1:3+OXuTbaKDgwk8jTi3aSLHRlmWqHEUDUtxnbFigO4YE=",
       "effective_path": "golang.org/x/term",
-      "effective_version": "v0.5.0",
-      "effective_sum": "h1:n2a8QNdAb0sZNpU9R1ALUXBbY+w51fCQDN+7EdxNBsY=",
-      "go_mod_sum": "h1:jMB1sMXY+tzblOD4FWmEbocvup2/aLOaQEp7JmGp78k=",
-      "zip_sha256": "7d89c49ab41306950128a0f4b7c67fb8e2d2f637ece8e024e6cf38d17a33193b",
-      "go_mod_sha256": "0d6f58228aadc1a6528e6755da018516566e3ae5c5201f7ade1773f56fa8d934",
+      "effective_version": "v0.46.0",
+      "effective_sum": "h1:3+OXuTbaKDgwk8jTi3aSLHRlmWqHEUDUtxnbFigO4YE=",
+      "go_mod_sum": "h1:+K02xbkittuwc0Am4abfA3Fc+XRGXkvBXNO88NCXPoc=",
+      "zip_sha256": "9147fdd982f1aed1392183d5b48055f4f74c85d496604766c7f0b1d3bbd61c7c",
+      "go_mod_sha256": "f94c7bd036a7d189950b7759a3f105e7bcc7164dc89d80d186c7e8a903d6c332",
       "license_expression": "BSD-3-Clause",
       "license_files": [
         "LICENSE"
@@ -455,14 +447,14 @@
     },
     {
       "path": "google.golang.org/protobuf",
-      "version": "v1.34.2",
-      "sum": "h1:6xV6lTsCfpGD21XK49h7MhtcApnLqkfYgPcdHftf6hg=",
+      "version": "v1.36.12",
+      "sum": "h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=",
       "effective_path": "google.golang.org/protobuf",
-      "effective_version": "v1.34.2",
-      "effective_sum": "h1:6xV6lTsCfpGD21XK49h7MhtcApnLqkfYgPcdHftf6hg=",
-      "go_mod_sum": "h1:qYOHts0dSfpeUzUFpOMr/WGzszTmLH+DiWniOlNbLDw=",
-      "zip_sha256": "10308a9146b8fd78c8d04347e3e4c6a446e44d0d2834d05b64210f2911b0416e",
-      "go_mod_sha256": "6fde7a4dd83ec5376d74ffd6dc492dc6dade5c101877ed70f43555ef34a74350",
+      "effective_version": "v1.36.12",
+      "effective_sum": "h1:pJOKDDOyeXErUroCihFAd5LQuwXBSpVnKGrj5o/fwxc=",
+      "go_mod_sum": "h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=",
+      "zip_sha256": "68f8a3174aff42950fd9bd02c11b45c6986eb8060508d124d1c3dd6bf86b9be6",
+      "go_mod_sha256": "a75c105a852fbd8da8d8cfac09c2eab9a206cfd27ed37c973737e23f632ca96e",
       "license_expression": "BSD-3-Clause",
       "license_files": [
         "LICENSE"

@@ -66,9 +66,9 @@ class RecipeTests(unittest.TestCase):
         self, _which, version, _system
     ) -> None:
         version.side_effect = lambda command, _context: {
-            "cargo": "cargo 1.98.0",
-            "rustc": "rustc 1.98.0 (fixture)",
-            "go": "go version go1.27.0 linux/arm64",
+            "cargo": "cargo 1.98.1",
+            "rustc": "rustc 1.98.1 (fixture)",
+            "go": "go version go1.27.1 linux/arm64",
         }[Path(command[0]).name]
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()

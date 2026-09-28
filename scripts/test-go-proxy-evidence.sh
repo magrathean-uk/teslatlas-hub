@@ -2,6 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
+# Preserve the workspace-selected external Go executable across the builder's
+# sanitized PATH. This keeps its module cache on the managed external root.
+TESLATLAS_GO=${TESLATLAS_GO:-$(command -v go)}
+export TESLATLAS_GO
+
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 HELPER="$ROOT/scripts/go-proxy-evidence.py"
 LOCK="$ROOT/scripts/tesla-proxy-lock.json"
@@ -56,28 +61,21 @@ assert not cleanup_race.exists()
 
 assert lock["schema"] == "teslatlas.tesla-proxy-lock/v3"
 policy = module.validate_lock(copy.deepcopy(lock))["build_host"]
-assert len(policy["go"]) == 3
+assert len(policy["go"]) == 1
 assert policy["go"] == sorted(
-    policy["go"], key=lambda item: (item["path"], item["sha256"], item["goroot"])
+    policy["go"], key=lambda item: (
+        item["path"], item["sha256"], item["goroot"],
+        item.get("binary_path", ""), item.get("binary_sha256", ""),
+    )
 )
 official = {
-    "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
-    "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
-    "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64",
-}
-homebrew = {
-    "path": "/opt/homebrew/Cellar/go/1.27.0/libexec/bin/go",
-    "sha256": "71c4991041d8e44975c882e4f72005719c958013d3340dc665a3808b72ddf702",
-    "goroot": "/opt/homebrew/Cellar/go/1.27.0/libexec",
-}
-user_owned = {
-    "path": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64/bin/go",
-    "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
-    "goroot": "/Users/bolyki/dev/teslatlas-lab/toolchains/go1.27.0-darwin-arm64",
+    "path": "/Users/bolyki/Library/Application Support/clean-development/bin/go",
+    "sha256": "8f891adac45a0340c54d32475d8e4dfb00721d02ea9452fdf507a329b658c76c",
+    "goroot": "/opt/homebrew/Cellar/go/1.27.1/libexec",
+    "binary_path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
+    "binary_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b",
 }
 assert official in policy["go"]
-assert homebrew in policy["go"]
-assert user_owned in policy["go"]
 assert policy["compiler"] == {
     "path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
     "sha256": "5922f5f7843fee699497c45cc98134b6686e0a5e2fa8a5866ab74c5482fa87a5",
@@ -94,8 +92,8 @@ assert policy["sdk"] == {
 }
 assert lock["subjects"]["darwin-arm64"] == {
     "name": "tesla-http-proxy",
-    "sha256": "7ff7c45fc8cb3d3900a54b24010d8cd86fcbcba34ed639572af09a0885705222",
-    "size": 12666818,
+    "sha256": "f3243ee333d2b6668e4e8655fc7818529f0a3ea391f4f2b6495031b1aebdb0a3",
+    "size": 10579122,
 }
 
 def rejected(action, message):
@@ -106,7 +104,7 @@ def rejected(action, message):
     else:
         raise AssertionError(f"accepted invalid host policy: {message}")
 
-for selected in (official, homebrew, user_owned):
+for selected in (official,):
     observed = {
         "go": copy.deepcopy(selected),
         "compiler": copy.deepcopy(policy["compiler"]),
@@ -115,7 +113,7 @@ for selected in (official, homebrew, user_owned):
     }
     module.require_reviewed_build_host(observed, policy, "test host")
 
-for field in ("path", "sha256", "goroot"):
+for field in ("path", "sha256", "goroot", "binary_path", "binary_sha256"):
     observed = {
         "go": copy.deepcopy(official),
         "compiler": copy.deepcopy(policy["compiler"]),
@@ -123,7 +121,7 @@ for field in ("path", "sha256", "goroot"):
         "sdk": copy.deepcopy(policy["sdk"]),
     }
     observed["go"][field] = (
-        "0" * 64 if field == "sha256" else observed["go"][field] + ".forged"
+        "0" * 64 if field in {"sha256", "binary_sha256"} else observed["go"][field] + ".forged"
     )
     rejected(
         lambda observed=observed: module.require_reviewed_build_host(
@@ -135,8 +133,10 @@ for field in ("path", "sha256", "goroot"):
 mixed = {
     "go": {
         "path": official["path"],
-        "sha256": homebrew["sha256"],
+        "sha256": official["binary_sha256"],
         "goroot": official["goroot"],
+        "binary_path": official["binary_path"],
+        "binary_sha256": official["binary_sha256"],
     },
     "compiler": copy.deepcopy(policy["compiler"]),
     "xcode": copy.deepcopy(policy["xcode"]),
@@ -152,6 +152,8 @@ unlisted["go"] = {
     "path": "/private/reviewed-nowhere/go",
     "sha256": "1" * 64,
     "goroot": "/private/reviewed-nowhere",
+    "binary_path": "/private/reviewed-nowhere/bin/go",
+    "binary_sha256": "1" * 64,
 }
 rejected(
     lambda: module.require_reviewed_build_host(unlisted, policy, "test host"),
@@ -184,6 +186,15 @@ del malformed["build_host"]["go"][0]["goroot"]
 rejected(lambda: module.validate_lock(malformed), "keys mismatch")
 
 unsorted = copy.deepcopy(lock)
+other_go = copy.deepcopy(unsorted["build_host"]["go"][0])
+other_go.update({
+    "path": "/private/other/go",
+    "sha256": "f" * 64,
+    "goroot": "/private/other",
+    "binary_path": "/private/other/bin/go",
+    "binary_sha256": "f" * 64,
+})
+unsorted["build_host"]["go"].append(other_go)
 unsorted["build_host"]["go"].reverse()
 rejected(lambda: module.validate_lock(unsorted), "uniquely sorted")
 PY
@@ -240,9 +251,11 @@ evidence = Path(sys.argv[1])
 proxy = Path(sys.argv[2])
 digest = lambda data: hashlib.sha256(data).hexdigest()
 official = {
-    "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
-    "sha256": "a19a71df81715c12d9a7e81bab036c12696fec1ddbd4258b48a2131a9080b267",
-    "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64",
+    "path": "/Users/bolyki/Library/Application Support/clean-development/bin/go",
+    "sha256": "8f891adac45a0340c54d32475d8e4dfb00721d02ea9452fdf507a329b658c76c",
+    "goroot": "/opt/homebrew/Cellar/go/1.27.1/libexec",
+    "binary_path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
+    "binary_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b",
 }
 
 manifest = json.loads((evidence / "go-component-manifest.json").read_text())
@@ -286,7 +299,7 @@ assert receipt["clean_rebuild_byte_identical"] is True
 assert receipt["target"] == "darwin-arm64"
 assert receipt["clean_rebuild_sha256"] == digest(proxy.read_bytes())
 assert receipt["strict_go_environment"]["GOFLAGS"] == ""
-assert receipt["toolchain"]["go_version"] == "go1.27.0"
+assert receipt["toolchain"]["go_version"] == "go1.27.1"
 assert receipt["toolchain"]["godebug_default"] == "go1.27"
 assert "DefaultGODEBUG" not in {
     item["Key"] for item in receipt["build_info"]["Settings"]
@@ -425,6 +438,8 @@ for field, forged in (
     ("path", "/unreviewed/go"),
     ("sha256", "0" * 64),
     ("goroot", "/unreviewed"),
+    ("binary_path", "/unreviewed/bin/go"),
+    ("binary_sha256", "0" * 64),
 ):
     json_forgery(
         f"forged-go-{field}", "go-build-receipt.json",
@@ -435,9 +450,11 @@ for field, forged in (
 
 def mix_allowed_go(value):
     value["build_host"]["go"] = {
-        "path": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64/bin/go",
+        "path": "/Users/bolyki/Library/Application Support/clean-development/bin/go",
         "sha256": "71c4991041d8e44975c882e4f72005719c958013d3340dc665a3808b72ddf702",
-        "goroot": "/Users/bolyki/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.27.0.darwin-arm64",
+        "goroot": "/opt/homebrew/Cellar/go/1.27.1/libexec",
+        "binary_path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
+        "binary_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b",
     }
 
 json_forgery("forged-go-mixed", "go-build-receipt.json", mix_allowed_go)
@@ -490,6 +507,7 @@ manifest_path.write_text(
 )
 PY
 for forgery in forged-receipt forged-go-path forged-go-sha256 forged-go-goroot \
+    forged-go-binary_path forged-go-binary_sha256 \
     forged-go-mixed forged-compiler forged-xcode forged-sdk forged-inventory \
     forged-sbom forged-notices forged-archive forged-proxy-component forged-target
 do
@@ -500,7 +518,8 @@ do
     fi
 done
 grep -Fq 'does not prove the locked reproducible subject' "$TMP/forged-receipt.out"
-for forgery in forged-go-path forged-go-sha256 forged-go-goroot forged-go-mixed; do
+for forgery in forged-go-path forged-go-sha256 forged-go-goroot \
+    forged-go-binary_path forged-go-binary_sha256 forged-go-mixed; do
     grep -Fq 'Go identity is not an allowed complete binding' "$TMP/$forgery.out"
 done
 grep -Fq 'compiler identity does not match the exact lock' "$TMP/forged-compiler.out"
@@ -524,7 +543,7 @@ fi
 test ! -e "$TMP/tampered-evidence"
 
 mkdir -p "$TMP/wrong-repo/scripts"
-sed 's/"go_version": "go1.27.0"/"go_version": "go1.26.0"/' "$LOCK" \
+sed 's/"go_version": "go1.27.1"/"go_version": "go1.26.0"/' "$LOCK" \
     >"$TMP/wrong-repo/scripts/tesla-proxy-lock.json"
 if python3 "$HELPER" --repo "$TMP/wrong-repo" --proxy-binary "$TMP/tesla-http-proxy" \
     --output-dir "$TMP/wrong-toolchain-evidence" >"$TMP/wrong-toolchain.out" 2>&1; then
