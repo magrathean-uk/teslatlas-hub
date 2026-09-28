@@ -104,6 +104,13 @@ receiver envelope. Optional `device_client_version` and `firmware_version`
 fields participate when present and are omitted when absent. Object key order
 does not affect the result. A content change produces a different ID.
 
+Object keys are sorted by their UTF-8 bytes, which is Unicode code point
+order. RFC 8785 sorts by UTF-16 code units instead. The two orders differ only
+when two keys first differ at a character in U+E000 to U+FFFF on one side and a
+character above U+FFFF on the other. Persisted IDs use the UTF-8 order, so an
+implementation that reproduces them must too. Changing it needs a separately
+versioned identity migration.
+
 `batch_id` is lowercase SHA-256 hex over the ordered record IDs with the domain
 `teslatlas-edge-batch-v1\0` and a zero byte after every ID. Hub should treat it
 as an opaque batch correlation value, not a record identity.

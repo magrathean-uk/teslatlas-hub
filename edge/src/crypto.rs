@@ -1,5 +1,5 @@
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
-use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use rand::RngExt;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -21,9 +21,8 @@ impl EncryptionKey {
     pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         let mut nonce_bytes = [0_u8; NONCE_BYTES];
         rand::rng().fill(&mut nonce_bytes);
-        let key = Key::try_from(&self.0[..]).expect("encryption key has fixed length");
         let nonce = XNonce::try_from(&nonce_bytes[..]).expect("XChaCha nonce has fixed length");
-        let cipher = XChaCha20Poly1305::new(&key);
+        let cipher = self.cipher();
         let ciphertext = cipher
             .encrypt(
                 &nonce,
@@ -53,10 +52,9 @@ impl EncryptionKey {
         if input[key_id_start..nonce_start] != self.key_id() {
             return Err(CryptoError::KeyMismatch);
         }
-        let key = Key::try_from(&self.0[..]).expect("encryption key has fixed length");
         let nonce = XNonce::try_from(&input[nonce_start..ciphertext_start])
             .expect("validated XChaCha nonce has fixed length");
-        let cipher = XChaCha20Poly1305::new(&key);
+        let cipher = self.cipher();
         cipher
             .decrypt(
                 &nonce,
@@ -66,6 +64,12 @@ impl EncryptionKey {
                 },
             )
             .map_err(|_| CryptoError::InvalidCiphertext)
+    }
+
+    /// Builds the cipher straight from the key bytes, so no separate key copy is
+    /// left on the stack; the cipher wipes its own copy on drop.
+    fn cipher(&self) -> XChaCha20Poly1305 {
+        XChaCha20Poly1305::new_from_slice(&self.0).expect("encryption key has fixed length")
     }
 
     fn key_id(&self) -> [u8; KEY_ID_BYTES] {

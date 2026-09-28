@@ -18,7 +18,8 @@ path = "src/main.rs"
 axum = { version = "0.8", features = ["json"] }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
 base64 = "0.23"
-chacha20poly1305 = "0.11"
+# `zeroize` wipes the cipher's internal key copy on drop.
+chacha20poly1305 = { version = "0.11", features = ["zeroize"] }
 clap = { version = "4.6", features = ["derive"] }
 fs4 = "1.1"
 hex = "0.4"
