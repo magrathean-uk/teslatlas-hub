@@ -28,13 +28,13 @@ The reference views label loading, empty, absent, stale, inferred, degraded, off
 
 ## Development status
 
-Viewer feature development remains deferred. This authorized dependency refresh updated package and toolchain pins while preserving the existing feature work and acceptance boundaries; it did not run the build, application tests, installed Hub journeys, or live pairing. Compatibility remains a candidate with no accepted Hub-version entries in [the manifest](compatibility/hub.json). Historical receipts do not establish acceptance of the current checkout.
+Viewer feature development is deferred. The dependency update of 28 September 2026 changed the package and toolchain pins. It also brought in the paused 8 to 12 September installed-Hub work: the container health probe, installed-Hub browser tests, the matrix tools, their receipts and a change to how the current-state view labels a vehicle whose freshness is unknown but which has an update time. The build, application tests, installed Hub journeys and live pairing were not run for that update. Compatibility remains a candidate with no accepted Hub-version entries in [the manifest](compatibility/hub.json). Historical receipts do not establish acceptance of the current checkout.
 
 ## Requirements
 
 For a source checkout, use Node.js 26.x, npm 12.x, and `tar`. The package manifest accepts Node `>=26.0.0` and npm `>=11.0.0`; the reproducible local toolchain is pinned to Node `26.10.0` and npm `12.1.0`. Recreating the pinned SDK archive also requires the SDK source commit recorded in `artifacts/teslatlas-sdk.json`.
 
-The repository expects the project-relative SDK archive at `artifacts/teslatlas-sdk-2026.36.2.tgz`. That generated archive is ignored. A clean checkout therefore needs an SDK source checkout and the exact Node/npm executables before `npm ci` can install the file dependency.
+`npm ci` installs the SDK from the project-relative archive `artifacts/teslatlas-sdk-2026.36.2.tgz`. That archive is tracked in Git, although `.gitignore` also matches `artifacts/*.tgz`. `npm run sdk:prepare` regenerates it from an SDK source checkout with the exact Node and npm executables, and `npm run sdk:verify` checks the archive and the installed package against `artifacts/teslatlas-sdk.json`.
 
 ## Build from source
 
@@ -81,7 +81,7 @@ The server serves `GET` and `HEAD`, falls back to `index.html` for application r
 
 The Docker image builds the static assets in the official Node 26.10.0 Debian slim image pinned by OCI digest, then runs only `dist`, the static server, the health probe, and package metadata as the non-root `node` user. It has no Viewer data volume. Compose binds the service to `127.0.0.1:4173` and uses `unless-stopped`.
 
-After preparing the ignored SDK archive, use the Compose command available on your host:
+With the SDK archive in place, use the Compose command available on your host:
 
 ```sh
 docker compose up --build -d
