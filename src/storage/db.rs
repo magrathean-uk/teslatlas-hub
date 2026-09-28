@@ -56,7 +56,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 63;
+pub const SCHEMA_VERSION: i32 = 66;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -889,6 +889,13 @@ pub struct TeslaMateImportProjectionStateLookup {
 // performs a bounded number of SQLite reads while a backtrack replaces only
 // that entity's range.
 const TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS: usize = 1_024;
+const TESLAMATE_IMPORT_PROJECTION_STATE_PAGE_SQL: &str =
+    "SELECT entity, entity_ordinal, entity_id, car_id, projection_sha256
+       FROM teslamate_import_projection_state_rows
+      WHERE vehicle_id = ?1
+        AND (entity_ordinal, entity_id) > (?2, ?3)
+      ORDER BY entity_ordinal ASC, entity_id ASC
+      LIMIT ?4";
 
 #[derive(Debug)]
 struct TeslaMateImportProjectionStateDigestCache {
@@ -1073,15 +1080,7 @@ impl TeslaMateImportProjectionStateLookup {
         let query_limit = i64::from(limit) + 1;
         let mut statement = self
             .connection
-            .prepare(
-                "SELECT entity, entity_ordinal, entity_id, car_id, projection_sha256
-                   FROM teslamate_import_projection_state_rows
-                  WHERE vehicle_id = ?1
-                    AND (entity_ordinal > ?2
-                      OR (entity_ordinal = ?2 AND entity_id > ?3))
-                  ORDER BY entity_ordinal ASC, entity_id ASC
-                  LIMIT ?4",
-            )
+            .prepare(TESLAMATE_IMPORT_PROJECTION_STATE_PAGE_SQL)
             .map_err(StoreError::LineageCatalog)?;
         let raw_rows = statement
             .query_map(

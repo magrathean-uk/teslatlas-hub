@@ -13,11 +13,11 @@ the narrowest owning domain; `src/lib.rs` is the only Rust file permitted at the
 | Authentication | `src/auth/` | Credential custody, encryption, recovery, and refresh inputs |
 | Collection | `src/collection/` | Discovery, polling, streaming, Fleet Telemetry, and scheduling |
 | Geography | `src/geo/` | Location enrichment, terrain, geofences, and GPX export |
-| Import | `src/import/teslamate/` | TeslaMate capture, schema compatibility, projection, and write-back |
+| Import | `src/import/teslamate/` | TeslaMate capture, schema compatibility, projection, PhysicalV3 comparison/publication, optional prepared maps, and write-back |
 | Platform | `src/platform/` | macOS launchd, Linux systemd, and process ownership |
 | Runtime | `src/runtime/` | Configuration, diagnostics, and vehicle lifecycle projection |
 | Storage | `src/storage/` | SQLite catalogue, recovery, transactions, and durable models |
-| Sync | `src/sync/` | Immutable packs, manifests, delivery, and logical updates |
+| Sync | `src/sync/` | Immutable packs, typed physical-row scanning, manifests, delivery, and logical updates |
 
 The crate keeps compatibility exports such as `teslatlas_hub::db` and
 `teslatlas_hub::collector`. New code should use domain paths such as

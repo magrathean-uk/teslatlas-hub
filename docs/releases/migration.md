@@ -76,8 +76,10 @@ validation, and comply with privacy/employment rules.
 
 ## Data differences
 
-The importer is a selected-car projection, not a PostgreSQL backup and
-not a continuing TeslaMate bridge. The running app must be TeslaMate 4.2.0 or
+The importer is a selected-car projection, not a PostgreSQL backup or live
+replication service. An operator can repeat a history-only, read-only import
+with `--online-snapshot --preserve-existing-credentials` while retaining the
+Hub's stored Legacy pair. The running app must be TeslaMate 4.2.0 or
 newer, and the database must match the exact reviewed v4.2-compatible migration
 set. That schema is also present in v4.1.1, so database evidence cannot prove
 the app version and the operator must acknowledge the limitation explicitly.
@@ -169,7 +171,10 @@ in the immutable physical capture.
 Source row identity, per-table watermarks, and a content fingerprint make a
 retry idempotent. Re-importing an unchanged capture skips a new history
 publication while still preserving the reconciled open tail. Changed rows are
-published as a successor. Removed rows become typed tombstones only for the
+published as a complete signed PhysicalV3 successor; when bounded by Protocol
+1.4, an immediate predecessor also gets a signed changed set. A client with an
+older retained base receives a signed full replacement. Removed rows become
+typed tombstones in the compatibility projection only for the
 inventoried telemetry entities: drives, positions, charging processes, charge
 samples, states, and updates. The selected car identity is never tombstoned;
 car settings, geofences, and addresses are represented by the successor
@@ -189,7 +194,7 @@ Hub does not silently coerce it.
 
 ## Separate bounded write-back
 
-Migration is always read-only and is not a continuing bridge. A separate,
+Migration is always read-only and is not live replication. A separate,
 explicit `write-back charge-cost` command can lock and update one selected
 TeslaMate charging-process cost. It defaults to rollback and requires
 `--apply` to commit. Ordinary migration and collection never call it; no other

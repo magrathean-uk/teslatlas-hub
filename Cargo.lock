@@ -2442,6 +2442,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "teslatlas-compute"
+version = "0.1.0"
+
+[[package]]
 name = "teslatlas-hub"
 version = "2026.36.2"
 dependencies = [
@@ -2469,6 +2473,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "teslatlas-compute",
  "thiserror",
  "time",
  "tokio",

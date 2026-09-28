@@ -203,7 +203,7 @@ fn validate_optional_text_with_source_width(
     Ok(())
 }
 
-fn ensure_private_staging_directory(path: &Path) -> Result<(), ProjectionPackError> {
+pub(crate) fn ensure_private_staging_directory(path: &Path) -> Result<(), ProjectionPackError> {
     // The caller may run with a group-writable umask. Create this sensitive
     // leaf at its private mode rather than admitting and repairing an unsafe
     // directory after the fact.

@@ -65,6 +65,39 @@ async fn persist_discovery_events_with_timeout(
     Ok(())
 }
 
+// A successful inventory response is current presence evidence even when it
+// produces no scheduler event. Do not re-run lifecycle or compatibility
+// publication for these unchanged vehicles.
+async fn persist_unchanged_discoveries(
+    store: &HubStore,
+    vehicles: &[Vehicle],
+    provider: CollectorProvider,
+) -> Result<(), CollectorError> {
+    if vehicles.is_empty() {
+        return Ok(());
+    }
+    let _publication_gate = store.acquire_publication_gate().await?;
+    let observed_at_ms = current_epoch_millis()?;
+    let source = store.register_source(&provider_source(provider), observed_at_ms)?;
+    for vehicle in vehicles {
+        let mut descriptor = VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string())
+            .with_tesla_identity(Some(vehicle.id.get() as i64), None);
+        descriptor.vin = clean_optional_text(Some(&vehicle.vin));
+        descriptor.display_name = clean_optional_text(vehicle.display_name.as_deref());
+        let registered = store.register_vehicle(&descriptor, observed_at_ms)?;
+        store.record_current_discovery(
+            &ObservationInput {
+                source_id: source.source_id,
+                vehicle_id: registered.vehicle_id,
+                observed_at_ms,
+                payload: discovery_payload(vehicle, provider),
+            },
+            observed_at_ms,
+        )?;
+    }
+    Ok(())
+}
+
 fn discovery_payload(vehicle: &Vehicle, provider: CollectorProvider) -> Value {
     serde_json::json!({
         "record_type": provider_discovery_record_type(provider),

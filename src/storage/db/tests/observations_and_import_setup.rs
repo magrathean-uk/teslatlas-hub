@@ -53,6 +53,40 @@ fn appends_canonical_json_once_and_retries_idempotently() {
 }
 
 #[test]
+fn real_discovery_event_replaces_current_only_success_at_same_millisecond() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store initializes");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    let current_only = ObservationInput {
+        source_id: source.source_id,
+        vehicle_id: vehicle.vehicle_id,
+        observed_at_ms: 10_000,
+        payload: serde_json::json!({
+            "record_type": "owner_api_discovery_v1",
+            "source_vehicle_state": "asleep"
+        }),
+    };
+    store
+        .record_current_discovery(&current_only, 10_000)
+        .expect("current-only success");
+    let state_change = ObservationInput {
+        payload: serde_json::json!({
+            "record_type": "owner_api_discovery_v1",
+            "source_vehicle_state": "online"
+        }),
+        ..current_only
+    };
+    store
+        .append_observation(&state_change, 10_000)
+        .expect("real state-change event");
+    let current = store
+        .current_observations_for_vehicle(vehicle.vehicle_id)
+        .expect("current discovery");
+    assert_eq!(current.len(), 1);
+    assert_eq!(current[0].payload["source_vehicle_state"], "online");
+}
+
+#[test]
 fn observations_are_time_ordered_and_query_is_bounded() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store initializes");
@@ -1356,6 +1390,74 @@ fn projection_state_digest_cache_is_bounded_and_leaves_tombstone_paging_exact() 
             .iter()
             .all(|row| row.entity == TeslaMateProjectionStateEntity::Position)
     );
+}
+
+#[test]
+fn projection_state_tombstone_page_seeks_past_a_large_prior_prefix() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding) = persist_projection_state_rows(
+        &store,
+        temporary.path(),
+        &[
+            (TeslaMateProjectionStateEntity::Drive, 1),
+            (TeslaMateProjectionStateEntity::Position, 1),
+        ],
+    );
+    let mut connection = store.open().expect("catalogue");
+    let transaction = connection.transaction().expect("bulk state fixture");
+    {
+        let mut insert = transaction.prepare(
+            "INSERT INTO teslamate_import_projection_state_rows
+             (vehicle_id, entity, entity_ordinal, entity_id, car_id, projection_sha256)
+             VALUES (?1, 'position', 2, ?2, ?3, ?4)",
+        ).expect("insert prior positions");
+        for id in 2_i64..=30_001 {
+            insert.execute(params![
+                vehicle.vehicle_id.to_string(), id, binding.selected_car_id,
+                vec![7_u8; 32],
+            ]).expect("prior position");
+        }
+    }
+    transaction.commit().expect("durable prior prefix");
+    let mut plan = connection.prepare(&format!(
+        "EXPLAIN QUERY PLAN {TESLAMATE_IMPORT_PROJECTION_STATE_PAGE_SQL}",
+    )).expect("page query plan");
+    let details = plan.query_map(
+        params![vehicle.vehicle_id.to_string(), 2_i64, 29_998_i64, 4_i64],
+        |row| row.get::<_, String>(3),
+    ).expect("explain page").collect::<Result<Vec<_>, _>>().expect("plan details");
+    assert!(
+        details.iter().any(|detail| detail.contains("USING PRIMARY KEY")
+            && detail.contains("(entity_ordinal,entity_id)>(?,?)")),
+        "late tombstone page must seek by the compound key: {details:?}",
+    );
+    drop(plan);
+    drop(connection);
+
+    let mut lookup = store.teslamate_import_projection_state_lookup(
+        vehicle.vehicle_id, binding.account_id, binding.selected_car_id,
+    ).expect("verified lookup");
+    let first = lookup.page_after_store(None, 2).expect("first page");
+    assert_eq!(
+        first.rows.iter().map(|row| (row.entity, row.id)).collect::<Vec<_>>(),
+        vec![(TeslaMateProjectionStateEntity::Car, binding.selected_car_id),
+             (TeslaMateProjectionStateEntity::Drive, 1)],
+    );
+    let boundary = lookup.page_after_store(first.next_after, 2)
+        .expect("entity boundary page");
+    assert_eq!(
+        boundary.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![1, 2],
+    );
+    assert!(boundary.rows.iter().all(|row| row.entity == TeslaMateProjectionStateEntity::Position));
+    let late = lookup.page_after_store(Some(TeslaMateProjectionStateCursor {
+        entity: TeslaMateProjectionStateEntity::Position, id: 29_998,
+    }), 2).expect("late page");
+    assert_eq!(late.rows.iter().map(|row| row.id).collect::<Vec<_>>(), vec![29_999, 30_000]);
+    let tail = lookup.page_after_store(late.next_after, 2).expect("final page");
+    assert_eq!(tail.rows.iter().map(|row| row.id).collect::<Vec<_>>(), vec![30_001]);
+    assert!(tail.next_after.is_none());
 }
 
 #[test]

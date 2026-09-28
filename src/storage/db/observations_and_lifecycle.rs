@@ -290,6 +290,67 @@ impl HubStore {
         result
     }
 
+    /// Record a successful configured-vehicle discovery as current presence.
+    /// This deliberately does not append a lifecycle event or reproject history:
+    /// unchanged provider success is freshness evidence, not a state change.
+    pub(crate) fn record_current_discovery(
+        &self,
+        input: &ObservationInput,
+        received_at_ms: i64,
+    ) -> Result<(), StoreError> {
+        input.validate()?;
+        validate_timestamp("discovery received_at_ms", received_at_ms)?;
+        let record_type = input.payload.get("record_type").and_then(Value::as_str);
+        if !matches!(
+            record_type,
+            Some("owner_api_discovery_v1" | "fleet_api_discovery_v1")
+        ) {
+            return Err(StoreError::InvalidCurrentDiscovery);
+        }
+        let payload = serde_json::to_vec(&input.payload).map_err(StoreError::SerializeObservation)?;
+        if payload.len() > MAX_RAW_OBSERVATION_BYTES {
+            return Err(StoreError::ObservationTooLarge {
+                actual: payload.len(),
+                maximum: MAX_RAW_OBSERVATION_BYTES,
+            });
+        }
+        let digest = Sha256Digest::of_bytes(&payload);
+        let payload = String::from_utf8(payload).expect("serde_json is UTF-8");
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        ensure_vehicle_belongs_to_source(&transaction, input.vehicle_id, input.source_id)?;
+        transaction.execute(
+            "INSERT INTO current_observations(
+                vehicle_id,record_type,observation_id,source_id,
+                observed_at_ms,received_at_ms,payload_sha256,payload_json
+             ) VALUES (
+                ?1,?2,
+                MAX(
+                    COALESCE((SELECT MAX(observation_id) FROM raw_observations),0),
+                    COALESCE((SELECT MAX(observation_id) FROM current_observations),0)
+                )+1,
+                ?3,?4,?5,?6,?7
+             ) ON CONFLICT(vehicle_id,record_type) DO UPDATE SET
+                observation_id=excluded.observation_id,
+                source_id=excluded.source_id,
+                observed_at_ms=excluded.observed_at_ms,
+                received_at_ms=excluded.received_at_ms,
+                payload_sha256=excluded.payload_sha256,
+                payload_json=excluded.payload_json
+             WHERE excluded.observed_at_ms > current_observations.observed_at_ms
+                OR (excluded.observed_at_ms = current_observations.observed_at_ms
+                    AND excluded.payload_sha256 != current_observations.payload_sha256)",
+            params![
+                input.vehicle_id.to_string(), record_type.expect("checked discovery type"),
+                input.source_id.to_string(), input.observed_at_ms, received_at_ms,
+                digest.as_bytes().as_slice(), payload,
+            ],
+        ).map_err(StoreError::AppendObservation)?;
+        transaction.commit().map_err(StoreError::AppendObservation)
+    }
+
     pub(crate) fn accept_stream_observation_and_lifecycle(
         &self,
         input: &ObservationInput,

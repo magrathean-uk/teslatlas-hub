@@ -111,6 +111,7 @@ pub enum DevelopmentServeMode {
     Fixture,
     Standalone,
     Edge,
+    PrivateLan,
 }
 
 /// Parse the process-level source-run opt-in without consulting global state.
@@ -141,15 +142,21 @@ pub fn development_serve_mode(
         (Some(_), Some(value)) if value == OsStr::new("edge") => {
             Ok(Some(DevelopmentServeMode::Edge))
         }
+        (Some(_), Some(value)) if value == OsStr::new("private-lan") => {
+            Ok(Some(DevelopmentServeMode::PrivateLan))
+        }
         (Some(_), Some(_)) => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("{DEVELOPMENT_SERVE_MODE_ENV} must be fixture, standalone, or edge"),
+            format!(
+                "{DEVELOPMENT_SERVE_MODE_ENV} must be fixture, standalone, edge, or private-lan"
+            ),
         )),
     }
 }
 
 /// Validate Serve without weakening production install/service preflight.
-/// Every source-run mode remains loopback-only with a verified TLS identity.
+/// Existing source-run modes remain loopback-only. Private LAN is an explicit
+/// local-v1 opt-in with an exact RFC1918 IPv4 HTTPS identity.
 /// Fixture mode additionally requires the historical published fixture;
 /// standalone permits empty/import-only state; Edge requires the exact local
 /// Edge binding through the normal production preflight.
@@ -160,6 +167,9 @@ pub fn preflight_hub_for_serve(
     let Some(development_mode) = development_mode else {
         return preflight_hub_for_config(config);
     };
+    if development_mode == DevelopmentServeMode::PrivateLan {
+        return preflight_private_lan_serve(config);
+    }
     if !config.bind.ip().is_loopback() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -223,6 +233,7 @@ pub fn preflight_hub_for_serve(
             }
             return preflight_hub_for_config(config);
         }
+        DevelopmentServeMode::PrivateLan => unreachable!("private LAN preflight returned above"),
         DevelopmentServeMode::Fixture => {}
     }
 
@@ -298,6 +309,57 @@ pub fn preflight_hub_for_serve(
         }
     }
     Ok(())
+}
+
+fn preflight_private_lan_serve(config: &crate::config::HubConfig) -> io::Result<()> {
+    let IpAddr::V4(bind_ip) = config.bind.ip() else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "private-LAN source-run Serve requires a literal RFC1918 IPv4 bind address",
+        ));
+    };
+    if !bind_ip.is_private() || config.bind.port() == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "private-LAN source-run Serve requires a literal RFC1918 IPv4 bind address",
+        ));
+    }
+    let tls = config.tls.as_ref().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "private-LAN source-run Serve requires strict TLS",
+        )
+    })?;
+    let expected_url = format!("https://{bind_ip}:{}", config.bind.port());
+    if tls.public_url != expected_url && tls.public_url != format!("{expected_url}/") {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "private-LAN source-run Serve requires an exact matching HTTPS public URL",
+        ));
+    }
+    crate::server::validate_tls_identity(tls)?;
+    if config.collector.edge.is_some() || config.collector.fleet_telemetry.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "private-LAN source-run Serve does not admit Edge or Fleet telemetry",
+        ));
+    }
+    if config.collector.interval_seconds == 0 {
+        crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("private-LAN source-run Hub data is unavailable: {error}"),
+            )
+        })?;
+        return Ok(());
+    }
+    if config.collector.provider != crate::config::CollectorProvider::Legacy {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "private-LAN source-run Serve admits only native Legacy collection",
+        ));
+    }
+    preflight_hub_for_provider(&config.data_dir, crate::config::CollectorProvider::Legacy)
 }
 
 /// Load and request start of an already prepared LaunchAgent. The caller must

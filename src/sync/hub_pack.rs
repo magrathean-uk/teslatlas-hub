@@ -723,6 +723,7 @@ include!("hub_pack/writer.rs");
 include!("hub_pack/validation.rs");
 include!("hub_pack/sqlite_writers.rs");
 include!("hub_pack/sqlite_verification.rs");
+include!("hub_pack/physical_row_scan.rs");
 include!("hub_pack/sqlite_v2_2.rs");
 include!("hub_pack/sqlite_legacy.rs");
 include!("hub_pack/compression.rs");

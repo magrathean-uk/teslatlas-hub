@@ -254,6 +254,35 @@ pub struct TeslaMateStage {
     file_descriptor: OwnedFd,
 }
 
+/// A capture owned by an in-flight import. Failed or cancelled imports must
+/// remove their private source rows; publication takes ownership explicitly.
+#[derive(Debug)]
+pub(crate) struct OwnedTeslaMateStage(Option<TeslaMateStage>);
+
+impl OwnedTeslaMateStage {
+    pub(crate) fn new(stage: TeslaMateStage) -> Self {
+        Self(Some(stage))
+    }
+
+    pub(crate) fn stage_mut(&mut self) -> &mut TeslaMateStage {
+        self.0.as_mut().expect("owned stage is present")
+    }
+
+    pub(crate) fn take(mut self) -> TeslaMateStage {
+        self.0.take().expect("owned stage is present")
+    }
+}
+
+impl Drop for OwnedTeslaMateStage {
+    fn drop(&mut self) {
+        if let Some(stage) = self.0.take() {
+            if let Err(error) = stage.discard() {
+                tracing::error!(%error, "could not discard unpublished physical source stage");
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StageFileIdentity {
     device: u64,

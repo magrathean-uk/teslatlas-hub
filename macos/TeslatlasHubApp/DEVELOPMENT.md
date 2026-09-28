@@ -19,8 +19,13 @@ TESLATLAS_HUB_DEVELOPMENT_MODE=standalone
 - `edge` runs only the explicitly configured local `collector.edge` composition.
 - `fixture` retains the historical seeded-fixture checks. It is the compatibility
   default when the mode variable is absent, but it is not the ordinary fresh setup.
+- `private-lan` admits an explicitly selected RFC1918 IPv4 listener with strict
+  TLS and an exact matching HTTPS public URL. It can serve an existing valid
+  Hub store with collection disabled, or use the normal native Legacy provider
+  preflight when that provider is enabled. It does not adopt Edge or Fleet
+  Telemetry ingress.
 
-All three modes require a literal loopback listener, matching HTTPS public URL, and
+The original three modes require a literal loopback listener, matching HTTPS public URL, and
 a valid owner-controlled TLS identity. Standalone rejects any collector; Edge rejects
 periodic/Fleet Telemetry collection and passes the normal production Edge binding
 preflight. No mode bypasses configuration, data ownership, TLS, or credential checks.

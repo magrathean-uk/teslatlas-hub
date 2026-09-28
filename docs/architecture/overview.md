@@ -47,20 +47,35 @@ flowchart TB
 ## Data path
 
 Provider observations are validated and projected into bounded current state,
-sessions, and immutable history packs. Credential-like fields are recursively
-removed from retained provider envelopes. Raw processing rows are pruned after
-projection; Hub is not an unbounded provider-response archive.
+sessions, and immutable history packs. A successful configured-vehicle discovery
+also advances its durable current observation when the provider reports no
+lifecycle change; older dynamic telemetry is not presented as newly observed.
+Credential-like fields are recursively removed from retained provider envelopes.
+Raw processing rows are pruned after projection; Hub is not an unbounded
+provider-response archive.
 
-The client receives a signed manifest and downloads only referenced,
+The selected-car TeslaMate importer publishes a complete schema-2.2 PhysicalV3
+head from the same exported, read-only PostgreSQL snapshot as its compatibility
+projection. For an immediate successor, Hub can also publish a signed Protocol
+1.4 changed set with bounded typed rows, removals, projection recomputation
+scope, and source context. If that set cannot be represented within its bounds,
+the complete signed head remains available for replacement. Older retained
+receipts can request a signed full rebase. Hub optionally prepares one completed
+UTC month of map tiles bound to the current signed source head; an unavailable
+artifact leaves client-side map generation available.
+
+The client receives signed receipts and manifests and downloads only referenced,
 content-addressed packs. Device pairing and bearer rotation are separate from
 provider credentials.
 
 ## Migration boundary
 
-TeslaMate migration opens an operator-supplied PostgreSQL source in a read-only
-transaction and maps supported TeslaMate v4.2-compatible records into Hub-owned
-storage.
-TeslaMate is not bundled, started, stopped, or required after migration.
+TeslaMate migration opens an operator-supplied PostgreSQL source in an exported,
+repeatable-read, read-only transaction and maps supported TeslaMate
+v4.2-compatible records into Hub-owned storage. A history-only import can be
+repeated while preserving Hub's stored provider credentials; unchanged source
+content does not advance the signed physical head. TeslaMate is not bundled,
+started, stopped, or required after migration.
 
 The explicit `write-back` command is outside migration and collection. It can
 update only one selected TeslaMate charging-process cost, starts as a locked-row

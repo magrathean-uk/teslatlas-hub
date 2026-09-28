@@ -95,7 +95,10 @@ fn append_observation_in_transaction(
                     payload_json = excluded.payload_json
                  WHERE excluded.observed_at_ms > current_observations.observed_at_ms
                     OR (excluded.observed_at_ms = current_observations.observed_at_ms
-                        AND excluded.observation_id > current_observations.observation_id)",
+                        AND (excluded.observation_id > current_observations.observation_id
+                             OR (current_observations.record_type IN (
+                                    'owner_api_discovery_v1', 'fleet_api_discovery_v1')
+                                 AND excluded.payload_sha256 != current_observations.payload_sha256)))",
                 params![
                     observation.vehicle_id.to_string(),
                     record_type,

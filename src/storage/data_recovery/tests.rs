@@ -359,6 +359,9 @@ fn downgrade_catalogue_fixture(connection: &Connection, schema: i32) {
              -- historical fixture must remove it before its user_version is
              -- rewound, otherwise the later schema-62 migration would try to
              -- add `serve_state` to an already-current table.
+             DROP TABLE IF EXISTS physical_v3_delta_packs;
+             DROP TABLE IF EXISTS physical_v3_delta_transitions;
+             DROP TABLE IF EXISTS prepared_map_months;
              DROP TABLE IF EXISTS retained_physical_v3_packs;
              DROP TABLE IF EXISTS retained_physical_v3_admissions;
              DROP TABLE IF EXISTS pending_physical_v3_packs;

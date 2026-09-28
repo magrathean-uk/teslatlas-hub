@@ -4,6 +4,7 @@
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{Signer, SigningKey};
+use serde::Serialize;
 
 use crate::protocol::{CursorKey, Sha256Digest};
 
@@ -37,6 +38,59 @@ impl ManifestSigning {
     pub(crate) fn sign_base64(&self, raw_manifest_json: &[u8]) -> String {
         let signature = self.signing_key.sign(raw_manifest_json);
         STANDARD.encode(signature.to_bytes())
+    }
+
+    /// The control document's exact JSON bytes are its 1.4 manifest identity.
+    /// Keep this single serializer shared by HTTP and delta publication.
+    pub(crate) fn signed_control_document(
+        &self,
+        payload: &impl Serialize,
+    ) -> Result<Vec<u8>, serde_json::Error> {
+        let canonical = serde_jcs::to_vec(payload)?;
+        let mut document = serde_json::to_value(payload)?;
+        document
+            .as_object_mut()
+            .expect("signed control payload is an object")
+            .insert(
+                "signature".to_owned(),
+                serde_json::json!({
+                    "algorithm": "ed25519",
+                    "key_id": self.key_id(),
+                    "signed_payload_sha256": Sha256Digest::of_bytes(&canonical).to_string(),
+                    "signature": self.sign_base64(&canonical),
+                }),
+            );
+        serde_json::to_vec(&document)
+    }
+
+    pub(crate) fn signed_physical_manifest_document(
+        &self,
+        admission: &crate::db::PendingPhysicalV3Admission,
+    ) -> Result<Vec<u8>, serde_json::Error> {
+        let chunks: Vec<_> = admission
+            .manifest
+            .chunks
+            .iter()
+            .map(|pack| {
+                serde_json::json!({
+                    "chunk_index": pack.ordinal,
+                    "pack": {
+                        "object_name": format!("{}.sqlite.zst", pack.sha256),
+                        "sha256": pack.sha256.to_string(),
+                        "compressed_bytes": pack.compressed_bytes,
+                    }
+                })
+            })
+            .collect();
+        self.signed_control_document(&serde_json::json!({
+            "manifest_id": admission.snapshot_id.to_string(),
+            "receipt_id": admission.receipt_id,
+            "vehicle_id": admission.vehicle_id,
+            "kind": "snapshot",
+            "schema_version": "2.2",
+            "sequence": admission.head_sequence,
+            "chunks": chunks,
+        }))
     }
 }
 

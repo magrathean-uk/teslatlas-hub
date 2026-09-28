@@ -9,7 +9,10 @@ use thiserror::Error;
 use uuid::Uuid;
 
 use crate::{
-    db::{HubStore, PendingPhysicalV3Admission, PhysicalV3PublicationState, StoreError},
+    db::{
+        HubStore, PendingPhysicalV3Admission, PhysicalV3PublicationState, PublicationGate,
+        StoreError,
+    },
     hub_pack::{ProjectionBinding, ProjectionPackError, ProjectionPackWriter},
     protocol::{CursorKey, ProtocolLimits, SequenceRange, Sha256Digest},
     teslamate_physical_fragments::{
@@ -60,15 +63,49 @@ async fn publish_sealed_physical_v3_stage_at(
     stage: TeslaMateStage,
     now_ms: i64,
 ) -> Result<PhysicalV3Publication, TeslaMatePhysicalPublicationError> {
+    let owned = crate::teslamate_stage::OwnedTeslaMateStage::new(stage);
+    let gate = store.acquire_publication_gate().await?;
+    publish_sealed_physical_v3_stage_with_gate_at(
+        store,
+        cursor_key,
+        binding,
+        owned.take(),
+        &gate,
+        now_ms,
+    )
+}
+
+/// The normal importer already holds the publication gate from source capture
+/// through both catalogues. Never release it or acquire it recursively here.
+pub(crate) fn publish_sealed_physical_v3_stage_with_gate_at(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    binding: ProjectionBinding,
+    stage: TeslaMateStage,
+    gate: &PublicationGate,
+    now_ms: i64,
+) -> Result<PhysicalV3Publication, TeslaMatePhysicalPublicationError> {
     let result = publish_sealed_physical_v3_stage_inner(
         store,
         cursor_key,
         binding,
         &stage,
+        gate,
         now_ms,
         TeslaMatePhysicalFragmentLimits::default(),
-    )
-    .await;
+    );
+    if let Ok(publication) = &result {
+        if let Err(error) = crate::import::teslamate::prepared_map::publish_selected_month(
+            store,
+            cursor_key,
+            &stage,
+            &publication.admission,
+            now_ms,
+        ) {
+            tracing::warn!(%error, vehicle_id = %publication.admission.vehicle_id,
+                "optional prepared month is unavailable; local map generation remains authoritative");
+        }
+    }
     let cleanup = stage.discard();
     match (result, cleanup) {
         (Ok(publication), Ok(())) => Ok(publication),
@@ -89,11 +126,12 @@ enum IntendedPublication {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn publish_sealed_physical_v3_stage_inner(
+fn publish_sealed_physical_v3_stage_inner(
     store: &HubStore,
     cursor_key: &CursorKey,
     binding: ProjectionBinding,
     stage: &TeslaMateStage,
+    publication_gate: &PublicationGate,
     now_ms: i64,
     fragment_limits: TeslaMatePhysicalFragmentLimits,
 ) -> Result<PhysicalV3Publication, TeslaMatePhysicalPublicationError> {
@@ -102,7 +140,6 @@ async fn publish_sealed_physical_v3_stage_inner(
     }
     let stage_digest = stage.sealed_content_digest()?;
     let snapshot_id = physical_v3_snapshot_id(stage_digest, &binding);
-    let publication_gate = store.acquire_publication_gate().await?;
     let state = store.physical_v3_publication_state_for_vehicle_at(binding.vehicle_id, now_ms)?;
     let (head_sequence, intended) = match state {
         PhysicalV3PublicationState::Empty => (1, IntendedPublication::First),
@@ -161,7 +198,7 @@ async fn publish_sealed_physical_v3_stage_inner(
     match intended {
         IntendedPublication::First => {
             let admission =
-                store.stage_pending_physical_v3_admission(&publication_gate, candidate)?;
+                store.stage_pending_physical_v3_admission(publication_gate, candidate)?;
             Ok(PhysicalV3Publication {
                 kind: PhysicalV3PublicationKind::FirstHead,
                 admission,
@@ -175,13 +212,42 @@ async fn publish_sealed_physical_v3_stage_inner(
             })
         }
         IntendedPublication::Rotate(prior) => {
-            let rotated = store.rotate_pending_physical_v3_admission_at(
-                &publication_gate,
+            let delta = match crate::db::physical_v3_admission_from_manifest(
+                &candidate.manifest,
+                candidate.binding.selected_car_id,
+            ) {
+                Ok(target) => {
+                    match crate::import::teslamate::physical_delta_pack::prepare_changed_set(
+                        &prior,
+                        &target,
+                        &candidate.binding,
+                        cursor_key,
+                        stage_digest,
+                        store.packs_dir(),
+                        stage_limits.minimum_free_bytes,
+                    ) {
+                        Ok(delta) => Some(delta),
+                        Err(error) => {
+                            tracing::warn!(%error, vehicle_id = %candidate.binding.vehicle_id,
+                            "bounded physical changed set unavailable; signed full replacement remains available");
+                            None
+                        }
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(%error, vehicle_id = %candidate.binding.vehicle_id,
+                        "physical changed set candidate identity unavailable");
+                    None
+                }
+            };
+            let rotated = store.rotate_pending_physical_v3_admission_with_delta_at(
+                publication_gate,
                 candidate,
+                delta,
                 now_ms,
             )?;
             let admission = store.activate_pending_physical_v3_rotation_at(
-                &publication_gate,
+                publication_gate,
                 rotated.vehicle_id,
                 &prior.receipt_id,
                 now_ms,
@@ -197,7 +263,7 @@ async fn publish_sealed_physical_v3_stage_inner(
         } => {
             require_exact_candidate(&candidate, &current)?;
             let admission = store.activate_pending_physical_v3_rotation_at(
-                &publication_gate,
+                publication_gate,
                 current.vehicle_id,
                 &retained_receipt_id,
                 now_ms,

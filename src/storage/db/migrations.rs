@@ -2191,6 +2191,139 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 63;
     }
 
+    if version == 63 {
+        // A vehicle can rotate more than once within the retention window.
+        // Keep every existing receipt and its pack references while changing
+        // the retained admission key from vehicle to receipt.
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                 CREATE TABLE retained_physical_v3_admissions_v64 (
+                    vehicle_id TEXT NOT NULL,
+                    snapshot_id TEXT NOT NULL,
+                    installation_id TEXT NOT NULL,
+                    account_id TEXT NOT NULL,
+                    generation INTEGER NOT NULL
+                        CHECK(generation BETWEEN 1 AND 9007199254740991),
+                    selected_car_id INTEGER NOT NULL
+                        CHECK(selected_car_id BETWEEN -32768 AND 32767),
+                    profile TEXT NOT NULL CHECK(profile = 'hub-sync-v1@1.3.0'),
+                    head_sequence INTEGER NOT NULL
+                        CHECK(head_sequence BETWEEN 1 AND 9007199254740991),
+                    chunk_count INTEGER NOT NULL CHECK(chunk_count BETWEEN 1 AND 1771),
+                    manifest_sha256 TEXT NOT NULL CHECK(length(manifest_sha256) = 64),
+                    ordered_chunks_sha256 TEXT NOT NULL
+                        CHECK(length(ordered_chunks_sha256) = 64),
+                    receipt_id TEXT PRIMARY KEY NOT NULL CHECK(length(receipt_id) = 68),
+                    retained_at_ms INTEGER NOT NULL
+                        CHECK(retained_at_ms BETWEEN 0 AND 9007199254740991),
+                    expires_at_ms INTEGER NOT NULL
+                        CHECK(expires_at_ms BETWEEN 1 AND 9007199254740991),
+                    manifest_json BLOB NOT NULL CHECK(length(manifest_json) BETWEEN 2 AND 2097152),
+                    UNIQUE(vehicle_id, head_sequence),
+                    CHECK(expires_at_ms > retained_at_ms),
+                    CHECK(length(vehicle_id) = 36),
+                    CHECK(length(snapshot_id) = 36),
+                    CHECK(length(installation_id) = 36),
+                    CHECK(length(account_id) = 36)
+                 ) STRICT;
+                 CREATE TABLE retained_physical_v3_packs_v64 (
+                    receipt_id TEXT NOT NULL
+                        REFERENCES retained_physical_v3_admissions_v64(receipt_id)
+                        ON DELETE CASCADE,
+                    ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 1770),
+                    sha256 TEXT NOT NULL CHECK(length(sha256) = 64),
+                    relative_path TEXT NOT NULL,
+                    compressed_bytes INTEGER NOT NULL
+                        CHECK(compressed_bytes BETWEEN 1 AND 16777216),
+                    uncompressed_bytes INTEGER NOT NULL CHECK(uncompressed_bytes >= 100),
+                    PRIMARY KEY(receipt_id, ordinal),
+                    UNIQUE(receipt_id, sha256)
+                 ) STRICT, WITHOUT ROWID;
+                 INSERT INTO retained_physical_v3_admissions_v64
+                    SELECT * FROM retained_physical_v3_admissions;
+                 INSERT INTO retained_physical_v3_packs_v64
+                    SELECT * FROM retained_physical_v3_packs;
+                 DROP TABLE retained_physical_v3_packs;
+                 DROP TABLE retained_physical_v3_admissions;
+                 ALTER TABLE retained_physical_v3_admissions_v64
+                    RENAME TO retained_physical_v3_admissions;
+                 ALTER TABLE retained_physical_v3_packs_v64
+                    RENAME TO retained_physical_v3_packs;
+                 CREATE INDEX retained_physical_v3_expiry
+                    ON retained_physical_v3_admissions(expires_at_ms, vehicle_id);
+                 CREATE INDEX retained_physical_v3_vehicle_sequence
+                    ON retained_physical_v3_admissions(vehicle_id, head_sequence DESC);
+                 PRAGMA user_version = 64;
+                 COMMIT;",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 64;
+    }
+
+    if version == 64 {
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                 CREATE TABLE IF NOT EXISTS prepared_map_months (
+                    artifact_id TEXT PRIMARY KEY NOT NULL,
+                    vehicle_id TEXT NOT NULL,
+                    month TEXT NOT NULL,
+                    input_manifest_id TEXT NOT NULL,
+                    input_receipt_id TEXT NOT NULL,
+                    input_sequence INTEGER NOT NULL CHECK(input_sequence >= 1),
+                    source_digest TEXT NOT NULL CHECK(length(source_digest) = 64),
+                    pack_sha256 TEXT NOT NULL CHECK(length(pack_sha256) = 64),
+                    compressed_bytes INTEGER NOT NULL CHECK(compressed_bytes BETWEEN 1 AND 16777216),
+                    receipt_json BLOB NOT NULL CHECK(length(receipt_json) BETWEEN 2 AND 2097152),
+                    UNIQUE(vehicle_id, input_receipt_id, month)
+                 ) STRICT;
+                 CREATE INDEX IF NOT EXISTS prepared_map_months_pack ON prepared_map_months(pack_sha256);
+                 PRAGMA user_version = 65;
+                 COMMIT;",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 65;
+    }
+
+    if version == 65 {
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                 CREATE TABLE physical_v3_delta_transitions (
+                    target_receipt_id TEXT PRIMARY KEY NOT NULL
+                        REFERENCES pending_physical_v3_admissions(receipt_id) ON DELETE CASCADE,
+                    base_receipt_id TEXT NOT NULL
+                        REFERENCES retained_physical_v3_admissions(receipt_id) ON DELETE CASCADE,
+                    vehicle_id TEXT NOT NULL,
+                    base_manifest_signed_sha256 TEXT NOT NULL CHECK(length(base_manifest_signed_sha256)=64),
+                    target_manifest_signed_sha256 TEXT NOT NULL CHECK(length(target_manifest_signed_sha256)=64),
+                    receipt_json BLOB NOT NULL CHECK(length(receipt_json) BETWEEN 2 AND 2097152),
+                    chunk_count INTEGER NOT NULL CHECK(chunk_count BETWEEN 1 AND 64),
+                    total_compressed_bytes INTEGER NOT NULL CHECK(total_compressed_bytes BETWEEN 1 AND 268435456),
+                    total_uncompressed_bytes INTEGER NOT NULL CHECK(total_uncompressed_bytes BETWEEN 1 AND 2147483648),
+                    total_rows INTEGER NOT NULL CHECK(total_rows BETWEEN 1 AND 2000000),
+                    impacted_roots_count INTEGER NOT NULL CHECK(impacted_roots_count BETWEEN 0 AND 10000),
+                    UNIQUE(vehicle_id,base_receipt_id,target_receipt_id)
+                 ) STRICT;
+                 CREATE TABLE physical_v3_delta_packs (
+                    target_receipt_id TEXT NOT NULL
+                        REFERENCES physical_v3_delta_transitions(target_receipt_id) ON DELETE CASCADE,
+                    ordinal INTEGER NOT NULL CHECK(ordinal BETWEEN 0 AND 63),
+                    sha256 TEXT NOT NULL CHECK(length(sha256)=64),
+                    relative_path TEXT NOT NULL,
+                    compressed_bytes INTEGER NOT NULL CHECK(compressed_bytes BETWEEN 1 AND 16777216),
+                    uncompressed_bytes INTEGER NOT NULL CHECK(uncompressed_bytes BETWEEN 1 AND 268435456),
+                    PRIMARY KEY(target_receipt_id,ordinal)
+                 ) STRICT, WITHOUT ROWID;
+                 CREATE INDEX physical_v3_delta_packs_digest ON physical_v3_delta_packs(sha256);
+                 PRAGMA user_version = 66;
+                 COMMIT;",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 66;
+    }
+
     if version == SCHEMA_VERSION {
         Ok(())
     } else {

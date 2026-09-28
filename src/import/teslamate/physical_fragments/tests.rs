@@ -1347,6 +1347,209 @@ fn referenced_relations_emit_once_with_their_deterministic_first_referrer() {
 }
 
 #[test]
+fn complete_charging_processes_share_one_physical_chunk() {
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let mut stage = TeslaMateStage::create_physical_v3(
+        temporary.path().join("imports"),
+        TeslaMateStageLimits {
+            max_rows: 16,
+            max_stage_bytes: 1024 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("physical stage");
+    seed_roots(&mut stage);
+    for (process_id, charge_id) in [(50, 60), (51, 61)] {
+        stage
+            .insert(
+                TeslaMateStageTable::ChargingProcesses,
+                i64::from(process_id),
+                &physical_charging_process(process_id, ProjectionFixedNumericV2_2::Finite(100)),
+            )
+            .expect("physical charging process");
+        stage
+            .insert(
+                TeslaMateStageTable::Charges,
+                i64::from(charge_id),
+                &physical_charge(charge_id, process_id),
+            )
+            .expect("physical charge");
+    }
+    stage.seal().expect("seal physical stage");
+
+    let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding(),
+        snapshot_id(),
+        sequence(),
+        &CursorKey::from_bytes([27; 32]),
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 7,
+            max_projected_json_bytes: 64 * 1024,
+        },
+    )
+    .expect("co-packed physical candidate");
+    assert_eq!(candidate.logical_source_rows, 7);
+    assert_eq!(candidate.chunks.len(), 1);
+    assert_eq!(candidate.manifest.total_rows, 7);
+    let decoded = temporary.path().join("co-packed-charge-processes.sqlite");
+    decode_pack(&candidate.chunks[0], &decoded);
+    let connection = Connection::open(decoded).expect("decoded SQLite");
+    for table in ["charging_processes", "charges"] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("physical table count");
+        assert_eq!(count, 2, "{table}");
+    }
+}
+
+#[test]
+fn charging_parent_repeats_only_when_a_shared_chunk_fills() {
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let mut stage = TeslaMateStage::create_physical_v3(
+        temporary.path().join("imports"),
+        TeslaMateStageLimits {
+            max_rows: 16,
+            max_stage_bytes: 1024 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("physical stage");
+    seed_roots(&mut stage);
+    for process_id in [50, 51] {
+        stage
+            .insert(
+                TeslaMateStageTable::ChargingProcesses,
+                i64::from(process_id),
+                &physical_charging_process(process_id, ProjectionFixedNumericV2_2::Finite(100)),
+            )
+            .expect("physical charging process");
+    }
+    for (charge_id, process_id) in [(60, 50), (61, 51), (62, 51), (63, 51)] {
+        stage
+            .insert(
+                TeslaMateStageTable::Charges,
+                i64::from(charge_id),
+                &physical_charge(charge_id, process_id),
+            )
+            .expect("physical charge");
+    }
+    stage.seal().expect("seal physical stage");
+
+    let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding(),
+        snapshot_id(),
+        sequence(),
+        &CursorKey::from_bytes([28; 32]),
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 7,
+            max_projected_json_bytes: 64 * 1024,
+        },
+    )
+    .expect("split physical candidate");
+    assert_eq!(candidate.logical_source_rows, 9);
+    assert_eq!(candidate.chunks.len(), 2);
+    assert_eq!(candidate.manifest.total_rows, 13);
+    assert_eq!(candidate.chunks[0].metadata.row_count, 7);
+    assert_eq!(candidate.chunks[1].metadata.row_count, 6);
+    for (index, expected_parents, expected_charges) in
+        [(0, vec![50, 51], vec![60, 61]), (1, vec![51], vec![62, 63])]
+    {
+        let decoded = temporary
+            .path()
+            .join(format!("shared-charge-chunk-{index}.sqlite"));
+        decode_pack(&candidate.chunks[index], &decoded);
+        let connection = Connection::open(decoded).expect("decoded SQLite");
+        for (table, expected) in [
+            ("charging_processes", expected_parents),
+            ("charges", expected_charges),
+        ] {
+            let mut statement = connection
+                .prepare(&format!("SELECT id FROM {table} ORDER BY id"))
+                .expect("physical table query");
+            let ids = statement
+                .query_map([], |row| row.get::<_, i32>(0))
+                .expect("physical table rows")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("physical ids");
+            assert_eq!(ids, expected, "{table} in chunk {index}");
+        }
+    }
+}
+
+#[test]
+fn charging_relations_can_fill_a_chunk_before_the_first_charge() {
+    let temporary = tempdir().expect("temp dir");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let mut stage = TeslaMateStage::create_physical_v3(
+        temporary.path().join("imports"),
+        TeslaMateStageLimits {
+            max_rows: 16,
+            max_stage_bytes: 1024 * 1024,
+            minimum_free_bytes: 0,
+        },
+    )
+    .expect("physical stage");
+    seed_roots(&mut stage);
+    let mut process = physical_charging_process(50, ProjectionFixedNumericV2_2::Finite(100));
+    process.address_id = Some(70);
+    stage
+        .insert(TeslaMateStageTable::ChargingProcesses, 50, &process)
+        .expect("physical charging process");
+    stage
+        .insert(TeslaMateStageTable::Addresses, 70, &physical_address(70))
+        .expect("physical address");
+    stage
+        .insert(TeslaMateStageTable::Charges, 60, &physical_charge(60, 50))
+        .expect("physical charge");
+    stage.seal().expect("seal physical stage");
+
+    let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::new(store.packs_dir()),
+        binding(),
+        snapshot_id(),
+        sequence(),
+        &CursorKey::from_bytes([29; 32]),
+        TeslaMatePhysicalFragmentLimits {
+            max_rows_per_chunk: 5,
+            max_projected_json_bytes: 64 * 1024,
+        },
+    )
+    .expect("relations and charge split with a repeated parent");
+    assert_eq!(candidate.logical_source_rows, 6);
+    assert_eq!(candidate.chunks.len(), 2);
+    assert_eq!(candidate.manifest.total_rows, 10);
+    for (index, expected_address_count, expected_charge_count) in [(0, 1, 0), (1, 0, 1)] {
+        assert_eq!(candidate.chunks[index].metadata.row_count, 5);
+        let decoded = temporary
+            .path()
+            .join(format!("relations-before-charge-{index}.sqlite"));
+        decode_pack(&candidate.chunks[index], &decoded);
+        let connection = Connection::open(decoded).expect("decoded SQLite");
+        for (table, expected_count) in [
+            ("charging_processes", 1),
+            ("addresses", expected_address_count),
+            ("charges", expected_charge_count),
+        ] {
+            let count: i64 = connection
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("physical table count");
+            assert_eq!(count, expected_count, "{table} in chunk {index}");
+        }
+    }
+}
+
+#[test]
 fn charge_chunks_repeat_the_parent_across_a_512_row_boundary() {
     const CHARGE_COUNT: i32 = 513;
 
@@ -2177,8 +2380,7 @@ fn physical_v3_rotation_retains_prior_across_restart_and_backup_but_stays_unserv
         .collect::<Vec<_>>();
     assert!(matches!(
         store.rotate_pending_physical_v3_admission_at(&gate, third, retained_at_ms + 1),
-        Err(crate::storage::db::StoreError::PhysicalV3SecondHeadUnsupported(vehicle_id))
-            if vehicle_id == binding.vehicle_id
+        Err(crate::storage::db::StoreError::PhysicalV3AdmissionConflict)
     ));
     assert!(third_paths.iter().all(|path| !path.exists()));
     drop(gate);

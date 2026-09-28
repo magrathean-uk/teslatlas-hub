@@ -122,6 +122,7 @@ pub(crate) struct DirectSnapshotCapture {
     pub updates_v2_2: DirectUpdatesSourceV2_2,
     pub open_session: TeslaMateOpenSession,
     pub legacy_tokens: Option<TeslaMateLegacyTokenCiphertexts>,
+    pub physical_stage: Option<crate::teslamate_stage::OwnedTeslaMateStage>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -149,6 +150,7 @@ pub async fn write_direct_full_snapshot(
         false,
         DirectCaptureMode::PublishPacks,
         false,
+        None,
     )
     .await
     .map(|capture| capture.packs)
@@ -169,6 +171,7 @@ pub(crate) async fn write_direct_full_snapshot_with_projection_state<F>(
     snapshot_id: Uuid,
     sequence: SequenceRange,
     capture_legacy_token: bool,
+    physical_imports_dir: Option<&Path>,
     progress: TeslaMateMigrationProgressReporter,
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
@@ -191,6 +194,7 @@ where
         capture_legacy_token,
         DirectCaptureMode::PublishPacks,
         true,
+        physical_imports_dir,
     )
     .await
 }
@@ -208,6 +212,7 @@ pub(crate) async fn capture_direct_successor_diff_with_projection_state<F>(
     snapshot_id: Uuid,
     sequence: SequenceRange,
     capture_legacy_token: bool,
+    physical_imports_dir: Option<&Path>,
     progress: TeslaMateMigrationProgressReporter,
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
@@ -230,6 +235,7 @@ where
         capture_legacy_token,
         DirectCaptureMode::SuccessorDiff,
         true,
+        physical_imports_dir,
     )
     .await
 }
@@ -249,6 +255,7 @@ pub(crate) async fn capture_direct_snapshot_for_legacy_bridge<F>(
     snapshot_id: Uuid,
     sequence: SequenceRange,
     capture_legacy_token: bool,
+    physical_imports_dir: Option<&Path>,
     progress: TeslaMateMigrationProgressReporter,
     mut capture_factory: F,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
@@ -271,6 +278,7 @@ where
         capture_legacy_token,
         DirectCaptureMode::LegacyBridgeCapture,
         true,
+        physical_imports_dir,
     )
     .await
 }
@@ -290,6 +298,7 @@ async fn write_direct_full_snapshot_with_capture_factory<F>(
     capture_legacy_token: bool,
     capture_mode: DirectCaptureMode,
     capture_projection_state: bool,
+    physical_imports_dir: Option<&Path>,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError>
 where
     F: FnMut(
@@ -404,6 +413,19 @@ where
                 result => break result?,
             }
         };
+        if let Some(imports_dir) = physical_imports_dir {
+            capture.physical_stage = Some(
+                crate::teslamate_reader::capture_physical_v3_from_lease(
+                    &lease,
+                    source,
+                    password,
+                    selected_car_id_i16,
+                    read_limits,
+                    imports_dir,
+                )
+                .await?,
+            );
+        }
         if capture_legacy_token {
             capture.legacy_tokens =
                 Some(read_legacy_token_ciphertexts_in_client(lease.client()).await?);
@@ -1486,6 +1508,7 @@ async fn write_from_session(
         updates_v2_2,
         open_session,
         legacy_tokens: None,
+        physical_stage: None,
     })
 }
 

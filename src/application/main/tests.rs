@@ -2314,6 +2314,15 @@ fn source_run_serve_preflight_cli_requires_an_explicit_known_mode() {
         Cli::try_parse_from(["teslatlas-hub", "serve-preflight", "--mode", "production",]).is_err(),
         "production is not a source-run mode"
     );
+    let selected =
+        Cli::try_parse_from(["teslatlas-hub", "serve-preflight", "--mode", "private-lan"])
+            .expect("explicit private-LAN preflight mode");
+    assert!(matches!(
+        selected.command,
+        Command::ServePreflight {
+            mode: DevelopmentServeModeArgument::PrivateLan
+        }
+    ));
 }
 
 fn test_identity(name: &str) -> (String, zeroize::Zeroizing<String>, Vec<u8>) {

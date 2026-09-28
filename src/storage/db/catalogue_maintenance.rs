@@ -32,6 +32,8 @@ fn referenced_pack_rows_at(
         connection,
         retired_expiry_cutoff_ms,
     )?);
+    rows.extend(prepared_map_pack_rows(connection, retired_expiry_cutoff_ms)?);
+    rows.extend(physical_delta_pack_rows(connection, retired_expiry_cutoff_ms)?);
     let retired_rows = {
         let mut statement = connection
             .prepare(
@@ -87,6 +89,82 @@ fn referenced_pack_rows_at(
         deduplicated.push(row);
     }
     Ok(deduplicated)
+}
+
+fn physical_delta_pack_rows(
+    connection: &Connection,
+    expiry_cutoff_ms: i64,
+) -> Result<Vec<(String, String, i64)>, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT packs.sha256,packs.relative_path,packs.compressed_bytes
+               FROM physical_v3_delta_packs AS packs
+               JOIN physical_v3_delta_transitions AS delta
+                 ON delta.target_receipt_id=packs.target_receipt_id
+               JOIN pending_physical_v3_admissions AS target
+                 ON target.receipt_id=delta.target_receipt_id
+               JOIN retained_physical_v3_admissions AS base
+                 ON base.receipt_id=delta.base_receipt_id
+              WHERE base.expires_at_ms > ?1",
+        )
+        .map_err(StoreError::Query)?;
+    statement
+        .query_map([expiry_cutoff_ms], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, i64>(2)?))
+        })
+        .map_err(StoreError::Query)?
+        .map(|row| {
+            let (digest, path, bytes) = row.map_err(StoreError::Query)?;
+            let parsed = digest
+                .parse::<Sha256Digest>()
+                .map_err(|_| StoreError::LineageCatalogConflict)?;
+            if path != format!("/v1/packs/sha256/{parsed}.sqlite.zst")
+                || !(1..=16 * 1024 * 1024).contains(&bytes)
+            {
+                return Err(StoreError::LineageCatalogConflict);
+            }
+            Ok((digest, path, bytes))
+        })
+        .collect()
+}
+
+fn prepared_map_pack_rows(
+    connection: &Connection,
+    expiry_cutoff_ms: i64,
+) -> Result<Vec<(String, String, i64)>, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT p.pack_sha256, p.compressed_bytes FROM prepared_map_months AS p
+             WHERE EXISTS (
+                 SELECT 1 FROM pending_physical_v3_admissions AS h
+                 WHERE h.vehicle_id = p.vehicle_id
+                   AND h.receipt_id = p.input_receipt_id
+                   AND h.serve_state = 'public_first'
+             ) OR EXISTS (
+                 SELECT 1 FROM retained_physical_v3_admissions AS r
+                 WHERE r.vehicle_id = p.vehicle_id
+                   AND r.receipt_id = p.input_receipt_id
+                   AND r.expires_at_ms > ?1
+             )",
+        )
+        .map_err(StoreError::Query)?;
+    statement
+        .query_map([expiry_cutoff_ms], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(StoreError::Query)?
+        .map(|row| {
+            let (digest, bytes) = row.map_err(StoreError::Query)?;
+            digest
+                .parse::<Sha256Digest>()
+                .map_err(|_| StoreError::LineageCatalogConflict)?;
+            if !(1..=16 * 1024 * 1024).contains(&bytes) {
+                return Err(StoreError::LineageCatalogConflict);
+            }
+            let path = format!("/v1/packs/sha256/{digest}.sqlite.zst");
+            Ok((digest, path, bytes))
+        })
+        .collect()
 }
 
 fn retained_physical_v3_pack_rows(

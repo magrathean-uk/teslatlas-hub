@@ -371,7 +371,9 @@
         "src/auth/legacy_auth.rs",
         "src/auth/teslamate_credentials.rs",
         "src/auth/teslamate_token.rs",
-        "src/collection/fake_tesla.rs"
+        "src/collection/fake_tesla.rs",
+        "src/import/teslamate/prepared_pack_v1.sql",
+        "src/import/teslamate/physical_delta_pack_v1.sql"
       ],
       "globs": [
         "src/auth/legacy_auth/*.rs",

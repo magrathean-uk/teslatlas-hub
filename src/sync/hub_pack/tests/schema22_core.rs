@@ -1750,16 +1750,15 @@ fn schema_2_2_draft_and_physical_publication_metadata_are_not_interchangeable() 
         ));
 
         let connection = Connection::open(path).expect("metadata SQLite");
-        let values = ["publication_scope", "ledger_state", "reconciliation"]
-            .map(|key| {
-                connection
-                    .query_row(
-                        "SELECT value FROM hub_pack_metadata WHERE key = ?1",
-                        [key],
-                        |row| row.get::<_, String>(0),
-                    )
-                    .expect("metadata value")
-            });
+        let values = ["publication_scope", "ledger_state", "reconciliation"].map(|key| {
+            connection
+                .query_row(
+                    "SELECT value FROM hub_pack_metadata WHERE key = ?1",
+                    [key],
+                    |row| row.get::<_, String>(0),
+                )
+                .expect("metadata value")
+        });
         assert_eq!(
             values,
             [
@@ -1769,4 +1768,524 @@ fn schema_2_2_draft_and_physical_publication_metadata_are_not_interchangeable() 
             ]
         );
     }
+}
+
+fn compare_physical_fixtures(
+    root: &Path,
+    old: &ProjectionSnapshotV2_2,
+    new: &ProjectionSnapshotV2_2,
+) -> crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison {
+    try_compare_physical_fixtures(root, old, new, 64 * 1024 * 1024)
+        .expect("bounded exact comparison")
+}
+
+fn try_compare_physical_fixtures(
+    root: &Path,
+    old: &ProjectionSnapshotV2_2,
+    new: &ProjectionSnapshotV2_2,
+    scratch_limit: u64,
+) -> Result<
+    crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison,
+    crate::import::teslamate::physical_delta_compare::PhysicalCompareError,
+> {
+    use crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison;
+
+    let packs = root.join("packs");
+    let writer =
+        ProjectionPackWriter::with_limits(&packs, ProtocolLimits::hub_sync_v1_1_3_schema_2_2());
+    let key = CursorKey::from_bytes([0x71; 32]);
+    let mut old_request = request_v2_2(old);
+    old_request.pack_id = Uuid::new_v4();
+    let old_pack = writer
+        .write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&old_request)
+        .expect("old exact physical pack");
+    let old_manifest = old_request
+        .signed_manifest(&old_pack, &key)
+        .expect("old signed full manifest");
+    let mut new_request = request_v2_2(new);
+    new_request.pack_id = Uuid::new_v4();
+    new_request.snapshot_id = Uuid::new_v4();
+    new_request.sequence = SequenceRange {
+        from_exclusive: 8,
+        to_inclusive: 8,
+    };
+    let new_pack = writer
+        .write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&new_request)
+        .expect("new exact physical pack");
+    let new_manifest = new_request
+        .signed_manifest(&new_pack, &key)
+        .expect("new signed full manifest");
+    PhysicalDeltaComparison::compare(
+        &old_manifest,
+        &new_manifest,
+        &binding(),
+        &key,
+        &packs,
+        scratch_limit,
+        0,
+    )
+}
+
+fn raw_changes(
+    comparison: &crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison,
+) -> Vec<(String, i64, bool)> {
+    let mut changes = Vec::new();
+    comparison
+        .visit_changed_raw(|table, id, removed| {
+            changes.push((table.to_owned(), id, removed));
+            Ok(())
+        })
+        .expect("exact raw changes");
+    changes
+}
+
+fn projected_scope(
+    comparison: &crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison,
+) -> Vec<(String, i64, bool)> {
+    let mut scope = Vec::new();
+    comparison
+        .visit_affected_projected(|table, id, removed| {
+            scope.push((table.to_owned(), id, removed));
+            Ok(())
+        })
+        .expect("projected recomputation scope");
+    scope
+}
+
+#[test]
+fn physical_compare_reads_all_eleven_exact_typed_tables_and_ignores_pack_metadata() {
+    let temporary = crate::private_tempdir().unwrap();
+    let original = snapshot_v2_2();
+    let same = compare_physical_fixtures(temporary.path(), &original, &original);
+    assert!(
+        raw_changes(&same).is_empty(),
+        "new signed pack identity is not a row change"
+    );
+    let (plan, page_limit, bytes) = same.scratch_plan_and_limit().unwrap();
+    assert_eq!(page_limit, (64 * 1024 * 1024) / 4096);
+    assert!(bytes <= 64 * 1024 * 1024);
+    assert!(
+        plan.iter()
+            .any(|step| step.contains("target_context_pack_order"))
+    );
+    assert!(
+        !plan.iter().any(|step| step.contains("TEMP B-TREE")),
+        "context visitor must stream in indexed pack order: {plan:?}"
+    );
+    let scratch = same.scratch_path().to_path_buf();
+    drop(same);
+    assert!(!scratch.exists(), "private comparison is removed on drop");
+
+    let failed = try_compare_physical_fixtures(temporary.path(), &original, &original, 4096);
+    assert!(failed.is_err(), "one page cannot hold the index schema");
+    assert!(
+        !temporary
+            .path()
+            .join("packs/.staging")
+            .read_dir()
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("physical-compare-")),
+        "failed comparison cleans its scratch"
+    );
+
+    let mut changed = original.clone();
+    changed.global_settings[0].language = "en".into();
+    changed.car_settings[0].suspend_min += 1;
+    changed.cars[0].name = Some("New name".into());
+    changed.addresses[0].display_name = Some("Changed".into());
+    changed.geofences[0].name = "Changed".into();
+    changed.drives[0].duration_min = Some(0);
+    changed.positions[0].speed = Some(0);
+    changed.charging_processes[0].duration_min = Some(0);
+    changed.charges[0].charger_power = 0;
+    changed.states[0].end_date_pg_us = Some(0);
+    changed.updates[0].version = Some("2026.4".into());
+    let comparison = compare_physical_fixtures(temporary.path(), &original, &changed);
+    let changed_tables: Vec<String> = raw_changes(&comparison).into_iter().map(|v| v.0).collect();
+    assert_eq!(changed_tables.len(), 11);
+    for table in PHYSICAL_TABLES_2_2 {
+        assert!(
+            changed_tables.contains(&table.to_owned()),
+            "missing {table}"
+        );
+    }
+    let scope = projected_scope(&comparison);
+    for table in [
+        "cars",
+        "car_settings",
+        "drives",
+        "positions",
+        "charges",
+        "charge_samples",
+        "car_states",
+        "car_updates",
+    ] {
+        assert!(scope.iter().any(|v| v.0 == table), "missing {table} scope");
+    }
+    assert!(
+        scope.contains(&("car_settings".into(), 10, false)),
+        "projected settings are keyed by selected car, not raw settings ID 500"
+    );
+    let mut context = Vec::new();
+    comparison
+        .visit_target_context(|table, id, ordinal| {
+            context.push((table.to_owned(), id, ordinal));
+            Ok(())
+        })
+        .unwrap();
+    assert!(context.iter().all(|entry| entry.2 == 0));
+    assert!(context.len() >= 11);
+}
+
+#[test]
+fn physical_compare_tracks_moved_children_open_drive_and_shared_dependencies() {
+    let temporary = crate::private_tempdir().unwrap();
+    let original = snapshot_v2_2();
+    let mut changed = original.clone();
+    changed.drives[0].end_date_pg_us = None;
+    changed.positions[0].drive_id = None;
+    changed.charges[0].charger_power = 0;
+    changed.addresses[0].display_name = Some("renamed".into());
+    let comparison = compare_physical_fixtures(temporary.path(), &original, &changed);
+    let scope = projected_scope(&comparison);
+    for (table, id) in [
+        ("drives", 20),
+        ("positions", 30),
+        ("charges", 40),
+        ("charge_samples", 50),
+    ] {
+        assert!(scope.iter().any(|v| v.0 == table && v.1 == id && !v.2));
+    }
+    assert!(
+        scope.contains(&("drives".into(), 20, false)),
+        "open raw drive remains a recompute intent, not a raw tombstone"
+    );
+    assert!(raw_changes(&comparison).iter().all(|v| !v.2));
+    comparison.prepare_wire_scope().expect("bounded root closure");
+    let mut roots = Vec::new();
+    comparison.visit_roots(|root| {
+        roots.push((root.root_type,root.id,root.base_state,root.target_state,root.target_child_count));
+        Ok(())
+    }).expect("root witness");
+    assert!(roots.contains(&("drive",20,"closed","open",0)));
+    assert!(roots.iter().any(|root| root.0 == "charge" && root.1 == 40));
+
+    let mut deleted = original.clone();
+    deleted.drives.clear();
+    deleted.addresses.retain(|address| address.id != 101);
+    deleted.geofences.retain(|geofence| geofence.id != 201);
+    deleted.positions[0].drive_id = Some(20); // source soft ref survives, App detaches it
+    deleted.charges.clear();
+    let comparison = compare_physical_fixtures(temporary.path(), &original, &deleted);
+    let scope = projected_scope(&comparison);
+    assert!(scope.contains(&("drives".into(), 20, true)));
+    assert!(scope.contains(&("positions".into(), 30, false)));
+    assert!(scope.contains(&("charge_samples".into(), 50, true)));
+    assert!(raw_changes(&comparison).contains(&("drives".into(), 20, true)));
+    assert!(!raw_changes(&comparison).iter().any(|v| v.0 == "positions"));
+    comparison.prepare_wire_scope().expect("deleted-root closure");
+    let mut roots = Vec::new();
+    comparison.visit_roots(|root| { roots.push((root.root_type,root.id,root.target_state,root.target_child_count)); Ok(()) })
+        .expect("deleted roots");
+    assert!(roots.contains(&("drive",20,"absent",1)),
+        "raw surviving soft reference is preserved for projection detachment");
+}
+
+#[test]
+fn physical_delta_pack_preserves_surviving_soft_child_of_deleted_drive() {
+    let temporary = crate::private_tempdir().expect("private pack root");
+    let packs = temporary.path().join("packs");
+    let writer =
+        ProjectionPackWriter::with_limits(&packs, ProtocolLimits::hub_sync_v1_1_3_schema_2_2());
+    let key = CursorKey::from_bytes([0x71; 32]);
+    let mut original = snapshot_v2_2();
+    original.drives[0].start_date_pg_us = 1_700_000_000_000_000;
+    let mut target = original.clone();
+    target.drives.clear();
+    target.addresses.retain(|address| address.id != 101);
+    target.geofences.retain(|geofence| geofence.id != 201);
+    assert_eq!(target.positions[0].drive_id, Some(20));
+    let mut old_request = request_v2_2(&original);
+    old_request.sequence = SequenceRange {
+        from_exclusive: 0,
+        to_inclusive: 1,
+    };
+    let old_pack = writer
+        .write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&old_request)
+        .expect("old physical pack");
+    let old_manifest = old_request
+        .signed_manifest(&old_pack, &key)
+        .expect("old signed manifest");
+    let mut next_request = request_v2_2(&target);
+    next_request.snapshot_id = Uuid::new_v4();
+    next_request.pack_id = Uuid::new_v4();
+    next_request.sequence = SequenceRange {
+        from_exclusive: 1,
+        to_inclusive: 2,
+    };
+    let next_pack = writer
+        .write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&next_request)
+        .expect("target physical pack");
+    let next_manifest = next_request
+        .signed_manifest(&next_pack, &key)
+        .expect("target signed manifest");
+    let old = crate::db::physical_v3_admission_from_manifest(&old_manifest, 10)
+        .expect("old admission");
+    let next = crate::db::physical_v3_admission_from_manifest(&next_manifest, 10)
+        .expect("target admission");
+    let delta = crate::import::teslamate::physical_delta_pack::prepare_changed_set(
+        &old,
+        &next,
+        &binding(),
+        &key,
+        Sha256Digest::of_bytes(b"synthetic target raw"),
+        &packs,
+        0,
+    )
+    .expect("truthful soft-reference changed set");
+    if let Some(output) = std::env::var_os("TESLATLAS_HUB_SYNTHETIC_SOFTREF_FIXTURE_DIR") {
+        let output = std::path::PathBuf::from(output);
+        std::fs::create_dir_all(&output).expect("synthetic fixture output directory");
+        std::fs::write(output.join("receipt.json"), &delta.receipt_json)
+            .expect("synthetic signed receipt");
+        std::fs::copy(&delta.packs[0].path, output.join("pack.sqlite.zst"))
+            .expect("synthetic immutable delta pack");
+    }
+    let decoded = zstd::stream::decode_all(
+        std::fs::File::open(&delta.packs[0].path).expect("soft-reference pack"),
+    )
+    .expect("decode soft-reference pack");
+    let sqlite = temporary.path().join("soft-reference.sqlite");
+    std::fs::write(&sqlite, decoded).expect("private synthetic SQLite");
+    let connection = rusqlite::Connection::open_with_flags(
+        &sqlite,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .expect("open changed set");
+    let witness: (String, i64) = connection
+        .query_row(
+            "SELECT target_state,target_child_count FROM impacted_roots
+             WHERE root_type='drive' AND root_id=20",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("absent drive witness");
+    assert_eq!(witness, ("absent".to_owned(), 1));
+    assert_eq!(
+        connection
+            .query_row("SELECT drive_id FROM positions WHERE id=30", [], |row| row.get::<_, i64>(0))
+            .expect("surviving raw soft reference"),
+        20
+    );
+    let effect: String = connection
+        .query_row(
+            "SELECT effect FROM affected_projected_ids WHERE table_name='positions' AND entity_id=30",
+            [],
+            |row| row.get(0),
+        )
+        .expect("position detach scope");
+    assert_eq!(effect, "recompute");
+}
+
+#[test]
+fn physical_delta_pack_splits_a_root_from_its_children_without_duplicate_rows() {
+    let temporary = crate::private_tempdir().expect("private pack root");
+    let packs = temporary.path().join("packs");
+    let writer =
+        ProjectionPackWriter::with_limits(&packs, ProtocolLimits::hub_sync_v1_1_3_schema_2_2());
+    let key = CursorKey::from_bytes([0x72; 32]);
+    let mut original = snapshot_v2_2();
+    original.drives[0].start_date_pg_us = 1_700_000_000_000_000;
+    for id in 2_000..2_256 {
+        let mut position = original.positions[0].clone();
+        position.id = id;
+        position.date_pg_us += i64::from(id);
+        original.positions.push(position);
+    }
+    let mut target = original.clone();
+    target.positions.retain(|position| position.id < 2_000);
+    for id in 1_000..1_384 {
+        let mut position = original.positions[0].clone();
+        position.id = id;
+        position.date_pg_us += i64::from(id);
+        target.positions.push(position);
+    }
+    let mut old_request = request_v2_2(&original);
+    old_request.sequence = SequenceRange {
+        from_exclusive: 0,
+        to_inclusive: 1,
+    };
+    let old_pack = writer
+        .write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&old_request)
+        .expect("old physical pack");
+    let old_manifest = old_request
+        .signed_manifest(&old_pack, &key)
+        .expect("old signed manifest");
+    let mut next_request = request_v2_2(&target);
+    next_request.snapshot_id = Uuid::new_v4();
+    next_request.pack_id = Uuid::new_v4();
+    next_request.sequence = SequenceRange {
+        from_exclusive: 1,
+        to_inclusive: 2,
+    };
+    let next_pack = writer
+        .write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&next_request)
+        .expect("target physical pack");
+    let next_manifest = next_request
+        .signed_manifest(&next_pack, &key)
+        .expect("target signed manifest");
+    let old = crate::db::physical_v3_admission_from_manifest(&old_manifest, 10)
+        .expect("old admission");
+    let next = crate::db::physical_v3_admission_from_manifest(&next_manifest, 10)
+        .expect("target admission");
+    let delta = crate::import::teslamate::physical_delta_pack::prepare_changed_set_with_chunk_target(
+        &old,
+        &next,
+        &binding(),
+        &key,
+        Sha256Digest::of_bytes(b"synthetic target raw"),
+        &packs,
+        0,
+        4096,
+    )
+    .expect("bounded multi-pack changed set");
+    assert!(delta.packs.len() > 1);
+    assert!(delta.packs.len() <= 64);
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&delta.receipt_json).expect("signed receipt");
+    assert_eq!(receipt["chunks"].as_array().unwrap().len(), delta.packs.len());
+    let mut rows = std::collections::HashSet::new();
+    let mut tombstones = std::collections::HashSet::new();
+    let mut affected = std::collections::HashSet::new();
+    let mut roots = std::collections::HashSet::new();
+    let mut root_in = None;
+    let mut child_packs = std::collections::HashSet::new();
+    let mut expected_metadata = None;
+    for pack in &delta.packs {
+        assert_eq!(
+            receipt["chunks"][pack.ordinal as usize]["chunk_index"],
+            pack.ordinal
+        );
+        let decoded = zstd::stream::decode_all(
+            std::fs::File::open(&pack.path).expect("immutable delta pack"),
+        )
+        .expect("decode delta pack");
+        assert_eq!(decoded.len() as u64, pack.uncompressed_bytes);
+        assert!(pack.compressed_bytes <= 16 * 1024 * 1024);
+        let sqlite = temporary.path().join(format!("delta-{}.sqlite", pack.ordinal));
+        std::fs::write(&sqlite, decoded).expect("private synthetic SQLite");
+        let connection = rusqlite::Connection::open_with_flags(
+            &sqlite,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .expect("open chunk");
+        let metadata = connection
+            .prepare("SELECT key,value FROM delta_metadata ORDER BY key")
+            .expect("binding metadata")
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .expect("binding rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("binding values");
+        if let Some(first) = &expected_metadata {
+            assert_eq!(&metadata, first, "every chunk has the same signed source binding");
+        } else {
+            expected_metadata = Some(metadata);
+        }
+        let mut statement = connection
+            .prepare("SELECT table_name,entity_id FROM row_roles")
+            .expect("typed rows");
+        for entry in statement
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+            .expect("typed row query")
+        {
+            assert!(rows.insert(entry.expect("typed row")), "duplicate typed ID across packs");
+        }
+        let mut statement = connection
+            .prepare("SELECT table_name,entity_id FROM tombstones")
+            .expect("tombstone rows");
+        for entry in statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))).expect("tombstone query") {
+            assert!(tombstones.insert(entry.expect("tombstone")), "duplicate tombstone across packs");
+        }
+        let mut statement = connection.prepare(
+            "SELECT table_name,entity_id,effect FROM affected_projected_ids"
+        ).expect("affected rows");
+        for entry in statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?))).expect("affected query") {
+            assert!(affected.insert(entry.expect("affected row")), "duplicate affected ID across packs");
+        }
+        let mut statement = connection.prepare(
+            "SELECT root_type,root_id,base_state,target_state,target_child_count FROM impacted_roots"
+        ).expect("root rows");
+        for entry in statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, i64>(4)?))).expect("root query") {
+            assert!(roots.insert(entry.expect("root witness")), "duplicate root across packs");
+        }
+        let root_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM impacted_roots WHERE root_type='drive' AND root_id=20", [], |row| row.get(0))
+            .expect("root count");
+        if root_count == 1 {
+            assert!(root_in.replace(pack.ordinal).is_none());
+        }
+        let children: i64 = connection
+            .query_row("SELECT COUNT(*) FROM positions WHERE drive_id=20", [], |row| row.get(0))
+            .expect("child count");
+        if children > 0 {
+            child_packs.insert(pack.ordinal);
+        }
+    }
+    assert_eq!(rows.iter().filter(|(table, _)| table == "positions").count(), 385);
+    assert_eq!(tombstones.len(), 256);
+    assert!(rows.is_disjoint(&tombstones));
+    assert_eq!(receipt["total_rows"], (rows.len() + tombstones.len()) as u64);
+    let mut affected = affected.into_iter().collect::<Vec<_>>();
+    affected.sort_by(|left, right| (&left.0,left.1).cmp(&(&right.0,right.1)));
+    let affected_bytes = affected.iter().map(|(table,id,effect)| format!("{table}\t{id}\t{effect}\n")).collect::<String>();
+    assert_eq!(receipt["affected_projected_ids_count"], affected.len() as u64);
+    assert_eq!(receipt["affected_projected_ids_sha256"], Sha256Digest::of_bytes(affected_bytes.as_bytes()).to_string());
+    let mut roots = roots.into_iter().collect::<Vec<_>>();
+    roots.sort_by(|left,right| (&left.0,left.1).cmp(&(&right.0,right.1)));
+    let root_bytes = roots.iter().map(|(kind,id,base,target,count)| format!("{kind}\t{id}\t{base}\t{target}\t{count}\n")).collect::<String>();
+    assert_eq!(receipt["impacted_roots_count"], roots.len() as u64);
+    assert_eq!(receipt["impacted_roots_sha256"], Sha256Digest::of_bytes(root_bytes.as_bytes()).to_string());
+    assert!(root_in.is_some());
+    assert!(child_packs.iter().any(|ordinal| Some(*ordinal) != root_in));
+}
+
+#[test]
+fn physical_compare_includes_unchanged_latest_update_after_delete_and_only_raw_global_change() {
+    let temporary = crate::private_tempdir().unwrap();
+    let mut old = snapshot_v2_2();
+    old.updates.push(ProjectionUpdateV2_2 {
+        id: 17,
+        car_id: 10,
+        start_date_pg_us: 1_700_000_000_000_000,
+        end_date_pg_us: None,
+        version: Some("prior".into()),
+    });
+    let mut new = old.clone();
+    new.updates.retain(|row| row.id == 17);
+    let comparison = compare_physical_fixtures(temporary.path(), &old, &new);
+    assert!(projected_scope(&comparison).contains(&("cars".into(), 10, false)));
+    let mut context = Vec::new();
+    comparison
+        .visit_target_context(|table, id, _| {
+            context.push((table.to_owned(), id));
+            Ok(())
+        })
+        .unwrap();
+    assert!(
+        context.contains(&("updates".into(), 17)),
+        "full car reproject needs the surviving latest firmware row"
+    );
+
+    let mut global_only = old.clone();
+    global_only.global_settings[0].language = "en".into();
+    let comparison = compare_physical_fixtures(temporary.path(), &old, &global_only);
+    assert_eq!(
+        raw_changes(&comparison),
+        vec![("global_settings".into(), i64::MIN, false)]
+    );
+    assert!(projected_scope(&comparison).is_empty());
 }

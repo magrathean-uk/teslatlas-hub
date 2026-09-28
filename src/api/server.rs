@@ -717,6 +717,10 @@ fn router_with_access_telemetry_and_http(
             get(signing_keys),
         )
         .route(
+            "/v1/vehicles/{vehicle_id}/sync/prepared-artefacts/{artifact_id}",
+            get(prepared_artefact),
+        )
+        .route(
             "/v1/vehicles/{vehicle_id}/sync/changes-since",
             post(hub_sync_v1::changes_since),
         )
@@ -1569,7 +1573,10 @@ async fn manifest(
     match hub_sync_v1::bootstrap_selection(&headers) {
         hub_sync_v1::BootstrapSelection::Legacy => {}
         hub_sync_v1::BootstrapSelection::Selected => {
-            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id);
+            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id, false);
+        }
+        hub_sync_v1::BootstrapSelection::Selected14 => {
+            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id, true);
         }
         hub_sync_v1::BootstrapSelection::Unsupported => {
             return hub_sync_v1::unavailable_bootstrap_manifest();
@@ -1704,6 +1711,37 @@ async fn signing_keys(
         Ok(response) => response,
         Err(error) => {
             tracing::error!(%error, %vehicle_id, "cannot serialize bounded signing-key response");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
+}
+
+async fn prepared_artefact(
+    State(state): State<AppState>,
+    Path((vehicle_id, artifact_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(status) = require_authorized_device(&state, &headers) {
+        return device_auth_reject(status);
+    }
+    let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if let Err(response) = require_active_vehicle(&state, vehicle_id) {
+        return response;
+    }
+    match crate::import::teslamate::prepared_map::current_receipt(
+        &state.store,
+        vehicle_id,
+        &artifact_id,
+    ) {
+        Ok(Some(bytes)) => bounded_no_store_json_bytes(bytes).unwrap_or_else(|error| {
+            tracing::error!(%error, %vehicle_id, "prepared receipt exceeds response bound");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot resolve prepared receipt");
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
@@ -1861,11 +1899,41 @@ async fn pack(
     let Ok(digest) = digest.parse::<Sha256Digest>() else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    let mut delta_pack = false;
     let (stored, verify_digest) = match state.store.pack_for_digest(digest) {
         Ok(Some(pack)) => (pack, false),
         Ok(None) => match state.store.pending_physical_v3_pack_for_digest(digest) {
             Ok(Some(pack)) => (pack, true),
-            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+            Ok(None) => {
+                let now_ms = match current_epoch_ms() {
+                    Ok(now_ms) => now_ms,
+                    Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+                };
+                match state
+                    .store
+                    .physical_v3_delta_pack_for_digest_at(digest, now_ms)
+                {
+                    Ok(Some(pack)) => {
+                        delta_pack = true;
+                        (pack, true)
+                    }
+                    Ok(None) => match crate::import::teslamate::prepared_map::current_pack(
+                        &state.store,
+                        digest,
+                    ) {
+                        Ok(Some(pack)) => (pack, true),
+                        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+                        Err(error) => {
+                            tracing::error!(%error, %digest, "cannot load admitted prepared pack");
+                            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                        }
+                    },
+                    Err(error) => {
+                        tracing::error!(%error, %digest, "cannot load admitted changed-set pack");
+                        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                    }
+                }
+            }
             Err(error) => {
                 tracing::error!(%error, %digest, "cannot load admitted physical pack");
                 return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -1904,6 +1972,11 @@ async fn pack(
         permit,
         device_slot,
         verify_digest,
+        if delta_pack {
+            "application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1"
+        } else {
+            "application/vnd.teslatlas.sync-pack"
+        },
     )
     .await
 }
@@ -2111,6 +2184,7 @@ async fn stream_pack(
     permit: tokio::sync::OwnedSemaphorePermit,
     device_slot: PackDeviceSlot,
     verify_digest: bool,
+    media_type: &'static str,
 ) -> Response {
     let opened = if verify_digest {
         open_admitted_physical_pack(&stored.path)
@@ -2179,10 +2253,7 @@ async fn stream_pack(
             header::CACHE_CONTROL,
             HeaderValue::from_static("private, max-age=31536000, immutable"),
         )
-        .header(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/vnd.teslatlas.sync-pack"),
-        )
+        .header(header::CONTENT_TYPE, HeaderValue::from_static(media_type))
         .header(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"))
         .header(header::CONTENT_LENGTH, content_length)
         .header(header::ETAG, etag);

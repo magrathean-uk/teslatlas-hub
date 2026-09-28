@@ -1239,7 +1239,7 @@ impl HubStore {
             return Err(StoreError::LineageCatalogConflict);
         }
         let _publication_gate = self.try_acquire_publication_gate()?;
-        let connection = self.open()?;
+        let mut connection = self.open()?;
         let retired_cleanup_cutoff = now_ms.saturating_sub(RETIRED_LINEAGE_PACK_DELETE_GRACE_MS);
         self.verify_referenced_packs_at(now_ms)?;
         let quarantined_sessions_preserved: i64 = connection
@@ -1285,18 +1285,37 @@ impl HubStore {
         }
         // Retention metadata stays retryable if any validation or filesystem
         // cleanup above fails; make its deletion the final fallible operation.
-        connection
+        let transaction = connection.transaction().map_err(StoreError::Query)?;
+        transaction
             .execute(
                 "DELETE FROM sync_retired_lineages WHERE expires_at_ms <= ?1",
                 params![retired_cleanup_cutoff],
             )
             .map_err(StoreError::LineageCatalog)?;
-        connection
+        transaction
+            .execute(
+                "DELETE FROM prepared_map_months AS p
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM pending_physical_v3_admissions AS h
+                     WHERE h.vehicle_id = p.vehicle_id
+                       AND h.receipt_id = p.input_receipt_id
+                       AND h.serve_state = 'public_first'
+                 ) AND NOT EXISTS (
+                     SELECT 1 FROM retained_physical_v3_admissions AS r
+                     WHERE r.vehicle_id = p.vehicle_id
+                       AND r.receipt_id = p.input_receipt_id
+                       AND r.expires_at_ms > ?1
+                 )",
+                params![retired_cleanup_cutoff],
+            )
+            .map_err(StoreError::LineageCatalog)?;
+        transaction
             .execute(
                 "DELETE FROM retained_physical_v3_admissions WHERE expires_at_ms <= ?1",
                 params![retired_cleanup_cutoff],
             )
             .map_err(StoreError::LineageCatalog)?;
+        transaction.commit().map_err(StoreError::LineageCatalog)?;
 
         Ok(RepairReport {
             status: "ok".to_owned(),

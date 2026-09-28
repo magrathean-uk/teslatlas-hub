@@ -1309,6 +1309,41 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
         },
         updates: Vec::new(),
     };
+    let physical_stage = |updates: &[i32]| {
+        let mut stage = TeslaMateStage::create_physical_v3(
+            store.imports_dir(),
+            crate::teslamate_physical_fragments::tests::stage_limits(),
+        )
+        .expect("physical source stage");
+        stage
+            .insert(
+                TeslaMateStageTable::GlobalSettings,
+                1,
+                &source.global_settings,
+            )
+            .unwrap();
+        stage
+            .insert(TeslaMateStageTable::Cars, 1, &source.car)
+            .unwrap();
+        stage
+            .insert(TeslaMateStageTable::CarSettings, 1, &source.car_settings)
+            .unwrap();
+        // The common fixture is selected-car 7; use the selected command's car 1.
+        for id in updates {
+            let row = crate::teslamate_projection::TeslaMateUpdatePhysicalV2_2 {
+                id: *id,
+                car_id: 1,
+                start_date_pg_us: 0,
+                end_date_pg_us: Some(1),
+                version: Some("2026.1".into()),
+            };
+            stage
+                .insert(TeslaMateStageTable::Updates, i64::from(*id), &row)
+                .unwrap();
+        }
+        stage.seal().unwrap();
+        crate::teslamate_stage::OwnedTeslaMateStage::new(stage)
+    };
     let registered_car = history().cars.remove(0);
     validate_exported_vehicle_identity(&registered_car, &source)
         .expect("same exported VIN/EID/VID tuple");
@@ -1366,6 +1401,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
             updates_v2_2: source.clone(),
             legacy_tokens: None,
             atomic_schema_22: None,
+            physical_stage: Some(physical_stage(&[])),
             publication_gate,
         },
     )
@@ -1398,6 +1434,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
             updates_v2_2: source.clone(),
             legacy_tokens: None,
             atomic_schema_22: None,
+            physical_stage: Some(physical_stage(&[])),
             publication_gate,
         },
     )
@@ -1418,6 +1455,54 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
     assert_eq!(current.head_sequence, completed.updates_schema_22.sequence);
     crate::updates_delivery::schema_22_signed_artifacts(&store, current.vehicle_id, &cursor_key)
         .expect("canonical signed manifest/no-op pair");
+
+    let first_physical = completed
+        .physical_v3
+        .as_ref()
+        .expect("normal finalizer publishes physical head");
+    assert_eq!(
+        first_physical.kind,
+        crate::teslamate_physical_publication::PhysicalV3PublicationKind::FirstHead
+    );
+    for (updates, expected_kind, expected_sequence) in [
+        (
+            vec![],
+            crate::teslamate_physical_publication::PhysicalV3PublicationKind::Unchanged,
+            1,
+        ),
+        (
+            vec![71],
+            crate::teslamate_physical_publication::PhysicalV3PublicationKind::Rotation,
+            2,
+        ),
+    ] {
+        let result = finish_selected_schema_22_publication(
+            &store,
+            &cursor_key,
+            CapturedTeslaMateImport {
+                report: legacy.clone(),
+                binding: binding.clone(),
+                updates_v2_2: source.clone(),
+                legacy_tokens: None,
+                atomic_schema_22: Some(completed.updates_schema_22.clone()),
+                physical_stage: Some(physical_stage(&updates)),
+                publication_gate: store.try_acquire_publication_gate().unwrap(),
+            },
+        )
+        .expect("physical follow-up under existing import gate");
+        let physical = result.physical_v3.unwrap();
+        assert_eq!(physical.kind, expected_kind);
+        assert_eq!(physical.admission.head_sequence, expected_sequence);
+        if updates.is_empty() {
+            assert_eq!(physical.admission, first_physical.admission);
+        }
+    }
+    assert_eq!(
+        std::fs::read_dir(store.imports_dir().join(".staging"))
+            .unwrap()
+            .count(),
+        0
+    );
 
     let delta_temporary = crate::private_tempdir().expect("delta Hub store");
     let delta_store = HubStore::initialize(delta_temporary.path()).expect("delta store");
@@ -1480,6 +1565,7 @@ fn selected_command_post_commit_finalizer_is_explicit_and_retry_safe() {
             updates_v2_2: delta_updates,
             legacy_tokens: None,
             atomic_schema_22: None,
+            physical_stage: None,
             publication_gate,
         },
     )

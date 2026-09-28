@@ -137,6 +137,7 @@ fn source_run_mode_requires_explicit_opt_in_and_known_mode() {
         ("fixture", DevelopmentServeMode::Fixture),
         ("standalone", DevelopmentServeMode::Standalone),
         ("edge", DevelopmentServeMode::Edge),
+        ("private-lan", DevelopmentServeMode::PrivateLan),
     ] {
         assert_eq!(
             development_serve_mode(Some(OsStr::new("1")), Some(OsStr::new(raw))).unwrap(),
@@ -146,6 +147,65 @@ fn source_run_mode_requires_explicit_opt_in_and_known_mode() {
     assert!(development_serve_mode(None, Some(OsStr::new("standalone"))).is_err());
     assert!(development_serve_mode(Some(OsStr::new("true")), None).is_err());
     assert!(development_serve_mode(Some(OsStr::new("1")), Some(OsStr::new("production"))).is_err());
+}
+
+#[test]
+fn private_lan_source_run_requires_exact_rfc1918_https_and_valid_collection_authority() {
+    let temporary = crate::private_tempdir().expect("temporary source-run root");
+    let data = temporary.path().join("history");
+    let mut config = source_run_config(temporary.path(), &data);
+    config.bind = "172.17.17.111:21445".parse().expect("private LAN bind");
+    config.tls.as_mut().unwrap().public_url = "https://172.17.17.111:21445".to_owned();
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::PrivateLan))
+        .expect("disabled collector with valid Hub state");
+    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
+    assert!(preflight_hub_for_serve(&config, None).is_err());
+
+    for bind in [
+        "0.0.0.0:21445",
+        "172.17.17.111:0",
+        "8.8.8.8:21445",
+        "127.0.0.1:21445",
+        "169.254.1.1:21445",
+        "[::]:21445",
+    ] {
+        config.bind = bind.parse().expect("test bind");
+        assert!(
+            preflight_hub_for_serve(&config, Some(DevelopmentServeMode::PrivateLan)).is_err(),
+            "{bind}"
+        );
+    }
+    config.bind = "172.17.17.111:21445".parse().unwrap();
+    for url in [
+        "http://172.17.17.111:21445",
+        "https://172.17.17.112:21445",
+        "https://172.17.17.111:21446",
+        "https://user@172.17.17.111:21445",
+        "https://172.17.17.111:21445/?q=1",
+        "https://172.17.17.111:21445/#fragment",
+        "https://172.17.17.111:21445/other",
+        "https://0xac11116f:21445",
+    ] {
+        config.tls.as_mut().unwrap().public_url = url.to_owned();
+        assert!(
+            preflight_hub_for_serve(&config, Some(DevelopmentServeMode::PrivateLan)).is_err(),
+            "{url}"
+        );
+    }
+    config.tls.as_mut().unwrap().public_url = "https://172.17.17.111:21445/".to_owned();
+    config.collector.interval_seconds = 300;
+    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::PrivateLan)).is_err());
+    config.collector.provider = CollectorProvider::Fleet;
+    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::PrivateLan)).is_err());
+
+    let native_data = temporary.path().join("native");
+    seed_ready_hub(&native_data);
+    let mut native = source_run_config(temporary.path(), &native_data);
+    native.bind = "10.24.0.7:21445".parse().unwrap();
+    native.tls.as_mut().unwrap().public_url = "https://10.24.0.7:21445".to_owned();
+    native.collector.interval_seconds = 300;
+    preflight_hub_for_serve(&native, Some(DevelopmentServeMode::PrivateLan))
+        .expect("native Legacy with normal usable credential preflight");
 }
 
 #[test]

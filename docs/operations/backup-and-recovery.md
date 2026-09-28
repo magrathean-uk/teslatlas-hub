@@ -22,7 +22,9 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub verify-backup \
 ```
 
 The data backup contains the catalogue, encrypted token row, pairing database,
-and immutable packs. Pairing invitations and active device authority are removed.
+and all referenced immutable packs, including active or retained PhysicalV3,
+changed-set, and prepared-map packs. Pairing invitations and active device
+authority are removed.
 It excludes the TeslaMate decryption key, cursor-signing key, TLS identity,
 configuration, and service state.
 

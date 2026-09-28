@@ -115,6 +115,14 @@ pub fn build_current_vehicle_summary(
         observations,
         &["owner_api_discovery_v1", "fleet_api_discovery_v1"],
     );
+    // Discovery proves current presence/state, but cannot refresh older owner
+    // or stream telemetry. Keep the projected car identity independently.
+    let owner = owner.filter(|record| {
+        discovery.is_none_or(|discovery| record.observed_at_ms >= discovery.observed_at_ms)
+    });
+    let stream = stream.filter(|record| {
+        discovery.is_none_or(|discovery| record.observed_at_ms >= discovery.observed_at_ms)
+    });
     let mut vehicle_data = owner
         .and_then(|record| provider_vehicle_data(&record.payload))
         .and_then(Value::as_object)
@@ -137,6 +145,19 @@ pub fn build_current_vehicle_summary(
     let update = vehicle.and_then(|value| object(Some(value), "software_update"));
     let open =
         lifecycle.and_then(|record| OpenSessionState::decode(&record.open_session_json).ok());
+    let lifecycle_is_current = discovery.is_none_or(|discovery| {
+        lifecycle
+            .zip(open.as_ref())
+            .and_then(|(record, state)| {
+                state
+                    .last_observed_at_ms
+                    .map(|observed_at_ms| (record.last_observation_id, observed_at_ms))
+            })
+            .is_some_and(|(observation_id, observed_at_ms)| {
+                (observed_at_ms, observation_id)
+                    >= (discovery.observed_at_ms, discovery.observation_id)
+            })
+    });
     let newest = observations
         .iter()
         .max_by_key(|record| (record.observed_at_ms, record.observation_id));
@@ -146,11 +167,13 @@ pub fn build_current_vehicle_summary(
         .and_then(|record| text(record.payload.as_object(), "source_vehicle_state"));
     let state = open
         .as_ref()
+        .filter(|_| lifecycle_is_current)
         .and_then(|state| state.open_state.as_ref().map(|state| state.state.clone()))
         .or(source_state)
         .or_else(|| Some("unavailable".to_owned()));
     let since = open
         .as_ref()
+        .filter(|_| lifecycle_is_current)
         .and_then(|state| state.open_state.as_ref().map(|state| state.start_date_ms));
 
     let windows = ["fd_window", "rd_window", "fp_window", "rp_window"]
@@ -535,6 +558,124 @@ mod tests {
         assert_eq!(summary.longitude, Some(19.0));
         assert_eq!(summary.battery_level, Some(81));
         assert_eq!(summary.plugged_in, None);
+    }
+
+    #[test]
+    fn newer_discovery_updates_presence_without_redating_old_telemetry() {
+        let owner = record(
+            1,
+            1_000,
+            json!({
+                "record_type": "owner_api_vehicle_data_v1",
+                "source_vehicle_state": "online",
+                "vehicle_data": {
+                    "drive_state": {"latitude": 47.0, "longitude": 19.0},
+                    "charge_state": {"battery_level": 80}
+                }
+            }),
+        );
+        let stream = record(
+            2,
+            1_500,
+            json!({
+                "record_type": "tesla_stream_update_v1",
+                "source_vehicle_state": "online",
+                "fields": {"charge_state": {"battery_level": 79}}
+            }),
+        );
+        let discovery = record(
+            3,
+            2_000,
+            json!({
+                "record_type": "owner_api_discovery_v1",
+                "source_vehicle_state": "asleep"
+            }),
+        );
+        let car = ProjectionCar {
+            id: 9,
+            name: "Stored car".into(),
+            model: "Model 3".into(),
+            vin: None,
+            source_eid: None,
+            source_vid: None,
+            trim_badging: None,
+            marketing_name: None,
+            exterior_color: None,
+            wheel_type: None,
+            spoiler_type: None,
+            firmware_version: None,
+            efficiency_wh_per_km: None,
+            settings: Default::default(),
+        };
+        let mut open = OpenSessionState::new();
+        open.last_observed_at_ms = Some(1_500);
+        open.open_state = Some(crate::lifecycle::OpenState {
+            id: 1,
+            car_id: 9,
+            state: "online".into(),
+            start_date_ms: 1_000,
+        });
+        let lifecycle = LifecycleStateRecord {
+            vehicle_id: Uuid::from_u128(2),
+            car_id: 9,
+            last_observation_id: 2,
+            open_session_json: open.encode().expect("lifecycle encoding"),
+            quarantined: false,
+            updated_at_ms: 1_500,
+        };
+        let summary = build_current_vehicle_summary(
+            Uuid::from_u128(2),
+            &[owner, stream, discovery],
+            Some(car),
+            Some(&lifecycle),
+            None,
+        );
+        assert_eq!(summary.observed_at_ms, Some(2_000));
+        assert_eq!(summary.state.as_deref(), Some("asleep"));
+        assert_eq!(summary.since, None);
+        assert_eq!(summary.display_name.as_deref(), Some("Stored car"));
+        assert_eq!(summary.battery_level, None);
+        assert_eq!(summary.latitude, None);
+        assert_eq!(summary.longitude, None);
+        assert_eq!(summary.car.as_ref().map(|car| car.id), Some(9));
+    }
+
+    #[test]
+    fn same_millisecond_current_only_discovery_supersedes_earlier_lifecycle() {
+        let discovery = record(
+            3,
+            2_000,
+            json!({
+                "record_type": "owner_api_discovery_v1",
+                "source_vehicle_state": "asleep"
+            }),
+        );
+        let mut open = OpenSessionState::new();
+        open.last_observed_at_ms = Some(2_000);
+        open.open_state = Some(crate::lifecycle::OpenState {
+            id: 1,
+            car_id: 9,
+            state: "online".into(),
+            start_date_ms: 1_000,
+        });
+        let lifecycle = LifecycleStateRecord {
+            vehicle_id: Uuid::from_u128(2),
+            car_id: 9,
+            last_observation_id: 2,
+            open_session_json: open.encode().expect("lifecycle encoding"),
+            quarantined: false,
+            updated_at_ms: 2_000,
+        };
+        let summary = build_current_vehicle_summary(
+            Uuid::from_u128(2),
+            &[discovery],
+            None,
+            Some(&lifecycle),
+            None,
+        );
+        assert_eq!(summary.observed_at_ms, Some(2_000));
+        assert_eq!(summary.state.as_deref(), Some("asleep"));
+        assert_eq!(summary.since, None);
     }
 
     #[test]

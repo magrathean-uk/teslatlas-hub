@@ -500,24 +500,30 @@ impl PhysicalChunkAccumulator {
         Ok(())
     }
 
-    fn ensure_parent_child_fits(
+    fn parent_child_needs_flush(
         &self,
         parent_bytes: u64,
         child_bytes: u64,
         limits: TeslaMatePhysicalFragmentLimits,
-    ) -> Result<(), TeslaMatePhysicalFragmentError> {
+    ) -> Result<bool, TeslaMatePhysicalFragmentError> {
+        let next_rows = self
+            .payload_rows
+            .checked_add(5)
+            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
         let total_bytes = self
             .projected_json_bytes
             .checked_add(parent_bytes)
             .and_then(|value| value.checked_add(child_bytes))
             .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
-        if self.payload_rows != 0
-            || limits.max_rows_per_chunk < 5
-            || total_bytes > limits.max_projected_json_bytes
+        if self.payload_rows == 0
+            && (next_rows > limits.max_rows_per_chunk
+                || total_bytes > limits.max_projected_json_bytes)
         {
             return Err(TeslaMatePhysicalFragmentError::ParentChildExceedsTarget);
         }
-        Ok(())
+        Ok(self.payload_rows != 0
+            && (next_rows > limits.max_rows_per_chunk
+                || total_bytes > limits.max_projected_json_bytes))
     }
 
     fn take_snapshot(&mut self) -> Result<ProjectionSnapshotV2_2, TeslaMatePhysicalFragmentError> {
@@ -940,7 +946,28 @@ fn stream_charging_processes(
                 let projected_charge: ProjectionChargeV2_2 = charge_row.value.into();
                 let charge_bytes = serialized_bytes(&projected_charge)?;
                 if !saw_charge {
-                    if accumulator.payload_rows != 0 {
+                    let owned = relations
+                        .take()
+                        .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+                    let group_rows = 2_u64
+                        .checked_add(owned.row_count()?)
+                        .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+                    let group_bytes = process_bytes
+                        .checked_add(owned.serialized_bytes)
+                        .and_then(|bytes| bytes.checked_add(charge_bytes))
+                        .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
+                    let needs_flush = if owned.is_empty() {
+                        accumulator.parent_child_needs_flush(process_bytes, charge_bytes, limits)?
+                    } else {
+                        match accumulator.group_needs_flush(group_rows, group_bytes, limits) {
+                            Ok(needs_flush) => needs_flush,
+                            Err(TeslaMatePhysicalFragmentError::ParentRelationsExceedTarget) => {
+                                false
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    };
+                    if needs_flush {
                         flush_chunk(
                             writer,
                             binding,
@@ -951,35 +978,29 @@ fn stream_charging_processes(
                             fail_before_ordinal,
                         )?;
                     }
-                    let owned = relations
-                        .take()
-                        .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
-                    if owned.is_empty() {
-                        accumulator.ensure_parent_child_fits(
+                    let relations_and_charge_fit = if owned.is_empty() {
+                        accumulator.parent_child_needs_flush(
                             process_bytes,
                             charge_bytes,
                             limits,
                         )?;
-                        accumulator
-                            .snapshot
-                            .charging_processes
-                            .push(projected_process.clone());
-                        accumulator.add_payload(process_bytes)?;
+                        true
                     } else {
-                        let group_rows = 1_u64
-                            .checked_add(owned.row_count()?)
-                            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
-                        let group_bytes = process_bytes
-                            .checked_add(owned.serialized_bytes)
-                            .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;
-                        accumulator.group_needs_flush(group_rows, group_bytes, limits)?;
-                        accumulator
-                            .snapshot
-                            .charging_processes
-                            .push(projected_process.clone());
-                        accumulator.add_payload(process_bytes)?;
-                        append_parent_relations(accumulator, owned)?;
-                        if accumulator.needs_flush(charge_bytes, limits)? {
+                        match accumulator.group_needs_flush(group_rows, group_bytes, limits) {
+                            Ok(false) => true,
+                            Ok(true) => {
+                                return Err(TeslaMatePhysicalFragmentError::AccountingOverflow);
+                            }
+                            Err(TeslaMatePhysicalFragmentError::ParentRelationsExceedTarget) => {
+                                false
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    };
+                    if !relations_and_charge_fit {
+                        let relation_rows = group_rows - 1;
+                        let relation_bytes = group_bytes - charge_bytes;
+                        if accumulator.group_needs_flush(relation_rows, relation_bytes, limits)? {
                             flush_chunk(
                                 writer,
                                 binding,
@@ -989,17 +1010,35 @@ fn stream_charging_processes(
                                 chunks,
                                 fail_before_ordinal,
                             )?;
-                            accumulator.ensure_parent_child_fits(
-                                process_bytes,
-                                charge_bytes,
-                                limits,
-                            )?;
-                            accumulator
-                                .snapshot
-                                .charging_processes
-                                .push(projected_process.clone());
-                            accumulator.add_payload(process_bytes)?;
+                            accumulator.group_needs_flush(relation_rows, relation_bytes, limits)?;
                         }
+                    }
+                    accumulator
+                        .snapshot
+                        .charging_processes
+                        .push(projected_process.clone());
+                    accumulator.add_payload(process_bytes)?;
+                    append_parent_relations(accumulator, owned)?;
+                    if !relations_and_charge_fit {
+                        flush_chunk(
+                            writer,
+                            binding,
+                            snapshot_id,
+                            sequence,
+                            accumulator,
+                            chunks,
+                            fail_before_ordinal,
+                        )?;
+                        accumulator.parent_child_needs_flush(
+                            process_bytes,
+                            charge_bytes,
+                            limits,
+                        )?;
+                        accumulator
+                            .snapshot
+                            .charging_processes
+                            .push(projected_process.clone());
+                        accumulator.add_payload(process_bytes)?;
                     }
                 } else if accumulator.needs_flush(charge_bytes, limits)? {
                     flush_chunk(
@@ -1011,7 +1050,7 @@ fn stream_charging_processes(
                         chunks,
                         fail_before_ordinal,
                     )?;
-                    accumulator.ensure_parent_child_fits(process_bytes, charge_bytes, limits)?;
+                    accumulator.parent_child_needs_flush(process_bytes, charge_bytes, limits)?;
                     accumulator
                         .snapshot
                         .charging_processes
@@ -1023,17 +1062,7 @@ fn stream_charging_processes(
                 saw_charge = true;
                 Ok(())
             })?;
-            if saw_charge {
-                flush_chunk(
-                    writer,
-                    binding,
-                    snapshot_id,
-                    sequence,
-                    accumulator,
-                    chunks,
-                    fail_before_ordinal,
-                )?;
-            } else {
+            if !saw_charge {
                 let owned = relations
                     .take()
                     .ok_or(TeslaMatePhysicalFragmentError::AccountingOverflow)?;

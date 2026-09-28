@@ -349,6 +349,8 @@ pub enum StoreError {
     NilVehicleId,
     #[error("raw observation payload must be a JSON object")]
     ObservationMustBeObject,
+    #[error("current-only observation must be a provider discovery")]
+    InvalidCurrentDiscovery,
     #[error("raw observation is {actual} bytes; maximum is {maximum}")]
     ObservationTooLarge { actual: usize, maximum: usize },
     #[error("raw observation is missing after a successful insert")]

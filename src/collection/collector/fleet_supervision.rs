@@ -128,7 +128,7 @@ where
                                 CollectorProvider::Fleet,
                             )?;
                             report_successful_owner_api_request(&collector_state, false);
-                            let events = scheduler.accept_discovery(vehicles, Instant::now());
+                            let events = scheduler.accept_discovery(vehicles.clone(), Instant::now());
                             if !events.is_empty() {
                                 persist_discovery_events_with_timeout(
                                     store,
@@ -139,6 +139,16 @@ where
                                 )
                                 .await?;
                             }
+                            let unchanged = vehicles
+                                .into_iter()
+                                .filter(|vehicle| !events.iter().any(|event| event.id == vehicle.id))
+                                .collect::<Vec<_>>();
+                            persist_unchanged_discoveries(
+                                store,
+                                &unchanged,
+                                CollectorProvider::Fleet,
+                            )
+                            .await?;
                         }
                         Err(error) => {
                             report_terminal_auth_failure(&collector_state, &error);
@@ -188,6 +198,16 @@ where
                                 )
                                 .await?;
                             }
+                            let unchanged = discovered
+                                .into_iter()
+                                .filter(|vehicle| !events.iter().any(|event| event.id == vehicle.id))
+                                .collect::<Vec<_>>();
+                            persist_unchanged_discoveries(
+                                store,
+                                &unchanged,
+                                CollectorProvider::Fleet,
+                            )
+                            .await?;
                         }
                         Err(error) => {
                             if fleet_collection_must_stop(&error) {

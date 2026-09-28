@@ -36,14 +36,41 @@ The accepted binding does not add routes beyond those advertised by discovery.
 | `GET` | `/v1/vehicles` | List vehicles visible to the paired device. |
 | `GET` | `/v1/vehicles/{vehicle_id}/current` | Get bounded current state. |
 | `GET` | `/v1/vehicles/{vehicle_id}/drives` | Get one bounded, newest-first drive page. |
+| `GET` | `/v1/vehicles/{vehicle_id}/sync/signing-keys` | Get the authenticated signing-key manifest. |
+| `POST` | `/v1/vehicles/{vehicle_id}/sync/changes-since` | Request a signed no-op, changed set, or replacement for a verified base. |
 | `GET` | `/v1/vehicles/{vehicle_id}/sync/manifest` | Get a signed sync manifest. |
 | `GET` | `/v1/vehicles/{vehicle_id}/sync/noop` | Schema 2.2 no-op synchronization response. |
+| `GET` | `/v1/vehicles/{vehicle_id}/sync/prepared-artefacts/{artifact_id}` | Get an available, signed prepared-map receipt for the current physical head. |
 | `GET` | `/v1/packs/sha256/{object_name}` | Stream one manifest-authorized immutable pack. |
 | `POST` | `/v1/internal/fleet-telemetry` | Private supervised Fleet Telemetry ingestion. |
 
 Pack objects are content-addressed and served only when an authorized manifest
 references the digest. Unknown, retired, orphaned, and unauthorized digests are
 rejected.
+
+## Physical history and prepared maps
+
+The selected-car import publishes a complete signed PhysicalV3 schema-2.2 head.
+The authenticated `changes-since` request negotiates the supported Hub Sync
+profile; existing Protocol 1.3 requests retain their original response format.
+Protocol 1.4 binds the request to the installation, account, vehicle, source
+generation, selected car, and exact signed base manifest and receipt. An
+unchanged head returns a signed no-op. An immediate predecessor may receive a
+signed `physical_changed_set` with typed changed rows, removals, affected
+projection IDs, impacted roots, and bounded context in up to 64 compressed
+packs. A missing transition or older retained base receives a signed `409`
+full-head rebase; an unknown or expired base is rejected. Full schema-2.2 packs
+remain the bootstrap and capacity fallback. The Protocol 1.4 profile defines
+the exact wire fields, signatures, and pack limits.
+
+An eligible completed UTC month may have a prepared-map artifact derived from
+the same signed head. Its deterministic ID includes the source receipt and
+window, style, geometry, and algorithm identity. The authenticated artifact
+route returns `404` when the current head has no such artifact, allowing the
+client to render locally. Its pack uses the same authorized digest download
+route. A published receipt or focused host check is not evidence that the
+physical phone selected the prepared path; that acceptance belongs in the
+workspace master plan.
 
 ## Discovery and drive queries
 

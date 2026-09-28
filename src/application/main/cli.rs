@@ -32,6 +32,7 @@ enum DevelopmentServeModeArgument {
     Fixture,
     Standalone,
     Edge,
+    PrivateLan,
 }
 
 #[cfg(target_os = "macos")]
@@ -41,6 +42,7 @@ impl DevelopmentServeModeArgument {
             Self::Fixture => "fixture",
             Self::Standalone => "standalone",
             Self::Edge => "edge",
+            Self::PrivateLan => "private-lan",
         }
     }
 
@@ -49,6 +51,7 @@ impl DevelopmentServeModeArgument {
             Self::Fixture => teslatlas_hub::macos_launch_agent::DevelopmentServeMode::Fixture,
             Self::Standalone => teslatlas_hub::macos_launch_agent::DevelopmentServeMode::Standalone,
             Self::Edge => teslatlas_hub::macos_launch_agent::DevelopmentServeMode::Edge,
+            Self::PrivateLan => teslatlas_hub::macos_launch_agent::DevelopmentServeMode::PrivateLan,
         }
     }
 }

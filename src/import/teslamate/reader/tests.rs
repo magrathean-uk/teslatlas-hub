@@ -1567,6 +1567,76 @@ async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failur
         .collect::<Vec<_>>();
     assert!(staged_files.is_empty(), "retained stages: {staged_files:?}");
 
+    // Exercise the normal command seam after the lossless edge-value checks.
+    // This database is disposable and contains only the synthetic rows above.
+    admin
+        .batch_execute(
+            "TRUNCATE public.charges, public.charging_processes, public.positions,
+            public.drives, public.states, public.updates, public.addresses,
+            public.geofences CASCADE;
+         UPDATE public.cars SET efficiency = 0.15;
+         INSERT INTO public.updates(id, car_id, start_date, end_date, version)
+         VALUES (10, 1, TIMESTAMP '2026-01-01', TIMESTAMP '2026-01-02', '2026.1');",
+        )
+        .await
+        .expect("reset synthetic source for ordinary import");
+    let hub = crate::db::HubStore::initialize(temporary.path().join("ordinary-hub")).unwrap();
+    let key = crate::protocol::CursorKey::from_bytes([74; 32]);
+    let request = crate::teslamate_import::TeslaMateImportRequest {
+        source_key: "ordinary-physical-test".into(),
+        scope: crate::teslamate_import::TeslaMateImportScope::Selected(1),
+        imported_at_ms: 1_800_000_000_000,
+    };
+    let import_limits = TeslaMateReadLimits {
+        maximum_rows: 64,
+        maximum_stage_bytes: 4 * 1024 * 1024,
+        minimum_free_bytes: 0,
+        ..limits
+    };
+    let mut first = None;
+    for pass in 0..3 {
+        if pass == 2 {
+            admin
+                .batch_execute(
+                    "INSERT INTO public.updates(id, car_id, start_date, end_date, version)
+                 VALUES (11, 1, TIMESTAMP '2026-02-01', TIMESTAMP '2026-02-02', '2026.2');",
+                )
+                .await
+                .unwrap();
+        }
+        let imported = crate::teslamate_import::import_selected_from_postgres_with_schema_22(
+            &hub,
+            &source,
+            &password,
+            &key,
+            &request,
+            import_limits,
+        )
+        .await
+        .expect("ordinary selected import publishes physical head");
+        let physical = imported.physical_v3.expect("physical publication");
+        match pass {
+            0 => {
+                assert_eq!(physical.admission.head_sequence, 1);
+                first = Some(physical.admission);
+            }
+            1 => assert_eq!(physical.admission, *first.as_ref().unwrap()),
+            _ => {
+                assert_eq!(physical.admission.head_sequence, 2);
+                assert_ne!(
+                    physical.admission.snapshot_id,
+                    first.as_ref().unwrap().snapshot_id
+                );
+            }
+        }
+        assert_eq!(
+            std::fs::read_dir(hub.imports_dir().join(".staging"))
+                .unwrap()
+                .count(),
+            0
+        );
+    }
+
     drop(admin);
     connection_task.await.expect("fixture admin join");
 }

@@ -9,6 +9,8 @@ use super::*;
 const MAX_CHANGES_SINCE_REQUEST_BYTES: usize = 8_192;
 const MAX_PROFILE_PACK_BYTES: u64 = 16 * 1024 * 1024;
 const MAX_I_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+pub(super) const HUB_SYNC_PROFILE_14: &str = "hub-sync-v1@1.4.0";
+pub(super) const PHYSICAL_DELTA_FORMAT: &str = "teslatlas-physical-v3-delta-v1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,6 +19,29 @@ struct ChangesSinceRequest {
     base_manifest_schema: String,
     from_sequence: u64,
     schema_version_range: SchemaVersionRange,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PhysicalChangesSinceRequest {
+    source: PhysicalSource,
+    base_receipt_id: String,
+    base_manifest_id: String,
+    base_manifest_sha256: String,
+    base_manifest_schema: String,
+    from_sequence: u64,
+    schema_version_range: SchemaVersionRange,
+    accepted_changed_set_formats: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PhysicalSource {
+    installation_id: Uuid,
+    account_id: Uuid,
+    vehicle_id: Uuid,
+    generation: u64,
+    selected_car_id: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -168,14 +193,6 @@ struct WirePack {
     compressed_bytes: u64,
 }
 
-#[derive(Serialize)]
-struct WireSignature {
-    algorithm: &'static str,
-    key_id: String,
-    signed_payload_sha256: String,
-    signature: String,
-}
-
 enum CurrentCheckpoint<'a> {
     Changed(&'a crate::protocol::LineageDelta),
     Head,
@@ -185,6 +202,7 @@ enum CurrentCheckpoint<'a> {
 pub(super) enum BootstrapSelection {
     Legacy,
     Selected,
+    Selected14,
     Unsupported,
 }
 
@@ -196,6 +214,10 @@ pub(super) fn bootstrap_selection(headers: &HeaderMap) -> BootstrapSelection {
         && has_exact_single_header(headers, SUPPORTED_SCHEMAS_HEADER, b"2.1,2.2")
     {
         BootstrapSelection::Selected
+    } else if has_exact_single_header(headers, SYNC_PROFILE_HEADER, HUB_SYNC_PROFILE_14.as_bytes())
+        && has_exact_single_header(headers, SUPPORTED_SCHEMAS_HEADER, b"2.1,2.2")
+    {
+        BootstrapSelection::Selected14
     } else {
         BootstrapSelection::Unsupported
     }
@@ -209,7 +231,11 @@ fn has_exact_single_header(headers: &HeaderMap, name: &str, expected: &[u8]) -> 
     )
 }
 
-pub(super) fn bootstrap_manifest(state: &AppState, vehicle_id: Uuid) -> Response {
+pub(super) fn bootstrap_manifest(
+    state: &AppState,
+    vehicle_id: Uuid,
+    physical_only: bool,
+) -> Response {
     let Some(signing) = state.manifest_signing.as_deref() else {
         tracing::error!(%vehicle_id, "manifest signing key is unavailable");
         return unavailable_bootstrap_manifest();
@@ -239,6 +265,9 @@ pub(super) fn bootstrap_manifest(state: &AppState, vehicle_id: Uuid) -> Response
             tracing::error!(%error, %vehicle_id, "cannot load admitted physical bootstrap");
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
+    }
+    if physical_only {
+        return unavailable_bootstrap_manifest();
     }
     let lineage = match state.store.lineage_manifest_for_vehicle(vehicle_id) {
         Ok(Some(lineage)) => lineage,
@@ -309,6 +338,20 @@ pub(super) async fn changes_since(
             );
         }
     };
+    if serde_json::from_slice::<serde_json::Value>(&raw)
+        .ok()
+        .and_then(|value| {
+            value
+                .as_object()
+                .map(|object| object.contains_key("accepted_changed_set_formats"))
+        })
+        .unwrap_or(false)
+    {
+        return match parse_physical_changes_since_request(&raw) {
+            Ok(request) => serve_physical_changes_since_14(&state, vehicle_id, request),
+            Err(error) => request_error_response(error),
+        };
+    }
     let request = match parse_changes_since_request(&raw) {
         Ok(request) => request,
         Err(RequestValidationError::InvalidJson) => {
@@ -346,6 +389,64 @@ pub(super) async fn changes_since(
     };
 
     serve_changes_since(&state, vehicle_id, request)
+}
+
+fn request_error_response(error: RequestValidationError) -> Response {
+    match error {
+        RequestValidationError::InvalidJson => sync_error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid_json",
+            "Request body is not valid JSON.",
+            false,
+        ),
+        RequestValidationError::InvalidRequest => sync_error_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_request",
+            "Request body does not match the changes-since schema.",
+            false,
+        ),
+        RequestValidationError::InvalidSchemaRange => sync_error_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_schema_range",
+            "Schema range is reversed or excludes the base schema.",
+            false,
+        ),
+        RequestValidationError::UnsupportedSchemaRange => schema_range_unsupported(),
+    }
+}
+
+fn parse_physical_changes_since_request(
+    raw: &[u8],
+) -> Result<PhysicalChangesSinceRequest, RequestValidationError> {
+    let request: PhysicalChangesSinceRequest = serde_json::from_slice(raw).map_err(|error| {
+        if error.is_data() {
+            RequestValidationError::InvalidRequest
+        } else {
+            RequestValidationError::InvalidJson
+        }
+    })?;
+    if request.base_manifest_schema != "2.2"
+        || request.schema_version_range.minimum != "2.2"
+        || request.schema_version_range.maximum != "2.2"
+        || request.accepted_changed_set_formats != [PHYSICAL_DELTA_FORMAT]
+        || request.base_receipt_id.is_empty()
+        || request.base_receipt_id.len() > 4096
+        || !request.base_receipt_id.bytes().all(is_receipt_token_byte)
+        || request.base_manifest_id.is_empty()
+        || request.base_manifest_id.len() > 4096
+        || !request.base_manifest_id.bytes().all(is_receipt_token_byte)
+        || request
+            .base_manifest_sha256
+            .parse::<Sha256Digest>()
+            .is_err()
+        || request.from_sequence == 0
+        || !sequence_is_admitted(request.from_sequence)
+        || request.source.generation > MAX_I_JSON_INTEGER
+        || !(1..=MAX_I_JSON_INTEGER as i64).contains(&request.source.selected_car_id)
+    {
+        return Err(RequestValidationError::InvalidRequest);
+    }
+    Ok(request)
 }
 
 fn parse_changes_since_request(raw: &[u8]) -> Result<ChangesSinceRequest, RequestValidationError> {
@@ -632,6 +733,159 @@ fn serve_physical_changes_since(
     )
 }
 
+fn serve_physical_changes_since_14(
+    state: &AppState,
+    vehicle_id: Uuid,
+    request: PhysicalChangesSinceRequest,
+) -> Response {
+    let Some(signing) = state.manifest_signing.as_deref() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
+    let admission = match state
+        .store
+        .pending_physical_v3_control_admission_for_vehicle(vehicle_id)
+    {
+        Ok(Some(admission)) if crate::db::physical_v3_admission_is_public(&admission) => admission,
+        Ok(_) => return schema_range_unsupported(),
+        Err(error) => {
+            tracing::error!(%error,%vehicle_id,"cannot load 1.4 physical head");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    if request.source.vehicle_id != vehicle_id
+        || request.source.installation_id != admission.installation_id
+        || request.source.account_id != admission.account_id
+        || request.source.generation != admission.manifest.generation
+        || request.source.selected_car_id != admission.selected_car_id
+    {
+        return unknown_base_receipt();
+    }
+    let target_manifest_bytes = match signing.signed_physical_manifest_document(&admission) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::error!(%error,"cannot encode current signed physical manifest");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let target_sha = Sha256Digest::of_bytes(&target_manifest_bytes).to_string();
+    let base = if request.base_receipt_id == admission.receipt_id
+        && request.from_sequence == admission.head_sequence
+    {
+        admission.clone()
+    } else {
+        let now_ms = match current_epoch_ms() {
+            Ok(ms) => ms,
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        };
+        match state.store.retained_physical_v3_admission_for_receipt_at(
+            vehicle_id,
+            &request.base_receipt_id,
+            now_ms,
+            false,
+        ) {
+            Ok(Some(retained)) if retained.admission.head_sequence == request.from_sequence => {
+                retained.admission
+            }
+            Ok(_) => return unknown_base_receipt(),
+            Err(error) => {
+                tracing::error!(%error,%vehicle_id,"cannot resolve 1.4 retained checkpoint");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        }
+    };
+    let base_manifest_bytes = match signing.signed_physical_manifest_document(&base) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::error!(%error,"cannot encode retained signed physical manifest");
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        }
+    };
+    let base_sha = Sha256Digest::of_bytes(&base_manifest_bytes).to_string();
+    if request.base_manifest_id != base.snapshot_id.to_string()
+        || request.base_manifest_sha256 != base_sha
+        || base.installation_id != admission.installation_id
+        || base.account_id != admission.account_id
+        || base.selected_car_id != admission.selected_car_id
+        || base.manifest.generation != admission.manifest.generation
+    {
+        return unknown_base_receipt();
+    }
+    if base.receipt_id == admission.receipt_id {
+        return signed_control_response(
+            StatusCode::OK,
+            &NoOpPayload {
+                kind: "no_op",
+                vehicle_id,
+                base_receipt_id: request.base_receipt_id,
+                base_manifest_schema: "2.2",
+                sequence: request.from_sequence,
+                manifest_schema: "2.2",
+            },
+            signing,
+        );
+    }
+    if base.head_sequence.checked_add(1) == Some(admission.head_sequence) {
+        let now_ms = match current_epoch_ms() {
+            Ok(ms) => ms,
+            Err(_) => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        };
+        match state.store.physical_v3_delta_receipt_for_base_at(
+            vehicle_id,
+            &base.receipt_id,
+            &admission.receipt_id,
+            now_ms,
+        ) {
+            Ok(Some((stored_base_sha, stored_target_sha, receipt_json)))
+                if stored_base_sha == base_sha && stored_target_sha == target_sha =>
+            {
+                return bounded_control_json_bytes(StatusCode::OK, receipt_json, false)
+                    .unwrap_or_else(|_| StatusCode::SERVICE_UNAVAILABLE.into_response());
+            }
+            Ok(Some(_)) => {
+                tracing::error!(%vehicle_id,"physical delta signed-manifest identity differs");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+            Ok(None) => {}
+            Err(error) => {
+                tracing::error!(%error,%vehicle_id,"cannot resolve physical delta transition");
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
+        }
+    }
+    let replacement = serde_json::json!({
+        "manifest_id":admission.snapshot_id.to_string(),
+        "receipt_id":admission.receipt_id,
+        "manifest_sha256":target_sha,
+        "sequence":admission.head_sequence,
+        "schema_version":"2.2",
+        "chunks":admission.manifest.chunks.iter().map(wire_chunk).collect::<Vec<_>>(),
+    });
+    let requested = serde_json::json!({
+        "manifest_id":base.snapshot_id.to_string(),
+        "receipt_id":base.receipt_id,
+        "manifest_sha256":base_sha,
+        "sequence":base.head_sequence,
+        "schema_version":"2.2",
+    });
+    let mut retry = request.clone();
+    retry.base_manifest_id = admission.snapshot_id.to_string();
+    retry.base_receipt_id = admission.receipt_id.clone();
+    retry.base_manifest_sha256 = target_sha;
+    retry.from_sequence = admission.head_sequence;
+    signed_control_response(
+        StatusCode::CONFLICT,
+        &serde_json::json!({
+            "kind":"rebase_required",
+            "vehicle_id":vehicle_id,
+            "requested_base":requested,
+            "reason":"compacted",
+            "replacement":replacement,
+            "retry_request":retry,
+        }),
+        signing,
+    )
+}
+
 fn admitted_schema_21_base(lineage: &LineageManifestV2) -> Option<&crate::protocol::TransportPack> {
     if lineage.schema != HUB_PROJECTION_SCHEMA_V2
         || lineage.base.sequence == 0
@@ -706,22 +960,10 @@ fn signed_control_response(
     signing: &ManifestSigning,
 ) -> Response {
     let response = (|| {
-        let canonical = serde_jcs::to_vec(payload).map_err(BoundedJsonError::Serialize)?;
-        let signature = WireSignature {
-            algorithm: "ed25519",
-            key_id: signing.key_id(),
-            signed_payload_sha256: Sha256Digest::of_bytes(&canonical).to_string(),
-            signature: signing.sign_base64(&canonical),
-        };
-        let mut document = serde_json::to_value(payload).map_err(BoundedJsonError::Serialize)?;
-        document
-            .as_object_mut()
-            .expect("signed control payload serializes as an object")
-            .insert(
-                "signature".to_owned(),
-                serde_json::to_value(signature).map_err(BoundedJsonError::Serialize)?,
-            );
-        bounded_control_json(status, &document, false)
+        let bytes = signing
+            .signed_control_document(payload)
+            .map_err(BoundedJsonError::Serialize)?;
+        bounded_control_json_bytes(status, bytes, false)
     })();
     response.unwrap_or_else(|error| {
         tracing::error!(%error, %status, "cannot serialize bounded signed sync response");

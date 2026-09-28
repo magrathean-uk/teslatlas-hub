@@ -107,6 +107,7 @@ fn remove_v50_current_observation_schema(connection: &Connection) {
 fn remove_v55_fleet_schema(connection: &Connection) {
     // Fixtures that mark a catalogue as pre-v55 must also remove the later
     // post-v55 shape before replaying the real migration sequence.
+    remove_v66_delta_schema(connection);
     connection
         .execute_batch(
             "DROP TABLE retained_physical_v3_packs;
@@ -121,6 +122,15 @@ fn remove_v55_fleet_schema(connection: &Connection) {
                  DROP TABLE fleet_tokens;",
         )
         .expect("remove v55 Fleet schema");
+}
+
+fn remove_v66_delta_schema(connection: &Connection) {
+    connection
+        .execute_batch(
+            "DROP TABLE physical_v3_delta_packs;
+             DROP TABLE physical_v3_delta_transitions;",
+        )
+        .expect("remove v66 physical delta schema");
 }
 
 #[test]
@@ -214,6 +224,7 @@ fn schema_59_upgrade_adds_null_vehicle_retirement_state() {
         )
         .expect("vehicle");
     let connection = store.open().expect("migration connection");
+    remove_v66_delta_schema(&connection);
     connection
         .execute_batch(
             "DROP TABLE retained_physical_v3_packs;
@@ -252,6 +263,7 @@ fn schema_60_upgrade_keeps_paired_bearers_and_adds_rotation_grace() {
         .expect("pairing claim");
     let old = access.access_token.as_bearer().to_owned();
     let connection = store.open().expect("migration connection");
+    remove_v66_delta_schema(&connection);
     connection
         .execute_batch(
             "DROP TABLE retained_physical_v3_packs;
@@ -287,6 +299,7 @@ fn schema_61_upgrade_adds_physical_v3_admission_marker() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("current store");
     let connection = store.open().expect("migration connection");
+    remove_v66_delta_schema(&connection);
     connection
         .execute_batch(
             "DROP TABLE retained_physical_v3_packs;
@@ -376,6 +389,7 @@ fn schema_62_upgrade_adds_physical_v3_rotation_retention() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("current store");
     let connection = store.open().expect("migration connection");
+    remove_v66_delta_schema(&connection);
     connection
         .execute_batch(
             "DROP TABLE retained_physical_v3_packs;
@@ -409,6 +423,138 @@ fn schema_62_upgrade_adds_physical_v3_rotation_retention() {
             .expect("retained table exists");
         assert_eq!(exists, 1, "missing {table}");
     }
+}
+
+#[test]
+fn schema_63_upgrade_preserves_retained_physical_receipt_and_packs() {
+    let temporary = crate::private_tempdir().expect("temporary database");
+    let store = HubStore::initialize(temporary.path()).expect("current store");
+    let connection = store.open().expect("migration connection");
+    remove_v66_delta_schema(&connection);
+    connection
+        .execute_batch(
+            "DROP TABLE retained_physical_v3_packs;
+             DROP TABLE retained_physical_v3_admissions;
+             CREATE TABLE retained_physical_v3_admissions (
+                vehicle_id TEXT PRIMARY KEY NOT NULL,
+                snapshot_id TEXT NOT NULL UNIQUE,
+                installation_id TEXT NOT NULL,
+                account_id TEXT NOT NULL,
+                generation INTEGER NOT NULL,
+                selected_car_id INTEGER NOT NULL,
+                profile TEXT NOT NULL,
+                head_sequence INTEGER NOT NULL,
+                chunk_count INTEGER NOT NULL,
+                manifest_sha256 TEXT NOT NULL,
+                ordered_chunks_sha256 TEXT NOT NULL,
+                receipt_id TEXT NOT NULL UNIQUE,
+                retained_at_ms INTEGER NOT NULL,
+                expires_at_ms INTEGER NOT NULL,
+                manifest_json BLOB NOT NULL
+             ) STRICT;
+             CREATE TABLE retained_physical_v3_packs (
+                receipt_id TEXT NOT NULL
+                    REFERENCES retained_physical_v3_admissions(receipt_id)
+                    ON DELETE CASCADE,
+                ordinal INTEGER NOT NULL,
+                sha256 TEXT NOT NULL,
+                relative_path TEXT NOT NULL,
+                compressed_bytes INTEGER NOT NULL,
+                uncompressed_bytes INTEGER NOT NULL,
+                PRIMARY KEY(receipt_id, ordinal),
+                UNIQUE(receipt_id, sha256)
+             ) STRICT, WITHOUT ROWID;
+             PRAGMA user_version = 63;",
+        )
+        .expect("restore schema 63 retained shape");
+    let vehicle_id = Uuid::new_v4().to_string();
+    let snapshot_id = Uuid::new_v4().to_string();
+    let first_receipt = format!("pv3_{}", "1".repeat(64));
+    connection
+        .execute(
+            "INSERT INTO retained_physical_v3_admissions VALUES
+             (?1, ?2, ?3, ?4, 1, 1, 'hub-sync-v1@1.3.0', 1, 1,
+              ?5, ?6, ?7, 1000, 2000, ?8)",
+            params![
+                vehicle_id,
+                snapshot_id,
+                Uuid::new_v4().to_string(),
+                Uuid::new_v4().to_string(),
+                "2".repeat(64),
+                "3".repeat(64),
+                first_receipt,
+                b"{}".as_slice(),
+            ],
+        )
+        .expect("schema 63 retained receipt");
+    connection
+        .execute(
+            "INSERT INTO retained_physical_v3_packs VALUES (?1, 0, ?2, 'pack', 1, 100)",
+            params![first_receipt, "4".repeat(64)],
+        )
+        .expect("schema 63 retained pack");
+
+    migrate(&connection).expect("migrate populated schema 63");
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
+    let retained: (String, String) = connection
+        .query_row(
+            "SELECT admission.vehicle_id, pack.sha256
+               FROM retained_physical_v3_admissions AS admission
+               JOIN retained_physical_v3_packs AS pack
+                 ON pack.receipt_id = admission.receipt_id
+              WHERE admission.receipt_id = ?1",
+            [&first_receipt],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("retained receipt and pack survived");
+    assert_eq!(retained, (vehicle_id.clone(), "4".repeat(64)));
+    let second_receipt = format!("pv3_{}", "5".repeat(64));
+    connection
+        .execute(
+            "INSERT INTO retained_physical_v3_admissions VALUES
+             (?1, ?2, ?3, ?4, 1, 1, 'hub-sync-v1@1.3.0', 2, 1,
+              ?5, ?6, ?7, 1001, 2001, ?8)",
+            params![
+                vehicle_id,
+                snapshot_id,
+                Uuid::new_v4().to_string(),
+                Uuid::new_v4().to_string(),
+                "6".repeat(64),
+                "7".repeat(64),
+                second_receipt,
+                b"{}".as_slice(),
+            ],
+        )
+        .expect("second receipt with the same content snapshot after migration");
+    let violations: i64 = connection
+        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| row.get(0))
+        .expect("foreign-key check");
+    assert_eq!(violations, 0);
+}
+
+#[test]
+fn schema_64_upgrade_adds_prepared_catalogue_without_losing_vehicle_state() {
+    let temporary = crate::private_tempdir().expect("temporary database");
+    let store = HubStore::initialize(temporary.path()).expect("current store");
+    let (_, vehicle) = test_registered_vehicle(&store);
+    let connection = store.open().expect("catalogue");
+    remove_v66_delta_schema(&connection);
+    connection.execute_batch(
+        "DROP TABLE prepared_map_months;
+         PRAGMA user_version = 64;",
+    ).expect("restore populated schema 64 boundary");
+    migrate(&connection).expect("additive 64 to 65 migration");
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
+    let vehicle_count: i64 = connection.query_row(
+        "SELECT count(*) FROM vehicles WHERE vehicle_id = ?1",
+        [vehicle.vehicle_id.to_string()], |row| row.get(0),
+    ).expect("preserved vehicle");
+    assert_eq!(vehicle_count, 1);
+    let prepared_count: i64 = connection.query_row(
+        "SELECT count(*) FROM prepared_map_months", [], |row| row.get(0),
+    ).expect("prepared catalogue exists");
+    assert_eq!(prepared_count, 0);
+    migrate(&connection).expect("repeated migration is stable");
 }
 
 #[test]
@@ -873,6 +1019,42 @@ fn upgrades_v42_with_supervised_collector_lease_schema() {
         .expect("collector lease schema");
     assert!(schema.contains("auth_terminal"));
     assert!(schema.contains("singleton_id = 1"));
+}
+
+#[test]
+fn upgrades_populated_schema_65_to_delta_catalogue_without_changing_physical_head() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let root = temporary.path().join("store");
+    let store = HubStore::initialize(&root).expect("schema 66 store");
+    let key = CursorKey::from_bytes([0x66; 32]);
+    let (binding,candidate) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temporary.path().join("source"),&store,&key,1,"v65-delta-migration",1,
+        );
+    let gate = store.try_acquire_publication_gate().expect("publication gate");
+    let admitted = store.stage_pending_physical_v3_admission(&gate,candidate)
+        .expect("populated prior physical head");
+    drop(gate);
+    let connection = store.open().expect("catalogue");
+    connection.execute_batch(
+        "DROP TABLE physical_v3_delta_packs;
+         DROP TABLE physical_v3_delta_transitions;
+         PRAGMA user_version=65;",
+    ).expect("recreate populated schema 65 boundary");
+    drop(connection);
+    drop(store);
+    let upgraded = HubStore::initialize(&root).expect("upgrade populated prior");
+    let current = upgraded.pending_physical_v3_control_admission_for_vehicle(binding.vehicle_id)
+        .expect("physical admission lookup").expect("prior head retained");
+    assert_eq!(current,admitted);
+    let connection = upgraded.open().expect("upgraded catalogue");
+    assert_eq!(schema_version(&connection).unwrap(),66);
+    for table in ["physical_v3_delta_transitions","physical_v3_delta_packs"] {
+        let count: i64 = connection.query_row(
+            &format!("SELECT COUNT(*) FROM {table}"),[],|row| row.get(0),
+        ).expect("empty additive table");
+        assert_eq!(count,0);
+    }
 }
 
 #[test]

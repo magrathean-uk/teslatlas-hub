@@ -1312,6 +1312,7 @@ async fn native_ten_million_corpus_direct_import_meets_target_when_enabled() {
                 to_inclusive: 1,
             },
             false,
+            None,
             TeslaMateMigrationProgressReporter::default(),
             |state_limits| {
                 TeslaMateProjectionState::create(packs.path(), state_limits)

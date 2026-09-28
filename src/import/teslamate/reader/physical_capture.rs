@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /// Capture bounded, source-shaped roots and selected-car relation rows for the
-/// physical V3 source slice. This is deliberately unlinked from the
-/// importer and catalogue: callers receive one private sealed stage and must
-/// either consume or discard it explicitly.
+/// physical V3 source slice. Callers receive one private sealed stage and
+/// must either consume or discard it explicitly.
 pub async fn capture_physical_v3_to_stage(
     source: &ReadOnlySource,
     password: &TeslaMatePostgresPassword,
@@ -131,6 +130,33 @@ async fn finish_physical_v3_capture(
         ));
     }
     Ok(stage)
+}
+
+/// Retain the full physical image from the direct import's existing snapshot.
+/// Keeping the lease shared also binds the legacy cutover and token capture
+/// to precisely the rows that the phone will activate.
+pub(crate) async fn capture_physical_v3_from_lease(
+    owner: &ExportedSnapshotLease,
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    selected_car_id: i16,
+    limits: TeslaMateReadLimits,
+    imports_dir: &Path,
+) -> Result<crate::teslamate_stage::OwnedTeslaMateStage, TeslaMateReaderError> {
+    let stage = TeslaMateStage::create_physical_v3(
+        imports_dir,
+        TeslaMateStageLimits {
+            max_rows: u64::try_from(limits.maximum_rows).expect("usize fits u64"),
+            max_stage_bytes: limits.maximum_stage_bytes,
+            minimum_free_bytes: limits.minimum_free_bytes,
+        },
+    )?;
+    let mut owned = crate::teslamate_stage::OwnedTeslaMateStage::new(stage);
+    capture_physical_v3_from_exported_snapshot(
+        owner, source, password, selected_car_id, limits, owned.stage_mut(),
+    ).await?;
+    owned.stage_mut().seal()?;
+    Ok(owned)
 }
 
 async fn capture_physical_v3_from_exported_snapshot(

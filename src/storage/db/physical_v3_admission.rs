@@ -137,13 +137,30 @@ impl HubStore {
     pub(crate) fn rotate_pending_physical_v3_admission_at(
         &self,
         publication_gate: &PublicationGate,
-        mut candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
         retained_at_ms: i64,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
-        let result = self.rotate_pending_physical_v3_admission_inner(&candidate, retained_at_ms);
+        self.rotate_pending_physical_v3_admission_with_delta_at(
+            publication_gate, candidate, None, retained_at_ms,
+        )
+    }
+
+    pub(crate) fn rotate_pending_physical_v3_admission_with_delta_at(
+        &self,
+        publication_gate: &PublicationGate,
+        mut candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        mut delta: Option<crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta>,
+        retained_at_ms: i64,
+    ) -> Result<PendingPhysicalV3Admission, StoreError> {
+        let result = self.rotate_pending_physical_v3_admission_inner(
+            &candidate, delta.as_ref(), retained_at_ms,
+        );
         candidate.retain_catalogued_objects();
         match result {
-            Ok(admission) => Ok(admission),
+            Ok(admission) => {
+                if let Some(delta) = delta.as_mut() { delta.retain_catalogued_objects(); }
+                Ok(admission)
+            }
             Err(error) => {
                 let mut cleanup_error = None;
                 for chunk in &candidate.chunks {
@@ -168,6 +185,7 @@ impl HubStore {
     fn rotate_pending_physical_v3_admission_inner(
         &self,
         candidate: &crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        delta: Option<&crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta>,
         retained_at_ms: i64,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
         let expires_at_ms = retained_at_ms
@@ -199,9 +217,6 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        if retained_physical_v3_row_exists(&transaction, next.vehicle_id)? {
-            return Err(StoreError::PhysicalV3SecondHeadUnsupported(next.vehicle_id));
-        }
         let stored_snapshot: Option<String> = transaction
             .query_row(
                 "SELECT snapshot_id FROM pending_physical_v3_admissions
@@ -227,6 +242,9 @@ impl HubStore {
             )
             .map_err(StoreError::PublishManifest)?;
         insert_pending_physical_v3_admission(&transaction, &next, "blocked_rotation")?;
+        if let Some(delta) = delta {
+            insert_physical_v3_delta_transition(&transaction, &prior, &next, delta, &self.packs_dir)?;
+        }
         self.commit_physical_v3_rotation(
             transaction,
             &prior,
@@ -444,6 +462,12 @@ impl HubStore {
             )?
             .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
         let prior = &retained.admission;
+        if self.immediate_retained_physical_v3_receipt(vehicle_id, current.head_sequence)?
+            .as_deref()
+            != Some(retained_receipt_id)
+        {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
         if current.installation_id != prior.installation_id
             || current.account_id != prior.account_id
             || current.vehicle_id != prior.vehicle_id
@@ -560,8 +584,8 @@ impl HubStore {
     }
 
     /// Resolve the exact private publication state while rechecking every
-    /// current and retained object. A blocked successor is returned only with
-    /// its one unexpired prior receipt so a production caller can finish the
+    /// current and retained object. A blocked successor is returned with
+    /// its immediate unexpired prior receipt so a production caller can finish the
     /// already-committed rotation instead of attempting a third head.
     pub(crate) fn physical_v3_publication_state_for_vehicle_at(
         &self,
@@ -583,23 +607,13 @@ impl HubStore {
         match serve_state.as_str() {
             "public_first" => Ok(PhysicalV3PublicationState::Public(current)),
             "blocked_rotation" => {
-                let receipt_ids = connection
-                    .prepare(
-                        "SELECT receipt_id FROM retained_physical_v3_admissions
-                          WHERE vehicle_id = ?1 ORDER BY receipt_id",
-                    )
-                    .map_err(StoreError::Query)?
-                    .query_map([vehicle_id.to_string()], |row| row.get::<_, String>(0))
-                    .map_err(StoreError::Query)?
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(StoreError::Query)?;
-                if receipt_ids.len() != 1 {
-                    return Err(StoreError::PhysicalV3AdmissionConflict);
-                }
+                let receipt_id = self
+                    .immediate_retained_physical_v3_receipt(vehicle_id, current.head_sequence)?
+                    .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
                 let retained = self
                     .retained_physical_v3_admission_for_receipt_at(
                         vehicle_id,
-                        &receipt_ids[0],
+                        &receipt_id,
                         now_ms,
                         true,
                     )?
@@ -608,6 +622,27 @@ impl HubStore {
             }
             _ => Err(StoreError::PhysicalV3AdmissionConflict),
         }
+    }
+
+    /// The blocked head's direct predecessor is the latest retained sequence
+    /// below it. Older unexpired receipts remain available for signed rebases.
+    fn immediate_retained_physical_v3_receipt(
+        &self,
+        vehicle_id: Uuid,
+        current_sequence: u64,
+    ) -> Result<Option<String>, StoreError> {
+        let current_sequence = i64::try_from(current_sequence)
+            .map_err(|_| StoreError::InvalidStoredSequence)?;
+        self.open_read_only_connection()?
+            .query_row(
+                "SELECT receipt_id FROM retained_physical_v3_admissions
+                  WHERE vehicle_id = ?1 AND head_sequence < ?2
+                  ORDER BY head_sequence DESC LIMIT 1",
+                params![vehicle_id.to_string(), current_sequence],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)
     }
 
     /// Load the currently bound marker and exact pack metadata for a control
@@ -972,21 +1007,6 @@ impl HubStore {
     }
 }
 
-fn retained_physical_v3_row_exists(
-    transaction: &Transaction<'_>,
-    vehicle_id: Uuid,
-) -> Result<bool, StoreError> {
-    transaction
-        .query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM retained_physical_v3_admissions WHERE vehicle_id = ?1
-             )",
-            [vehicle_id.to_string()],
-            |row| row.get(0),
-        )
-        .map_err(StoreError::Query)
-}
-
 fn insert_pending_physical_v3_admission(
     transaction: &Transaction<'_>,
     admission: &PendingPhysicalV3Admission,
@@ -1041,6 +1061,145 @@ fn insert_pending_physical_v3_admission(
             .map_err(StoreError::PublishManifest)?;
     }
     Ok(())
+}
+
+fn insert_physical_v3_delta_transition(
+    transaction: &Transaction<'_>,
+    prior: &PendingPhysicalV3Admission,
+    target: &PendingPhysicalV3Admission,
+    delta: &crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta,
+    packs_dir: &std::path::Path,
+) -> Result<(), StoreError> {
+    if delta.vehicle_id != target.vehicle_id
+        || delta.base_receipt_id != prior.receipt_id
+        || delta.target_receipt_id != target.receipt_id
+        || delta.packs.is_empty() || delta.packs.len() > 64
+        || delta.total_rows == 0 || delta.total_rows > 2_000_000
+        || delta.impacted_roots_count > 10_000
+        || delta.receipt_json.len() > 2_097_152
+    {
+        return Err(StoreError::PhysicalV3AdmissionInvalid);
+    }
+    let receipt: serde_json::Value = serde_json::from_slice(&delta.receipt_json)
+        .map_err(|_| StoreError::PhysicalV3AdmissionInvalid)?;
+    if receipt.get("kind").and_then(serde_json::Value::as_str) != Some("physical_changed_set")
+        || receipt.pointer("/base/receipt_id").and_then(serde_json::Value::as_str)
+            != Some(prior.receipt_id.as_str())
+        || receipt.pointer("/target/receipt_id").and_then(serde_json::Value::as_str)
+            != Some(target.receipt_id.as_str())
+        || receipt.pointer("/base/manifest_sha256").and_then(serde_json::Value::as_str)
+            != Some(delta.base_manifest_signed_sha256.to_string().as_str())
+        || receipt.pointer("/target/manifest_sha256").and_then(serde_json::Value::as_str)
+            != Some(delta.target_manifest_signed_sha256.to_string().as_str())
+    {
+        return Err(StoreError::PhysicalV3AdmissionInvalid);
+    }
+    let total_compressed: u64 = delta.packs.iter().map(|pack| pack.compressed_bytes).sum();
+    let total_uncompressed: u64 = delta.packs.iter().map(|pack| pack.uncompressed_bytes).sum();
+    if total_compressed > 268_435_456 || total_uncompressed > 2_147_483_648 {
+        return Err(StoreError::PhysicalV3AdmissionInvalid);
+    }
+    for (index,pack) in delta.packs.iter().enumerate() {
+        if pack.ordinal as usize != index || pack.compressed_bytes == 0
+            || pack.compressed_bytes > 16_777_216 || pack.uncompressed_bytes == 0
+            || pack.uncompressed_bytes > 268_435_456
+            || pack.path != packs_dir.join("sha256").join(format!("{}.sqlite.zst",pack.sha256))
+            || fs::metadata(&pack.path).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?.len()
+                != pack.compressed_bytes
+            || sha256_file_hex(&pack.path).map_err(|_| StoreError::PhysicalV3AdmissionConflict)?
+                != pack.sha256.to_string()
+        {
+            return Err(StoreError::PhysicalV3AdmissionInvalid);
+        }
+    }
+    transaction.execute(
+        "INSERT INTO physical_v3_delta_transitions(
+            target_receipt_id,base_receipt_id,vehicle_id,
+            base_manifest_signed_sha256,target_manifest_signed_sha256,receipt_json,
+            chunk_count,total_compressed_bytes,total_uncompressed_bytes,total_rows,impacted_roots_count
+         ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+        params![target.receipt_id,prior.receipt_id,target.vehicle_id.to_string(),
+            delta.base_manifest_signed_sha256.to_string(),delta.target_manifest_signed_sha256.to_string(),
+            delta.receipt_json,delta.packs.len() as i64,total_compressed as i64,
+            total_uncompressed as i64,delta.total_rows as i64,delta.impacted_roots_count as i64],
+    ).map_err(StoreError::PublishManifest)?;
+    for pack in &delta.packs {
+        transaction.execute(
+            "INSERT INTO physical_v3_delta_packs
+             (target_receipt_id,ordinal,sha256,relative_path,compressed_bytes,uncompressed_bytes)
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![target.receipt_id,i64::from(pack.ordinal),pack.sha256.to_string(),
+                format!("/v1/packs/sha256/{}.sqlite.zst",pack.sha256),
+                pack.compressed_bytes as i64,pack.uncompressed_bytes as i64],
+        ).map_err(StoreError::PublishManifest)?;
+    }
+    Ok(())
+}
+
+impl HubStore {
+    pub(crate) fn physical_v3_delta_receipt_for_base_at(
+        &self,
+        vehicle_id: Uuid,
+        base_receipt_id: &str,
+        target_receipt_id: &str,
+        now_ms: i64,
+    ) -> Result<Option<(String, String, Vec<u8>)>, StoreError> {
+        self.open_read_only_connection()?
+            .query_row(
+                "SELECT delta.base_manifest_signed_sha256,
+                        delta.target_manifest_signed_sha256,delta.receipt_json
+                   FROM physical_v3_delta_transitions AS delta
+                   JOIN pending_physical_v3_admissions AS target
+                     ON target.receipt_id=delta.target_receipt_id
+                   JOIN retained_physical_v3_admissions AS base
+                     ON base.receipt_id=delta.base_receipt_id
+                  WHERE delta.vehicle_id=?1 AND delta.base_receipt_id=?2
+                    AND delta.target_receipt_id=?3
+                    AND target.vehicle_id=?1 AND target.serve_state='public_first'
+                    AND base.vehicle_id=?1 AND base.expires_at_ms>?4
+                    AND base.head_sequence+1=target.head_sequence",
+                params![vehicle_id.to_string(),base_receipt_id,target_receipt_id,now_ms],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?)),
+            )
+            .optional()
+            .map_err(StoreError::Query)
+    }
+
+    pub(crate) fn physical_v3_delta_pack_for_digest_at(
+        &self,
+        digest: Sha256Digest,
+        now_ms: i64,
+    ) -> Result<Option<StoredPack>, StoreError> {
+        let row: Option<(String, i64)> = self.open_read_only_connection()?
+            .query_row(
+                "SELECT packs.relative_path,packs.compressed_bytes
+                   FROM physical_v3_delta_packs AS packs
+                   JOIN physical_v3_delta_transitions AS delta
+                     ON delta.target_receipt_id=packs.target_receipt_id
+                   JOIN pending_physical_v3_admissions AS target
+                     ON target.receipt_id=delta.target_receipt_id
+                   JOIN retained_physical_v3_admissions AS base
+                     ON base.receipt_id=delta.base_receipt_id
+                  WHERE packs.sha256=?1 AND target.serve_state='public_first'
+                    AND base.expires_at_ms>?2
+                  LIMIT 1",
+                params![digest.to_string(),now_ms],
+                |row| Ok((row.get(0)?,row.get(1)?)),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        let Some((relative_path,bytes)) = row else { return Ok(None); };
+        if relative_path != format!("/v1/packs/sha256/{digest}.sqlite.zst")
+            || !(1..=16_777_216).contains(&bytes)
+        {
+            return Err(StoreError::PhysicalV3AdmissionConflict);
+        }
+        Ok(Some(StoredPack {
+            digest,
+            compressed_bytes: bytes as u64,
+            path: self.packs_dir.join("sha256").join(format!("{digest}.sqlite.zst")),
+        }))
+    }
 }
 
 fn insert_retained_physical_v3_admission(
@@ -1113,7 +1272,7 @@ pub(crate) fn physical_v3_admission_is_public(admission: &PendingPhysicalV3Admis
             .all(|pack| (1..=16 * 1024 * 1024).contains(&pack.compressed_bytes))
 }
 
-fn physical_v3_admission_from_manifest(
+pub(crate) fn physical_v3_admission_from_manifest(
     manifest: &SyncManifest,
     selected_car_id: i64,
 ) -> Result<PendingPhysicalV3Admission, StoreError> {

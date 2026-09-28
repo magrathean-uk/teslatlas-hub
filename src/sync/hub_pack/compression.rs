@@ -119,7 +119,7 @@ fn compress_file_with_workers(
     Ok((digest, bytes))
 }
 
-fn available_bytes(path: &Path) -> Result<u64, ProjectionPackError> {
+pub(crate) fn available_bytes(path: &Path) -> Result<u64, ProjectionPackError> {
     let stats = statvfs(path).map_err(|source| ProjectionPackError::FilesystemSpace {
         path: path.to_path_buf(),
         source,

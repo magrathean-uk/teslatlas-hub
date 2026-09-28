@@ -192,7 +192,7 @@ where
                                 &collector_state,
                                 stream_authentication_rejected,
                             );
-                            let events = scheduler.accept_discovery(vehicles, Instant::now());
+                            let events = scheduler.accept_discovery(vehicles.clone(), Instant::now());
                             disconnect_streams_not_in_scheduler(&mut streams, &scheduler).await;
                             if !events.is_empty() {
                                 persist_discovery_events_with_timeout(
@@ -204,6 +204,16 @@ where
                                 )
                                 .await?;
                             }
+                            let unchanged = vehicles
+                                .into_iter()
+                                .filter(|vehicle| !events.iter().any(|event| event.id == vehicle.id))
+                                .collect::<Vec<_>>();
+                            persist_unchanged_discoveries(
+                                store,
+                                &unchanged,
+                                CollectorProvider::Legacy,
+                            )
+                            .await?;
                             for vehicle in scheduler.vehicles() {
                                 if vehicle.is_online()
                                     && vehicle.settings.enabled
@@ -260,6 +270,17 @@ where
                                     &events,
                                     CollectorProvider::Legacy,
                                     cadence.offline_drive_timeout,
+                                )
+                                .await?;
+                            } else if let Some(vehicle) = scheduler
+                                .vehicles()
+                                .into_iter()
+                                .find(|vehicle| vehicle.id == vehicle_id)
+                            {
+                                persist_unchanged_discoveries(
+                                    store,
+                                    &[vehicle],
+                                    CollectorProvider::Legacy,
                                 )
                                 .await?;
                             }

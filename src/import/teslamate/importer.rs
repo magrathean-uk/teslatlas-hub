@@ -478,10 +478,13 @@ async fn capture_direct_import_snapshot(
     successor: bool,
     legacy_bridge: bool,
     capture_legacy_token: bool,
+    capture_physical: bool,
     progress: TeslaMateMigrationProgressReporter,
 ) -> Result<DirectSnapshotCapture, TeslaMateDirectError> {
     let writer = ProjectionPackWriter::new(store.packs_dir())
         .with_minimum_free_bytes(limits.minimum_free_bytes);
+    let imports_dir = store.imports_dir();
+    let physical_imports_dir = capture_physical.then_some(imports_dir.as_path());
     if legacy_bridge {
         return capture_direct_snapshot_for_legacy_bridge(
             source,
@@ -493,6 +496,7 @@ async fn capture_direct_import_snapshot(
             capture_snapshot_id,
             capture_range,
             capture_legacy_token,
+            physical_imports_dir,
             progress,
             |state_limits| {
                 direct_projection_state_capture(
@@ -533,6 +537,7 @@ async fn capture_direct_import_snapshot(
             capture_snapshot_id,
             capture_range,
             capture_legacy_token,
+            physical_imports_dir,
             progress,
             capture_factory,
         )
@@ -548,6 +553,7 @@ async fn capture_direct_import_snapshot(
             capture_snapshot_id,
             capture_range,
             capture_legacy_token,
+            physical_imports_dir,
             progress,
             capture_factory,
         )
@@ -706,6 +712,7 @@ struct CapturedTeslaMateImport {
     updates_v2_2: DirectUpdatesSourceV2_2,
     legacy_tokens: Option<TeslaMateLegacyTokenCiphertexts>,
     atomic_schema_22: Option<ProductionUpdatesPublication>,
+    physical_stage: Option<crate::teslamate_stage::OwnedTeslaMateStage>,
     publication_gate: PublicationGate,
 }
 
@@ -713,6 +720,7 @@ struct CapturedTeslaMateImport {
 pub struct TeslaMateSelectedImportReport {
     pub import: TeslaMateImportReport,
     pub updates_schema_22: ProductionUpdatesPublication,
+    pub physical_v3: Option<crate::teslamate_physical_publication::PhysicalV3Publication>,
 }
 
 fn finish_selected_schema_22_publication(
@@ -726,43 +734,64 @@ fn finish_selected_schema_22_publication(
         updates_v2_2,
         legacy_tokens: _,
         atomic_schema_22,
+        physical_stage,
         publication_gate,
     } = captured;
-    if let Some(updates_schema_22) = atomic_schema_22 {
-        return Ok(TeslaMateSelectedImportReport {
-            import: report,
-            updates_schema_22,
-        });
-    }
     let vehicle_id = report.vehicle_id;
     let legacy_snapshot_id = report.snapshot_id;
     // Observe the schema-2.2 head only after this command's legacy transaction
     // has committed. The same retained gate has covered source capture and the
     // legacy commit, so no other publisher can interleave before this check.
-    let expected_schema_22_head = production_updates_head(store, vehicle_id).map_err(|source| {
-        TeslaMateImportError::Schema22PostCommit {
+    let updates_schema_22 = if let Some(publication) = atomic_schema_22 {
+        publication
+    } else {
+        let expected_schema_22_head =
+            production_updates_head(store, vehicle_id).map_err(|source| {
+                TeslaMateImportError::Schema22PostCommit {
+                    vehicle_id,
+                    legacy_snapshot_id,
+                    source,
+                }
+            })?;
+        let updates_schema_22 = publish_production_updates_schema_22_with_gate(
+            store,
+            cursor_key,
+            &binding,
+            updates_v2_2,
+            &publication_gate,
+            &expected_schema_22_head,
+            Some((legacy_snapshot_id, report.sequence)),
+        )
+        .map_err(|source| TeslaMateImportError::Schema22PostCommit {
             vehicle_id,
             legacy_snapshot_id,
             source,
-        }
-    })?;
-    let updates_schema_22 = publish_production_updates_schema_22_with_gate(
-        store,
-        cursor_key,
-        &binding,
-        updates_v2_2,
-        &publication_gate,
-        &expected_schema_22_head,
-        Some((legacy_snapshot_id, report.sequence)),
-    )
-    .map_err(|source| TeslaMateImportError::Schema22PostCommit {
-        vehicle_id,
-        legacy_snapshot_id,
-        source,
-    })?;
+        })?;
+        updates_schema_22
+    };
+    let physical_v3 = physical_stage
+        .map(|stage| {
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|value| i64::try_from(value.as_millis()).ok())
+                .ok_or(
+                    crate::teslamate_physical_publication::TeslaMatePhysicalPublicationError::Clock,
+                )?;
+            crate::teslamate_physical_publication::publish_sealed_physical_v3_stage_with_gate_at(
+                store,
+                cursor_key,
+                binding,
+                stage.take(),
+                &publication_gate,
+                now_ms,
+            )
+        })
+        .transpose()?;
     Ok(TeslaMateSelectedImportReport {
         import: report,
         updates_schema_22,
+        physical_v3,
     })
 }
 
@@ -882,6 +911,7 @@ async fn import_from_postgres_with_updates_capture(
         successor,
         legacy_bridge,
         capture_legacy_token,
+        prepare_schema_22,
         progress,
     )
     .await
@@ -928,6 +958,7 @@ async fn import_from_postgres_with_updates_capture(
     let mut direct = first_capture.packs;
     let updates_v2_2 = first_capture.updates_v2_2;
     let legacy_tokens = first_capture.legacy_tokens;
+    let physical_stage = first_capture.physical_stage;
     let second_open_session =
         match read_open_session(source, password, selected_car_id, limits).await {
             Ok(value) => value,
@@ -990,6 +1021,7 @@ async fn import_from_postgres_with_updates_capture(
             updates_v2_2,
             legacy_tokens,
             atomic_schema_22: None,
+            physical_stage,
             publication_gate,
         });
     }
@@ -1024,6 +1056,7 @@ async fn import_from_postgres_with_updates_capture(
                 updates_v2_2,
                 legacy_tokens,
                 atomic_schema_22: None,
+                physical_stage,
                 publication_gate,
             });
         }
@@ -1045,6 +1078,7 @@ async fn import_from_postgres_with_updates_capture(
                 updates_v2_2,
                 legacy_tokens,
                 atomic_schema_22: None,
+                physical_stage,
                 publication_gate,
             });
         }
@@ -1190,6 +1224,7 @@ async fn import_from_postgres_with_updates_capture(
             updates_v2_2,
             legacy_tokens,
             atomic_schema_22: None,
+            physical_stage,
             publication_gate,
         });
     }
@@ -1301,6 +1336,7 @@ async fn import_from_postgres_with_updates_capture(
         updates_v2_2,
         legacy_tokens,
         atomic_schema_22: prepared_schema_22.map(|prepared| prepared.publication),
+        physical_stage,
         publication_gate,
     })
 }
@@ -2520,6 +2556,12 @@ fn transport_row_count(chunks: &[BuiltProjectionPack]) -> Result<u64, Projection
 
 #[derive(Debug, Error)]
 pub enum TeslaMateImportError {
+    #[error(
+        "physical V3 publication failed after legacy import; retry the selected-car import: {0}"
+    )]
+    PhysicalPublication(
+        #[from] crate::teslamate_physical_publication::TeslaMatePhysicalPublicationError,
+    ),
     #[error("TeslaMate selected car id must be positive")]
     InvalidSelectedCarId,
     #[error("TeslaMate selected car disappeared before publication")]

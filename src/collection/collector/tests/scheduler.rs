@@ -474,6 +474,75 @@ fn offline_discovery_event_materialises_timed_out_drive() {
     );
 }
 
+#[test]
+fn unchanged_successful_discovery_refreshes_current_only() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "asleep");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .expect("runtime");
+    runtime
+        .block_on(persist_unchanged_discoveries(
+            &store,
+            &[vehicle.clone()],
+            CollectorProvider::Legacy,
+        ))
+        .expect("first successful inventory");
+    let vehicle_id = store
+        .open()
+        .expect("database")
+        .query_row("SELECT vehicle_id FROM vehicles", [], |row| row.get::<_, String>(0))
+        .expect("vehicle id")
+        .parse::<Uuid>()
+        .expect("uuid");
+    let before = store
+        .current_observations_for_vehicle(vehicle_id)
+        .expect("first current");
+    assert_eq!(before.len(), 1);
+    let first_time = before[0].observed_at_ms;
+    std::thread::sleep(Duration::from_millis(2));
+    runtime
+        .block_on(persist_unchanged_discoveries(
+            &store,
+            &[vehicle],
+            CollectorProvider::Legacy,
+        ))
+        .expect("unchanged successful inventory");
+    let after = store
+        .current_observations_for_vehicle(vehicle_id)
+        .expect("refreshed current");
+    assert_eq!(after.len(), 1);
+    assert!(after[0].observed_at_ms > first_time);
+    store
+        .record_current_discovery(
+            &ObservationInput {
+                source_id: after[0].source_id,
+                vehicle_id,
+                observed_at_ms: first_time,
+                payload: json!({
+                    "record_type": "owner_api_discovery_v1",
+                    "source_vehicle_state": "offline"
+                }),
+            },
+            first_time,
+        )
+        .expect("out-of-order retry");
+    let still_current = store
+        .current_observations_for_vehicle(vehicle_id)
+        .expect("current after retry");
+    assert_eq!(still_current[0].observed_at_ms, after[0].observed_at_ms);
+    assert_eq!(still_current[0].payload, after[0].payload);
+    let connection = store.open().expect("database");
+    for table in ["raw_observations", "vehicle_lifecycle_state", "export_outbox"] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .expect("history count");
+        assert_eq!(count, 0, "{table} must remain unchanged");
+    }
+}
+
 fn safe_idle_snapshot() -> VehicleData {
     VehicleData::for_test(
         1,

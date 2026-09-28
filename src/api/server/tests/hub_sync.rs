@@ -60,6 +60,206 @@ fn hub_sync_protocol_fixture(name: &str) -> serde_json::Value {
 }
 
 #[tokio::test]
+async fn hub_sync_14_serves_immediate_physical_delta_and_keeps_13_rebase() {
+    let temp = crate::private_tempdir().expect("private test root");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let key = CursorKey::from_bytes([0x14; 32]);
+    let now = current_epoch_ms().expect("clock");
+    let gate = store.try_acquire_publication_gate().expect("gate");
+    let (binding,first_candidate) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("first"),&store,&key,1,"profile14",1);
+    let first = store
+        .stage_pending_physical_v3_admission(&gate, first_candidate)
+        .expect("first head");
+    let (_,second_candidate) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("second"),&store,&key,2,"profile14",2);
+    let second_preview = crate::db::physical_v3_admission_from_manifest(
+        &second_candidate.manifest,
+        binding.selected_car_id,
+    )
+    .expect("second identity");
+    let delta = crate::import::teslamate::physical_delta_pack::prepare_changed_set(
+        &first,
+        &second_preview,
+        &binding,
+        &key,
+        Sha256Digest::of_bytes(b"synthetic target raw"),
+        store.packs_dir(),
+        0,
+    )
+    .expect("bounded changed set");
+    let second = store
+        .rotate_pending_physical_v3_admission_with_delta_at(
+            &gate,
+            second_candidate,
+            Some(delta),
+            now,
+        )
+        .expect("atomic rotation");
+    store
+        .activate_pending_physical_v3_rotation_at(&gate, binding.vehicle_id, &first.receipt_id, now)
+        .expect("public successor");
+    drop(gate);
+    let invitation = store
+        .create_pairing("profile14", now - 1, i64::MAX)
+        .expect("invite");
+    let access = store
+        .claim_pairing(invitation.pairing_id, invitation.secret(), "client", now)
+        .expect("paired access");
+    let bearer = access.access_token.as_bearer();
+    let app = paired_router(store.clone(), &key);
+    let route = format!("/v1/vehicles/{}/sync/manifest", binding.vehicle_id);
+    let get_manifest = |profile: &'static str| {
+        Request::builder()
+            .uri(&route)
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(SYNC_PROFILE_HEADER, profile)
+            .header(SUPPORTED_SCHEMAS_HEADER, "2.1,2.2")
+            .body(Body::empty())
+            .unwrap()
+    };
+    let legacy = app
+        .clone()
+        .oneshot(get_manifest(HUB_SYNC_PROFILE_ID))
+        .await
+        .unwrap();
+    assert_eq!(legacy.status(), StatusCode::OK);
+    let legacy_raw = legacy.into_body().collect().await.unwrap().to_bytes();
+    let selected = app
+        .clone()
+        .oneshot(get_manifest(hub_sync_v1::HUB_SYNC_PROFILE_14))
+        .await
+        .unwrap();
+    assert_eq!(selected.status(), StatusCode::OK);
+    let selected_raw = selected.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(
+        legacy_raw, selected_raw,
+        "1.4 bootstrap reuses exact 1.3 physical manifest"
+    );
+    let signing = ManifestSigning::from_cursor_key(&key);
+    assert_eq!(
+        selected_raw.as_ref(),
+        signing.signed_physical_manifest_document(&second).unwrap()
+    );
+    let first_sha =
+        Sha256Digest::of_bytes(&signing.signed_physical_manifest_document(&first).unwrap());
+    let request14 = serde_json::json!({
+        "source": {"installation_id":binding.installation_id,"account_id":binding.account_id,
+            "vehicle_id":binding.vehicle_id,"generation":binding.generation,
+            "selected_car_id":binding.selected_car_id},
+        "base_receipt_id":first.receipt_id,"base_manifest_id":first.snapshot_id.to_string(),
+        "base_manifest_sha256":first_sha.to_string(),"base_manifest_schema":"2.2",
+        "from_sequence":first.head_sequence,
+        "schema_version_range":{"minimum":"2.2","maximum":"2.2"},
+        "accepted_changed_set_formats":[hub_sync_v1::PHYSICAL_DELTA_FORMAT],
+    });
+    let changes_route = format!("/v1/vehicles/{}/sync/changes-since", binding.vehicle_id);
+    let post = |payload: serde_json::Value| {
+        Request::builder()
+            .method("POST")
+            .uri(&changes_route)
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&payload).unwrap()))
+            .unwrap()
+    };
+    let changed = app.clone().oneshot(post(request14.clone())).await.unwrap();
+    assert_eq!(changed.status(), StatusCode::OK);
+    let changed = response_json(changed).await;
+    assert_eq!(changed["kind"], "physical_changed_set");
+    assert_eq!(changed["target"]["receipt_id"], second.receipt_id);
+    assert_hub_sync_signature(&changed, &key);
+    let digest: Sha256Digest = changed["chunks"][0]["pack"]["sha256"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let pack = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/packs/sha256/{digest}.sqlite.zst"))
+                .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(pack.status(), StatusCode::OK);
+    assert_eq!(
+        pack.headers()[header::CONTENT_TYPE],
+        "application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1"
+    );
+    let bytes = pack.into_body().collect().await.unwrap().to_bytes();
+    assert_eq!(Sha256Digest::of_bytes(&bytes), digest);
+    let mut noop14 = request14.clone();
+    noop14["base_receipt_id"] = second.receipt_id.clone().into();
+    noop14["base_manifest_id"] = second.snapshot_id.to_string().into();
+    noop14["base_manifest_sha256"] = Sha256Digest::of_bytes(&selected_raw).to_string().into();
+    noop14["from_sequence"] = second.head_sequence.into();
+    let noop = app.clone().oneshot(post(noop14)).await.unwrap();
+    assert_eq!(noop.status(), StatusCode::OK);
+    assert_eq!(response_json(noop).await["kind"], "no_op");
+    let request13 = serde_json::json!({
+        "base_receipt_id":first.receipt_id,"base_manifest_schema":"2.2",
+        "from_sequence":first.head_sequence,
+        "schema_version_range":{"minimum":"2.2","maximum":"2.2"}});
+    let legacy_rebase = app.clone().oneshot(post(request13)).await.unwrap();
+    assert_eq!(legacy_rebase.status(), StatusCode::CONFLICT);
+    let legacy_rebase = response_json(legacy_rebase).await;
+    assert_eq!(legacy_rebase["kind"], "rebase_required");
+    assert!(legacy_rebase.get("requested_base").is_none());
+
+    // A later full head remains reachable to both surviving checkpoints, but
+    // only its immediate predecessor is eligible for an optional delta.
+    let gate = store.try_acquire_publication_gate().expect("third gate");
+    let (_, third_candidate) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("third"), &store, &key, 3, "profile14", 3);
+    let third = store
+        .rotate_pending_physical_v3_admission_at(&gate, third_candidate, now + 1)
+        .expect("full successor without delta");
+    store
+        .activate_pending_physical_v3_rotation_at(
+            &gate,
+            binding.vehicle_id,
+            &second.receipt_id,
+            now + 1,
+        )
+        .expect("third public head");
+    drop(gate);
+    for (base, request) in [
+        (&first, request14),
+        (&second, {
+            serde_json::json!({
+                "source": {"installation_id":binding.installation_id,"account_id":binding.account_id,
+                    "vehicle_id":binding.vehicle_id,"generation":binding.generation,
+                    "selected_car_id":binding.selected_car_id},
+                "base_receipt_id":second.receipt_id,"base_manifest_id":second.snapshot_id.to_string(),
+                "base_manifest_sha256":Sha256Digest::of_bytes(&selected_raw).to_string(),
+                "base_manifest_schema":"2.2","from_sequence":second.head_sequence,
+                "schema_version_range":{"minimum":"2.2","maximum":"2.2"},
+                "accepted_changed_set_formats":[hub_sync_v1::PHYSICAL_DELTA_FORMAT],
+            })
+        }),
+    ] {
+        let response = app.clone().oneshot(post(request)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        let response = response_json(response).await;
+        assert_eq!(response["kind"], "rebase_required");
+        assert_eq!(response["requested_base"]["receipt_id"], base.receipt_id);
+        assert_eq!(response["replacement"]["receipt_id"], third.receipt_id);
+        assert_eq!(
+            response["retry_request"]["base_receipt_id"],
+            third.receipt_id
+        );
+        assert_hub_sync_signature(&response, &key);
+    }
+}
+
+#[tokio::test]
 async fn hub_sync_bootstrap_manifest_is_signed_and_resumes_with_one_changed_pack() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store");
@@ -599,6 +799,129 @@ async fn hub_sync_physical_bootstrap_serves_513_chunks_and_continues_with_noop()
 }
 
 #[tokio::test]
+async fn prepared_receipt_route_requires_pairing_and_current_vehicle_head() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path().join("store")).expect("store");
+    let key = CursorKey::from_bytes([0x55; 32]);
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let (binding, candidate) =
+        crate::import::teslamate::physical_fragments::tests::public_admission_candidate_fixture(
+            &temp.path().join("primary"),
+            &store,
+            &key,
+            1,
+        );
+    let admission = store
+        .stage_pending_physical_v3_admission(&gate, candidate)
+        .expect("public physical head");
+    drop(gate);
+    let artifact_id = format!("map-month-v1.{}", "a".repeat(64));
+    let receipt = br#"{"signed":"fixture"}"#;
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO prepared_map_months
+         (artifact_id, vehicle_id, month, input_manifest_id, input_receipt_id,
+          input_sequence, source_digest, pack_sha256, compressed_bytes, receipt_json)
+         VALUES (?1, ?2, '2025-01', ?3, ?4, ?5, ?6, ?7, 100, ?8)",
+            rusqlite::params![
+                artifact_id,
+                binding.vehicle_id.to_string(),
+                admission.snapshot_id.to_string(),
+                admission.receipt_id,
+                i64::try_from(admission.head_sequence).unwrap(),
+                "b".repeat(64),
+                "c".repeat(64),
+                receipt.as_slice(),
+            ],
+        )
+        .expect("prepared catalogue fixture");
+    let now_ms = current_epoch_ms().expect("pairing clock");
+    let invitation = store
+        .create_pairing("prepared route", now_ms - 1, i64::MAX)
+        .expect("pairing invitation");
+    let access = store
+        .claim_pairing(
+            invitation.pairing_id,
+            invitation.secret(),
+            "test client",
+            now_ms,
+        )
+        .expect("paired access");
+    let app = paired_router(store.clone(), &key);
+    let path = format!(
+        "/v1/vehicles/{}/sync/prepared-artefacts/{artifact_id}",
+        binding.vehicle_id,
+    );
+    let unauthenticated = app
+        .clone()
+        .oneshot(Request::builder().uri(&path).body(Body::empty()).unwrap())
+        .await
+        .expect("unauthenticated response");
+    assert_eq!(unauthenticated.status(), StatusCode::UNAUTHORIZED);
+    let authorized = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(&path)
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", access.access_token.as_bearer()),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("authorized response");
+    assert_eq!(authorized.status(), StatusCode::OK);
+    assert_eq!(
+        authorized
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .as_ref(),
+        receipt
+    );
+    let other_vehicle = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!(
+                    "/v1/vehicles/{}/sync/prepared-artefacts/{artifact_id}",
+                    Uuid::new_v4(),
+                ))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", access.access_token.as_bearer()),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("other vehicle response");
+    assert_eq!(other_vehicle.status(), StatusCode::NOT_FOUND);
+    let unknown_artifact = app
+        .oneshot(
+            Request::builder()
+                .uri(format!("{path}0"))
+                .header(
+                    header::AUTHORIZATION,
+                    format!("Bearer {}", access.access_token.as_bearer()),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("unknown artifact response");
+    assert_eq!(unknown_artifact.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn hub_sync_physical_rotation_stays_fail_closed_until_rebase_is_available() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path().join("store")).expect("store");
@@ -733,6 +1056,48 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
         )
         .expect("activate rotated physical admission");
     assert_eq!(activated, current);
+    let second = current;
+    let (_, third) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("primary-third"),
+            &store,
+            &cursor_key,
+            2,
+            "physical-v3-rebase-primary",
+            3,
+        );
+    let current = store
+        .rotate_pending_physical_v3_admission_at(&gate, third, retained_at_ms + 1)
+        .expect("third physical admission");
+    store
+        .activate_pending_physical_v3_rotation_at(
+            &gate,
+            binding.vehicle_id,
+            &second.receipt_id,
+            retained_at_ms + 1,
+        )
+        .expect("activate third physical admission");
+    let third = current;
+    let (_, fourth) = crate::import::teslamate::physical_fragments::tests::
+        public_admission_candidate_fixture_for_source_and_sequence(
+            &temp.path().join("primary-fourth"),
+            &store,
+            &cursor_key,
+            2,
+            "physical-v3-rebase-primary",
+            4,
+        );
+    let current = store
+        .rotate_pending_physical_v3_admission_at(&gate, fourth, retained_at_ms + 2)
+        .expect("fourth physical admission");
+    store
+        .activate_pending_physical_v3_rotation_at(
+            &gate,
+            binding.vehicle_id,
+            &third.receipt_id,
+            retained_at_ms + 2,
+        )
+        .expect("activate fourth physical admission");
 
     let (other_binding, other_first) = crate::import::teslamate::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
@@ -904,7 +1269,7 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
     let chunks = rebase["replacement"]["chunks"]
         .as_array()
         .expect("replacement chunks");
-    assert_eq!(chunks.len(), 513);
+    assert_eq!(chunks.len(), current.manifest.chunks.len());
     for (index, (chunk, pack)) in chunks.iter().zip(&current.manifest.chunks).enumerate() {
         assert_eq!(chunk["chunk_index"], index as u64);
         assert_eq!(chunk["pack"]["sha256"], pack.sha256.to_string());
@@ -925,6 +1290,45 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
     );
     assert_hub_sync_signature(&rebase, &cursor_key);
     assert_hub_sync_signature_rejects(&rebase, &CursorKey::from_bytes([97; 32]));
+
+    let second_rebase = app
+        .clone()
+        .oneshot(request(
+            binding.vehicle_id,
+            &second.receipt_id,
+            second.head_sequence,
+        ))
+        .await
+        .expect("second prior rebase response");
+    assert_eq!(second_rebase.status(), StatusCode::CONFLICT);
+    let second_rebase = response_json(second_rebase).await;
+    assert_eq!(
+        second_rebase["replacement"]["receipt_id"],
+        current.receipt_id
+    );
+    assert_eq!(
+        second_rebase["requested_base_receipt_id"],
+        second.receipt_id
+    );
+    assert_hub_sync_signature(&second_rebase, &cursor_key);
+
+    let third_rebase = app
+        .clone()
+        .oneshot(request(
+            binding.vehicle_id,
+            &third.receipt_id,
+            third.head_sequence,
+        ))
+        .await
+        .expect("third prior rebase response");
+    assert_eq!(third_rebase.status(), StatusCode::CONFLICT);
+    let third_rebase = response_json(third_rebase).await;
+    assert_eq!(
+        third_rebase["replacement"]["receipt_id"],
+        current.receipt_id
+    );
+    assert_eq!(third_rebase["requested_base_receipt_id"], third.receipt_id);
+    assert_hub_sync_signature(&third_rebase, &cursor_key);
 
     let noop = app
         .clone()
