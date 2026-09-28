@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use rand::RngCore;
+use rand::RngExt;
 use serde::Deserialize;
 #[cfg(unix)]
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -185,13 +185,13 @@ pub fn initialize(config: &EdgeConfig) -> Result<(), ConfigError> {
     }
 
     let mut receiver_secret = [0_u8; 32];
-    rand::rng().fill_bytes(&mut receiver_secret);
+    rand::rng().fill(&mut receiver_secret);
     let receiver_token = URL_SAFE_NO_PAD.encode(receiver_secret);
     receiver_secret.zeroize();
     write_new_private(&config.receiver_bearer_path, receiver_token.as_bytes())?;
 
     let mut spool_key = [0_u8; 32];
-    rand::rng().fill_bytes(&mut spool_key);
+    rand::rng().fill(&mut spool_key);
     if let Err(error) = write_new_private(&config.spool_key_path, &spool_key) {
         spool_key.zeroize();
         return Err(error);
@@ -209,7 +209,7 @@ pub fn rotate_receiver_token(config: &EdgeConfig) -> Result<IssuedReceiverToken,
     let parent = destination.parent().ok_or(ConfigError::InvalidPath)?;
     let temporary = parent.join(format!(".receiver-token.{}.tmp", Uuid::new_v4()));
     let mut secret = [0_u8; 32];
-    rand::rng().fill_bytes(&mut secret);
+    rand::rng().fill(&mut secret);
     let token = URL_SAFE_NO_PAD.encode(secret);
     secret.zeroize();
     write_new_private(&temporary, token.as_bytes())?;

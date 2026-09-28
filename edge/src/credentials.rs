@@ -8,7 +8,7 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use rand::RngCore;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -306,7 +306,7 @@ struct IssuedPair {
 fn issue(label: &str, rotation_of: Option<Uuid>, now_ms: i64, ttl_ms: i64) -> IssuedPair {
     let id = Uuid::new_v4();
     let mut secret = [0_u8; 32];
-    rand::rng().fill_bytes(&mut secret);
+    rand::rng().fill(&mut secret);
     let secret_component = URL_SAFE_NO_PAD.encode(secret);
     let token = format!("tte1.{id}.{secret_component}");
     let stored = StoredCredential {

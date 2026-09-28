@@ -1,6 +1,6 @@
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
-use rand::RngCore;
+use rand::RngExt;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -19,12 +19,14 @@ impl EncryptionKey {
     }
 
     pub(crate) fn encrypt(&self, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
-        let mut nonce = [0_u8; NONCE_BYTES];
-        rand::rng().fill_bytes(&mut nonce);
-        let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.0));
+        let mut nonce_bytes = [0_u8; NONCE_BYTES];
+        rand::rng().fill(&mut nonce_bytes);
+        let key = Key::try_from(&self.0[..]).expect("encryption key has fixed length");
+        let nonce = XNonce::try_from(&nonce_bytes[..]).expect("XChaCha nonce has fixed length");
+        let cipher = XChaCha20Poly1305::new(&key);
         let ciphertext = cipher
             .encrypt(
-                XNonce::from_slice(&nonce),
+                &nonce,
                 Payload {
                     msg: plaintext,
                     aad: MAGIC,
@@ -37,7 +39,7 @@ impl EncryptionKey {
         output.extend_from_slice(&self.key_id());
         output.extend_from_slice(&nonce);
         output.extend_from_slice(&ciphertext);
-        nonce.zeroize();
+        nonce_bytes.zeroize();
         Ok(output)
     }
 
@@ -51,10 +53,13 @@ impl EncryptionKey {
         if input[key_id_start..nonce_start] != self.key_id() {
             return Err(CryptoError::KeyMismatch);
         }
-        let cipher = XChaCha20Poly1305::new(Key::from_slice(&self.0));
+        let key = Key::try_from(&self.0[..]).expect("encryption key has fixed length");
+        let nonce = XNonce::try_from(&input[nonce_start..ciphertext_start])
+            .expect("validated XChaCha nonce has fixed length");
+        let cipher = XChaCha20Poly1305::new(&key);
         cipher
             .decrypt(
-                XNonce::from_slice(&input[nonce_start..ciphertext_start]),
+                &nonce,
                 Payload {
                     msg: &input[ciphertext_start..],
                     aad: MAGIC,

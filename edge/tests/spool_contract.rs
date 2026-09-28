@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
-use teslatlas_edge::protocol::{GapReasonV2, HubAckV1, HubAckV2, HubBatchV2, ReceiverEnvelope};
+use teslatlas_edge::protocol::{
+    GapReasonV2, HubAckV1, HubAckV2, HubBatchV2, ReceiverEnvelope, RecordId,
+};
 use teslatlas_edge::spool::{EnqueueOutcome, Spool, SpoolConfig, SpoolError, SpoolKey};
 
 use support::{T0, VIN, receiver_envelope};
@@ -91,6 +93,79 @@ fn encrypts_pending_records_and_recovers_after_restart() {
     assert_eq!(batch.records.len(), 1);
     assert_eq!(batch.records[0].record_id, record.record_id());
     assert_eq!(batch.records[0].envelope, record);
+}
+
+#[test]
+fn persisted_non_bmp_ids_recover_replay_and_ack_without_reidentification() {
+    let temp = TempDir::new().unwrap();
+    let spool_config = config(&temp);
+    let event = ReceiverEnvelope::parse(
+        &serde_json::to_vec(&json!({
+            "version": 1,
+            "vin": VIN,
+            "txid": "unicode-tx",
+            "tx_type": "V",
+            "received_at_ms": T0 + 100,
+            "timestamp_ms": T0,
+            "payload": {
+                "\u{E000}": "bmp",
+                "\u{10000}": "supplementary"
+            }
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let legacy_record_id = "f0eb7ab23fc9f7df8c8a6a705b178738e3d3224aa3cc85ee9b17f8a3fd7c8647";
+    let stable_record_id = "a9fa37158e58fc752b27fc6c8efca3881de94e76ed920782b4003820b72b865f";
+
+    let spool = Spool::open(spool_config.clone(), key(), T0).unwrap();
+    assert_eq!(
+        spool.enqueue(event.clone(), T0).unwrap(),
+        EnqueueOutcome::Stored(RecordId::parse(legacy_record_id).unwrap())
+    );
+    drop(spool);
+
+    let recovered = Spool::open(spool_config.clone(), key(), T0 + 1_000).unwrap();
+    let batch = recovered.next_batch_v2(T0 + 1_000).unwrap();
+    assert_eq!(batch.records.len(), 1);
+    assert_eq!(batch.records[0].record_id.as_str(), stable_record_id);
+    assert_eq!(batch.records[0].legacy_record_id.as_str(), legacy_record_id);
+    assert_eq!(batch.records[0].envelope, event);
+
+    let mut replay = event;
+    replay.received_at_ms += 2_000;
+    assert_ne!(replay.record_id().as_str(), legacy_record_id);
+    assert_eq!(replay.stable_record_id().as_str(), stable_record_id);
+    assert_eq!(
+        recovered.enqueue(replay, T0 + 2_000).unwrap(),
+        EnqueueOutcome::AlreadyPresent(RecordId::parse(legacy_record_id).unwrap())
+    );
+
+    let acknowledgement = HubAckV2 {
+        version: 2,
+        batch_id: batch.batch_id,
+        accepted_record_ids: vec![RecordId::parse(stable_record_id).unwrap()],
+        accepted_gap_notice_ids: Vec::new(),
+    };
+    let acknowledged = recovered.acknowledge_v2(&acknowledgement).unwrap();
+    assert_eq!(
+        acknowledged.acknowledged_record_ids[0].as_str(),
+        stable_record_id
+    );
+    drop(recovered);
+
+    let restarted = Spool::open(spool_config, key(), T0 + 3_000).unwrap();
+    assert_eq!(
+        restarted.acknowledge_v2(&acknowledgement).unwrap(),
+        acknowledged
+    );
+    assert!(
+        restarted
+            .next_batch_v2(T0 + 3_000)
+            .unwrap()
+            .records
+            .is_empty()
+    );
 }
 
 #[test]

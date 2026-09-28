@@ -17,31 +17,33 @@ path = "src/main.rs"
 [dependencies]
 axum = { version = "0.8", features = ["json"] }
 axum-server = { version = "0.8", features = ["tls-rustls"] }
-base64 = "0.22"
-chacha20poly1305 = "0.10"
-clap = { version = "4.5", features = ["derive"] }
-fs4 = "0.13"
+base64 = "0.23"
+chacha20poly1305 = "0.11"
+clap = { version = "4.6", features = ["derive"] }
+fs4 = "1.1"
 hex = "0.4"
 http = "1"
-rand = "0.9"
+rand = "0.10"
 rustls = "0.23"
 rustls-pemfile = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
-serde_jcs = "0.1"
-sha2 = "0.10"
+# Persisted Edge IDs and Hub replay validation depend on 0.1's UTF-8 key order.
+# Changing this requires a separately versioned cross-product identity migration.
+serde_jcs = "=0.1.0"
+sha2 = "0.11"
 subtle = "2.6"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
 tokio-util = "0.7"
-toml = "0.9"
+toml = "1.1"
 tower = { version = "0.5", features = ["util"] }
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1.26", features = ["v4", "serde"] }
 zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 rcgen = "0.14"
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tempfile = "3"
 
 [profile.release]

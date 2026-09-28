@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 #[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 
-use fs4::fs_std::FileExt;
+use fs4::FileExt;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -1982,16 +1982,13 @@ fn acquire_spool_lock(directory: &Path) -> Result<File, SpoolError> {
     let file = options.open(&path).map_err(map_io_error)?;
     // Keep an advisory non-blocking lock for the lifetime of Inner so another
     // process cannot enter recovery or mutate the same spool.
-    match file.try_lock_exclusive() {
-        Ok(true) => {
+    match FileExt::try_lock(&file) {
+        Ok(()) => {
             set_private_file_permissions(&file)?;
             Ok(file)
         }
-        Ok(false) => Err(SpoolError::AlreadyOpen),
-        Err(error) if matches!(error.kind(), io::ErrorKind::WouldBlock) => {
-            Err(SpoolError::AlreadyOpen)
-        }
-        Err(error) => Err(map_io_error(error)),
+        Err(fs4::TryLockError::WouldBlock) => Err(SpoolError::AlreadyOpen),
+        Err(fs4::TryLockError::Error(error)) => Err(map_io_error(error)),
     }
 }
 

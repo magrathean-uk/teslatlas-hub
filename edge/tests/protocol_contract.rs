@@ -105,6 +105,32 @@ fn record_id_is_stable_across_payload_key_order() {
 }
 
 #[test]
+fn record_id_uses_persisted_utf8_order_for_non_bmp_keys() {
+    let event = ReceiverEnvelope::parse(&envelope(json!({
+        "\u{E000}": "bmp",
+        "\u{10000}": "supplementary"
+    })))
+    .unwrap();
+    let value = serde_json::to_value(&event).unwrap();
+    let canonical = serde_jcs::to_vec(&value).unwrap();
+    let expected = format!(
+        r#"{{"device_client_version":"1.3.0","firmware_version":"2026.26.6","payload":{{"{bmp}":"bmp","{supplementary}":"supplementary"}},"received_at_ms":1800000000100,"timestamp_ms":1800000000000,"tx_type":"vehicle_data","txid":"tx-42","version":1,"vin":"{VIN}"}}"#,
+        bmp = '\u{E000}',
+        supplementary = '\u{10000}',
+    );
+
+    assert_eq!(canonical, expected.as_bytes());
+    assert_eq!(
+        event.record_id().as_str(),
+        "d9546bec8bf7c1f42c84229d3d00821447a5975fb6297d0b62789d76e949dffe"
+    );
+    assert_eq!(
+        event.stable_record_id().as_str(),
+        "f99c1ca5e080a582a5b2f7d07ccc5ae149b21b51a37424cfd90fe9b8be010227"
+    );
+}
+
+#[test]
 fn stable_record_id_ignores_receiver_arrival_time_only() {
     let first = ReceiverEnvelope::parse(&envelope(json!({"value": 1}))).unwrap();
     let mut later_value: Value = serde_json::from_slice(&envelope(json!({"value": 1}))).unwrap();
