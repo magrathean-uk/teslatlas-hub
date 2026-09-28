@@ -13,9 +13,9 @@ and the checks required before redistributing those dependencies.
 | arrow | 1.4.0 | Apache-2.0 |
 | attrs | 26.1.0 | MIT |
 | cffi | 2.1.1 | MIT-0 |
-| cryptography | 46.0.7 | Apache-2.0 OR BSD-3-Clause |
-| fqdn | 1.5.1 | MPL-2.0 |
-| idna | 3.19 | BSD-3-Clause |
+| cryptography | 50.0.1 | Apache-2.0 OR BSD-3-Clause |
+| fqdn | 1.6.0 | MPL-2.0 |
+| idna | 3.20 | BSD-3-Clause |
 | isoduration | 20.11.0 | MIT |
 | jsonpointer | 3.1.1 | BSD-3-Clause |
 | jsonschema | 4.26.0 | MIT |
@@ -41,7 +41,7 @@ and the checks required before redistributing those dependencies.
 | six | 1.17.0 | MIT |
 | typing-extensions | 4.16.0 | PSF-2.0 |
 | typing-inspection | 0.4.4 | MIT |
-| tzdata | 2026.3 | Apache-2.0 |
+| tzdata | 2026.4 | Apache-2.0 |
 | uri-template | 1.3.0 | MIT |
 | webcolors | 25.10.0 | BSD-3-Clause |
 | zstandard | 0.25.0 | BSD-3-Clause |

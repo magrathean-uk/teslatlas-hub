@@ -27,8 +27,8 @@ dependency list. The three entries added to close the previous inventory gap
 were checked against the licence files in the exact installed distributions
 and the matching tagged upstream sources:
 
-- `cryptography 46.0.7`: `Apache-2.0 OR BSD-3-Clause`, with the tagged
-  [licence selector](https://github.com/pyca/cryptography/blob/46.0.7/LICENSE).
+- `cryptography 50.0.1`: `Apache-2.0 OR BSD-3-Clause`, with the tagged
+  [licence selector](https://github.com/pyca/cryptography/blob/50.0.1/LICENSE).
 - `cffi 2.1.1`: `MIT-0`, with the tagged
   [licence file](https://github.com/python-cffi/cffi/blob/v2.1.1/LICENSE).
 - `pycparser 3.0`: `BSD-3-Clause`, with the tagged
