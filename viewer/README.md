@@ -28,21 +28,21 @@ The reference views label loading, empty, absent, stale, inferred, degraded, off
 
 ## Development status
 
-Viewer development is deferred by its owner. The commands below document the source workflow for future authorized work; this documentation refresh did not run them or reopen implementation, testing, or live pairing. Compatibility remains a candidate with no accepted Hub-version entries in [the manifest](compatibility/hub.json). Historical receipts do not establish acceptance of the current checkout.
+Viewer feature development remains deferred. This authorized dependency refresh updated package and toolchain pins while preserving the existing feature work and acceptance boundaries; it did not run the build, application tests, installed Hub journeys, or live pairing. Compatibility remains a candidate with no accepted Hub-version entries in [the manifest](compatibility/hub.json). Historical receipts do not establish acceptance of the current checkout.
 
 ## Requirements
 
-For a source checkout, use Node.js 26.x, npm 11.x, and `tar`. The package manifest accepts Node `>=26.0.0` and npm `>=11.0.0`. Recreating the pinned SDK archive is stricter: `npm run sdk:prepare` requires Node `v26.7.0`, npm `11.19.0`, and the SDK source commit recorded in `artifacts/teslatlas-sdk.json`.
+For a source checkout, use Node.js 26.x, npm 12.x, and `tar`. The package manifest accepts Node `>=26.0.0` and npm `>=11.0.0`; the reproducible local toolchain is pinned to Node `26.10.0` and npm `12.1.0`. Recreating the pinned SDK archive also requires the SDK source commit recorded in `artifacts/teslatlas-sdk.json`.
 
 The repository expects the project-relative SDK archive at `artifacts/teslatlas-sdk-2026.36.2.tgz`. That generated archive is ignored. A clean checkout therefore needs an SDK source checkout and the exact Node/npm executables before `npm ci` can install the file dependency.
 
 ## Build from source
 
-From the viewer checkout, prepare the SDK archive, install dependencies, then start Vite. Replace the paths below with the SDK checkout at the recorded commit and the exact Node executable; npm 11.19.0 must be alongside that executable:
+From the viewer checkout, prepare the SDK archive, install dependencies, then start Vite. Replace the paths below with the SDK checkout at the recorded commit and the exact Node executable; npm 12.1.0 must be alongside that executable:
 
 ```sh
 TESLATLAS_SDK_SOURCE=../teslatlas-sdk-typescript \
-TESLATLAS_SDK_NODE=/path/to/node-v26.7.0/bin/node \
+TESLATLAS_SDK_NODE=/path/to/node-v26.10.0/bin/node \
 npm run sdk:prepare
 npm ci --include=dev
 npm run dev -- --host 127.0.0.1
@@ -79,7 +79,7 @@ The server serves `GET` and `HEAD`, falls back to `index.html` for application r
 
 ## Docker and Compose
 
-The Docker image builds the static assets in Node 26.8.1 Debian slim, then runs only `dist`, the static server, the health probe, and package metadata as the non-root `node` user. It has no Viewer data volume. Compose binds the service to `127.0.0.1:4173` and uses `unless-stopped`.
+The Docker image builds the static assets in the official Node 26.10.0 Debian slim image pinned by OCI digest, then runs only `dist`, the static server, the health probe, and package metadata as the non-root `node` user. It has no Viewer data volume. Compose binds the service to `127.0.0.1:4173` and uses `unless-stopped`.
 
 After preparing the ignored SDK archive, use the Compose command available on your host:
 

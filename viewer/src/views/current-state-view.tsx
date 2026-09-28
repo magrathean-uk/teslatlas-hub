@@ -66,6 +66,7 @@ export function CurrentStateView({
         <div className="state-stack">
           {available.map((vehicle) => {
             const current = snapshot.currentByVehicle[vehicle.id]!;
+            const isObserved = current.updatedAt !== null;
             return (
               <article className="panel vehicle-state" key={vehicle.id}>
                 <header>
@@ -79,7 +80,7 @@ export function CurrentStateView({
                         ? 'stale'
                         : current.inferredFields.length > 0
                           ? 'inferred'
-                          : current.freshness === 'unknown'
+                          : current.freshness === 'unknown' && !isObserved
                             ? 'empty'
                             : 'complete'
                     }
@@ -88,7 +89,7 @@ export function CurrentStateView({
                         ? 'Stale'
                         : current.inferredFields.length > 0
                           ? 'Inferred'
-                          : current.freshness === 'unknown'
+                          : current.freshness === 'unknown' && !isObserved
                             ? 'Freshness unknown'
                             : 'Observed'
                     }

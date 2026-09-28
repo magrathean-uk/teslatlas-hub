@@ -7,6 +7,19 @@
     "node": ">=26.0.0",
     "npm": ">=11.0.0"
   },
+  "packageManager": "npm@12.1.0",
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "26.10.0",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "12.1.0",
+      "onFail": "error"
+    }
+  },
   "bin": {
     "teslatlas-viewer": "bin/teslatlas-viewer.mjs"
   },
@@ -26,30 +39,35 @@
     "pretest": "npm run sdk:verify",
     "test": "vitest",
     "test:sdk-artifact": "node --test scripts/verify-sdk-artifact.test.mjs",
+    "test:sdk-source": "node --test scripts/prepare-sdk-artifact.test.mjs",
     "test:cli": "node --test scripts/viewer-cli.test.mjs",
+    "test:container:source": "node --test scripts/container-shape.test.mjs",
     "test:e2e": "playwright test",
     "pretest:e2e:hub": "npm run build",
     "test:e2e:hub": "playwright test e2e/live-hub.spec.ts --config=playwright.hub.config.ts",
     "test:e2e:installed:hub": "TESLATLAS_VIEWER_EXTERNAL_SERVER=1 playwright test e2e/installed-hub.spec.ts --config=playwright.hub.config.ts",
+    "test:e2e:installed:recovery": "TESLATLAS_VIEWER_EXTERNAL_SERVER=1 playwright test e2e/installed-r1-recovery.spec.ts --config=playwright.hub.config.ts",
+    "test:e2e:installed:data-state": "TESLATLAS_VIEWER_EXTERNAL_SERVER=1 playwright test e2e/installed-r1-data-state.spec.ts --config=playwright.hub.config.ts",
+    "sdk:prepare": "node scripts/prepare-sdk-artifact.mjs",
     "sdk:verify": "node scripts/verify-sdk-artifact.mjs",
     "capture:screenshots": "playwright test e2e/screenshots.spec.ts"
   },
   "devDependencies": {
-    "@teslatlas/sdk": "file:artifacts/teslatlas-sdk-2026.36.2.tgz",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
     "@axe-core/playwright": "^4.13.0",
-    "@playwright/test": "^1.62.1",
+    "@playwright/test": "^1.63.0",
+    "@teslatlas/sdk": "file:artifacts/teslatlas-sdk-2026.36.2.tgz",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
-    "@testing-library/user-event": "^14.6.6",
-    "@types/node": "^26.4.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.5",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "jsdom": "^30.0.1",
+    "jsdom": "^30.1.1",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "typescript": "^7.0.2",
-    "vite": "^8.2.2",
-    "vitest": "^4.1.11"
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
   }
 }

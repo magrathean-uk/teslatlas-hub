@@ -13,13 +13,13 @@ test('admits the exact vendored and installed SDK contents', async () => {
 
   assert.equal(
     result.tarballSha256,
-    'd1ab6ba0ede3a24ae12ed4151db0c90bf957fa19f5640cc4323bd368e565e8bb',
+    '138d1e6924828e655f3fc8c58731467983a3a0e0086ec927c182b7cdd7a09340',
   );
   assert.equal(
     result.installedContentManifestSha256,
-    '2b8b4c2b73ea4ca6dce50092d56172bb3114c55034890ee1d8ecea8831786bb5',
+    'dc3b8cf27fdd514474b048dda0587a60f094e32e1ab9cab185608695dd7b5ea4',
   );
-  assert.equal(result.installedMemberCount, 80);
+  assert.equal(result.installedMemberCount, 88);
 });
 
 test('rejects a changed transitive installed SDK file', async () => {

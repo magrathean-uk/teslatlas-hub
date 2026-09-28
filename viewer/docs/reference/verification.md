@@ -58,6 +58,6 @@ These records do not verify today's dirty checkout, a different package, a diffe
 
 ## Container boundary
 
-[Dockerfile](../../Dockerfile) builds with `node:26.8.1-bookworm-slim`. The SDK archive must exist before its build. The runtime serves static assets as the non-root `node` user. [Compose](../../compose.yaml) maps port 4173 to host loopback, uses `unless-stopped`, and declares no volume.
+[Dockerfile](../../Dockerfile) builds with the official Node 26.10.0 Debian slim image pinned by OCI digest. The SDK archive must exist before its build. The runtime serves static assets as the non-root `node` user. [Compose](../../compose.yaml) maps port 4173 to host loopback, uses `unless-stopped`, and declares no volume.
 
 For an authorized container task, `docker compose config` inspects configuration, `docker compose up --build -d` builds and starts the service, and `docker compose down` stops it. The health probe checks HTTP 200 at the static root only. It does not test Hub readiness, pairing, browser trust, or CORS. A running container is not an installed user-path acceptance result.

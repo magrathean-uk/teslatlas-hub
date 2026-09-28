@@ -416,6 +416,22 @@ describe('reference views', () => {
     expect(within(group).queryByText('End of available history')).toBeNull();
   });
 
+  it('labels a timestamped current projection as observed when freshness is unknown', async () => {
+    const source = new FixtureDataSource();
+    const snapshot = createFixtureSnapshot('complete');
+    const current = snapshot.currentByVehicle['vehicle-redacted-1'];
+    if (!current) throw new Error('fixture current state is missing');
+    current.freshness = 'unknown';
+    vi.spyOn(source, 'readSnapshot').mockResolvedValue(snapshot);
+
+    render(<App dataSource={source} mode="fixture" initialPaired />);
+
+    const currentView = await openView('Current state');
+    const firstVehicle = within(currentView).getAllByRole('article')[0];
+    expect(within(firstVehicle).getByText('Observed')).toBeInTheDocument();
+    expect(within(firstVehicle).queryByText('Freshness unknown')).not.toBeInTheDocument();
+  });
+
   it('labels stale last-known data without presenting it as current', async () => {
     renderScenario('stale');
 

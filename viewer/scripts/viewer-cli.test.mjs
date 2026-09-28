@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import test from 'node:test';
+import { normalizeNpmPackReport } from './npm-pack-report.mjs';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -132,24 +133,33 @@ async function bundleFingerprint(root) {
 
 test('packed Viewer CLI serves only its installed built assets and shuts down cleanly', async () => {
   const temporary = await mkdtemp(join(os.tmpdir(), 'teslatlas-viewer-cli-'));
+  const npmEnvironment = {
+    ...process.env,
+    npm_config_cache: join(temporary, 'npm-cache'),
+  };
   let server;
   try {
     let packagePath = process.env.TESLATLAS_VIEWER_PACKAGE;
     if (packagePath === undefined) {
-      const packed = await npm(['pack', '--silent', '--json', '--pack-destination', temporary]);
-      assert.equal(packed.code, 0, packed.stderr);
-      const jsonStart = packed.stdout.lastIndexOf('\n[');
-      const packResult = JSON.parse(
-        jsonStart === -1 ? packed.stdout : packed.stdout.slice(jsonStart + 1),
+      const build = await npm(['run', 'build'], { env: npmEnvironment });
+      const buildOutput = `${build.stdout}\n${build.stderr}`;
+      assert.equal(build.code, 0, buildOutput);
+      assert.match(buildOutput, /Some chunks are larger than 500 kB after minification/u);
+
+      const packed = await npm(
+        ['pack', '--ignore-scripts', '--silent', '--json', '--pack-destination', temporary],
+        { env: npmEnvironment },
       );
-      packagePath = join(temporary, packResult[0].filename);
+      assert.equal(packed.code, 0, packed.stderr);
+      const packResult = normalizeNpmPackReport(JSON.parse(packed.stdout), 'teslatlas-viewer');
+      packagePath = join(temporary, packResult.filename);
     }
     packagePath = resolve(packagePath);
     const installRoot = temporary;
     await writeFile(join(temporary, 'package.json'), '{"private":true}\n');
     const installed = await npm(
       ['install', '--no-audit', '--no-fund', '--omit=dev', packagePath],
-      { cwd: temporary },
+      { cwd: temporary, env: npmEnvironment },
     );
     assert.equal(installed.code, 0, installed.stderr);
 
@@ -184,7 +194,7 @@ test('packed Viewer CLI serves only its installed built assets and shuts down cl
     const assetPath = index.body.toString('utf8').match(/src="(\/assets\/[^"]+\.js)"/u)?.[1];
     assert.ok(assetPath);
     const asset = await rawRequest(origin, assetPath);
-    assert.equal(asset.status, 200);
+    assert.equal(asset.status, 200, `${assetPath}: ${asset.body.toString('utf8').slice(0, 160)}`);
     assert.match(asset.headers['content-type'], /javascript/u);
     assert.ok(asset.body.length > 1_000);
     const versionResponse = await rawRequest(origin, '/version.json');
@@ -300,7 +310,7 @@ test('packed Viewer CLI serves only its installed built assets and shuts down cl
     assert.equal(archiveEntries.some((path) => path.includes('node_modules/')), false);
     assert.equal(archiveEntries.some((path) => /(credential|secret|\.cache|test-results|playwright-report)/iu.test(path)), false);
 
-    const npmVersion = await npm(['--version']);
+    const npmVersion = await npm(['--version'], { env: npmEnvironment });
     assert.equal(npmVersion.code, 0, npmVersion.stderr);
     const receipt = {
       schemaVersion: 1,

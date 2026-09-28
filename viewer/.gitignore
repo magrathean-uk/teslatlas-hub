@@ -6,3 +6,5 @@ test-results/
 .playwright-cli/
 .DS_Store
 *.tsbuildinfo
+artifacts/*.tgz
+tools/__pycache__/

@@ -34,6 +34,53 @@ test('installed Viewer pairs, reads and pages a disposable current Hub', async (
   if (!Array.isArray(vehicleIds) || typeof vehicleIds[0] !== 'string') {
     throw new Error('scenario must provide vehicle_ids');
   }
+  const scenarioVehicles = scenario.vehicles;
+  if (!Array.isArray(scenarioVehicles)) {
+    throw new Error('scenario must provide named vehicles');
+  }
+  const pagingVehicle = scenarioVehicles.find(
+    (vehicle) =>
+      vehicle &&
+      typeof vehicle === 'object' &&
+      (vehicle.vehicle_id ?? vehicle.vehicleId) === vehicleIds[0],
+  );
+  const pagingVehicleName =
+    pagingVehicle && typeof pagingVehicle === 'object'
+      ? pagingVehicle.display_name ?? pagingVehicle.displayName
+      : undefined;
+  if (typeof pagingVehicleName !== 'string' || pagingVehicleName.length === 0) {
+    throw new Error('scenario must name the paging vehicle');
+  }
+  const emptyVehicle =
+    typeof vehicleIds[1] === 'string'
+      ? scenarioVehicles.find(
+          (vehicle) =>
+            vehicle &&
+            typeof vehicle === 'object' &&
+            (vehicle.vehicle_id ?? vehicle.vehicleId) === vehicleIds[1],
+        )
+      : undefined;
+  const emptyVehicleName =
+    emptyVehicle && typeof emptyVehicle === 'object'
+      ? emptyVehicle.display_name ?? emptyVehicle.displayName
+      : undefined;
+  const drivePages = scenario.drive_pages_at_limit_25 ?? scenario.drive_pages_at_limit_2;
+  if (
+    !Array.isArray(drivePages) ||
+    drivePages.length === 0 ||
+    drivePages.some(
+      (page) =>
+        !Array.isArray(page) ||
+        page.some((id) => !Number.isSafeInteger(id) || id < 1),
+    )
+  ) {
+    throw new Error('scenario must provide ordered drive pages');
+  }
+  const expectedDriveIds = drivePages.flat().map(String);
+  if (new Set(expectedDriveIds).size !== expectedDriveIds.length) {
+    throw new Error('scenario drive pages must not repeat drive IDs');
+  }
+  const expectedDriveRequestCount = Math.ceil(expectedDriveIds.length / 25);
   const pagingVehicleId =
     process.env.TESLATLAS_VIEWER_PAGING_VEHICLE_ID ?? vehicleIds[0];
   const emptyVehicleId =
@@ -41,7 +88,8 @@ test('installed Viewer pairs, reads and pages a disposable current Hub', async (
     (typeof vehicleIds[1] === 'string' ? vehicleIds[1] : undefined);
 
   const driveRequests: string[] = [];
-  const driveResponses: number[] = [];
+  const driveResponses: Array<{ status: number; ids: string[] }> = [];
+  const driveResponseReads: Promise<void>[] = [];
   page.on('request', (request) => {
     const url = new URL(request.url());
     if (
@@ -57,7 +105,24 @@ test('installed Viewer pairs, reads and pages a disposable current Hub', async (
       url.origin === new URL(endpoint).origin &&
       url.pathname === `/v1/vehicles/${pagingVehicleId}/drives`
     ) {
-      driveResponses.push(response.status());
+      const record = { status: response.status(), ids: [] as string[] };
+      driveResponses.push(record);
+      if (record.status === 200) {
+        driveResponseReads.push(
+          (async () => {
+            const payload = (await response.json()) as Record<string, unknown>;
+            if (!Array.isArray(payload.items)) {
+              throw new Error('drive response must provide items');
+            }
+            record.ids = payload.items.map((item) => {
+              if (!item || typeof item !== 'object' || !('id' in item)) {
+                throw new Error('drive response item must provide an ID');
+              }
+              return String(item.id);
+            });
+          })(),
+        );
+      }
     }
   });
 
@@ -84,27 +149,47 @@ test('installed Viewer pairs, reads and pages a disposable current Hub', async (
   await expect(page.getByRole('region', { name: 'Hub health' })).toBeVisible();
   await expect(page.getByText(hubId, { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Recent sessions' }).click();
-  const pagingGroup = page.locator('.session-group').filter({ hasText: pagingVehicleId });
-  const fallbackGroup = page.locator('.session-group').filter({ has: page.getByRole('button', { name: /Load more drives/ }) }).first();
-  const group = (await pagingGroup.count()) > 0 ? pagingGroup : fallbackGroup;
+  const navigation = page.getByRole('navigation', { name: 'Viewer sections' });
+  await navigation.getByRole('button', { name: 'Current state' }).click();
+  const currentState = page.getByRole('region', { name: 'Current state' });
+  const firstVehicleState = currentState.locator('.vehicle-state').first();
+  await expect(firstVehicleState).toBeVisible();
+  await expect(firstVehicleState.getByText('0%', { exact: true })).toBeVisible();
+  await expect(firstVehicleState.getByText('160.93 km', { exact: true })).toBeVisible();
+  await expect(firstVehicleState.getByText('16,093.44 km', { exact: true })).toBeVisible();
+  await expect(firstVehicleState.getByText('Observed', { exact: true })).toBeVisible();
+
+  await navigation.getByRole('button', { name: 'Recent sessions' }).click();
+  const group = page.locator('.session-group').filter({
+    has: page.getByRole('heading', { name: pagingVehicleName, exact: true }),
+  });
   await expect(group).toBeVisible();
-  await expect(group.locator('.count-chip')).toHaveText('25');
+  await expect(group.locator('.count-chip')).toHaveText(
+    String(Math.min(25, expectedDriveIds.length)),
+  );
 
   let loadMoreCount = 0;
   while (await group.getByRole('button', { name: /Load more drives/ }).count() > 0) {
     loadMoreCount += 1;
     await group.getByRole('button', { name: /Load more drives/ }).click();
-    await expect(group.locator('.count-chip')).toHaveText(String(Math.min(25 * (loadMoreCount + 1), 51)));
-    if (loadMoreCount > 2) throw new Error('installed Viewer did not reach terminal history');
+    await expect(group.locator('.count-chip')).toHaveText(
+      String(Math.min(25 * (loadMoreCount + 1), expectedDriveIds.length)),
+    );
+    if (loadMoreCount >= expectedDriveRequestCount) {
+      throw new Error('installed Viewer did not reach terminal history');
+    }
   }
-  expect(loadMoreCount).toBe(2);
+  expect(loadMoreCount).toBe(Math.max(0, expectedDriveRequestCount - 1));
   await expect(group).toContainText('End of available history');
-  expect(driveRequests.filter((query) => query.includes('limit=25'))).toHaveLength(3);
-  expect(driveResponses.filter((status) => status === 200 || status === 304).length).toBeGreaterThanOrEqual(3);
+  await Promise.all(driveResponseReads);
+  expect(driveRequests.filter((query) => query.includes('limit=25'))).toHaveLength(expectedDriveRequestCount);
+  expect(driveResponses.filter(({ status }) => status === 200 || status === 304).length).toBeGreaterThanOrEqual(expectedDriveRequestCount);
+  expect(driveResponses.filter(({ status }) => status === 200).flatMap(({ ids }) => ids)).toEqual(expectedDriveIds);
 
-  if (emptyVehicleId !== undefined) {
-    const emptyGroup = page.locator('.session-group').filter({ hasText: emptyVehicleId });
+  if (emptyVehicleId !== undefined && typeof emptyVehicleName === 'string') {
+    const emptyGroup = page.locator('.session-group').filter({
+      has: page.getByRole('heading', { name: emptyVehicleName, exact: true }),
+    });
     if (await emptyGroup.count() > 0) {
       await expect(emptyGroup).toContainText(/No recent drives|End of available history/);
     }
