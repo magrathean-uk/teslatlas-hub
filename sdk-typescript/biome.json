@@ -6,7 +6,15 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!dist", "!node_modules", "!protocol", "!src/generated"]
+    "includes": [
+      "**",
+      "!dist",
+      "!node_modules",
+      "!protocol",
+      "!src/generated",
+      "!compatibility/hub.json",
+      "!docs/development"
+    ]
   },
   "formatter": {
     "enabled": true,
