@@ -51,7 +51,7 @@ Credentials and event checkpoints remain caller-owned. Do not put authorization 
 
 ## Local development
 
-Use the Node `26.10.0` and npm `12.1.0` toolchain named by `package.json`. The manifest declares no broader runtime floor because the current evidence policy does not accept one. The previously accepted runtime evidence remains bound to Node `26.7.0` and npm `11.19.0` until a focused run records the new tuple.
+Use the Node `26.10.0` and npm `12.1.0` toolchain named by `package.json`. The manifest declares no broader runtime floor because the current evidence policy does not accept one. The accepted runtime evidence still names Node `26.7.0` and npm `11.19.0`; it covers the new versions only after a focused run records them.
 
 Follow `.github/CONTRIBUTING.md` in the [source repository](https://github.com/magrathean-uk/teslatlas-sdk-typescript) and applicable workspace instructions before running package commands. A build replaces the checkout's `dist/` directory. With the pinned toolchain, the local verification sequence is:
 
