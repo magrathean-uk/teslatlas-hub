@@ -1144,11 +1144,7 @@ mod tests {
 
         let over_limit = fixture("changes-since-request-8193-bytes.json");
         assert_eq!(
-            over_limit["body"]
-                .as_str()
-                .expect("fixture body")
-                .as_bytes()
-                .len(),
+            over_limit["body"].as_str().expect("fixture body").len(),
             MAX_CHANGES_SINCE_REQUEST_BYTES + 1
         );
     }

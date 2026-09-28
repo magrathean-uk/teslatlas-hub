@@ -284,6 +284,7 @@ impl PhysicalDeltaComparison {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn scratch_path(&self) -> &Path {
         self.scratch.path()
     }
@@ -306,6 +307,7 @@ impl PhysicalDeltaComparison {
         Ok((plan, page_limit, bytes))
     }
 
+    #[cfg(test)]
     pub(crate) fn visit_changed_raw(
         &self,
         mut visit: impl FnMut(&str, i64, bool) -> Result<(), PhysicalCompareError>,
@@ -353,6 +355,7 @@ impl PhysicalDeltaComparison {
 
     /// Raw target rows required as full context for affected projected roots.
     /// These rows do not themselves authorize a projected write.
+    #[cfg(test)]
     pub(crate) fn visit_target_context(
         &self,
         mut visit: impl FnMut(&str, i64, u32) -> Result<(), PhysicalCompareError>,

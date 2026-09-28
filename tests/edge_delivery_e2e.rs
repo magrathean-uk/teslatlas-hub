@@ -24,8 +24,9 @@ use teslatlas_hub::{
     edge_delivery::{EdgeConsumer, EdgeDeliveryError},
 };
 
+// Shared across test binaries; each uses a different subset.
+#[allow(dead_code, unused_imports)]
 #[path = "interop/seed.rs"]
-#[allow(dead_code)]
 mod seed;
 
 const VIN: &str = "5YJ3E1EA7KF000001";

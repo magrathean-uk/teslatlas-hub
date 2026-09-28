@@ -356,8 +356,8 @@ fn write_staged_physical_updates_snapshot_v3_inner(
         return Err(error);
     }
 
-    if accumulator.payload_rows != 0 || chunks.is_empty() {
-        if let Err(error) = flush_chunk(
+    if (accumulator.payload_rows != 0 || chunks.is_empty())
+        && let Err(error) = flush_chunk(
             writer,
             &binding,
             snapshot_id,
@@ -365,10 +365,10 @@ fn write_staged_physical_updates_snapshot_v3_inner(
             &mut accumulator,
             &mut chunks,
             fail_before_ordinal,
-        ) {
-            cleanup_chunks(&mut chunks);
-            return Err(error);
-        }
+        )
+    {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
     }
     let total_rows = chunks.iter().try_fold(0_u64, |total, chunk| {
         total

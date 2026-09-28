@@ -61,7 +61,7 @@ assert not cleanup_race.exists()
 
 assert lock["schema"] == "teslatlas.tesla-proxy-lock/v3"
 policy = module.validate_lock(copy.deepcopy(lock))["build_host"]
-assert len(policy["go"]) == 1
+assert len(policy["go"]) == 2
 assert policy["go"] == sorted(
     policy["go"], key=lambda item: (
         item["path"], item["sha256"], item["goroot"],
@@ -76,6 +76,15 @@ official = {
     "binary_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b",
 }
 assert official in policy["go"]
+# The plain Homebrew toolchain, for builds outside the clean-development wrapper.
+portable = {
+    "path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
+    "sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b",
+    "goroot": "/opt/homebrew/Cellar/go/1.27.1/libexec",
+    "binary_path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
+    "binary_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b",
+}
+assert portable in policy["go"]
 assert policy["compiler"] == {
     "path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
     "sha256": "5922f5f7843fee699497c45cc98134b6686e0a5e2fa8a5866ab74c5482fa87a5",
@@ -104,7 +113,7 @@ def rejected(action, message):
     else:
         raise AssertionError(f"accepted invalid host policy: {message}")
 
-for selected in (official,):
+for selected in (official, portable):
     observed = {
         "go": copy.deepcopy(selected),
         "compiler": copy.deepcopy(policy["compiler"]),

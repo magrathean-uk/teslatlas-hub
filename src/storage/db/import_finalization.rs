@@ -972,6 +972,7 @@ impl HubStore {
     /// fragment-independent logical fingerprint. This never publishes a pack,
     /// delta, or sequence. Any failed compatibility check rolls all writes
     /// back and reports that a rebase is required.
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn bridge_legacy_teslamate_direct_import(
         &self,
@@ -1761,6 +1762,7 @@ impl HubStore {
     /// schema-2.2 successor. The immutable schema-2.2 no-op must be durable
     /// before this catalogue transaction; neither manifest is visible alone.
     #[allow(clippy::too_many_arguments)]
+    #[cfg(test)]
     pub(crate) fn finalize_import_generation_with_projection_state_and_schema_22(
         &self,
         publication_gate: &PublicationGate,

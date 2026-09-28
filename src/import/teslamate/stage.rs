@@ -275,10 +275,10 @@ impl OwnedTeslaMateStage {
 
 impl Drop for OwnedTeslaMateStage {
     fn drop(&mut self) {
-        if let Some(stage) = self.0.take() {
-            if let Err(error) = stage.discard() {
-                tracing::error!(%error, "could not discard unpublished physical source stage");
-            }
+        if let Some(stage) = self.0.take()
+            && let Err(error) = stage.discard()
+        {
+            tracing::error!(%error, "could not discard unpublished physical source stage");
         }
     }
 }

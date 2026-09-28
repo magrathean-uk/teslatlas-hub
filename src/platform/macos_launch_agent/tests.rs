@@ -108,8 +108,10 @@ fn source_run_config(temporary: &Path, data_dir: &Path) -> HubConfig {
         .expect("protect certificate");
     fs::set_permissions(&private_key_path, fs::Permissions::from_mode(0o600))
         .expect("protect private key");
-    let mut collector = crate::config::CollectorConfig::default();
-    collector.interval_seconds = 0;
+    let collector = crate::config::CollectorConfig {
+        interval_seconds: 0,
+        ..Default::default()
+    };
     HubConfig {
         data_dir: data_dir.to_owned(),
         bind: "127.0.0.1:21444".parse().expect("loopback bind"),

@@ -200,7 +200,7 @@ fn legal_aliases_and_source_command_parse_without_configuration() {
             ca_file,
             server_name,
         }
-            if ca_file == PathBuf::from("/etc/teslatlas-hub/tls/ca.pem")
+            if ca_file == *"/etc/teslatlas-hub/tls/ca.pem"
                 && server_name == "hub.example.invalid"
     ));
 }

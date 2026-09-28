@@ -2034,10 +2034,10 @@ pub struct ReceiptIdentityHashes {
 
 fn shipping_hub_binary_path() -> Result<PathBuf, UpdatesDeliveryError> {
     let mut candidates = Vec::new();
-    if let Ok(executable) = std::env::current_exe() {
-        if executable.file_name().and_then(|name| name.to_str()) == Some("teslatlas-hub") {
-            candidates.push(executable);
-        }
+    if let Ok(executable) = std::env::current_exe()
+        && executable.file_name().and_then(|name| name.to_str()) == Some("teslatlas-hub")
+    {
+        candidates.push(executable);
     }
     if let Some(target_dir) = canonical_cargo_target_dir(std::env::var_os("CARGO_TARGET_DIR"))? {
         candidates.push(target_dir.join("release/teslatlas-hub"));

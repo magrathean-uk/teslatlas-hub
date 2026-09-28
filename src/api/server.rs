@@ -1246,6 +1246,7 @@ async fn vehicles(State(state): State<AppState>, headers: HeaderMap) -> Response
     }
 }
 
+#[allow(clippy::result_large_err)] // an axum Response is the handler error by design
 fn require_active_vehicle(state: &AppState, vehicle_id: Uuid) -> Result<(), Response> {
     match state.store.vehicle_is_active(vehicle_id) {
         Ok(true) => Ok(()),

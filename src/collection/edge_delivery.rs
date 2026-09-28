@@ -48,11 +48,10 @@ fn transport_diagnostic_code(error: &reqwest::Error) -> &'static str {
     }
     let mut cause = error.source();
     while let Some(value) = cause {
-        if let Some(io_error) = value.downcast_ref::<std::io::Error>() {
-            match io_error.kind() {
-                ErrorKind::ConnectionRefused => return "connect_refused",
-                _ => {}
-            }
+        if let Some(io_error) = value.downcast_ref::<std::io::Error>()
+            && io_error.kind() == ErrorKind::ConnectionRefused
+        {
+            return "connect_refused";
         }
         let text = value.to_string().to_ascii_lowercase();
         if text.contains("certificate") || text.contains("tls") {

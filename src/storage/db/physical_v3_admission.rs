@@ -75,8 +75,7 @@ impl HubStore {
                 for chunk in &candidate.chunks {
                     if chunk.ownership()
                         == crate::hub_pack::ProjectionPackOwnership::Created
-                    {
-                        if let Err(source) = self.remove_unretained_pack(
+                        && let Err(source) = self.remove_unretained_pack(
                             publication_gate,
                             chunk.metadata.sha256,
                             &chunk.path,
@@ -84,7 +83,6 @@ impl HubStore {
                         {
                             cleanup_error = Some(source);
                         }
-                    }
                 }
                 Err(cleanup_error.unwrap_or(error))
             }
@@ -134,6 +132,8 @@ impl HubStore {
     /// exact signed checkpoint for a bounded future rebase response. The new
     /// head is deliberately blocked from public control and pack routes until
     /// the retained-prior 409 adapter is installed in a later cut.
+    // Exercised by tests until the retained-prior 409 adapter lands.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn rotate_pending_physical_v3_admission_at(
         &self,
         publication_gate: &PublicationGate,
@@ -166,8 +166,7 @@ impl HubStore {
                 for chunk in &candidate.chunks {
                     if chunk.ownership()
                         == crate::hub_pack::ProjectionPackOwnership::Created
-                    {
-                        if let Err(source) = self.remove_unretained_pack(
+                        && let Err(source) = self.remove_unretained_pack(
                             publication_gate,
                             chunk.metadata.sha256,
                             &chunk.path,
@@ -175,7 +174,6 @@ impl HubStore {
                         {
                             cleanup_error = Some(source);
                         }
-                    }
                 }
                 Err(cleanup_error.unwrap_or(error))
             }
@@ -861,7 +859,7 @@ impl HubStore {
         now_ms: i64,
         verify_file_digests: bool,
     ) -> Result<Option<RetainedPhysicalV3Admission>, StoreError> {
-        if now_ms < 0 || now_ms > 9_007_199_254_740_991 {
+        if !(0..=9_007_199_254_740_991).contains(&now_ms) {
             return Err(StoreError::PhysicalV3RetentionInvalid);
         }
         let connection = self.open_read_only_connection()?;

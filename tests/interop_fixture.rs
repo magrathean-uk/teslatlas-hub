@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+// Shared across test binaries; each uses a different subset.
+#[allow(dead_code, unused_imports)]
 #[path = "interop/seed.rs"]
 mod seed;
 
@@ -11,11 +13,10 @@ use ed25519_dalek::{Signature, VerifyingKey};
 use http_body_util::BodyExt;
 use serde_json::Value;
 #[cfg(feature = "interop-fixture")]
+use teslatlas_hub::db::VehicleDescriptor;
+#[cfg(feature = "interop-fixture")]
 use teslatlas_hub::protocol::Sha256Digest;
-use teslatlas_hub::{
-    db::{HubStore, VehicleDescriptor},
-    server::paired_router,
-};
+use teslatlas_hub::{db::HubStore, server::paired_router};
 use tower::ServiceExt;
 
 #[test]

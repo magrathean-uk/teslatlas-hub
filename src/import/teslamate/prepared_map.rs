@@ -121,10 +121,10 @@ fn pg_ms(value: i64) -> PreparedResult<i64> {
     if value == i64::MIN || value == i64::MAX {
         return Err(invalid("prepared map timestamp is infinite"));
     }
-    Ok(value
+    value
         .checked_add(PG_EPOCH_OFFSET_US)
         .and_then(|v| v.checked_div(1_000))
-        .ok_or_else(|| invalid("prepared map timestamp is outside App range"))?)
+        .ok_or_else(|| invalid("prepared map timestamp is outside App range"))
 }
 
 fn coordinate(value: ProjectionFixedNumericV2_2) -> PreparedResult<i64> {
@@ -746,12 +746,12 @@ pub(crate) fn publish_selected_month(
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
-    if let Some((vehicle, source_receipt, _)) = &previous {
-        if vehicle != &admission.vehicle_id.to_string() || source_receipt != &admission.receipt_id {
-            return Err(invalid(
-                "prepared artifact identity conflicts with its source head",
-            ));
-        }
+    if let Some((vehicle, source_receipt, _)) = &previous
+        && (vehicle != &admission.vehicle_id.to_string() || source_receipt != &admission.receipt_id)
+    {
+        return Err(invalid(
+            "prepared artifact identity conflicts with its source head",
+        ));
     }
 
     let mut drives = Vec::new();

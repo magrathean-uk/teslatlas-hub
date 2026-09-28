@@ -486,7 +486,7 @@ fn unchanged_successful_discovery_refreshes_current_only() {
     runtime
         .block_on(persist_unchanged_discoveries(
             &store,
-            &[vehicle.clone()],
+            std::slice::from_ref(&vehicle),
             CollectorProvider::Legacy,
         ))
         .expect("first successful inventory");

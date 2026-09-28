@@ -12,6 +12,8 @@ use std::{
 };
 #[cfg(feature = "interop-fixture")]
 use teslatlas_hub::hub_pack::ProjectionCarSettings;
+#[cfg(feature = "interop-fixture")]
+use teslatlas_hub::protocol::HUB_PROJECTION_SCHEMA_V3;
 use teslatlas_hub::{
     credentials::OwnerTokens,
     db::{
@@ -22,7 +24,7 @@ use teslatlas_hub::{
         ProjectionPackRequestV2_2, ProjectionPackWriter, ProjectionSnapshot,
         ProjectionSnapshotV2_2,
     },
-    protocol::{HUB_PROJECTION_SCHEMA_V3, SequenceRange, Sha256Digest},
+    protocol::{SequenceRange, Sha256Digest},
     teslamate_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
     teslamate_token::encrypt_legacy_owner_tokens,
     updates_delivery::{
@@ -1073,10 +1075,10 @@ fn schema_22_snapshot(car_id: i64, name: &str, vin: &str) -> Result<ProjectionSn
 pub fn expose_dynamic_vehicle(root: &Path) -> Result<DynamicVehicleMutation> {
     let (store, source_id) = open_owned_fixture(root)?;
     let was_known = store.source_vehicle_key(DYNAMIC_VEHICLE_ID)?.is_some();
-    if let Some(source_vehicle_key) = store.source_vehicle_key(DYNAMIC_VEHICLE_ID)? {
-        if source_vehicle_key != DYNAMIC_CAR_ID.to_string() {
-            return Err("dynamic fixture vehicle identity conflict".into());
-        }
+    if let Some(source_vehicle_key) = store.source_vehicle_key(DYNAMIC_VEHICLE_ID)?
+        && source_vehicle_key != DYNAMIC_CAR_ID.to_string()
+    {
+        return Err("dynamic fixture vehicle identity conflict".into());
     }
 
     let source = store.register_source(

@@ -26,6 +26,13 @@
         "goroot": "/opt/homebrew/Cellar/go/1.27.1/libexec",
         "binary_path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
         "binary_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b"
+      },
+      {
+        "path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
+        "sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b",
+        "goroot": "/opt/homebrew/Cellar/go/1.27.1/libexec",
+        "binary_path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
+        "binary_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b"
       }
     ],
     "compiler": {

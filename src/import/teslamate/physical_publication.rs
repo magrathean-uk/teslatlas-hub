@@ -94,17 +94,17 @@ pub(crate) fn publish_sealed_physical_v3_stage_with_gate_at(
         now_ms,
         TeslaMatePhysicalFragmentLimits::default(),
     );
-    if let Ok(publication) = &result {
-        if let Err(error) = crate::import::teslamate::prepared_map::publish_selected_month(
+    if let Ok(publication) = &result
+        && let Err(error) = crate::import::teslamate::prepared_map::publish_selected_month(
             store,
             cursor_key,
             &stage,
             &publication.admission,
             now_ms,
-        ) {
-            tracing::warn!(%error, vehicle_id = %publication.admission.vehicle_id,
+        )
+    {
+        tracing::warn!(%error, vehicle_id = %publication.admission.vehicle_id,
                 "optional prepared month is unavailable; local map generation remains authoritative");
-        }
     }
     let cleanup = stage.discard();
     match (result, cleanup) {

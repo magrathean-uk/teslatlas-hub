@@ -243,6 +243,7 @@ pub(crate) struct RetainedPhysicalV3Admission {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)] // short-lived state value, never stored in bulk
 pub(crate) enum PhysicalV3PublicationState {
     Empty,
     Public(PendingPhysicalV3Admission),

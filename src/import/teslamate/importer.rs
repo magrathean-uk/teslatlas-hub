@@ -753,7 +753,8 @@ fn finish_selected_schema_22_publication(
                     source,
                 }
             })?;
-        let updates_schema_22 = publish_production_updates_schema_22_with_gate(
+
+        publish_production_updates_schema_22_with_gate(
             store,
             cursor_key,
             &binding,
@@ -766,8 +767,7 @@ fn finish_selected_schema_22_publication(
             vehicle_id,
             legacy_snapshot_id,
             source,
-        })?;
-        updates_schema_22
+        })?
     };
     let physical_v3 = physical_stage
         .map(|stage| {
