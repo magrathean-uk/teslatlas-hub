@@ -2,13 +2,13 @@
 
 The Python project, lockfile and Home Assistant manifest identify this integration as `2026.36.2`. The manifest supplies Home Assistant's displayed integration version.
 
-Keep three version identities distinct:
+Keep these version identities distinct:
 
 | Identity | Recorded value | Meaning |
 | --- | --- | --- |
 | Integration | `2026.36.2` | Candidate component version |
 | Home Assistant development | `2026.9.4` | Locked Python test environment |
-| Home Assistant minimum | `2026.8.3` | Public integration compatibility floor in `manifest.json` and `hacs.json` |
+| Home Assistant minimum | `2026.8.3` | Minimum version declared in `hacs.json` |
 | Compose example | `2026.8.3` | Pinned isolated evaluation image |
 | Hub HTTP profile | `hub-http-v1@1.0.0` | Embedded protocol contract |
 

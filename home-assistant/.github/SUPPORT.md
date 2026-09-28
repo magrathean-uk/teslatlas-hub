@@ -2,7 +2,7 @@
 
 First checks for setup and connection problems, and where to report a bug.
 
-This is a custom integration candidate. The recorded development baseline is Home Assistant `2026.8.3`; historical synthetic test results do not establish production support or compatibility with every Home Assistant release.
+This is a custom integration candidate. The declared minimum is Home Assistant `2026.8.3`, and the locked development environment uses Home Assistant `2026.9.4`. Historical synthetic test results do not establish production support or compatibility with every Home Assistant release.
 
 ## First checks
 
