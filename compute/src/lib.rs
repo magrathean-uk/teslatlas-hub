@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Dependency-free deterministic compute kernels shared by Teslatlas products.
 
+mod cleaner;
 mod raster;
+
+pub use cleaner::{
+    CleanMapError, MAX_RAW_MAP_POSITIONS_PER_DRIVE, RawMapPosition,
+    prepare_positions_for_tile_rendering_v1,
+};
 
 use std::collections::BTreeMap;
 use std::fmt;

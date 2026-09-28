@@ -1,4 +1,16 @@
-# Teslatlas Compute
+<p align="center">
+  <img src="https://raw.githubusercontent.com/magrathean-uk/magrathean-uk/main/assets/icons/teslatlas.png" width="96" height="96" alt="">
+</p>
+
+<h1 align="center">Teslatlas Compute</h1>
+
+<p align="center">The dependency-free shared Rust kernel for deterministic Teslatlas map computation.</p>
+
+<p align="center">
+  <a href="LICENSE">Licence</a>
+</p>
+
+## Overview
 
 `teslatlas-compute` is the dependency-free shared Rust kernel for deterministic
 Teslatlas map computation. Its first public API converts typed drives or bounded
@@ -17,17 +29,25 @@ the prepared-artefact contract in Teslatlas Protocol commit
 ## API boundary
 
 - `parse_position_page_v1` validates and decodes one bounded input page.
+- `prepare_positions_for_tile_rendering_v1` converts a drive's ordered raw
+  `(date_ms, latitude, longitude, speed_kmh)` positions to cleaned f32
+  coordinates using the App's validity, bridgeable-outlier and stationary-drift
+  rules. It never smooths or interpolates. A drive over 65,536 raw positions
+  returns `CleanMapError::OversizedDrive`: no Hub prepared map should be
+  published for that span, and the App retains its existing local route path.
 - `generate_tile_payload_v1` computes from an in-memory drive slice.
 - `generate_tile_payload_v1_from_pages` consumes each bounded page once and
   produces stable bytes independent of drive order or page boundaries. Every
   consumer call is limited to 128 drives and an 8 MiB encoded-page equivalent.
 - Callers own storage, scheduling, publication, and cancellation-token lifetime.
 
-The crate does not yet mean the App or Hub consumes it. Product integration and
-ordinary-user acceptance remain separate Phase 4 work. The App still owns raw
-position cleaning in `prepare_positions_for_tile_rendering`; callers must supply
-an equivalently cleaned `(latitude, longitude)` sequence. Cross-product byte
-parity remains an integration acceptance check.
+The Hub and App Rust core now depend on this crate for prepared and local map
+computation. Product integration and ordinary-user acceptance still require
+their own evidence. Callers own stable raw-row ordering by
+`(date_ms, source_position_id)` and must clean each whole
+eligible drive before splitting its output into bounded generator pages. A
+fragment independently cleaned at a page boundary is not equivalent.
+Cross-product byte parity remains an integration acceptance check.
 
 ## Determinism limits
 
@@ -48,3 +68,10 @@ scripts/dev/with-heavy-build-lock.sh \
 ```
 
 Build output is routed outside the checkout by clean-development.
+
+## Licence
+
+Teslatlas Compute is licensed under the Apache License 2.0. See
+[LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+<sub>© 2026 MAGRATHEAN UK LTD · [Legal](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)</sub>
