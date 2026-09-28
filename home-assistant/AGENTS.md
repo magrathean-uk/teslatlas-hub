@@ -18,6 +18,7 @@ See [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the pinned environment and fo
 
 ```sh
 uv run --locked pytest tests/test_config_flow.py tests/test_coordinator.py tests/test_diagnostics.py
+uv run --locked --no-default-groups --group floor pytest
 uv run --locked ruff check .
 ```
 

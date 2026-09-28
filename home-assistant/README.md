@@ -33,7 +33,7 @@ Missing fields remain unknown; numeric zero remains zero. There are no vehicle c
 
 ## Try it in an isolated Home Assistant installation
 
-The locked development environment uses Home Assistant `2026.9.4`. The minimum version declared in [hacs.json](hacs.json) is `2026.8.3`, and the Compose example below pins that version. Use a compatible Hub that implements the checked profile, a reachable HTTPS endpoint with a trusted certificate, and a fresh pairing invitation. A certificate pin supplements normal certificate and hostname validation.
+The locked development environment uses Home Assistant `2026.9.4`. The minimum version declared in [hacs.json](hacs.json) is `2026.8.3`, and the Compose example below pins that version. `uv run --locked --no-default-groups --group floor pytest` runs the tests against that minimum. Use a compatible Hub that implements the checked profile, a reachable HTTPS endpoint with a trusted certificate, and a fresh pairing invitation. A certificate pin supplements normal certificate and hostname validation.
 
 1. Back up the Home Assistant configuration and the previous component before replacing an installation.
 2. From this repository, copy only `custom_components/teslatlas_hub` to `/config/custom_components/teslatlas_hub`, including its `profile` and `translations` directories. Exclude generated caches. Restart Home Assistant.

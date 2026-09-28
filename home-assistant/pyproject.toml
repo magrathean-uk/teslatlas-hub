@@ -13,6 +13,11 @@ dev = [
     "pytest-homeassistant-custom-component==0.13.367",
     "ruff==0.16.9",
 ]
+# The minimum Home Assistant declared in hacs.json, for the floor test run.
+floor = [
+    "homeassistant==2026.8.3",
+    "pytest-homeassistant-custom-component==0.13.357",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -29,3 +34,4 @@ select = ["ASYNC", "B", "E", "F", "I", "RUF", "SIM", "UP"]
 
 [tool.uv]
 package = false
+conflicts = [[{ group = "dev" }, { group = "floor" }]]
