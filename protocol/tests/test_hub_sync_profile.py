@@ -169,6 +169,23 @@ class HubSyncProfileTests(unittest.TestCase):
         )
         self.assertEqual(self.sync.validate_signing_keys(keys, request_fixture["vehicle_id"]), [])
 
+    def test_identified_month_has_exact_signed_bytes_and_full_utc_window(self):
+        fixture = self.fixture("prepared-artefact-identified-month")
+        receipt = fixture["receipt"]
+        compressed = (PROFILE / fixture["pack_file"]).read_bytes()
+        self.assertEqual(self.sync.validate_prepared_pack(receipt, compressed, VEHICLE_ID), [])
+        self.assertEqual(
+            receipt["artifact_id"],
+            "map-month-v1.98e39194b223fa4fd7515a0f7fa46d373d7413e76b7a2cc8c6178398f2bd3b7f",
+        )
+        self.assertEqual(self.sync.prepared_month_artifact_id(receipt, "2025-01"), receipt["artifact_id"])
+        tampered = copy.deepcopy(receipt)
+        tampered["artifact_id"] = "map-month-v1." + "0" * 64
+        self.assertEqual(
+            self.sync.validate_prepared_artefact(tampered, VEHICLE_ID),
+            ["prepared artefact identity mismatch"],
+        )
+
     def test_prepared_pack_is_bound_map_month_only_sqlite(self):
         fixture = self.fixture("prepared-artefact-map-months")
         receipt = fixture["receipt"]
@@ -652,7 +669,7 @@ class HubSyncProfileTests(unittest.TestCase):
 
     def test_registered_fixture_cases_cover_positive_and_negative_vectors(self):
         results = self.sync.run_fixture_cases()
-        self.assertEqual(len(results), 64)
+        self.assertEqual(len(results), 65)
         self.assertTrue(all(result["passed"] for result in results))
         by_case = {result["case_id"]: result for result in results}
         self.assertEqual(

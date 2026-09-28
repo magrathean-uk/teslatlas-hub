@@ -8,6 +8,7 @@ cd "$repo_dir"
 uv sync --locked
 uv run python tools/build_hub_http_profile.py --check
 uv run python tools/build_hub_sync_profile.py --check
+uv run python tools/build_hub_sync_14_profile.py --check
 uv run python tools/build_edge_delivery_profile.py --check
 uv run python tools/build_openapi.py --check
 uv run python tools/build_fixtures.py --check

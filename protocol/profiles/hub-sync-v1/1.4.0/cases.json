@@ -1,0 +1,114 @@
+{
+  "cases": [
+    {
+      "expected_errors": [],
+      "id": "physical-changed-set",
+      "request_fixture": "changes-since-request-physical-v1",
+      "response_fixture": "changes-since-physical-changed-set-v1",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "capability not advertised"
+      ],
+      "id": "physical-changed-set-unsupported-client",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "base checkpoint mismatch"
+      ],
+      "id": "physical-changed-set-wrong-base",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "incomplete impacted root"
+      ],
+      "id": "physical-changed-set-missing-closure",
+      "response_fixture": "changes-since-physical-missing-closure-v1",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "physical pack binding mismatch"
+      ],
+      "id": "physical-changed-set-wrong-binding",
+      "response_fixture": "changes-since-physical-wrong-binding-v1",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "source vehicle mismatch"
+      ],
+      "id": "physical-changed-set-wrong-source",
+      "response_fixture": "changes-since-physical-wrong-source-v1",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "source binding mismatch"
+      ],
+      "id": "physical-changed-set-wrong-generation",
+      "response_fixture": "changes-since-physical-wrong-generation-v1",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "impacted root open/closed state mismatch"
+      ],
+      "id": "physical-changed-set-wrong-open-state",
+      "response_fixture": "changes-since-physical-wrong-open-state-v1",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "receipt violates 1.4 schema"
+      ],
+      "id": "physical-changed-set-over-limit",
+      "response_fixture": "changes-since-physical-over-limit-v1",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "pack digest mismatch"
+      ],
+      "id": "physical-changed-set-tampered-pack",
+      "status": 200
+    },
+    {
+      "expected_errors": [],
+      "id": "physical-changed-set-compacted-base",
+      "response_fixture": "changes-since-physical-rebase-v1",
+      "status": 409
+    },
+    {
+      "expected_errors": [],
+      "id": "physical-changed-set-full-rebase-over-64",
+      "response_fixture": "changes-since-physical-rebase-large-v1",
+      "status": 409
+    },
+    {
+      "expected_errors": [],
+      "id": "physical-absent-drive-surviving-position",
+      "response_fixture": "changes-since-physical-absent-drive-surviving-position-v1",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "incomplete impacted root"
+      ],
+      "id": "physical-absent-drive-missing-surviving-position",
+      "response_fixture": "changes-since-physical-absent-drive-missing-surviving-position-v1",
+      "status": 200
+    },
+    {
+      "expected_errors": [
+        "missing surviving-child recomputation scope"
+      ],
+      "id": "physical-absent-drive-missing-detach-scope",
+      "response_fixture": "changes-since-physical-absent-drive-missing-detach-scope-v1",
+      "status": 200
+    }
+  ]
+}

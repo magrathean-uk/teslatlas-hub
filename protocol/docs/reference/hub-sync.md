@@ -1,5 +1,43 @@
 # Hub changes-since contract
 
+[`hub-sync-v1@1.4.0`](../../profiles/hub-sync-v1/1.4.0/) adds a negotiated
+PhysicalV3 changed-set representation for a schema 2.2 base. A client selects
+the 1.4 bootstrap with `x-teslatlas-sync-profile: hub-sync-v1@1.4.0` and the
+existing `x-teslatlas-supported-schemas: 2.1,2.2` header. Its changes-since
+request pins the base manifest ID, exact signed manifest bytes SHA-256, receipt,
+sequence and source binding, and advertises
+`teslatlas-physical-v3-delta-v1`. A 1.3 client never receives the new
+`physical_changed_set` response kind. The 1.3 signed no-op remains valid; a
+1.4 signed 409 replacement supplies the exact 1.4 retry request.
+
+The 1.4 selector admits only a signed schema 2.2 PhysicalV3 bootstrap; the
+retained `2.1,2.2` header spelling does not permit a 2.1 base. Before a signed
+no-op or changed set, the Hub checks the base manifest ID, SHA-256 of the exact
+signed manifest bytes, receipt, sequence, and source binding. Only the immediate
+predecessor can receive a `physical_changed_set`; an older retained base gets a
+signed `409` complete schema 2.2 replacement.
+
+The 1.4 changed-set pack has complete typed rows for each upsert across the
+11-table, 168 mapped-source-field PhysicalV3 slice, plus explicit typed
+tombstones and unchanged context rows needed for impacted drive and charge
+roots. `addresses.raw` remains outside that slice. The signed affected-ID
+witness defines the projection recomputation scope. It may include unchanged
+dependents; context alone does not authorize a reader write. The signed target
+raw digest commits the Hub's all-history state. A phone retaining a 30-day
+window verifies and applies its bounded candidate separately, and uses the
+signed full replacement when widening to 365 days or when a delta cannot be
+admitted. The [field catalog](../../profiles/hub-sync-v1/1.4.0/physical-field-catalog.json),
+[pack contract](../../profiles/hub-sync-v1/1.4.0/physical-delta-pack-v1-contract.json),
+and [SQL layout](../../profiles/hub-sync-v1/1.4.0/physical-delta-pack-v1.sql)
+are the wire authority.
+
+Admission is bounded before pack fetch: at most 64 contiguous packs, 256 MiB
+compressed and 2 GiB uncompressed in total, 2,000,000 unique typed rows and
+tombstones (counting context once), and 10,000 impacted roots. Each pack is at
+most 16 MiB compressed and 256 MiB uncompressed. A valid change that cannot
+fit uses the signed `409` complete replacement; clients do not raise these
+limits locally.
+
 [`hub-sync-v1@1.3.0`](../../profiles/hub-sync-v1/1.3.0/) is the candidate,
 source-neutral successor to retained `hub-sync-v1@1.0.0`, `1.1.0`, and `1.2.0` candidates. It
 has no exact Hub product-version pin. A client selects its bootstrap

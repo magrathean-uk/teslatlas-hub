@@ -42,6 +42,20 @@ PREPARED_SCOPE = "map_months"
 PREPARED_MAP_STYLE = "route-stroke-v8-opaque"
 PREPARED_TILE_GEOMETRY_VERSION = "raster-v9-rounded-tile-px"
 PREPARED_ARTIFACT_SCHEMA_VERSION = 1
+PREPARED_ID_DOMAIN = "teslatlas-prepared-map-month-id-v1"
+
+
+def prepared_month_artifact_id(vehicle_id, manifest_id, receipt_id, sequence,
+                               month, from_ms, to_ms, algorithm_version):
+    # Every string member is constrained to ASCII without a newline by its
+    # wire schema. Decimal integers have no sign or leading zeroes.
+    fields = (PREPARED_ID_DOMAIN, vehicle_id, manifest_id, receipt_id,
+              str(sequence), month, str(from_ms), str(to_ms),
+              PREPARED_MAP_STYLE, PREPARED_TILE_GEOMETRY_VERSION,
+              algorithm_version)
+    preimage = ("\n".join(fields) + "\n").encode("ascii")
+    return "map-month-v1." + hashlib.sha256(preimage).hexdigest()
+
 PREPARED_SQLITE_APPLICATION_ID = 0x54544150  # ASCII TTAP
 PREPARED_SQLITE_USER_VERSION = 1
 PREPARED_PACK_SQL = """\
@@ -848,6 +862,16 @@ def bundle():
         "prepared_demo_000900",
         "packs/prepared-map-months-v1.sqlite.zst",
     )
+    selected_month = prepared_months[0]
+    prepared_identity_id = prepared_month_artifact_id(
+        vehicle_id, "manifest_demo_000900", "receipt_demo_000900", 900,
+        selected_month["month"], selected_month["from_ms"],
+        selected_month["to_ms"], "1.0.0")
+    prepared_identity, _, prepared_identity_pack = prepared_fixture(
+        "prepared-artefact-identified-month-v1", prepared_identity_id,
+        "packs/prepared-identified-month-v1.sqlite.zst",
+        receipt_months=[selected_month],
+    )
     prepared_ready_empty, _, prepared_ready_empty_pack = prepared_fixture(
         "prepared-artefact-ready-empty-v1",
         "prepared_demo_ready_empty",
@@ -937,6 +961,7 @@ def bundle():
                     manifest_2_1_example["manifest"], manifest_2_2_example["manifest"],
                     manifest_2_2_small_example["manifest"], noop_example["receipt"],
                     changes_noop_example["receipt"], prepared_example["receipt"],
+                    prepared_identity["receipt"],
                     prepared_ready_empty["receipt"],
                     prepared_bad_version["receipt"], prepared_span_mismatch["receipt"],
                     prepared_lineage_mismatch["receipt"],
@@ -1169,6 +1194,18 @@ def bundle():
         "status_tables": "status-tables.json",
         "prepared_artefact": "prepared-artefact.schema.json",
         "prepared_pack_contract": "prepared-pack-v1-contract.json",
+        "prepared_artifact_id_rule": {
+            "domain": PREPARED_ID_DOMAIN,
+            "encoding": "ASCII fields joined by LF, including a terminal LF; integers are unsigned base-10 with no leading zeroes",
+            "fields": ["domain", "vehicle_id", "source.input_manifest_id",
+                       "source.input_receipt_id", "source.input_sequence",
+                       "month", "window.from_ms", "window.to_ms", "map_style",
+                       "tile_geometry_version", "algorithm_version"],
+            "id": "map-month-v1. + lowercase hex SHA-256 of encoded fields",
+            "scope": "one full UTC month matching one exact canonical block; use the admitted head receipt, not a transient no-op receipt",
+            "unavailable": "Authenticated 404 means no compatible prepared month; the client builds locally",
+            "fixture": "examples/prepared-artefact-identified-month.json",
+        },
         "fixture_signing_keys": "fixture-signing-keys.json",
         "bootstrap_selector": {
             "header": BOOTSTRAP_PROFILE_HEADER,
@@ -1246,6 +1283,7 @@ def bundle():
       {"id": "sync-noop-signed", "validator": "noop", "vehicle_id": vehicle_id, "status": 200, "response_fixture": noop_example["fixture_id"], "expected_errors": []},
       {"id": "sync-noop-unavailable", "validator": "noop", "vehicle_id": vehicle_id, "status": 406, "response_fixture": noop_unavailable["fixture_id"], "expected_errors": []},
       {"id": "prepared-artefact-map-months", "validator": "prepared_artefact", "vehicle_id": vehicle_id, "status": 200, "response_fixture": prepared_example["fixture_id"], "expected_errors": []},
+      {"id": "prepared-artefact-identified-month", "validator": "prepared_pack", "vehicle_id": vehicle_id, "status": 200, "response_fixture": prepared_identity["fixture_id"], "expected_errors": []},
       {"id": "prepared-pack-map-months", "validator": "prepared_pack", "vehicle_id": vehicle_id, "status": 200, "response_fixture": prepared_example["fixture_id"], "expected_errors": []},
       {"id": "prepared-artefact-ready-empty", "validator": "prepared_artefact", "vehicle_id": vehicle_id, "status": 200, "response_fixture": prepared_ready_empty["fixture_id"], "expected_errors": []},
       {"id": "prepared-pack-ready-empty", "validator": "prepared_pack", "vehicle_id": vehicle_id, "status": 200, "response_fixture": prepared_ready_empty["fixture_id"], "expected_errors": []},
@@ -1307,6 +1345,7 @@ def bundle():
            "examples/schema-2-2-multi-chunk-manifest-noncontiguous.json": noncontiguous_manifest,
            "examples/sync-noop-unavailable-cacheable.json": cacheable_noop,
            "examples/prepared-artefact-map-months.json": prepared_example,
+           "examples/prepared-artefact-identified-month.json": prepared_identity,
            "examples/prepared-artefact-ready-empty.json": prepared_ready_empty,
            "examples/prepared-artefact-route-id-unsupported.json": prepared_route_id,
            "examples/prepared-pack-unsupported-payload-version.json": prepared_bad_version,
@@ -1333,6 +1372,7 @@ def bundle():
     encoded.update({
         "prepared-pack-v1.sql": PREPARED_PACK_SQL.encode(),
         prepared_example["pack_file"]: prepared_pack,
+        prepared_identity["pack_file"]: prepared_identity_pack,
         prepared_ready_empty["pack_file"]: prepared_ready_empty_pack,
         prepared_bad_version["pack_file"]: prepared_bad_version_pack,
         prepared_span_mismatch["pack_file"]: prepared_span_mismatch_pack,

@@ -21,11 +21,12 @@ It carries four distinct contract families with different identities:
   [`docs/reference/current-hub.md`](docs/reference/current-hub.md). It
   describes discovery, pairing, authenticated vehicle/current/drives reads,
   and credential rotation.
-- Candidate Hub changes-since: `hub-sync-v1@1.3.0`, documented in
+- Candidate Hub changes-since: `hub-sync-v1@1.4.0`, documented in
   [`docs/reference/hub-sync.md`](docs/reference/hub-sync.md). It defines
-  bootstrap checkpoints, signed changed-set and no-op receipts, vehicle-bound
-  signing-key discovery, and a multi-chunk rebase after compaction without a
-  product-version pin.
+  schema 2.2 PhysicalV3 bootstrap checkpoints, bounded signed changed sets,
+  no-op receipts, vehicle-bound signing-key discovery, and complete signed
+  replacement after compaction. The retained `1.3.0` profile also defines
+  signed prepared map months.
 - Rich semantic HTTP and event profiles: `1.0.0`, `1.1.0`, and `1.2.0`. The
   local conformance gate covers the current minor and its two predecessors.
   Their walkthrough is
@@ -69,8 +70,10 @@ or deployment instructions.
 - `profiles/hub-http-v1/1.1.0/` — current-Hub HTTP schemas, OpenAPI 3.1.0,
   examples, cases, and content hash. Distribute the complete directory because
   its OpenAPI references adjacent schema files.
-- `profiles/hub-sync-v1/1.3.0/` — changes-since, no-op, key discovery, pack,
-  status-table, and schema 2.2 multi-chunk manifest contracts.
+- `profiles/hub-sync-v1/1.4.0/` — negotiated schema 2.2 PhysicalV3 changed
+  sets, typed delta packs, bounded admission, no-op and full-replacement rebase.
+- `profiles/hub-sync-v1/1.3.0/` — retained changes-since, no-op, key discovery,
+  schema 2.2 multi-chunk manifests, and signed prepared map months.
 - `profiles/edge-delivery-v2/2.0.0/` — Edge pull, stable identity,
   sequence/gap, acknowledgement, and durable-consumer disposition contract.
 - `conformance/` — JSONL adapter protocol, executable cases, and runner.

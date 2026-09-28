@@ -1,0 +1,126 @@
+{
+  "access_windows": "Free 30-day projection may discard older raw and projected rows. A later Full 365-day widening uses signed full-head rehydrate. If the required parent/child closure is missing or exceeds limits, return signed 409 complete replacement; never silently invent context.",
+  "affected_projected_ids": {
+    "digest": "SHA-256 of ASCII table_name TAB decimal_entity_id TAB effect LF, sorted by table_name then numeric entity_id",
+    "effects": [
+      "recompute",
+      "delete"
+    ],
+    "rule": "Exact declared projection recomputation/write scope, not a claim that every value differs. The scope may conservatively include unchanged dependents. recompute means derive an eligible target row from the signed target closure, or remove it when the public projection policy omits it (for example an open drive); delete means the target raw row is absent. The App MUST keep delta-driven writes inside this scope, plus separately bounded local retention/access-window updates, and verify each affected root and relation is covered. Context rows alone never authorize writes.",
+    "tables": [
+      "cars",
+      "car_settings",
+      "drives",
+      "positions",
+      "charges",
+      "charge_samples",
+      "car_states",
+      "car_updates"
+    ]
+  },
+  "affected_scope_derivation": "Derive from both old and new raw relation edges: changed positions affect their row, old/new drive owners and drives/processes using them as endpoints; changed drives include old/new linked positions; drive deletion/opening detaches surviving positions; address/geofence changes affect old/new referring drives/processes; process/sample changes affect old/new sessions and all target charge samples; car/settings/updates affect singleton car and latest firmware; states/updates directly affect their projected IDs. Global settings changes are transported without a direct projected row.",
+  "aggregate_admission": "Before fetching, reject a receipt exceeding 64 contiguous packs, 256 MiB total compressed, 2 GiB total uncompressed, 2000000 unique typed rows/tombstones (context counted once) or 10000 impacted roots. Each pack remains at most 16 MiB compressed and 256 MiB uncompressed. Hub returns a signed 409 complete replacement when a valid changed set cannot fit; App never increases limits locally.",
+  "apply": "Verify signature, vehicle-bound key, exact base and target signed-manifest hashes, source binding, contiguous pack hashes, complete rows, tombstones, closure and exact witness. Apply to a private retained-window candidate and atomically activate checkpoint and candidate. Replay of an already activated target is idempotent; interruption preserves the previous readable checkpoint.",
+  "closure": "For each impacted drive or charging process include complete target root when present, every target position retaining its soft drive_id or every target charge sample with its required process parent, all needed address/geofence/position soft parents, and prior and target parent IDs for changed links. Mark unchanged rows context. Root child counts equal target raw references across all chunks. An absent drive has no raw root row but may retain surviving positions with drive_id set; include them and sign recompute intents so the reader detaches them. An absent charging process has zero surviving charge samples because that parent edge is required. Open/closed transitions require a root witness even when the target is omitted by reader policy.",
+  "field_catalog": "physical-field-catalog.json",
+  "format": "teslatlas-physical-v3-delta-v1",
+  "full_row_rule": "All 205 wire columns representing the 168 mapped source fields are present for every changed/context row; absent columns, partial updates, and addresses.raw are forbidden.",
+  "impacted_roots_digest": "SHA-256 of ASCII root_type TAB decimal_root_id TAB base_state TAB target_state TAB decimal_target_child_count LF, sorted by root_type then numeric root_id",
+  "map_identity": "Affected months include old and new UTC months touched by a changed drive, position or relation. Prepared months bind target manifest ID, receipt ID, sequence and Compute algorithm identity; stale base-head preparations are rejected.",
+  "media_type": "application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1",
+  "relation_edges": [
+    {
+      "from": "cars.settings_id",
+      "kind": "required",
+      "to": "car_settings.id"
+    },
+    {
+      "from": "drives.car_id",
+      "kind": "required",
+      "to": "cars.id"
+    },
+    {
+      "from": "positions.car_id",
+      "kind": "required",
+      "to": "cars.id"
+    },
+    {
+      "from": "positions.drive_id",
+      "kind": "soft",
+      "to": "drives.id"
+    },
+    {
+      "from": "charging_processes.car_id",
+      "kind": "required",
+      "to": "cars.id"
+    },
+    {
+      "from": "charging_processes.position_id",
+      "kind": "soft",
+      "to": "positions.id"
+    },
+    {
+      "from": "charges.charging_process_id",
+      "kind": "required",
+      "to": "charging_processes.id"
+    },
+    {
+      "from": "drives.start_position_id",
+      "kind": "soft",
+      "to": "positions.id"
+    },
+    {
+      "from": "drives.end_position_id",
+      "kind": "soft",
+      "to": "positions.id"
+    },
+    {
+      "from": "drives.start_address_id",
+      "kind": "soft",
+      "to": "addresses.id"
+    },
+    {
+      "from": "drives.end_address_id",
+      "kind": "soft",
+      "to": "addresses.id"
+    },
+    {
+      "from": "drives.start_geofence_id",
+      "kind": "soft",
+      "to": "geofences.id"
+    },
+    {
+      "from": "drives.end_geofence_id",
+      "kind": "soft",
+      "to": "geofences.id"
+    },
+    {
+      "from": "charging_processes.address_id",
+      "kind": "soft",
+      "to": "addresses.id"
+    },
+    {
+      "from": "charging_processes.geofence_id",
+      "kind": "soft",
+      "to": "geofences.id"
+    },
+    {
+      "from": "states.car_id",
+      "kind": "required",
+      "to": "cars.id"
+    },
+    {
+      "from": "updates.car_id",
+      "kind": "required",
+      "to": "cars.id"
+    }
+  ],
+  "row_roles": {
+    "changed": "full target row replacing or adding same typed ID",
+    "context": "unchanged complete target row used only to close an impacted root; its presence never implies a source edit"
+  },
+  "sql": "physical-delta-pack-v1.sql",
+  "target_raw_sha256": "Hub-signed all-history target commitment. A retained-window App candidate is not required to reproduce it; candidate digest and access-window availability are separate local evidence.",
+  "tombstones": "Typed raw deletion is explicit. An omitted raw ID means unchanged. Upsert/tombstone overlap and duplicate IDs across chunks are invalid. Deleting or opening a root requires recompute intents for surviving children that detach or change; tombstones are only for rows actually absent from the target source.",
+  "value_semantics": "physical-value-semantics.json"
+}

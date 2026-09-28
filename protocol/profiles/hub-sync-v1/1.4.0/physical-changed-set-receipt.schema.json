@@ -1,0 +1,271 @@
+{
+  "$defs": {
+    "receipt": {
+      "additionalProperties": false,
+      "properties": {
+        "affected_months": {
+          "items": {
+            "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$",
+            "type": "string"
+          },
+          "maxItems": 120,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "affected_projected_ids_count": {
+          "maximum": 2000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "affected_projected_ids_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base": {
+          "additionalProperties": false,
+          "properties": {
+            "manifest_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "manifest_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "receipt_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "2.2"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "manifest_id",
+            "receipt_id",
+            "manifest_sha256",
+            "sequence",
+            "schema_version"
+          ],
+          "type": "object"
+        },
+        "chunks": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "chunk_index": {
+                "maximum": 63,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pack": {
+                "additionalProperties": false,
+                "properties": {
+                  "compressed_bytes": {
+                    "maximum": 16777216,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "object_name": {
+                    "pattern": "^[a-z0-9][a-z0-9._/-]{0,1023}$",
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "object_name",
+                  "sha256",
+                  "compressed_bytes"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "chunk_index",
+              "pack"
+            ],
+            "type": "object"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "type": "array"
+        },
+        "impacted_roots_count": {
+          "maximum": 10000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "impacted_roots_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "physical_changed_set"
+        },
+        "payload_format": {
+          "const": "teslatlas-physical-v3-delta-v1"
+        },
+        "signature": {
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "const": "ed25519"
+            },
+            "key_id": {
+              "pattern": "^ed25519-sha256-[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "signature": {
+              "pattern": "^[A-Za-z0-9+/]{86}==$",
+              "type": "string"
+            },
+            "signed_payload_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "algorithm",
+            "key_id",
+            "signed_payload_sha256",
+            "signature"
+          ],
+          "type": "object"
+        },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "generation": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "installation_id": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            "selected_car_id": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "vehicle_id": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "installation_id",
+            "account_id",
+            "vehicle_id",
+            "generation",
+            "selected_car_id"
+          ],
+          "type": "object"
+        },
+        "target": {
+          "additionalProperties": false,
+          "properties": {
+            "manifest_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "manifest_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "receipt_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "2.2"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "manifest_id",
+            "receipt_id",
+            "manifest_sha256",
+            "sequence",
+            "schema_version"
+          ],
+          "type": "object"
+        },
+        "target_raw_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "total_compressed_bytes": {
+          "maximum": 268435456,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "total_rows": {
+          "maximum": 2000000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "total_uncompressed_bytes": {
+          "maximum": 2147483648,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "vehicle_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "payload_format",
+        "vehicle_id",
+        "source",
+        "base",
+        "target",
+        "target_raw_sha256",
+        "chunks",
+        "total_compressed_bytes",
+        "total_uncompressed_bytes",
+        "total_rows",
+        "affected_projected_ids_sha256",
+        "affected_projected_ids_count",
+        "impacted_roots_sha256",
+        "impacted_roots_count",
+        "affected_months",
+        "signature"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-sync-v1:1.4.0:receipt",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,0 +1,57 @@
+{
+  "fixture_id": "changes-since-physical-absent-drive-missing-surviving-position-v1",
+  "receipt": {
+    "affected_months": [
+      "2026-08",
+      "2026-09"
+    ],
+    "affected_projected_ids_count": 6,
+    "affected_projected_ids_sha256": "9254f8aea070ba3aa9f245950171ae507a886bacb59ac6616241a10991f00378",
+    "base": {
+      "manifest_id": "manifest_demo_000042",
+      "manifest_sha256": "f430601b7197404e69bc85bad960917e5ecec7f02604f52610dd023e9c3ffbc1",
+      "receipt_id": "receipt_demo_000042",
+      "schema_version": "2.2",
+      "sequence": 42
+    },
+    "chunks": [
+      {
+        "chunk_index": 0,
+        "pack": {
+          "compressed_bytes": 2991,
+          "object_name": "packs/negative/physical-absent-drive-missing-surviving-position.sqlite.zst",
+          "sha256": "9c294a414f26274020fc773cad1010fc408c4b62480fb64686eb3c9915741527"
+        }
+      }
+    ],
+    "impacted_roots_count": 2,
+    "impacted_roots_sha256": "4db584897ada78cfbdd2dcd2a190cd6c49d772a42f87ccc57f49552e6eea26c1",
+    "kind": "physical_changed_set",
+    "payload_format": "teslatlas-physical-v3-delta-v1",
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "hdWUJbHsaGRQ+LIPh5hLQFr6n6iiTTibQ9dbDjBXtMStjzmMOlMW5kKzbHAJojKIP8C1N+tOjO3fKc6z+WDyBg==",
+      "signed_payload_sha256": "ba2ffb68eb3e39c4b6b2fa01a7160c289e3b9869278bf42e0e7077aa7bd20ef2"
+    },
+    "source": {
+      "account_id": "22222222-2222-4222-8222-222222222222",
+      "generation": 1,
+      "installation_id": "11111111-1111-4111-8111-111111111111",
+      "selected_car_id": 1,
+      "vehicle_id": "33333333-3333-4333-8333-333333333333"
+    },
+    "target": {
+      "manifest_id": "manifest_demo_000043",
+      "manifest_sha256": "8b5ad2bc48c116cf300f5be011e69bdc0d18f8255e584ff57c8986edb6c43d80",
+      "receipt_id": "receipt_demo_000043",
+      "schema_version": "2.2",
+      "sequence": 43
+    },
+    "target_raw_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "total_compressed_bytes": 2991,
+    "total_rows": 5,
+    "total_uncompressed_bytes": 81920,
+    "vehicle_id": "33333333-3333-4333-8333-333333333333"
+  }
+}

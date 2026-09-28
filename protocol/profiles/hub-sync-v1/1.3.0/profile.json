@@ -35,6 +35,27 @@
   },
   "pack_sizing_rule": "Every compressed pack is 1 to 16 MiB inclusive. Writers SHOULD target at least 8 MiB for each non-final snapshot chunk. A complete small history, the final chunk, a changed set, or a prepared artefact MAY be smaller than 8 MiB.",
   "prepared_artefact": "prepared-artefact.schema.json",
+  "prepared_artifact_id_rule": {
+    "domain": "teslatlas-prepared-map-month-id-v1",
+    "encoding": "ASCII fields joined by LF, including a terminal LF; integers are unsigned base-10 with no leading zeroes",
+    "fields": [
+      "domain",
+      "vehicle_id",
+      "source.input_manifest_id",
+      "source.input_receipt_id",
+      "source.input_sequence",
+      "month",
+      "window.from_ms",
+      "window.to_ms",
+      "map_style",
+      "tile_geometry_version",
+      "algorithm_version"
+    ],
+    "fixture": "examples/prepared-artefact-identified-month.json",
+    "id": "map-month-v1. + lowercase hex SHA-256 of encoded fields",
+    "scope": "one full UTC month matching one exact canonical block; use the admitted head receipt, not a transient no-op receipt",
+    "unavailable": "Authenticated 404 means no compatible prepared month; the client builds locally"
+  },
   "prepared_pack_contract": "prepared-pack-v1-contract.json",
   "previous_profile": "hub-sync-v1@1.2.0",
   "product_version_binding": "none; this protocol profile has no exact Hub product-version pin",

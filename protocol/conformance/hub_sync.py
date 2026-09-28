@@ -11,6 +11,7 @@ import binascii
 import sqlite3
 import struct
 import tempfile
+from datetime import datetime, timezone
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -20,6 +21,18 @@ import zstandard
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = ROOT / "profiles/hub-sync-v1/1.3.0"
 PROFILE_ID = "hub-sync-v1@1.3.0"
+PREPARED_MONTH_ID_DOMAIN = "teslatlas-prepared-map-month-id-v1"
+
+
+def prepared_month_artifact_id(receipt, month):
+    source = receipt["source"]
+    window = receipt["window"]
+    fields = (PREPARED_MONTH_ID_DOMAIN, receipt["vehicle_id"],
+              source["input_manifest_id"], source["input_receipt_id"],
+              str(source["input_sequence"]), month, str(window["from_ms"]),
+              str(window["to_ms"]), receipt["map_style"],
+              receipt["tile_geometry_version"], receipt["algorithm_version"])
+    return "map-month-v1." + hashlib.sha256(("\n".join(fields) + "\n").encode("ascii")).hexdigest()
 
 
 class ContractError(ValueError):
@@ -392,6 +405,25 @@ def validate_prepared_artefact(value, vehicle_id, root=PROFILE):
     for span in spans["map_months"]:
         if span["from_ms"] >= span["to_ms"] or span["from_ms"] < window["from_ms"] or span["to_ms"] > window["to_ms"]:
             return ["prepared-artefact dirty span is outside window"]
+    if value["artifact_id"].startswith("map-month-v1."):
+        if len(spans["map_months"]) != 1:
+            return ["identified prepared artefact must contain one full UTC month"]
+        span = spans["map_months"][0]
+        try:
+            start = datetime.fromtimestamp(window["from_ms"] / 1000, timezone.utc)
+        except (OverflowError, ValueError):
+            return ["identified prepared artefact must contain one full UTC month"]
+        if (start.day, start.hour, start.minute, start.second, start.microsecond) != (1, 0, 0, 0, 0) or start.strftime("%Y-%m") != span["month"]:
+            return ["identified prepared artefact must contain one full UTC month"]
+        next_year = start.year + (start.month == 12)
+        next_month = start.month % 12 + 1
+        end = datetime(next_year, next_month, 1, tzinfo=timezone.utc)
+        if (window["to_ms"] != int(end.timestamp() * 1000)
+                or span["from_ms"] != window["from_ms"]
+                or span["to_ms"] != window["to_ms"]):
+            return ["identified prepared artefact must contain one full UTC month"]
+        if value["artifact_id"] != prepared_month_artifact_id(value, span["month"]):
+            return ["prepared artefact identity mismatch"]
     if value["generation"]["generated_at_ms"] < window["to_ms"]:
         return ["prepared-artefact generation predates window"]
     pack_errors = _validate_pack_limits([value["pack"]], root)
