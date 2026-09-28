@@ -23,6 +23,7 @@ REPO = Path(__file__).resolve().parents[1]
 ROOT_FILES = (
     "Dockerfile",
     "LICENSE",
+    "NOTICE",
     "README.md",
     "docs/legal/third-party-notices.md",
     "VERSION",
@@ -49,6 +50,7 @@ TREE_ROOTS = (
 )
 REQUIRED_PATHS = (
     "LICENSE",
+    "NOTICE",
     "README.md",
     "docs/legal/third-party-notices.md",
     "VERSION",

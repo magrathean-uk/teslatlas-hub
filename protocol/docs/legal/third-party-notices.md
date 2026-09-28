@@ -1,11 +1,14 @@
 # Third-party notices
 
-The Protocol contracts and local tooling are Apache-2.0 licensed; see
-`LICENSE`. The local development gate uses the exact dependency versions in
-`uv.lock`. Those packages are not redistributed in the developer source
-bundle. The existing declared licence identifiers are retained below for
-operator review. See [licensing](licensing.md) for the evidence boundary
-and the checks required before redistributing those dependencies.
+The Protocol's local tooling uses the third-party Python packages below, at the
+exact versions locked in `uv.lock`.
+
+The Protocol contracts and tooling are licensed under Apache-2.0; see
+[`LICENSE`](../../LICENSE). The packages are not redistributed in the developer
+source bundle. Each licence is the one the package declares in its
+distribution metadata or licence file, written as an SPDX identifier. See
+[licensing](licensing.md) for the checks required before redistributing a
+dependency.
 
 | Package | Locked version | Declared licence |
 | --- | --- | --- |
@@ -16,7 +19,7 @@ and the checks required before redistributing those dependencies.
 | cryptography | 50.0.1 | Apache-2.0 OR BSD-3-Clause |
 | fqdn | 1.6.0 | MPL-2.0 |
 | idna | 3.20 | BSD-3-Clause |
-| isoduration | 20.11.0 | MIT |
+| isoduration | 20.11.0 | ISC |
 | jsonpointer | 3.1.1 | BSD-3-Clause |
 | jsonschema | 4.26.0 | MIT |
 | jsonschema-path | 0.5.0 | Apache-2.0 |
@@ -30,7 +33,7 @@ and the checks required before redistributing those dependencies.
 | pydantic | 2.13.5 | MIT |
 | pydantic-core | 2.46.5 | MIT |
 | pydantic-settings | 2.15.0 | MIT |
-| python-dateutil | 2.9.0.post0 | Apache-2.0 OR BSD-3-Clause |
+| python-dateutil | 2.9.0.post0 | Apache-2.0 AND BSD-3-Clause |
 | python-dotenv | 1.2.3 | BSD-3-Clause |
 | PyYAML | 6.0.3 | MIT |
 | referencing | 0.37.0 | MIT |
@@ -46,6 +49,5 @@ and the checks required before redistributing those dependencies.
 | webcolors | 25.10.0 | BSD-3-Clause |
 | zstandard | 0.25.0 | BSD-3-Clause |
 
-This table is informational. When redistributing any dependency, obtain its
-source distribution or wheel and preserve the licence files shipped by that
-artifact.
+When redistributing any dependency, obtain its source distribution or wheel
+and preserve the licence files shipped by that artefact.

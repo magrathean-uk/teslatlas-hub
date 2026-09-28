@@ -3,10 +3,9 @@
 Teslatlas Protocol is licensed under the Apache License, Version 2.0.
 
 The controlling licence text is the unmodified Apache License 2.0 in the
-repository root [`LICENSE`](../../LICENSE). This guide does not modify the
-grant or add terms. Copyright and attribution are recorded in
-[`NOTICE`](../../NOTICE); MAGRATHEAN UK LTD holds the copyright. See the
-[company's legal page](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)
+repository root [`LICENSE`](../../LICENSE). Copyright and attribution are
+recorded in [`NOTICE`](../../NOTICE); MAGRATHEAN UK LTD holds the copyright.
+See the [company's legal page](https://github.com/magrathean-uk/.github/blob/main/LEGAL.md)
 for the licensing, trade mark and contribution terms that apply across
 Magrathean repositories.
 
@@ -19,13 +18,14 @@ rights and licence terms.
 ## Redistribution and notices
 
 Redistributors must comply with Apache-2.0, including carrying the licence and
-preserving applicable copyright, patent, trademark, and attribution notices.
-Apache-2.0 does not grant trademark permission except as its terms allow.
+the `NOTICE` file and preserving the applicable copyright, patent, trade mark
+and attribution notices. Apache-2.0 grants no trade mark permission beyond what
+its terms allow.
 
-[`third-party-notices.md`](third-party-notices.md) is an informational
-dependency list. The three entries added to close the previous inventory gap
-were checked against the licence files in the exact installed distributions
-and the matching tagged upstream sources:
+[`third-party-notices.md`](third-party-notices.md) lists the Python packages
+locked in `uv.lock` for the local tooling. The following licences were checked
+against the licence files in the exact installed distributions and, where
+linked, the matching tagged upstream sources:
 
 - `cryptography 50.0.1`: `Apache-2.0 OR BSD-3-Clause`, with the tagged
   [licence selector](https://github.com/pyca/cryptography/blob/50.0.1/LICENSE).
@@ -36,12 +36,10 @@ and the matching tagged upstream sources:
 - `zstandard 0.25.0`: `BSD-3-Clause`, checked against the `LICENSE` shipped in
   the exact installed distribution used by the local profile generator.
 
-This closes the documentation inventory gap for the locked artifacts; it is
-not legal clearance and does not establish the contents or obligations of a
-different wheel, source distribution, build, or version. The table is not a
-substitute for the licence files supplied with an artifact. Before
-redistributing a dependency, inspect that exact artifact and preserve every
-licence, notice, attribution, and other required material it ships.
+These checks cover only the locked versions. A different wheel, source
+distribution, build or version can carry different terms. Before
+redistributing a dependency, inspect that exact artefact and preserve every
+licence, notice, attribution and other required material it ships.
 
 ## Contributions
 
