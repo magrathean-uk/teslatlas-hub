@@ -23,6 +23,16 @@ adjacent JSON Schema files; use its own profile documents and
 | Canonical JSON | [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html) | projection and metadata hash inputs |
 | Version syntax | [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html) | protocol and capability version numbers |
 
+### Edge delivery key order
+
+The Edge delivery `2.0.0` profile names RFC 8785 for record identity. Its
+record IDs sort object keys by UTF-8 bytes (Unicode code point order), not by
+the UTF-16 code units RFC 8785 specifies. The two orders differ only when two
+keys first differ at a character in U+E000 to U+FFFF on one side and a
+character above U+FFFF on the other. Existing record IDs depend on the UTF-8
+order, so a `2.0.0` implementation MUST use it. A later profile version will
+state this in the profile itself.
+
 ## Project policies
 
 These rules are Teslatlas contract choices, not requirements imposed by the
