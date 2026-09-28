@@ -70,6 +70,20 @@ def _entity_id(hass: HomeAssistant, unique_id: str) -> str:
     return entity_id
 
 
+def _device_by_identifier(
+    hass: HomeAssistant,
+    identifier: tuple[str, str],
+    config_entry_id: str,
+):
+    device_registry = dr.async_get(hass)
+    get_device_by_identifier = getattr(
+        device_registry, "async_get_device_by_identifier", None
+    )
+    if get_device_by_identifier is not None:
+        return get_device_by_identifier(identifier, config_entry_id)
+    return device_registry.async_get_device(identifiers={identifier})
+
+
 async def test_setup_creates_hub_and_vehicle_devices_with_stable_entities(
     hass: HomeAssistant,
     caplog,
@@ -78,11 +92,11 @@ async def test_setup_creates_hub_and_vehicle_devices_with_stable_entities(
     client = FixtureHubClient()
     entry = await _setup(hass, client)
 
-    alpha_device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, "hub-fixture:vehicle-alpha")}
+    alpha_device = _device_by_identifier(
+        hass, (DOMAIN, "hub-fixture:vehicle-alpha"), entry.entry_id
     )
-    beta_device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, "hub-fixture:vehicle-beta")}
+    beta_device = _device_by_identifier(
+        hass, (DOMAIN, "hub-fixture:vehicle-beta"), entry.entry_id
     )
     assert alpha_device is not None
     assert alpha_device.name == "Fixture Alpha"
@@ -159,8 +173,8 @@ async def test_poll_adds_new_vehicle_entities_once(
     )
     await hass.async_block_till_done()
 
-    gamma_device = dr.async_get(hass).async_get_device(
-        identifiers={(DOMAIN, "hub-fixture:vehicle-gamma")}
+    gamma_device = _device_by_identifier(
+        hass, (DOMAIN, "hub-fixture:vehicle-gamma"), entry.entry_id
     )
     assert gamma_device is not None
     assert gamma_device.name == "Fixture Gamma"
@@ -251,10 +265,9 @@ async def test_dynamic_vehicle_survives_restart_while_absent_without_duplicates(
     entry.runtime_data.async_set_updated_data(with_dynamic)
     await hass.async_block_till_done()
 
-    device_registry = dr.async_get(hass)
     entity_registry = er.async_get(hass)
     device_identifier = (DOMAIN, f"hub-fixture:{dynamic_vehicle_id}")
-    dynamic_device = device_registry.async_get_device(identifiers={device_identifier})
+    dynamic_device = _device_by_identifier(hass, device_identifier, entry.entry_id)
     assert dynamic_device is not None
     original_device_registry_id = dynamic_device.id
     original_entities = {
@@ -281,7 +294,7 @@ async def test_dynamic_vehicle_survives_restart_while_absent_without_duplicates(
         assert await hass.config_entries.async_setup(entry.entry_id) is True
     await hass.async_block_till_done()
 
-    restarted_device = device_registry.async_get_device(identifiers={device_identifier})
+    restarted_device = _device_by_identifier(hass, device_identifier, entry.entry_id)
     assert restarted_device is not None
     assert restarted_device.id == original_device_registry_id
     restarted_entities = {
@@ -297,7 +310,7 @@ async def test_dynamic_vehicle_survives_restart_while_absent_without_duplicates(
 
     entry.runtime_data.async_set_updated_data(with_dynamic)
     await hass.async_block_till_done()
-    returned_device = device_registry.async_get_device(identifiers={device_identifier})
+    returned_device = _device_by_identifier(hass, device_identifier, entry.entry_id)
     assert returned_device is not None
     assert returned_device.id == original_device_registry_id
     returned_entities = {

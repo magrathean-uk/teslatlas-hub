@@ -7,7 +7,9 @@ Keep three version identities distinct:
 | Identity | Recorded value | Meaning |
 | --- | --- | --- |
 | Integration | `2026.36.2` | Candidate component version |
-| Home Assistant | `2026.8.3` | Pinned development and Compose baseline |
+| Home Assistant development | `2026.9.4` | Locked Python test environment |
+| Home Assistant minimum | `2026.8.3` | Public integration compatibility floor in `manifest.json` and `hacs.json` |
+| Compose example | `2026.8.3` | Pinned isolated evaluation image |
 | Hub HTTP profile | `hub-http-v1@1.0.0` | Embedded protocol contract |
 
 [compatibility/hub.json](../../compatibility/hub.json) accepts only the exact profile hash, tested Hub source fingerprint and named synthetic Debian 13 ARM64 Container receipts. A matching calendar version alone does not establish compatibility.

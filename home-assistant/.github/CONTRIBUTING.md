@@ -6,7 +6,7 @@ Keep changes focused on the public Hub integration. Report a reproducible bug th
 
 ## Local environment
 
-[pyproject.toml](../pyproject.toml) requires Python `>=3.14.2` and uses `uv`. The locked development environment includes Home Assistant `2026.8.3`, Ruff `0.16.5` and the Home Assistant pytest plugin. For a standalone checkout, run these from the repository root. In the coordinated Teslatlas workspace, use its current parent execution rules for these commands:
+[pyproject.toml](../pyproject.toml) requires Python `>=3.14.2` and uses `uv`. The locked development environment uses Home Assistant `2026.9.4`, `pytest-homeassistant-custom-component` `0.13.367` and Ruff `0.16.9`. For a standalone checkout, run these from the repository root. In the coordinated Teslatlas workspace, use its current parent execution rules for these commands:
 
 ```sh
 uv sync --locked --group dev
