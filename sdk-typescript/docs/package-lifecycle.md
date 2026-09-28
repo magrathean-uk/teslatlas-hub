@@ -5,8 +5,8 @@ select a moving catalog, start Hub, or publish a package.
 
 ## Install, update, rollback and removal
 
-Run from a clean source checkout at the exact catalog commit with Node `26.7.0`
-and npm `11.19.0`:
+Run from a clean source checkout at the exact catalog commit with Node `26.10.0`
+and npm `12.1.0`:
 
 ```bash
 npm run gate:package-lifecycle -- \
@@ -32,7 +32,7 @@ and verifies each archive against its separate immutable, independently
 accepted admission receipt and frozen source export. Each receipt binds the
 exact commit, source-manifest SHA-256 and file count, archive SHA-256 and member
 count, package version, toolchain and review verdict. The candidate must use
-Node `26.7.0` and npm `11.19.0`; the historical 83-member archive
+Node `26.10.0` and npm `12.1.0`; the historical 83-member archive
 `42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7`
 is explicitly ineligible for the changed candidate.
 

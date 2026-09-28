@@ -137,7 +137,7 @@ describe("package lifecycle provenance", () => {
       memberCount: 83,
       packageName: "@teslatlas/sdk" as const,
       packageVersion: "2026.36.2",
-      packageManager: "npm@11.19.0",
+      packageManager: "npm@12.1.0",
     };
     const admission = await admissionReceipt(root, "candidate", source, archive);
 
@@ -387,7 +387,7 @@ async function packageArchive(
       name: "@teslatlas/sdk",
       version,
       private: true,
-      packageManager: "npm@11.19.0",
+      packageManager: "npm@12.1.0",
     })}\n`,
   );
   const entries = [
@@ -465,7 +465,7 @@ async function admissionReceipt(
       archive_sha256: archive.sha256,
       member_count: archive.memberCount,
     },
-    toolchain: { node: "26.7.0", npm: "11.19.0" },
+    toolchain: { node: "26.10.0", npm: "12.1.0" },
     review: {
       verdict: "ACCEPT",
       reviewer_model: "GPT-5.6 Sol",

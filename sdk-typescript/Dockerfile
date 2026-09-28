@@ -3,7 +3,7 @@
 # This Dockerfile is intentionally package-only. scripts/run-docker-package-gate.mjs
 # creates a private temporary context containing the exact reviewed npm archive and
 # bounded consumer files; repository source is never part of the build context.
-FROM --platform=linux/arm64 node:26.7.0-bookworm-slim@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32 AS package-check
+FROM --platform=linux/arm64 node:26.10.0-bookworm-slim@sha256:662933cf47f013bc8e4beb31a6116448427a82057ba7c42c97e4c5ba766504c2 AS package-check
 
 ARG BUILDPLATFORM
 ARG TARGETPLATFORM
@@ -18,9 +18,9 @@ WORKDIR /consumer
 RUN test "$BUILDPLATFORM" = "linux/arm64" \
     && test "$TARGETPLATFORM" = "linux/arm64" \
     && test "$(uname -m)" = "aarch64" \
-    && test "$(node --version)" = "v26.7.0" \
-    && npm install --global npm@11.19.0 \
-    && test "$(npm --version)" = "11.19.0"
+    && test "$(node --version)" = "v26.10.0" \
+    && npm install --global npm@12.1.0 \
+    && test "$(npm --version)" = "12.1.0"
 
 COPY teslatlas-sdk.tgz /tmp/teslatlas-sdk.tgz
 COPY package-smoke.mjs ./package-smoke.mjs

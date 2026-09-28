@@ -17,12 +17,12 @@ describe("F3/F6 platform and package gates", () => {
       registry: "registry-1.docker.io",
       repository: "library/node",
       official_image: true,
-      index_digest: "sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32",
+      index_digest: "sha256:662933cf47f013bc8e4beb31a6116448427a82057ba7c42c97e4c5ba766504c2",
       linux_arm64_v8_child_digest:
-        "sha256:2b028cd57303b2761d24173789c85a013558d6cf20e78f51723385f368b6e34d",
+        "sha256:131c9695bc02b79f4dbb1ca360f5822d5f67f248a621498c22de5883f94122d0",
     });
     expect(dockerfile).toContain(
-      `node:26.7.0-bookworm-slim@${imageLock.index_digest} AS package-check`,
+      `node:26.10.0-bookworm-slim@${imageLock.index_digest} AS package-check`,
     );
     expect(dockerfile).toContain("FROM --platform=linux/arm64");
     expect(dockerfile).toContain('test "$BUILDPLATFORM" = "linux/arm64"');
@@ -51,7 +51,7 @@ describe("F3/F6 platform and package gates", () => {
       await readFile(new URL("../../package.json", import.meta.url), "utf8"),
     );
 
-    expect(support.reproducibility_toolchain).toEqual({ node: "26.7.0", npm: "11.19.0" });
+    expect(support.reproducibility_toolchain).toEqual({ node: "26.10.0", npm: "12.1.0" });
     expect(support.accepted_runtime_evidence).toEqual([
       {
         os: "macOS 27",

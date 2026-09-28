@@ -28,7 +28,7 @@ success or failure.
 
 ## Invocation with a fresh handoff
 
-Use the pinned Node 26.7.0 executable on `PATH`. The paths below are placeholders for the fresh handoff.
+Use the pinned Node 26.10.0 executable on `PATH`. The paths below are placeholders for the fresh handoff.
 
 ```sh
 TESLATLAS_HUB_HTTP_CONFIG=/private/runtime/mac3-sdk-descriptor.json \

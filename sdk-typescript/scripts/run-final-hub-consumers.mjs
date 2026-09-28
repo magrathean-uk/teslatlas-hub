@@ -245,8 +245,8 @@ function required(environment, name) {
 
 function assertExactToolchain() {
   const npmVersion = run(npmExecutable, ["--version"], repositoryRoot).trim();
-  if (process.version !== "v26.7.0" || npmVersion !== "11.19.0") {
-    throw new Error("final consumer gate requires exact Node v26.7.0 and npm 11.19.0");
+  if (process.version !== "v26.10.0" || npmVersion !== "12.1.0") {
+    throw new Error("final consumer gate requires exact Node v26.10.0 and npm 12.1.0");
   }
 }
 

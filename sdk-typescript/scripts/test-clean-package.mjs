@@ -5,6 +5,7 @@ import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "no
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeNpmPackReport } from "./npm-pack-report.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = await mkdtemp(join(tmpdir(), "teslatlas-clean-package-"));
@@ -58,7 +59,10 @@ try {
       await writeFile(join(source, "dist/obsolete.js"), "throw new Error('stale runtime');");
     }
     run(process.execPath, ["scripts/build.mjs"], source);
-    const [report] = JSON.parse(run(npmExecutable, ["pack", "--json"], source));
+    const report = normalizeNpmPackReport(
+      JSON.parse(run(npmExecutable, ["pack", "--json"], source)),
+      "@teslatlas/sdk",
+    );
     const tarball = join(source, report.filename);
     tarballPaths.push(tarball);
     tarballs.push(await readFile(tarball));

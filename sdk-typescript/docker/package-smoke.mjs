@@ -12,10 +12,10 @@ const manifest = JSON.parse(
 if (
   manifest.name !== "@teslatlas/sdk" ||
   manifest.version !== "2026.36.2" ||
-  manifest.packageManager !== "npm@11.19.0" ||
+  manifest.packageManager !== "npm@12.1.0" ||
   manifest.teslatlasSupport?.policy !== "evidence-only" ||
-  manifest.teslatlasSupport?.reproducibilityToolchain?.node !== "26.7.0" ||
-  manifest.teslatlasSupport?.reproducibilityToolchain?.npm !== "11.19.0" ||
+  manifest.teslatlasSupport?.reproducibilityToolchain?.node !== "26.10.0" ||
+  manifest.teslatlasSupport?.reproducibilityToolchain?.npm !== "12.1.0" ||
   Object.values(manifest.teslatlasSupport?.declaredFloors ?? {}).some((value) => value !== null)
 ) {
   throw new Error("installed SDK metadata is not the reviewed candidate");

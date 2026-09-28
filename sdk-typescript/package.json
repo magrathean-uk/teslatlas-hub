@@ -6,12 +6,12 @@
   "license": "Apache-2.0",
   "type": "module",
   "sideEffects": false,
-  "packageManager": "npm@11.19.0",
+  "packageManager": "npm@12.1.0",
   "teslatlasSupport": {
     "policy": "evidence-only",
     "reproducibilityToolchain": {
-      "node": "26.7.0",
-      "npm": "11.19.0"
+      "node": "26.10.0",
+      "npm": "12.1.0"
     },
     "acceptedRuntimeEvidence": [
       {
@@ -31,12 +31,12 @@
   "devEngines": {
     "runtime": {
       "name": "node",
-      "version": "26.7.0",
+      "version": "26.10.0",
       "onFail": "error"
     },
     "packageManager": {
       "name": "npm",
-      "version": "11.19.0",
+      "version": "12.1.0",
       "onFail": "error"
     }
   },
@@ -105,14 +105,14 @@
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run protocol:check && npm run build && npm run test && npm run example:node && npm run pack:check && npm run test:package"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.11",
-    "@types/node": "26.4.0",
-    "@vitest/browser-playwright": "4.1.11",
+    "@biomejs/biome": "2.5.14",
+    "@types/node": "26.6.3",
+    "@vitest/browser-playwright": "5.0.2",
     "openapi-typescript": "7.13.0",
-    "playwright": "1.62.1",
+    "playwright": "1.63.0",
     "typescript": "5.9.3",
-    "vite": "8.2.2",
-    "vitest": "4.1.11"
+    "vite": "8.3.1",
+    "vitest": "5.0.2"
   },
   "dependencies": {
     "ajv": "8.20.0",

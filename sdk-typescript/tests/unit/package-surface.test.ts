@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import manifest from "../../package.json" with { type: "json" };
 import { describe, expect, it } from "vitest";
+import manifest from "../../package.json" with { type: "json" };
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -78,7 +78,16 @@ describe("package surface", () => {
       cwd: repositoryRoot,
       encoding: "utf8",
     });
-    const reports = JSON.parse(result.stdout) as Array<{ files?: Array<{ path?: string }> }>;
+    const parsed = JSON.parse(result.stdout) as
+      | Array<{ name?: string; files?: Array<{ path?: string }> }>
+      | Record<string, { name?: string; files?: Array<{ path?: string }> }>;
+    const reports = Array.isArray(parsed)
+      ? parsed
+      : Object.keys(parsed).length === 1 && Object.hasOwn(parsed, "@teslatlas/sdk")
+        ? [parsed["@teslatlas/sdk"]]
+        : [];
+    expect(reports).toHaveLength(1);
+    expect(reports[0]?.name).toBe("@teslatlas/sdk");
     const files = new Set(reports[0]?.files?.map((entry) => entry.path).filter(isString));
 
     expect(files.has("docs/compatibility.md")).toBe(true);

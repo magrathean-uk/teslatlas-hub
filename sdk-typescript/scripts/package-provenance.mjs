@@ -652,9 +652,9 @@ export async function validateReviewedPackageBinding({
   }
   if (
     role === "candidate" &&
-    (receipt.toolchain.node !== "26.7.0" || receipt.toolchain.npm !== "11.19.0")
+    (receipt.toolchain.node !== "26.10.0" || receipt.toolchain.npm !== "12.1.0")
   ) {
-    throw new Error("candidate receipt requires exact Node 26.7.0 and npm 11.19.0");
+    throw new Error("candidate receipt requires exact Node 26.10.0 and npm 12.1.0");
   }
   return {
     role,

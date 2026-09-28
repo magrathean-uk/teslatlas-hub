@@ -57,8 +57,8 @@ rotation use normal Web PKI, require an exact allowlisted origin and real
 failures as generic Fetch errors. The SDK does not perform mDNS discovery,
 background polling, or automatic reconnect/rotation.
 
-The exact reproducibility tuple is Node 26.7.0 and npm 11.19.0. Current accepted
-runtime evidence is Node 26.7.0 and Chrome 153 on macOS 27; no broader Node,
+The current reproducibility tuple is Node 26.10.0 and npm 12.1.0. Current accepted
+runtime evidence remains Node 26.7.0 and Chrome 153 on macOS 27; no broader Node,
 browser, or operating-system floor is claimed by that evidence.
 `tools/platform-support.json` encodes this as evidence with null declared
 Node/npm/browser floors; null means unaccepted, not unlimited support. The historical 2026-09-20 Docker receipt records a bounded package-only pass; see [Docker](docker.md). The `acceptance_boundary` string in `tools/platform-support.json` still says that lane is unrun and predates that receipt. Neither record establishes current final-Hub acceptance. New runtime claims need exact-source receipts.

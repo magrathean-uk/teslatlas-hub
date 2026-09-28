@@ -2,8 +2,8 @@
   "schema_version": 1,
   "policy": "evidence-only",
   "reproducibility_toolchain": {
-    "node": "26.7.0",
-    "npm": "11.19.0"
+    "node": "26.10.0",
+    "npm": "12.1.0"
   },
   "accepted_runtime_evidence": [
     {

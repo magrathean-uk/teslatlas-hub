@@ -29,7 +29,7 @@ def context_for(module):
         "runtime_ref": module.RUNTIME_REF,
         "runtime_kind": "node-process" if module.ADAPTER_ID.endswith("node") else "browser-process",
         "platform": {"os": "macOS", "architecture": "arm64"},
-        "tool_versions": {"node": "v26.7.0"} if module.ADAPTER_ID.endswith("node") else {"node": "v26.7.0", "chromium": "Chromium 152"},
+        "tool_versions": {"node": "v26.10.0"} if module.ADAPTER_ID.endswith("node") else {"node": "v26.10.0", "chromium": "Chromium 152"},
         "transport": {"kind": "node-undici-diagnostics-channel" if module.ADAPTER_ID.endswith("node") else "Chromium CDP Network"},
         "artifact": {
             "role": module.ARTIFACT_ROLE,

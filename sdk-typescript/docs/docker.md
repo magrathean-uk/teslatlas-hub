@@ -3,17 +3,17 @@
 Docker is a native Linux ARM64 package-consumer lane for this private SDK. It
 does not build from repository source, publish an image, or start a Hub.
 
-The base is the official Node `26.7.0-bookworm-slim` OCI index pinned at
-`sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32`.
+The base is the official Node `26.10.0-bookworm-slim` OCI index pinned at
+`sha256:662933cf47f013bc8e4beb31a6116448427a82057ba7c42c97e4c5ba766504c2`.
 The registry index readback contains Linux ARM64/v8 child
-`sha256:2b028cd57303b2761d24173789c85a013558d6cf20e78f51723385f368b6e34d`.
+`sha256:131c9695bc02b79f4dbb1ca360f5822d5f67f248a621498c22de5883f94122d0`.
 [`tools/node-image-lock.json`](../tools/node-image-lock.json) records that
 provenance. This registry readback is not a build or runtime pass.
 
 ## Run the lane
 
-First create the clean deterministic archive with the exact Node `26.7.0` and
-npm `11.19.0` toolchain and record its SHA-256. Then, on a native Linux ARM64
+First create the clean deterministic archive with the exact Node `26.10.0` and
+npm `12.1.0` toolchain and record its SHA-256. Then, on a native Linux ARM64
 Docker engine, run:
 
 ```bash
