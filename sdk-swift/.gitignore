@@ -2,3 +2,5 @@
 .swiftpm/
 DerivedData/
 *.xcresult
+__pycache__/
+*.pyc
