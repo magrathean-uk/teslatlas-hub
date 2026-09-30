@@ -142,6 +142,60 @@ final class CurrentHubClientTests: XCTestCase {
     XCTAssertEqual(object, ["secret": String(repeating: "0", count: 64), "device_name": "Swift Test"])
   }
 
+  func testClaimAcceptsEncodedBodyAtProfileLimit() async throws {
+    let invitation = try currentHubInvitation()
+    let emptyBody = try JSONSerialization.data(
+      withJSONObject: ["secret": invitation.secret, "device_name": ""],
+      options: [.sortedKeys]
+    )
+    let deviceName = String(repeating: "a", count: 4_096 - emptyBody.count)
+    let (client, transport, _) = try await makeCurrentHubClient(
+      credential: nil,
+      additionalResponses: [
+        CurrentHubStubResponse(body: futureClaimResponse(token: CurrentHubTestData.tokenA))
+      ]
+    )
+
+    _ = try await client.claim(invitation: invitation, deviceName: deviceName)
+
+    let requests = await transport.requests()
+    XCTAssertEqual(requests.count, 2)
+    XCTAssertEqual(requests.last?.httpBody?.count, 4_096)
+  }
+
+  func testClaimRejectsOversizedEncodedBodiesBeforeSendingSecret() async throws {
+    let invitation = try currentHubInvitation()
+    let emptyBody = try JSONSerialization.data(
+      withJSONObject: ["secret": invitation.secret, "device_name": ""],
+      options: [.sortedKeys]
+    )
+    let names = [
+      String(repeating: "a", count: 4_097 - emptyBody.count),
+      String(repeating: "é", count: 2_100),
+      String(repeating: "\"", count: 2_048),
+    ]
+    let (client, transport, store) = try await makeCurrentHubClient(credential: nil)
+    let before = await transport.requests().count
+
+    for deviceName in names {
+      await assertCurrentHubError(
+        try await client.claim(invitation: invitation, deviceName: deviceName)
+      ) { error in
+        XCTAssertEqual(
+          error,
+          .invalidRequest("pairing claim request exceeds 4096-byte profile bound")
+        )
+      }
+    }
+
+    let after = await transport.requests().count
+    let saveCount = await store.saveCount()
+    let leafPins = await transport.leafPins()
+    XCTAssertEqual(after, before)
+    XCTAssertEqual(saveCount, 0)
+    XCTAssertTrue(leafPins.isEmpty)
+  }
+
   func testClaimAcceptsInvitationWhosePublicURLHasATrailingSlash() async throws {
     let invitation = try JSONDecoder().decode(
       CurrentHubInvitation.self,

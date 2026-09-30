@@ -159,13 +159,17 @@ public actor CurrentHubClient {
     else {
       throw CurrentHubError.invalidRequest("device name is empty, too long, or contains control characters")
     }
-    var request = request(path: "/v1/pairings/\(invitation.pairingID.uuidString.lowercased())/claim")
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.httpBody = try JSONSerialization.data(
+    let body = try JSONSerialization.data(
       withJSONObject: ["secret": invitation.secret, "device_name": deviceName],
       options: [.sortedKeys]
     )
+    guard body.count <= 4_096 else {
+      throw CurrentHubError.invalidRequest("pairing claim request exceeds 4096-byte profile bound")
+    }
+    var request = request(path: "/v1/pairings/\(invitation.pairingID.uuidString.lowercased())/claim")
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = body
     guard let pinningTransport = transport as? any CurrentHubInvitationPinningTransport else {
       throw CurrentHubError.invalidRequest(
         "current-Hub claim transport must own invitation leaf pin validation"
