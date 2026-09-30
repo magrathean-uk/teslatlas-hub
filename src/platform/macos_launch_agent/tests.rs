@@ -1,5 +1,92 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#[test]
+fn standalone_preflight_allows_only_known_v66_forward_upgrade_without_writes() {
+    use crate::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
+    let temporary = crate::private_tempdir().unwrap();
+    let data_dir = temporary.path().join("state");
+    let config = source_run_config(temporary.path(), &data_dir);
+    let store = HubStore::initialize(&data_dir).unwrap();
+    let source = store
+        .register_source(&SourceDescriptor::new("teslamate", "preflight-fixture"), 1)
+        .unwrap();
+    let vehicle = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "eid:42"), 2)
+        .unwrap();
+    store.append_observation(&ObservationInput { source_id: source.source_id, vehicle_id: vehicle.vehicle_id,
+        observed_at_ms: 3, payload: serde_json::json!({"record_type":"owner_api_vehicle_data_v1","fixture":true}) },4).unwrap();
+    let before_records = store
+        .current_observations_for_vehicle(vehicle.vehicle_id)
+        .unwrap();
+    let connection = store.open().unwrap();
+    let schema: String = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE name='current_observations'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let schema66 = schema
+        .replacen("current_observations", "current_v66", 1)
+        .replace(", 'teslamate_position_v1'", "");
+    assert!(!schema66.contains("teslamate_position_v1"));
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {schema66};
+        INSERT INTO current_v66 SELECT * FROM current_observations;
+        DROP TABLE current_observations; ALTER TABLE current_v66 RENAME TO current_observations;
+        PRAGMA user_version=66; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);"
+        ))
+        .unwrap();
+    drop(connection);
+    let before_bytes = fs::read(config.database_path()).unwrap();
+    assert!(matches!(
+        HubStore::open_read_only(&data_dir),
+        Err(crate::db::StoreError::UnsupportedSchema(66))
+    ));
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
+    assert_eq!(fs::read(config.database_path()).unwrap(), before_bytes);
+    let connection = rusqlite::Connection::open(config.database_path()).unwrap();
+    assert_eq!(
+        connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
+            .unwrap(),
+        66
+    );
+    drop(connection);
+    // The same initialization used by ordinary Serve owns the actual migration.
+    let migrated = HubStore::initialize(&data_dir).unwrap();
+    assert_eq!(
+        migrated
+            .current_observations_for_vehicle(vehicle.vehicle_id)
+            .unwrap(),
+        before_records
+    );
+    let connection = migrated.open().unwrap();
+    assert_eq!(
+        connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
+            .unwrap(),
+        67
+    );
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
+    for unsupported in [65_i32, 68] {
+        connection
+            .pragma_update(None, "user_version", unsupported)
+            .unwrap();
+        assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
+        assert_eq!(
+            connection
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
+                .unwrap(),
+            unsupported
+        );
+    }
+    connection.pragma_update(None, "user_version", 66).unwrap();
+    connection.pragma_update(None, "application_id", 0).unwrap();
+    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
+}
+
 use super::*;
 use crate::{
     config::{CollectorProvider, EdgeCollectorConfig, HubConfig, TlsListenerConfig},

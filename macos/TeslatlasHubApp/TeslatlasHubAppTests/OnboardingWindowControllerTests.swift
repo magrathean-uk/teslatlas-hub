@@ -247,6 +247,32 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(cancel.isEnabled)
     }
 
+    func testResumedHistoryOnlyHandoverUsesOfflineAcknowledgement() throws {
+        let home = FileManager.default.temporaryDirectory
+            .appendingPathComponent("teslatlas-hub-history-resume-\(UUID().uuidString)",
+                                    isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let folder = home.appendingPathComponent("Library/Application Support/Teslatlas Hub")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try #"{"phase":"awaiting_handover","previousIntervalSeconds":0,"historyOnly":true}"#.write(
+            to: folder.appendingPathComponent(".teslamate-handover-pending"),
+            atomically: true, encoding: .utf8)
+        let controller = HubController(homeDirectory: home, serviceInstalledOverride: false)
+        let onboarding = OnboardingWindowController(
+            controller: controller, resumeMigrationHandoverPhase: .awaitingHandover,
+            onComplete: { _ in }
+        )
+        let root = try XCTUnwrap(onboarding.window?.contentView)
+        let acknowledgements = buttons(in: root).compactMap { $0.accessibilityLabel() }
+        XCTAssertTrue(controller.pendingMigrationHandoverIsHistoryOnly)
+        XCTAssertTrue(acknowledgements.contains(
+            "I understand collection remains disabled; this Hub serves imported history only"
+        ))
+        XCTAssertFalse(acknowledgements.contains(
+            "I have disabled Tesla access in TeslaMate to avoid duplicate requests"
+        ))
+    }
+
     func testFirstRunReplacesDismissibleOnboardingWithNonDismissibleSheet() throws {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
                                        initialSnapshot: .firstRun)
@@ -912,6 +938,24 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(connect.isDescendant(of: try XCTUnwrap(view(in: root, identifier: "onboarding.footer"))))
     }
 
+    func testMigrationOffersLocalHistoryWithoutSSHOrTeslaKey() throws {
+        let onboarding = OnboardingWindowController(
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
+            previewRoute: "migration", onComplete: { _ in }
+        )
+        let root = try XCTUnwrap(onboarding.window?.contentView)
+        let local = try XCTUnwrap(view(in: root, identifier: "onboarding.local-history") as? NSButton)
+        local.performClick(nil)
+        let current = try XCTUnwrap(onboarding.window?.contentView)
+        let text = labels(in: current).map(\.stringValue)
+        XCTAssertTrue(text.contains("Local PostgreSQL source"))
+        XCTAssertTrue(text.contains("Car ID"))
+        XCTAssertTrue(text.contains("Password file"))
+        XCTAssertFalse(text.contains("SSH user"))
+        XCTAssertFalse(buttons(in: current).contains { $0.title == "Choose Key…" })
+        XCTAssertTrue(buttons(in: current).contains { $0.title == "Check Snapshot" })
+    }
+
     func testFleetPopupUsesSharedNativeFormTreatment() throws {
         let onboarding = OnboardingWindowController(
             controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
@@ -1024,7 +1068,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
                                                      previewRoute: "migration",
                                                      onComplete: { _ in })
 
-        onboarding.setBusy(true, message: "Importing data…")
+        onboarding.setBusy(true, operation: .importing)
 
         let view = onboarding.window?.contentView
         let text = labels(in: view).map(\.stringValue)
@@ -1074,7 +1118,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
                                                      initialRoute: .legacy,
                                                      onComplete: { _ in })
 
-        onboarding.setBusy(true, message: "Setting up Hub…")
+        onboarding.setBusy(true, operation: .setup)
 
         let view = onboarding.window?.contentView
         let text = labels(in: view).map(\.stringValue)
@@ -1169,7 +1213,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             $0.itemTitles == ["SSH key", "Password"]
         })
 
-        onboarding.setBusy(true, message: "Connecting…")
+        onboarding.setBusy(true, operation: .connecting)
         let connect = try XCTUnwrap(buttons(in: view).first { $0.title == "Connecting…" })
         XCTAssertFalse(server.isEnabled)
         XCTAssertFalse(authentication.isEnabled)

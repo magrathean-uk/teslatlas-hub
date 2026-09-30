@@ -803,6 +803,9 @@ impl CollectorConfig {
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TeslaMateConfig {
+    /// Independent read-only current-state producer; absent means disabled.
+    #[serde(default)]
+    pub current: Option<TeslaMateCurrentConfig>,
     #[serde(default)]
     pub source_url: Option<String>,
     #[serde(default)]
@@ -829,6 +832,7 @@ impl fmt::Debug for TeslaMateConfig {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("TeslaMateConfig")
+            .field("current", &self.current.as_ref().map(|_| "[configured]"))
             .field(
                 "source_url",
                 &self.source_url.as_ref().map(|_| "[redacted]"),
@@ -846,6 +850,33 @@ impl fmt::Debug for TeslaMateConfig {
             .field("parallel_copy_lanes", &self.parallel_copy_lanes)
             .field("performance_profile", &self.performance_profile)
             .finish()
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TeslaMateCurrentConfig {
+    pub source_url: String,
+    pub source_key: String,
+    pub vehicle_id: uuid::Uuid,
+    pub car_id: i64,
+    pub password_file: PathBuf,
+}
+impl TeslaMateCurrentConfig {
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        let source = ReadOnlySource::parse(&self.source_url)
+            .map_err(|_| ConfigError::Invalid("invalid TeslaMate current endpoint"))?;
+        if source.user().is_none()
+            || self.source_key.is_empty()
+            || self.source_key.len() > 256
+            || self.vehicle_id.is_nil()
+            || self.car_id <= 0
+            || self.car_id > i64::from(i16::MAX)
+            || !self.password_file.is_absolute()
+        {
+            return Err(ConfigError::Invalid("invalid TeslaMate current binding"));
+        }
+        Ok(())
     }
 }
 
@@ -903,6 +934,7 @@ const fn default_teslamate_parallel_copy_lanes() -> usize {
 impl Default for TeslaMateConfig {
     fn default() -> Self {
         Self {
+            current: None,
             source_url: None,
             source_key: None,
             connect_timeout_seconds: default_teslamate_connect_timeout_seconds(),
@@ -1107,6 +1139,9 @@ impl HubConfig {
         }
         if source_set {
             self.teslamate.import_config()?;
+        }
+        if let Some(current) = &self.teslamate.current {
+            current.validate()?;
         }
         Ok(())
     }

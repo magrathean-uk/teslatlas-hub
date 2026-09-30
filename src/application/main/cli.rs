@@ -420,19 +420,29 @@ enum Command {
         /// PostgreSQL password file, or `-` for stdin.
         #[arg(long)]
         postgres_password_file: PathBuf,
+        /// Check history compatibility without inspecting TeslaMate's private token schema.
+        #[arg(long)]
+        history_only: bool,
         /// Accept that database evidence proves a TeslaMate v4.2-compatible schema, not the app version.
         #[arg(long)]
         acknowledge_v4_2_compatible_schema: bool,
     },
     /// Validate that one configured car and its credentials are ready to serve.
     #[cfg(unix)]
-    Preflight,
+    Preflight {
+        /// Validate signed published history with collection disabled, without inspecting Tesla credentials.
+        #[arg(long)]
+        history_only: bool,
+    },
     /// Validate one explicit local source-run Serve mode without starting a listener.
     #[cfg(target_os = "macos")]
     #[command(name = "serve-preflight", hide = true)]
     ServePreflight {
         #[arg(long, value_enum)]
         mode: DevelopmentServeModeArgument,
+        /// Require collection and Legacy authentication to remain disabled for a history-only Hub.
+        #[arg(long)]
+        history_only: bool,
     },
     /// Capture the current durable observation watermark for one source car.
     #[command(name = "observation-watermark")]
@@ -489,6 +499,9 @@ enum Command {
         /// PostgreSQL password file, or `-` for stdin.
         #[arg(long)]
         postgres_password_file: PathBuf,
+        /// Import and publish history without reading or storing Tesla credentials.
+        #[arg(long, requires = "online_snapshot", conflicts_with_all = ["encryption_key_file", "access_token_file", "refresh_token_file", "preserve_existing_credentials"])]
+        history_only: bool,
         /// TeslaMate ENCRYPTION_KEY file, or `-` for stdin. Omit only with both fresh-token files.
         #[arg(long)]
         encryption_key_file: Option<PathBuf>,

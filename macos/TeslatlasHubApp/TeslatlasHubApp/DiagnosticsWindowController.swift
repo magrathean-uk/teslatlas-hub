@@ -17,10 +17,10 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     private let rawTextView = HubReportTextView()
     private var utilityToolbar: HubUtilityToolbar?
     private let rawScroll = NSScrollView()
-    private let rawDisclosure = HubActionButton(title: "Show raw redacted report", target: nil, action: nil)
-    private let runButton = HubActionButton(title: "Run Again", target: nil, action: nil)
-    private let copyButton = HubActionButton(title: "Copy Report", target: nil, action: nil)
-    private let saveButton = HubActionButton(title: "Save Report…", target: nil, action: nil)
+    private let rawDisclosure = HubActionButton(title: HubL10n.text("hub.DiagnosticsWindowController.20.203", fallback: "Show raw redacted report"), target: nil, action: nil)
+    private let runButton = HubActionButton(title: HubL10n.text("hub.DiagnosticsWindowController.21.204", fallback: "Run Again"), target: nil, action: nil)
+    private let copyButton = HubActionButton(title: HubL10n.text("hub.DiagnosticsWindowController.22.205", fallback: "Copy Report"), target: nil, action: nil)
+    private let saveButton = HubActionButton(title: HubL10n.text("hub.DiagnosticsWindowController.23.206", fallback: "Save Report…"), target: nil, action: nil)
     private var latestReport: String?
     private weak var embeddedPage: NSView?
     private var embeddedBody: NSView?
@@ -36,7 +36,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         self.onOperationStateChanged = onOperationStateChanged
         self.savePanelPresenter = savePanelPresenter
         super.init(window: embedded ? nil : HubUtilityWindowStyle.makeWindow(
-            title: "Diagnostics", size: HubMetrics.diagnosticsSheetSize,
+            title: HubL10n.text("hub.AppDelegate.123.39", fallback: "Diagnostics"), size: HubMetrics.diagnosticsSheetSize,
             minimum: NSSize(width: 485, height: 360)
         ))
         let body = contentView()
@@ -66,8 +66,8 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         }
         let page = HubEmbeddedUtilityPage(
             symbol: "stethoscope",
-            title: "Diagnostics",
-            subtitle: "Check the Hub, its database, and its connections.",
+            title: HubL10n.text("hub.AppDelegate.123.39", fallback: "Diagnostics"),
+            subtitle: HubL10n.text("hub.DiagnosticsWindowController.70.212", fallback: "Check the Hub, its database, and its connections."),
             body: body,
             actions: [runButton],
             onBack: onBack
@@ -146,7 +146,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         reportActions.isHidden = controller.previewMode
 
         let privacy = NSTextField(wrappingLabelWithString:
-            "Displayed, copied, and saved reports redact credentials and private identifiers. Review before sharing.")
+            HubL10n.text("hub.DiagnosticsWindowController.149.220", fallback: "Displayed, copied, and saved reports redact credentials and private identifiers. Review before sharing."))
         privacy.font = .systemFont(ofSize: 10.5)
         privacy.textColor = HubPalette.mutedForeground
         privacy.maximumNumberOfLines = 2
@@ -179,17 +179,19 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
             latestReport = rows.map { "== \($0.title) ==\n\($0.detail)" }
                 .joined(separator: "\n\n")
             rawTextView.string = latestReport ?? ""
-            statusDetail.stringValue = "\(rows.count) of \(rows.count) checks passed."
+            statusDetail.stringValue = HubL10n.plural("hub.DiagnosticsWindowController.182.223", first: rows.count,
+                                                       count: rows.count, one: "%1$d of %2$d check passed.",
+                                                       other: "%1$d of %2$d checks passed.")
             render(rows: rows)
             copyButton.isEnabled = true
             saveButton.isEnabled = true
         } else {
             let summary = controller.diagnostics()
             statusDetail.stringValue = summary.isEmpty
-                ? "Run diagnostics to collect a redacted report."
+                ? HubL10n.text("hub.DiagnosticsWindowController.189.224", fallback: "Run diagnostics to collect a redacted report.")
                 : summary.joined(separator: " · ")
             render(rows: [])
-            rawTextView.string = "No diagnostic report has been run."
+            rawTextView.string = HubL10n.text("hub.DiagnosticsWindowController.192.225", fallback: "No diagnostic report has been run.")
             copyButton.isEnabled = false
             saveButton.isEnabled = false
         }
@@ -205,9 +207,9 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         saveButton.isEnabled = false
         latestReport = nil
         rawTextView.string = ""
-        rawDisclosure.title = "Show raw redacted report"
+        rawDisclosure.title = HubL10n.text("hub.DiagnosticsWindowController.20.203", fallback: "Show raw redacted report")
         rawScroll.isHidden = true
-        statusDetail.stringValue = "Running checks…"
+        statusDetail.stringValue = HubL10n.text("hub.DiagnosticsWindowController.210.227", fallback: "Running checks…")
         statusDetail.setAccessibilityValue("Running checks")
         HubAccessibility.announce("Diagnostics started.", from: embeddedPage ?? statusDetail)
         render(rows: [])
@@ -224,8 +226,10 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
                 self.render(rows: rows)
                 let passed = rows.filter { $0.outcome == .passed }.count
                 self.statusDetail.stringValue = rows.isEmpty
-                    ? "No structured checks were returned."
-                    : "\(passed) of \(rows.count) checks passed."
+                    ? HubL10n.text("hub.DiagnosticsWindowController.227.230", fallback: "No structured checks were returned.")
+                    : HubL10n.plural("hub.DiagnosticsWindowController.182.223", first: passed,
+                                     count: rows.count, one: "%1$d of %2$d check passed.",
+                                     other: "%1$d of %2$d checks passed.")
                 self.statusDetail.setAccessibilityValue(self.statusDetail.stringValue)
                 HubAccessibility.announce(self.statusDetail.stringValue,
                                           from: self.embeddedPage ?? self.statusDetail)
@@ -243,7 +247,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
             $0.removeFromSuperview()
         }
         if rows.isEmpty {
-            let empty = NSTextField(wrappingLabelWithString: "Run diagnostics to view completed checks.")
+            let empty = NSTextField(wrappingLabelWithString: HubL10n.text("hub.DiagnosticsWindowController.246.232", fallback: "Run diagnostics to view completed checks."))
             empty.textColor = HubPalette.mutedForeground
             empty.font = .systemFont(ofSize: 12)
             let holder = NSStackView(views: [empty])
@@ -280,7 +284,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         let title = NSTextField(labelWithString: row.title)
         title.font = HubTypography.emphasis
         title.textColor = HubPalette.foreground
-        let detail = NSTextField(labelWithString: row.detail.isEmpty ? "No additional detail." : row.detail)
+        let detail = NSTextField(labelWithString: row.detail.isEmpty ? HubL10n.text("hub.DiagnosticsWindowController.283.236", fallback: "No additional detail.") : row.detail)
         detail.font = HubTypography.caption
         detail.textColor = HubPalette.mutedForeground
         detail.lineBreakMode = .byTruncatingTail
@@ -308,7 +312,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         HubMotion.layout(embeddedPage ?? window?.contentView ?? rawScroll) {
             rawScroll.isHidden = !visible
         }
-        rawDisclosure.title = visible ? "Hide raw redacted report" : "Show raw redacted report"
+        rawDisclosure.title = visible ? HubL10n.text("hub.DiagnosticsWindowController.311.237", fallback: "Hide raw redacted report") : HubL10n.text("hub.DiagnosticsWindowController.20.203", fallback: "Show raw redacted report")
         (embeddedPage ?? window?.contentView)?.layoutSubtreeIfNeeded()
         rawTextView.fitDocument()
     }
@@ -318,7 +322,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
         guard let latestReport else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(latestReport, forType: .string)
-        statusDetail.stringValue = "Redacted report copied."
+        statusDetail.stringValue = HubL10n.text("hub.DiagnosticsWindowController.321.239", fallback: "Redacted report copied.")
     }
 
     @objc private func savePressed() {
@@ -332,7 +336,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
             guard let destination else { return }
             do {
                 try HubAppLog.writePrivateReport(latestReport, to: destination)
-                self?.statusDetail.stringValue = "Redacted report saved."
+                self?.statusDetail.stringValue = HubL10n.text("hub.DiagnosticsWindowController.335.241", fallback: "Redacted report saved.")
             } catch {
                 HubUIPresentation.presentError(error)
             }
@@ -368,12 +372,12 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private static let previewRows: [HubDiagnosticRow] = [
-        .init(title: "Environment doctor", detail: "Runtime and permissions OK", outcome: .passed),
-        .init(title: "Preflight", detail: "Configuration is valid", outcome: .passed),
-        .init(title: "Service status", detail: "Running", outcome: .passed),
-        .init(title: "Database", detail: "Integrity check passed", outcome: .passed),
-        .init(title: "Credentials", detail: "Fleet token valid", outcome: .passed),
-        .init(title: "Connection", detail: "Reached Tesla Fleet endpoint", outcome: .passed),
-        .init(title: "Recent logs", detail: "No errors in the last hour", outcome: .passed)
+        .init(title: HubL10n.text("hub.DiagnosticsWindowController.371.242", fallback: "Environment doctor"), detail: HubL10n.text("hub.DiagnosticsWindowController.371.243", fallback: "Runtime and permissions OK"), outcome: .passed),
+        .init(title: HubL10n.text("hub.DiagnosticsWindowController.372.244", fallback: "Preflight"), detail: HubL10n.text("hub.DiagnosticsWindowController.372.245", fallback: "Configuration is valid"), outcome: .passed),
+        .init(title: HubL10n.text("hub.DiagnosticsWindowController.373.246", fallback: "Service status"), detail: HubL10n.text("hub.DiagnosticsWindowController.373.247", fallback: "Running"), outcome: .passed),
+        .init(title: HubL10n.text("hub.DiagnosticsWindowController.374.248", fallback: "Database"), detail: HubL10n.text("hub.DiagnosticsWindowController.374.249", fallback: "Integrity check passed"), outcome: .passed),
+        .init(title: HubL10n.text("hub.DiagnosticsWindowController.375.250", fallback: "Credentials"), detail: HubL10n.text("hub.DiagnosticsWindowController.375.251", fallback: "Fleet token valid"), outcome: .passed),
+        .init(title: HubL10n.text("hub.DiagnosticsWindowController.376.252", fallback: "Connection"), detail: HubL10n.text("hub.DiagnosticsWindowController.376.253", fallback: "Reached Tesla Fleet endpoint"), outcome: .passed),
+        .init(title: HubL10n.text("hub.DiagnosticsWindowController.377.254", fallback: "Recent logs"), detail: HubL10n.text("hub.DiagnosticsWindowController.377.255", fallback: "No errors in the last hour"), outcome: .passed)
     ]
 }

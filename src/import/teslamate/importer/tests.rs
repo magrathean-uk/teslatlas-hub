@@ -2961,3 +2961,6 @@ async fn native_complete_corpus_publishes_a_durable_manifest_when_configured() {
         );
     }
 }
+
+#[path = "capacity_fallback_tests.rs"]
+mod capacity_fallback;

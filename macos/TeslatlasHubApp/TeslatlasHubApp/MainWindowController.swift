@@ -12,20 +12,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let serviceValue = NSTextField(labelWithString: "")
     private let accountValue = NSTextField(labelWithString: "")
     private let databaseValue = NSTextField(labelWithString: "")
-    private let vehicleControlName = NSTextField(labelWithString: "Vehicle")
+    private let vehicleControlName = NSTextField(labelWithString: HubL10n.text("hub.MainWindowController.15.1766", fallback: "Vehicle"))
     private let vehicleControlStatus = NSTextField(labelWithString: "")
     private let vehicleSelector = NSPopUpButton()
     private let serviceDot = NSImageView()
     private let activityStack = NSStackView()
     private let versionLabel = NSTextField(labelWithString: "")
-    private let titlebarTitle = NSTextField(labelWithString: "Teslatlas Hub")
-    private let stopButton = HubActionButton(title: "Stop Hub", target: nil, action: nil)
-    private let restartButton = HubActionButton(title: "Restart", target: nil, action: nil)
-    private let installButton = HubActionButton(title: "Set Up Hub", target: nil, action: nil)
-    private let heroDiagnosticsButton = HubActionButton(title: "Run Diagnostics", target: nil, action: nil)
-    let connectButton = HubActionButton(title: "Connect Tesla", target: nil, action: nil)
-    let importButton = HubActionButton(title: "Import", target: nil, action: nil)
-    let detailsButton = HubActionButton(title: "Service Details", target: nil, action: nil)
+    private let titlebarTitle = NSTextField(labelWithString: HubL10n.text("hub.HubUtilityWindow.107.1609", fallback: "Teslatlas Hub"))
+    private let stopButton = HubActionButton(title: HubL10n.text("hub.MainWindowController.22.1768", fallback: "Stop Hub"), target: nil, action: nil)
+    private let restartButton = HubActionButton(title: HubL10n.text("hub.MainWindowController.23.1769", fallback: "Restart"), target: nil, action: nil)
+    private let installButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.98.1354", fallback: "Set Up Hub"), target: nil, action: nil)
+    private let heroDiagnosticsButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.99.1355", fallback: "Run Diagnostics"), target: nil, action: nil)
+    let connectButton = HubActionButton(title: HubL10n.text("hub.MainWindowController.26.1772", fallback: "Connect Tesla"), target: nil, action: nil)
+    let importButton = HubActionButton(title: HubL10n.text("hub.MainWindowController.27.1773", fallback: "Import"), target: nil, action: nil)
+    let detailsButton = HubActionButton(title: HubL10n.text("hub.AppDelegate.132.43", fallback: "Service Details"), target: nil, action: nil)
     private var vehicleActionButtons: [NSButton] = []
     private var vehicleControlSectionViews: [NSView] = []
     private var vehicleControlSectionHeightConstraints: [NSLayoutConstraint] = []
@@ -95,7 +95,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: HubMetrics.windowSize),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
-        window.title = "Teslatlas Hub"
+        window.title = HubL10n.text("hub.HubUtilityWindow.107.1609", fallback: "Teslatlas Hub")
         window.backgroundColor = HubPalette.background
         window.isOpaque = true
         window.minSize = NSSize(width: 820, height: 640)
@@ -385,22 +385,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             heroStateIcon.image = NSImage(systemSymbolName: "checkmark.shield",
                                           accessibilityDescription: "Running")
             heroStateIcon.contentTintColor = .secondaryLabelColor
-            heroSubtitle.stringValue = "Hub runs in the background. You can close this window."
+            heroSubtitle.stringValue = HubL10n.text("hub.HubDashboardView.514.1389", fallback: "Hub runs in the background. You can close this window.")
         case .stopped:
             heroStateIcon.image = NSImage(systemSymbolName: "pause.circle",
                                           accessibilityDescription: "Stopped")
             heroStateIcon.contentTintColor = .secondaryLabelColor
-            heroSubtitle.stringValue = "Vehicle data is not being collected."
+            heroSubtitle.stringValue = HubL10n.text("hub.HubDashboardView.515.1390", fallback: "Vehicle data is not being collected.")
         case .needsInstall:
             heroStateIcon.image = NSImage(systemSymbolName: "person.badge.key",
                                           accessibilityDescription: "Setup required")
             heroStateIcon.contentTintColor = .secondaryLabelColor
-            heroSubtitle.stringValue = "Choose how Hub connects to Tesla."
+            heroSubtitle.stringValue = HubL10n.text("hub.HubDashboardView.516.1391", fallback: "Choose how Hub connects to Tesla.")
         case .degraded:
             heroStateIcon.image = NSImage(systemSymbolName: "exclamationmark.triangle",
                                           accessibilityDescription: "Attention needed")
             heroStateIcon.contentTintColor = .systemOrange
-            heroSubtitle.stringValue = "Open diagnostics for details."
+            heroSubtitle.stringValue = HubL10n.text("hub.HubDashboardView.517.1392", fallback: "Open diagnostics for details.")
         }
         serviceValue.stringValue = snapshot.service
         accountValue.stringValue = snapshot.accountDisplay
@@ -437,13 +437,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         detailsButton.isEnabled = !accountWorkflowActive
         connectButton.isHidden = false
         importButton.isHidden = !snapshot.shouldOfferTeslaMateImport
-        if snapshot.account == "Connected" {
-            connectButton.title = "Manage Tesla"
+        if snapshot.accountState == .connected {
+            connectButton.title = HubL10n.text("hub.MainWindowController.441.1792", fallback: "Manage Tesla")
             connectButton.image = NSImage(systemSymbolName: "person.crop.circle.badge.checkmark",
                                           accessibilityDescription: "Manage Tesla")
             connectButton.action = #selector(manageTeslaPressed(_:))
         } else {
-            connectButton.title = "Connect Tesla"
+            connectButton.title = HubL10n.text("hub.MainWindowController.26.1772", fallback: "Connect Tesla")
             connectButton.image = NSImage(systemSymbolName: "person.badge.key",
                                           accessibilityDescription: "Connect Tesla")
             connectButton.action = #selector(connectTeslaPressed)
@@ -452,7 +452,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         mainToolbar?.apply(snapshot: snapshot, enabled: accountActionsAvailable)
         let controlsAvailable = !controller.previewMode
             && snapshot.health == .running
-            && snapshot.account == "Connected"
+            && snapshot.accountState == .connected
             && selectedControlVehicleID != nil
             && !vehicleControlPending
             && !vehicleControlOutcomeUnknown
@@ -485,20 +485,20 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             window?.defaultButtonCell = nil
         }
         if snapshot.health == .stopped {
-            stopButton.title = "Start Hub"
+            stopButton.title = HubL10n.text("hub.HubDashboardView.119.1362", fallback: "Start Hub")
             stopButton.action = #selector(startPressed)
             configurePrimaryButton(stopButton, symbol: "play.fill")
         } else {
-            stopButton.title = "Stop Hub…"
+            stopButton.title = HubL10n.text("hub.HubDashboardView.96.1352", fallback: "Stop Hub…")
             stopButton.action = #selector(stopPressed)
             configureFlatButton(stopButton, symbol: "stop.fill", tint: .systemRed)
         }
-        restartButton.title = "Restart Hub"
+        restartButton.title = HubL10n.text("hub.HubDashboardView.97.1353", fallback: "Restart Hub")
         configureFlatButton(restartButton, symbol: "arrow.clockwise",
                             tint: .controlAccentColor)
-        heroDiagnosticsButton.title = "Run Diagnostics"
+        heroDiagnosticsButton.title = HubL10n.text("hub.HubDashboardView.99.1355", fallback: "Run Diagnostics")
         configureFlatButton(heroDiagnosticsButton, symbol: "waveform.path.ecg")
-        installButton.title = "Set Up Hub"
+        installButton.title = HubL10n.text("hub.HubDashboardView.98.1354", fallback: "Set Up Hub")
         configurePrimaryButton(installButton, symbol: "person.badge.key")
 
         activityStack.arrangedSubviews.forEach {
@@ -506,7 +506,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             $0.removeFromSuperview()
         }
         if snapshot.activity.isEmpty {
-            let empty = NSTextField(labelWithString: "No recent app actions. See Logs for collector activity.")
+            let empty = NSTextField(labelWithString: HubL10n.text("hub.HubDashboardView.399.1383", fallback: "No recent app actions. See Logs for collector activity."))
             empty.textColor = .secondaryLabelColor
             empty.heightAnchor.constraint(equalToConstant: 30).isActive = true
             activityStack.addArrangedSubview(empty)
@@ -680,7 +680,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         vehicleControlOutcomeUnknown: Bool
     ) -> Bool {
         snapshot.health == .running
-            && snapshot.account == "Connected"
+            && snapshot.accountState == .connected
             && snapshot.provider == .fleet
             && !serviceTransitionActive
             && !accountWorkflowActive
@@ -707,10 +707,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     static func stopHubConfirmation() -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Stop collecting vehicle data?"
-        alert.informativeText = "Hub will stop running. Your existing history stays safe, and you can start Hub again anytime."
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Stop Hub")
+        alert.messageText = HubL10n.text("hub.MainWindowController.710.1816", fallback: "Stop collecting vehicle data?")
+        alert.informativeText = HubL10n.text("hub.MainWindowController.711.1817", fallback: "Hub will stop running. Your existing history stays safe, and you can start Hub again anytime.")
+        alert.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
+        alert.addButton(withTitle: HubL10n.text("hub.MainWindowController.22.1768", fallback: "Stop Hub"))
         alert.buttons[0].keyEquivalent = "\r"
         alert.buttons[1].keyEquivalent = ""
         return alert
@@ -797,7 +797,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                                 token: token,
                                 announceCompletion: false)
         HubAccessibility.announce(
-            "\(transition.title.replacingOccurrences(of: "…", with: "")) failed: \(error.localizedDescription)",
+            HubL10n.format("hub.MainWindowController.800.1821", fallback: "%1$@ failed: %2$@", arguments: [String(describing: transition.title.replacingOccurrences(of: "…", with: "")), String(describing: error.localizedDescription)]),
             from: embeddedDetailView ?? pageContainer
         )
         showError(error)
@@ -846,7 +846,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                                 announceCompletion: false)
         let action = transition == .stopping ? "stop" : "start"
         let error = HubActionError.commandFailed(
-            "Hub did not finish the \(action) operation. Its current status is shown; open diagnostics for details."
+            HubL10n.format("hub.MainWindowController.849.1824", fallback: "Hub did not finish the %1$@ operation. Its current status is shown; open diagnostics for details.", arguments: [String(describing: action)])
         )
         HubAccessibility.announce(error.localizedDescription, from: embeddedDetailView ?? pageContainer)
         showError(error)
@@ -891,9 +891,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                                            vehicleName: String) -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "\(action.title) for \(vehicleName)?"
-        alert.informativeText = "Teslatlas Hub will send this command once."
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = HubL10n.format("hub.MainWindowController.894.1825", fallback: "%1$@ for %2$@?", arguments: [String(describing: action.title), String(describing: vehicleName)])
+        alert.informativeText = HubL10n.text("hub.MainWindowController.895.1826", fallback: "Teslatlas Hub will send this command once.")
+        alert.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
         alert.addButton(withTitle: action.title)
         return alert
     }
@@ -910,8 +910,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     static func unknownVehicleControlOutcomeAlert() -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Command outcome unknown"
-        alert.informativeText = "Check the vehicle. Do not repeat the command from this app session."
+        alert.messageText = HubL10n.text("hub.MainWindowController.913.1830", fallback: "Command outcome unknown")
+        alert.informativeText = HubL10n.text("hub.MainWindowController.914.1831", fallback: "Check the vehicle. Do not repeat the command from this app session.")
         return alert
     }
 
@@ -929,7 +929,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                                    vehicleName: String) {
         guard !vehicleControlPending,
               controlVehicles.contains(where: { $0.id == vehicleID }) else {
-            showError(HubActionError.commandFailed("The selected vehicle is no longer configured."))
+            showError(HubActionError.commandFailed(HubL10n.text("hub.HubController.3053.1048", fallback: "The selected vehicle is no longer configured.")))
             return
         }
         vehicleControlPending = true
@@ -957,7 +957,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                                           from: self.selectedSection == .vehicles
                                               ? self.vehiclesView : self.dashboardView)
                 let accepted = NSAlert()
-                accepted.messageText = "Command accepted"
+                accepted.messageText = HubL10n.text("hub.MainWindowController.960.1835", fallback: "Command accepted")
                 accepted.informativeText = action.acceptedMessage
                 HubUIPresentation.presentInformation(accepted)
             case let .failure(error):
@@ -1147,16 +1147,16 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func teslaAccountMenu() -> NSMenu {
-        let menu = NSMenu(title: "Tesla account")
-        if lastPresentedSnapshot.account == "Connected" {
-            menu.addItem(menuItem("Use Fleet API", action: #selector(useFleetPressed)))
-            menu.addItem(menuItem("Use Legacy token", action: #selector(useLegacyPressed)))
-            menu.addItem(menuItem("Migrate from TeslaMate…", action: #selector(migrateTeslaMatePressed)))
+        let menu = NSMenu(title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"))
+        if lastPresentedSnapshot.accountState == .connected {
+            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1152.1840", fallback: "Use Fleet API"), action: #selector(useFleetPressed)))
+            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1153.1841", fallback: "Use Legacy token"), action: #selector(useLegacyPressed)))
+            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1154.1842", fallback: "Migrate from TeslaMate…"), action: #selector(migrateTeslaMatePressed)))
             menu.addItem(.separator())
-            menu.addItem(menuItem("Disconnect Tesla…", action: #selector(disconnectTeslaPressed)))
+            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1156.1843", fallback: "Disconnect Tesla…"), action: #selector(disconnectTeslaPressed)))
         } else {
-            menu.addItem(menuItem("Connect Tesla Account…", action: #selector(connectTeslaPressed)))
-            menu.addItem(menuItem("Migrate from TeslaMate…", action: #selector(migrateTeslaMatePressed)))
+            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1158.1844", fallback: "Connect Tesla Account…"), action: #selector(connectTeslaPressed)))
+            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1154.1842", fallback: "Migrate from TeslaMate…"), action: #selector(migrateTeslaMatePressed)))
         }
         return menu
     }
@@ -1425,10 +1425,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     static func disconnectConfirmation() -> NSAlert {
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Disconnect Tesla from Hub?"
-        alert.informativeText = "Hub will stop and remove its stored Fleet and Legacy credentials. Your collected data stays on this Mac."
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Disconnect")
+        alert.messageText = HubL10n.text("hub.MainWindowController.1428.1846", fallback: "Disconnect Tesla from Hub?")
+        alert.informativeText = HubL10n.text("hub.MainWindowController.1429.1847", fallback: "Hub will stop and remove its stored Fleet and Legacy credentials. Your collected data stays on this Mac.")
+        alert.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
+        alert.addButton(withTitle: HubL10n.text("hub.MainWindowController.1431.1849", fallback: "Disconnect"))
         alert.buttons[0].keyEquivalent = "\r"
         alert.buttons[1].keyEquivalent = ""
         return alert

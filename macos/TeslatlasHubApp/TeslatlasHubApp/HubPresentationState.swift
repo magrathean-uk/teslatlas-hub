@@ -58,7 +58,7 @@ struct HubSessionActivityStore {
     private(set) var activities: [HubActivity] = []
 
     mutating func record(_ event: HubSessionEvent) {
-        activities.insert(HubActivity(message: event.message, age: "just now", color: event.color), at: 0)
+        activities.insert(HubActivity(message: event.message, age: HubL10n.text("hub.HubController.3905.1332", fallback: "just now"), color: event.color), at: 0)
         activities = Array(activities.prefix(limit))
     }
 }
@@ -66,15 +66,15 @@ struct HubSessionActivityStore {
 private extension HubSessionEvent {
     var message: String {
         switch self {
-        case .hubSetUp: return "Hub set up and started"
-        case .teslaMateImported: return "Imported TeslaMate history"
-        case .hubStarted: return "Hub service started"
-        case .hubStopped: return "Hub service stopped"
-        case .hubRestarted: return "Hub service restarted"
-        case let .accountChanged(provider): return "Now using \(provider.displayName)"
-        case .accountDisconnected: return "Tesla account disconnected"
+        case .hubSetUp: return HubL10n.text("hub.HubPresentationState.69.1522", fallback: "Hub set up and started")
+        case .teslaMateImported: return HubL10n.text("hub.HubPresentationState.70.1523", fallback: "Imported TeslaMate history")
+        case .hubStarted: return HubL10n.text("hub.HubPresentationState.71.1524", fallback: "Hub service started")
+        case .hubStopped: return HubL10n.text("hub.HubPresentationState.72.1525", fallback: "Hub service stopped")
+        case .hubRestarted: return HubL10n.text("hub.HubPresentationState.73.1526", fallback: "Hub service restarted")
+        case let .accountChanged(provider): return HubL10n.format("hub.HubPresentationState.74.1527", fallback: "Now using %1$@", arguments: [String(describing: provider.displayName)])
+        case .accountDisconnected: return HubL10n.text("hub.HubPresentationState.75.1528", fallback: "Tesla account disconnected")
         case let .vehicleCommandAccepted(command, vehicle):
-            return "\(command.title) accepted for \(vehicle)"
+            return HubL10n.format("hub.HubPresentationState.77.1529", fallback: "%1$@ accepted for %2$@", arguments: [String(describing: command.title), String(describing: vehicle)])
         }
     }
 

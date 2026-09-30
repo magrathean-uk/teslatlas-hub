@@ -31,11 +31,11 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     private let pendingProgress = NSProgressIndicator()
     private let pendingTitle = NSTextField(labelWithString: "")
     private let pendingDetail = NSTextField(wrappingLabelWithString: "")
-    private let startStopButton = HubActionButton(title: "Stop Hub…", target: nil, action: nil)
-    private let restartButton = HubActionButton(title: "Restart Hub", target: nil, action: nil)
-    private let updateButton = HubActionButton(title: "Update Service…", target: nil, action: nil)
-    private let uninstallButton = HubActionButton(title: "Uninstall Hub…", target: nil, action: nil)
-    private let deleteDataButton = HubActionButton(title: "Delete Hub and Data…", target: nil, action: nil)
+    private let startStopButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.96.1352", fallback: "Stop Hub…"), target: nil, action: nil)
+    private let restartButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.97.1353", fallback: "Restart Hub"), target: nil, action: nil)
+    private let updateButton = HubActionButton(title: HubL10n.text("hub.ServiceDetailsWindowController.36.2167", fallback: "Update Service…"), target: nil, action: nil)
+    private let uninstallButton = HubActionButton(title: HubL10n.text("hub.ServiceDetailsWindowController.37.2168", fallback: "Uninstall Hub…"), target: nil, action: nil)
+    private let deleteDataButton = HubActionButton(title: HubL10n.text("hub.ServiceDetailsWindowController.38.2169", fallback: "Delete Hub and Data…"), target: nil, action: nil)
     private var mutationsEnabled = true
     private var mutationPending = false
     private var embeddedBody: NSView?
@@ -45,13 +45,13 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         case update
         case uninstall
 
-        var title: String { self == .update ? "Updating Hub…" : "Uninstalling Hub…" }
+        var title: String { self == .update ? HubL10n.text("hub.ServiceDetailsWindowController.48.2170", fallback: "Updating Hub…") : HubL10n.text("hub.ServiceDetailsWindowController.48.2171", fallback: "Uninstalling Hub…") }
         var detail: String {
             self == .update
-                ? "Installing the current bundled service on this Mac."
-                : "Stopping and removing the local Hub service."
+                ? HubL10n.text("hub.ServiceDetailsWindowController.51.2172", fallback: "Installing the current bundled service on this Mac.")
+                : HubL10n.text("hub.ServiceDetailsWindowController.52.2173", fallback: "Stopping and removing the local Hub service.")
         }
-        var completion: String { self == .update ? "Hub update completed." : "Hub uninstall completed." }
+        var completion: String { self == .update ? HubL10n.text("hub.ServiceDetailsWindowController.54.2174", fallback: "Hub update completed.") : HubL10n.text("hub.ServiceDetailsWindowController.54.2175", fallback: "Hub uninstall completed.") }
     }
 
     init(snapshot: HubSnapshot,
@@ -76,10 +76,10 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         self.confirmationPresenter = confirmationPresenter
         self.serviceHealth = snapshot.health
         super.init(window: embedded ? nil : HubUtilityWindowStyle.makeWindow(
-            title: "Service Details", size: HubMetrics.serviceDetailsSheetSize,
+            title: HubL10n.text("hub.AppDelegate.132.43", fallback: "Service Details"), size: HubMetrics.serviceDetailsSheetSize,
             minimum: NSSize(width: 450, height: 380)
         ))
-        window?.title = "Service Details"
+        window?.title = HubL10n.text("hub.AppDelegate.132.43", fallback: "Service Details")
         window?.delegate = self
         let body = contentView()
         window?.contentView = body
@@ -101,8 +101,8 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         }
         return HubEmbeddedUtilityPage(
             symbol: "slider.horizontal.3",
-            title: "Service details",
-            subtitle: "Inspect and manage the local Hub service.",
+            title: HubL10n.text("hub.ServiceDetailsWindowController.104.2180", fallback: "Service details"),
+            subtitle: HubL10n.text("hub.ServiceDetailsWindowController.105.2181", fallback: "Inspect and manage the local Hub service."),
             body: body,
             onBack: onBack
         )
@@ -110,15 +110,15 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
 
     static func details(for snapshot: HubSnapshot) -> [HubServiceDetail] {
         [
-            .init(label: "Version", value: "Teslatlas Hub \(snapshot.version)"),
-            .init(label: "Service", value: snapshot.health == .running ? "Active" : snapshot.service),
-            .init(label: "Provider", value: snapshot.provider?.displayName ?? "Not configured"),
-            .init(label: "Tesla account", value: snapshot.accountDisplay),
-            .init(label: "Database", value: snapshot.database),
-            .init(label: "Data folder",
+            .init(label: HubL10n.text("hub.ServiceDetailsWindowController.113.2182", fallback: "Version"), value: HubL10n.format("hub.HubDashboardView.279.1374", fallback: "Teslatlas Hub %1$@", arguments: [String(describing: snapshot.version)])),
+            .init(label: HubL10n.text("hub.ServiceDetailsWindowController.114.2184", fallback: "Service"), value: snapshot.health == .running ? HubL10n.text("hub.ServiceDetailsWindowController.114.2185", fallback: "Active") : snapshot.service),
+            .init(label: HubL10n.text("hub.ServiceDetailsWindowController.115.2186", fallback: "Provider"), value: snapshot.provider?.displayName ?? HubL10n.text("hub.HubController.393.343", fallback: "Not configured")),
+            .init(label: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"), value: snapshot.accountDisplay),
+            .init(label: HubL10n.text("hub.DiagnosticsWindowController.374.248", fallback: "Database"), value: snapshot.database),
+            .init(label: HubL10n.text("hub.ServiceDetailsWindowController.118.2190", fallback: "Data folder"),
                   value: snapshot.dataDirectory.map {
                       ($0.path as NSString).abbreviatingWithTildeInPath
-                  } ?? "Not available")
+                  } ?? HubL10n.text("hub.ServiceDetailsWindowController.121.2191", fallback: "Not available"))
         ]
     }
 
@@ -174,7 +174,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
             rowsStack.bottomAnchor.constraint(equalTo: detailsCard.bottomAnchor)
         ])
 
-        let lifecycleTitle = NSTextField(labelWithString: "Service controls")
+        let lifecycleTitle = NSTextField(labelWithString: HubL10n.text("hub.ServiceDetailsWindowController.177.2193", fallback: "Service controls"))
         lifecycleTitle.font = HubTypography.emphasis
         lifecycleTitle.textColor = HubPalette.foreground
         lifecycleDetail.font = HubTypography.body
@@ -236,11 +236,11 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
 
         configureButton(uninstallButton, symbol: nil, style: .destructive,
                         action: #selector(uninstallPressed))
-        let dangerTitle = NSTextField(labelWithString: "Uninstall Hub")
+        let dangerTitle = NSTextField(labelWithString: HubL10n.text("hub.ServiceDetailsWindowController.239.2201", fallback: "Uninstall Hub"))
         dangerTitle.font = .systemFont(ofSize: 13, weight: .semibold)
         dangerTitle.textColor = HubPalette.foreground
         let dangerDetail = NSTextField(wrappingLabelWithString:
-            "Stops the service and removes it from this Mac. Your collected data folder is left in place unless you delete it manually.")
+            HubL10n.text("hub.ServiceDetailsWindowController.243.2202", fallback: "Stops the service and removes it from this Mac. Your collected data folder is left in place unless you delete it manually."))
         dangerDetail.font = .systemFont(ofSize: 12.5)
         dangerDetail.textColor = HubPalette.mutedForeground
         dangerDetail.maximumNumberOfLines = 0
@@ -363,11 +363,11 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     @objc private func uninstallPressed() {
         let choice = NSAlert()
         choice.alertStyle = .warning
-        choice.messageText = "Uninstall Teslatlas Hub?"
-        choice.informativeText = "The background service and logs will be removed. Your Hub database and configuration are preserved by default."
-        choice.addButton(withTitle: "Uninstall, Keep Data")
-        choice.addButton(withTitle: "Delete Data…")
-        choice.addButton(withTitle: "Cancel")
+        choice.messageText = HubL10n.text("hub.ServiceDetailsWindowController.366.2208", fallback: "Uninstall Teslatlas Hub?")
+        choice.informativeText = HubL10n.text("hub.ServiceDetailsWindowController.367.2209", fallback: "The background service and logs will be removed. Your Hub database and configuration are preserved by default.")
+        choice.addButton(withTitle: HubL10n.text("hub.ServiceDetailsWindowController.368.2210", fallback: "Uninstall, Keep Data"))
+        choice.addButton(withTitle: HubL10n.text("hub.ServiceDetailsWindowController.369.2211", fallback: "Delete Data…"))
+        choice.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
         let response = confirmationPresenter(choice, .alertThirdButtonReturn)
         guard response != .alertThirdButtonReturn else { return }
 
@@ -417,7 +417,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         guard mutationPending else { return }
         mutationPending = false
         let operation = kind.title.replacingOccurrences(of: "…", with: "")
-        let announcement = error.map { "\(operation) failed: \($0.localizedDescription)" }
+        let announcement = error.map { HubL10n.format("hub.MainWindowController.800.1821", fallback: "%1$@ failed: %2$@", arguments: [String(describing: operation), String(describing: $0.localizedDescription)]) }
             ?? kind.completion
         HubAccessibility.announce(announcement, from: pendingSurface)
         pendingProgress.stopAnimation(nil)
@@ -453,30 +453,30 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         lifecycleCard.isHidden = !available
         switch serviceHealth {
         case .stopped:
-            lifecycleDetail.stringValue = "The background collector is stopped. Start it to resume collection."
-            startStopButton.title = "Start Hub"
+            lifecycleDetail.stringValue = HubL10n.text("hub.ServiceDetailsWindowController.456.2214", fallback: "The background collector is stopped. Start it to resume collection.")
+            startStopButton.title = HubL10n.text("hub.HubDashboardView.119.1362", fallback: "Start Hub")
             startStopButton.image = NSImage(systemSymbolName: "play.fill",
                                             accessibilityDescription: "Start Hub")
             startStopButton.hubStyle = .primary
             restartButton.isHidden = true
         case .running:
-            lifecycleDetail.stringValue = "The background collector is running on this Mac."
-            startStopButton.title = "Stop Hub…"
+            lifecycleDetail.stringValue = HubL10n.text("hub.ServiceDetailsWindowController.463.2218", fallback: "The background collector is running on this Mac.")
+            startStopButton.title = HubL10n.text("hub.HubDashboardView.96.1352", fallback: "Stop Hub…")
             startStopButton.image = NSImage(systemSymbolName: "stop.fill",
                                             accessibilityDescription: "Stop Hub")
             startStopButton.hubStyle = .flatDanger
             restartButton.hubStyle = .neutral
             restartButton.isHidden = false
         case .degraded:
-            lifecycleDetail.stringValue = "Hub needs attention. Restart it after reviewing diagnostics."
-            startStopButton.title = "Stop Hub…"
+            lifecycleDetail.stringValue = HubL10n.text("hub.ServiceDetailsWindowController.471.2222", fallback: "Hub needs attention. Restart it after reviewing diagnostics.")
+            startStopButton.title = HubL10n.text("hub.HubDashboardView.96.1352", fallback: "Stop Hub…")
             startStopButton.image = NSImage(systemSymbolName: "stop.fill",
                                             accessibilityDescription: "Stop Hub")
             startStopButton.hubStyle = .flatDanger
             restartButton.hubStyle = .primary
             restartButton.isHidden = false
         case .needsInstall:
-            lifecycleDetail.stringValue = "Set up Hub before using service controls."
+            lifecycleDetail.stringValue = HubL10n.text("hub.ServiceDetailsWindowController.479.2226", fallback: "Set up Hub before using service controls.")
             restartButton.isHidden = true
         }
         startStopButton.setAccessibilityHelp(lifecycleDetail.stringValue)
@@ -487,10 +487,10 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     static func deleteDataConfirmation() -> NSAlert {
         let confirmation = NSAlert()
         confirmation.alertStyle = .critical
-        confirmation.messageText = "Permanently delete Hub data?"
-        confirmation.informativeText = "This removes the Hub database and configuration. This cannot be undone."
-        confirmation.addButton(withTitle: "Cancel")
-        confirmation.addButton(withTitle: "Delete Data and Uninstall")
+        confirmation.messageText = HubL10n.text("hub.ServiceDetailsWindowController.490.2228", fallback: "Permanently delete Hub data?")
+        confirmation.informativeText = HubL10n.text("hub.ServiceDetailsWindowController.491.2229", fallback: "This removes the Hub database and configuration. This cannot be undone.")
+        confirmation.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
+        confirmation.addButton(withTitle: HubL10n.text("hub.ServiceDetailsWindowController.493.2231", fallback: "Delete Data and Uninstall"))
         confirmation.buttons[0].keyEquivalent = "\r"
         confirmation.buttons[1].keyEquivalent = ""
         return confirmation

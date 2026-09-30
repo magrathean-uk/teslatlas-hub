@@ -245,23 +245,33 @@ impl HubStore {
     /// migrating schema, or issuing mutating SQL. SQLite may still create WAL
     /// coordination files while observing a concurrently active catalogue.
     pub fn open_read_only(data_dir: impl AsRef<Path>) -> Result<Self, StoreError> {
-        Self::open_read_only_with_mode(data_dir.as_ref(), false)
+        Self::open_read_only_with_mode(data_dir.as_ref(), false, false)
     }
 
     /// Open an already-migrated live catalogue for a short local control
     /// transaction without taking the long-lived collector process lock.
     pub fn open_existing(data_dir: impl AsRef<Path>) -> Result<Self, StoreError> {
-        Self::open_read_only_with_mode(data_dir.as_ref(), false)
+        Self::open_read_only_with_mode(data_dir.as_ref(), false, false)
     }
 
     /// Open a byte-stable immutable snapshot for operator diagnosis. This
     /// refuses a pending WAL and must be followed by
     /// [`Self::verify_immutable_snapshot_unchanged`] before reporting success.
     pub fn open_immutable_read_only(data_dir: impl AsRef<Path>) -> Result<Self, StoreError> {
-        Self::open_read_only_with_mode(data_dir.as_ref(), true)
+        Self::open_read_only_with_mode(data_dir.as_ref(), true, false)
     }
 
-    fn open_read_only_with_mode(data_dir: &Path, immutable: bool) -> Result<Self, StoreError> {
+    /// Standalone Serve can migrate the known v66 current-cache shape to v67.
+    /// Return no store handle: consumers still require a fully migrated schema.
+    pub(crate) fn preflight_standalone_schema_read_only(data_dir: &Path) -> Result<(), StoreError> {
+        Self::open_read_only_with_mode(data_dir, false, true).map(|_| ())
+    }
+
+    fn open_read_only_with_mode(
+        data_dir: &Path,
+        immutable: bool,
+        standalone_migration_candidate: bool,
+    ) -> Result<Self, StoreError> {
         let database_path = data_dir.join("hub.sqlite");
         let immutable_snapshot = if immutable {
             Some(immutable_catalogue_fingerprint(&database_path)?)
@@ -287,7 +297,9 @@ impl HubStore {
             return Err(StoreError::InvalidApplicationId(application_id));
         }
         let version = schema_version(&connection)?;
-        if version != SCHEMA_VERSION {
+        let known_forward_upgrade =
+            standalone_migration_candidate && SCHEMA_VERSION == 67 && version == 66;
+        if version != SCHEMA_VERSION && !known_forward_upgrade {
             return Err(StoreError::UnsupportedSchema(version));
         }
         Ok(store)

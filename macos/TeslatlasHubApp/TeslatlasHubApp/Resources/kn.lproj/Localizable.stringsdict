@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>hub.DiagnosticsWindowController.182.223</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%2$#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%1$d/%2$d ಪರಿಶೀಲನೆ ಯಶಸ್ವಿಯಾಗಿದೆ</string>
+			<key>other</key>
+			<string>%1$d/%2$d ಪರಿಶೀಲನೆಗಳು ಯಶಸ್ವಿಯಾಗಿವೆ</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3748.1243</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%1$d ವಾಹನ</string>
+			<key>other</key>
+			<string>%1$d ವಾಹನಗಳು</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3906.1333</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%1$d ನಿಮಿಷ ಹಿಂದೆ</string>
+			<key>other</key>
+			<string>%1$d ನಿಮಿಷಗಳ ಹಿಂದೆ</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3907.1334</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%1$d ಗಂಟೆ ಹಿಂದೆ</string>
+			<key>other</key>
+			<string>%1$d ಗಂಟೆಗಳ ಹಿಂದೆ</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3908.1335</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%1$d ದಿನ ಹಿಂದೆ</string>
+			<key>other</key>
+			<string>%1$d ದಿನಗಳ ಹಿಂದೆ</string>
+		</dict>
+	</dict>
+	<key>hub.HubDiagnosticsPresentation.structured_results</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%1$d ರಚನಾತ್ಮಕ ಫಲಿತಾಂಶ</string>
+			<key>other</key>
+			<string>%1$d ರಚನಾತ್ಮಕ ಫಲಿತಾಂಶಗಳು</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

@@ -14,13 +14,13 @@ final class LogsWindowController: NSWindowController {
     private var utilityToolbar: HubUtilityToolbar?
     var scrollViewForTesting: NSScrollView { scroll }
     var textViewForTesting: NSTextView { textView }
-    private let statusLabel = NSTextField(labelWithString: "Loading logs…")
-    let secondaryActionsMenu = NSMenu(title: "Log actions")
-    private let moreButton = HubActionButton(title: "More", target: nil, action: nil)
-    private let refreshItem = NSMenuItem(title: "Refresh", action: #selector(refreshPressed), keyEquivalent: "")
-    private let diagnosticsItem = NSMenuItem(title: "Run Diagnostics", action: #selector(diagnosticsPressed), keyEquivalent: "")
-    private let copyButton = HubActionButton(title: "Copy", target: nil, action: nil)
-    private let saveButton = HubActionButton(title: "Save…", target: nil, action: nil)
+    private let statusLabel = NSTextField(labelWithString: HubL10n.text("hub.LogsWindowController.17.1712", fallback: "Loading logs…"))
+    let secondaryActionsMenu = NSMenu(title: HubL10n.text("hub.LogsWindowController.18.1713", fallback: "Log actions"))
+    private let moreButton = HubActionButton(title: HubL10n.text("hub.LogsWindowController.19.1714", fallback: "More"), target: nil, action: nil)
+    private let refreshItem = NSMenuItem(title: HubL10n.text("hub.LogsWindowController.20.1715", fallback: "Refresh"), action: #selector(refreshPressed), keyEquivalent: "")
+    private let diagnosticsItem = NSMenuItem(title: HubL10n.text("hub.HubDashboardView.99.1355", fallback: "Run Diagnostics"), action: #selector(diagnosticsPressed), keyEquivalent: "")
+    private let copyButton = HubActionButton(title: HubL10n.text("hub.AppDelegate.87.24", fallback: "Copy"), target: nil, action: nil)
+    private let saveButton = HubActionButton(title: HubL10n.text("hub.LogsWindowController.23.1718", fallback: "Save…"), target: nil, action: nil)
     private var latestText = ""
     private var operationInProgress = false
     private weak var embeddedPage: NSView?
@@ -34,7 +34,7 @@ final class LogsWindowController: NSWindowController {
         self.appLog = appLog
         self.savePanelPresenter = savePanelPresenter
         super.init(window: embedded ? nil : HubUtilityWindowStyle.makeWindow(
-            title: "Activity & Logs", size: HubMetrics.logsSheetSize,
+            title: HubL10n.text("hub.AppDelegate.128.41", fallback: "Activity & Logs"), size: HubMetrics.logsSheetSize,
             minimum: NSSize(width: 554, height: 300)
         ))
         let body = contentView()
@@ -46,7 +46,7 @@ final class LogsWindowController: NSWindowController {
             window?.toolbarStyle = .expanded
         }
         if controller.previewMode {
-            renderLogs(Self.previewLogText, status: "Preview fixture")
+            renderLogs(Self.previewLogText, status: HubL10n.text("hub.LogsWindowController.49.1721", fallback: "Preview fixture"))
         } else {
             refresh()
         }
@@ -66,8 +66,8 @@ final class LogsWindowController: NSWindowController {
         }
         let page = HubEmbeddedUtilityPage(
             symbol: "doc.text.magnifyingglass",
-            title: "Activity & Logs",
-            subtitle: "Review redacted Hub and application logs.",
+            title: HubL10n.text("hub.AppDelegate.128.41", fallback: "Activity & Logs"),
+            subtitle: HubL10n.text("hub.LogsWindowController.70.1725", fallback: "Review redacted Hub and application logs."),
             body: body,
             actions: [copyButton, saveButton, moreButton],
             onBack: onBack
@@ -110,7 +110,7 @@ final class LogsWindowController: NSWindowController {
         configureButton(moreButton, symbol: "ellipsis.circle", style: .flat,
                         action: #selector(morePressed))
         moreButton.imagePosition = .imageOnly
-        moreButton.toolTip = "More log actions"
+        moreButton.toolTip = HubL10n.text("hub.LogsWindowController.113.1730", fallback: "More log actions")
         secondaryActionsMenu.autoenablesItems = false
         for item in [refreshItem, diagnosticsItem] {
             item.target = self
@@ -120,7 +120,7 @@ final class LogsWindowController: NSWindowController {
         statusLabel.textColor = HubPalette.mutedForeground
         statusLabel.setAccessibilityLabel("Logs status")
         let privacy = NSTextField(wrappingLabelWithString:
-            "Displayed, copied, and saved logs redact credentials and private identifiers. Review before sharing.")
+            HubL10n.text("hub.LogsWindowController.123.1732", fallback: "Displayed, copied, and saved logs redact credentials and private identifiers. Review before sharing."))
         privacy.font = .systemFont(ofSize: 10.5)
         privacy.textColor = HubPalette.mutedForeground
         let actionRow = NSStackView(views: [NSView(), statusLabel])
@@ -150,14 +150,14 @@ final class LogsWindowController: NSWindowController {
     func refresh() {
         guard !operationInProgress else { return }
         if controller.previewMode {
-            renderLogs(Self.previewLogText, status: "Preview fixture")
+            renderLogs(Self.previewLogText, status: HubL10n.text("hub.LogsWindowController.49.1721", fallback: "Preview fixture"))
             return
         }
         operationInProgress = true
         let started = Date()
         appLog.record("refresh.requested", category: "logs", level: "INFO", fields: [:])
         setActionsEnabled(false)
-        statusLabel.stringValue = "Loading logs…"
+        statusLabel.stringValue = HubL10n.text("hub.LogsWindowController.17.1712", fallback: "Loading logs…")
         statusLabel.setAccessibilityValue("Loading logs")
         HubAccessibility.announce("Loading logs.", from: embeddedPage ?? statusLabel)
 
@@ -172,14 +172,14 @@ final class LogsWindowController: NSWindowController {
             "== app and import diagnostics ==\n\(appText)",
             "== Hub service logs ==\n\(serviceText)"
         ].joined(separator: "\n"))
-        renderLogs(combined, status: "Files read just now · entries may be historical")
+        renderLogs(combined, status: HubL10n.text("hub.LogsWindowController.175.1743", fallback: "Files read just now · entries may be historical"))
         appLog.record("refresh.completed", category: "logs", level: "INFO", fields: [
             "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000)),
             "service_bytes": String(serviceText.utf8.count)
         ])
     }
 
-    func renderLogs(_ redactedText: String, status: String = "Files read just now · entries may be historical") {
+    func renderLogs(_ redactedText: String, status: String = HubL10n.text("hub.LogsWindowController.175.1743", fallback: "Files read just now · entries may be historical")) {
         let combined = Self.shareableText(redactedText)
         latestText = combined
         textView.string = Self.numberedPresentation(combined)
@@ -205,10 +205,10 @@ final class LogsWindowController: NSWindowController {
         guard !operationInProgress else { return }
         operationInProgress = true
         setActionsEnabled(false)
-        statusLabel.stringValue = "Running diagnostics…"
+        statusLabel.stringValue = HubL10n.text("hub.LogsWindowController.208.1750", fallback: "Running diagnostics…")
         statusLabel.setAccessibilityValue("Running diagnostics")
         HubAccessibility.announce("Log diagnostics started.", from: embeddedPage ?? statusLabel)
-        textView.string = "Running database, credential, connection, and service checks…"
+        textView.string = HubL10n.text("hub.LogsWindowController.211.1753", fallback: "Running database, credential, connection, and service checks…")
         controller.runFullDiagnostics { [weak self] report in
             guard let self else { return }
             let combined = Self.shareableText([
@@ -232,7 +232,7 @@ final class LogsWindowController: NSWindowController {
         guard !latestText.isEmpty else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(Self.shareableText(latestText), forType: .string)
-        statusLabel.stringValue = "Redacted logs copied"
+        statusLabel.stringValue = HubL10n.text("hub.LogsWindowController.235.1757", fallback: "Redacted logs copied")
     }
 
     @objc private func savePressed() {
@@ -247,7 +247,7 @@ final class LogsWindowController: NSWindowController {
             guard let destination else { return }
             do {
                 try HubAppLog.writePrivateReport(report, to: destination)
-                self?.statusLabel.stringValue = "Redacted logs saved"
+                self?.statusLabel.stringValue = HubL10n.text("hub.LogsWindowController.250.1759", fallback: "Redacted logs saved")
             } catch {
                 HubUIPresentation.presentError(error)
             }
@@ -283,7 +283,7 @@ final class LogsWindowController: NSWindowController {
     }
 
     static func diagnosticsStatus(for report: String) -> String {
-        report.contains(" (failed) ==") ? "Diagnostics found issues" : "Diagnostics complete"
+        report.contains(" (failed) ==") ? HubL10n.text("hub.LogsWindowController.286.1764", fallback: "Diagnostics found issues") : HubL10n.text("hub.LogsWindowController.286.1765", fallback: "Diagnostics complete")
     }
 
     @objc private func closePressed() { window?.close() }

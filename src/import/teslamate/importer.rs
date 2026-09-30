@@ -7,8 +7,8 @@
 //! identity, maps only the selected car, and publishes either:
 //! - the first immutable full-snapshot base; or
 //! - a typed ordered import delta successor bound to that base when history
-//!   changes. It never invents a second V2 base or wraps a full-snapshot pack
-//!   with a foreign snapshot identity as a lineage delta.
+//!   changes; or an explicitly retained base rotation when that import lineage
+//!   has no room for the changed rows. Full captures never masquerade as deltas.
 
 use std::collections::HashSet;
 
@@ -874,9 +874,9 @@ async fn import_from_postgres_with_updates_capture(
     let successor = prior_v2_head.is_some() && !legacy_bridge;
     let capture_snapshot_id = Uuid::new_v4();
     let capture_sequence = match prior_v2_head {
-        Some((_, head_sequence, _)) => u64::try_from(head_sequence)
+        Some((_, head_sequence, _)) if legacy_bridge => u64::try_from(head_sequence)
             .map_err(|_| crate::db::StoreError::InvalidStoredSequence)?,
-        None => store.reserve_next_full_snapshot_sequence(&publication_gate, vehicle.vehicle_id)?,
+        _ => store.reserve_next_full_snapshot_sequence(&publication_gate, vehicle.vehicle_id)?,
     };
     let capture_range = SequenceRange {
         from_exclusive: capture_sequence,
@@ -1083,21 +1083,17 @@ async fn import_from_postgres_with_updates_capture(
             });
         }
     }
+    let mut capture = direct
+        .projection_state
+        .take()
+        .ok_or(TeslaMateImportError::ProjectionStateCaptureMissing)?;
+    capture.seal()?;
+    let mut replacement = None;
     if let Some((base_snapshot_id, head_sequence, head_digest)) = prior_v2_head {
-        // These full snapshot capture packs cannot be published as deltas.
-        // Remove their unreferenced files before writing the sparse typed
-        // successor; catalogue checks preserve any coincident object.
-        direct.keep_chunks();
-        discard_unpublished_chunks(store, &publication_gate, &direct.chunks)?;
         let selected_car = direct
             .selected_car
             .clone()
             .ok_or(TeslaMateImportError::ProjectionStateCaptureMissing)?;
-        let mut capture = direct
-            .projection_state
-            .take()
-            .ok_or(TeslaMateImportError::ProjectionStateCaptureMissing)?;
-        capture.seal()?;
         let from_sequence = u64::try_from(head_sequence)
             .map_err(|_| crate::db::StoreError::InvalidStoredSequence)?;
         let existing = store
@@ -1109,83 +1105,101 @@ async fn import_from_postgres_with_updates_capture(
             .len()
             .checked_add(existing.deltas.len())
             .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
-        let remaining_delta_packs = crate::protocol::ProtocolLimits::default()
+        let remaining_delta_packs = ProtocolLimits::default()
             .max_chunks
             .checked_sub(existing_pack_count)
             .ok_or(crate::db::StoreError::LineageCatalogConflict)?;
-        if remaining_delta_packs == 0 {
-            return Err(crate::db::StoreError::LineageCatalogConflict.into());
-        }
-        let mut next_ordinal = store.next_v2_pack_ordinal(base_snapshot_id)?;
-        let mut parent_digest = head_digest;
-        let mut prior_sequence = from_sequence;
-        // Keep one decoded delta batch at a time.  The projection-state spool
-        // owns the complete current history; retaining every decoded sparse
-        // row here would turn a changed multi-million-row import back into an
-        // in-memory history.
-        let mut deltas = Vec::new();
-        let mut delta_packs = UnpublishedDirectDeltaPacks::new(store, &publication_gate);
-        direct_delta_rows_from_capture(
+        // Decide before discarding the complete capture or writing delta packs.
+        // Only pack-capacity exhaustion permits an explicit new base.
+        if direct_delta_capacity_exhausted(
             &mut capture,
             &binding,
             &selected_car,
             remaining_delta_packs,
-            |batch| {
-                let to_sequence = store
-                    .reserve_next_full_snapshot_sequence(&publication_gate, vehicle.vehicle_id)?;
-                if to_sequence <= prior_sequence {
-                    return Err(crate::db::StoreError::LineageCatalogConflict.into());
-                }
-                let delta = batch.into_delta(
-                    binding.clone(),
-                    SequenceRange {
-                        from_exclusive: prior_sequence,
-                        to_inclusive: to_sequence,
-                    },
-                    parent_digest,
-                );
-                let built = ProjectionPackWriter::new(store.packs_dir())
-                    .with_minimum_free_bytes(limits.minimum_free_bytes)
-                    .write_delta(&ProjectionDeltaPackRequest {
-                        pack_id: Uuid::new_v4(),
-                        snapshot_id: base_snapshot_id,
-                        ordinal: next_ordinal,
-                        delta: &delta,
-                    })?;
-                let chain_digest =
-                    canonical_delta_chain_digest(parent_digest, built.metadata.sha256);
-                deltas.push(LineageDelta {
-                    from_sequence: prior_sequence,
-                    to_sequence,
-                    parent_chain_digest: parent_digest,
-                    chain_digest,
-                    pack_digest: built.metadata.sha256,
-                    pack: built.metadata.clone(),
-                });
-                delta_packs.push(built);
-                prior_sequence = to_sequence;
-                parent_digest = chain_digest;
-                next_ordinal = next_ordinal
-                    .checked_add(1)
-                    .ok_or(crate::db::StoreError::PackOrdinalTooLarge)?;
-                Ok(())
-            },
-        )?;
-        let projection_state = capture.into_state();
-        let terminal_cursor = OpaqueCursor::issue(
-            cursor_key,
-            CursorClaims {
-                protocol: PROTOCOL_V1,
-                schema: HUB_PROJECTION_SCHEMA_V2,
-                installation_id: binding.installation_id,
-                account_id: binding.account_id,
-                vehicle_id: binding.vehicle_id,
-                generation: binding.generation,
-                sequence: prior_sequence,
-            },
-        )
-        .map_err(crate::db::StoreError::Manifest)?;
-        store
+        )? {
+            let mut event = crate::runtime::development_event_log::Event::new(
+                crate::runtime::development_event_log::Kind::CapacityFallback,
+                crate::runtime::development_event_log::Outcome::FullBase,
+            );
+            event.base_sequence = Some(from_sequence);
+            event.chunks = existing_pack_count as u64;
+            crate::runtime::development_event_log::record(event);
+            replacement = Some(existing);
+        } else {
+            direct.keep_chunks();
+            discard_unpublished_chunks(store, &publication_gate, &direct.chunks)?;
+            let mut next_ordinal = store.next_v2_pack_ordinal(base_snapshot_id)?;
+            let mut parent_digest = head_digest;
+            let mut prior_sequence = from_sequence;
+            // Keep one decoded delta batch at a time.  The projection-state spool
+            // owns the complete current history; retaining every decoded sparse
+            // row here would turn a changed multi-million-row import back into an
+            // in-memory history.
+            let mut deltas = Vec::new();
+            let mut delta_packs = UnpublishedDirectDeltaPacks::new(store, &publication_gate);
+            direct_delta_rows_from_capture(
+                &mut capture,
+                &binding,
+                &selected_car,
+                remaining_delta_packs,
+                |batch| {
+                    let to_sequence = store.reserve_next_full_snapshot_sequence(
+                        &publication_gate,
+                        vehicle.vehicle_id,
+                    )?;
+                    if to_sequence <= prior_sequence {
+                        return Err(crate::db::StoreError::LineageCatalogConflict.into());
+                    }
+                    let delta = batch.into_delta(
+                        binding.clone(),
+                        SequenceRange {
+                            from_exclusive: prior_sequence,
+                            to_inclusive: to_sequence,
+                        },
+                        parent_digest,
+                    );
+                    let built = ProjectionPackWriter::new(store.packs_dir())
+                        .with_minimum_free_bytes(limits.minimum_free_bytes)
+                        .write_delta(&ProjectionDeltaPackRequest {
+                            pack_id: Uuid::new_v4(),
+                            snapshot_id: base_snapshot_id,
+                            ordinal: next_ordinal,
+                            delta: &delta,
+                        })?;
+                    let chain_digest =
+                        canonical_delta_chain_digest(parent_digest, built.metadata.sha256);
+                    deltas.push(LineageDelta {
+                        from_sequence: prior_sequence,
+                        to_sequence,
+                        parent_chain_digest: parent_digest,
+                        chain_digest,
+                        pack_digest: built.metadata.sha256,
+                        pack: built.metadata.clone(),
+                    });
+                    delta_packs.push(built);
+                    prior_sequence = to_sequence;
+                    parent_digest = chain_digest;
+                    next_ordinal = next_ordinal
+                        .checked_add(1)
+                        .ok_or(crate::db::StoreError::PackOrdinalTooLarge)?;
+                    Ok(())
+                },
+            )?;
+            let projection_state = capture.into_state();
+            let terminal_cursor = OpaqueCursor::issue(
+                cursor_key,
+                CursorClaims {
+                    protocol: PROTOCOL_V1,
+                    schema: HUB_PROJECTION_SCHEMA_V2,
+                    installation_id: binding.installation_id,
+                    account_id: binding.account_id,
+                    vehicle_id: binding.vehicle_id,
+                    generation: binding.generation,
+                    sequence: prior_sequence,
+                },
+            )
+            .map_err(crate::db::StoreError::Manifest)?;
+            store
             .finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
                 run_id,
                 registered_source.source_id,
@@ -1201,38 +1215,34 @@ async fn import_from_postgres_with_updates_capture(
                 &materialised_car,
                 &materialised_drives,
             )?;
-        delta_packs.published();
-        drop(delta_packs);
-        run_guard.disarm();
-        let projected_rows = deltas.iter().try_fold(0_u64, |total, delta| {
-            total
-                .checked_add(delta.pack.row_count)
-                .ok_or(TeslaMateImportError::DirectDeltaBatchOverflow)
-        })?;
-        return Ok(CapturedTeslaMateImport {
-            report: TeslaMateImportReport {
-                source_id: registered_source.source_id,
-                vehicle_id: vehicle.vehicle_id,
-                snapshot_id: base_snapshot_id,
-                sequence: prior_sequence,
-                projection: direct.report,
-                projected_rows,
-                skipped: false,
-                cutover_unsettled: cutover.cutover_unsettled,
-            },
-            binding: binding.clone(),
-            updates_v2_2,
-            legacy_tokens,
-            atomic_schema_22: None,
-            physical_stage,
-            publication_gate,
-        });
+            delta_packs.published();
+            drop(delta_packs);
+            run_guard.disarm();
+            let projected_rows = deltas.iter().try_fold(0_u64, |total, delta| {
+                total
+                    .checked_add(delta.pack.row_count)
+                    .ok_or(TeslaMateImportError::DirectDeltaBatchOverflow)
+            })?;
+            return Ok(CapturedTeslaMateImport {
+                report: TeslaMateImportReport {
+                    source_id: registered_source.source_id,
+                    vehicle_id: vehicle.vehicle_id,
+                    snapshot_id: base_snapshot_id,
+                    sequence: prior_sequence,
+                    projection: direct.report,
+                    projected_rows,
+                    skipped: false,
+                    cutover_unsettled: cutover.cutover_unsettled,
+                },
+                binding: binding.clone(),
+                updates_v2_2,
+                legacy_tokens,
+                atomic_schema_22: None,
+                physical_stage,
+                publication_gate,
+            });
+        }
     }
-    let mut capture = direct
-        .projection_state
-        .take()
-        .ok_or(TeslaMateImportError::ProjectionStateCaptureMissing)?;
-    capture.seal()?;
     let projection_state = capture.into_state();
     let manifest = match signed_full_snapshot_manifest(
         &binding,
@@ -1248,7 +1258,7 @@ async fn import_from_postgres_with_updates_capture(
             return Err(error.into());
         }
     };
-    let prepared_schema_22 = if prepare_schema_22 {
+    let prepared_schema_22 = if prepare_schema_22 && replacement.is_none() {
         match prepare_initial_production_updates_schema_22_with_gate(
             store,
             cursor_key,
@@ -1268,7 +1278,24 @@ async fn import_from_postgres_with_updates_capture(
     };
     // A pre-commit failure can leave only unreferenced candidate packs; repair
     // may remove those safely. After the transaction commits they are catalogued.
-    let finalization = if let Some(prepared) = prepared_schema_22.as_ref() {
+    let finalization = if let Some(expected) = replacement.as_ref() {
+        store.finalize_import_generation_replacing_base_with_materialisation(
+            &publication_gate,
+            expected,
+            run_id,
+            registered_source.source_id,
+            vehicle.vehicle_id,
+            selected_car_id,
+            request.imported_at_ms,
+            &manifest,
+            direct.fingerprint,
+            &direct.geofences,
+            &binding,
+            &projection_state,
+            &materialised_car,
+            &materialised_drives,
+        )
+    } else if let Some(prepared) = prepared_schema_22.as_ref() {
         store.finalize_import_generation_with_projection_state_and_schema_22_and_materialisation(
             &publication_gate,
             run_id,
@@ -2279,6 +2306,19 @@ impl DirectDeltaRows {
 /// importer bounded even when every source row changed. It also enforces the
 /// remaining protocol pack capacity before an unbounded number of candidate
 /// pack files can be constructed.
+fn direct_delta_capacity_exhausted(
+    capture: &mut TeslaMateProjectionStateCapture,
+    binding: &ProjectionBinding,
+    car: &ProjectionCar,
+    maximum_batches: usize,
+) -> Result<bool, TeslaMateImportError> {
+    match direct_delta_rows_from_capture(capture, binding, car, maximum_batches, |_| Ok(())) {
+        Ok(()) => Ok(false),
+        Err(TeslaMateImportError::DirectDeltaBatchLimitExceeded { .. }) => Ok(true),
+        Err(error) => Err(error),
+    }
+}
+
 fn direct_delta_rows_from_capture<F>(
     capture: &mut TeslaMateProjectionStateCapture,
     binding: &ProjectionBinding,

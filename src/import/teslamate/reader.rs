@@ -82,6 +82,7 @@ include!("reader/capture.rs");
 include!("reader/staging.rs");
 include!("reader/physical_capture.rs");
 include!("reader/schema.rs");
+include!("reader/current_position.rs");
 include!("reader/binary_rows.rs");
 include!("reader/v2_rows.rs");
 include!("reader/decoding.rs");

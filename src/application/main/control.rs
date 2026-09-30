@@ -2,10 +2,17 @@
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    use teslatlas_hub::runtime::development_event_log as dev;
+    if dev::initialize().is_err() {
+        eprintln!("teslatlas-hub: development journal unavailable");
+        return ExitCode::FAILURE;
+    }
     tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
+        .with_env_filter(if dev::enabled() {
+            EnvFilter::new("off")
+        } else {
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
+        })
         .with_ansi(std::io::stderr().is_terminal())
         .with_target(false)
         .init();
@@ -14,7 +21,28 @@ async fn main() -> ExitCode {
     if let Command::Companions { command } = &cli.command {
         return run_companion_command(command).await;
     }
-    match run(cli).await {
+    let kind = match &cli.command {
+        Command::Migrate { .. } => dev::Kind::Import,
+        Command::Serve => dev::Kind::Serve,
+        _ => dev::Kind::Command,
+    };
+    let started = Instant::now();
+    dev::record(dev::Event::new(kind, dev::Outcome::Start));
+    let result = run(cli).await;
+    let mut event = dev::Event::new(
+        kind,
+        if result.is_ok() {
+            dev::Outcome::Complete
+        } else {
+            dev::Outcome::Failed
+        },
+    );
+    event.duration_ms = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+    dev::record(event);
+    if !dev::flush() {
+        eprintln!("teslatlas-hub: development journal incomplete");
+    }
+    match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("teslatlas-hub: {error}");

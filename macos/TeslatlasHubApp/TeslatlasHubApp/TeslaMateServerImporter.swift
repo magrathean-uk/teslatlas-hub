@@ -31,7 +31,7 @@ struct TeslaMateSSHDiagnostic: LocalizedError, Equatable {
     var errorDescription: String? { summary }
 
     var safeReport: String {
-        ([title, summary] + suggestions.map { "- \($0)" } + ["Code: \(reasonCode)"])
+        ([title, summary] + suggestions.map { "- \($0)" } + [HubL10n.format("hub.TeslaMateServerImporter.34.2284", fallback: "Code: %1$@", arguments: [String(describing: reasonCode)])])
             .joined(separator: "\n")
     }
 }
@@ -425,7 +425,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         }
         let required = ["user", "password", "database", "key", "car", "address"]
         guard required.allSatisfy({ !(values[$0] ?? "").isEmpty }) else {
-            throw HubActionError.commandFailed("TeslaMate server returned incomplete setup details.")
+            throw HubActionError.commandFailed(HubL10n.text("hub.TeslaMateServerImporter.428.2461", fallback: "TeslaMate server returned incomplete setup details."))
         }
         return values
     }
@@ -688,68 +688,68 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         let suggestions: [String]
         switch reason {
         case "invalid_input":
-            title = "Check the server details"
-            summary = "Enter a valid server, SSH user, and port."
-            suggestions = ["A server name, IP address, or SSH config alias is accepted."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.691.2530", fallback: "Check the server details")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.692.2531", fallback: "Enter a valid server, SSH user, and port.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.693.2532", fallback: "A server name, IP address, or SSH config alias is accepted.")]
         case "unsafe_identity_file":
-            title = "Choose a usable private key"
-            summary = "Hub could not safely use the selected SSH key."
-            suggestions = ["Choose a private key owned by this Mac user.", "Do not select the .pub file."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.695.2534", fallback: "Choose a usable private key")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.696.2535", fallback: "Hub could not safely use the selected SSH key.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.697.2536", fallback: "Choose a private key owned by this Mac user."), HubL10n.text("hub.TeslaMateServerImporter.697.2537", fallback: "Do not select the .pub file.")]
         case "password_required":
-            title = "Enter the SSH password"
-            summary = "Password authentication was selected but no password was entered."
-            suggestions = ["Enter the server account password, or use SSH config, agent, or key authentication."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.699.2539", fallback: "Enter the SSH password")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.700.2540", fallback: "Password authentication was selected but no password was entered.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.701.2541", fallback: "Enter the server account password, or use SSH config, agent, or key authentication.")]
         case "authentication_failed", "ssh_authentication_or_connection":
-            title = "SSH authentication failed"
-            summary = "The server did not accept the selected account or authentication method."
+            title = HubL10n.text("hub.TeslaMateServerImporter.703.2544", fallback: "SSH authentication failed")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.704.2545", fallback: "The server did not accept the selected account or authentication method.")
             suggestions = method == .keyOrAgent
-                ? ["Leave the key empty to use ~/.ssh/config, ssh-agent, and standard keys.",
-                   "Choose the private key that works in Terminal, or switch to Password."]
-                : ["Check the account password, or switch to SSH config, agent, or key."]
+                ? [HubL10n.text("hub.TeslaMateServerImporter.706.2546", fallback: "Leave the key empty to use ~/.ssh/config, ssh-agent, and standard keys."),
+                   HubL10n.text("hub.TeslaMateServerImporter.707.2547", fallback: "Choose the private key that works in Terminal, or switch to Password.")]
+                : [HubL10n.text("hub.TeslaMateServerImporter.708.2548", fallback: "Check the account password, or switch to SSH config, agent, or key.")]
         case "host_key_failed":
-            title = "Server identity needs verification"
-            summary = "OpenSSH refused the server identity."
-            suggestions = ["Verify the server fingerprint through a trusted channel, then add or update its entry in ~/.ssh/known_hosts."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.710.2550", fallback: "Server identity needs verification")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.711.2551", fallback: "OpenSSH refused the server identity.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.712.2552", fallback: "Verify the server fingerprint through a trusted channel, then add or update its entry in ~/.ssh/known_hosts.")]
         case "connection_refused":
-            title = "SSH connection refused"
-            summary = "The server is reachable, but SSH is not accepting this connection."
-            suggestions = ["Check that SSH is running and the port is correct."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.714.2554", fallback: "SSH connection refused")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.715.2555", fallback: "The server is reachable, but SSH is not accepting this connection.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.716.2556", fallback: "Check that SSH is running and the port is correct.")]
         case "name_resolution_failed":
-            title = "Server not found"
-            summary = "The server name could not be resolved."
-            suggestions = ["Check the server address, SSH config alias, DNS, and VPN."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.718.2558", fallback: "Server not found")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.719.2559", fallback: "The server name could not be resolved.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.720.2560", fallback: "Check the server address, SSH config alias, DNS, and VPN.")]
         case "route_unavailable":
-            title = "Server unreachable"
-            summary = "This Mac has no route to the TeslaMate server."
-            suggestions = ["Check the network, VPN, and firewall."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.722.2562", fallback: "Server unreachable")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.723.2563", fallback: "This Mac has no route to the TeslaMate server.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.724.2564", fallback: "Check the network, VPN, and firewall.")]
         case "connection_timed_out", "timed_out":
-            title = "SSH connection timed out"
-            summary = "The TeslaMate server did not respond in time."
-            suggestions = ["Check the address, port, network, VPN, and firewall."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.726.2567", fallback: "SSH connection timed out")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.727.2568", fallback: "The TeslaMate server did not respond in time.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.728.2569", fallback: "Check the address, port, network, VPN, and firewall.")]
         case "connection_closed":
-            title = "SSH connection closed"
-            summary = "The server closed the connection."
-            suggestions = ["Check the server SSH logs and account policy."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.730.2571", fallback: "SSH connection closed")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.731.2572", fallback: "The server closed the connection.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.732.2573", fallback: "Check the server SSH logs and account policy.")]
         case "forwarding_disabled":
-            title = "SSH forwarding is disabled"
-            summary = "Hub connected, but the server refused the protected database tunnel."
-            suggestions = ["Allow TCP forwarding for this SSH account."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.734.2575", fallback: "SSH forwarding is disabled")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.735.2576", fallback: "Hub connected, but the server refused the protected database tunnel.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.736.2577", fallback: "Allow TCP forwarding for this SSH account.")]
         case "tunnel_timeout", "tunnel_failed":
-            title = "Database tunnel failed"
-            summary = "Hub connected, but the protected database tunnel did not become ready."
-            suggestions = ["Try again, then open Logs for the safe reason code."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.738.2580", fallback: "Database tunnel failed")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.739.2581", fallback: "Hub connected, but the protected database tunnel did not become ready.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.740.2582", fallback: "Try again, then open Logs for the safe reason code.")]
         case "local_port_unavailable":
-            title = "Local tunnel port unavailable"
-            summary = "Hub could not reserve a local database tunnel port."
-            suggestions = ["Try again."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.742.2584", fallback: "Local tunnel port unavailable")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.743.2585", fallback: "Hub could not reserve a local database tunnel port.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.744.2586", fallback: "Try again.")]
         case "teslamate_version_too_old":
-            title = "Update TeslaMate first"
-            summary = "Guided migration requires TeslaMate 4.2.0 or newer."
-            suggestions = ["Back up TeslaMate, update it, let its migrations finish, then connect again."]
+            title = HubL10n.text("hub.TeslaMateServerImporter.746.2588", fallback: "Update TeslaMate first")
+            summary = HubL10n.text("hub.TeslaMateServerImporter.747.2589", fallback: "Guided migration requires TeslaMate 4.2.0 or newer.")
+            suggestions = [HubL10n.text("hub.TeslaMateServerImporter.748.2590", fallback: "Back up TeslaMate, update it, let its migrations finish, then connect again.")]
         default:
-            title = "TeslaMate connection failed"
+            title = HubL10n.text("hub.OnboardingWindowController.298.1866", fallback: "TeslaMate connection failed")
             summary = discoveryFailureMessageForReason(reason)
-            suggestions = ["Check the server account and Docker access, then try again."]
+            suggestions = [HubL10n.text("hub.OnboardingWindowController.300.1868", fallback: "Check the server account and Docker access, then try again.")]
         }
         return TeslaMateSSHDiagnostic(reasonCode: reason,
                                       title: title,
@@ -760,102 +760,102 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
 
     private static func discoveryFailureMessageForReason(_ reason: String) -> String {
         switch reason {
-        case "teslamate_not_found": return "TeslaMate is not running or its container could not be found."
-        case "compose_project_missing": return "The TeslaMate Docker Compose project could not be identified."
-        case "database_not_found": return "The TeslaMate database container is not running or could not be found."
-        case "credentials_incomplete": return "TeslaMate database or encryption credentials are incomplete."
-        case "database_network_invalid": return "The TeslaMate database network could not be identified safely."
-        case "multiple_vehicles": return "Guided import currently requires a TeslaMate database with one vehicle."
-        case "vehicle_missing": return "TeslaMate has no vehicle available to import."
-        case "multiple_teslamate_instances": return "More than one TeslaMate instance is running."
-        case "multiple_database_instances": return "The TeslaMate project has more than one database container."
-        case "passwordless_sudo_required": return "This account cannot run Docker with passwordless sudo."
-        case "sudo_not_permitted": return "This account is not allowed to run Docker with sudo."
-        case "docker_permission_denied": return "This account cannot access Docker."
-        case "docker_missing": return "Docker was not found on the TeslaMate server."
-        case "docker_unavailable": return "Docker is installed but unavailable."
-        case "teslamate_version_too_old": return "Guided migration requires TeslaMate 4.2.0 or newer."
-        default: return "Hub could not read TeslaMate over SSH."
+        case "teslamate_not_found": return HubL10n.text("hub.TeslaMateServerImporter.763.2594", fallback: "TeslaMate is not running or its container could not be found.")
+        case "compose_project_missing": return HubL10n.text("hub.TeslaMateServerImporter.764.2596", fallback: "The TeslaMate Docker Compose project could not be identified.")
+        case "database_not_found": return HubL10n.text("hub.TeslaMateServerImporter.765.2598", fallback: "The TeslaMate database container is not running or could not be found.")
+        case "credentials_incomplete": return HubL10n.text("hub.TeslaMateServerImporter.766.2600", fallback: "TeslaMate database or encryption credentials are incomplete.")
+        case "database_network_invalid": return HubL10n.text("hub.TeslaMateServerImporter.767.2602", fallback: "The TeslaMate database network could not be identified safely.")
+        case "multiple_vehicles": return HubL10n.text("hub.TeslaMateServerImporter.768.2604", fallback: "Guided import currently requires a TeslaMate database with one vehicle.")
+        case "vehicle_missing": return HubL10n.text("hub.TeslaMateServerImporter.769.2606", fallback: "TeslaMate has no vehicle available to import.")
+        case "multiple_teslamate_instances": return HubL10n.text("hub.TeslaMateServerImporter.770.2608", fallback: "More than one TeslaMate instance is running.")
+        case "multiple_database_instances": return HubL10n.text("hub.TeslaMateServerImporter.771.2610", fallback: "The TeslaMate project has more than one database container.")
+        case "passwordless_sudo_required": return HubL10n.text("hub.TeslaMateServerImporter.772.2612", fallback: "This account cannot run Docker with passwordless sudo.")
+        case "sudo_not_permitted": return HubL10n.text("hub.TeslaMateServerImporter.773.2614", fallback: "This account is not allowed to run Docker with sudo.")
+        case "docker_permission_denied": return HubL10n.text("hub.OnboardingWindowController.299.1867", fallback: "This account cannot access Docker.")
+        case "docker_missing": return HubL10n.text("hub.TeslaMateServerImporter.775.2618", fallback: "Docker was not found on the TeslaMate server.")
+        case "docker_unavailable": return HubL10n.text("hub.TeslaMateServerImporter.776.2620", fallback: "Docker is installed but unavailable.")
+        case "teslamate_version_too_old": return HubL10n.text("hub.TeslaMateServerImporter.747.2589", fallback: "Guided migration requires TeslaMate 4.2.0 or newer.")
+        default: return HubL10n.text("hub.TeslaMateServerImporter.778.2623", fallback: "Hub could not read TeslaMate over SSH.")
         }
     }
 
     static func tunnelFailureMessage(_ diagnostic: String) -> String {
         switch sshFailureReason(diagnostic) {
         case "forwarding_disabled":
-            return "The SSH server does not permit database forwarding. Enable TCP forwarding for this account."
+            return HubL10n.text("hub.TeslaMateServerImporter.785.2625", fallback: "The SSH server does not permit database forwarding. Enable TCP forwarding for this account.")
         case "authentication_failed":
-            return "SSH authentication failed while opening the database tunnel."
+            return HubL10n.text("hub.TeslaMateServerImporter.787.2627", fallback: "SSH authentication failed while opening the database tunnel.")
         case "host_key_failed":
-            return "SSH host identity verification failed. Verify or update this server in your SSH known-hosts file."
+            return HubL10n.text("hub.TeslaMateServerImporter.789.2629", fallback: "SSH host identity verification failed. Verify or update this server in your SSH known-hosts file.")
         case "connection_refused":
-            return "The SSH server refused the connection. Check that SSH is running and the port is correct."
+            return HubL10n.text("hub.TeslaMateServerImporter.791.2631", fallback: "The SSH server refused the connection. Check that SSH is running and the port is correct.")
         case "name_resolution_failed":
-            return "The SSH server name could not be resolved. Check the server address and network."
+            return HubL10n.text("hub.TeslaMateServerImporter.793.2633", fallback: "The SSH server name could not be resolved. Check the server address and network.")
         case "route_unavailable":
-            return "The SSH server is unreachable from this Mac. Check the network, VPN, and firewall."
+            return HubL10n.text("hub.TeslaMateServerImporter.795.2635", fallback: "The SSH server is unreachable from this Mac. Check the network, VPN, and firewall.")
         case "connection_timed_out":
-            return "The SSH connection timed out. Check the server address, port, network, and firewall."
+            return HubL10n.text("hub.TeslaMateServerImporter.797.2637", fallback: "The SSH connection timed out. Check the server address, port, network, and firewall.")
         case "connection_closed":
-            return "The SSH server closed the connection while opening the database tunnel."
+            return HubL10n.text("hub.TeslaMateServerImporter.799.2639", fallback: "The SSH server closed the connection while opening the database tunnel.")
         case "local_port_unavailable":
-            return "A local database tunnel port was unavailable. Try again."
+            return HubL10n.text("hub.TeslaMateServerImporter.801.2641", fallback: "A local database tunnel port was unavailable. Try again.")
         default:
-            return "Could not open the protected TeslaMate database tunnel."
+            return HubL10n.text("hub.TeslaMateServerImporter.803.2642", fallback: "Could not open the protected TeslaMate database tunnel.")
         }
     }
 
     static func discoveryFailureMessage(_ error: Error) -> String {
         switch discoveryFailureReason(error) {
         case "teslamate_not_found":
-            return "TeslaMate is not running or its container could not be found."
+            return HubL10n.text("hub.TeslaMateServerImporter.763.2594", fallback: "TeslaMate is not running or its container could not be found.")
         case "compose_project_missing":
-            return "The TeslaMate Docker Compose project could not be identified."
+            return HubL10n.text("hub.TeslaMateServerImporter.764.2596", fallback: "The TeslaMate Docker Compose project could not be identified.")
         case "database_not_found":
-            return "The TeslaMate database container is not running or could not be found."
+            return HubL10n.text("hub.TeslaMateServerImporter.765.2598", fallback: "The TeslaMate database container is not running or could not be found.")
         case "credentials_incomplete":
-            return "TeslaMate database or encryption credentials are incomplete."
+            return HubL10n.text("hub.TeslaMateServerImporter.766.2600", fallback: "TeslaMate database or encryption credentials are incomplete.")
         case "database_network_invalid":
-            return "The TeslaMate database network could not be identified safely."
+            return HubL10n.text("hub.TeslaMateServerImporter.767.2602", fallback: "The TeslaMate database network could not be identified safely.")
         case "multiple_vehicles":
-            return "Guided import currently requires a TeslaMate database with one vehicle."
+            return HubL10n.text("hub.TeslaMateServerImporter.768.2604", fallback: "Guided import currently requires a TeslaMate database with one vehicle.")
         case "vehicle_missing":
-            return "TeslaMate has no vehicle available to import."
+            return HubL10n.text("hub.TeslaMateServerImporter.769.2606", fallback: "TeslaMate has no vehicle available to import.")
         case "multiple_teslamate_instances":
-            return "More than one TeslaMate instance is running. Stop the instance you do not want to import, then try again."
+            return HubL10n.text("hub.TeslaMateServerImporter.824.2658", fallback: "More than one TeslaMate instance is running. Stop the instance you do not want to import, then try again.")
         case "multiple_database_instances":
-            return "The selected TeslaMate project has more than one database container. Stop the duplicate, then try again."
+            return HubL10n.text("hub.TeslaMateServerImporter.826.2660", fallback: "The selected TeslaMate project has more than one database container. Stop the duplicate, then try again.")
         case "passwordless_sudo_required":
-            return "This account cannot run Docker with passwordless sudo. Grant Docker access or turn off passwordless sudo and use an account that can access Docker directly."
+            return HubL10n.text("hub.TeslaMateServerImporter.828.2662", fallback: "This account cannot run Docker with passwordless sudo. Grant Docker access or turn off passwordless sudo and use an account that can access Docker directly.")
         case "sudo_not_permitted":
-            return "This account is not allowed to run Docker with sudo. Grant Docker access or use another server account."
+            return HubL10n.text("hub.TeslaMateServerImporter.830.2664", fallback: "This account is not allowed to run Docker with sudo. Grant Docker access or use another server account.")
         case "docker_permission_denied":
-            return "This account cannot access Docker. Grant direct Docker access or allow passwordless sudo for Docker."
+            return HubL10n.text("hub.TeslaMateServerImporter.832.2666", fallback: "This account cannot access Docker. Grant direct Docker access or allow passwordless sudo for Docker.")
         case "docker_missing":
-            return "Docker was not found on the TeslaMate server. Check the server and account PATH."
+            return HubL10n.text("hub.TeslaMateServerImporter.834.2668", fallback: "Docker was not found on the TeslaMate server. Check the server and account PATH.")
         case "docker_unavailable":
-            return "Docker is installed but unavailable. Check that the Docker service is running."
+            return HubL10n.text("hub.TeslaMateServerImporter.836.2670", fallback: "Docker is installed but unavailable. Check that the Docker service is running.")
         case "teslamate_version_too_old":
-            return "Guided migration requires TeslaMate 4.2.0 or newer. Update TeslaMate, then try again."
+            return HubL10n.text("hub.TeslaMateServerImporter.838.2672", fallback: "Guided migration requires TeslaMate 4.2.0 or newer. Update TeslaMate, then try again.")
         case "ssh_authentication_or_connection":
-            return "SSH could not connect or authenticate. Check the server, port, account, and selected authentication method."
+            return HubL10n.text("hub.TeslaMateServerImporter.840.2674", fallback: "SSH could not connect or authenticate. Check the server, port, account, and selected authentication method.")
         case "authentication_failed":
-            return "SSH authentication failed. Check the account and selected authentication method."
+            return HubL10n.text("hub.TeslaMateServerImporter.842.2676", fallback: "SSH authentication failed. Check the account and selected authentication method.")
         case "host_key_failed":
-            return "SSH host identity verification failed. Verify or update this server in your SSH known-hosts file."
+            return HubL10n.text("hub.TeslaMateServerImporter.789.2629", fallback: "SSH host identity verification failed. Verify or update this server in your SSH known-hosts file.")
         case "connection_refused":
-            return "The SSH server refused the connection. Check that SSH is running and the port is correct."
+            return HubL10n.text("hub.TeslaMateServerImporter.791.2631", fallback: "The SSH server refused the connection. Check that SSH is running and the port is correct.")
         case "name_resolution_failed":
-            return "The SSH server name could not be resolved. Check the server address and network."
+            return HubL10n.text("hub.TeslaMateServerImporter.793.2633", fallback: "The SSH server name could not be resolved. Check the server address and network.")
         case "route_unavailable":
-            return "The SSH server is unreachable from this Mac. Check the network, VPN, and firewall."
+            return HubL10n.text("hub.TeslaMateServerImporter.795.2635", fallback: "The SSH server is unreachable from this Mac. Check the network, VPN, and firewall.")
         case "connection_timed_out":
-            return "The SSH connection timed out. Check the server address, port, network, and firewall."
+            return HubL10n.text("hub.TeslaMateServerImporter.797.2637", fallback: "The SSH connection timed out. Check the server address, port, network, and firewall.")
         case "connection_closed":
-            return "The SSH server closed the connection. Check the server logs and SSH policy."
+            return HubL10n.text("hub.TeslaMateServerImporter.854.2688", fallback: "The SSH server closed the connection. Check the server logs and SSH policy.")
         case "timed_out":
-            return "The SSH connection timed out. Check the server address, port, and network."
+            return HubL10n.text("hub.TeslaMateServerImporter.856.2690", fallback: "The SSH connection timed out. Check the server address, port, and network.")
         default:
-            return "Could not read TeslaMate over SSH. Check authentication and Docker access."
+            return HubL10n.text("hub.TeslaMateServerImporter.858.2691", fallback: "Could not read TeslaMate over SSH. Check authentication and Docker access.")
         }
     }
 

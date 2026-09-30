@@ -9,9 +9,9 @@ final class HubApplication: NSApplication {
         guard AppDelegate.finishSheetsBeforeQuit(in: windows) else {
             activate(ignoringOtherApps: true)
             let alert = NSAlert()
-            alert.messageText = "Hub is finishing an operation"
-            alert.informativeText = "Wait for the current setup, service, vehicle, or diagnostics operation to finish, then quit. Quitting the app does not stop the background Hub service."
-            alert.addButton(withTitle: "OK")
+            alert.messageText = HubL10n.text("hub.AppDelegate.12.1", fallback: "Hub is finishing an operation")
+            alert.informativeText = HubL10n.text("hub.AppDelegate.13.2", fallback: "Wait for the current setup, service, vehicle, or diagnostics operation to finish, then quit. Quitting the app does not stop the background Hub service.")
+            alert.addButton(withTitle: HubL10n.text("hub.AppDelegate.14.3", fallback: "OK"))
             _ = HubUIPresentation.response(to: alert)
             return
         }
@@ -20,6 +20,7 @@ final class HubApplication: NSApplication {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
+    private static let windowMenuTag = 104
     private var mainWindowController: MainWindowController?
     private var hubController: HubController!
     private let keyWindow: () -> NSWindow?
@@ -29,9 +30,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         super.init()
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        DevelopmentEventLog.drainAll()
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = Self.makeMainMenu(actionTarget: self)
-        NSApp.windowsMenu = NSApp.mainMenu?.items.compactMap(\.submenu).first { $0.title == "Window" }
+        NSApp.windowsMenu = NSApp.mainMenu?.item(withTag: Self.windowMenuTag)?.submenu
     }
 
     static func makeMainMenu(actionTarget: AnyObject? = nil) -> NSMenu {
@@ -41,117 +46,118 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let applicationMenu = NSMenu()
         applicationItem.submenu = applicationMenu
         mainMenu.addItem(applicationItem)
-        applicationMenu.addItem(withTitle: "About Teslatlas Hub",
+        applicationMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.44.5", fallback: "About Teslatlas Hub"),
                                 action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
                                 keyEquivalent: "")
         let legal = applicationMenu.addItem(
-            withTitle: "Legal & Licence…",
+            withTitle: HubL10n.text("hub.AppDelegate.48.6", fallback: "Legal & Licence…"),
             action: #selector(showLegalNotice(_:)),
             keyEquivalent: ""
         )
         legal.target = actionTarget
         if HubRelease.bundledSourceCommit != nil {
             let source = applicationMenu.addItem(
-                withTitle: "Corresponding Source…",
+                withTitle: HubL10n.text("hub.AppDelegate.55.7", fallback: "Corresponding Source…"),
                 action: #selector(openCorrespondingSource(_:)),
                 keyEquivalent: ""
             )
             source.target = actionTarget
         }
         applicationMenu.addItem(.separator())
-        applicationMenu.addItem(withTitle: "Hide Teslatlas Hub",
+        applicationMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.62.8", fallback: "Hide Teslatlas Hub"),
                                 action: #selector(NSApplication.hide(_:)),
                                 keyEquivalent: "h")
-        let hideOthers = applicationMenu.addItem(withTitle: "Hide Others",
+        let hideOthers = applicationMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.65.10", fallback: "Hide Others"),
                                                  action: #selector(NSApplication.hideOtherApplications(_:)),
                                                  keyEquivalent: "h")
         hideOthers.keyEquivalentModifierMask = [.command, .option]
-        applicationMenu.addItem(withTitle: "Show All",
+        applicationMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.69.12", fallback: "Show All"),
                                 action: #selector(NSApplication.unhideAllApplications(_:)),
                                 keyEquivalent: "")
         applicationMenu.addItem(.separator())
-        let quit = applicationMenu.addItem(withTitle: "Quit Teslatlas Hub",
+        let quit = applicationMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.73.13", fallback: "Quit Teslatlas Hub"),
                                            action: #selector(quitApplication(_:)),
                                            keyEquivalent: "q")
         quit.target = actionTarget
 
         let editItem = NSMenuItem()
-        let editMenu = NSMenu(title: "Edit")
+        let editMenu = NSMenu(title: HubL10n.text("hub.AppDelegate.79.15", fallback: "Edit"))
         editItem.submenu = editMenu
         mainMenu.addItem(editItem)
-        editMenu.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = editMenu.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        editMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.82.16", fallback: "Undo"), action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = editMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.83.19", fallback: "Redo"), action: Selector(("redo:")), keyEquivalent: "Z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: "")
+        editMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.86.22", fallback: "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.87.24", fallback: "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.88.26", fallback: "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.89.28", fallback: "Delete"), action: #selector(NSText.delete(_:)), keyEquivalent: "")
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.91.29", fallback: "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
         let fileItem = NSMenuItem()
-        let fileMenu = NSMenu(title: "File")
+        let fileMenu = NSMenu(title: HubL10n.text("hub.AppDelegate.94.31", fallback: "File"))
         fileItem.submenu = fileMenu
         mainMenu.addItem(fileItem)
-        let importData = fileMenu.addItem(withTitle: "Import TeslaMate Data…",
+        let importData = fileMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.97.32", fallback: "Import TeslaMate Data…"),
                                           action: #selector(importData(_:)),
                                           keyEquivalent: "i")
         importData.target = actionTarget
 
         let viewItem = NSMenuItem()
-        let viewMenu = NSMenu(title: "View")
+        let viewMenu = NSMenu(title: HubL10n.text("hub.AppDelegate.103.34", fallback: "View"))
         viewItem.submenu = viewMenu
         mainMenu.addItem(viewItem)
-        let overview = viewMenu.addItem(withTitle: "Overview",
+        let overview = viewMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.106.35", fallback: "Overview"),
                                         action: #selector(showOverview(_:)),
                                         keyEquivalent: "1")
         overview.target = actionTarget
-        let vehicles = viewMenu.addItem(withTitle: "Vehicles",
+        let vehicles = viewMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.110.36", fallback: "Vehicles"),
                                         action: #selector(showVehicles(_:)),
                                         keyEquivalent: "2")
         vehicles.target = actionTarget
-        let activity = viewMenu.addItem(withTitle: "Activity",
+        let activity = viewMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.114.37", fallback: "Activity"),
                                         action: #selector(showActivity(_:)),
                                         keyEquivalent: "3")
         activity.target = actionTarget
-        let settings = viewMenu.addItem(withTitle: "Settings",
+        let settings = viewMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.118.38", fallback: "Settings"),
                                         action: #selector(showSettings(_:)),
                                         keyEquivalent: "4")
         settings.target = actionTarget
         viewMenu.addItem(.separator())
-        let diagnostics = viewMenu.addItem(withTitle: "Diagnostics",
+        let diagnostics = viewMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.123.39", fallback: "Diagnostics"),
                                            action: #selector(showDiagnostics(_:)),
                                            keyEquivalent: "d")
         diagnostics.keyEquivalentModifierMask = [.command, .shift]
         diagnostics.target = actionTarget
-        let logs = viewMenu.addItem(withTitle: "Activity & Logs",
+        let logs = viewMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.128.41", fallback: "Activity & Logs"),
                                     action: #selector(showLogs(_:)),
                                     keyEquivalent: "l")
         logs.target = actionTarget
-        let service = viewMenu.addItem(withTitle: "Service Details",
+        let service = viewMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.132.43", fallback: "Service Details"),
                                        action: #selector(showServiceDetails(_:)),
                                        keyEquivalent: "i")
         service.keyEquivalentModifierMask = [.command, .option]
         service.target = actionTarget
 
         let windowItem = NSMenuItem()
-        let windowMenu = NSMenu(title: "Window")
+        windowItem.tag = windowMenuTag
+        let windowMenu = NSMenu(title: HubL10n.text("hub.AppDelegate.139.45", fallback: "Window"))
         windowItem.submenu = windowMenu
         mainMenu.addItem(windowItem)
         // AppKit disables performClose: for attached sheets before asking the
         // window to validate it. Route Close explicitly to the key window so an
         // idle account sheet can use its guarded Cancel action instead.
-        let close = windowMenu.addItem(withTitle: "Close", action: #selector(closeKeyWindow(_:)), keyEquivalent: "w")
+        let close = windowMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.145.46", fallback: "Close"), action: #selector(closeKeyWindow(_:)), keyEquivalent: "w")
         close.target = actionTarget
-        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.147.48", fallback: "Minimize"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.148.50", fallback: "Zoom"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
 
         let helpItem = NSMenuItem()
-        let helpMenu = NSMenu(title: "Help")
+        let helpMenu = NSMenu(title: HubL10n.text("hub.AppDelegate.151.51", fallback: "Help"))
         helpItem.submenu = helpMenu
         mainMenu.addItem(helpItem)
-        let help = helpMenu.addItem(withTitle: "Teslatlas Hub Help",
+        let help = helpMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.154.52", fallback: "Teslatlas Hub Help"),
                                     action: #selector(showHelp(_:)),
                                     keyEquivalent: "?")
         help.target = actionTarget
@@ -224,9 +230,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         } catch {
             let alert = NSAlert()
             alert.alertStyle = .critical
-            alert.messageText = "Local Hub development configuration was rejected"
+            alert.messageText = HubL10n.text("hub.AppDelegate.227.53", fallback: "Local Hub development configuration was rejected")
             alert.informativeText = error.localizedDescription
-            alert.addButton(withTitle: "Quit")
+            alert.addButton(withTitle: HubL10n.text("hub.AppDelegate.229.54", fallback: "Quit"))
             _ = HubUIPresentation.response(to: alert)
             NSApp.terminate(nil)
             return
@@ -328,9 +334,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func showHelp(_ sender: Any?) {
         let alert = NSAlert()
-        alert.messageText = "Teslatlas Hub Help"
-        alert.informativeText = "Overview shows Hub health at a glance. Vehicles contains status and commands. Activity keeps recent events together, and Settings contains connections, diagnostics, imports and service details."
-        alert.addButton(withTitle: "OK")
+        alert.messageText = HubL10n.text("hub.AppDelegate.154.52", fallback: "Teslatlas Hub Help")
+        alert.informativeText = HubL10n.text("hub.AppDelegate.332.71", fallback: "Overview shows Hub health at a glance. Vehicles contains status and commands. Activity keeps recent events together, and Settings contains connections, diagnostics, imports and service details.")
+        alert.addButton(withTitle: HubL10n.text("hub.AppDelegate.14.3", fallback: "OK"))
         HubUIPresentation.presentInformation(alert)
     }
 
@@ -341,12 +347,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func showLegalNotice(_ sender: Any?) {
         let alert = NSAlert()
-        alert.messageText = "Teslatlas Hub v\(HubRelease.bundledVersion)"
+        alert.messageText = HubL10n.format("hub.AppDelegate.344.73", fallback: "Teslatlas Hub v%1$@", arguments: [String(describing: HubRelease.bundledVersion)])
         alert.informativeText = Self.legalNoticeText
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: "View Licence")
+        alert.addButton(withTitle: HubL10n.text("hub.AppDelegate.14.3", fallback: "OK"))
+        alert.addButton(withTitle: HubL10n.text("hub.AppDelegate.347.75", fallback: "View Licence"))
         if HubRelease.bundledSourceCommit != nil {
-            alert.addButton(withTitle: "Corresponding Source")
+            alert.addButton(withTitle: HubL10n.text("hub.AppDelegate.349.76", fallback: "Corresponding Source"))
         }
         switch HubUIPresentation.response(to: alert) {
         case .alertSecondButtonReturn:

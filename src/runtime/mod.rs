@@ -5,3 +5,5 @@
 pub mod config;
 pub mod diagnostics;
 pub mod lifecycle;
+
+pub mod development_event_log;

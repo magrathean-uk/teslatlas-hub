@@ -54,10 +54,18 @@ fn teslamate_version_confirmation(
 fn print_teslamate_check_success(
     car_id: i64,
     snapshot: &TeslaMateCheckSnapshot,
+    history_only: bool,
     acknowledge_v4_2_compatible_schema: bool,
 ) {
-    let (status, reason_code, guidance) =
-        teslamate_version_confirmation(acknowledge_v4_2_compatible_schema);
+    let (status, reason_code, guidance) = if history_only {
+        if acknowledge_v4_2_compatible_schema {
+            ("compatible", "v4_2_compatible_schema", "The read-only database has the reviewed v4.2-compatible history schema. The TeslaMate application version is unknown; no Tesla credentials were inspected or imported.")
+        } else {
+            ("confirmation_required", "v4_2_schema_acknowledgement_required", "The database has the reviewed v4.2-compatible history schema, but the TeslaMate application version is unknown. Acknowledge schema-only history import before continuing.")
+        }
+    } else {
+        teslamate_version_confirmation(acknowledge_v4_2_compatible_schema)
+    };
     println!(
         "{}",
         serde_json::json!({
@@ -78,6 +86,8 @@ fn print_teslamate_check_success(
             "sourceTokensRelationPresent": snapshot.source_tokens_relation_present,
             "legacyTokenPair": snapshot.legacy_token_pair,
             "sourceNeverMutated": true,
+            "credentialScope": if history_only { "history-only" } else { "credentials-and-history" },
+            "applicationVersionStatus": if history_only { "unknown" } else { "operator-acknowledged" },
             "versionEvidence": "database_schema_only",
             "schemaEvidence": "v4_2_compatible_schema",
             "versionAcknowledged": acknowledge_v4_2_compatible_schema,
@@ -173,6 +183,7 @@ async fn run_teslamate_check(
     source_url: &str,
     car_id: i64,
     postgres_password_file: &Path,
+    history_only: bool,
     acknowledge_v4_2_compatible_schema: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let source = match ReadOnlySource::parse(source_url) {
@@ -191,6 +202,9 @@ async fn run_teslamate_check(
             .into());
         }
     };
+    if history_only && !source.is_loopback() {
+        return Err("history-only import requires a numeric loopback PostgreSQL source".into());
+    }
     let password = match read_migration_postgres_password(postgres_password_file) {
         Ok(password) => password,
         Err(_) => {
@@ -207,13 +221,17 @@ async fn run_teslamate_check(
             .into());
         }
     };
-    match check_teslamate_compatibility(&source, &password, car_id, TeslaMateReadLimits::default())
-        .await
-    {
+    let snapshot = if history_only {
+        check_teslamate_history_compatibility(&source, &password, car_id, TeslaMateReadLimits::default()).await
+    } else {
+        check_teslamate_compatibility(&source, &password, car_id, TeslaMateReadLimits::default()).await
+    };
+    match snapshot {
         Ok(snapshot) => {
             print_teslamate_check_success(
                 car_id,
                 &snapshot,
+                history_only,
                 acknowledge_v4_2_compatible_schema,
             );
             if acknowledge_v4_2_compatible_schema {

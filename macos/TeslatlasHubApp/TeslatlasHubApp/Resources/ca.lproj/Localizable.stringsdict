@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>hub.DiagnosticsWindowController.182.223</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%2$#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%1$d de %2$d comprovació superada.</string>
+			<key>many</key>
+			<string>%1$d de %2$d comprovacions superades.</string>
+			<key>other</key>
+			<string>%1$d de %2$d comprovacions superades.</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3748.1243</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d vehicle</string>
+			<key>many</key>
+			<string>%d vehicles</string>
+			<key>other</key>
+			<string>%d vehicles</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3906.1333</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Fa %d minut</string>
+			<key>many</key>
+			<string>Fa %d minuts</string>
+			<key>other</key>
+			<string>Fa %d minuts</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3907.1334</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Fa %d hora</string>
+			<key>many</key>
+			<string>Fa %d hores</string>
+			<key>other</key>
+			<string>Fa %d hores</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3908.1335</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Fa %d dia</string>
+			<key>many</key>
+			<string>Fa %d dies</string>
+			<key>other</key>
+			<string>Fa %d dies</string>
+		</dict>
+	</dict>
+	<key>hub.HubDiagnosticsPresentation.structured_results</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d resultat estructurat.</string>
+			<key>many</key>
+			<string>%d resultats estructurats.</string>
+			<key>other</key>
+			<string>%d resultats estructurats.</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

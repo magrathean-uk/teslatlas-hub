@@ -21,7 +21,7 @@ final class HubEmbeddedUtilityPage: HubSurfaceView {
             .replacingOccurrences(of: " ", with: "-")
         identifier = NSUserInterfaceItemIdentifier("hub.embedded." + identifierSlug)
 
-        let back = HubActionButton(title: "Back", target: self, action: #selector(backPressed))
+        let back = HubActionButton(title: HubL10n.text("hub.HubUtilityWindow.24.1603", fallback: "Back"), target: self, action: #selector(backPressed))
         backButton = back
         back.hubStyle = .neutral
         back.hubFont = HubTypography.action
@@ -104,7 +104,7 @@ enum HubOnboardingSheetStyle {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: contentSize),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
-        window.title = "Teslatlas Hub"
+        window.title = HubL10n.text("hub.HubUtilityWindow.107.1609", fallback: "Teslatlas Hub")
         window.titleVisibility = .visible
         window.titlebarAppearsTransparent = false
         window.isReleasedWhenClosed = false

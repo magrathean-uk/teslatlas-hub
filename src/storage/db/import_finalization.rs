@@ -1588,6 +1588,7 @@ impl HubStore {
             projection_state,
             None,
             retain_legacy_inventory,
+            None,
         )
     }
 
@@ -1623,6 +1624,59 @@ impl HubStore {
             projection_state,
             Some((materialised_car, materialised_drives)),
             retain_legacy_inventory,
+            None,
+        )
+    }
+
+    /// Rotate only a verified import lineage; generic second-base publication
+    /// remains forbidden. Current state and prior checkpoint retention commit together.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn finalize_import_generation_replacing_base_with_materialisation(
+        &self,
+        _gate: &PublicationGate,
+        expected: &LineageManifestV2,
+        run_id: Uuid,
+        source_id: Uuid,
+        vehicle_id: Uuid,
+        car_id: i64,
+        updated_at_ms: i64,
+        manifest: &SyncManifest,
+        fingerprint: Sha256Digest,
+        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        binding: &ProjectionBinding,
+        projection_state: &TeslaMateProjectionState,
+        car: &ProjectionCar,
+        drives: &[ProjectionDrive],
+    ) -> Result<(), StoreError> {
+        let current = self
+            .lineage_manifest_for_vehicle(vehicle_id)?
+            .ok_or(StoreError::LineageCatalogConflict)?;
+        if serde_json::to_vec(&current).map_err(StoreError::SerializeManifest)?
+            != serde_json::to_vec(expected).map_err(StoreError::SerializeManifest)?
+            || expected.schema != HUB_PROJECTION_SCHEMA_V2
+            || expected.installation_id != binding.installation_id
+            || expected.account_id != binding.account_id
+            || expected.vehicle_id != binding.vehicle_id
+            || expected.generation != binding.generation
+            || manifest.snapshot_id == expected.base.snapshot_id
+            || manifest.head_sequence <= expected.head_sequence
+        {
+            return Err(StoreError::LineageCatalogConflict);
+        }
+        self.finalize_import_generation_with_projection_state_inner(
+            run_id,
+            source_id,
+            vehicle_id,
+            car_id,
+            updated_at_ms,
+            manifest,
+            fingerprint,
+            geofences,
+            binding,
+            projection_state,
+            Some((car, drives)),
+            false,
+            Some(expected),
         )
     }
 
@@ -1641,6 +1695,7 @@ impl HubStore {
         projection_state: &TeslaMateProjectionState,
         materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
         retain_legacy_inventory: bool,
+        replacement: Option<&LineageManifestV2>,
     ) -> Result<(), StoreError> {
         if run_id.is_nil()
             || source_id.is_nil()
@@ -1689,7 +1744,6 @@ impl HubStore {
                     .ok_or(StoreError::ImportGenerationNotFound)?;
             let session =
                 serde_json::from_str(&encoded).map_err(|_| StoreError::InvalidLifecycleSession)?;
-            publish_manifest_in_transaction(&transaction, manifest, Some(binding))?;
             if let Some((car, drives)) = materialisation {
                 reconcile_imported_materialisation_in_transaction(
                     &transaction,
@@ -1698,9 +1752,17 @@ impl HubStore {
                     car,
                     drives,
                     ImportedProjectionRows::Attached,
-                    PriorImportedDriveRows::None,
+                    if replacement.is_some() {
+                        PriorImportedDriveRows::Durable
+                    } else {
+                        PriorImportedDriveRows::None
+                    },
                 )?;
             }
+            if let Some(expected) = replacement {
+                retire_import_lineage_in_transaction(&transaction, expected, binding)?;
+            }
+            publish_manifest_in_transaction(&transaction, manifest, Some(binding))?;
             promote_imported_open_session_in_transaction(
                 &transaction,
                 source_id,
@@ -2644,5 +2706,135 @@ fn reconcile_imported_materialisation_in_transaction(
                 .map_err(StoreError::LifecycleWrite)?;
         }
     }
+    Ok(())
+}
+
+/// Preserve the exact import checkpoint before changing its active base.
+fn retire_import_lineage_in_transaction(
+    tx: &Transaction<'_>,
+    expected: &LineageManifestV2,
+    binding: &ProjectionBinding,
+) -> Result<(), StoreError> {
+    let vehicle = expected.vehicle_id.to_string();
+    let current: Option<(String, i64, String)> = tx
+        .query_row(
+            "SELECT base_snapshot_id,head_sequence,head_digest FROM sync_heads WHERE vehicle_id=?1",
+            params![&vehicle],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()
+        .map_err(StoreError::LineageCatalog)?;
+    if current
+        != Some((
+            expected.base.snapshot_id.to_string(),
+            i64::try_from(expected.head_sequence).map_err(|_| StoreError::SequenceTooLarge)?,
+            expected.head_digest.to_string(),
+        ))
+    {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+    let base: (i64, String, Vec<u8>) = tx
+        .query_row(
+            "SELECT base_sequence,base_digest,packs_json FROM sync_bases WHERE vehicle_id=?1",
+            params![&vehicle],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(StoreError::LineageCatalog)?;
+    if base
+        != (
+            i64::try_from(expected.base.sequence).map_err(|_| StoreError::SequenceTooLarge)?,
+            expected.base.digest.to_string(),
+            serde_json::to_vec(&expected.base.packs).map_err(StoreError::SerializeManifest)?,
+        )
+    {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+    let mut stmt = tx.prepare("SELECT pack_json FROM sync_deltas WHERE vehicle_id=?1 ORDER BY from_sequence,to_sequence")
+        .map_err(StoreError::LineageCatalog)?;
+    let deltas = stmt
+        .query_map(params![&vehicle], |r| r.get::<_, Vec<u8>>(0))
+        .map_err(StoreError::LineageCatalog)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::LineageCatalog)?;
+    let expected_deltas = expected
+        .deltas
+        .iter()
+        .map(serde_json::to_vec)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StoreError::SerializeManifest)?;
+    if deltas != expected_deltas {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+    drop(stmt);
+    let stored: (String,String,String,i64,i64) = tx.query_row(
+        "SELECT snapshot_id,installation_id,account_id,generation,selected_car_id FROM v2_base_bindings WHERE vehicle_id=?1",
+        params![&vehicle], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)),
+    ).map_err(StoreError::LineageCatalog)?;
+    if stored
+        != (
+            expected.base.snapshot_id.to_string(),
+            binding.installation_id.to_string(),
+            binding.account_id.to_string(),
+            i64::try_from(binding.generation).map_err(|_| StoreError::SequenceTooLarge)?,
+            binding.selected_car_id,
+        )
+    {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+    // Imported rows do not prove ownership of collector spans.
+    let live: bool = tx
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_live_delta_spans WHERE vehicle_id=?1)",
+            params![&vehicle],
+            |r| r.get(0),
+        )
+        .map_err(StoreError::LineageCatalog)?;
+    if live {
+        return Err(StoreError::LineageCatalogConflict);
+    }
+    let now = retired_lineage_clock_ms()?;
+    let expires = now
+        .checked_add(RETIRED_LINEAGE_PACK_RETENTION_MS)
+        .ok_or(StoreError::RetiredLineageClockOverflow)?;
+    tx.execute(
+        "INSERT INTO sync_retired_lineages(vehicle_id,head_digest,manifest_json,retired_at_ms,expires_at_ms) VALUES(?1,?2,?3,?4,?5)",
+        params![&vehicle,expected.head_digest.to_string(),
+            serde_json::to_vec(expected).map_err(StoreError::SerializeManifest)?,now,expires],
+    ).map_err(StoreError::LineageCatalog)?;
+    for pack in expected
+        .base
+        .packs
+        .iter()
+        .chain(expected.deltas.iter().map(|d| &d.pack))
+    {
+        tx.execute(
+            "INSERT INTO sync_retired_lineage_packs(vehicle_id,head_digest,pack_digest,relative_path,compressed_bytes) VALUES(?1,?2,?3,?4,?5)",
+            params![&vehicle,expected.head_digest.to_string(),pack.sha256.to_string(),
+                &pack.relative_path,i64::try_from(pack.compressed_bytes)
+                    .map_err(|_|StoreError::PackSizeTooLarge)?],
+        ).map_err(StoreError::LineageCatalog)?;
+    }
+    tx.execute(
+        "DELETE FROM sync_deltas WHERE vehicle_id=?1",
+        params![&vehicle],
+    )
+    .map_err(StoreError::LineageCatalog)?;
+    tx.execute(
+        "DELETE FROM sync_heads WHERE vehicle_id=?1",
+        params![&vehicle],
+    )
+    .map_err(StoreError::LineageCatalog)?;
+    // Cascades remove only the superseded binding and import digest/inventory.
+    tx.execute(
+        "DELETE FROM sync_bases WHERE vehicle_id=?1",
+        params![&vehicle],
+    )
+    .map_err(StoreError::LineageCatalog)?;
+    // Retired objects remain reachable only through the expiring checkpoint.
+    tx.execute(
+        "DELETE FROM sync_manifests WHERE snapshot_id=?1",
+        params![expected.base.snapshot_id.to_string()],
+    )
+    .map_err(StoreError::LineageCatalog)?;
     Ok(())
 }

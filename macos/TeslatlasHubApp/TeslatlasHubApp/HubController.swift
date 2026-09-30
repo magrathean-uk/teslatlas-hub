@@ -97,10 +97,10 @@ enum HubHealth: Equatable {
 
     var title: String {
         switch self {
-        case .running: return "Hub is running"
-        case .stopped: return "Hub is stopped"
-        case .needsInstall: return "Setup required"
-        case .degraded: return "Attention needed"
+        case .running: return HubL10n.text("hub.HubController.100.306", fallback: "Hub is running")
+        case .stopped: return HubL10n.text("hub.HubController.101.307", fallback: "Hub is stopped")
+        case .needsInstall: return HubL10n.text("hub.HubController.102.308", fallback: "Setup required")
+        case .degraded: return HubL10n.text("hub.HubController.103.309", fallback: "Attention needed")
         }
     }
 
@@ -247,8 +247,8 @@ enum HubAccountProvider: String, Equatable {
 
     var displayName: String {
         switch self {
-        case .legacy: return "Legacy token"
-        case .fleet: return "Fleet API"
+        case .legacy: return HubL10n.text("hub.HubController.250.318", fallback: "Legacy token")
+        case .fleet: return HubL10n.text("hub.HubController.251.319", fallback: "Fleet API")
         }
     }
 }
@@ -263,13 +263,16 @@ private struct HubMigrationHandoverState: Codable {
     var phase: HubMigrationHandoverPhase
     let previousIntervalSeconds: Int
     let previousProvider: String?
+    let historyOnly: Bool?
 
     init(phase: HubMigrationHandoverPhase,
          previousIntervalSeconds: Int,
-         previousProvider: String? = nil) {
+         previousProvider: String? = nil,
+         historyOnly: Bool = false) {
         self.phase = phase
         self.previousIntervalSeconds = previousIntervalSeconds
         self.previousProvider = previousProvider
+        self.historyOnly = historyOnly
     }
 }
 
@@ -308,23 +311,23 @@ enum HubVehicleControl: String, CaseIterable, Equatable {
 
     var title: String {
         switch self {
-        case .wake: return "Wake Vehicle"
-        case .climateStart: return "Start Climate"
-        case .climateStop: return "Stop Climate"
-        case .lock: return "Lock Doors"
-        case .unlock: return "Unlock Doors"
-        case .flashLights: return "Flash Lights"
-        case .honkHorn: return "Honk Horn"
+        case .wake: return HubL10n.text("hub.HubController.314.326", fallback: "Wake Vehicle")
+        case .climateStart: return HubL10n.text("hub.HubController.315.327", fallback: "Start Climate")
+        case .climateStop: return HubL10n.text("hub.HubController.316.328", fallback: "Stop Climate")
+        case .lock: return HubL10n.text("hub.HubController.317.329", fallback: "Lock Doors")
+        case .unlock: return HubL10n.text("hub.HubController.318.330", fallback: "Unlock Doors")
+        case .flashLights: return HubL10n.text("hub.HubController.319.331", fallback: "Flash Lights")
+        case .honkHorn: return HubL10n.text("hub.HubController.320.332", fallback: "Honk Horn")
         }
     }
 
     var acceptedMessage: String {
         switch self {
-        case .wake: return "Check the vehicle to confirm it woke."
-        case .climateStart, .climateStop: return "Check the vehicle to confirm the climate changed."
-        case .lock, .unlock: return "Check the vehicle to confirm the doors changed."
-        case .flashLights: return "The flash-lights command was accepted."
-        case .honkHorn: return "The honk-horn command was accepted."
+        case .wake: return HubL10n.text("hub.HubController.326.333", fallback: "Check the vehicle to confirm it woke.")
+        case .climateStart, .climateStop: return HubL10n.text("hub.HubController.327.334", fallback: "Check the vehicle to confirm the climate changed.")
+        case .lock, .unlock: return HubL10n.text("hub.HubController.328.335", fallback: "Check the vehicle to confirm the doors changed.")
+        case .flashLights: return HubL10n.text("hub.HubController.329.336", fallback: "The flash-lights command was accepted.")
+        case .honkHorn: return HubL10n.text("hub.HubController.330.337", fallback: "The honk-horn command was accepted.")
         }
     }
 }
@@ -336,9 +339,9 @@ enum HubVehicleTelemetryStatus: String, Equatable {
 
     var displayName: String {
         switch self {
-        case .current: return "Current"
-        case .cached: return "Cached"
-        case .unknown: return "Unknown"
+        case .current: return HubL10n.text("hub.HubController.342.338", fallback: "Current")
+        case .cached: return HubL10n.text("hub.HubController.343.339", fallback: "Cached")
+        case .unknown: return HubL10n.text("hub.HubController.344.340", fallback: "Unknown")
         }
     }
 }
@@ -367,37 +370,50 @@ struct HubControlVehicle: Equatable {
 }
 
 struct HubSnapshot {
+    enum AccountState {
+        case connected, notConfigured, historyOnly, unknown
+    }
+
+    enum DatabaseState {
+        case healthy, awaitingSetup, unknown
+    }
+
     var health: HubHealth
     var service: String
     var account: String
+    var accountState: AccountState
     var provider: HubAccountProvider?
     var vehicleName: String
     var vehicle: String
+    var hasConfiguredVehicle: Bool
     var controlVehicleID: UUID?
     var controlVehicles: [HubControlVehicle]
     var database: String
+    var databaseState: DatabaseState
     var activity: [HubActivity]
     var version: String
     var dataDirectory: URL?
     var diagnosticLines: [String]
 
     var accountDisplay: String {
-        guard account == "Connected", let provider else { return account }
-        return "\(account) · \(provider.displayName)"
+        guard accountState == .connected, let provider else { return account }
+        return HubL10n.format("hub.HubController.389.342", fallback: "%1$@ · %2$@", arguments: [String(describing: account), String(describing: provider.displayName)])
     }
 
     var shouldOfferTeslaMateImport: Bool {
-        health != .running && account == "Not configured"
-            && database == "Waiting for setup or import"
+        health != .running && accountState == .notConfigured
+            && databaseState == .awaitingSetup
     }
 
     static let previewRunning = HubSnapshot(
         health: .running,
         service: "Active",
         account: "Connected",
+        accountState: .connected,
         provider: .fleet,
         vehicleName: "Aurora",
         vehicle: "Model 3 Long Range · Parked · 78% · Home",
+        hasConfiguredVehicle: true,
         controlVehicleID: UUID(uuidString: "B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5"),
         controlVehicles: [
             HubControlVehicle(
@@ -419,6 +435,7 @@ struct HubSnapshot {
             )
         ],
         database: "teslatlas.sqlite · 3.51 GB (imported)",
+        databaseState: .healthy,
         activity: [
             HubActivity(message: "Imported TeslaMate history", age: "just now", color: .systemGreen)
         ],
@@ -435,18 +452,21 @@ struct HubSnapshot {
 
     static let firstRun = HubSnapshot(
         health: .needsInstall,
-        service: "Not installed",
-        account: "Not configured",
+        service: HubL10n.text("hub.HubController.441.368", fallback: "Not installed"),
+        account: HubL10n.text("hub.HubController.393.343", fallback: "Not configured"),
+        accountState: .notConfigured,
         provider: nil,
-        vehicleName: "Vehicle",
-        vehicle: "No configured vehicle",
+        vehicleName: HubL10n.text("hub.HubController.1163.481", fallback: "Vehicle"),
+        vehicle: HubL10n.text("hub.HubController.445.371", fallback: "No configured vehicle"),
+        hasConfiguredVehicle: false,
         controlVehicleID: nil,
         controlVehicles: [],
-        database: "Waiting for setup or import",
+        database: HubL10n.text("hub.HubController.394.344", fallback: "Waiting for setup or import"),
+        databaseState: .awaitingSetup,
         activity: [],
         version: HubRelease.fallbackVersion,
         dataDirectory: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/Teslatlas Hub/data"),
-        diagnosticLines: ["Hub has not been configured or installed."]
+        diagnosticLines: [HubL10n.text("hub.HubController.452.374", fallback: "Hub has not been configured or installed.")]
     )
 }
 
@@ -461,17 +481,17 @@ enum HubActionError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .preview:
-            return "Preview mode is read-only. No process, installer, or launchctl action was run."
+            return HubL10n.text("hub.HubController.467.375", fallback: "Preview mode is read-only. No process, installer, or launchctl action was run.")
         case let .missingResource(name):
-            return "Embedded resource is missing: \(name)"
+            return HubL10n.format("hub.HubController.469.376", fallback: "Embedded resource is missing: %1$@", arguments: [String(describing: name)])
         case let .untrustedInstaller(reason):
-            return "Installer trust check failed: \(reason)"
+            return HubL10n.format("hub.HubController.471.377", fallback: "Installer trust check failed: %1$@", arguments: [String(describing: reason)])
         case let .commandFailed(message):
             return message
         case let .commandExited(_, message):
             return message
         case .commandTimedOut:
-            return "Hub command timed out."
+            return HubL10n.text("hub.HubController.477.378", fallback: "Hub command timed out.")
         }
     }
 }
@@ -769,13 +789,13 @@ enum HubProcessExecutor {
                     callbackGate.cancel()
                     pipeReader.cancel()
                     _ = reader.wait(timeout: .now() + max(0.001, outputDrainTimeout))
-                    completion(.failure(HubActionError.commandFailed("Hub command output did not close.")))
+                    completion(.failure(HubActionError.commandFailed(HubL10n.text("hub.HubController.775.379", fallback: "Hub command output did not close."))))
                     return
                 }
                 callbackGate.cancel()
                 guard pipeReader.outcome == .endOfFile else {
                     completion(.failure(HubActionError.commandFailed(
-                        "Hub command output could not be read."
+                        HubL10n.text("hub.HubController.781.380", fallback: "Hub command output could not be read.")
                     )))
                     return
                 }
@@ -785,7 +805,7 @@ enum HubProcessExecutor {
                 } else {
                     completion(.failure(HubActionError.commandExited(
                         process.terminationStatus,
-                        text.isEmpty ? "Hub command failed." : text
+                        text.isEmpty ? HubL10n.text("hub.HubController.791.381", fallback: "Hub command failed.") : text
                     )))
                 }
             } catch {
@@ -933,13 +953,13 @@ final class EmbeddedInstaller: HubInstalling {
               expectedSHA256.unicodeScalars.allSatisfy({
                   (48 ... 57).contains($0.value) || (97 ... 102).contains($0.value)
               }) else {
-            throw HubActionError.untrustedInstaller("package digest metadata is invalid")
+            throw HubActionError.untrustedInstaller(HubL10n.text("hub.HubController.939.405", fallback: "package digest metadata is invalid"))
         }
         guard expectedTeamID.count == 10,
               expectedTeamID.unicodeScalars.allSatisfy({
                   (48 ... 57).contains($0.value) || (65 ... 90).contains($0.value)
               }) else {
-            throw HubActionError.untrustedInstaller("Team ID metadata is invalid")
+            throw HubActionError.untrustedInstaller(HubL10n.text("hub.HubController.945.406", fallback: "Team ID metadata is invalid"))
         }
         return "staging=$(/usr/bin/mktemp -d /private/var/tmp/teslatlas-hub-install.XXXXXX)" +
             " || exit 1; " +
@@ -1038,7 +1058,7 @@ final class LaunchctlServiceController: HubServiceControlling {
         case "stop": action = .stop
         case "restart": action = .restart
         default:
-            completion(.failure(HubActionError.commandFailed("Unknown service action.")))
+            completion(.failure(HubActionError.commandFailed(HubL10n.text("hub.DevelopmentHubRuntime.472.142", fallback: "Unknown service action."))))
             return
         }
         let domain = "gui/\(getuid())"
@@ -1145,7 +1165,7 @@ final class LaunchctlServiceController: HubServiceControlling {
                 }
             case .success(true):
                 completion(.failure(HubActionError.commandFailed(
-                    "Hub service did not finish stopping."
+                    HubL10n.text("hub.HubController.1151.476", fallback: "Hub service did not finish stopping.")
                 )))
             case let .failure(error): completion(.failure(error))
             }
@@ -1155,12 +1175,12 @@ final class LaunchctlServiceController: HubServiceControlling {
 
 final class HubController {
     static let previewOnboardingChecks = [
-        HubOnboardingCheck(title: "Service", detail: "Launch agent installed and responsive", passed: true),
-        HubOnboardingCheck(title: "Tesla account", detail: "Credentials stored and valid", passed: true),
-        HubOnboardingCheck(title: "Vehicle", detail: "1 vehicle reachable", passed: true),
-        HubOnboardingCheck(title: "Database", detail: "SQLite schema at revision 42", passed: true),
-        HubOnboardingCheck(title: "Diagnostics", detail: "Preflight checks passed", passed: true),
-        HubOnboardingCheck(title: "Logs", detail: "No errors in the last hour", passed: true)
+        HubOnboardingCheck(title: HubL10n.text("hub.HubController.1161.477", fallback: "Service"), detail: HubL10n.text("hub.HubController.1161.478", fallback: "Launch agent installed and responsive"), passed: true),
+        HubOnboardingCheck(title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"), detail: HubL10n.text("hub.HubController.1162.480", fallback: "Credentials stored and valid"), passed: true),
+        HubOnboardingCheck(title: HubL10n.text("hub.HubController.1163.481", fallback: "Vehicle"), detail: HubL10n.text("hub.HubController.1163.482", fallback: "1 vehicle reachable"), passed: true),
+        HubOnboardingCheck(title: HubL10n.text("hub.DiagnosticsWindowController.374.248", fallback: "Database"), detail: HubL10n.text("hub.HubController.1164.484", fallback: "SQLite schema at revision 42"), passed: true),
+        HubOnboardingCheck(title: HubL10n.text("hub.AppDelegate.123.39", fallback: "Diagnostics"), detail: HubL10n.text("hub.HubController.1165.486", fallback: "Preflight checks passed"), passed: true),
+        HubOnboardingCheck(title: HubL10n.text("hub.HubController.1166.487", fallback: "Logs"), detail: HubL10n.text("hub.DiagnosticsWindowController.377.255", fallback: "No errors in the last hour"), passed: true)
     ]
 
     let previewMode: Bool
@@ -1300,7 +1320,7 @@ final class HubController {
         installedServiceMatchesBundledVersion { matches in
             if matches {
                 HubAppLog.shared.record("installed_version.reused", category: "service")
-                completion(.success("Matching service already installed"))
+                completion(.success(HubL10n.text("hub.HubController.1306.509", fallback: "Matching service already installed")))
             } else {
                 self.installer.install(completion: completion)
             }
@@ -1313,6 +1333,16 @@ final class HubController {
 
     var pendingMigrationHandoverPhase: HubMigrationHandoverPhase? {
         previewMode ? nil : migrationHandoverState?.phase
+    }
+
+    var pendingMigrationHandoverIsHistoryOnly: Bool {
+        !previewMode && migrationHandoverState?.historyOnly == true
+    }
+
+    var historyOnlyControlActive: Bool {
+        guard !previewMode else { return false }
+        if migrationHandoverState?.historyOnly == true { return true }
+        return (try? HistoryOnlyControl.isSelected(for: configPath)) ?? true
     }
 
     /// Reasons that are safe to decide synchronously before the first status refresh.
@@ -1335,7 +1365,7 @@ final class HubController {
             || hasPendingMigrationHandover
             || !FileManager.default.fileExists(atPath: configPath.path)
             || snapshot.health == .needsInstall
-            || snapshot.account == "Not configured"
+            || snapshot.accountState == .notConfigured
     }
 
     func refresh(completion: @escaping (HubSnapshot) -> Void) {
@@ -1405,7 +1435,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard developmentConfiguration == nil else {
             completion(.failure(HubActionError.commandFailed(
-                "A source-run development Hub cannot install or update the production service."
+                HubL10n.text("hub.HubController.1421.524", fallback: "A source-run development Hub cannot install or update the production service.")
             )))
             return
         }
@@ -1436,7 +1466,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard developmentConfiguration == nil else {
             completion(.failure(HubActionError.commandFailed(
-                "A source-run development Hub cannot uninstall the production service or delete its data."
+                HubL10n.text("hub.HubController.1452.535", fallback: "A source-run development Hub cannot uninstall the production service or delete its data.")
             )))
             return
         }
@@ -1470,7 +1500,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard !hasPendingMigrationHandover else {
             completion(.failure(HubActionError.commandFailed(
-                "Finish or cancel the TeslaMate migration handover before signing out."
+                HubL10n.text("hub.HubController.1486.555", fallback: "Finish or cancel the TeslaMate migration handover before signing out.")
             )))
             return
         }
@@ -1488,7 +1518,7 @@ final class HubController {
                                             fields: ["error_code": HubAppLog.errorCode(error)])
                     self.refresh { _ in
                         completion(.failure(HubActionError.commandFailed(
-                            "Disconnect did not finish cleanly. Hub status was refreshed; check whether the account is still connected. \(error.localizedDescription)"
+                            HubL10n.format("hub.HubController.1504.567", fallback: "Disconnect did not finish cleanly. Hub status was refreshed; check whether the account is still connected. %1$@", arguments: [String(describing: error.localizedDescription)])
                         )))
                     }
                 }
@@ -1500,43 +1530,53 @@ final class HubController {
                                      carID: String,
                                      passwordFile: String,
                                      acknowledgeV42CompatibleSchema: Bool,
+                                     historyOnly: Bool = false,
                                      completion: @escaping (Result<HubTeslaMateCompatibility, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard acknowledgeV42CompatibleSchema else {
             completion(.failure(HubActionError.commandFailed(
-                "Confirm TeslaMate 4.2.0 or newer before checking compatibility."
+                historyOnly
+                    ? HubL10n.text("hub.HubController.1522.568", fallback: "Acknowledge the reviewed TeslaMate history schema before checking compatibility.")
+                    : HubL10n.text("hub.HubController.1523.569", fallback: "Confirm TeslaMate 4.2.0 or newer before checking compatibility.")
             )))
             return
         }
         do {
             try Self.validateMigrationSource(source)
+            if historyOnly {
+                let host = URLComponents(string: source)?.host
+                guard host == "127.0.0.1" || host == "::1" else {
+                    throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1532.570", fallback: "Choose a local PostgreSQL source on 127.0.0.1 or ::1."))
+                }
+            }
             guard let selectedCarID = Int64(carID), selectedCarID > 0 else {
-                throw HubActionError.commandFailed("TeslaMate car ID must be a positive number.")
+                throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1536.571", fallback: "TeslaMate car ID must be a positive number."))
             }
             guard !passwordFile.isEmpty else {
-                throw HubActionError.commandFailed("Choose the protected PostgreSQL password file.")
+                throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1539.572", fallback: "Choose the protected PostgreSQL password file."))
             }
             let arguments = ["--config", configPath.path, "teslamate-check",
                              "--source", source, "--car-id", String(selectedCarID),
                              "--postgres-password-file", passwordFile,
                              "--acknowledge-v4-2-compatible-schema"]
+                + (historyOnly ? ["--history-only"] : [])
             commandRunner.run(arguments: arguments) { result in
                 DispatchQueue.main.async {
                     switch result {
                     case let .success(output):
-                        guard let report = Self.parseTeslaMateCompatibility(output) else {
+                        guard let report = Self.parseTeslaMateCompatibility(output, historyOnly: historyOnly) else {
                             completion(.failure(HubActionError.commandFailed(
-                                "TeslaMate compatibility check returned no valid report."
+                                HubL10n.text("hub.HubController.1552.580", fallback: "TeslaMate compatibility check returned no valid report.")
                             )))
                             return
                         }
                         completion(.success(report))
                     case let .failure(error):
-                        if let report = Self.parseTeslaMateCompatibility(error.localizedDescription) {
+                        if let report = Self.parseTeslaMateCompatibility(error.localizedDescription, historyOnly: historyOnly) {
                             completion(.success(report))
                         } else {
                             completion(.failure(HubActionError.commandFailed(
-                                "Could not verify TeslaMate. Check the server connection and try again."
+                                HubL10n.text("hub.HubController.1562.581", fallback: "Could not verify TeslaMate. Check the server connection and try again.")
                             )))
                         }
                     }
@@ -1559,13 +1599,13 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard acknowledgeV42CompatibleSchema else {
             completion(.failure(HubActionError.commandFailed(
-                "Confirm TeslaMate 4.2.0 or newer before importing."
+                HubL10n.text("hub.HubController.1585.586", fallback: "Confirm TeslaMate 4.2.0 or newer before importing.")
             )))
             return
         }
         guard !encryptionKeyFile.isEmpty else {
             completion(.failure(HubActionError.commandFailed(
-                "Choose the TeslaMate ENCRYPTION_KEY file."
+                HubL10n.text("hub.HubController.1591.587", fallback: "Choose the TeslaMate ENCRYPTION_KEY file.")
             )))
             return
         }
@@ -1592,8 +1632,35 @@ final class HubController {
                                             carID: carID,
                                             passwordFile: passwordFile,
                                             encryptionKeyFile: encryptionKeyFile,
+                                            historyOnly: false,
                                             progress: progress,
                                             completion: completion)
+            }
+        }
+    }
+
+    func importTeslaMateHistoryOnlyOnline(source: String,
+                                          carID: String,
+                                          passwordFile: String,
+                                          acknowledgeV42CompatibleSchema: Bool,
+                                          progress: @escaping (HubMigrationProgress) -> Void = { _ in },
+                                          completion: @escaping (Result<Void, Error>) -> Void) {
+        guard !previewMode else { completion(.failure(HubActionError.preview)); return }
+        checkTeslaMateCompatibility(source: source, carID: carID,
+                                    passwordFile: passwordFile,
+                                    acknowledgeV42CompatibleSchema: acknowledgeV42CompatibleSchema,
+                                    historyOnly: true) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case let .success(report) where report.compatible:
+                self.prepareOnlineMigration(source: source, carID: carID,
+                                            passwordFile: passwordFile,
+                                            encryptionKeyFile: nil, historyOnly: true,
+                                            progress: progress, completion: completion)
+            case let .success(report):
+                completion(.failure(HubActionError.commandFailed(report.message)))
+            case let .failure(error):
+                completion(.failure(error))
             }
         }
     }
@@ -1601,11 +1668,12 @@ final class HubController {
     private func prepareOnlineMigration(source: String,
                                         carID: String,
                                         passwordFile: String,
-                                        encryptionKeyFile: String,
+                                        encryptionKeyFile: String?,
+                                        historyOnly: Bool,
                                         progress: @escaping (HubMigrationProgress) -> Void,
                                         completion: @escaping (Result<Void, Error>) -> Void) {
-        let previousInterval = migrationHandoverState?.previousIntervalSeconds
-            ?? configuredCollectorIntervalSeconds()
+        let previousInterval = historyOnly ? 0 : (migrationHandoverState?.previousIntervalSeconds
+            ?? configuredCollectorIntervalSeconds())
         let previousProvider = migrationHandoverState?.previousProvider
             ?? configuredCollectorProvider()
         let originalConfig: String?
@@ -1619,9 +1687,10 @@ final class HubController {
             try writeMigrationHandoverMarker(
                 HubMigrationHandoverState(phase: .importing,
                                           previousIntervalSeconds: previousInterval,
-                                          previousProvider: previousProvider)
+                                          previousProvider: previousProvider,
+                                          historyOnly: historyOnly)
             )
-            try ensureConfig(collectorIntervalSeconds: 0)
+            if !historyOnly { try ensureConfig(collectorIntervalSeconds: 0) }
         } catch {
             completion(.failure(recoverFailedImport(error, originalConfig: originalConfig)))
             return
@@ -1629,10 +1698,10 @@ final class HubController {
         let arguments = ["--config", configPath.path, "migrate",
                          "--source", source, "--car-id", carID,
                          "--postgres-password-file", passwordFile,
-                         "--encryption-key-file", encryptionKeyFile,
                          "--online-snapshot",
-                         "--preserve-existing-credentials",
                          "--acknowledge-v4-2-compatible-schema"]
+            + (historyOnly ? ["--history-only"] : ["--encryption-key-file", encryptionKeyFile ?? "",
+                                                  "--preserve-existing-credentials"])
         let finish: (Result<Void, Error>) -> Void = { result in
             DispatchQueue.main.async { completion(result) }
         }
@@ -1663,15 +1732,17 @@ final class HubController {
                                                 category: "teslamate_import", level: "ERROR",
                                                 fields: durationFields)
                         failStartedImport(HubActionError.commandFailed(
-                            "TeslaMate import returned no valid completion report. Hub remains stopped."
+                            HubL10n.text("hub.HubController.1718.615", fallback: "TeslaMate import returned no valid completion report. Hub remains stopped.")
                         ))
                         return
                     }
                     do {
+                        if historyOnly { try self.writeHistoryOnlyControl() }
                         try self.writeMigrationHandoverMarker(
                             HubMigrationHandoverState(phase: .awaitingVerification,
                                                       previousIntervalSeconds: previousInterval,
-                                                      previousProvider: previousProvider)
+                                                      previousProvider: previousProvider,
+                                                      historyOnly: historyOnly)
                         )
                         HubAppLog.shared.record("import.completed", category: "teslamate_import",
                                                 fields: durationFields.merging(
@@ -1685,7 +1756,7 @@ final class HubController {
                                                     ["error_code": HubAppLog.errorCode(error)]
                                                 ) { _, new in new })
                         finish(.failure(HubActionError.commandFailed(
-                            "Import completed, but Hub could not record the safe handover gate: \(error.localizedDescription). Hub remains stopped."
+                            HubL10n.format("hub.HubController.1742.624", fallback: "Import completed, but Hub could not record the safe handover gate: %1$@. Hub remains stopped.", arguments: [String(describing: error.localizedDescription)])
                         )))
                     }
                 case let .failure(error):
@@ -1702,6 +1773,15 @@ final class HubController {
             }
         }
         // This controls Teslatlas Hub only. TeslaMate is never stopped or changed.
+        if historyOnly {
+            serviceRunner.run(arguments: ["service", "stop"]) { result in
+                switch result {
+                case .success: runImport()
+                case let .failure(error): abortBeforeImport(error)
+                }
+            }
+            return
+        }
         guard isServiceInstalled else {
             runImport()
             return
@@ -1720,7 +1800,8 @@ final class HubController {
         }
     }
 
-    static func parseTeslaMateCompatibility(_ output: String) -> HubTeslaMateCompatibility? {
+    static func parseTeslaMateCompatibility(_ output: String,
+                                            historyOnly: Bool = false) -> HubTeslaMateCompatibility? {
         for line in output.split(whereSeparator: { $0.isNewline }) {
             guard let data = String(line).data(using: .utf8),
                   let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -1728,6 +1809,10 @@ final class HubController {
                   let reason = root["reasonCode"] as? String,
                   let required = root["requiredVersion"] as? String,
                   let guidance = root["guidance"] as? String else { continue }
+            if historyOnly && (root["credentialScope"] as? String != "history-only"
+                               || root["applicationVersionStatus"] as? String != "unknown") {
+                continue
+            }
             return HubTeslaMateCompatibility(
                 compatible: status == "compatible"
                     && reason == "v4_2_compatible_schema"
@@ -1775,7 +1860,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard acknowledgeV42CompatibleSchema else {
             completion(.failure(HubActionError.commandFailed(
-                "Confirm TeslaMate 4.2.0 or newer before importing from a direct PostgreSQL source."
+                HubL10n.text("hub.HubController.1846.655", fallback: "Confirm TeslaMate 4.2.0 or newer before importing from a direct PostgreSQL source.")
             )))
             return
         }
@@ -1794,11 +1879,11 @@ final class HubController {
               let host = components.host, !host.isEmpty,
               components.path.count > 1 else {
             throw HubActionError.commandFailed(
-                "PostgreSQL source must include a postgres or postgresql scheme, host, and database name."
+                HubL10n.text("hub.HubController.1865.658", fallback: "PostgreSQL source must include a postgres or postgresql scheme, host, and database name.")
             )
         }
         guard components.password == nil else {
-            throw HubActionError.commandFailed("PostgreSQL source must not contain a password. Use the password file field.")
+            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1869.659", fallback: "PostgreSQL source must not contain a password. Use the password file field."))
         }
     }
 
@@ -1887,7 +1972,7 @@ final class HubController {
             return
         }
 
-        if snapshot.account != "Connected" {
+        if snapshot.accountState != .connected {
             let restoreBeforeMutation = { [weak self] (setupError: Error) in
                 guard let self else { return }
                 do {
@@ -1895,7 +1980,7 @@ final class HubController {
                     finish(.failure(setupError))
                 } catch let recoveryError {
                     finish(.failure(HubActionError.commandFailed(
-                        "Fleet setup failed: \(setupError.localizedDescription) Hub configuration recovery also failed: \(recoveryError.localizedDescription)"
+                        HubL10n.format("hub.HubController.1966.689", fallback: "Fleet setup failed: %1$@ Hub configuration recovery also failed: %2$@", arguments: [String(describing: setupError.localizedDescription), String(describing: recoveryError.localizedDescription)])
                     )))
                 }
             }
@@ -1931,7 +2016,7 @@ final class HubController {
                                 case .success: startService()
                                 case let .failure(error):
                                     finish(.failure(HubActionError.commandFailed(
-                                        "Fleet is configured, but the service update failed. Hub remains stopped; retry Update Service. \(error.localizedDescription)"
+                                        HubL10n.format("hub.HubController.2002.697", fallback: "Fleet is configured, but the service update failed. Hub remains stopped; retry Update Service. %1$@", arguments: [String(describing: error.localizedDescription)])
                                     )))
                                 }
                             }
@@ -1967,7 +2052,7 @@ final class HubController {
                     try self.restoreConfig(originalConfig)
                 } catch let recoveryError {
                     finish(.failure(HubActionError.commandFailed(
-                        "Fleet setup failed: \(setupError.localizedDescription) Hub configuration recovery also failed: \(recoveryError.localizedDescription)"
+                        HubL10n.format("hub.HubController.1966.689", fallback: "Fleet setup failed: %1$@ Hub configuration recovery also failed: %2$@", arguments: [String(describing: setupError.localizedDescription), String(describing: recoveryError.localizedDescription)])
                     )))
                     return
                 }
@@ -1980,7 +2065,7 @@ final class HubController {
                     case .success: finish(.failure(setupError))
                     case let .failure(startError):
                         finish(.failure(HubActionError.commandFailed(
-                            "Fleet setup failed: \(setupError.localizedDescription) Hub restart also failed: \(startError.localizedDescription)"
+                            HubL10n.format("hub.HubController.2051.701", fallback: "Fleet setup failed: %1$@ Hub restart also failed: %2$@", arguments: [String(describing: setupError.localizedDescription), String(describing: startError.localizedDescription)])
                         )))
                     }
                 }
@@ -2025,7 +2110,7 @@ final class HubController {
               ["europe_middle_east_and_africa", "north_america_and_asia_pacific", "china"]
                 .contains(credentials.region),
               credentials.expiresInSeconds > 0 else {
-            throw HubActionError.commandFailed("Fleet credentials are incomplete or invalid.")
+            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.2096.708", fallback: "Fleet credentials are incomplete or invalid."))
         }
         let payload: [String: Any] = [
             "accessToken": credentials.accessToken,
@@ -2036,7 +2121,7 @@ final class HubController {
         ]
         let data = try JSONSerialization.data(withJSONObject: payload, options: [])
         guard let input = String(data: data, encoding: .utf8) else {
-            throw HubActionError.commandFailed("Could not encode Fleet credentials.")
+            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.2107.714", fallback: "Could not encode Fleet credentials."))
         }
         return HubSetupInvocation(
             arguments: ["--config", configPath.path, "setup-fleet", "--all-vehicles"],
@@ -2121,7 +2206,7 @@ final class HubController {
             return
         }
 
-        if snapshot.account != "Connected" {
+        if snapshot.accountState != .connected {
             let restoreBeforeMutation = { [weak self] (setupError: Error) in
                 guard let self else { return }
                 do {
@@ -2129,7 +2214,7 @@ final class HubController {
                     finish(.failure(setupError))
                 } catch let recoveryError {
                     finish(.failure(HubActionError.commandFailed(
-                        "Tesla setup failed: \(setupError.localizedDescription) Hub configuration recovery also failed: \(recoveryError.localizedDescription)"
+                        HubL10n.format("hub.HubController.2200.747", fallback: "Tesla setup failed: %1$@ Hub configuration recovery also failed: %2$@", arguments: [String(describing: setupError.localizedDescription), String(describing: recoveryError.localizedDescription)])
                     )))
                 }
             }
@@ -2165,7 +2250,7 @@ final class HubController {
                                 case .success: startService()
                                 case let .failure(error):
                                     finish(.failure(HubActionError.commandFailed(
-                                        "Legacy Tesla login is configured, but the service update failed. Hub remains stopped; retry Update Service. \(error.localizedDescription)"
+                                        HubL10n.format("hub.HubController.2236.755", fallback: "Legacy Tesla login is configured, but the service update failed. Hub remains stopped; retry Update Service. %1$@", arguments: [String(describing: error.localizedDescription)])
                                     )))
                                 }
                             }
@@ -2197,7 +2282,7 @@ final class HubController {
                     try self.restoreConfig(originalConfig)
                 } catch let recoveryError {
                     finish(.failure(HubActionError.commandFailed(
-                        "\(action): \(actionError.localizedDescription) Hub configuration recovery also failed: \(recoveryError.localizedDescription)"
+                        HubL10n.format("hub.HubController.2268.756", fallback: "%1$@: %2$@ Hub configuration recovery also failed: %3$@", arguments: [String(describing: action), String(describing: actionError.localizedDescription), String(describing: recoveryError.localizedDescription)])
                     )))
                     return
                 }
@@ -2211,7 +2296,7 @@ final class HubController {
                         finish(.failure(actionError))
                     case let .failure(restartError):
                         finish(.failure(HubActionError.commandFailed(
-                            "\(action): \(actionError.localizedDescription) Hub restart also failed: \(restartError.localizedDescription)"
+                            HubL10n.format("hub.HubController.2282.759", fallback: "%1$@: %2$@ Hub restart also failed: %3$@", arguments: [String(describing: action), String(describing: actionError.localizedDescription), String(describing: restartError.localizedDescription)])
                         )))
                     }
                 }
@@ -2221,7 +2306,7 @@ final class HubController {
                 case .success:
                     startService()
                 case let .failure(error):
-                    recover("Tesla setup failed", error, false)
+                    recover(HubL10n.text("hub.HubController.2292.760", fallback: "Tesla setup failed"), error, false)
                 }
             }
             let runSetup = {
@@ -2251,10 +2336,10 @@ final class HubController {
                             try self.ensureConfig(provider: "legacy")
                             runSetup()
                         } catch {
-                            recover("Tesla setup failed", error, true)
+                            recover(HubL10n.text("hub.HubController.2292.760", fallback: "Tesla setup failed"), error, true)
                         }
                     case let .failure(error):
-                        recover("Service update failed", error,
+                        recover(HubL10n.text("hub.HubController.2325.765", fallback: "Service update failed"), error,
                                 !Self.isForwardOnlyUpgradeFailure(error))
                     }
                 }
@@ -2270,12 +2355,12 @@ final class HubController {
             "refreshToken": tokens.refreshToken
         ], options: [])
         guard let input = String(data: payload, encoding: .utf8) else {
-            throw HubActionError.commandFailed("Could not encode Tesla login credentials.")
+            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.2341.768", fallback: "Could not encode Tesla login credentials."))
         }
         var arguments = ["--config", configPath.path, "setup", "--tokens-stdin"]
         if let vehicleID {
             guard vehicleID > 0 else {
-                throw HubActionError.commandFailed("Tesla vehicle ID must be positive.")
+                throw HubActionError.commandFailed(HubL10n.text("hub.HubController.2346.772", fallback: "Tesla vehicle ID must be positive."))
             }
             arguments += ["--vehicle-id", String(vehicleID)]
         } else {
@@ -2303,7 +2388,7 @@ final class HubController {
 
     static func providerSwitchStoppedError(_ error: Error) -> Error {
         HubActionError.commandFailed(
-            "Tesla provider switch outcome needs verification. Hub remains stopped; run diagnostics before retrying. \(error.localizedDescription)"
+            HubL10n.format("hub.HubController.2374.779", fallback: "Tesla provider switch outcome needs verification. Hub remains stopped; run diagnostics before retrying. %1$@", arguments: [String(describing: error.localizedDescription)])
         )
     }
 
@@ -2314,11 +2399,11 @@ final class HubController {
                 && diagnostic.contains("credential")
                 && diagnostic.contains("consum")) {
             return HubActionError.commandFailed(
-                "Sign in to Tesla again in TeslaMate, then retry the import."
+                HubL10n.text("hub.HubController.2385.784", fallback: "Sign in to Tesla again in TeslaMate, then retry the import.")
             )
         }
         return HubActionError.commandFailed(
-            "TeslaMate import failed; retry the import."
+            HubL10n.text("hub.HubController.2389.785", fallback: "TeslaMate import failed; retry the import.")
         )
     }
 
@@ -2386,11 +2471,17 @@ final class HubController {
             HubAppLog.shared.record("service.rejected", category: "service", level: "WARN",
                                     fields: ["action": "start", "reason": "handover_pending"])
             completion(.failure(HubActionError.commandFailed(
-                "Finish the TeslaMate handover before starting Hub."
+                HubL10n.text("hub.HubController.2457.838", fallback: "Finish the TeslaMate handover before starting Hub.")
             )))
             return
         }
-        runServiceCommand(["service", "start"], completion: completion)
+        verifyHistoryOnlyStartPolicy { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success: self.runServiceCommand(["service", "start"], completion: completion)
+            case let .failure(error): completion(.failure(error))
+            }
+        }
     }
 
     func stopHub(completion: @escaping (Result<Void, Error>) -> Void) {
@@ -2402,11 +2493,17 @@ final class HubController {
             HubAppLog.shared.record("service.rejected", category: "service", level: "WARN",
                                     fields: ["action": "restart", "reason": "handover_pending"])
             completion(.failure(HubActionError.commandFailed(
-                "Finish the TeslaMate handover before restarting Hub."
+                HubL10n.text("hub.HubController.2479.850", fallback: "Finish the TeslaMate handover before restarting Hub.")
             )))
             return
         }
-        runServiceCommand(["service", "restart"], completion: completion)
+        verifyHistoryOnlyStartPolicy { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success: self.runServiceCommand(["service", "restart"], completion: completion)
+            case let .failure(error): completion(.failure(error))
+            }
+        }
     }
 
     func acknowledgeMigrationHandoverAndStart(completion: @escaping (Result<Void, Error>) -> Void) {
@@ -2420,7 +2517,7 @@ final class HubController {
             HubAppLog.shared.record("handover_start.rejected", category: "teslamate_import",
                                     level: "WARN", fields: ["reason": "already_in_progress"])
             completion(.failure(HubActionError.commandFailed(
-                "Hub startup is already in progress."
+                HubL10n.text("hub.HubController.2503.863", fallback: "Hub startup is already in progress.")
             )))
             return
         }
@@ -2436,12 +2533,34 @@ final class HubController {
             HubAppLog.shared.record("handover_start.rejected", category: "teslamate_import",
                                     level: "WARN", fields: ["reason": "checks_incomplete"])
             finish(.failure(HubActionError.commandFailed(
-                "Finish the migration checks before starting Hub."
+                HubL10n.text("hub.HubController.2519.869", fallback: "Finish the migration checks before starting Hub.")
             )))
             return
         }
         let started = Date()
         HubAppLog.shared.record("handover_start.requested", category: "teslamate_import")
+        if handover.historyOnly == true {
+            verifyHistoryOnlyStartPolicy { [weak self] policyResult in
+                guard let self else { return }
+                switch policyResult {
+                case let .failure(error): finish(.failure(error))
+                case .success:
+                    self.serviceRunner.run(arguments: ["service", "start"]) { [weak self] result in
+                        guard let self else { return }
+                        switch result {
+                        case .success:
+                            self.completeMigrationHandoverStart(handover: handover,
+                                                                started: started, completion: finish)
+                        case let .failure(error):
+                            self.serviceRunner.run(arguments: ["service", "stop"]) { _ in
+                                finish(.failure(error))
+                            }
+                        }
+                    }
+                }
+            }
+            return
+        }
         captureMigrationCollectorLeaseBaseline { [weak self] baseline in
             guard let self else { return }
             do {
@@ -2505,7 +2624,7 @@ final class HubController {
                                                     "reason": "start_failure_rollback"
                                                 ])
                         finish(.failure(HubActionError.commandFailed(
-                            "Hub did not start: \(startError.localizedDescription). The collector pause could not be restored: \(error.localizedDescription)"
+                            HubL10n.format("hub.HubController.2610.896", fallback: "Hub did not start: %1$@. The collector pause could not be restored: %2$@", arguments: [String(describing: startError.localizedDescription), String(describing: error.localizedDescription)])
                         )))
                     }
                 }
@@ -2573,7 +2692,7 @@ final class HubController {
     ) {
         guard migrationStartupReadinessNowMilliseconds() < deadlineAtMs else {
             completion(.failure(HubActionError.commandFailed(
-                "Hub did not become ready before the startup deadline."
+                HubL10n.text("hub.HubController.2678.902", fallback: "Hub did not become ready before the startup deadline.")
             )))
             return
         }
@@ -2584,7 +2703,7 @@ final class HubController {
             switch result {
             case .failure:
                 completion(.failure(HubActionError.commandFailed(
-                    "Hub readiness status could not be read."
+                    HubL10n.text("hub.HubController.2689.905", fallback: "Hub readiness status could not be read.")
                 )))
                 return
             case let .success(output):
@@ -2593,7 +2712,7 @@ final class HubController {
                                                              from: data),
                       parsed.status == "ok" else {
                     completion(.failure(HubActionError.commandFailed(
-                        "Hub readiness status was invalid."
+                        HubL10n.text("hub.HubController.2698.907", fallback: "Hub readiness status was invalid.")
                     )))
                     return
                 }
@@ -2612,14 +2731,14 @@ final class HubController {
             if document.ready, collectorRequired,
                (document.collector == nil || document.collector?.isCoherent != true) {
                 completion(.failure(HubActionError.commandFailed(
-                    "Hub readiness status did not include a valid collector lease."
+                    HubL10n.text("hub.HubController.2717.908", fallback: "Hub readiness status did not include a valid collector lease.")
                 )))
                 return
             }
             guard attemptsRemaining > 1,
                   self.migrationStartupReadinessNowMilliseconds() < deadlineAtMs else {
                 completion(.failure(HubActionError.commandFailed(
-                    "Hub did not become ready before the startup deadline."
+                    HubL10n.text("hub.HubController.2678.902", fallback: "Hub did not become ready before the startup deadline.")
                 )))
                 return
             }
@@ -2679,8 +2798,10 @@ final class HubController {
                                     ])
             serviceRunner.run(arguments: ["service", "stop"]) { _ in
                 do {
-                    try self.ensureConfig(provider: handover.previousProvider,
-                                          collectorIntervalSeconds: 0)
+                    if handover.historyOnly != true {
+                        try self.ensureConfig(provider: handover.previousProvider,
+                                              collectorIntervalSeconds: 0)
+                    }
                     try self.writeMigrationHandoverMarker(handover)
                 } catch {
                     HubAppLog.shared.record("handover_recovery.failed",
@@ -2691,7 +2812,7 @@ final class HubController {
                                             ])
                 }
                 completion(.failure(HubActionError.commandFailed(
-                    "Hub was stopped because the migration handover gate could not be cleared: \(cleanupError.localizedDescription)"
+                    HubL10n.format("hub.HubController.2798.927", fallback: "Hub was stopped because the migration handover gate could not be cleared: %1$@", arguments: [String(describing: cleanupError.localizedDescription)])
                 )))
             }
         }
@@ -2725,11 +2846,11 @@ final class HubController {
             let message: String
             switch (stopResult, pauseRestored) {
             case (.success, true):
-                message = "Hub did not become ready and was stopped. The migration handover remains pending."
+                message = HubL10n.text("hub.HubController.2832.942", fallback: "Hub did not become ready and was stopped. The migration handover remains pending.")
             case (.success, false):
-                message = "Hub was stopped after startup failed, but the collector pause could not be restored. Keep TeslaMate disabled and try again."
+                message = HubL10n.text("hub.HubController.2834.943", fallback: "Hub was stopped after startup failed, but the collector pause could not be restored. Keep TeslaMate disabled and try again.")
             case (.failure, _):
-                message = "Hub did not become ready and could not be confirmed stopped. Keep TeslaMate disabled, stop Hub, and try again."
+                message = HubL10n.text("hub.HubController.2836.944", fallback: "Hub did not become ready and could not be confirmed stopped. Keep TeslaMate disabled, stop Hub, and try again.")
             }
             completion(.failure(HubActionError.commandFailed(message)))
         }
@@ -2741,6 +2862,18 @@ final class HubController {
                                 fields: ["expect_running": expectRunning ? "true" : "false"])
         if previewMode {
             DispatchQueue.main.async { completion(.success(Self.previewOnboardingChecks)) }
+            return
+        }
+        if !expectRunning, migrationHandoverState?.historyOnly == true {
+            serviceRunner.run(arguments: ["service", "stop"]) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success:
+                    self.performOnboardingChecks(expectRunning: false, completion: completion)
+                case let .failure(error):
+                    DispatchQueue.main.async { completion(.failure(error)) }
+                }
+            }
             return
         }
         if !expectRunning, migrationHandoverState != nil {
@@ -2774,6 +2907,35 @@ final class HubController {
 
     private func performOnboardingChecks(expectRunning: Bool,
                                          completion: @escaping (Result<[HubOnboardingCheck], Error>) -> Void) {
+        if !expectRunning, migrationHandoverState?.historyOnly == true {
+            commandRunner.run(arguments: ["--config", configPath.path, "preflight", "--history-only"]) {
+                [weak self] result in
+                guard let self else { return }
+                let ready: Bool
+                switch result {
+                case let .success(output):
+                    ready = Self.historyOnlyPreflightReady(output)
+                case .failure:
+                    ready = false
+                }
+                let checks = [
+                    HubOnboardingCheck(title: HubL10n.text("hub.HubController.2905.957", fallback: "Hub"), detail: HubL10n.text("hub.HubController.2905.958", fallback: "Stopped for history verification"), passed: true),
+                    HubOnboardingCheck(title: HubL10n.text("hub.HubController.2906.959", fallback: "Signed history"), detail: ready ? HubL10n.text("hub.HubController.2906.960", fallback: "Published and ready") : HubL10n.text("hub.HubController.2906.961", fallback: "Not ready"), passed: ready),
+                    HubOnboardingCheck(title: HubL10n.text("hub.HubController.2907.962", fallback: "Collection"), detail: ready ? HubL10n.text("hub.HubController.2907.963", fallback: "Disabled") : HubL10n.text("hub.HubController.2907.964", fallback: "Check the local Hub configuration"), passed: ready),
+                    HubOnboardingCheck(title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"), detail: HubL10n.text("hub.HubController.2908.966", fallback: "Not connected; history is available offline"), passed: true)
+                ]
+                if ready, var handover = self.migrationHandoverState {
+                    handover.phase = .awaitingHandover
+                    do { try self.writeMigrationHandoverMarker(handover) }
+                    catch {
+                        DispatchQueue.main.async { completion(.failure(error)) }
+                        return
+                    }
+                }
+                DispatchQueue.main.async { completion(.success(checks)) }
+            }
+            return
+        }
         let finish: (Result<String, Error>) -> Void = { [weak self] doctorResult in
             guard let self else { return }
             self.logs { logText in
@@ -2784,20 +2946,17 @@ final class HubController {
                         : snapshot.health == .stopped
                     let serviceDetail = expectRunning
                         ? snapshot.service
-                        : (servicePassed ? "Installed and safely stopped" : snapshot.service)
-                    let vehiclePassed = snapshot.vehicleName != "Vehicle"
-                        && snapshot.vehicleName != "No configured vehicle"
-                        && snapshot.vehicle != "No configured vehicle"
-                        && snapshot.vehicle != "Unknown"
+                        : (servicePassed ? HubL10n.text("hub.HubController.2932.967", fallback: "Installed and safely stopped") : snapshot.service)
+                    let vehiclePassed = snapshot.hasConfiguredVehicle
                     let doctorPassed: Bool
                     let doctorDetail: String
                     switch doctorResult {
                     case .success:
                         doctorPassed = !expectRunning || servicePassed
                         doctorDetail = expectRunning
-                            ? (servicePassed ? "Live readiness passed; full integrity check available in Diagnostics"
-                               : "Hub is not ready yet. Wait a moment, then run again.")
-                            : "Passed"
+                            ? (servicePassed ? HubL10n.text("hub.HubController.2943.972", fallback: "Live readiness passed; full integrity check available in Diagnostics")
+                               : HubL10n.text("hub.HubController.2944.973", fallback: "Hub is not ready yet. Wait a moment, then run again."))
+                            : HubL10n.text("hub.OnboardingWindowController.1165.2025", fallback: "Passed")
                     case let .failure(error):
                         doctorPassed = false
                         doctorDetail = Self.conciseDiagnostic(error.localizedDescription)
@@ -2805,19 +2964,19 @@ final class HubController {
                     let noLogsYet = logText.hasPrefix("No Hub logs are available yet.")
                     let logsPassed = expectRunning ? !noLogsYet && !logText.isEmpty : true
                     let logsDetail = noLogsYet
-                        ? (expectRunning ? "No logs yet" : "No service logs while stopped")
-                        : (logText.isEmpty ? "Unavailable" : "Readable")
+                        ? (expectRunning ? HubL10n.text("hub.HubController.2953.976", fallback: "No logs yet") : HubL10n.text("hub.HubController.2953.977", fallback: "No service logs while stopped"))
+                        : (logText.isEmpty ? HubL10n.text("hub.HubController.2954.978", fallback: "Unavailable") : HubL10n.text("hub.HubController.2954.979", fallback: "Readable"))
                     let checks = [
-                        HubOnboardingCheck(title: "Service", detail: serviceDetail, passed: servicePassed),
-                        HubOnboardingCheck(title: "Tesla account", detail: snapshot.account,
-                                           passed: snapshot.account == "Connected"),
-                        HubOnboardingCheck(title: "Vehicle", detail: snapshot.vehicleName,
+                        HubOnboardingCheck(title: HubL10n.text("hub.HubController.1161.477", fallback: "Service"), detail: serviceDetail, passed: servicePassed),
+                        HubOnboardingCheck(title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"), detail: snapshot.account,
+                                           passed: snapshot.accountState == .connected),
+                        HubOnboardingCheck(title: HubL10n.text("hub.HubController.1163.481", fallback: "Vehicle"), detail: snapshot.vehicleName,
                                            passed: vehiclePassed),
-                        HubOnboardingCheck(title: "Database", detail: snapshot.database,
-                                           passed: snapshot.database.hasPrefix("Healthy")),
-                        HubOnboardingCheck(title: "Diagnostics", detail: doctorDetail,
+                        HubOnboardingCheck(title: HubL10n.text("hub.DiagnosticsWindowController.374.248", fallback: "Database"), detail: snapshot.database,
+                                           passed: snapshot.databaseState == .healthy),
+                        HubOnboardingCheck(title: HubL10n.text("hub.AppDelegate.123.39", fallback: "Diagnostics"), detail: doctorDetail,
                                            passed: doctorPassed),
-                        HubOnboardingCheck(title: "Logs",
+                        HubOnboardingCheck(title: HubL10n.text("hub.HubController.1166.487", fallback: "Logs"),
                                            detail: logsDetail,
                                            passed: logsPassed)
                     ]
@@ -2862,7 +3021,7 @@ final class HubController {
 
     private static func conciseDiagnostic(_ message: String) -> String {
         let line = message.split(whereSeparator: { $0.isNewline }).first.map(String.init)
-            ?? "Failed"
+            ?? HubL10n.text("hub.HubController.3010.1006", fallback: "Failed")
         return String(line.prefix(160))
     }
 
@@ -2878,13 +3037,13 @@ final class HubController {
         guard snapshot.health == .running else {
             HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
                                     fields: ["action": action.rawValue, "reason": "service_not_running"])
-            completion(.failure(HubActionError.commandFailed("Hub must be running before sending a vehicle command.")))
+            completion(.failure(HubActionError.commandFailed(HubL10n.text("hub.HubController.3026.1019", fallback: "Hub must be running before sending a vehicle command."))))
             return
         }
-        guard snapshot.account == "Connected" else {
+        guard snapshot.accountState == .connected else {
             HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
                                     fields: ["action": action.rawValue, "reason": "account_disconnected"])
-            completion(.failure(HubActionError.commandFailed("Connect Tesla before sending a vehicle command.")))
+            completion(.failure(HubActionError.commandFailed(HubL10n.text("hub.HubController.3032.1027", fallback: "Connect Tesla before sending a vehicle command."))))
             return
         }
         guard snapshot.provider == .fleet else {
@@ -2892,20 +3051,20 @@ final class HubController {
                                     fields: ["action": action.rawValue,
                                              "reason": "provider_does_not_support_commands"])
             completion(.failure(HubActionError.commandFailed(
-                "Vehicle controls require Tesla Fleet API."
+                HubL10n.text("hub.HubController.3040.1034", fallback: "Vehicle controls require Tesla Fleet API.")
             )))
             return
         }
         guard let vehicleID = requestedVehicleID ?? snapshot.controlVehicleID else {
             HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
                                     fields: ["action": action.rawValue, "reason": "vehicle_not_selected"])
-            completion(.failure(HubActionError.commandFailed("Choose a vehicle before sending a command.")))
+            completion(.failure(HubActionError.commandFailed(HubL10n.text("hub.HubController.3047.1041", fallback: "Choose a vehicle before sending a command."))))
             return
         }
         guard snapshot.controlVehicles.contains(where: { $0.id == vehicleID }) else {
             HubAppLog.shared.record("command.rejected", category: "vehicle_control", level: "WARN",
                                     fields: ["action": action.rawValue, "reason": "vehicle_stale"])
-            completion(.failure(HubActionError.commandFailed("The selected vehicle is no longer configured.")))
+            completion(.failure(HubActionError.commandFailed(HubL10n.text("hub.HubController.3053.1048", fallback: "The selected vehicle is no longer configured."))))
             return
         }
         let started = Date()
@@ -2980,8 +3139,15 @@ final class HubController {
                     switch stopResult {
                     case .success:
                         self.runFullDiagnosticsWhileStopped { report in
-                            self.serviceRunner.run(arguments: ["service", "start"]) { startResult in
-                                completion(report + "\n\n" + Self.serviceResumeSection(startResult))
+                            self.verifyHistoryOnlyStartPolicy { policyResult in
+                                switch policyResult {
+                                case .success:
+                                    self.serviceRunner.run(arguments: ["service", "start"]) { startResult in
+                                        completion(report + "\n\n" + Self.serviceResumeSection(startResult))
+                                    }
+                                case let .failure(error):
+                                    completion(report + "\n\n" + Self.serviceResumeSection(.failure(error)))
+                                }
                             }
                         }
                     case let .failure(error):
@@ -3142,6 +3308,41 @@ final class HubController {
         NSWorkspace.shared.open(dataDirectory)
     }
 
+    private static func historyOnlyPreflightReady(_ output: String) -> Bool {
+        guard let data = output.data(using: .utf8),
+              let report = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        return report["status"] as? String == "ready"
+            && report["credentialScope"] as? String == "history-only"
+            && report["collectorEnabled"] as? Bool == false
+            && (report["publishedVehicles"] as? Int ?? 0) > 0
+    }
+
+    private func verifyHistoryOnlyStartPolicy(completion: @escaping (Result<Void, Error>) -> Void) {
+        let selected: Bool
+        do {
+            selected = try HistoryOnlyControl.isSelected(for: configPath)
+                || migrationHandoverState?.historyOnly == true
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        guard selected else { completion(.success(())); return }
+        commandRunner.run(arguments: ["--config", configPath.path, "preflight", "--history-only"]) { result in
+            DispatchQueue.main.async {
+                guard case let .success(output) = result,
+                      Self.historyOnlyPreflightReady(output) else {
+                    completion(.failure(HubActionError.commandFailed(
+                        HubL10n.text("hub.HubController.3323.1158", fallback: "History-only Hub configuration or published history is not ready. Keep collection disabled and run verification again.")
+                    )))
+                    return
+                }
+                completion(.success(()))
+            }
+        }
+    }
+
     private func runServiceCommand(_ arguments: [String], completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         let action = arguments.last ?? "unknown"
@@ -3187,6 +3388,10 @@ final class HubController {
 
     private var migrationHandoverMarker: URL {
         configPath.deletingLastPathComponent().appendingPathComponent(".teslamate-handover-pending")
+    }
+
+    private func writeHistoryOnlyControl() throws {
+        try HistoryOnlyControl.write(for: configPath)
     }
 
     private var migrationHandoverState: HubMigrationHandoverState? {
@@ -3236,18 +3441,18 @@ final class HubController {
                                      O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
         guard descriptor >= 0 else {
             if errno == ENOENT { return nil }
-            throw HubActionError.commandFailed("Hub configuration is not a regular file.")
+            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.3430.1177", fallback: "Hub configuration is not a regular file."))
         }
         defer { Darwin.close(descriptor) }
 
         var information = stat()
         guard fstat(descriptor, &information) == 0,
               information.st_mode & S_IFMT == S_IFREG else {
-            throw HubActionError.commandFailed("Hub configuration is not a regular file.")
+            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.3430.1177", fallback: "Hub configuration is not a regular file."))
         }
         let maximumBytes = 1024 * 1024
         guard information.st_size >= 0, information.st_size <= off_t(maximumBytes) else {
-            throw HubActionError.commandFailed("Hub configuration is too large.")
+            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.3441.1179", fallback: "Hub configuration is too large."))
         }
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 16 * 1024)
@@ -3258,15 +3463,15 @@ final class HubController {
             if count == 0 { break }
             if count < 0 {
                 if errno == EINTR { continue }
-                throw HubActionError.commandFailed("Hub configuration could not be read.")
+                throw HubActionError.commandFailed(HubL10n.text("hub.HubController.3452.1180", fallback: "Hub configuration could not be read."))
             }
             guard data.count + count <= maximumBytes else {
-                throw HubActionError.commandFailed("Hub configuration is too large.")
+                throw HubActionError.commandFailed(HubL10n.text("hub.HubController.3441.1179", fallback: "Hub configuration is too large."))
             }
             data.append(contentsOf: buffer.prefix(count))
         }
         guard let content = String(data: data, encoding: .utf8) else {
-            throw HubActionError.commandFailed("Hub configuration must use UTF-8 text.")
+            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.3460.1182", fallback: "Hub configuration must use UTF-8 text."))
         }
         return content
     }
@@ -3333,7 +3538,7 @@ final class HubController {
             let values = try configPath.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
             guard values.isRegularFile == true, values.isSymbolicLink != true else {
                 throw HubActionError.commandFailed(
-                    "Hub configuration recovery refused to remove a replaced configuration path."
+                    HubL10n.text("hub.HubController.3527.1187", fallback: "Hub configuration recovery refused to remove a replaced configuration path.")
                 )
             }
             try FileManager.default.removeItem(at: configPath)
@@ -3349,10 +3554,10 @@ final class HubController {
             return importError
         } catch let recoveryError {
             let safetyState = hasPendingMigrationHandover
-                ? "The migration safety marker remains and Hub must stay stopped."
-                : "Hub must stay stopped until its configuration is repaired."
+                ? HubL10n.text("hub.HubController.3543.1188", fallback: "The migration safety marker remains and Hub must stay stopped.")
+                : HubL10n.text("hub.HubController.3544.1189", fallback: "Hub must stay stopped until its configuration is repaired.")
             return HubActionError.commandFailed(
-                "TeslaMate import failed: \(importError.localizedDescription) Configuration recovery also failed: \(recoveryError.localizedDescription) \(safetyState)"
+                HubL10n.format("hub.HubController.3546.1190", fallback: "TeslaMate import failed: %1$@ Configuration recovery also failed: %2$@ %3$@", arguments: [String(describing: importError.localizedDescription), String(describing: recoveryError.localizedDescription), String(describing: safetyState)])
             )
         }
     }
@@ -3554,13 +3759,14 @@ final class HubController {
         let credentials = root["credentials"] as? [String: Any]
         let ready = root["ready"] as? Bool ?? false
         let vehicleName = vehicles.count > 1
-            ? "\(vehicles.count) vehicles"
-            : vehicle?["displayName"] as? String ?? "No configured vehicle"
+            ? HubL10n.plural("hub.HubController.3748.1243", count: vehicles.count,
+                             one: "%d vehicle", other: "%d vehicles")
+            : vehicle?["displayName"] as? String ?? HubL10n.text("hub.HubController.445.371", fallback: "No configured vehicle")
         let vehicleSummary: String
         if let observed = vehicle?["latestObservedAtMs"] as? NSNumber {
-            vehicleSummary = "Last seen \(relativeAge(milliseconds: observed.int64Value))"
+            vehicleSummary = HubL10n.format("hub.HubController.3752.1247", fallback: "Last seen %1$@", arguments: [String(describing: relativeAge(milliseconds: observed.int64Value))])
         } else {
-            vehicleSummary = vehicle == nil ? "No configured vehicle" : "No observations yet"
+            vehicleSummary = vehicle == nil ? HubL10n.text("hub.HubController.445.371", fallback: "No configured vehicle") : HubL10n.text("hub.HubController.3754.1249", fallback: "No observations yet")
         }
         let controlVehicleID = vehicles.count == 1
             ? (vehicles[0]["vehicleId"] as? String).flatMap(UUID.init(uuidString:))
@@ -3569,12 +3775,12 @@ final class HubController {
             guard let idValue = vehicle["vehicleId"] as? String,
                   let id = UUID(uuidString: idValue) else { return nil }
             let name = (vehicle["displayName"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let displayName = name.flatMap { $0.isEmpty ? nil : $0 } ?? "Vehicle"
+            let displayName = name.flatMap { $0.isEmpty ? nil : $0 } ?? HubL10n.text("hub.HubController.1163.481", fallback: "Vehicle")
             let status: String
             if let observed = vehicle["latestObservedAtMs"] as? NSNumber {
-                status = "Last seen \(relativeAge(milliseconds: observed.int64Value))"
+                status = HubL10n.format("hub.HubController.3752.1247", fallback: "Last seen %1$@", arguments: [String(describing: relativeAge(milliseconds: observed.int64Value))])
             } else {
-                status = "No observations yet"
+                status = HubL10n.text("hub.HubController.3754.1249", fallback: "No observations yet")
             }
             let state = (vehicle["activityState"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3593,9 +3799,9 @@ final class HubController {
             )
         }
         let dbBytes = database?["bytes"] as? NSNumber
-        let dbText = dbBytes.map { "Healthy · \($0.int64Value / 1_048_576) MB" } ?? "Waiting for setup or import"
+        let dbText = dbBytes.map { HubL10n.format("hub.HubController.3787.1262", fallback: "Healthy · %1$@ MB", arguments: [String(describing: $0.int64Value / 1_048_576)]) } ?? HubL10n.text("hub.HubController.394.344", fallback: "Waiting for setup or import")
         let dataDirectory = (database?["path"] as? String).map { URL(fileURLWithPath: $0).deletingLastPathComponent() }
-        let service = ready ? "Installed and running" : "Installed · needs attention"
+        let service = ready ? HubL10n.text("hub.HubController.3789.1265", fallback: "Installed and running") : HubL10n.text("hub.HubController.3789.1266", fallback: "Installed · needs attention")
         let providerValue = root["provider"] as? String
         let configuredProvider = providerValue.flatMap(HubAccountProvider.init(rawValue:))
         let legacy = root["legacyCredentials"] as? [String: Any]
@@ -3612,8 +3818,8 @@ final class HubController {
             provider = configuredProvider
         }
         let account = (selectedPresent || legacyPresent || fleetPresent)
-            ? "Connected"
-            : "Not configured"
+            ? HubL10n.text("hub.HubController.connected_state", fallback: "Connected")
+            : (vehicles.isEmpty ? HubL10n.text("hub.HubController.393.343", fallback: "Not configured") : HubL10n.text("hub.HubController.3807.1275", fallback: "History available · Tesla not connected"))
         let fleetScope = fleet?["scopeStatus"] as? String
         var diagnosticLines = [
             "Service: \(service)",
@@ -3631,12 +3837,16 @@ final class HubController {
         return HubSnapshot(health: ready ? .running : .degraded,
                            service: service,
                            account: account,
+                           accountState: selectedPresent || legacyPresent || fleetPresent
+                               ? .connected : (vehicles.isEmpty ? .notConfigured : .historyOnly),
                            provider: provider,
                            vehicleName: vehicleName,
                            vehicle: vehicleSummary,
+                           hasConfiguredVehicle: vehicle != nil,
                            controlVehicleID: controlVehicleID,
                            controlVehicles: controlVehicles,
                            database: dbText,
+                           databaseState: dbBytes == nil ? .awaitingSetup : .healthy,
                            activity: [],
                            version: root["version"] as? String ?? HubRelease.fallbackVersion,
                            dataDirectory: dataDirectory,
@@ -3644,18 +3854,22 @@ final class HubController {
     }
 
     private func statusSnapshot(_ status: HubSnapshot, installed: Bool, loaded: HubServiceLoadState) -> HubSnapshot {
-        guard installed else { return HubSnapshot(health: .needsInstall, service: "Not installed", account: status.account, provider: status.provider, vehicleName: status.vehicleName, vehicle: status.vehicle, controlVehicleID: nil, controlVehicles: status.controlVehicles, database: status.database, activity: status.activity, version: status.version, dataDirectory: status.dataDirectory ?? dataDirectory, diagnosticLines: status.diagnosticLines) }
+        guard installed else { return HubSnapshot(health: .needsInstall, service: HubL10n.text("hub.HubController.441.368", fallback: "Not installed"), account: status.account, accountState: status.accountState, provider: status.provider, vehicleName: status.vehicleName, vehicle: status.vehicle, hasConfiguredVehicle: status.hasConfiguredVehicle, controlVehicleID: nil, controlVehicles: status.controlVehicles, database: status.database, databaseState: status.databaseState, activity: status.activity, version: status.version, dataDirectory: status.dataDirectory ?? dataDirectory, diagnosticLines: status.diagnosticLines) }
         var result = status
+        var descriptionState: ServiceDescriptionState
         switch loaded {
         case .loaded:
             result.health = status.health == .running ? .running : .degraded
-            result.service = status.health == .running ? "Installed and running" : "Installed · needs attention"
+            descriptionState = status.health == .running ? .running : .attention
+            result.service = status.health == .running ? HubL10n.text("hub.HubController.3789.1265", fallback: "Installed and running") : HubL10n.text("hub.HubController.3789.1266", fallback: "Installed · needs attention")
         case .unloaded:
             result.health = .stopped
-            result.service = "Installed but stopped"
+            descriptionState = .stopped
+            result.service = HubL10n.text("hub.HubController.3846.1290", fallback: "Installed but stopped")
         case .unknown:
             result.health = .degraded
-            result.service = "Installed · service state unavailable"
+            descriptionState = .serviceStateUnavailable
+            result.service = HubL10n.text("hub.HubController.3849.1291", fallback: "Installed · service state unavailable")
         }
         if status.version != HubRelease.bundledVersion {
             result.diagnosticLines.insert(
@@ -3664,11 +3878,12 @@ final class HubController {
             )
             if case .loaded = loaded {
                 result.health = .degraded
-                result.service = "Installed · version mismatch"
+                descriptionState = .versionMismatch
+                result.service = HubL10n.text("hub.HubController.3858.1293", fallback: "Installed · version mismatch")
             }
         }
         if let developmentConfiguration {
-            result.service = Self.developmentServiceDescription(result.service)
+            result.service = Self.developmentServiceDescription(descriptionState)
             result.diagnosticLines.insert(
                 "Development runtime: \(developmentConfiguration.serviceLabel)", at: 0
             )
@@ -3681,15 +3896,18 @@ final class HubController {
         return result
     }
 
-    private static func developmentServiceDescription(_ productionDescription: String) -> String {
-        switch productionDescription {
-        case "Installed and running": return "Development Hub running"
-        case "Installed but stopped": return "Development Hub stopped"
-        case "Installed · needs attention": return "Development Hub · needs attention"
-        case "Installed · service state unavailable": return "Development Hub · service state unavailable"
-        case "Installed · version mismatch": return "Development Hub · version mismatch"
-        case "Installed · status unavailable": return "Development Hub · status unavailable"
-        default: return "Development Hub · \(productionDescription)"
+    private enum ServiceDescriptionState {
+        case running, stopped, attention, serviceStateUnavailable, versionMismatch, statusUnavailable
+    }
+
+    private static func developmentServiceDescription(_ state: ServiceDescriptionState) -> String {
+        switch state {
+        case .running: return HubL10n.text("hub.HubController.3877.1301", fallback: "Development Hub running")
+        case .stopped: return HubL10n.text("hub.HubController.3878.1303", fallback: "Development Hub stopped")
+        case .attention: return HubL10n.text("hub.HubController.3879.1305", fallback: "Development Hub · needs attention")
+        case .serviceStateUnavailable: return HubL10n.text("hub.HubController.3880.1307", fallback: "Development Hub · service state unavailable")
+        case .versionMismatch: return HubL10n.text("hub.HubController.3881.1309", fallback: "Development Hub · version mismatch")
+        case .statusUnavailable: return HubL10n.text("hub.HubController.3882.1311", fallback: "Development Hub · status unavailable")
         }
     }
 
@@ -3698,22 +3916,28 @@ final class HubController {
         let health: HubHealth
         let service: String
         switch loaded {
-        case .loaded: health = .degraded; service = "Installed · status unavailable"
-        case .unloaded: health = .stopped; service = "Installed but stopped"
-        case .unknown: health = .degraded; service = "Installed · service state unavailable"
+        case .loaded: health = .degraded; service = HubL10n.text("hub.HubController.3882.1310", fallback: "Installed · status unavailable")
+        case .unloaded: health = .stopped; service = HubL10n.text("hub.HubController.3846.1290", fallback: "Installed but stopped")
+        case .unknown: health = .degraded; service = HubL10n.text("hub.HubController.3849.1291", fallback: "Installed · service state unavailable")
         }
         if let developmentConfiguration {
-            let developmentService = Self.developmentServiceDescription(service)
-            return HubSnapshot(health: health, service: developmentService, account: "Unknown", provider: nil, vehicleName: "Vehicle", vehicle: "Unknown", controlVehicleID: nil, controlVehicles: [], database: "Unknown", activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [developmentService, "Development runtime: \(developmentConfiguration.serviceLabel)", "Mode: \(developmentConfiguration.mode.rawValue)", "Binary: \(developmentConfiguration.binary.path)", "Configuration: \(developmentConfiguration.config.path)", "State: \(developmentConfiguration.stateDirectory.path)", "Logs: \(developmentConfiguration.logDirectory.path)", "Hub status command did not return a valid report."])
+            let descriptionState: ServiceDescriptionState
+            switch loaded {
+            case .loaded: descriptionState = .statusUnavailable
+            case .unloaded: descriptionState = .stopped
+            case .unknown: descriptionState = .serviceStateUnavailable
+            }
+            let developmentService = Self.developmentServiceDescription(descriptionState)
+            return HubSnapshot(health: health, service: developmentService, account: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), accountState: .unknown, provider: nil, vehicleName: HubL10n.text("hub.HubController.1163.481", fallback: "Vehicle"), vehicle: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), hasConfiguredVehicle: false, controlVehicleID: nil, controlVehicles: [], database: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), databaseState: .unknown, activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [developmentService, "Development runtime: \(developmentConfiguration.serviceLabel)", "Mode: \(developmentConfiguration.mode.rawValue)", "Binary: \(developmentConfiguration.binary.path)", "Configuration: \(developmentConfiguration.config.path)", "State: \(developmentConfiguration.stateDirectory.path)", "Logs: \(developmentConfiguration.logDirectory.path)", "Hub status command did not return a valid report."])
         }
-        return HubSnapshot(health: health, service: service, account: "Unknown", provider: nil, vehicleName: "Vehicle", vehicle: "Unknown", controlVehicleID: nil, controlVehicles: [], database: "Unknown", activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [service, "Hub status command did not return a valid report."])
+        return HubSnapshot(health: health, service: service, account: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), accountState: .unknown, provider: nil, vehicleName: HubL10n.text("hub.HubController.1163.481", fallback: "Vehicle"), vehicle: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), hasConfiguredVehicle: false, controlVehicleID: nil, controlVehicles: [], database: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), databaseState: .unknown, activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [service, "Hub status command did not return a valid report."])
     }
 
     private func relativeAge(milliseconds: Int64) -> String {
         let seconds = max(0, Int(Date().timeIntervalSince1970 - Double(milliseconds) / 1_000))
-        if seconds < 60 { return "just now" }
-        if seconds < 3_600 { return "\(seconds / 60) minutes ago" }
-        if seconds < 86_400 { return "\(seconds / 3_600) hours ago" }
-        return "\(seconds / 86_400) days ago"
+        if seconds < 60 { return HubL10n.text("hub.HubController.3905.1332", fallback: "just now") }
+        if seconds < 3_600 { return HubL10n.plural("hub.HubController.3906.1333", count: Int(seconds / 60), one: "%d minute ago", other: "%d minutes ago") }
+        if seconds < 86_400 { return HubL10n.plural("hub.HubController.3907.1334", count: Int(seconds / 3_600), one: "%d hour ago", other: "%d hours ago") }
+        return HubL10n.plural("hub.HubController.3908.1335", count: Int(seconds / 86_400), one: "%d day ago", other: "%d days ago")
     }
 }

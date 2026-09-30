@@ -48,40 +48,48 @@ enum HubDiagnosticsPresentation {
         guard first.hasPrefix("{") || first.hasPrefix("[") else { return first }
         let data = Data(lines.joined(separator: "\n").utf8)
         guard let value = try? JSONSerialization.jsonObject(with: data) else {
-            return first.hasPrefix("{") ? "Structured report available in raw details." : first
+            return first.hasPrefix("{") ? HubL10n.text("hub.HubDiagnosticsPresentation.51.1418", fallback: "Structured report available in raw details.") : first
         }
         if let object = value as? [String: Any] {
             var fields: [String] = []
-            for (key, label) in [("status", "Status"), ("message", "Message"),
-                                 ("provider", "Provider"), ("version", "Version")] {
+            for (key, label) in [("status", HubL10n.text("hub.HubDiagnosticsPresentation.status_label", fallback: "Status")),
+                                 ("message", HubL10n.text("hub.HubDiagnosticsPresentation.message_label", fallback: "Message")),
+                                 ("provider", HubL10n.text("hub.ServiceDetailsWindowController.115.2186", fallback: "Provider")),
+                                 ("version", HubL10n.text("hub.ServiceDetailsWindowController.113.2182", fallback: "Version"))] {
                 if let value = object[key] as? String, !value.isEmpty {
-                    fields.append("\(label): \(value)")
+                    fields.append(HubL10n.format("hub.HubDiagnosticsPresentation.58.1427", fallback: "%1$@: %2$@", arguments: [String(describing: label), String(describing: value)]))
                 }
             }
-            for (key, label) in [("ready", "Ready"), ("compatible", "Compatible")] {
+            for (key, label) in [("ready", HubL10n.text("hub.HubDiagnosticsPresentation.ready_label", fallback: "Ready")),
+                                 ("compatible", HubL10n.text("hub.HubDiagnosticsPresentation.compatible_label", fallback: "Compatible"))] {
                 if let value = object[key] as? Bool {
-                    fields.append("\(label): \(value ? "yes" : "no")")
+                    let answer = value
+                        ? HubL10n.text("hub.HubDiagnosticsPresentation.boolean_yes", fallback: "yes")
+                        : HubL10n.text("hub.HubDiagnosticsPresentation.boolean_no", fallback: "no")
+                    fields.append(HubL10n.format("hub.HubDiagnosticsPresentation.58.1427", fallback: "%1$@: %2$@", arguments: [label, answer]))
                 }
             }
             if !fields.isEmpty { return fields.prefix(3).joined(separator: " · ") }
         } else if let values = value as? [Any] {
-            return "\(values.count) structured result\(values.count == 1 ? "" : "s")."
+            return HubL10n.plural("hub.HubDiagnosticsPresentation.structured_results",
+                                  count: values.count, one: "%d structured result.",
+                                  other: "%d structured results.")
         }
-        return "Structured report available in raw details."
+        return HubL10n.text("hub.HubDiagnosticsPresentation.51.1418", fallback: "Structured report available in raw details.")
     }
 
     private static func displayTitle(for rawTitle: String) -> String {
         let normalized = rawTitle.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         let prefix = normalized.split(separator: " —", maxSplits: 1, omittingEmptySubsequences: true).first ?? ""
         switch prefix.lowercased() {
-        case "doctor": return "Environment doctor"
-        case "preflight": return "Preflight"
-        case "status": return "Status"
-        case "recent logs": return "Recent logs"
-        case "service pause": return "Service pause"
-        case "service state check": return "Service state check"
-        case "service resume": return "Service resume"
-        case "support metadata": return "Support metadata"
+        case "doctor": return HubL10n.text("hub.DiagnosticsWindowController.371.242", fallback: "Environment doctor")
+        case "preflight": return HubL10n.text("hub.HubDiagnosticsPresentation.preflight_label", fallback: "Preflight")
+        case "status": return HubL10n.text("hub.HubDiagnosticsPresentation.status_label", fallback: "Status")
+        case "recent logs": return HubL10n.text("hub.DiagnosticsWindowController.377.254", fallback: "Recent logs")
+        case "service pause": return HubL10n.text("hub.HubDiagnosticsPresentation.81.1444", fallback: "Service pause")
+        case "service state check": return HubL10n.text("hub.HubDiagnosticsPresentation.82.1446", fallback: "Service state check")
+        case "service resume": return HubL10n.text("hub.HubDiagnosticsPresentation.83.1448", fallback: "Service resume")
+        case "support metadata": return HubL10n.text("hub.HubDiagnosticsPresentation.84.1450", fallback: "Support metadata")
         default:
             guard let first = normalized.first else { return normalized }
             return first.uppercased() + normalized.dropFirst()

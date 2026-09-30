@@ -26,10 +26,10 @@ final class HubNavigationBar: NSView {
     private var buttons: [HubActionButton] = []
     private var selectedSection: HubMainSection = .dashboard
     private let items = [
-        HubNavigationItem(section: .dashboard, title: "Overview", symbol: "house"),
-        HubNavigationItem(section: .vehicles, title: "Vehicles", symbol: "car.side"),
-        HubNavigationItem(section: .activity, title: "Activity", symbol: "list.bullet.rectangle"),
-        HubNavigationItem(section: .settings, title: "Settings", symbol: "gearshape")
+        HubNavigationItem(section: .dashboard, title: HubL10n.text("hub.AppDelegate.106.35", fallback: "Overview"), symbol: "house"),
+        HubNavigationItem(section: .vehicles, title: HubL10n.text("hub.AppDelegate.110.36", fallback: "Vehicles"), symbol: "car.side"),
+        HubNavigationItem(section: .activity, title: HubL10n.text("hub.AppDelegate.114.37", fallback: "Activity"), symbol: "list.bullet.rectangle"),
+        HubNavigationItem(section: .settings, title: HubL10n.text("hub.AppDelegate.118.38", fallback: "Settings"), symbol: "gearshape")
     ]
 
     init(actions: HubNavigationActions) {
@@ -50,7 +50,7 @@ final class HubNavigationBar: NSView {
             button.horizontalInset = 16
             button.iconBoxSize = 18
             button.hubStyle = .flat
-            button.toolTip = "Show \(item.title)"
+            button.toolTip = HubL10n.format("hub.HubNavigationBar.53.1462", fallback: "Show %1$@", arguments: [String(describing: item.title)])
             button.setAccessibilityLabel(item.title)
             button.setAccessibilityRole(.radioButton)
             button.wantsLayer = true
@@ -150,8 +150,8 @@ final class HubMainToolbar: NSObject, NSToolbarDelegate {
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         guard identifier == Item.navigation else { return nil }
         let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "Navigation"
-        item.paletteLabel = "Navigation"
+        item.label = HubL10n.text("hub.HubNavigationBar.navigation_label", fallback: "Navigation")
+        item.paletteLabel = HubL10n.text("hub.HubNavigationBar.navigation_label", fallback: "Navigation")
         item.view = navigationBar
         item.isBordered = false
         navigationBar.widthAnchor.constraint(equalToConstant: 492).isActive = true
@@ -188,7 +188,7 @@ final class HubOnboardingToolbar: NSObject, NSToolbarDelegate {
                  willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         guard identifier == Item.placeholder else { return nil }
         let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "Setup"
+        item.label = HubL10n.text("hub.HubNavigationBar.setup_label", fallback: "Setup")
         item.view = placeholder
         item.isBordered = false
         placeholder.widthAnchor.constraint(equalToConstant: 492).isActive = true
@@ -342,16 +342,16 @@ final class HubActivityView: HubCompactPageView, NSSearchFieldDelegate {
 
     init(actions: HubNavigationActions) {
         self.actions = actions
-        let header = HubPageHeaderView(symbol: "list.bullet.rectangle", title: "Activity",
-                                       subtitle: "Recent Hub events on this Mac.")
+        let header = HubPageHeaderView(symbol: "list.bullet.rectangle", title: HubL10n.text("hub.AppDelegate.114.37", fallback: "Activity"),
+                                       subtitle: HubL10n.text("hub.HubNavigationBar.346.1478", fallback: "Recent Hub events on this Mac."))
         super.init(header: header)
 
-        search.placeholderString = "Search activity"
+        search.placeholderString = HubL10n.text("hub.HubNavigationBar.349.1479", fallback: "Search activity")
         search.controlSize = .regular
         search.delegate = self
         search.sendsSearchStringImmediately = true
         search.heightAnchor.constraint(equalToConstant: HubMetrics.compactControlHeight).isActive = true
-        let logs = HubActionButton(title: "Open Logs…", target: self, action: #selector(openLogs))
+        let logs = HubActionButton(title: HubL10n.text("hub.HubNavigationBar.354.1480", fallback: "Open Logs…"), target: self, action: #selector(openLogs))
         logs.hubStyle = .neutral
         logs.hubFont = HubTypography.action
         logs.image = NSImage(systemSymbolName: "doc.text.magnifyingglass",
@@ -375,17 +375,17 @@ final class HubActivityView: HubCompactPageView, NSSearchFieldDelegate {
             rowsHost.topAnchor.constraint(equalTo: card.topAnchor),
             rowsHost.bottomAnchor.constraint(equalTo: card.bottomAnchor)
         ])
-        addSection(title: "Recent", view: card)
+        addSection(title: HubL10n.text("hub.HubNavigationBar.378.1483", fallback: "Recent"), view: card)
 
         content.addArrangedSubview(NSView())
         let lock = NSImageView(image: NSImage(systemSymbolName: "lock",
                                               accessibilityDescription: nil) ?? NSImage())
         lock.contentTintColor = HubPalette.mutedForeground
         lock.widthAnchor.constraint(equalToConstant: 16).isActive = true
-        let privacy = NSTextField(labelWithString: "Sensitive values are redacted from logs.")
+        let privacy = NSTextField(labelWithString: HubL10n.text("hub.HubNavigationBar.385.1485", fallback: "Sensitive values are redacted from logs."))
         privacy.font = HubTypography.label
         privacy.textColor = HubPalette.mutedForeground
-        let version = NSTextField(labelWithString: "Teslatlas Hub \(HubRelease.bundledVersion)")
+        let version = NSTextField(labelWithString: HubL10n.format("hub.HubDashboardView.279.1374", fallback: "Teslatlas Hub %1$@", arguments: [String(describing: HubRelease.bundledVersion)]))
         version.font = HubTypography.label
         version.textColor = HubPalette.mutedForeground
         let footer = NSStackView(views: [lock, privacy, NSView(), version])
@@ -415,8 +415,8 @@ final class HubActivityView: HubCompactPageView, NSSearchFieldDelegate {
             $0.removeFromSuperview()
         }
         if visible.isEmpty {
-            addActivityRow(symbol: "clock", title: query.isEmpty ? "No recent activity" : "No matching events",
-                           detail: query.isEmpty ? "Events will appear here as they happen." : "Try another search.")
+            addActivityRow(symbol: "clock", title: query.isEmpty ? HubL10n.text("hub.HubNavigationBar.418.1488", fallback: "No recent activity") : HubL10n.text("hub.HubNavigationBar.418.1489", fallback: "No matching events"),
+                           detail: query.isEmpty ? HubL10n.text("hub.HubNavigationBar.419.1490", fallback: "Events will appear here as they happen.") : HubL10n.text("hub.HubNavigationBar.419.1491", fallback: "Try another search."))
             return
         }
         for (index, entry) in visible.enumerated() {
@@ -450,35 +450,35 @@ final class HubSettingsView: HubCompactPageView {
 
     init(actions: HubNavigationActions) {
         self.actions = actions
-        let header = HubPageHeaderView(symbol: "gearshape", title: "Settings",
-                                       subtitle: "Manage this Hub and its connections.")
+        let header = HubPageHeaderView(symbol: "gearshape", title: HubL10n.text("hub.AppDelegate.118.38", fallback: "Settings"),
+                                       subtitle: HubL10n.text("hub.HubNavigationBar.454.1496", fallback: "Manage this Hub and its connections."))
         super.init(header: header)
 
-        accountRow = HubPageRowView(symbol: "person", title: "Tesla account",
+        accountRow = HubPageRowView(symbol: "person", title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"),
                                     detail: "",
                                     target: self, action: #selector(accountPressed(_:)))
-        databaseRow = HubPageRowView(symbol: "cylinder", title: "Local database",
+        databaseRow = HubPageRowView(symbol: "cylinder", title: HubL10n.text("hub.HubDashboardView.105.1361", fallback: "Local database"),
                                      detail: "", showsChevron: false)
         importRow = HubPageRowView(symbol: "square.and.arrow.down",
-                                   title: "Import TeslaMate history",
-                                   detail: "Import your existing TeslaMate data.",
+                                   title: HubL10n.text("hub.HubNavigationBar.463.1502", fallback: "Import TeslaMate history"),
+                                   detail: HubL10n.text("hub.HubNavigationBar.464.1503", fallback: "Import your existing TeslaMate data."),
                                    target: self, action: #selector(importPressed))
         importRow.identifier = NSUserInterfaceItemIdentifier("hub.settings.import-teslamate")
-        addSection(title: "Connections & data",
+        addSection(title: HubL10n.text("hub.HubNavigationBar.467.1505", fallback: "Connections & data"),
                    view: hubGroupedCard([accountRow, databaseRow, importRow]))
-        serviceRow = HubPageRowView(symbol: "gearshape.2", title: "Background service",
+        serviceRow = HubPageRowView(symbol: "gearshape.2", title: HubL10n.text("hub.HubNavigationBar.469.1507", fallback: "Background service"),
                                     detail: "",
                                     target: self, action: #selector(servicePressed))
-        let diagnostics = HubPageRowView(symbol: "stethoscope", title: "Diagnostics",
-                                         detail: "Check system status and logs.",
+        let diagnostics = HubPageRowView(symbol: "stethoscope", title: HubL10n.text("hub.AppDelegate.123.39", fallback: "Diagnostics"),
+                                         detail: HubL10n.text("hub.HubNavigationBar.473.1510", fallback: "Check system status and logs."),
                                          target: self, action: #selector(diagnosticsPressed))
-        addSection(title: "This Mac", view: hubGroupedCard([serviceRow, diagnostics]))
-        let appearance = HubPageRowView(symbol: "circle.lefthalf.filled", title: "Appearance",
+        addSection(title: HubL10n.text("hub.HubNavigationBar.475.1511", fallback: "This Mac"), view: hubGroupedCard([serviceRow, diagnostics]))
+        let appearance = HubPageRowView(symbol: "circle.lefthalf.filled", title: HubL10n.text("hub.HubNavigationBar.appearance_label", fallback: "Appearance"),
                                         detail: "",
                                         target: self, action: #selector(appearancePressed))
         addSection(view: hubGroupedCard([appearance]))
-        let about = HubPageRowView(symbol: "info.circle", title: "About Teslatlas Hub",
-                                   detail: "Version \(HubRelease.bundledVersion)",
+        let about = HubPageRowView(symbol: "info.circle", title: HubL10n.text("hub.AppDelegate.44.5", fallback: "About Teslatlas Hub"),
+                                   detail: HubL10n.format("hub.HubNavigationBar.481.1516", fallback: "Version %1$@", arguments: [String(describing: HubRelease.bundledVersion)]),
                                    target: self, action: #selector(aboutPressed))
         addSection(view: hubGroupedCard([about]))
     }

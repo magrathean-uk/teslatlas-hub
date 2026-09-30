@@ -69,11 +69,26 @@ struct MacMigrationInput<'a> {
     source_url: &'a str,
     car_id: i64,
     postgres_password_file: &'a Path,
+    history_only: bool,
     encryption_key_file: Option<&'a Path>,
     access_token_file: Option<&'a Path>,
     refresh_token_file: Option<&'a Path>,
     online_snapshot: bool,
     preserve_existing_credentials: bool,
+}
+
+#[cfg(unix)]
+fn validate_history_only_config(config: &HubConfig) -> Result<(), Box<dyn std::error::Error>> {
+    if config.collector.interval_seconds != 0
+        || config.collector.edge.is_some()
+        || config.collector.fleet_telemetry.is_some()
+        || config.collector.legacy_auth.enabled
+    {
+        return Err(
+            "history-only import requires every collector and Legacy auth path disabled".into(),
+        );
+    }
+    Ok(())
 }
 
 #[cfg(unix)]
@@ -155,6 +170,7 @@ async fn run_macos_migration(
         source_url,
         car_id,
         postgres_password_file,
+        history_only,
         encryption_key_file,
         access_token_file,
         refresh_token_file,
@@ -164,6 +180,17 @@ async fn run_macos_migration(
 ) -> Result<bool, Box<dyn std::error::Error>> {
     if car_id <= 0 {
         return Err("--car-id must be a positive TeslaMate car id".into());
+    }
+    if history_only
+        && (!online_snapshot
+            || encryption_key_file.is_some()
+            || access_token_file.is_some()
+            || refresh_token_file.is_some()
+            || preserve_existing_credentials)
+    {
+        return Err(
+            "history-only import requires --online-snapshot and no Tesla credential flags".into(),
+        );
     }
     let secret_paths = std::iter::once(Some(postgres_password_file))
         .chain([encryption_key_file, access_token_file, refresh_token_file])
@@ -179,9 +206,15 @@ async fn run_macos_migration(
     }
 
     let config = HubConfig::load(config_path)?;
+    if history_only {
+        validate_history_only_config(&config)?;
+    }
     admission.assert_sensitive_access()?;
     admission.assert_store_path(&config.data_dir)?;
     let source = ReadOnlySource::parse(source_url)?;
+    if history_only && !source.is_loopback() {
+        return Err("history-only import requires a numeric loopback PostgreSQL source".into());
+    }
     let postgres_password = read_migration_postgres_password(postgres_password_file)?;
     let mut limits = config.teslamate.read_limits()?;
     let profile = derive_effective_import_profile(
@@ -190,6 +223,51 @@ async fn run_macos_migration(
         &config.data_dir,
     )?;
     limits.parallel_copy_lanes = profile.parallel_copy_lanes;
+    if history_only {
+        let store = HubStore::initialize(&config.data_dir)?;
+        let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
+        let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
+        let progress = migration_progress_reporter(true);
+        let (report, captured_ciphertexts) = import_direct_migration_snapshot(
+            &store,
+            &cursor_key,
+            &source,
+            &postgres_password,
+            car_id,
+            limits,
+            false,
+            progress.clone(),
+        )
+        .await?;
+        if captured_ciphertexts.is_some() {
+            return Err("history-only import unexpectedly captured credentials".into());
+        }
+        catalogue_checkpoint.finish()?;
+        progress.complete(TeslaMateMigrationPhase::Complete);
+        println!(
+            "{}",
+            serde_json::json!({
+                "status": "imported",
+                "captureMode": "online-snapshot",
+                "credentialScope": "history-only",
+                "applicationVersionStatus": "unknown",
+                "schemaEvidence": "v4_2_compatible_schema",
+                "selectedCarId": car_id,
+                "projectedRows": report.projected_rows,
+                "snapshotId": report.snapshot_id,
+                "sequence": report.sequence,
+                "cutoverUnsettled": report.cutover_unsettled,
+                "retryRecommended": report.cutover_unsettled,
+                "sourceNeverMutated": true,
+                "credentialsInspected": false,
+                "credentialsImported": false,
+                "profileVersion": profile.version,
+                "parallelCopyLanes": profile.parallel_copy_lanes,
+                "profileReason": profile.reason.as_str(),
+            })
+        );
+        return Ok(false);
+    }
     let copy_teslamate_ciphertext = match (
         encryption_key_file,
         access_token_file,
@@ -454,7 +532,31 @@ fn migration_progress_reporter(online_snapshot: bool) -> TeslaMateMigrationProgr
     if !should_emit_migration_progress(online_snapshot) {
         return TeslaMateMigrationProgressReporter::default();
     }
-    TeslaMateMigrationProgressReporter::new(|event: TeslaMateMigrationProgressEvent| {
+    let phase = std::sync::Mutex::new(None);
+    let started = Instant::now();
+    TeslaMateMigrationProgressReporter::new(move |event: TeslaMateMigrationProgressEvent| {
+        use teslatlas_hub::runtime::development_event_log as dev;
+        let mut previous = phase
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if *previous != Some(event.phase) {
+            *previous = Some(event.phase);
+            let mut record = dev::Event::new(dev::Kind::Import, dev::Outcome::Progress);
+            record.phase = Some(match event.phase {
+                TeslaMateMigrationPhase::Counting => dev::Phase::Counting,
+                TeslaMateMigrationPhase::Metadata => dev::Phase::Metadata,
+                TeslaMateMigrationPhase::RelatedPositions => dev::Phase::RelatedPositions,
+                TeslaMateMigrationPhase::Positions => dev::Phase::Positions,
+                TeslaMateMigrationPhase::Charges => dev::Phase::Charges,
+                TeslaMateMigrationPhase::Finalizing => dev::Phase::Finalizing,
+                TeslaMateMigrationPhase::Complete => dev::Phase::Complete,
+            });
+            record.rows = event.completed_rows;
+            record.total_rows = event.total_rows;
+            record.duration_ms = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+            dev::record(record);
+        }
+        drop(previous);
         let stdout = std::io::stdout();
         let mut output = stdout.lock();
         if let Err(error) = write_migration_progress_event(&mut output, &event) {

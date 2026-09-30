@@ -27,14 +27,14 @@ enum TeslaAuthError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .cancelled: return "Tesla login was cancelled."
-        case .randomGeneration: return "Secure Tesla login state could not be generated."
-        case .invalidAuthorizationURL: return "Tesla authorization URL could not be created."
-        case .invalidCallback: return "Tesla returned an incomplete login callback."
-        case .stateMismatch: return "Tesla login state did not match. Start login again."
-        case .invalidIssuer: return "Tesla returned an invalid account issuer."
-        case .invalidResponse: return "Tesla returned an invalid token response."
-        case .exchangeFailed: return "Tesla token exchange failed."
+        case .cancelled: return HubL10n.text("hub.TeslaAuthWindowController.30.2235", fallback: "Tesla login was cancelled.")
+        case .randomGeneration: return HubL10n.text("hub.TeslaAuthWindowController.31.2236", fallback: "Secure Tesla login state could not be generated.")
+        case .invalidAuthorizationURL: return HubL10n.text("hub.TeslaAuthWindowController.32.2237", fallback: "Tesla authorization URL could not be created.")
+        case .invalidCallback: return HubL10n.text("hub.TeslaAuthWindowController.33.2238", fallback: "Tesla returned an incomplete login callback.")
+        case .stateMismatch: return HubL10n.text("hub.TeslaAuthWindowController.34.2239", fallback: "Tesla login state did not match. Start login again.")
+        case .invalidIssuer: return HubL10n.text("hub.TeslaAuthWindowController.35.2240", fallback: "Tesla returned an invalid account issuer.")
+        case .invalidResponse: return HubL10n.text("hub.TeslaAuthWindowController.36.2241", fallback: "Tesla returned an invalid token response.")
+        case .exchangeFailed: return HubL10n.text("hub.TeslaAuthWindowController.37.2242", fallback: "Tesla token exchange failed.")
         }
     }
 }
@@ -293,7 +293,7 @@ final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKN
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 720),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
-        window.title = "Connect Tesla Account"
+        window.title = HubL10n.text("hub.TeslaAuthWindowController.296.2280", fallback: "Connect Tesla Account")
         window.minSize = NSSize(width: 620, height: 560)
         super.init(window: window)
         window.delegate = self
@@ -355,10 +355,15 @@ final class TeslaAuthWindowController: NSWindowController, NSWindowDelegate, WKN
     }
 
     private func showProgress() {
+        let progressText = HubL10n.text("hub.TeslaAuthWindowController.358.html_progress",
+                                        fallback: "Finishing secure Tesla login…")
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
         webView.loadHTMLString("""
         <!doctype html><meta charset="utf-8"><style>
         body{font:15px -apple-system;margin:0;display:grid;place-items:center;height:100vh;color:#333}
-        </style><p>Finishing secure Tesla login…</p>
+        </style><p>\(progressText)</p>
         """, baseURL: nil)
     }
 

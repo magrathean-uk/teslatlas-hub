@@ -213,12 +213,14 @@ pub fn preflight_hub_for_serve(
                     "standalone source-run Serve requires every collector path to be disabled",
                 ));
             }
-            crate::db::HubStore::open_read_only(&config.data_dir).map_err(|error| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("standalone source-run Hub data is unavailable: {error}"),
-                )
-            })?;
+            crate::db::HubStore::preflight_standalone_schema_read_only(&config.data_dir).map_err(
+                |error| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("standalone source-run Hub data is unavailable: {error}"),
+                    )
+                },
+            )?;
             return Ok(());
         }
         DevelopmentServeMode::Edge => {

@@ -147,8 +147,8 @@ pub struct TeslaMateCheckSnapshot {
     pub open_sessions: TeslaMateOpenSessionCounts,
     pub selected_car_counts: TeslaMateSelectedCarCounts,
     pub source_totals: TeslaMateSourceTotals,
-    pub source_tokens_relation_present: bool,
-    pub legacy_token_pair: TeslaMateLegacyTokenPairDiagnostics,
+    pub source_tokens_relation_present: Option<bool>,
+    pub legacy_token_pair: Option<TeslaMateLegacyTokenPairDiagnostics>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -193,11 +193,8 @@ impl TeslaMateCheckSnapshot {
             selected_positions = self.selected_car_counts.positions,
             selected_charges = self.selected_car_counts.charges,
             source_positions = self.source_totals.positions,
-            tokens_relation_present = self.source_tokens_relation_present,
-            token_relation = %self.legacy_token_pair.relation,
-            token_access_ciphertext_bytes = self.legacy_token_pair.access_ciphertext_bytes,
-            token_refresh_ciphertext_bytes = self.legacy_token_pair.refresh_ciphertext_bytes,
-            "TeslaMate selected car (source is not mutated; token pair shape is validated without reading ciphertext)"
+            token_checks_performed = self.legacy_token_pair.is_some(),
+            "TeslaMate selected car (source is not mutated)"
         );
     }
 }
@@ -229,6 +226,28 @@ pub async fn check_teslamate_compatibility(
     password: &TeslaMatePostgresPassword,
     selected_car_id: i64,
     limits: TeslaMateReadLimits,
+) -> Result<TeslaMateCheckSnapshot, TeslaMateReaderError> {
+    check_teslamate_compatibility_with_token_scope(source, password, selected_car_id, limits, true)
+        .await
+}
+
+/// Check public history without probing the private TeslaMate token schema.
+pub async fn check_teslamate_history_compatibility(
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    selected_car_id: i64,
+    limits: TeslaMateReadLimits,
+) -> Result<TeslaMateCheckSnapshot, TeslaMateReaderError> {
+    check_teslamate_compatibility_with_token_scope(source, password, selected_car_id, limits, false)
+        .await
+}
+
+async fn check_teslamate_compatibility_with_token_scope(
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    selected_car_id: i64,
+    limits: TeslaMateReadLimits,
+    inspect_tokens: bool,
 ) -> Result<TeslaMateCheckSnapshot, TeslaMateReaderError> {
     tracing::info!(
         host = source.host(),
@@ -296,8 +315,11 @@ pub async fn check_teslamate_compatibility(
             .client()
             .query_one(SELECTED_CAR_COUNT_SQL, &[&selected_car_id_i16])
             .await?;
-        let legacy_token_pair = inspect_legacy_token_pair_in_client(session.client()).await?;
-        let source_tokens_relation_present = true;
+        let (source_tokens_relation_present, legacy_token_pair) = if inspect_tokens {
+            (Some(true), Some(inspect_legacy_token_pair_in_client(session.client()).await?))
+        } else {
+            (None, None)
+        };
         Ok(TeslaMateCheckSnapshot {
             schema,
             connection,

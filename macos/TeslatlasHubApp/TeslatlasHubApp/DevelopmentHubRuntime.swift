@@ -3,6 +3,63 @@
 import Darwin
 import Foundation
 
+enum HistoryOnlyControl {
+    private static let contents = Array("history-only-v1\n".utf8)
+
+    static func url(for config: URL) -> URL {
+        config.deletingLastPathComponent().appendingPathComponent(".history-only-control")
+    }
+
+    static func isSelected(for config: URL) throws -> Bool {
+        let path = url(for: config).path
+        let descriptor = Darwin.open(path, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        guard descriptor >= 0 else {
+            if errno == ENOENT { return false }
+            throw HubActionError.commandFailed(HubL10n.text("hub.DevelopmentHubRuntime.18.82", fallback: "History-only control file is unsafe or unavailable."))
+        }
+        defer { Darwin.close(descriptor) }
+        var information = stat()
+        guard fstat(descriptor, &information) == 0,
+              information.st_mode & S_IFMT == S_IFREG,
+              information.st_uid == getuid(),
+              information.st_mode & 0o777 == 0o600,
+              information.st_nlink == 1,
+              information.st_size == off_t(contents.count) else {
+            throw HubActionError.commandFailed(HubL10n.text("hub.DevelopmentHubRuntime.28.83", fallback: "History-only control file must be an owner-only regular file."))
+        }
+        var bytes = [UInt8](repeating: 0, count: contents.count)
+        var offset = 0
+        while offset < bytes.count {
+            let remaining = bytes.count - offset
+            let count = bytes.withUnsafeMutableBytes { buffer in
+                Darwin.read(descriptor, buffer.baseAddress!.advanced(by: offset), remaining)
+            }
+            guard count > 0 else {
+                if count < 0 && errno == EINTR { continue }
+                throw HubActionError.commandFailed(HubL10n.text("hub.DevelopmentHubRuntime.39.84", fallback: "History-only control file could not be read."))
+            }
+            offset += count
+        }
+        guard bytes == contents else {
+            throw HubActionError.commandFailed(HubL10n.text("hub.DevelopmentHubRuntime.44.85", fallback: "History-only control file has unexpected contents."))
+        }
+        return true
+    }
+
+    static func write(for config: URL) throws {
+        if try isSelected(for: config) { return }
+        let file = url(for: config)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data(contents).write(to: file, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
+                                              ofItemAtPath: file.path)
+        guard try isSelected(for: config) else {
+            throw HubActionError.commandFailed(HubL10n.text("hub.DevelopmentHubRuntime.58.86", fallback: "History-only control file was not saved."))
+        }
+    }
+}
+
 enum DevelopmentHubMode: String, Equatable {
     case fixture
     case standalone
@@ -18,11 +75,13 @@ struct DevelopmentHubConfiguration: Equatable {
     static let stateVariable = "TESLATLAS_HUB_DEVELOPMENT_STATE_DIRECTORY"
     static let logVariable = "TESLATLAS_HUB_DEVELOPMENT_LOG_DIRECTORY"
     static let modeVariable = "TESLATLAS_HUB_DEVELOPMENT_MODE"
+    static let controlVariable = "TESLATLAS_HUB_DEVELOPMENT_CONTROL_DIRECTORY"
 
     let binary: URL
     let config: URL
     let stateDirectory: URL
     let logDirectory: URL
+    let controlDirectory: URL
     let ownerUID: uid_t
     let mode: DevelopmentHubMode
 
@@ -36,31 +95,30 @@ struct DevelopmentHubConfiguration: Equatable {
     }
 
     var plist: URL {
-        stateDirectory.appendingPathComponent(".\(serviceLabel).plist")
+        controlDirectory.appendingPathComponent(".\(serviceLabel).plist")
     }
 
     var standardOutputLog: URL { logDirectory.appendingPathComponent("hub.out.log") }
     var standardErrorLog: URL { logDirectory.appendingPathComponent("hub.err.log") }
-
     static func from(environment: [String: String], ownerUID: uid_t = getuid()) throws -> Self? {
         let variables = [
-            enableVariable, binaryVariable, configVariable, stateVariable, logVariable, modeVariable
+            enableVariable, binaryVariable, configVariable, stateVariable, logVariable, modeVariable, controlVariable
         ]
         let supplied = variables.contains { environment[$0] != nil }
         guard supplied else { return nil }
         guard environment[enableVariable] == "1" else {
             throw HubActionError.commandFailed(
-                "Local development mode was not enabled. Set \(enableVariable)=1 together with all four development paths."
+                HubL10n.format("hub.DevelopmentHubRuntime.109.98", fallback: "Local development mode was not enabled. Set %1$@=1 together with all four development paths.", arguments: [String(describing: enableVariable)])
             )
         }
 
         func requiredPath(_ name: String) throws -> URL {
             guard let value = environment[name], !value.isEmpty, value.hasPrefix("/") else {
-                throw HubActionError.commandFailed("\(name) must be a non-empty absolute path.")
+                throw HubActionError.commandFailed(HubL10n.format("hub.DevelopmentHubRuntime.115.99", fallback: "%1$@ must be a non-empty absolute path.", arguments: [String(describing: name)]))
             }
             let url = URL(fileURLWithPath: value).standardizedFileURL
             guard url.path == value || (value.hasSuffix("/") && url.path + "/" == value) else {
-                throw HubActionError.commandFailed("\(name) must not contain relative path components.")
+                throw HubActionError.commandFailed(HubL10n.format("hub.DevelopmentHubRuntime.119.100", fallback: "%1$@ must not contain relative path components.", arguments: [String(describing: name)]))
             }
             return url
         }
@@ -69,7 +127,7 @@ struct DevelopmentHubConfiguration: Equatable {
         if let rawMode = environment[modeVariable] {
             guard let parsed = DevelopmentHubMode(rawValue: rawMode) else {
                 throw HubActionError.commandFailed(
-                    "\(modeVariable) must be fixture, standalone, or edge."
+                    HubL10n.format("hub.DevelopmentHubRuntime.128.101", fallback: "%1$@ must be fixture, standalone, or edge.", arguments: [String(describing: modeVariable)])
                 )
             }
             mode = parsed
@@ -81,6 +139,9 @@ struct DevelopmentHubConfiguration: Equatable {
             config: try requiredPath(configVariable),
             stateDirectory: try requiredPath(stateVariable),
             logDirectory: try requiredPath(logVariable),
+            controlDirectory: environment[controlVariable] == nil
+                ? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("dev/runtime", isDirectory: true)
+                : try requiredPath(controlVariable),
             ownerUID: ownerUID,
             mode: mode
         )
@@ -88,12 +149,15 @@ struct DevelopmentHubConfiguration: Equatable {
     }
 
     func validate(requireConfig: Bool) throws {
-        try Self.validatePath(binary, kind: .executable, ownerUID: ownerUID)
+        let control = try DevelopmentEventLog.validateDirectoryReadOnly(controlDirectory,
+                                                                       allowOwnedGroupWritableAncestors: false)
+        close(control)
+        try Self.validatePath(binary, kind: .executable, ownerUID: ownerUID, allowOwnedGroupWritableAncestors: false)
         try Self.validatePath(stateDirectory, kind: .privateDirectory, ownerUID: ownerUID)
         try Self.validatePath(logDirectory, kind: .privateDirectory, ownerUID: ownerUID)
-        try Self.validateAncestors(of: config, ownerUID: ownerUID, allowMissingLeaf: !requireConfig)
+        try Self.validateAncestors(of: config, ownerUID: ownerUID, allowMissingLeaf: !requireConfig, allowOwnedGroupWritableAncestors: false)
         if Self.pathEntryExists(config) || requireConfig {
-            try Self.validatePath(config, kind: .privateFile, ownerUID: ownerUID)
+            try Self.validatePath(config, kind: .privateFile, ownerUID: ownerUID, allowOwnedGroupWritableAncestors: false)
         }
         if Self.pathEntryExists(plist) {
             try Self.validatePath(plist, kind: .privateFile, ownerUID: ownerUID)
@@ -110,12 +174,7 @@ struct DevelopmentHubConfiguration: Equatable {
     /// repaired through its held descriptor before bootstrap or kickstart.
     func preparePrivateLaunchLogs() throws {
         try Self.validatePath(logDirectory, kind: .privateDirectory, ownerUID: ownerUID)
-        let directory = open(logDirectory.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
-        guard directory >= 0 else {
-            throw HubActionError.commandFailed(
-                "Development log directory cannot be safely opened: \(logDirectory.path)"
-            )
-        }
+        let directory = try DevelopmentEventLog.validateDirectoryReadOnly(logDirectory)
         defer { close(directory) }
         var directoryInformation = stat()
         guard fstat(directory, &directoryInformation) == 0,
@@ -123,7 +182,7 @@ struct DevelopmentHubConfiguration: Equatable {
               directoryInformation.st_uid == ownerUID,
               directoryInformation.st_mode & 0o077 == 0 else {
             throw HubActionError.commandFailed(
-                "Development log directory changed during preparation: \(logDirectory.path)"
+                HubL10n.format("hub.DevelopmentHubRuntime.182.103", fallback: "Development log directory changed during preparation: %1$@", arguments: [String(describing: logDirectory.path)])
             )
         }
 
@@ -143,7 +202,7 @@ struct DevelopmentHubConfiguration: Equatable {
             }
             guard descriptor >= 0 else {
                 throw HubActionError.commandFailed(
-                    "Development log cannot be safely opened: \(logDirectory.appendingPathComponent(name).path)"
+                    HubL10n.format("hub.DevelopmentHubRuntime.202.106", fallback: "Development log cannot be safely opened: %1$@", arguments: [String(describing: logDirectory.appendingPathComponent(name).path)])
                 )
             }
             defer { close(descriptor) }
@@ -154,18 +213,18 @@ struct DevelopmentHubConfiguration: Equatable {
                   information.st_uid == ownerUID,
                   information.st_nlink == 1 else {
                 throw HubActionError.commandFailed(
-                    "Development log must be a current-owner regular single-link file: \(logDirectory.appendingPathComponent(name).path)"
+                    HubL10n.format("hub.DevelopmentHubRuntime.213.107", fallback: "Development log must be a current-owner regular single-link file: %1$@", arguments: [String(describing: logDirectory.appendingPathComponent(name).path)])
                 )
             }
             let permissions = information.st_mode & 0o777
             guard permissions == 0o600 || permissions == 0o644 else {
                 throw HubActionError.commandFailed(
-                    "Development log has unsupported permissions: \(logDirectory.appendingPathComponent(name).path)"
+                    HubL10n.format("hub.DevelopmentHubRuntime.219.108", fallback: "Development log has unsupported permissions: %1$@", arguments: [String(describing: logDirectory.appendingPathComponent(name).path)])
                 )
             }
             if permissions == 0o644, fchmod(descriptor, mode_t(0o600)) != 0 {
                 throw HubActionError.commandFailed(
-                    "Development log permissions could not be repaired: \(logDirectory.appendingPathComponent(name).path)"
+                    HubL10n.format("hub.DevelopmentHubRuntime.224.109", fallback: "Development log permissions could not be repaired: %1$@", arguments: [String(describing: logDirectory.appendingPathComponent(name).path)])
                 )
             }
             var repaired = stat()
@@ -177,7 +236,7 @@ struct DevelopmentHubConfiguration: Equatable {
                   repaired.st_nlink == 1,
                   repaired.st_mode & 0o777 == 0o600 else {
                 throw HubActionError.commandFailed(
-                    "Development log identity changed during preparation: \(logDirectory.appendingPathComponent(name).path)"
+                    HubL10n.format("hub.DevelopmentHubRuntime.236.110", fallback: "Development log identity changed during preparation: %1$@", arguments: [String(describing: logDirectory.appendingPathComponent(name).path)])
                 )
             }
         }
@@ -189,7 +248,7 @@ struct DevelopmentHubConfiguration: Equatable {
     func validateStopTarget() throws {
         guard ownerUID == getuid() else {
             throw HubActionError.commandFailed(
-                "Development service must belong to the current user."
+                HubL10n.text("hub.DevelopmentHubRuntime.248.111", fallback: "Development service must belong to the current user.")
             )
         }
         let paths = [binary, config, stateDirectory, logDirectory]
@@ -197,13 +256,13 @@ struct DevelopmentHubConfiguration: Equatable {
             url.path.hasPrefix("/") && url.standardizedFileURL.path == url.path
         }) else {
             throw HubActionError.commandFailed(
-                "Development service identity contains an unsafe path."
+                HubL10n.text("hub.DevelopmentHubRuntime.256.112", fallback: "Development service identity contains an unsafe path.")
             )
         }
         guard serviceLabel.hasPrefix("com.teslatlas.hub.development."),
               serviceLabel.count > "com.teslatlas.hub.development.".count,
               serviceLabel != "com.teslatlas.hub" else {
-            throw HubActionError.commandFailed("Unsafe development service label.")
+            throw HubActionError.commandFailed(HubL10n.text("hub.DevelopmentHubRuntime.262.116", fallback: "Unsafe development service label."))
         }
     }
 
@@ -218,14 +277,16 @@ struct DevelopmentHubConfiguration: Equatable {
         case privateDirectory
     }
 
-    private static func validatePath(_ url: URL, kind: PathKind, ownerUID: uid_t) throws {
-        try validateAncestors(of: url, ownerUID: ownerUID, allowMissingLeaf: false)
+    private static func validatePath(_ url: URL, kind: PathKind, ownerUID: uid_t,
+                                     allowOwnedGroupWritableAncestors: Bool = true) throws {
+        try validateAncestors(of: url, ownerUID: ownerUID, allowMissingLeaf: false,
+                              allowOwnedGroupWritableAncestors: allowOwnedGroupWritableAncestors)
         var information = stat()
         guard lstat(url.path, &information) == 0 else {
-            throw HubActionError.commandFailed("Development path is unavailable: \(url.path)")
+            throw HubActionError.commandFailed(HubL10n.format("hub.DevelopmentHubRuntime.281.117", fallback: "Development path is unavailable: %1$@", arguments: [String(describing: url.path)]))
         }
         guard information.st_uid == ownerUID else {
-            throw HubActionError.commandFailed("Development path is not owned by the current user: \(url.path)")
+            throw HubActionError.commandFailed(HubL10n.format("hub.DevelopmentHubRuntime.284.118", fallback: "Development path is not owned by the current user: %1$@", arguments: [String(describing: url.path)]))
         }
         let type = information.st_mode & S_IFMT
         switch kind {
@@ -233,19 +294,19 @@ struct DevelopmentHubConfiguration: Equatable {
             guard type == S_IFREG, information.st_mode & 0o022 == 0,
                   FileManager.default.isExecutableFile(atPath: url.path) else {
                 throw HubActionError.commandFailed(
-                    "Development binary must be a regular executable not writable by group or others: \(url.path)"
+                    HubL10n.format("hub.DevelopmentHubRuntime.292.119", fallback: "Development binary must be a regular executable not writable by group or others: %1$@", arguments: [String(describing: url.path)])
                 )
             }
         case .privateFile:
             guard type == S_IFREG, information.st_mode & 0o077 == 0 else {
                 throw HubActionError.commandFailed(
-                    "Development file must be regular and accessible only to its owner: \(url.path)"
+                    HubL10n.format("hub.DevelopmentHubRuntime.298.120", fallback: "Development file must be regular and accessible only to its owner: %1$@", arguments: [String(describing: url.path)])
                 )
             }
         case .privateDirectory:
             guard type == S_IFDIR, information.st_mode & 0o077 == 0 else {
                 throw HubActionError.commandFailed(
-                    "Development directory must be owned and accessible only by its owner: \(url.path)"
+                    HubL10n.format("hub.DevelopmentHubRuntime.304.121", fallback: "Development directory must be owned and accessible only by its owner: %1$@", arguments: [String(describing: url.path)])
                 )
             }
         }
@@ -253,7 +314,8 @@ struct DevelopmentHubConfiguration: Equatable {
 
     private static func validateAncestors(of url: URL,
                                           ownerUID: uid_t,
-                                          allowMissingLeaf: Bool) throws {
+                                          allowMissingLeaf: Bool,
+                                          allowOwnedGroupWritableAncestors: Bool = true) throws {
         let components = url.standardizedFileURL.pathComponents
         var path = "/"
         for (index, component) in components.dropFirst().enumerated() {
@@ -261,20 +323,21 @@ struct DevelopmentHubConfiguration: Equatable {
             var information = stat()
             if lstat(path, &information) != 0 {
                 if allowMissingLeaf && index == components.count - 2 && errno == ENOENT { return }
-                throw HubActionError.commandFailed("Development path is unavailable: \(path)")
+                throw HubActionError.commandFailed(HubL10n.format("hub.DevelopmentHubRuntime.281.117", fallback: "Development path is unavailable: %1$@", arguments: [String(describing: path)]))
             }
             guard information.st_mode & S_IFMT != S_IFLNK else {
-                throw HubActionError.commandFailed("Development paths must not contain symbolic links: \(path)")
+                throw HubActionError.commandFailed(HubL10n.format("hub.DevelopmentHubRuntime.323.123", fallback: "Development paths must not contain symbolic links: %1$@", arguments: [String(describing: path)]))
             }
             if index < components.count - 2 {
                 guard information.st_mode & S_IFMT == S_IFDIR else {
-                    throw HubActionError.commandFailed("Development path parent is not a directory: \(path)")
+                    throw HubActionError.commandFailed(HubL10n.format("hub.DevelopmentHubRuntime.327.124", fallback: "Development path parent is not a directory: %1$@", arguments: [String(describing: path)]))
                 }
                 guard information.st_uid == 0 || information.st_uid == ownerUID else {
-                    throw HubActionError.commandFailed("Development path parent has an unexpected owner: \(path)")
+                    throw HubActionError.commandFailed(HubL10n.format("hub.DevelopmentHubRuntime.330.125", fallback: "Development path parent has an unexpected owner: %1$@", arguments: [String(describing: path)]))
                 }
-                guard information.st_mode & 0o022 == 0 else {
-                    throw HubActionError.commandFailed("Development path parent is writable by group or others: \(path)")
+                guard information.st_mode & 0o002 == 0,
+                      information.st_mode & 0o020 == 0 || (allowOwnedGroupWritableAncestors && information.st_uid == ownerUID && information.st_gid == getgid()) else {
+                    throw HubActionError.commandFailed(HubL10n.format("hub.DevelopmentHubRuntime.333.126", fallback: "Development path parent is writable by group or others: %1$@", arguments: [String(describing: path)]))
                 }
             }
         }
@@ -295,7 +358,7 @@ final class DevelopmentHubInstaller: HubInstalling {
 
     private static var rejection: Error {
         HubActionError.commandFailed(
-            "A source-run development Hub cannot mutate the production service installation."
+            HubL10n.text("hub.DevelopmentHubRuntime.354.127", fallback: "A source-run development Hub cannot mutate the production service installation.")
         )
     }
 }
@@ -325,6 +388,15 @@ final class DevelopmentHubCommandRunner: HubCommandRunning {
                      stdin: String?,
                      onOutputLine: ((String) -> Void)?,
                      completion: @escaping (Result<String, Error>) -> Void) {
+        let journal = DevelopmentEventLog.shared(directory: configuration.logDirectory)
+        let action = DevelopmentEventLog.action(arguments: arguments)
+        let operation = UUID(); let started = DispatchTime.now().uptimeNanoseconds
+        journal.record(kind: .command, action: action, outcome: .start, operation: operation)
+        let originalCompletion = completion
+        let completion: (Result<String, Error>) -> Void = { result in
+            journal.completion(kind: .command, action: action, operation: operation, started: started, result: result)
+            originalCompletion(result)
+        }
         do {
             try configuration.validate(requireConfig: arguments.contains("serve"))
         } catch {
@@ -335,6 +407,7 @@ final class DevelopmentHubCommandRunner: HubCommandRunning {
             executable: configuration.binary,
             arguments: arguments,
             stdin: stdin,
+            environment: [DevelopmentHubConfiguration.logVariable: configuration.logDirectory.path],
             maximumOutputBytes: arguments.contains("doctor") ? 1024 * 1024 : HubProcessExecutor.defaultMaximumOutputBytes,
             timeout: Self.timeout(for: arguments),
             onOutputLine: onOutputLine,
@@ -413,8 +486,17 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
         case "stop": action = .stop
         case "restart": action = .restart
         default:
-            completion(.failure(HubActionError.commandFailed("Unknown service action.")))
+            completion(.failure(HubActionError.commandFailed(HubL10n.text("hub.DevelopmentHubRuntime.472.142", fallback: "Unknown service action."))))
             return
+        }
+        let journal = DevelopmentEventLog.shared(directory: configuration.logDirectory)
+        let logAction: DevelopmentEventLog.Action = action == .start ? .start : action == .stop ? .stop : .restart
+        let operation = UUID(); let started = DispatchTime.now().uptimeNanoseconds
+        journal.record(kind: .control, action: logAction, outcome: .start, operation: operation)
+        let originalCompletion = completion
+        let completion: (Result<String, Error>) -> Void = { result in
+            journal.completion(kind: .control, action: logAction, operation: operation, started: started, result: result)
+            originalCompletion(result)
         }
         if action == .stop {
             do {
@@ -451,12 +533,23 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
     }
 
     private func runServePreflight(completion: @escaping (Result<String, Error>) -> Void) {
+        let historyOnly: Bool
+        do { historyOnly = try HistoryOnlyControl.isSelected(for: configuration.config) }
+        catch { completion(.failure(error)); return }
+        let journal = DevelopmentEventLog.shared(directory: configuration.logDirectory)
+        let operation = UUID(); let started = DispatchTime.now().uptimeNanoseconds
+        journal.record(kind: .preflight, action: .preflight, outcome: .start, operation: operation)
+        let originalCompletion = completion
+        let completion: (Result<String, Error>) -> Void = { result in
+            journal.completion(kind: .preflight, action: .preflight, operation: operation, started: started, result: result)
+            originalCompletion(result)
+        }
         processRunner(
             configuration.binary,
             [
                 "--config", configuration.config.path,
                 "serve-preflight", "--mode", configuration.mode.rawValue
-            ],
+            ] + (historyOnly ? ["--history-only"] : []),
             30,
             completion
         )
@@ -551,22 +644,28 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
         let data = try PropertyListSerialization.data(fromPropertyList: launchAgentPropertyList(),
                                                       format: .xml,
                                                       options: 0)
-        let temporary = configuration.stateDirectory
-            .appendingPathComponent(".launch-agent.\(UUID().uuidString).tmp")
-        try data.write(to: temporary, options: .withoutOverwriting)
-        do {
-            try FileManager.default.setAttributes(
-                [.posixPermissions: NSNumber(value: 0o600)],
-                ofItemAtPath: temporary.path
-            )
-            if rename(temporary.path, configuration.plist.path) != 0 {
-                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        let directory = try DevelopmentEventLog.validateDirectoryReadOnly(configuration.controlDirectory,
+                                                                         allowOwnedGroupWritableAncestors: false)
+        defer { close(directory) }
+        let temporary = ".launch-agent.\(UUID().uuidString).tmp"
+        let descriptor = openat(directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { close(descriptor); _ = unlinkat(directory, temporary, 0) }
+        try data.withUnsafeBytes { raw in
+            var offset = 0
+            while offset < raw.count {
+                let count = write(descriptor, raw.baseAddress!.advanced(by: offset), raw.count - offset)
+                guard count > 0 else {
+                    if errno == EINTR { continue }
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+                offset += count
             }
-            try configuration.validate(requireConfig: true)
-        } catch {
-            try? FileManager.default.removeItem(at: temporary)
-            throw error
         }
+        guard renameat(directory, temporary, directory, configuration.plist.lastPathComponent) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        try configuration.validate(requireConfig: true)
     }
 
     func launchAgentPropertyList() -> [String: Any] {
@@ -586,10 +685,13 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
             "EnvironmentVariables": [
                 DevelopmentHubConfiguration.enableVariable: "1",
                 DevelopmentHubConfiguration.modeVariable: configuration.mode.rawValue,
-                "RUST_LOG": "info,tower_http=debug"
+                "RUST_LOG": "info,tower_http=debug",
+                DevelopmentHubConfiguration.logVariable: configuration.logDirectory.path
             ],
-            "StandardOutPath": configuration.standardOutputLog.path,
-            "StandardErrorPath": configuration.standardErrorLog.path
+            // The typed journals own retention. Raw stdio can contain sensitive
+            // free-form diagnostics and an open launchd FD cannot be rotated.
+            "StandardOutPath": "/dev/null",
+            "StandardErrorPath": "/dev/null"
         ]
     }
 
@@ -630,7 +732,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                 }
             case .success:
                 completion(.failure(HubActionError.commandFailed(
-                    "Development Hub did not finish stopping."
+                    HubL10n.text("hub.DevelopmentHubRuntime.692.174", fallback: "Development Hub did not finish stopping.")
                 )))
             case let .failure(error):
                 if case let HubActionError.commandExited(status, output) = error,
@@ -651,7 +753,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                                 completion: @escaping (Result<String, Error>) -> Void) {
         guard let requestTimeout = readinessRequestTimeout(deadline: deadline) else {
             failStartupAndStop(startupFailure(
-                lastFailure: "The readiness deadline expired."
+                lastFailure: HubL10n.text("hub.DevelopmentHubRuntime.713.175", fallback: "The readiness deadline expired.")
             ), completion: completion)
             return
         }
@@ -668,14 +770,14 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                         previousReadyPID: nil,
                         attemptsRemaining: attemptsRemaining,
                         deadline: deadline,
-                        failure: "The owned LaunchAgent is loaded but is not running the intended binary and configuration.",
+                        failure: HubL10n.text("hub.DevelopmentHubRuntime.730.177", fallback: "The owned LaunchAgent is loaded but is not running the intended binary and configuration."),
                         completion: completion
                     )
                     return
                 }
                 guard let statusTimeout = self.readinessRequestTimeout(deadline: deadline) else {
                     self.failStartupAndStop(self.startupFailure(
-                        lastFailure: "The readiness deadline expired before the status check."
+                        lastFailure: HubL10n.text("hub.DevelopmentHubRuntime.737.178", fallback: "The readiness deadline expired before the status check.")
                     ), completion: completion)
                     return
                 }
@@ -689,13 +791,13 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                     case let .success(statusOutput)
                         where Self.isUsableStatusOutput(statusOutput):
                         if previousReadyPID == pid {
-                            completion(.success("Development Hub is running as PID \(pid)."))
+                            completion(.success(HubL10n.format("hub.DevelopmentHubRuntime.751.181", fallback: "Development Hub is running as PID %1$@.", arguments: [String(describing: pid)])))
                         } else {
                             self.retryReadiness(
                                 previousReadyPID: pid,
                                 attemptsRemaining: attemptsRemaining,
                                 deadline: deadline,
-                                failure: "The intended process has not remained stable for two readiness checks.",
+                                failure: HubL10n.text("hub.DevelopmentHubRuntime.757.182", fallback: "The intended process has not remained stable for two readiness checks."),
                                 completion: completion
                             )
                         }
@@ -704,7 +806,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                             previousReadyPID: nil,
                             attemptsRemaining: attemptsRemaining,
                             deadline: deadline,
-                            failure: "The intended process returned an invalid status response: \(Self.boundedDiagnostic(statusOutput))",
+                            failure: HubL10n.format("hub.DevelopmentHubRuntime.766.183", fallback: "The intended process returned an invalid status response: %1$@", arguments: [String(describing: Self.boundedDiagnostic(statusOutput))]),
                             completion: completion
                         )
                     case let .failure(error):
@@ -712,7 +814,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                             previousReadyPID: nil,
                             attemptsRemaining: attemptsRemaining,
                             deadline: deadline,
-                            failure: "The intended process status check failed: \(Self.boundedDiagnostic(error.localizedDescription))",
+                            failure: HubL10n.format("hub.DevelopmentHubRuntime.774.184", fallback: "The intended process status check failed: %1$@", arguments: [String(describing: Self.boundedDiagnostic(error.localizedDescription))]),
                             completion: completion
                         )
                     }
@@ -722,7 +824,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                     previousReadyPID: nil,
                     attemptsRemaining: attemptsRemaining,
                     deadline: deadline,
-                    failure: "The owned LaunchAgent is not running: \(Self.boundedDiagnostic(error.localizedDescription))",
+                    failure: HubL10n.format("hub.DevelopmentHubRuntime.784.185", fallback: "The owned LaunchAgent is not running: %1$@", arguments: [String(describing: Self.boundedDiagnostic(error.localizedDescription))]),
                     completion: completion
                 )
             }
@@ -790,12 +892,12 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
 
     private func startupCleanupFailure(startupError: Error, cleanupError: Error) -> Error {
         HubActionError.commandFailed(
-            "\(startupError.localizedDescription) The failed development LaunchAgent could not be unloaded: \(Self.boundedDiagnostic(cleanupError.localizedDescription))"
+            HubL10n.format("hub.DevelopmentHubRuntime.852.187", fallback: "%1$@ The failed development LaunchAgent could not be unloaded: %2$@", arguments: [String(describing: startupError.localizedDescription), String(describing: Self.boundedDiagnostic(cleanupError.localizedDescription))])
         )
     }
 
     private func startupFailure(lastFailure: String) -> Error {
-        var detail = "Development Hub did not become ready under \(service). \(lastFailure)"
+        var detail = HubL10n.format("hub.DevelopmentHubRuntime.857.188", fallback: "Development Hub did not become ready under %1$@. %2$@", arguments: [String(describing: service), String(describing: lastFailure)])
         if let stderr = HubAppLog.regularFileTail(
             of: configuration.standardErrorLog,
             maximumBytes: 4_096

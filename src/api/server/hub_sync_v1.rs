@@ -811,6 +811,11 @@ fn serve_physical_changes_since_14(
         return unknown_base_receipt();
     }
     if base.receipt_id == admission.receipt_id {
+        development_sync_event(
+            crate::runtime::development_event_log::Outcome::NoOp,
+            base.head_sequence,
+            admission.head_sequence,
+        );
         return signed_control_response(
             StatusCode::OK,
             &NoOpPayload {
@@ -838,6 +843,11 @@ fn serve_physical_changes_since_14(
             Ok(Some((stored_base_sha, stored_target_sha, receipt_json)))
                 if stored_base_sha == base_sha && stored_target_sha == target_sha =>
             {
+                development_sync_event(
+                    crate::runtime::development_event_log::Outcome::ChangedSet,
+                    base.head_sequence,
+                    admission.head_sequence,
+                );
                 return bounded_control_json_bytes(StatusCode::OK, receipt_json, false)
                     .unwrap_or_else(|_| StatusCode::SERVICE_UNAVAILABLE.into_response());
             }
@@ -872,6 +882,11 @@ fn serve_physical_changes_since_14(
     retry.base_receipt_id = admission.receipt_id.clone();
     retry.base_manifest_sha256 = target_sha;
     retry.from_sequence = admission.head_sequence;
+    development_sync_event(
+        crate::runtime::development_event_log::Outcome::RebaseRequired,
+        base.head_sequence,
+        admission.head_sequence,
+    );
     signed_control_response(
         StatusCode::CONFLICT,
         &serde_json::json!({
@@ -1271,4 +1286,16 @@ mod tests {
         );
         assert!(invalid.headers().get(header::CACHE_CONTROL).is_none());
     }
+}
+
+fn development_sync_event(
+    outcome: crate::runtime::development_event_log::Outcome,
+    base: u64,
+    target: u64,
+) {
+    use crate::runtime::development_event_log as dev;
+    let mut event = dev::Event::new(dev::Kind::Sync, outcome);
+    event.base_sequence = Some(base);
+    event.target_sequence = Some(target);
+    dev::record(event);
 }

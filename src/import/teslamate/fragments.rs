@@ -1345,6 +1345,7 @@ impl<'a> PackSink<'a> {
     /// Stream rows into the projection-state comparison spool without making
     /// a disposable full pack. Successor imports use this to produce only
     /// sparse deltas; their current base remains immutable and readable.
+    #[cfg(test)]
     pub(crate) fn capture_state_only(mut self) -> Self {
         self.capture_state_only = true;
         self

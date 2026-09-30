@@ -1,6 +1,64 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[test]
+fn teslamate_current_migration_preserves_populated_v66_and_adds_truthful_provenance() {
+    let temporary = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(temporary.path()).unwrap();
+    let (source, vehicle) = test_registered_vehicle(&store);
+    let owner = ObservationInput {
+        source_id: source.source_id,
+        vehicle_id: vehicle.vehicle_id,
+        observed_at_ms: 10_000,
+        payload: serde_json::json!({"record_type":"owner_api_vehicle_data_v1"}),
+    };
+    store.append_observation(&owner, 10_001).unwrap();
+    let before = store
+        .current_observations_for_vehicle(vehicle.vehicle_id)
+        .unwrap();
+    let connection = store.open().unwrap();
+    let schema: String = connection
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE name='current_observations'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let old_schema = schema
+        .replacen("current_observations", "current_v66", 1)
+        .replace(", 'teslamate_position_v1'", "");
+    assert!(!old_schema.contains("teslamate_position_v1"));
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {old_schema};
+        INSERT INTO current_v66 SELECT * FROM current_observations;
+        DROP TABLE current_observations; ALTER TABLE current_v66 RENAME TO current_observations;
+        PRAGMA user_version=66; COMMIT;"
+        ))
+        .unwrap();
+    drop(connection);
+    let upgraded = HubStore::initialize(temporary.path()).unwrap();
+    assert_eq!(
+        upgraded
+            .current_observations_for_vehicle(vehicle.vehicle_id)
+            .unwrap(),
+        before
+    );
+    let input = ObservationInput {
+        payload: serde_json::json!({"record_type":"teslamate_position_v1"}),
+        ..owner
+    };
+    assert!(upgraded.record_teslamate_current(&input, 10_002).unwrap());
+    assert_eq!(
+        upgraded
+            .current_observations_for_vehicle(vehicle.vehicle_id)
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(schema_version(&upgraded.open().unwrap()).unwrap(), 67);
+}
+
+#[test]
 fn lifecycle_cursor_query_uses_the_per_vehicle_id_index() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
@@ -36,7 +94,14 @@ fn public_drive_query_uses_its_vehicle_time_cursor_index_without_sorting() {
         .expect("query plan");
     let details = statement
         .query_map(
-            params![Uuid::new_v4().to_string(), 0_i64, 10_i64, 10_i64, 10_i64, 10_i64],
+            params![
+                Uuid::new_v4().to_string(),
+                0_i64,
+                10_i64,
+                10_i64,
+                10_i64,
+                10_i64
+            ],
             |row| row.get::<_, String>(3),
         )
         .expect("plan rows")
@@ -218,8 +283,7 @@ fn schema_59_upgrade_adds_null_vehicle_retirement_state() {
         .expect("source");
     let vehicle = store
         .register_vehicle(
-            &VehicleDescriptor::new(source.source_id, "9")
-                .with_tesla_identity(Some(9), None),
+            &VehicleDescriptor::new(source.source_id, "9").with_tesla_identity(Some(9), None),
             1_000,
         )
         .expect("vehicle");
@@ -313,7 +377,9 @@ fn schema_61_upgrade_adds_physical_v3_admission_marker() {
     migrate(&connection).expect("migrate schema 61");
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     let columns: Vec<String> = connection
-        .prepare("SELECT name FROM pragma_table_info('pending_physical_v3_admissions') ORDER BY cid")
+        .prepare(
+            "SELECT name FROM pragma_table_info('pending_physical_v3_admissions') ORDER BY cid",
+        )
         .expect("admission columns")
         .query_map([], |row| row.get(0))
         .expect("admission rows")
@@ -356,7 +422,9 @@ fn schema_61_upgrade_adds_physical_v3_admission_marker() {
         ]
     );
     let retained_columns: Vec<String> = connection
-        .prepare("SELECT name FROM pragma_table_info('retained_physical_v3_admissions') ORDER BY cid")
+        .prepare(
+            "SELECT name FROM pragma_table_info('retained_physical_v3_admissions') ORDER BY cid",
+        )
         .expect("retained admission columns")
         .query_map([], |row| row.get(0))
         .expect("retained admission rows")
@@ -527,7 +595,9 @@ fn schema_63_upgrade_preserves_retained_physical_receipt_and_packs() {
         )
         .expect("second receipt with the same content snapshot after migration");
     let violations: i64 = connection
-        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
         .expect("foreign-key check");
     assert_eq!(violations, 0);
 }
@@ -539,20 +609,27 @@ fn schema_64_upgrade_adds_prepared_catalogue_without_losing_vehicle_state() {
     let (_, vehicle) = test_registered_vehicle(&store);
     let connection = store.open().expect("catalogue");
     remove_v66_delta_schema(&connection);
-    connection.execute_batch(
-        "DROP TABLE prepared_map_months;
+    connection
+        .execute_batch(
+            "DROP TABLE prepared_map_months;
          PRAGMA user_version = 64;",
-    ).expect("restore populated schema 64 boundary");
+        )
+        .expect("restore populated schema 64 boundary");
     migrate(&connection).expect("additive 64 to 65 migration");
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
-    let vehicle_count: i64 = connection.query_row(
-        "SELECT count(*) FROM vehicles WHERE vehicle_id = ?1",
-        [vehicle.vehicle_id.to_string()], |row| row.get(0),
-    ).expect("preserved vehicle");
+    let vehicle_count: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM vehicles WHERE vehicle_id = ?1",
+            [vehicle.vehicle_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("preserved vehicle");
     assert_eq!(vehicle_count, 1);
-    let prepared_count: i64 = connection.query_row(
-        "SELECT count(*) FROM prepared_map_months", [], |row| row.get(0),
-    ).expect("prepared catalogue exists");
+    let prepared_count: i64 = connection
+        .query_row("SELECT count(*) FROM prepared_map_months", [], |row| {
+            row.get(0)
+        })
+        .expect("prepared catalogue exists");
     assert_eq!(prepared_count, 0);
     migrate(&connection).expect("repeated migration is stable");
 }
@@ -823,8 +900,12 @@ fn supervised_collector_lease_fences_kill_stale_and_recovery_transitions() {
     assert!(Uuid::parse_str(&first_status.instance_id).is_ok());
     assert_eq!(first_status.started_at_ms, 1_000);
     assert_eq!(first_status.heartbeat_at_ms, 1_000);
-    assert_eq!(first_status.lease_until_ms, 1_000 + SUPERVISED_COLLECTOR_LEASE_MS);
-    let status_json = serde_json::to_value(&first_status).expect("serialize collector lease status");
+    assert_eq!(
+        first_status.lease_until_ms,
+        1_000 + SUPERVISED_COLLECTOR_LEASE_MS
+    );
+    let status_json =
+        serde_json::to_value(&first_status).expect("serialize collector lease status");
     let status_object = status_json.as_object().expect("collector status object");
     let mut status_keys = status_object.keys().map(String::as_str).collect::<Vec<_>>();
     status_keys.sort_unstable();
@@ -1031,29 +1112,38 @@ fn upgrades_populated_schema_65_to_delta_catalogue_without_changing_physical_hea
         public_admission_candidate_fixture_for_source_and_sequence(
             &temporary.path().join("source"),&store,&key,1,"v65-delta-migration",1,
         );
-    let gate = store.try_acquire_publication_gate().expect("publication gate");
-    let admitted = store.stage_pending_physical_v3_admission(&gate,candidate)
+    let gate = store
+        .try_acquire_publication_gate()
+        .expect("publication gate");
+    let admitted = store
+        .stage_pending_physical_v3_admission(&gate, candidate)
         .expect("populated prior physical head");
     drop(gate);
     let connection = store.open().expect("catalogue");
-    connection.execute_batch(
-        "DROP TABLE physical_v3_delta_packs;
+    connection
+        .execute_batch(
+            "DROP TABLE physical_v3_delta_packs;
          DROP TABLE physical_v3_delta_transitions;
          PRAGMA user_version=65;",
-    ).expect("recreate populated schema 65 boundary");
+        )
+        .expect("recreate populated schema 65 boundary");
     drop(connection);
     drop(store);
     let upgraded = HubStore::initialize(&root).expect("upgrade populated prior");
-    let current = upgraded.pending_physical_v3_control_admission_for_vehicle(binding.vehicle_id)
-        .expect("physical admission lookup").expect("prior head retained");
-    assert_eq!(current,admitted);
+    let current = upgraded
+        .pending_physical_v3_control_admission_for_vehicle(binding.vehicle_id)
+        .expect("physical admission lookup")
+        .expect("prior head retained");
+    assert_eq!(current, admitted);
     let connection = upgraded.open().expect("upgraded catalogue");
-    assert_eq!(schema_version(&connection).unwrap(),66);
-    for table in ["physical_v3_delta_transitions","physical_v3_delta_packs"] {
-        let count: i64 = connection.query_row(
-            &format!("SELECT COUNT(*) FROM {table}"),[],|row| row.get(0),
-        ).expect("empty additive table");
-        assert_eq!(count,0);
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
+    for table in ["physical_v3_delta_transitions", "physical_v3_delta_packs"] {
+        let count: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("empty additive table");
+        assert_eq!(count, 0);
     }
 }
 

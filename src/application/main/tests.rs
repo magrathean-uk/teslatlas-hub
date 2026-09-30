@@ -36,7 +36,7 @@ use super::{
 };
 #[cfg(target_os = "macos")]
 use super::{
-    DevelopmentServeModeArgument, MAC_COMMAND_PROXY_RETRY_DELAY,
+    DevelopmentServeModeArgument, HubConfig, MAC_COMMAND_PROXY_RETRY_DELAY,
     MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
     MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES, MAX_MIGRATION_TOKEN_BYTES,
     MAX_MIGRATION_TOKEN_FILE_BYTES, MacCommandProxySpec, MacServeControl,
@@ -47,7 +47,7 @@ use super::{
     read_migration_encryption_key, read_migration_postgres_password, read_migration_secret,
     read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
     should_emit_migration_progress, should_preserve_existing_migration_credentials,
-    teslamate_check_failure_details, teslamate_version_confirmation,
+    teslamate_check_failure_details, teslamate_version_confirmation, validate_history_only_config,
     validate_legacy_setup_provider, validate_streaming_setting, write_migration_progress_event,
 };
 use teslatlas_hub::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
@@ -459,6 +459,79 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
 }
 
 #[cfg(target_os = "macos")]
+#[test]
+fn history_only_cli_requires_online_capture_and_excludes_tesla_credentials() {
+    let base = [
+        "teslatlas-hub",
+        "migrate",
+        "--source",
+        "postgresql://reader@localhost/teslamate",
+        "--car-id",
+        "1",
+        "--postgres-password-file",
+        "password",
+        "--acknowledge-v4-2-compatible-schema",
+    ];
+    let mut omitted_online = base.to_vec();
+    omitted_online.push("--history-only");
+    assert!(Cli::try_parse_from(omitted_online).is_err());
+    let mut accepted = base.to_vec();
+    accepted.extend(["--history-only", "--online-snapshot"]);
+    assert!(matches!(
+        Cli::try_parse_from(accepted.clone()).unwrap().command,
+        Command::Migrate {
+            history_only: true,
+            online_snapshot: true,
+            ..
+        }
+    ));
+    for conflicting in [
+        "--encryption-key-file",
+        "--access-token-file",
+        "--refresh-token-file",
+    ] {
+        let mut rejected = accepted.clone();
+        rejected.extend([conflicting, "secret"]);
+        assert!(Cli::try_parse_from(rejected).is_err());
+    }
+    let mut rejected = accepted;
+    rejected.push("--preserve-existing-credentials");
+    assert!(Cli::try_parse_from(rejected).is_err());
+    assert!(matches!(
+        Cli::try_parse_from([
+            "teslatlas-hub",
+            "teslamate-check",
+            "--source",
+            "postgresql://reader@localhost/teslamate",
+            "--car-id",
+            "1",
+            "--postgres-password-file",
+            "password",
+            "--history-only"
+        ])
+        .unwrap()
+        .command,
+        Command::TeslaMateCheck {
+            history_only: true,
+            ..
+        }
+    ));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn history_only_config_requires_collection_disabled() {
+    let parse = |collector: &str| {
+        HubConfig::from_exact_bytes(format!("data_dir = '/tmp/hub-history-only-test'\nbind = '127.0.0.1:21445'\n[collector]\n{collector}\n[collector.legacy_auth]\nenabled = false\n").as_bytes()).unwrap().0
+    };
+    assert!(validate_history_only_config(&parse("interval_seconds = 0")).is_ok());
+    assert!(validate_history_only_config(&parse("interval_seconds = 60")).is_err());
+    let mut legacy_auth = parse("interval_seconds = 0");
+    legacy_auth.collector.legacy_auth.enabled = true;
+    assert!(validate_history_only_config(&legacy_auth).is_err());
+}
+
+#[cfg(target_os = "macos")]
 #[tokio::test]
 async fn teslamate_check_invalid_source_does_not_create_hub_target() {
     let temporary = tempfile::tempdir().expect("temporary directory");
@@ -494,6 +567,7 @@ async fn migration_without_version_confirmation_does_not_create_hub_target() {
             source: "not-a-postgres-url".to_owned(),
             car_id: 7,
             postgres_password_file: PathBuf::from("unused-password"),
+            history_only: false,
             encryption_key_file: Some(PathBuf::from("unused-key")),
             access_token_file: None,
             refresh_token_file: None,
@@ -2240,6 +2314,7 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         source: "postgresql://localhost/teslamate".to_owned(),
         car_id: 1,
         postgres_password_file: PathBuf::from("password"),
+        history_only: false,
         encryption_key_file: Some(PathBuf::from("key")),
         access_token_file: None,
         refresh_token_file: None,
@@ -2272,11 +2347,14 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
     assert!(!command_requires_user_hub_admission(&Command::Legal));
     assert!(!command_requires_user_hub_admission(&Command::Source));
     assert!(!command_requires_user_hub_admission(&Command::Status));
-    assert!(!command_requires_user_hub_admission(&Command::Preflight));
+    assert!(!command_requires_user_hub_admission(&Command::Preflight {
+        history_only: true
+    }));
     #[cfg(target_os = "macos")]
     assert!(!command_requires_user_hub_admission(
         &Command::ServePreflight {
             mode: DevelopmentServeModeArgument::Standalone,
+            history_only: false,
         }
     ));
     assert!(!command_requires_user_hub_admission(&Command::Service {
@@ -2304,6 +2382,7 @@ fn source_run_serve_preflight_cli_requires_an_explicit_known_mode() {
         cli.command,
         Command::ServePreflight {
             mode: DevelopmentServeModeArgument::Edge,
+            history_only: false,
         }
     ));
     assert!(
@@ -2320,7 +2399,23 @@ fn source_run_serve_preflight_cli_requires_an_explicit_known_mode() {
     assert!(matches!(
         selected.command,
         Command::ServePreflight {
-            mode: DevelopmentServeModeArgument::PrivateLan
+            mode: DevelopmentServeModeArgument::PrivateLan,
+            history_only: false,
+        }
+    ));
+    let history = Cli::try_parse_from([
+        "teslatlas-hub",
+        "serve-preflight",
+        "--mode",
+        "standalone",
+        "--history-only",
+    ])
+    .expect("history-only standalone preflight");
+    assert!(matches!(
+        history.command,
+        Command::ServePreflight {
+            mode: DevelopmentServeModeArgument::Standalone,
+            history_only: true,
         }
     ));
 }

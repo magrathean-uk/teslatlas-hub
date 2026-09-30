@@ -2324,6 +2324,34 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         version = 66;
     }
 
+    if version == 66 {
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+             CREATE TABLE current_observations_v67 (
+                vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                record_type TEXT NOT NULL CHECK(record_type IN (
+                    'owner_api_discovery_v1', 'owner_api_vehicle_data_v1',
+                    'fleet_api_discovery_v1', 'fleet_api_vehicle_data_v1',
+                    'tesla_stream_update_v1', 'teslamate_position_v1')),
+                observation_id INTEGER NOT NULL CHECK(observation_id > 0),
+                source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,
+                observed_at_ms INTEGER NOT NULL CHECK(observed_at_ms >= 0),
+                received_at_ms INTEGER NOT NULL CHECK(received_at_ms >= 0),
+                payload_sha256 BLOB NOT NULL CHECK(length(payload_sha256) = 32),
+                payload_json TEXT NOT NULL CHECK(json_valid(payload_json))
+                    CHECK(length(CAST(payload_json AS BLOB)) <= 262144),
+                PRIMARY KEY(vehicle_id, record_type)
+             ) STRICT, WITHOUT ROWID;
+             INSERT INTO current_observations_v67 SELECT * FROM current_observations;
+             DROP TABLE current_observations;
+             ALTER TABLE current_observations_v67 RENAME TO current_observations;
+             PRAGMA user_version = 67;
+             COMMIT;",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 67;
+    }
     if version == SCHEMA_VERSION {
         Ok(())
     } else {

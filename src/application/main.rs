@@ -59,7 +59,7 @@ use teslatlas_hub::{
     },
     teslamate_reader::{
         TeslaMateCheckSnapshot, TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits,
-        TeslaMateReaderError, check_teslamate_compatibility,
+        TeslaMateReaderError, check_teslamate_compatibility, check_teslamate_history_compatibility,
     },
     teslamate_schema::{
         MAX_VALIDATED_MIGRATION, SchemaCompatibilityError, TESLAMATE_V4_MIGRATION_COUNT,

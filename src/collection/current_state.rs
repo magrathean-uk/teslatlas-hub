@@ -106,6 +106,25 @@ pub fn build_current_vehicle_summary(
     lifecycle: Option<&LifecycleStateRecord>,
     geofence: Option<String>,
 ) -> CurrentVehicleSummary {
+    // A TeslaMate position is one sparse, coherent sample in native km units.
+    // Never give older provider fields the timestamp of this newer source row.
+    if let Some(latest) = observations
+        .iter()
+        .max_by_key(|record| (record.observed_at_ms, record.observation_id))
+        && latest.payload.get("record_type").and_then(Value::as_str)
+            == Some("teslamate_position_v1")
+    {
+        let mut summary = build_current_vehicle_summary(vehicle_id, &[], car, None, None);
+        summary.observed_at_ms = Some(latest.observed_at_ms);
+        summary.healthy = None;
+        let fields = latest.payload.as_object();
+        summary.battery_level = integer(fields, "battery_level");
+        summary.ideal_battery_range_km = number(fields, "ideal_battery_range_km");
+        summary.est_battery_range_km = number(fields, "est_battery_range_km");
+        summary.rated_battery_range_km = number(fields, "rated_battery_range_km");
+        summary.odometer = number(fields, "odometer_km");
+        return summary;
+    }
     let owner = latest_observation_of_types(
         observations,
         &["owner_api_vehicle_data_v1", "fleet_api_vehicle_data_v1"],

@@ -9,33 +9,33 @@ enum HubServiceTransition: Equatable {
 
     var title: String {
         switch self {
-        case .starting: return "Starting Hub…"
-        case .stopping: return "Stopping Hub…"
-        case .restarting: return "Restarting Hub…"
+        case .starting: return HubL10n.text("hub.HubDashboardView.12.1336", fallback: "Starting Hub…")
+        case .stopping: return HubL10n.text("hub.HubDashboardView.13.1337", fallback: "Stopping Hub…")
+        case .restarting: return HubL10n.text("hub.HubDashboardView.14.1338", fallback: "Restarting Hub…")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .starting: return "Preparing vehicle data collection."
-        case .stopping: return "Finishing current work and stopping safely."
-        case .restarting: return "Restarting the background service."
+        case .starting: return HubL10n.text("hub.HubDashboardView.20.1339", fallback: "Preparing vehicle data collection.")
+        case .stopping: return HubL10n.text("hub.HubDashboardView.21.1340", fallback: "Finishing current work and stopping safely.")
+        case .restarting: return HubL10n.text("hub.HubDashboardView.22.1341", fallback: "Restarting the background service.")
         }
     }
 
     var service: String {
         switch self {
-        case .starting: return "Starting…"
-        case .stopping: return "Stopping…"
-        case .restarting: return "Restarting…"
+        case .starting: return HubL10n.text("hub.HubDashboardView.28.1342", fallback: "Starting…")
+        case .stopping: return HubL10n.text("hub.HubDashboardView.29.1343", fallback: "Stopping…")
+        case .restarting: return HubL10n.text("hub.HubDashboardView.30.1344", fallback: "Restarting…")
         }
     }
 
     var completionAnnouncement: String {
         switch self {
-        case .starting: return "Hub started."
-        case .stopping: return "Hub stopped."
-        case .restarting: return "Hub restarted."
+        case .starting: return HubL10n.text("hub.HubDashboardView.36.1345", fallback: "Hub started.")
+        case .stopping: return HubL10n.text("hub.HubDashboardView.37.1346", fallback: "Hub stopped.")
+        case .restarting: return HubL10n.text("hub.HubDashboardView.38.1347", fallback: "Hub restarted.")
         }
     }
 
@@ -93,16 +93,16 @@ final class HubDashboardView: HubSurfaceView {
     private let heroSubtitle = NSTextField(wrappingLabelWithString: "")
     private let heroSymbol = NSImageView()
     private let heroProgress = NSProgressIndicator()
-    private let startStopButton = HubActionButton(title: "Stop Hub…", target: nil, action: nil)
-    private let restartButton = HubActionButton(title: "Restart Hub", target: nil, action: nil)
-    private let setupButton = HubActionButton(title: "Set Up Hub", target: nil, action: nil)
-    private let diagnosticsButton = HubActionButton(title: "Run Diagnostics", target: nil, action: nil)
+    private let startStopButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.96.1352", fallback: "Stop Hub…"), target: nil, action: nil)
+    private let restartButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.97.1353", fallback: "Restart Hub"), target: nil, action: nil)
+    private let setupButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.98.1354", fallback: "Set Up Hub"), target: nil, action: nil)
+    private let diagnosticsButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.99.1355", fallback: "Run Diagnostics"), target: nil, action: nil)
     private let vehicleCard: HubVehicleCardView
-    private let serviceRow = HubStatusRowView(symbol: "gearshape", title: "Hub service",
+    private let serviceRow = HubStatusRowView(symbol: "gearshape", title: HubL10n.text("hub.HubDashboardView.101.1357", fallback: "Hub service"),
                                               detail: "")
-    private let accountRow = HubStatusRowView(symbol: "person.crop.circle", title: "Tesla account",
+    private let accountRow = HubStatusRowView(symbol: "person.crop.circle", title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"),
                                               detail: "")
-    private let databaseRow = HubStatusRowView(symbol: "cylinder", title: "Local database",
+    private let databaseRow = HubStatusRowView(symbol: "cylinder", title: HubL10n.text("hub.HubDashboardView.105.1361", fallback: "Local database"),
                                                detail: "")
     private let vehicleSummaryStack = NSStackView()
     private let activityStack = NSStackView()
@@ -112,11 +112,14 @@ final class HubDashboardView: HubSurfaceView {
     private var selectedVehicleID: UUID?
     private var interactionsEnabled = true
     private var vehicleControlsEnabled = true
+    private var startStopAction: StartStopAction = .stop
+
+    private enum StartStopAction { case start, stop }
 
     var defaultButton: NSButton? {
         if !setupButton.isHidden { return setupButton }
         if !diagnosticsButton.isHidden { return diagnosticsButton }
-        if startStopButton.title == "Start Hub" { return startStopButton }
+        if startStopAction == .start { return startStopButton }
         return nil
     }
 
@@ -140,7 +143,7 @@ final class HubDashboardView: HubSurfaceView {
             statusStack.bottomAnchor.constraint(equalTo: statusCard.bottomAnchor)
         ])
 
-        let vehiclesHeading = NSTextField(labelWithString: "Vehicles")
+        let vehiclesHeading = NSTextField(labelWithString: HubL10n.text("hub.AppDelegate.110.36", fallback: "Vehicles"))
         vehiclesHeading.font = .systemFont(ofSize: 14, weight: .medium)
         vehiclesHeading.textColor = .secondaryLabelColor
         let vehiclesCard = HubCardView()
@@ -163,7 +166,7 @@ final class HubDashboardView: HubSurfaceView {
                                                               accessibilityDescription: nil) ?? NSImage())
         activityHeadingIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 10, weight: .regular)
         activityHeadingIcon.contentTintColor = HubPalette.mutedForeground
-        let activityTitle = NSTextField(labelWithString: "Recent activity")
+        let activityTitle = NSTextField(labelWithString: HubL10n.text("hub.HubDashboardView.166.1366", fallback: "Recent activity"))
         activityTitle.font = HubTypography.emphasis
         activityTitle.textColor = HubPalette.mutedForeground
         let activityHeading = NSStackView(views: [activityTitle])
@@ -187,9 +190,9 @@ final class HubDashboardView: HubSurfaceView {
         activitySection.alignment = .leading
         activitySection.spacing = 7
 
-        let details = flatButton(title: "Service Details", symbol: nil,
+        let details = flatButton(title: HubL10n.text("hub.AppDelegate.132.43", fallback: "Service Details"), symbol: nil,
                                  action: #selector(serviceDetailsPressed))
-        let folder = flatButton(title: "Data Folder", symbol: "folder",
+        let folder = flatButton(title: HubL10n.text("hub.HubDashboardView.192.1369", fallback: "Data Folder"), symbol: "folder",
                                 action: #selector(dataFolderPressed))
         versionLabel.font = .systemFont(ofSize: 11.5)
         versionLabel.textColor = HubPalette.mutedForeground
@@ -198,7 +201,7 @@ final class HubDashboardView: HubSurfaceView {
         privacyIcon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
         privacyIcon.contentTintColor = HubPalette.mutedForeground
         privacyIcon.widthAnchor.constraint(equalToConstant: 16).isActive = true
-        let privacy = NSTextField(labelWithString: "Your data stays on this Mac.")
+        let privacy = NSTextField(labelWithString: HubL10n.text("hub.HubDashboardView.201.1372", fallback: "Your data stays on this Mac."))
         privacy.font = .systemFont(ofSize: 11.5)
         privacy.textColor = HubPalette.mutedForeground
         let footerLine = separator()
@@ -276,7 +279,7 @@ final class HubDashboardView: HubSurfaceView {
         serviceRow.statusTone = tone
         accountRow.value = snapshot.accountDisplay
         databaseRow.value = snapshot.database
-        versionLabel.stringValue = "Teslatlas Hub \(HubRelease.bundledVersion)"
+        versionLabel.stringValue = HubL10n.format("hub.HubDashboardView.279.1374", fallback: "Teslatlas Hub %1$@", arguments: [String(describing: HubRelease.bundledVersion)])
 
         let availableIDs = Set(snapshot.controlVehicles.map(\.id))
         if let selectedVehicleID, !availableIDs.contains(selectedVehicleID) {
@@ -287,7 +290,7 @@ final class HubDashboardView: HubSurfaceView {
         }
         let selectedVehicle = snapshot.controlVehicles.first { $0.id == selectedVehicleID }
         let controlsEnabled = vehicleControlsEnabled && interactionsEnabled && transition == nil
-            && snapshot.health == .running && snapshot.account == "Connected"
+            && snapshot.health == .running && snapshot.accountState == .connected
         vehicleCard.apply(vehicle: selectedVehicle,
                           allVehicles: snapshot.controlVehicles,
                           provider: snapshot.provider,
@@ -371,11 +374,13 @@ final class HubDashboardView: HubSurfaceView {
         [startStopButton, restartButton, diagnosticsButton, setupButton].forEach { $0.isEnabled = enabled }
 
         if snapshot.health == .stopped {
-            startStopButton.title = "Start Hub"
+            startStopAction = .start
+            startStopButton.title = HubL10n.text("hub.HubDashboardView.119.1362", fallback: "Start Hub")
             startStopButton.hubStyle = .primary
             startStopButton.keyEquivalent = "\r"
         } else {
-            startStopButton.title = "Stop Hub…"
+            startStopAction = .stop
+            startStopButton.title = HubL10n.text("hub.HubDashboardView.96.1352", fallback: "Stop Hub…")
             startStopButton.hubStyle = .flatDanger
             startStopButton.keyEquivalent = ""
         }
@@ -396,7 +401,7 @@ final class HubDashboardView: HubSurfaceView {
             $0.removeFromSuperview()
         }
         let entries = activity.isEmpty
-            ? [HubActivity(message: "No recent app actions. See Logs for collector activity.", age: "", color: HubPalette.mutedForeground)]
+            ? [HubActivity(message: HubL10n.text("hub.HubDashboardView.399.1383", fallback: "No recent app actions. See Logs for collector activity."), age: "", color: HubPalette.mutedForeground)]
             : Array(activity.prefix(3))
         for (index, entry) in entries.enumerated() {
             if index > 0 {
@@ -427,8 +432,8 @@ final class HubDashboardView: HubSurfaceView {
             $0.removeFromSuperview()
         }
         let entries = vehicles.isEmpty
-            ? [HubControlVehicle(id: UUID(), displayName: "No vehicles yet",
-                                 status: "Connect a Tesla account to see vehicles here.")]
+            ? [HubControlVehicle(id: UUID(), displayName: HubL10n.text("hub.HubDashboardView.430.1384", fallback: "No vehicles yet"),
+                                 status: HubL10n.text("hub.HubDashboardView.431.1385", fallback: "Connect a Tesla account to see vehicles here."))]
             : vehicles
         for (index, vehicle) in entries.enumerated() {
             if index > 0 {
@@ -506,15 +511,15 @@ final class HubDashboardView: HubSurfaceView {
     }
 
     private func compactServiceValue(_ snapshot: HubSnapshot) -> String {
-        snapshot.health == .running ? "Active" : snapshot.service
+        snapshot.health == .running ? HubL10n.text("hub.ServiceDetailsWindowController.114.2185", fallback: "Active") : snapshot.service
     }
 
     private func subtitle(for health: HubHealth) -> String {
         switch health {
-        case .running: return "Hub runs in the background. You can close this window."
-        case .stopped: return "Vehicle data is not being collected."
-        case .needsInstall: return "Choose how Hub connects to Tesla."
-        case .degraded: return "Open diagnostics for details."
+        case .running: return HubL10n.text("hub.HubDashboardView.514.1389", fallback: "Hub runs in the background. You can close this window.")
+        case .stopped: return HubL10n.text("hub.HubDashboardView.515.1390", fallback: "Vehicle data is not being collected.")
+        case .needsInstall: return HubL10n.text("hub.HubDashboardView.516.1391", fallback: "Choose how Hub connects to Tesla.")
+        case .degraded: return HubL10n.text("hub.HubDashboardView.517.1392", fallback: "Open diagnostics for details.")
         }
     }
 
@@ -537,7 +542,7 @@ final class HubDashboardView: HubSurfaceView {
     }
 
     @objc private func startStopPressed() {
-        startStopButton.title == "Start Hub" ? actions.start() : actions.stop()
+        startStopAction == .start ? actions.start() : actions.stop()
     }
     @objc private func restartPressed() { actions.restart() }
     @objc private func setupPressed() { actions.setup() }

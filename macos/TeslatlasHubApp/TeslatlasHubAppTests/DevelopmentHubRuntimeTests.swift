@@ -5,6 +5,52 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class DevelopmentHubRuntimeTests: XCTestCase {
+    func testExecutableAndConfigRejectGroupWritableAncestors() throws {
+        let fixture = try makeFixture(createConfig: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let groupParent = fixture.root.appendingPathComponent("group-parent", isDirectory: true)
+        try FileManager.default.createDirectory(at: groupParent, withIntermediateDirectories: false)
+        try FileManager.default.setAttributes([.posixPermissions: 0o775], ofItemAtPath: groupParent.path)
+        let binary = groupParent.appendingPathComponent("teslatlas-hub")
+        try writeExecutable(at: binary)
+        let config = groupParent.appendingPathComponent("config.toml")
+        try Data("test-only\n".utf8).write(to: config)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path)
+        for (variable, path) in [(DevelopmentHubConfiguration.binaryVariable, binary.path), (DevelopmentHubConfiguration.configVariable, config.path)] {
+            var environment = fixture.environment
+            environment[variable] = path
+            let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(environment: environment))
+            XCTAssertThrowsError(try configuration.validate(requireConfig: true))
+            if variable == DevelopmentHubConfiguration.configVariable {
+                try FileManager.default.removeItem(at: config)
+                XCTAssertThrowsError(try configuration.validate(requireConfig: false))
+            }
+        }
+        try XCTUnwrap(DevelopmentHubConfiguration.from(environment: fixture.environment)).validate(requireConfig: true)
+    }
+    func testControlDirectoryRejectsGroupWritableAncestor() throws {
+        let fixture = try makeFixture(createConfig: true)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let control = fixture.root.appendingPathComponent("control", isDirectory: true)
+        try FileManager.default.createDirectory(at: control, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        var environment = fixture.environment
+        environment[DevelopmentHubConfiguration.controlVariable] = control.path
+        let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(environment: environment))
+        try configuration.validate(requireConfig: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o775], ofItemAtPath: fixture.root.path)
+        XCTAssertThrowsError(try configuration.validate(requireConfig: true))
+    }
+    func testControlDirectoryDefaultsToExistingDevRuntime() throws {
+        let fixture = try makeFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var environment = fixture.environment
+        environment.removeValue(forKey: DevelopmentHubConfiguration.controlVariable)
+        let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(environment: environment))
+        XCTAssertEqual(configuration.controlDirectory.path, NSHomeDirectory() + "/dev/runtime")
+        XCTAssertEqual(configuration.plist.deletingLastPathComponent(), configuration.controlDirectory)
+        let descriptor = try DevelopmentEventLog.validateDirectoryReadOnly(configuration.controlDirectory, allowOwnedGroupWritableAncestors: false)
+        close(descriptor)
+    }
     func testApplicationControllerKeepsProductionDefaultWithoutOptIn() throws {
         let controller = try HubController.applicationController(environment: [:])
 
@@ -299,6 +345,61 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         XCTAssertFalse(calls.contains { $0.0.path == "/bin/launchctl" })
     }
 
+    func testInvalidHistoryOnlyControlStopsBeforeServePreflightOrLaunch() throws {
+        let fixture = try makeFixture(createConfig: true, mode: .standalone)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(
+            environment: fixture.environment
+        ))
+        let marker = HistoryOnlyControl.url(for: configuration.config)
+        try Data("unexpected\n".utf8).write(to: marker, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o600)],
+                                              ofItemAtPath: marker.path)
+        var calls: [(URL, [String])] = []
+        let controller = DevelopmentLaunchctlServiceController(
+            configuration: configuration,
+            processRunner: { executable, arguments, _, completion in
+                calls.append((executable, arguments))
+                completion(.success(""))
+            }
+        )
+        let rejected = expectation(description: "invalid mode marker rejected")
+        controller.run(arguments: ["service", "start"]) { result in
+            guard case .failure = result else { return XCTFail("invalid marker was accepted") }
+            rejected.fulfill()
+        }
+        wait(for: [rejected], timeout: 1)
+        XCTAssertTrue(calls.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: configuration.plist.path))
+    }
+
+    func testHistoryOnlyControlSelectsStrictStandaloneServePreflight() throws {
+        let fixture = try makeFixture(createConfig: true, mode: .standalone)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(
+            environment: fixture.environment
+        ))
+        try HistoryOnlyControl.write(for: configuration.config)
+        var calls: [(URL, [String])] = []
+        let controller = DevelopmentLaunchctlServiceController(
+            configuration: configuration,
+            processRunner: { executable, arguments, _, completion in
+                calls.append((executable, arguments))
+                completion(.failure(HubActionError.commandFailed("configuration rejected")))
+            }
+        )
+        let rejected = expectation(description: "history preflight rejected before launch")
+        controller.run(arguments: ["service", "start"]) { result in
+            guard case .failure = result else { return XCTFail("unsafe start was allowed") }
+            rejected.fulfill()
+        }
+        wait(for: [rejected], timeout: 1)
+        XCTAssertEqual(calls.count, 1)
+        let preflight = try XCTUnwrap(calls.first)
+        XCTAssertEqual(preflight.1, ["--config", configuration.config.path,
+                                     "serve-preflight", "--mode", "standalone", "--history-only"])
+    }
+
     func testValidServePreflightPermitsLaunchPlan() throws {
         let fixture = try makeFixture(createConfig: true, mode: .standalone)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
@@ -362,6 +463,9 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
             ["--config", configuration.config.path, "status"]
         ])
         XCTAssertTrue(FileManager.default.fileExists(atPath: configuration.plist.path))
+        XCTAssertEqual(configuration.plist.deletingLastPathComponent(), fixture.root)
+        XCTAssertEqual(try permissions(of: configuration.plist), 0o600)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fixture.state.appendingPathComponent(configuration.plist.lastPathComponent).path))
     }
 
     func testStartFailsWhenIntendedProcessNeverBecomesReady() throws {
@@ -651,8 +755,11 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         XCTAssertEqual(environment, [
             DevelopmentHubConfiguration.enableVariable: "1",
             DevelopmentHubConfiguration.modeVariable: "fixture",
-            "RUST_LOG": "info,tower_http=debug"
+            "RUST_LOG": "info,tower_http=debug",
+            DevelopmentHubConfiguration.logVariable: configuration.logDirectory.path
         ])
+        XCTAssertEqual(controller.launchAgentPropertyList()["StandardOutPath"] as? String, "/dev/null")
+        XCTAssertEqual(controller.launchAgentPropertyList()["StandardErrorPath"] as? String, "/dev/null")
     }
 
     func testDevelopmentLaunchAgentPropagatesExplicitStandaloneAndEdgeModes() throws {
@@ -768,10 +875,8 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
     private func makeFixture(createConfig: Bool = false,
                              mode: DevelopmentHubMode? = nil) throws -> Fixture {
         let root = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-            .appendingPathComponent(
-                "Library/Caches/TeslatlasHubDevelopmentTests-\(UUID().uuidString)",
-                isDirectory: true
-            )
+            .appendingPathComponent("dev/TeslatlasHubDevelopmentTests-\(UUID().uuidString)",
+                                    isDirectory: true)
         let state = root.appendingPathComponent("state", isDirectory: true)
         let logs = root.appendingPathComponent("logs", isDirectory: true)
         try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
@@ -793,7 +898,8 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
             DevelopmentHubConfiguration.binaryVariable: binary.path,
             DevelopmentHubConfiguration.configVariable: config.path,
             DevelopmentHubConfiguration.stateVariable: state.path,
-            DevelopmentHubConfiguration.logVariable: logs.path
+            DevelopmentHubConfiguration.logVariable: logs.path,
+            DevelopmentHubConfiguration.controlVariable: root.path
         ]
         if let mode { environment[DevelopmentHubConfiguration.modeVariable] = mode.rawValue }
         return Fixture(

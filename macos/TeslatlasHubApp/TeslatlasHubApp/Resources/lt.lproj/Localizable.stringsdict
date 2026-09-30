@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>hub.DiagnosticsWindowController.182.223</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%2$#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Sėkmingų patikrų: %1$d iš %2$d.</string>
+			<key>few</key>
+			<string>Sėkmingų patikrų: %1$d iš %2$d.</string>
+			<key>many</key>
+			<string>Sėkmingų patikrų: %1$d iš %2$d.</string>
+			<key>other</key>
+			<string>Sėkmingų patikrų: %1$d iš %2$d.</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3748.1243</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d transporto priemonė</string>
+			<key>few</key>
+			<string>%d transporto priemonės</string>
+			<key>many</key>
+			<string>%d transporto priemonių</string>
+			<key>other</key>
+			<string>%d transporto priemonių</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3906.1333</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>prieš %d minutę</string>
+			<key>few</key>
+			<string>prieš %d minutes</string>
+			<key>many</key>
+			<string>prieš %d minučių</string>
+			<key>other</key>
+			<string>prieš %d minučių</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3907.1334</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>prieš %d valandą</string>
+			<key>few</key>
+			<string>prieš %d valandas</string>
+			<key>many</key>
+			<string>prieš %d valandų</string>
+			<key>other</key>
+			<string>prieš %d valandų</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3908.1335</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>prieš %d dieną</string>
+			<key>few</key>
+			<string>prieš %d dienas</string>
+			<key>many</key>
+			<string>prieš %d dienų</string>
+			<key>other</key>
+			<string>prieš %d dienų</string>
+		</dict>
+	</dict>
+	<key>hub.HubDiagnosticsPresentation.structured_results</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d struktūrizuotas rezultatas</string>
+			<key>few</key>
+			<string>%d struktūrizuoti rezultatai</string>
+			<key>many</key>
+			<string>%d struktūrizuotų rezultatų</string>
+			<key>other</key>
+			<string>%d struktūrizuotų rezultatų</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

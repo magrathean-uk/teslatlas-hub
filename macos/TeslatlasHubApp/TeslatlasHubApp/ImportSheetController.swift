@@ -4,9 +4,9 @@ import AppKit
 
 final class ImportSheetController: NSWindowController {
     static let teslaMateHandoverDetail =
-        "Hub reads TeslaMate without stopping or changing it. After import, Hub tells you when to disable Tesla access in TeslaMate yourself."
+        HubL10n.text("hub.ImportSheetController.7.1687", fallback: "Hub reads TeslaMate without stopping or changing it. After import, Hub tells you when to disable Tesla access in TeslaMate yourself.")
     static let teslaMateVersionRequirement =
-        "Before import: back up TeslaMate, update it to version 4.2.0 or newer, start it once, and wait for its database migrations to finish. A direct database connection cannot prove the running app version."
+        HubL10n.text("hub.ImportSheetController.9.1688", fallback: "Before import: back up TeslaMate, update it to version 4.2.0 or newer, start it once, and wait for its database migrations to finish. A direct database connection cannot prove the running app version.")
 
     private let controller: HubController
     private let sourceField = NSTextField(string: "postgres://localhost/teslamate")
@@ -14,7 +14,7 @@ final class ImportSheetController: NSWindowController {
     private let passwordField = NSTextField(string: "")
     private let encryptionField = NSTextField(string: "")
     private let versionAcknowledgement = NSButton(
-        checkboxWithTitle: "I confirm this database belongs to TeslaMate 4.2.0 or newer",
+        checkboxWithTitle: HubL10n.text("hub.ImportSheetController.17.1690", fallback: "I confirm this database belongs to TeslaMate 4.2.0 or newer"),
         target: nil,
         action: nil
     )
@@ -23,7 +23,7 @@ final class ImportSheetController: NSWindowController {
         self.controller = controller
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 470),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        window.title = "Import TeslaMate"
+        window.title = HubL10n.text("hub.ImportSheetController.26.1691", fallback: "Import TeslaMate")
         super.init(window: window)
         window.contentView = contentView()
         window.center()
@@ -46,7 +46,7 @@ final class ImportSheetController: NSWindowController {
             stack.topAnchor.constraint(equalTo: root.topAnchor, constant: 24),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor, constant: -24)
         ])
-        let help = NSTextField(labelWithString: "Copy data from a TeslaMate PostgreSQL database into Teslatlas Hub.")
+        let help = NSTextField(labelWithString: HubL10n.text("hub.ImportSheetController.49.1693", fallback: "Copy data from a TeslaMate PostgreSQL database into Teslatlas Hub."))
         help.textColor = .secondaryLabelColor
         help.lineBreakMode = .byWordWrapping
         stack.addArrangedSubview(help)
@@ -61,18 +61,20 @@ final class ImportSheetController: NSWindowController {
         versionRequirement.maximumNumberOfLines = 3
         versionRequirement.widthAnchor.constraint(equalToConstant: 504).isActive = true
         stack.addArrangedSubview(versionRequirement)
-        stack.addArrangedSubview(field("PostgreSQL source", sourceField))
-        stack.addArrangedSubview(field("Car ID", carField))
-        let passwordRow = NSStackView(views: [passwordField, button("Choose…", #selector(choosePassword))])
+        stack.addArrangedSubview(field(HubL10n.text("hub.ImportSheetController.64.1694", fallback: "PostgreSQL source"), sourceField))
+        stack.addArrangedSubview(field(HubL10n.text("hub.ImportSheetController.65.1695", fallback: "Car ID"), carField))
+        let passwordRow = NSStackView(views: [passwordField, button(HubL10n.text("hub.ImportSheetController.110.1702", fallback: "Choose…"), #selector(choosePassword))])
         passwordRow.spacing = 8
         passwordRow.widthAnchor.constraint(equalToConstant: 504).isActive = true
-        stack.addArrangedSubview(labeled("Password file", passwordRow))
-        let encryptionRow = NSStackView(views: [encryptionField, button("Choose…", #selector(chooseEncryption))])
+        stack.addArrangedSubview(labeled(HubL10n.text("hub.ImportSheetController.69.1697", fallback: "Password file"), passwordRow))
+        let encryptionRow = NSStackView(views: [encryptionField, button(HubL10n.text("hub.ImportSheetController.110.1702", fallback: "Choose…"), #selector(chooseEncryption))])
         encryptionRow.spacing = 8
         encryptionRow.widthAnchor.constraint(equalToConstant: 504).isActive = true
-        stack.addArrangedSubview(labeled("TeslaMate ENCRYPTION_KEY file", encryptionRow))
+        stack.addArrangedSubview(labeled(HubL10n.text("hub.ImportSheetController.73.1699", fallback: "TeslaMate ENCRYPTION_KEY file"), encryptionRow))
         stack.addArrangedSubview(versionAcknowledgement)
-        let buttons = NSStackView(views: [spacer(), button("Cancel", #selector(cancelPressed)), button("Import", #selector(importPressed))])
+        let buttons = NSStackView(views: [spacer(),
+            button(HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"), #selector(cancelPressed)),
+            button(HubL10n.text("hub.ImportSheetController.111.1704", fallback: "Import"), #selector(importPressed))])
         buttons.spacing = 8
         stack.addArrangedSubview(buttons)
         return root
@@ -107,9 +109,9 @@ final class ImportSheetController: NSWindowController {
 
     private func symbol(for title: String) -> String {
         switch title {
-        case "Choose…": return "folder"
-        case "Import": return "square.and.arrow.down"
-        case "Cancel": return "xmark"
+        case HubL10n.text("hub.ImportSheetController.110.1702", fallback: "Choose…"): return "folder"
+        case HubL10n.text("hub.ImportSheetController.111.1704", fallback: "Import"): return "square.and.arrow.down"
+        case HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"): return "xmark"
         default: return "chevron.right"
         }
     }
@@ -145,15 +147,15 @@ final class ImportSheetController: NSWindowController {
     @objc private func importPressed() {
         guard !sourceField.stringValue.isEmpty, !carField.stringValue.isEmpty, !passwordField.stringValue.isEmpty, !encryptionField.stringValue.isEmpty else {
             let alert = NSAlert()
-            alert.messageText = "Complete all fields"
-            alert.informativeText = "Source, car ID, password file, and ENCRYPTION_KEY file are required."
+            alert.messageText = HubL10n.text("hub.ImportSheetController.148.1709", fallback: "Complete all fields")
+            alert.informativeText = HubL10n.text("hub.ImportSheetController.149.1710", fallback: "Source, car ID, password file, and ENCRYPTION_KEY file are required.")
             HubUIPresentation.presentInformation(alert)
             return
         }
         let versionAccepted = versionAcknowledgement.state == .on
         guard versionAccepted else {
             let alert = NSAlert()
-            alert.messageText = "Confirm TeslaMate version"
+            alert.messageText = HubL10n.text("hub.ImportSheetController.156.1711", fallback: "Confirm TeslaMate version")
             alert.informativeText = Self.teslaMateVersionRequirement
             HubUIPresentation.presentInformation(alert)
             return

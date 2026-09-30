@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>hub.DiagnosticsWindowController.182.223</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%2$#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Úspešné kontroly: %1$d z %2$d.</string>
+			<key>few</key>
+			<string>Úspešne prešlo %1$d z %2$d kontrol.</string>
+			<key>many</key>
+			<string>Úspešne prešlo %1$d z %2$d kontrol.</string>
+			<key>other</key>
+			<string>Úspešne prešlo %1$d z %2$d kontrol.</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3748.1243</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d vozidlo</string>
+			<key>few</key>
+			<string>%d vozidlá</string>
+			<key>many</key>
+			<string>%d vozidiel</string>
+			<key>other</key>
+			<string>%d vozidiel</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3906.1333</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>pred %d minútou</string>
+			<key>few</key>
+			<string>pred %d minútami</string>
+			<key>many</key>
+			<string>pred %d minútami</string>
+			<key>other</key>
+			<string>pred %d minútami</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3907.1334</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>pred %d hodinou</string>
+			<key>few</key>
+			<string>pred %d hodinami</string>
+			<key>many</key>
+			<string>pred %d hodinami</string>
+			<key>other</key>
+			<string>pred %d hodinami</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3908.1335</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>pred %d dňom</string>
+			<key>few</key>
+			<string>pred %d dňami</string>
+			<key>many</key>
+			<string>pred %d dňami</string>
+			<key>other</key>
+			<string>pred %d dňami</string>
+		</dict>
+	</dict>
+	<key>hub.HubDiagnosticsPresentation.structured_results</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d štruktúrovaný výsledok.</string>
+			<key>few</key>
+			<string>%d štruktúrované výsledky.</string>
+			<key>many</key>
+			<string>%d štruktúrovaných výsledkov.</string>
+			<key>other</key>
+			<string>%d štruktúrovaných výsledkov.</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

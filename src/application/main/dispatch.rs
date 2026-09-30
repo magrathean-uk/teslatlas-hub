@@ -51,6 +51,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         source,
         car_id,
         postgres_password_file,
+        history_only,
         acknowledge_v4_2_compatible_schema,
     } = &cli.command
     {
@@ -58,20 +59,24 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             source,
             *car_id,
             postgres_password_file,
+            *history_only,
             *acknowledge_v4_2_compatible_schema,
         )
         .await;
     }
 
     #[cfg(unix)]
-    if matches!(
-        &cli.command,
-        Command::Migrate {
-            acknowledge_v4_2_compatible_schema: false,
-            ..
-        }
-    ) {
-        return Err("TeslaMate migration requires --acknowledge-v4-2-compatible-schema after confirming TeslaMate 4.2.0 or newer".into());
+    if let Command::Migrate {
+        acknowledge_v4_2_compatible_schema: false,
+        history_only,
+        ..
+    } = &cli.command
+    {
+        return Err(if *history_only {
+            "history-only import requires --acknowledge-v4-2-compatible-schema; the database schema is reviewed but the TeslaMate application version remains unknown"
+        } else {
+            "TeslaMate migration requires --acknowledge-v4-2-compatible-schema after confirming TeslaMate 4.2.0 or newer"
+        }.into());
     }
 
     #[cfg(unix)]
@@ -142,8 +147,14 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     #[cfg(target_os = "macos")]
-    if let Command::ServePreflight { mode } = &cli.command {
+    if let Command::ServePreflight { mode, history_only } = &cli.command {
         let config = HubConfig::load(&config_path)?;
+        if *history_only {
+            if *mode != DevelopmentServeModeArgument::Standalone {
+                return Err("history-only Serve preflight requires standalone mode".into());
+            }
+            validate_history_only_config(&config)?;
+        }
         teslatlas_hub::macos_launch_agent::preflight_hub_for_serve(
             &config,
             Some(mode.serve_mode()),
@@ -212,6 +223,15 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     let admitted_user_hub = if command_requires_user_hub_admission(&cli.command) {
         let config = HubConfig::load(&config_path)?;
+        if matches!(
+            &cli.command,
+            Command::Migrate {
+                history_only: true,
+                ..
+            }
+        ) {
+            validate_history_only_config(&config)?;
+        }
         Some(AdmittedUserHub::admit(&config.data_dir)?)
     } else {
         None
@@ -222,6 +242,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         source,
         car_id,
         postgres_password_file,
+        history_only,
         encryption_key_file,
         access_token_file,
         refresh_token_file,
@@ -239,6 +260,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 source_url: source,
                 car_id: *car_id,
                 postgres_password_file,
+                history_only: *history_only,
                 encryption_key_file: encryption_key_file.as_deref(),
                 access_token_file: access_token_file.as_deref(),
                 refresh_token_file: refresh_token_file.as_deref(),
@@ -437,8 +459,28 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             return Ok(());
         }
         #[cfg(unix)]
-        Command::Preflight => {
+        Command::Preflight { history_only } => {
             let config = HubConfig::load(&config_path)?;
+            if *history_only {
+                validate_history_only_config(&config)?;
+                let published = run_immutable_diagnostic(&config.data_dir, |store| {
+                    store
+                        .service_readiness_at(false, current_epoch_ms()?)
+                        .map_err(|error| {
+                            format!("published history is not ready: {:?}", error.code)
+                        })?;
+                    let published = store.published_vehicles()?;
+                    if published.is_empty() {
+                        return Err("no signed history is published".into());
+                    }
+                    Ok(published.len())
+                })?;
+                println!(
+                    "{}",
+                    serde_json::json!({"status": "ready", "credentialScope": "history-only", "publishedVehicles": published, "collectorEnabled": false})
+                );
+                return Ok(());
+            }
             run_immutable_diagnostic(&config.data_dir, |store| {
                 store.catalogue_check()?;
                 let configured = store.configured_tesla_vehicles()?;
@@ -705,7 +747,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             unreachable!("service control returns before opening writable Hub state")
         }
         #[cfg(unix)]
-        Command::Preflight => {
+        Command::Preflight { .. } => {
             unreachable!("preflight returns before opening writable Hub state")
         }
         #[cfg(target_os = "macos")]
@@ -747,7 +789,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     provider = ?config.collector.provider,
                     interval_seconds = config.collector.interval_seconds,
                     bind = %config.bind,
-                    "Hub serve starting (TeslaMate is not opened; stored tokens are not deleted)"
+                    teslamate_current_enabled = config.teslamate.current.is_some(),
+                    "Hub serve starting"
                 );
                 let collector_store = store.clone();
                 let collector_config = config.clone();

@@ -64,12 +64,12 @@ fn teslamate_check_snapshot_json_covers_connection_and_redacts_vin() {
             updates: 2,
             schema_migrations: 105,
         },
-        source_tokens_relation_present: true,
-        legacy_token_pair: TeslaMateLegacyTokenPairDiagnostics {
+        source_tokens_relation_present: Some(true),
+        legacy_token_pair: Some(TeslaMateLegacyTokenPairDiagnostics {
             relation: "private.tokens".to_owned(),
             access_ciphertext_bytes: 128,
             refresh_ciphertext_bytes: 160,
-        },
+        }),
     };
     let value = serde_json::to_value(&snapshot).expect("JSON");
     assert_eq!(value["connection"]["transactionReadOnly"], true);
@@ -81,6 +81,13 @@ fn teslamate_check_snapshot_json_covers_connection_and_redacts_vin() {
     assert_eq!(value["sourceTotals"]["schemaMigrations"], 105);
     assert_eq!(value["sourceTokensRelationPresent"], true);
     assert_eq!(value["legacyTokenPair"]["relation"], "private.tokens");
+
+    let mut history_only = snapshot;
+    history_only.source_tokens_relation_present = None;
+    history_only.legacy_token_pair = None;
+    let history_value = serde_json::to_value(history_only).expect("history-only JSON");
+    assert!(history_value["sourceTokensRelationPresent"].is_null());
+    assert!(history_value["legacyTokenPair"].is_null());
 }
 
 #[test]

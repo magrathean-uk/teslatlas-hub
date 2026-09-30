@@ -1,5 +1,92 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+impl HubStore {
+    /// Bounded current-only cache: source row time is immutable on an unchanged retry.
+    pub(crate) fn record_teslamate_current(
+        &self,
+        input: &ObservationInput,
+        received_at_ms: i64,
+    ) -> Result<bool, StoreError> {
+        input.validate()?;
+        validate_timestamp("current received_at_ms", received_at_ms)?;
+        if input.payload.get("record_type").and_then(Value::as_str) != Some("teslamate_position_v1")
+        {
+            return Err(StoreError::InvalidCurrentDiscovery);
+        }
+        let bytes = serde_json::to_vec(&input.payload).map_err(StoreError::SerializeObservation)?;
+        if bytes.len() > MAX_RAW_OBSERVATION_BYTES {
+            return Err(StoreError::ObservationTooLarge {
+                actual: bytes.len(),
+                maximum: MAX_RAW_OBSERVATION_BYTES,
+            });
+        }
+        let digest = Sha256Digest::of_bytes(&bytes);
+        let payload = String::from_utf8(bytes).expect("serde JSON is UTF-8");
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        ensure_vehicle_belongs_to_source(&transaction, input.vehicle_id, input.source_id)?;
+        let inserted = transaction
+            .execute(
+                "INSERT INTO current_observations(
+                vehicle_id, record_type, observation_id, source_id, observed_at_ms,
+                received_at_ms, payload_sha256, payload_json
+             ) VALUES (?1, 'teslamate_position_v1',
+                MAX(COALESCE((SELECT MAX(observation_id) FROM raw_observations),0),
+                    COALESCE((SELECT MAX(observation_id) FROM current_observations),0))+1,
+                ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(vehicle_id, record_type) DO UPDATE SET
+                observation_id=excluded.observation_id, source_id=excluded.source_id,
+                observed_at_ms=excluded.observed_at_ms, received_at_ms=excluded.received_at_ms,
+                payload_sha256=excluded.payload_sha256, payload_json=excluded.payload_json
+             WHERE excluded.observed_at_ms > current_observations.observed_at_ms
+                OR (excluded.observed_at_ms = current_observations.observed_at_ms
+                    AND excluded.payload_sha256 != current_observations.payload_sha256)",
+                params![
+                    input.vehicle_id.to_string(),
+                    input.source_id.to_string(),
+                    input.observed_at_ms,
+                    received_at_ms,
+                    digest.as_bytes().as_slice(),
+                    payload
+                ],
+            )
+            .map_err(StoreError::AppendObservation)?
+            == 1;
+        transaction
+            .commit()
+            .map_err(StoreError::AppendObservation)?;
+        Ok(inserted)
+    }
+    /// Resolve the already registered TeslaMate alias, never create or remap identity.
+    pub(crate) fn teslamate_current_source(
+        &self,
+        source_key: &str,
+        vehicle_id: Uuid,
+        stable_key: &str,
+        vin: Option<&str>,
+    ) -> Result<Option<Uuid>, StoreError> {
+        let connection = self.open_read_only_connection()?;
+        let source: Option<String> = connection
+            .query_row(
+                "SELECT DISTINCT a.source_id FROM source_identities s
+             JOIN vehicle_identity_aliases a ON a.source_id = s.source_id
+             JOIN vehicles v ON v.vehicle_id = a.vehicle_id
+             WHERE s.source_kind = 'teslamate' AND s.source_key = ?1
+               AND a.vehicle_id = ?2 AND a.source_vehicle_key = ?3
+               AND (v.vin IS NULL OR v.vin = ?4) AND v.retired_at_ms IS NULL",
+                params![source_key, vehicle_id.to_string(), stable_key, vin],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        source
+            .map(|value| parse_stored_uuid("current source", &value))
+            .transpose()
+    }
+}
+
 fn append_observation_in_transaction(
     transaction: &Transaction<'_>,
     input: &ObservationInput,
@@ -30,6 +117,7 @@ fn append_observation_in_transaction(
                     | "fleet_api_discovery_v1"
                     | "fleet_api_vehicle_data_v1"
                     | "tesla_stream_update_v1"
+                    | "teslamate_position_v1"
             )
         });
     if let Some(record_type) = record_type

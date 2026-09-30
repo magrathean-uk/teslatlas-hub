@@ -199,8 +199,8 @@ where
     .await
 }
 
-/// Stream a direct successor into the comparison spool only. Its current base
-/// remains immutable; later import code turns changed rows into sparse deltas.
+/// Capture a successor comparison and a complete fallback candidate from the
+/// same source snapshot. Import publication prefers sparse deltas while they fit.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn capture_direct_successor_diff_with_projection_state<F>(
     source: &ReadOnlySource,
@@ -352,9 +352,7 @@ where
             .with_minimum_free_bytes(read_limits.minimum_free_bytes);
         let estimated_final_bytes = match capture_mode {
             DirectCaptureMode::PublishPacks => direct_projected_output_estimate(source_counts)?,
-            DirectCaptureMode::SuccessorDiff => state_limits
-                .map(|limits| limits.max_changed_payload_bytes)
-                .unwrap_or(0),
+            DirectCaptureMode::SuccessorDiff => direct_projected_output_estimate(source_counts)?,
             DirectCaptureMode::LegacyBridgeCapture => 0,
         };
         capture_writer.ensure_incremental_capture_capacity_with_final_estimate(
@@ -1347,9 +1345,9 @@ async fn write_from_session(
         DirectCaptureMode::PublishPacks => sink
             .without_physical_fingerprint()
             .with_synchronous_pack_builds(),
-        DirectCaptureMode::SuccessorDiff => {
-            sink.without_physical_fingerprint().capture_state_only()
-        }
+        DirectCaptureMode::SuccessorDiff => sink
+            .without_physical_fingerprint()
+            .with_synchronous_pack_builds(),
         DirectCaptureMode::LegacyBridgeCapture => sink.capture_only(),
     };
     if let Some(projection_state) = projection_state {

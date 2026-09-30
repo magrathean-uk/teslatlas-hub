@@ -18,17 +18,17 @@ final class HubVehicleCardView: NSView {
     private let statusLabel = NSTextField(wrappingLabelWithString: "")
     private let selector = NSPopUpButton()
     private let commandStack = NSStackView()
-    private let stateRow = HubStatusRowView(symbol: "info.circle", title: "State",
+    private let stateRow = HubStatusRowView(symbol: "info.circle", title: HubL10n.text("hub.HubVehicleViews.state_label", fallback: "State"),
                                             detail: "")
-    private let batteryRow = HubStatusRowView(symbol: "battery.75percent", title: "Battery",
+    private let batteryRow = HubStatusRowView(symbol: "battery.75percent", title: HubL10n.text("hub.HubVehicleViews.battery_label", fallback: "Battery"),
                                               detail: "")
-    private let locationRow = HubStatusRowView(symbol: "location", title: "Location",
+    private let locationRow = HubStatusRowView(symbol: "location", title: HubL10n.text("hub.HubVehicleViews.location_label", fallback: "Location"),
                                                detail: "")
-    private let connectionRow = HubStatusRowView(symbol: "clock.arrow.circlepath", title: "Telemetry",
-                                                 detail: "Whether stored telemetry is current, cached, or unknown")
+    private let connectionRow = HubStatusRowView(symbol: "clock.arrow.circlepath", title: HubL10n.text("hub.HubVehicleViews.telemetry_label", fallback: "Telemetry"),
+                                                 detail: HubL10n.text("hub.HubVehicleViews.28.1622", fallback: "Whether stored telemetry is current, cached, or unknown"))
     private let legacySurface = HubSurfaceView(fill: .elevated)
     private let legacyMessage = NSTextField(wrappingLabelWithString:
-        "Vehicle commands are available when Hub connects through Fleet Telemetry.")
+        HubL10n.text("hub.HubVehicleViews.31.1623", fallback: "Vehicle commands are available when Hub connects through Fleet Telemetry."))
     private var representedVehicles: [HubControlVehicle] = []
     private var selectedVehicleID: UUID?
     private var commandGroupButtons: [HubActionButton] = []
@@ -72,9 +72,9 @@ final class HubVehicleCardView: NSView {
         header.spacing = 12
 
         let groups: [(String, String, [HubVehicleControl])] = [
-            ("Climate", "fan", [.climateStart, .climateStop]),
-            ("Access", "lock", [.lock, .unlock]),
-            ("More", "ellipsis.circle", [.wake, .flashLights, .honkHorn])
+            (HubL10n.text("hub.HubVehicleViews.climate_group", fallback: "Climate"), "fan", [.climateStart, .climateStop]),
+            (HubL10n.text("hub.HubVehicleViews.access_group", fallback: "Access"), "lock", [.lock, .unlock]),
+            (HubL10n.text("hub.LogsWindowController.19.1714", fallback: "More"), "ellipsis.circle", [.wake, .flashLights, .honkHorn])
         ]
         commandStack.orientation = .vertical
         commandStack.alignment = .leading
@@ -99,11 +99,11 @@ final class HubVehicleCardView: NSView {
             commandGroupButtons.append(button)
             let detail: String
             switch key {
-            case "climate": detail = "Start or stop cabin climate."
-            case "access": detail = "Lock or unlock your vehicle."
-            default: detail = "Wake, flash lights, or honk."
+            case "climate": detail = HubL10n.text("hub.HubVehicleViews.102.1640", fallback: "Start or stop cabin climate.")
+            case "access": detail = HubL10n.text("hub.HubVehicleViews.103.1642", fallback: "Lock or unlock your vehicle.")
+            default: detail = HubL10n.text("hub.HubVehicleViews.104.1643", fallback: "Wake, flash lights, or honk.")
             }
-            let row = commandRow(symbol: symbol, title: title == "More" ? "Other commands" : title,
+            let row = commandRow(symbol: symbol, title: key == "more" ? HubL10n.text("hub.HubVehicleViews.106.1645", fallback: "Other commands") : title,
                                  detail: detail, control: button)
             commandStack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: commandStack.widthAnchor).isActive = true
@@ -125,7 +125,7 @@ final class HubVehicleCardView: NSView {
             legacyMessage.bottomAnchor.constraint(equalTo: legacySurface.bottomAnchor, constant: -8)
         ])
 
-        let commandTitle = NSTextField(labelWithString: "Vehicle controls")
+        let commandTitle = NSTextField(labelWithString: HubL10n.text("hub.HubVehicleViews.128.1647", fallback: "Vehicle controls"))
         commandTitle.font = .systemFont(ofSize: 14, weight: .medium)
         commandTitle.textColor = HubPalette.mutedForeground
         let commandCard = HubSurfaceView(fill: .navigationGroup)
@@ -186,7 +186,7 @@ final class HubVehicleCardView: NSView {
 
     func apply(vehicle: HubControlVehicle?, allVehicles: [HubControlVehicle],
                provider: HubAccountProvider?, enabled: Bool,
-               emptyTitle: String = "Vehicle", emptyStatus: String = "No configured vehicle") {
+               emptyTitle: String = "Vehicle", emptyStatus: String = HubL10n.text("hub.HubController.445.371", fallback: "No configured vehicle")) {
         if selectedVehicleID != nil, selectedVehicleID != vehicle?.id { HubMotion.transition(self) }
         representedVehicles = allVehicles
         selectedVehicleID = vehicle?.id
@@ -199,10 +199,10 @@ final class HubVehicleCardView: NSView {
         selector.isEnabled = enabled && allVehicles.count > 1
         nameLabel.stringValue = vehicle?.displayName ?? emptyTitle
         statusLabel.stringValue = vehicle?.status.components(separatedBy: " · ").first ?? emptyStatus
-        stateRow.value = vehicle?.activityState.map(Self.displayState) ?? "Unavailable"
-        batteryRow.value = vehicle?.batteryLevel.map { "\($0)%" } ?? "Unavailable"
-        locationRow.value = vehicle?.locationName ?? "Unavailable"
-        connectionRow.value = vehicle?.telemetryStatus.displayName ?? "Unknown"
+        stateRow.value = vehicle?.activityState.map(Self.displayState) ?? HubL10n.text("hub.HubController.2954.978", fallback: "Unavailable")
+        batteryRow.value = vehicle?.batteryLevel.map { "\($0)%" } ?? HubL10n.text("hub.HubController.2954.978", fallback: "Unavailable")
+        locationRow.value = vehicle?.locationName ?? HubL10n.text("hub.HubController.2954.978", fallback: "Unavailable")
+        connectionRow.value = vehicle?.telemetryStatus.displayName ?? HubL10n.text("hub.HubVehicleViews.205.1653", fallback: "Unknown")
         connectionRow.statusTone = vehicle?.telemetryStatus == .current ? .success : .neutral
 
         let fleet = provider == .fleet
@@ -253,13 +253,13 @@ final class HubVehicleCardView: NSView {
 
     private func commandTitle(_ command: HubVehicleControl) -> String {
         switch command {
-        case .climateStart: return "Start Climate"
-        case .climateStop: return "Stop Climate"
-        case .wake: return "Wake Vehicle"
-        case .lock: return "Lock Doors"
-        case .unlock: return "Unlock Doors"
-        case .flashLights: return "Flash Lights"
-        case .honkHorn: return "Honk Horn"
+        case .climateStart: return HubL10n.text("hub.HubController.315.327", fallback: "Start Climate")
+        case .climateStop: return HubL10n.text("hub.HubController.316.328", fallback: "Stop Climate")
+        case .wake: return HubL10n.text("hub.HubController.314.326", fallback: "Wake Vehicle")
+        case .lock: return HubL10n.text("hub.HubController.317.329", fallback: "Lock Doors")
+        case .unlock: return HubL10n.text("hub.HubController.318.330", fallback: "Unlock Doors")
+        case .flashLights: return HubL10n.text("hub.HubController.319.331", fallback: "Flash Lights")
+        case .honkHorn: return HubL10n.text("hub.HubController.320.332", fallback: "Honk Horn")
         }
     }
 
@@ -373,7 +373,7 @@ private final class HubVehicleTableView: NSTableView {
 final class HubVehiclesView: HubSurfaceView {
     private let actions: HubVehicleCardActions
     private let selector = NSPopUpButton()
-    private let countLabel = NSTextField(labelWithString: "No configured vehicles")
+    private let countLabel = NSTextField(labelWithString: HubL10n.text("hub.HubVehicleViews.376.1673", fallback: "No configured vehicles"))
     private var detailCard: HubVehicleCardView!
     private var vehicles: [HubControlVehicle] = []
     private var provider: HubAccountProvider?
@@ -387,7 +387,7 @@ final class HubVehiclesView: HubSurfaceView {
 
         let tile = HubIconTileView(symbol: "car.side", accessibilityDescription: "Vehicles",
                                    size: 48, symbolSize: 24, weight: .medium, radius: 12)
-        let heading = NSTextField(labelWithString: "Vehicles")
+        let heading = NSTextField(labelWithString: HubL10n.text("hub.AppDelegate.110.36", fallback: "Vehicles"))
         heading.font = .systemFont(ofSize: 24, weight: .semibold)
         countLabel.font = .systemFont(ofSize: 14)
         countLabel.textColor = HubPalette.mutedForeground
@@ -407,11 +407,11 @@ final class HubVehiclesView: HubSurfaceView {
         let noteIcon = NSImageView(image: NSImage(systemSymbolName: "lock",
                                                    accessibilityDescription: nil) ?? NSImage())
         noteIcon.contentTintColor = .secondaryLabelColor
-        let note = NSTextField(labelWithString: "Commands always ask for confirmation before they are sent.")
+        let note = NSTextField(labelWithString: HubL10n.text("hub.HubVehicleViews.410.1679", fallback: "Commands always ask for confirmation before they are sent."))
         note.font = .systemFont(ofSize: 12)
         note.textColor = .secondaryLabelColor
         let footer = NSStackView(views: [noteIcon, note, NSView(),
-                                         NSTextField(labelWithString: "Teslatlas Hub \(HubRelease.bundledVersion)")])
+                                         NSTextField(labelWithString: HubL10n.format("hub.HubDashboardView.279.1374", fallback: "Teslatlas Hub %1$@", arguments: [String(describing: HubRelease.bundledVersion)]))])
         footer.alignment = .centerY
         footer.spacing = 8
 
@@ -465,8 +465,8 @@ final class HubVehiclesView: HubSurfaceView {
             selectedVehicleID = snapshot.controlVehicleID ?? vehicles.first?.id
         }
         countLabel.stringValue = vehicles.isEmpty
-            ? "No configured vehicles"
-            : "Your configured vehicles."
+            ? HubL10n.text("hub.HubVehicleViews.376.1673", fallback: "No configured vehicles")
+            : HubL10n.text("hub.HubVehicleViews.469.1683", fallback: "Your configured vehicles.")
         selector.removeAllItems()
         selector.addItems(withTitles: vehicles.map(\.displayName))
         if let selectedVehicleID, let index = vehicles.firstIndex(where: { $0.id == selectedVehicleID }) {
@@ -496,8 +496,8 @@ final class HubVehiclesView: HubSurfaceView {
         let selected = vehicles.first { $0.id == selectedVehicleID }
         detailCard.apply(vehicle: selected, allVehicles: selected.map { [$0] } ?? [],
                          provider: provider, enabled: commandsEnabled,
-                         emptyTitle: "No vehicles yet",
-                         emptyStatus: "Connect a Tesla account and start Hub to see vehicles here.")
+                         emptyTitle: HubL10n.text("hub.HubDashboardView.430.1384", fallback: "No vehicles yet"),
+                         emptyStatus: HubL10n.text("hub.HubVehicleViews.500.1685", fallback: "Connect a Tesla account and start Hub to see vehicles here."))
     }
 
     @available(*, unavailable)

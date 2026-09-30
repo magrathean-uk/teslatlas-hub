@@ -735,9 +735,7 @@ fn router_with_access_telemetry_and_http(
     let telemetry = Router::new()
         .route("/v1/internal/fleet-telemetry", post(ingest_fleet_telemetry))
         .layer(DefaultBodyLimit::max(MAX_FLEET_TELEMETRY_INPUT_BYTES));
-    let router = ordinary
-        .merge(telemetry)
-        .layer(TraceLayer::new_for_http())
+    let router = trace_router(ordinary.merge(telemetry))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .with_state(AppState::new(
@@ -767,27 +765,28 @@ fn fleet_telemetry_router(
     native_config_digest: Sha256Digest,
     fleet_telemetry: FleetTelemetryIngress,
 ) -> Router {
-    let router = Router::new()
-        .route("/v1/internal/fleet-telemetry", post(ingest_fleet_telemetry))
-        .layer(DefaultBodyLimit::max(MAX_FLEET_TELEMETRY_INPUT_BYTES))
-        .layer(TraceLayer::new_for_http())
-        .layer(PropagateRequestIdLayer::x_request_id())
-        .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
-        .with_state(AppState::new(
-            store,
-            false,
-            false,
-            false,
-            None,
-            Some(cursor_key),
-            Some(native_config_digest),
-            Some(fleet_telemetry),
-        ));
+    let router = trace_router(
+        Router::new()
+            .route("/v1/internal/fleet-telemetry", post(ingest_fleet_telemetry))
+            .layer(DefaultBodyLimit::max(MAX_FLEET_TELEMETRY_INPUT_BYTES)),
+    )
+    .layer(PropagateRequestIdLayer::x_request_id())
+    .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
+    .with_state(AppState::new(
+        store,
+        false,
+        false,
+        false,
+        None,
+        Some(cursor_key),
+        Some(native_config_digest),
+        Some(fleet_telemetry),
+    ));
     apply_http_resource_limits(router, MAX_IN_FLIGHT_HTTP_REQUESTS, HTTP_HANDLER_TIMEOUT)
 }
 
 fn apply_http_resource_limits(router: Router, maximum: usize, timeout: Duration) -> Router {
-    router
+    let router = router
         .layer(GlobalConcurrencyLimitLayer::new(maximum))
         // This is outermost, so time spent waiting for a handler slot is also
         // bounded. Streaming response bodies are deliberately not timed out;
@@ -795,7 +794,12 @@ fn apply_http_resource_limits(router: Router, maximum: usize, timeout: Duration)
         .layer(TimeoutLayer::with_status_code(
             StatusCode::SERVICE_UNAVAILABLE,
             timeout,
-        ))
+        ));
+    if crate::runtime::development_event_log::enabled() {
+        router.layer(axum::middleware::from_fn(development_http_event))
+    } else {
+        router
+    }
 }
 
 fn apply_http_resource_limits_with_cors(
@@ -899,7 +903,18 @@ where
                 })
         }
     };
-    serve_with_cursor_key(
+    let (current_stop, stopped) = tokio::sync::oneshot::channel();
+    let mut current_worker = config.teslamate.current.clone().map(|current| {
+        tokio::spawn(crate::collection::teslamate_current::run(
+            store.clone(),
+            current,
+            std::sync::Arc::clone(&admission),
+            async move {
+                let _ = stopped.await;
+            },
+        ))
+    });
+    let result = serve_with_cursor_key(
         store,
         config,
         native_config_digest,
@@ -907,7 +922,17 @@ where
         Some(admission),
         shutdown,
     )
-    .await
+    .await;
+    let _ = current_stop.send(());
+    if let Some(worker) = current_worker.as_mut()
+        && tokio::time::timeout(std::time::Duration::from_secs(3), &mut *worker)
+            .await
+            .is_err()
+    {
+        worker.abort();
+        let _ = worker.await;
+    }
+    result
 }
 
 #[cfg(unix)]
@@ -2520,3 +2545,87 @@ mod tests;
 #[cfg(test)]
 #[path = "server/cors_tests.rs"]
 mod cors_tests;
+
+fn trace_router(router: Router<AppState>) -> Router<AppState> {
+    if crate::runtime::development_event_log::enabled() {
+        router
+    } else {
+        router.layer(TraceLayer::new_for_http())
+    }
+}
+async fn development_http_event(request: Request<Body>, next: Next) -> Response {
+    use crate::runtime::development_event_log as dev;
+    let endpoint = dev::Endpoint::from_route(
+        request
+            .extensions()
+            .get::<axum::extract::MatchedPath>()
+            .map_or("", |p| p.as_str()),
+    );
+    let method = match *request.method() {
+        axum::http::Method::GET => dev::Method::Get,
+        axum::http::Method::POST => dev::Method::Post,
+        _ => dev::Method::Other,
+    };
+    let started = Instant::now();
+    let id = Uuid::new_v4();
+    dev::request_scope(id, async move {
+        let response = next.run(request).await;
+        let mut event = dev::Event::new(
+            dev::Kind::Http,
+            if response.status().is_success() {
+                dev::Outcome::Complete
+            } else {
+                dev::Outcome::Failed
+            },
+        );
+        event.endpoint = Some(endpoint);
+        event.method = Some(method);
+        event.status = Some(response.status().as_u16());
+        event.duration_ms = started.elapsed().as_millis().min(u64::MAX as u128) as u64;
+        dev::record(event);
+        response
+    })
+    .await
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn development_http_journal_records_outer_timeout_without_dynamic_uri() {
+    use crate::runtime::development_event_log as dev;
+    use tower::ServiceExt;
+    let temp = crate::private_tempdir().unwrap();
+    let path = temp.path().canonicalize().unwrap();
+    dev::with_test_journal(path.clone(), async {
+        let router = Router::new().route(
+            "/stall/{private_id}",
+            get(|| async {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                "private body"
+            }),
+        );
+        let router = apply_http_resource_limits(router, 1, Duration::from_millis(10));
+        let response = router
+            .oneshot(
+                Request::builder()
+                    .uri("/stall/private-vehicle?token=SECRET")
+                    .header("authorization", "SECRET")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    })
+    .await;
+    let contents = std::fs::read_to_string(path.join("hub-events.0.jsonl")).unwrap();
+    let events: Vec<serde_json::Value> = contents
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["status"], 503);
+    assert_eq!(events[0]["endpoint"], "other");
+    assert!(!contents.contains("SECRET"));
+    assert!(!contents.contains("private-vehicle"));
+    assert!(!contents.contains("private body"));
+}

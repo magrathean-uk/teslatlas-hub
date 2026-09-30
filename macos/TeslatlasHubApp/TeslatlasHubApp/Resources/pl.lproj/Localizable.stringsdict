@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>hub.DiagnosticsWindowController.182.223</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%2$#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Kontrole zakończone powodzeniem: %1$d/%2$d.</string>
+			<key>few</key>
+			<string>Kontrole zakończone powodzeniem: %1$d/%2$d.</string>
+			<key>many</key>
+			<string>Kontrole zakończone powodzeniem: %1$d/%2$d.</string>
+			<key>other</key>
+			<string>Kontrole zakończone powodzeniem: %1$d/%2$d.</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3748.1243</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d pojazd</string>
+			<key>few</key>
+			<string>%d pojazdy</string>
+			<key>many</key>
+			<string>%d pojazdów</string>
+			<key>other</key>
+			<string>%d pojazdu</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3906.1333</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d minutę temu</string>
+			<key>few</key>
+			<string>%d minuty temu</string>
+			<key>many</key>
+			<string>%d minut temu</string>
+			<key>other</key>
+			<string>%d minuty temu</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3907.1334</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d godzinę temu</string>
+			<key>few</key>
+			<string>%d godziny temu</string>
+			<key>many</key>
+			<string>%d godzin temu</string>
+			<key>other</key>
+			<string>%d godziny temu</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3908.1335</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d dzień temu</string>
+			<key>few</key>
+			<string>%d dni temu</string>
+			<key>many</key>
+			<string>%d dni temu</string>
+			<key>other</key>
+			<string>%d dnia temu</string>
+		</dict>
+	</dict>
+	<key>hub.HubDiagnosticsPresentation.structured_results</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d wynik strukturalny</string>
+			<key>few</key>
+			<string>%d wyniki strukturalne</string>
+			<key>many</key>
+			<string>%d wyników strukturalnych</string>
+			<key>other</key>
+			<string>%d wyniku strukturalnego</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>hub.DiagnosticsWindowController.182.223</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%2$#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>Пройдено проверок: %1$d из %2$d.</string>
+			<key>few</key>
+			<string>Пройдено проверок: %1$d из %2$d.</string>
+			<key>many</key>
+			<string>Пройдено проверок: %1$d из %2$d.</string>
+			<key>other</key>
+			<string>Пройдено проверок: %1$d из %2$d.</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3748.1243</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d автомобиль</string>
+			<key>few</key>
+			<string>%d автомобиля</string>
+			<key>many</key>
+			<string>%d автомобилей</string>
+			<key>other</key>
+			<string>%d автомобиля</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3906.1333</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d минуту назад</string>
+			<key>few</key>
+			<string>%d минуты назад</string>
+			<key>many</key>
+			<string>%d минут назад</string>
+			<key>other</key>
+			<string>%d минуты назад</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3907.1334</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d час назад</string>
+			<key>few</key>
+			<string>%d часа назад</string>
+			<key>many</key>
+			<string>%d часов назад</string>
+			<key>other</key>
+			<string>%d часа назад</string>
+		</dict>
+	</dict>
+	<key>hub.HubController.3908.1335</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d день назад</string>
+			<key>few</key>
+			<string>%d дня назад</string>
+			<key>many</key>
+			<string>%d дней назад</string>
+			<key>other</key>
+			<string>%d дня назад</string>
+		</dict>
+	</dict>
+	<key>hub.HubDiagnosticsPresentation.structured_results</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>d</string>
+			<key>one</key>
+			<string>%d структурированный результат.</string>
+			<key>few</key>
+			<string>%d структурированных результата.</string>
+			<key>many</key>
+			<string>%d структурированных результатов.</string>
+			<key>other</key>
+			<string>%d структурированного результата.</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

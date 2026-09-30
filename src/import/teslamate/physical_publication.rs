@@ -106,6 +106,21 @@ pub(crate) fn publish_sealed_physical_v3_stage_with_gate_at(
         tracing::warn!(%error, vehicle_id = %publication.admission.vehicle_id,
                 "optional prepared month is unavailable; local map generation remains authoritative");
     }
+    use crate::runtime::development_event_log as dev;
+    let mut event = dev::Event::new(
+        dev::Kind::Publication,
+        if result.is_ok() {
+            dev::Outcome::Complete
+        } else {
+            dev::Outcome::Failed
+        },
+    );
+    if let Ok(publication) = &result {
+        event.target_sequence = Some(publication.admission.head_sequence);
+        event.chunks = publication.admission.manifest.chunk_count as u64;
+        event.rows = publication.admission.manifest.total_rows;
+    }
+    dev::record(event);
     let cleanup = stage.discard();
     match (result, cleanup) {
         (Ok(publication), Ok(())) => Ok(publication),
@@ -240,6 +255,9 @@ fn publish_sealed_physical_v3_stage_inner(
                     None
                 }
             };
+            let mut event = dev_publication_choice(delta.is_some(), prior.head_sequence);
+            event.target_sequence = Some(head_sequence);
+            crate::runtime::development_event_log::record(event);
             let rotated = store.rotate_pending_physical_v3_admission_with_delta_at(
                 publication_gate,
                 candidate,
@@ -331,3 +349,17 @@ pub enum TeslaMatePhysicalPublicationError {
 #[cfg(test)]
 #[path = "physical_publication/tests.rs"]
 mod tests;
+
+fn dev_publication_choice(delta: bool, base: u64) -> crate::runtime::development_event_log::Event {
+    use crate::runtime::development_event_log as dev;
+    let mut event = dev::Event::new(
+        dev::Kind::Publication,
+        if delta {
+            dev::Outcome::ChangedSet
+        } else {
+            dev::Outcome::FullReplacement
+        },
+    );
+    event.base_sequence = Some(base);
+    event
+}
