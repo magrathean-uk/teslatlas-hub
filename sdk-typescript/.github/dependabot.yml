@@ -12,6 +12,10 @@ updates:
       time: "19:00"
       timezone: "Europe/London"
     open-pull-requests-limit: 100
+    ignore:
+      # TypeScript 7 breaks `npm ci` (openapi-typescript peer ^5), the build (needs types: node) and the protocol generator.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     cooldown:
       default-days: 7
     labels:
