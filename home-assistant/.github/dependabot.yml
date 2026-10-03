@@ -21,6 +21,10 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     groups:
+      homeassistant-stack:
+        patterns:
+          - "homeassistant"
+          - "pytest-homeassistant-custom-component"
       minor-and-patch:
         patterns:
           - "*"
