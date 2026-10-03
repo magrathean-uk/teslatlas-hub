@@ -1,6 +1,6 @@
 # Docker Official Image swift:6.0.3-jammy, linux/arm64/v8 child only.
 # Parent OCI index: sha256:e2b0410500126d7f569d387b5817426cef5c38cc02dc494c3dc5edc8e10304d6
-FROM --platform=linux/arm64/v8 swift:6.3.2-jammy@sha256:5f846f008aa76859377d4e9dafe2826c74dde99421bbc60ae2b98d0f1daf72cf
+FROM --platform=linux/arm64/v8 swift:6.0.3-jammy@sha256:c84da0197afcc90ef90a64194d4d451be7c090a845bcbf632755f9c16334ba8f
 
 RUN apt-get update \
   && apt-get install --no-install-recommends -y ca-certificates libcurl4-openssl-dev libssl-dev python3 \
