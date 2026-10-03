@@ -31,7 +31,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
 # Persisted Edge IDs and Hub replay validation depend on 0.1's UTF-8 key order.
 # Changing this requires a separately versioned cross-product identity migration.
-serde_jcs = "=0.1.0"
+serde_jcs = "=0.2.0"
 sha2 = "0.11"
 subtle = "2.6"
 thiserror = "2"
