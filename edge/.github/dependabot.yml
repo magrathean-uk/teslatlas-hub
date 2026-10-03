@@ -12,6 +12,10 @@ updates:
       time: "19:00"
       timezone: "Europe/London"
     open-pull-requests-limit: 100
+    ignore:
+      # Cargo.toml pins serde_jcs =0.1.0 on purpose: 0.2 sorts keys by UTF-16 code unit (RFC 8785), which changes
+      # canonical bytes and therefore persisted record ids for non-BMP keys.
+      - dependency-name: "serde_jcs"
     cooldown:
       default-days: 7
     labels:
