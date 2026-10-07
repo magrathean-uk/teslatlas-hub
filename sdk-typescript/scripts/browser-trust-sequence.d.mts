@@ -1,4 +1,9 @@
 export const SEQUENTIAL_MACOS_TRUST_MODE: "sequential-macos-login-keychain";
+export function withActionDeadline<T>(
+  action: () => T | Promise<T>,
+  label: string,
+  timeoutMs: number,
+): Promise<T>;
 export interface TrustPhaseContext {
   readonly endpoint: string;
   readonly certificatePath: string;
@@ -37,6 +42,8 @@ export function runSequentialMacTrustSequence(options: {
   readonly endpoint: string;
   readonly certificatePath: string;
   readonly certificateSha256: string;
+  readonly operationTimeoutMs?: number;
+  readonly cleanupTimeoutMs?: number;
   readonly openUntrusted: () => Promise<unknown>;
   readonly observeUntrusted: (
     control: unknown,

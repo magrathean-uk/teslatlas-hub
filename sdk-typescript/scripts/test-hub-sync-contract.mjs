@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { chmod, readFile, writeFile } from "node:fs/promises";
 import { requireManifestPublicKey, verifyHubResponseSignature } from "./hub-signature-evidence.mjs";
 import {
+  fetchResponseWithDeadline,
+  readBoundedResponseBytes,
   requestSignedSyncJson,
   schema22SyncHeaders,
   validateSchema22Noop,
@@ -46,28 +48,27 @@ const noop = await requestSignedSyncJson({
   signaturePublicKey: manifestPublicKey,
 });
 validateSchema22Noop(manifest.body, noop.body);
-const packResponse = await fetch(new URL(pack.relative_path, endpoint), {
+const packResponse = await fetchResponseWithDeadline(new URL(pack.relative_path, endpoint), {
   headers: schema22SyncHeaders(authorization),
   redirect: "error",
 });
-if (packResponse.status !== 200) throw new Error(`pack returned HTTP ${packResponse.status}`);
-const contentLength = numberHeader(packResponse, "content-length");
-if (contentLength !== pack.compressed_bytes || contentLength > 64 * 1024 * 1024) {
-  throw new Error("pack content length differs from its bounded manifest descriptor");
-}
-const packBytes = new Uint8Array(await packResponse.arrayBuffer());
-if (packBytes.byteLength !== contentLength) throw new Error("pack stream length differs");
+const packBytes = await readBoundedResponseBytes(packResponse, {
+  label: "pack",
+  maxBytes: 64 * 1024 * 1024,
+  expectedBytes: pack.compressed_bytes,
+  requireContentLength: true,
+});
 const packSha256 = createHash("sha256").update(packBytes).digest("hex");
 if (packSha256 !== pack.sha256) throw new Error("pack stream digest differs");
 
 const unsupported = {};
 for (const path of ["/v1/events", "/v1/data-quality"]) {
-  const response = await fetch(new URL(path, endpoint), {
+  const response = await fetchResponseWithDeadline(new URL(path, endpoint), {
     headers: authorization,
     redirect: "error",
   });
+  void response.body?.cancel().catch(() => undefined);
   if (response.status !== 404) throw new Error(`${path} unexpectedly returned ${response.status}`);
-  await response.arrayBuffer();
   unsupported[path] = response.status;
 }
 
@@ -112,12 +113,14 @@ await chmod(receiptPath, 0o600);
 process.stdout.write(`${JSON.stringify(receipt)}\n`);
 
 async function jsonRequest(path, { headers, signaturePublicKey } = {}) {
-  const response = await fetch(new URL(path, endpoint), { headers, redirect: "error" });
-  if (response.status !== 200) throw new Error(`${path} returned HTTP ${response.status}`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength === 0 || bytes.byteLength > 4 * 1024 * 1024) {
-    throw new Error(`${path} returned an invalid bounded JSON body`);
-  }
+  const response = await fetchResponseWithDeadline(new URL(path, endpoint), {
+    headers,
+    redirect: "error",
+  });
+  const bytes = await readBoundedResponseBytes(response, {
+    label: path,
+    maxBytes: 4 * 1024 * 1024,
+  });
   let body;
   try {
     body = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
@@ -172,13 +175,6 @@ function countPackDescriptors(value) {
       0,
     )
   );
-}
-
-function numberHeader(response, name) {
-  const value = response.headers.get(name);
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${name} is invalid`);
-  return parsed;
 }
 
 function validateCredential(value) {

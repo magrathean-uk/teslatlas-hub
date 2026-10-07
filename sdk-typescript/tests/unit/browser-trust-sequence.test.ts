@@ -77,6 +77,75 @@ function successfulCallbacks(events: string[]) {
 }
 
 describe("sequential macOS browser trust", () => {
+  it("bounds hung close/cleanup/removal actions and still independently verifies removal", async () => {
+    const events: string[] = [];
+    const callbacks = successfulCallbacks(events);
+    const never = () => new Promise<never>(() => undefined);
+    let failure: unknown;
+    try {
+      await runSequentialMacTrustSequence({
+        endpoint,
+        certificatePath,
+        certificateSha256,
+        ...callbacks,
+        operationTimeoutMs: 20,
+        cleanupTimeoutMs: 5,
+        closeTrusted: () => {
+          events.push("trusted:close-pending");
+          return never();
+        },
+        cleanupTrusted: () => {
+          events.push("trusted:cleanup-pending");
+          return never();
+        },
+        removeCertificate: () => {
+          events.push("certificate:remove-pending");
+          return never();
+        },
+      });
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toBeInstanceOf(AggregateError);
+    const errors = (failure as AggregateError).errors as Error[];
+    expect(errors.map((error) => error.message)).toEqual([
+      "close trusted browser during cleanup timed out after 5 ms",
+      "trusted browser cleanup timed out after 5 ms",
+      "remove certificate timed out after 5 ms",
+    ]);
+    expect(events.slice(-4)).toEqual([
+      "trusted:close-pending",
+      "trusted:cleanup-pending",
+      "certificate:remove-pending",
+      "certificate:verify-removed",
+    ]);
+  });
+
+  it("bounds a never-settling import and attempts removal for possible import side effects", async () => {
+    const events: string[] = [];
+    const callbacks = successfulCallbacks(events);
+    await expect(
+      runSequentialMacTrustSequence({
+        endpoint,
+        certificatePath,
+        certificateSha256,
+        ...callbacks,
+        operationTimeoutMs: 5,
+        cleanupTimeoutMs: 5,
+        importCertificate: () => {
+          events.push("certificate:import-pending");
+          return new Promise<never>(() => undefined);
+        },
+      }),
+    ).rejects.toThrow("import certificate timed out after 5 ms");
+    expect(events.slice(-3)).toEqual([
+      "certificate:import-pending",
+      "certificate:remove",
+      "certificate:verify-removed",
+    ]);
+    expect(events).not.toContain("trusted:start");
+  });
+
   it("closes the negative control before import and verifies exact certificate removal", async () => {
     const events: string[] = [];
 

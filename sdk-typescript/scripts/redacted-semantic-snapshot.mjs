@@ -27,7 +27,9 @@ const defaultPlan = Object.freeze({
   boundaryQueries,
 });
 
-const uuidPattern = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/iu;
+const uuidText = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const uuidPattern = new RegExp(uuidText, "iu");
+const uuidIdentityPattern = new RegExp(`^${uuidText}$`, "u");
 const forbiddenKeyPattern = /uuid|vehicleid|displayname|address|location|token|cursor|endpoint/iu;
 const tokenPattern = /\b[0-9a-f]{64}\b/iu;
 const endpointPattern = /\bhttps?:\/\//iu;
@@ -460,7 +462,10 @@ function normalizeSemanticProfile(value) {
     "boundaryMode",
   ]);
   if (value.schemaVersion !== 1) throw new Error("semantic profile schemaVersion must be 1");
-  if (typeof value.primaryVehicleId !== "string" || !uuidPattern.test(value.primaryVehicleId)) {
+  if (
+    typeof value.primaryVehicleId !== "string" ||
+    !uuidIdentityPattern.test(value.primaryVehicleId)
+  ) {
     throw new Error("semantic profile primaryVehicleId must be a UUID");
   }
   if (

@@ -1,6 +1,9 @@
 import { ProtocolValidationError } from "../core/errors.js";
 import { validateDiscovery } from "../generated/validators.js";
 import { readEntityTag } from "../http/conditional.js";
+import { readBoundedJson } from "../http/bounded-json.js";
+import { requireMediaType } from "../http/response-decoder.js";
+import { withResponseOwnership } from "../http/response-ownership.js";
 import { FetchTransport, InvalidBaseUrlError } from "../http/fetch-transport.js";
 import type { HubDescriptor } from "../protocol/models.js";
 import { negotiateProtocolVersion } from "../protocol/negotiation.js";
@@ -24,15 +27,18 @@ export async function createClientSession(options: CreateClientOptions): Promise
     redirect: "error",
     ...(options.signal === undefined ? {} : { signal: options.signal }),
   });
-  if (response.status !== 200) {
-    throw new ProtocolValidationError("Discovery.status");
-  }
-  requireDiscoveryEntityTag(response);
-  const descriptor = decodeProtocolValue<HubDescriptor>(
-    await readDiscoveryBody(response, options.signal),
-    validateDiscovery,
-    "validateDiscovery",
-  );
+  const descriptor = await withResponseOwnership(response, async () => {
+    if (response.status !== 200) {
+      throw new ProtocolValidationError("Discovery.status");
+    }
+    requireMediaType(response, "application/json", "validateDiscovery");
+    requireDiscoveryEntityTag(response);
+    return decodeProtocolValue<HubDescriptor>(
+      await readDiscoveryBody(response, options.signal),
+      validateDiscovery,
+      "validateDiscovery",
+    );
+  });
   validateEndpointUrls(descriptor);
 
   const protocolVersion = negotiateProtocolVersion(
@@ -74,11 +80,12 @@ async function readDiscoveryBody(
   signal: AbortSignal | undefined,
 ): Promise<unknown> {
   try {
-    return await response.json();
+    return await readBoundedJson(response, signal, "validateDiscovery");
   } catch (error) {
     if (signal?.aborted === true) {
       throw signal.reason ?? error;
     }
+    if (error instanceof ProtocolValidationError) throw error;
     throw new ProtocolValidationError("validateDiscovery");
   }
 }

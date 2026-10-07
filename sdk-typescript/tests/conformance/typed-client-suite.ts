@@ -66,9 +66,14 @@ export function defineTypedClientConformanceSuite(
           if (path === "/.well-known/teslatlas-hub") return jsonGet(discovery, 'W/"discovery-1"');
           currentCalls += 1;
           if (currentCalls === 1) {
-            return Response.json(currentState, { headers: { ETag: 'W/"current-1"' } });
+            return Response.json(currentState, {
+              headers: { ETag: 'W/"current-1"', "Teslatlas-Protocol-Version": "1.2.0" },
+            });
           }
-          return new Response(null, { status: 304, headers: { ETag: 'W/"current-1"' } });
+          return new Response(null, {
+            status: 304,
+            headers: { ETag: 'W/"current-1"', "Teslatlas-Protocol-Version": "1.2.0" },
+          });
         }),
       );
 
@@ -81,7 +86,7 @@ export function defineTypedClientConformanceSuite(
         }),
       ).resolves.toEqual({
         kind: "not-modified",
-        metadata: { status: 304, etag: 'W/"current-1"' },
+        metadata: { status: 304, etag: 'W/"current-1"', protocolVersion: "1.2.0" },
       });
     });
 
@@ -199,6 +204,7 @@ export function defineTypedClientConformanceSuite(
             headers: {
               ETag: '"command-1"',
               Location: "/v1/commands/command_demo_0001",
+              "Teslatlas-Protocol-Version": "1.1.0",
             },
           });
         }, "1.1.0"),
@@ -234,9 +240,13 @@ export function defineTypedClientConformanceSuite(
             ifMatch: new Headers(init?.headers).get("if-match"),
           });
           if (init?.method === "DELETE") {
-            return Response.json(metadataTombstone, { headers: { ETag: '"metadata-3"' } });
+            return Response.json(metadataTombstone, {
+              headers: { ETag: '"metadata-3"', "Teslatlas-Protocol-Version": "1.2.0" },
+            });
           }
-          return Response.json(metadataRecord, { headers: { ETag: '"metadata-1"' } });
+          return Response.json(metadataRecord, {
+            headers: { ETag: '"metadata-1"', "Teslatlas-Protocol-Version": "1.2.0" },
+          });
         }),
       );
       const replacement = decodeProtocolValue<MetadataReplace>(
@@ -294,5 +304,10 @@ function router(
 }
 
 function jsonGet(value: unknown, etag: string): Response {
-  return Response.json(value, { headers: { ETag: etag } });
+  return Response.json(value, {
+    headers: {
+      ETag: etag,
+      ...(value === discovery ? {} : { "Teslatlas-Protocol-Version": "1.2.0" }),
+    },
+  });
 }

@@ -587,6 +587,17 @@ export async function validateReviewedPackageBinding({
   const receiptFile = await readStrictJsonFile(receiptPath, `${role} receipt`, receiptSha256);
   const receipt = receiptFile.value;
   const source = await sourceExportManifest(sourceExport, `${role} source export`);
+  validatePackageAdmissionReceipt({ role, receipt, archive, source });
+  return {
+    role,
+    receiptPath: receiptFile.path,
+    receiptSha256: receiptFile.sha256,
+    receipt,
+    source,
+  };
+}
+
+export function validatePackageAdmissionReceipt({ role, receipt, archive, source }) {
   validateExactKeys(
     receipt,
     [
@@ -624,8 +635,7 @@ export async function validateReviewedPackageBinding({
     receipt.role !== role ||
     receipt.state !== "independently-reviewed" ||
     receipt.review.verdict !== "ACCEPT" ||
-    receipt.review.reviewer_model !== "GPT-5.6 Sol" ||
-    receipt.review.reasoning !== "high" ||
+    !acceptedReviewPolicy(role, receipt.review) ||
     typeof receipt.review.reviewed_at !== "string" ||
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(receipt.review.reviewed_at) ||
     Number.isNaN(Date.parse(receipt.review.reviewed_at)) ||
@@ -656,13 +666,17 @@ export async function validateReviewedPackageBinding({
   ) {
     throw new Error("candidate receipt requires exact Node 26.10.0 and npm 12.1.0");
   }
-  return {
-    role,
-    receiptPath: receiptFile.path,
-    receiptSha256: receiptFile.sha256,
-    receipt,
-    source,
-  };
+  return receipt;
+}
+
+function acceptedReviewPolicy(role, review) {
+  const currentReview =
+    ["gpt-6.1-sol", "GPT-6.1 Sol"].includes(review.reviewer_model) && review.reasoning === "ultra";
+  if ((role === "candidate" || role === "predecessor") && currentReview) return true;
+  // This admits an existing historical receipt; it does not dispatch that model.
+  return (
+    role === "predecessor" && review.reviewer_model === "GPT-5.6 Sol" && review.reasoning === "high"
+  );
 }
 
 export async function readCatalogBinding({ catalogPath, catalogSha256, reviewedPackage }) {

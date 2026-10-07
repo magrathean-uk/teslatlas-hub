@@ -468,8 +468,8 @@ async function admissionReceipt(
     toolchain: { node: "26.10.0", npm: "12.1.0" },
     review: {
       verdict: "ACCEPT",
-      reviewer_model: "GPT-5.6 Sol",
-      reasoning: "high",
+      reviewer_model: role === "candidate" ? "gpt-6.1-sol" : "GPT-5.6 Sol",
+      reasoning: role === "candidate" ? "ultra" : "high",
       reviewed_at: "2026-09-19T16:00:00Z",
     },
   };

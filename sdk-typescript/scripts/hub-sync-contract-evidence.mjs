@@ -28,15 +28,18 @@ export async function requestSignedSyncJson({
   signaturePublicKey,
   fetch = globalThis.fetch,
 }) {
-  const response = await fetch(new URL(path, endpoint), {
-    headers: schema22SyncHeaders(authorization),
-    redirect: "error",
+  const response = await fetchResponseWithDeadline(
+    new URL(path, endpoint),
+    {
+      headers: schema22SyncHeaders(authorization),
+      redirect: "error",
+    },
+    fetch,
+  );
+  const bytes = await readBoundedResponseBytes(response, {
+    label: path,
+    maxBytes: 4 * 1024 * 1024,
   });
-  if (response.status !== 200) throw new Error(`${path} returned HTTP ${response.status}`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength === 0 || bytes.byteLength > 4 * 1024 * 1024) {
-    throw new Error(`${path} returned an invalid bounded JSON body`);
-  }
   const signature = response.headers.get("x-teslatlas-manifest-signature");
   const signatureEvidence = verifyHubResponseSignature(bytes, signature, signaturePublicKey);
   let body;
@@ -55,6 +58,131 @@ export async function requestSignedSyncJson({
     signatureVerified: signatureEvidence.verified,
     status: response.status,
   };
+}
+
+export async function fetchResponseWithDeadline(
+  input,
+  init,
+  fetch = globalThis.fetch,
+  timeoutMs = 30_000,
+) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2_147_483_647) {
+    throw new Error("invalid fetch deadline");
+  }
+  const controller = new AbortController();
+  let timedOut = false;
+  let timer;
+  try {
+    const response = Promise.resolve()
+      .then(() => fetch(input, { ...init, signal: controller.signal }))
+      .then((value) => {
+        if (timedOut) void value.body?.cancel().catch(() => undefined);
+        return value;
+      });
+    return await Promise.race([
+      response,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+          reject(new Error("evidence fetch timed out"));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Admit headers before reading and retain no bytes beyond the caller's cap.
+// Cancellation is initiated without awaiting a peer-controlled cancel promise.
+export async function readBoundedResponseBytes(
+  response,
+  { label, maxBytes, expectedBytes, requireContentLength = false, timeoutMs = 30_000 },
+) {
+  let reader;
+  let timer;
+  try {
+    if (
+      !Number.isSafeInteger(maxBytes) ||
+      maxBytes < 1 ||
+      (expectedBytes !== undefined &&
+        (!Number.isSafeInteger(expectedBytes) || expectedBytes < 1 || expectedBytes > maxBytes)) ||
+      !Number.isSafeInteger(timeoutMs) ||
+      timeoutMs < 1 ||
+      timeoutMs > 2_147_483_647
+    ) {
+      throw new Error("invalid bounded response limits");
+    }
+    if (response.status !== 200) throw new Error(`${label} returned HTTP ${response.status}`);
+    const header = response.headers.get("content-length");
+    if (requireContentLength && header === null)
+      throw new Error(`${label} requires content length`);
+    let declaredLength;
+    if (header !== null) {
+      const size = Number(header);
+      if (
+        !/^\d+$/u.test(header) ||
+        !Number.isSafeInteger(size) ||
+        size < 1 ||
+        size > maxBytes ||
+        (expectedBytes !== undefined && size !== expectedBytes)
+      ) {
+        throw new Error(`${label} returned an invalid bounded content length`);
+      }
+      declaredLength = size;
+    }
+    if (response.body === null) throw new Error(`${label} returned an empty body`);
+    reader = response.body.getReader();
+    const deadline = new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} body read timed out`)), timeoutMs);
+    });
+    const limit = expectedBytes ?? declaredLength ?? maxBytes;
+    const collect = async () => {
+      const bytes = new Uint8Array(limit);
+      let size = 0;
+      let emptyChunks = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!(value instanceof Uint8Array)) throw new Error(`${label} returned invalid body bytes`);
+        if (value.byteLength === 0) {
+          if (++emptyChunks > 1_024) throw new Error(`${label} exceeded its empty chunk bound`);
+          continue;
+        }
+        emptyChunks = 0;
+        if (value.byteLength > limit - size)
+          throw new Error(`${label} exceeded its bounded body limit`);
+        bytes.set(value, size);
+        size += value.byteLength;
+      }
+      if (
+        size === 0 ||
+        (expectedBytes !== undefined && size !== expectedBytes) ||
+        (declaredLength !== undefined && size !== declaredLength)
+      ) {
+        throw new Error(`${label} stream length differs`);
+      }
+      return bytes.subarray(0, size);
+    };
+    // One race for the entire collection avoids retaining a deadline reaction per chunk.
+    return await Promise.race([collect(), deadline]);
+  } catch (error) {
+    try {
+      const cancellation = reader === undefined ? response.body?.cancel() : reader.cancel();
+      void Promise.resolve(cancellation).catch(() => undefined);
+    } catch {
+      /* Preserve the admission/read error. */
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    try {
+      reader?.releaseLock();
+    } catch {
+      /* A timed-out read can still be pending. */
+    }
+  }
 }
 
 export function validateSchema22Noop(manifest, noop) {

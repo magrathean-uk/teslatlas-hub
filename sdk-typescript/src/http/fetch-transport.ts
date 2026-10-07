@@ -92,7 +92,11 @@ export class FetchTransport {
     }
 
     try {
-      const authorization = await this.#authorization?.({ url: new URL(url.href), method });
+      throwIfAborted(init.signal);
+      const authorization = await waitForAuthorization(
+        this.#authorization?.({ url: new URL(url.href), method }),
+        init.signal,
+      );
       if (authorization !== undefined) {
         if (authorization.length === 0 || containsControlCharacters(authorization)) {
           throw new InvalidAuthorizationValueError();
@@ -100,6 +104,7 @@ export class FetchTransport {
         headers.set("Authorization", authorization);
       }
 
+      throwIfAborted(init.signal);
       onDispatch?.();
       return await this.#fetch(url, {
         ...remainingInit,
@@ -118,6 +123,31 @@ export class FetchTransport {
       }
       throw new TransportError();
     }
+  }
+}
+
+function throwIfAborted(signal: AbortSignal | null | undefined): void {
+  if (signal?.aborted === true) {
+    throw signal.reason ?? new DOMException("Aborted", "AbortError");
+  }
+}
+
+async function waitForAuthorization<T>(
+  value: T | PromiseLike<T>,
+  signal: AbortSignal | null | undefined,
+): Promise<T> {
+  if (signal === undefined || signal === null) return value;
+  let abortListener: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    abortListener = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    signal.addEventListener("abort", abortListener, { once: true });
+  });
+  try {
+    throwIfAborted(signal);
+    // Promise.race also observes a provider rejection after cancellation.
+    return await Promise.race([value, aborted]);
+  } finally {
+    if (abortListener !== undefined) signal.removeEventListener("abort", abortListener);
   }
 }
 

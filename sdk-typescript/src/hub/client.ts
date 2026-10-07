@@ -5,8 +5,14 @@ import {
   TransportError,
 } from "../core/errors.js";
 import { FetchTransport, type FetchImplementation } from "../http/fetch-transport.js";
+import { readBoundedText } from "../http/bounded-json.js";
 import { requireEmptyResponseBody } from "../http/empty-body.js";
-import { asStrongEntityTag, isStrongEntityTag } from "../http/strong-etag.js";
+import {
+  InvalidStrongEntityTagError,
+  isStrongEntityTag,
+  type StrongEntityTag,
+} from "../http/strong-etag.js";
+import { withResponseOwnership } from "../http/response-ownership.js";
 import type {
   CreateHubClientOptions,
   HubCapability,
@@ -41,12 +47,19 @@ import {
 const discoveryPath = "/.well-known/teslatlas-hub";
 const maximumResponseBytes = 1_048_576;
 const maximumClaimRequestBytes = 4_096;
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const tokenPattern = /^[0-9a-f]{64}$/u;
+const maximumHubEntityTagLength = 65_536;
 
 interface HubOperation {
   readonly generation: number;
   readonly signal: AbortSignal;
+}
+
+interface PendingDiscovery {
+  readonly promise: Promise<HubResponse<HubDiscovery>>;
+  readonly controller: AbortController;
+  waiters: number;
 }
 
 export class HubIdentityMismatchError extends TeslatlasError<"hub_identity_mismatch"> {
@@ -121,7 +134,7 @@ class StaticHubClient implements HubClient {
   readonly #ownerSignal: AbortSignal | undefined;
   #sessionAbort = new AbortController();
   #discovery: HubDiscovery | undefined;
-  #discoveryPending: Promise<HubResponse<HubDiscovery>> | undefined;
+  #discoveryPending: PendingDiscovery | undefined;
   #disposed = false;
   #sessionGeneration = 0;
   #credentialMutation: Promise<void> = Promise.resolve();
@@ -148,33 +161,82 @@ class StaticHubClient implements HubClient {
 
   async #discover(operation: HubOperation): Promise<HubResponse<HubDiscovery>> {
     this.#assertOperation(operation);
-    if (this.#discoveryPending !== undefined) return this.#discoveryPending;
-    const pending = this.#read(
-      this.#unauthenticatedTransport,
-      discoveryPath,
-      validateHubDiscovery,
-      "HubDiscovery",
-      operation,
-      [200],
-    ).then((result: HubResponse<HubDiscovery>) => {
-      this.#assertOperation(operation);
-      if (result.value.hubId !== this.#expectedHubId) throw new HubIdentityMismatchError();
-      this.#discovery = result.value;
-      this.#cursorBindings.clear();
-      return result;
-    });
-    this.#discoveryPending = pending;
-    try {
-      return await pending;
-    } catch (error) {
-      if (operation.generation === this.#sessionGeneration && !this.#disposed) {
-        this.#discovery = undefined;
-        this.#cursorBindings.clear();
-      }
-      throw error;
-    } finally {
-      if (this.#discoveryPending === pending) this.#discoveryPending = undefined;
+    let pending = this.#discoveryPending;
+    if (pending === undefined) {
+      const controller = new AbortController();
+      const sharedOperation = this.#beginOperation(controller.signal);
+      const promise = this.#read(
+        this.#unauthenticatedTransport,
+        discoveryPath,
+        validateHubDiscovery,
+        "HubDiscovery",
+        sharedOperation,
+        [200],
+      )
+        .then((result: HubResponse<HubDiscovery>) => {
+          this.#assertOperation(sharedOperation);
+          if (result.value.hubId !== this.#expectedHubId) throw new HubIdentityMismatchError();
+          this.#discovery = result.value;
+          this.#cursorBindings.clear();
+          return result;
+        })
+        .catch((error: unknown) => {
+          if (
+            this.#discoveryPending === pending &&
+            sharedOperation.generation === this.#sessionGeneration &&
+            !this.#disposed
+          ) {
+            this.#discovery = undefined;
+            this.#cursorBindings.clear();
+          }
+          throw error;
+        })
+        .finally(() => {
+          if (this.#discoveryPending === pending) this.#discoveryPending = undefined;
+        });
+      pending = { promise, controller, waiters: 0 };
+      this.#discoveryPending = pending;
     }
+    return this.#waitForDiscovery(pending, operation);
+  }
+
+  #waitForDiscovery(
+    pending: PendingDiscovery,
+    operation: HubOperation,
+  ): Promise<HubResponse<HubDiscovery>> {
+    pending.waiters += 1;
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      const finish = (settle: () => void) => {
+        if (settled) return;
+        settled = true;
+        operation.signal.removeEventListener("abort", onAbort);
+        pending.waiters -= 1;
+        if (pending.waiters === 0 && this.#discoveryPending === pending) {
+          this.#discoveryPending = undefined;
+          pending.controller.abort(
+            new DOMException("Discovery has no active callers", "AbortError"),
+          );
+        }
+        settle();
+      };
+      const onAbort = () =>
+        finish(() => reject(operation.signal.reason ?? new DOMException("Aborted", "AbortError")));
+      operation.signal.addEventListener("abort", onAbort, { once: true });
+      pending.promise.then(
+        (result) => {
+          if (settled) return;
+          try {
+            this.#assertOperation(operation);
+            finish(() => resolve(result));
+          } catch (error) {
+            finish(() => reject(error));
+          }
+        },
+        (error: unknown) => finish(() => reject(error)),
+      );
+      if (operation.signal.aborted) onAbort();
+    });
   }
 
   async health(options: HubRequestOptions = {}) {
@@ -253,7 +315,7 @@ class StaticHubClient implements HubClient {
     if (previous === undefined) throw new HubHttpError(401, "hub_http_error");
     validateCredential(previous);
     const result = await this.#writeClaim(
-      this.#makeAuthenticatedTransport(operation),
+      this.#makeAuthenticatedTransport(operation, previous),
       "/v1/device/rotate",
       undefined,
       operation,
@@ -300,52 +362,86 @@ class StaticHubClient implements HubClient {
   }
 
   async drives(vehicleId: string, options: HubDrivesOptions = {}): Promise<HubDrivesResult> {
+    const { fromMs, toMs, limit, cursor, ifNoneMatch, signal } = options;
     validateUuid(vehicleId, "vehicleId");
-    if (options.ifNoneMatch !== undefined) asStrongEntityTag(options.ifNoneMatch);
-    const operation = this.#beginOperation(options.signal);
+    if (ifNoneMatch !== undefined) asHubEntityTag(ifNoneMatch, true);
+    const operation = this.#beginOperation(signal);
     await this.#requireCapability("query.drives", operation);
     this.#assertOperation(operation);
-    const binding = cursorBinding(vehicleId, options.fromMs, options.toMs);
+    const binding = cursorBinding(vehicleId, fromMs, toMs);
     if (
-      options.cursor !== undefined &&
-      this.#cursorBindings.has(options.cursor) &&
-      this.#cursorBindings.get(options.cursor) !== binding
+      cursor !== undefined &&
+      this.#cursorBindings.has(cursor) &&
+      this.#cursorBindings.get(cursor) !== binding
     ) {
       throw new ProtocolValidationError("HubDrives.cursorBinding");
     }
     const query = new URLSearchParams();
-    appendInteger(query, "from_ms", options.fromMs);
-    appendInteger(query, "to_ms", options.toMs);
-    appendInteger(query, "limit", options.limit);
-    if (options.cursor !== undefined) query.set("cursor", options.cursor);
+    appendInteger(query, "from_ms", fromMs);
+    appendInteger(query, "to_ms", toMs);
+    appendInteger(query, "limit", limit);
+    if (cursor !== undefined) query.set("cursor", cursor);
     const response = await this.#makeAuthenticatedTransport(operation).request(
       `/v1/vehicles/${encodeURIComponent(vehicleId)}/drives${query.size === 0 ? "" : `?${query}`}`,
       {
         redirect: "error",
         signal: operation.signal,
-        ...(options.ifNoneMatch === undefined
-          ? {}
-          : { headers: { "If-None-Match": options.ifNoneMatch } }),
+        onDispatch: () => this.#assertOperation(operation),
+        ...(ifNoneMatch === undefined ? {} : { headers: { "If-None-Match": ifNoneMatch } }),
       },
     );
-    this.#assertOperation(operation);
-    if (response.status !== 200 && response.status !== 304) {
-      return this.#throwHubError(response, "drives", operation);
-    }
-    requireNoStore(response);
-    const metadata = responseMetadata(response, true);
-    if (response.status === 304) {
-      await requireEmptyResponseBody(response, operation.signal, "HubDrives.304");
+    return withResponseOwnership(response, async (): Promise<HubDrivesResult> => {
       this.#assertOperation(operation);
-      return { kind: "notModified", metadata };
-    }
-    const value = await decodeResponse(response, validateHubDrives, "HubDrives", operation.signal);
-    this.#assertOperation(operation);
-    if (value.items.some((drive: HubDrive) => drive.vehicleId !== vehicleId)) {
-      throw new VehicleIdentityMismatchError();
-    }
-    if (value.nextCursor !== null) this.#cursorBindings.set(value.nextCursor, binding);
-    return { kind: "page", value, metadata };
+      if (response.status !== 200 && response.status !== 304) {
+        return this.#throwHubError(response, "drives", operation);
+      }
+      requireNoStore(response);
+      const metadata = responseMetadata(response, true);
+      if (response.status === 304) {
+        if (ifNoneMatch === undefined || metadata.etag !== ifNoneMatch) {
+          throw new ProtocolValidationError("HubDrives.304.condition");
+        }
+        await requireEmptyResponseBody(response, operation.signal, "HubDrives.304");
+        this.#assertOperation(operation);
+        return { kind: "notModified", metadata };
+      }
+      const value = await decodeResponse(
+        response,
+        validateHubDrives,
+        "HubDrives",
+        operation.signal,
+      );
+      this.#assertOperation(operation);
+      if (value.items.some((drive: HubDrive) => drive.vehicleId !== vehicleId)) {
+        throw new VehicleIdentityMismatchError();
+      }
+      if (value.items.length > (limit ?? 100)) {
+        throw new ProtocolValidationError("HubDrives.limit");
+      }
+      if (
+        value.items.some(
+          (drive: HubDrive) =>
+            drive.startDateMs < (fromMs ?? 0) ||
+            drive.startDateMs >= (toMs ?? Number.MAX_SAFE_INTEGER),
+        )
+      ) {
+        throw new ProtocolValidationError("HubDrives.timeRange");
+      }
+      if (
+        value.items.some((drive: HubDrive, index: number) => {
+          const earlier = value.items[index - 1];
+          return (
+            earlier !== undefined &&
+            (earlier.startDateMs < drive.startDateMs ||
+              (earlier.startDateMs === drive.startDateMs && earlier.id <= drive.id))
+          );
+        })
+      ) {
+        throw new ProtocolValidationError("HubDrives.order");
+      }
+      if (value.nextCursor !== null) this.#cursorBindings.set(value.nextCursor, binding);
+      return { kind: "page", value, metadata };
+    });
   }
 
   async logout(): Promise<void> {
@@ -379,7 +475,13 @@ class StaticHubClient implements HubClient {
     try {
       const credential = await this.#credentials.load();
       this.#assertOperation(operation);
-      return credential;
+      return credential === undefined
+        ? undefined
+        : {
+            accessToken: credential.accessToken,
+            deviceId: credential.deviceId,
+            expiresAtMs: credential.expiresAtMs,
+          };
     } catch (error) {
       if (this.#isExpired(operation) || operation.signal.aborted) this.#assertOperation(operation);
       throw error;
@@ -414,11 +516,11 @@ class StaticHubClient implements HubClient {
     }
   }
 
-  #makeAuthenticatedTransport(operation: HubOperation): FetchTransport {
+  #makeAuthenticatedTransport(operation: HubOperation, snapshot?: HubCredential): FetchTransport {
     return new FetchTransport({
       ...this.#transportOptions,
       authorization: async () => {
-        const credential = await this.#loadCredential(operation);
+        const credential = snapshot ?? (await this.#loadCredential(operation));
         if (credential === undefined) return undefined;
         validateCredential(credential);
         return `Bearer ${credential.accessToken}`;
@@ -438,21 +540,24 @@ class StaticHubClient implements HubClient {
     const response = await transport.request(path, {
       redirect: "error",
       signal: operation.signal,
+      onDispatch: () => this.#assertOperation(operation),
     });
-    this.#assertOperation(operation);
-    if (!successStatuses.includes(response.status)) {
-      return this.#throwHubError(
-        response,
-        path === discoveryPath ? "discovery" : "other",
-        operation,
-      );
-    }
-    const value = await decodeResponse(response, validator, validatorName, operation.signal);
-    this.#assertOperation(operation);
-    return {
-      value,
-      metadata: responseMetadata(response, false),
-    };
+    return withResponseOwnership(response, async () => {
+      this.#assertOperation(operation);
+      if (!successStatuses.includes(response.status)) {
+        return this.#throwHubError(
+          response,
+          path === discoveryPath ? "discovery" : "other",
+          operation,
+        );
+      }
+      const value = await decodeResponse(response, validator, validatorName, operation.signal);
+      this.#assertOperation(operation);
+      return {
+        value,
+        metadata: responseMetadata(response, false),
+      };
+    });
   }
 
   async #writeClaim(
@@ -467,6 +572,7 @@ class StaticHubClient implements HubClient {
       method: "POST",
       redirect: "error",
       signal: operation.signal,
+      onDispatch: () => this.#assertOperation(operation),
       ...(body === undefined ? {} : { body, headers: { "Content-Type": "application/json" } }),
     });
     return this.#decodeClaimResponse(response, operation, route);
@@ -477,19 +583,21 @@ class StaticHubClient implements HubClient {
     operation: HubOperation,
     route: "claim" | "rotate",
   ): Promise<HubResponse<HubClaim>> {
-    this.#assertOperation(operation);
-    if (response.status !== 200) {
-      if (route === "claim" && isClaimExtractorStatus(response.status)) {
-        return this.#throwClaimExtractorError(response, operation);
+    return withResponseOwnership(response, async () => {
+      this.#assertOperation(operation);
+      if (response.status !== 200) {
+        if (route === "claim" && isClaimExtractorStatus(response.status)) {
+          return this.#throwClaimExtractorError(response, operation);
+        }
+        return this.#throwHubError(response, "other", operation);
       }
-      return this.#throwHubError(response, "other", operation);
-    }
-    const value = await decodeResponse(response, validateHubClaim, "HubClaim", operation.signal);
-    this.#assertOperation(operation);
-    return {
-      value,
-      metadata: responseMetadata(response, false),
-    };
+      const value = await decodeResponse(response, validateHubClaim, "HubClaim", operation.signal);
+      this.#assertOperation(operation);
+      return {
+        value,
+        metadata: responseMetadata(response, false),
+      };
+    });
   }
 
   async #throwClaimExtractorError(response: Response, operation: HubOperation): Promise<never> {
@@ -598,6 +706,7 @@ function validateCredential(value: HubCredential): void {
   ) {
     throw new ProtocolValidationError("HubCredential");
   }
+  if (value.expiresAtMs <= Date.now()) throw new ProtocolValidationError("HubCredential.expiry");
 }
 
 function validateInvitation(invitation: HubInvitation, endpoint: URL): void {
@@ -672,51 +781,7 @@ async function readBody(
   signal: AbortSignal | undefined,
   validatorName: string,
 ): Promise<string> {
-  if (response.body === null) {
-    if (signal?.aborted === true) {
-      throw signal.reason ?? new DOMException("Aborted", "AbortError");
-    }
-    return "";
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let totalBytes = 0;
-  let abortListener: (() => void) | undefined;
-  const aborted =
-    signal === undefined
-      ? undefined
-      : new Promise<never>((_resolve, reject) => {
-          abortListener = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-          signal.addEventListener("abort", abortListener, { once: true });
-        });
-  try {
-    if (signal?.aborted === true) throw signal.reason ?? new DOMException("Aborted", "AbortError");
-    while (true) {
-      const result = await (aborted === undefined
-        ? reader.read()
-        : Promise.race([reader.read(), aborted]));
-      if (result.done) break;
-      totalBytes += result.value.byteLength;
-      if (totalBytes > maximumResponseBytes) {
-        throw new ProtocolValidationError(`${validatorName}.size`);
-      }
-      chunks.push(result.value);
-    }
-  } catch (error) {
-    if (signal?.aborted === true) throw signal.reason ?? error;
-    if (error instanceof ProtocolValidationError) throw error;
-    throw new ProtocolValidationError(validatorName);
-  } finally {
-    if (abortListener !== undefined) signal?.removeEventListener("abort", abortListener);
-    void reader.cancel().catch(() => undefined);
-  }
-  const body = new Uint8Array(totalBytes);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(body);
+  return readBoundedText(response, signal, validatorName, maximumResponseBytes);
 }
 
 function requireJsonContentType(response: Response, validatorName: string): void {
@@ -740,7 +805,7 @@ function isClaimExtractorStatus(status: number): boolean {
 function responseMetadata(
   response: Response,
   requireEtag: true,
-): HubResponseMetadata & { etag: ReturnType<typeof asStrongEntityTag> };
+): HubResponseMetadata & { etag: StrongEntityTag };
 function responseMetadata(response: Response, requireEtag: false): HubResponseMetadata;
 function responseMetadata(response: Response, requireEtag: boolean): HubResponseMetadata {
   const etag = response.headers.get("ETag") ?? undefined;
@@ -751,9 +816,21 @@ function responseMetadata(response: Response, requireEtag: boolean): HubResponse
   const requestId = requestIdHeader === null ? undefined : asSafeRequestId(requestIdHeader);
   return {
     status: response.status,
-    ...(etag === undefined ? {} : { etag: requireEtag ? asStrongEntityTag(etag) : etag }),
+    ...(etag === undefined ? {} : { etag: requireEtag ? asHubEntityTag(etag) : etag }),
     ...(requestId === undefined ? {} : { requestId }),
   };
+}
+
+function asHubEntityTag(value: string, request = false): StrongEntityTag {
+  if (
+    typeof value !== "string" ||
+    value.length > maximumHubEntityTagLength ||
+    !isStrongEntityTag(value)
+  ) {
+    if (request) throw new InvalidStrongEntityTagError();
+    throw new ProtocolValidationError("HubResponse.etag");
+  }
+  return value as StrongEntityTag;
 }
 
 function requireNoStore(response: Response): void {

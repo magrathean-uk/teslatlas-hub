@@ -7,6 +7,7 @@ export async function requireEmptyResponseBody(
   signal: AbortSignal | undefined,
   validatorName: string,
 ): Promise<void> {
+  throwIfAborted(signal);
   if (response.body === null) return;
   const reader = response.body.getReader();
   let abortListener: (() => void) | undefined;
@@ -35,4 +36,8 @@ export async function requireEmptyResponseBody(
     if (abortListener !== undefined) signal?.removeEventListener("abort", abortListener);
     void reader.cancel().catch(() => undefined);
   }
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true) throw signal.reason ?? new DOMException("Aborted", "AbortError");
 }

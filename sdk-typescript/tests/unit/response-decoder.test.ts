@@ -2,6 +2,7 @@ import currentState from "../../protocol/source/examples/current-state.json" wit
 import problem from "../../protocol/source/examples/error.json" with { type: "json" };
 import { describe, expect, it } from "vitest";
 import { ProtocolHttpError, ProtocolValidationError } from "../../src/core/errors.js";
+import { asEntityTag } from "../../src/core/opaque-values.js";
 import { validateCurrentState } from "../../src/generated/validators.js";
 import { decodeReadResponse } from "../../src/http/response-decoder.js";
 import type { CurrentState } from "../../src/protocol/models.js";
@@ -50,12 +51,14 @@ describe("read response decoder", () => {
     ).rejects.toBeInstanceOf(ProtocolValidationError);
   });
 
-  it("maps an empty 304 only when it carries a valid ETag", async () => {
+  it("maps an empty 304 only when it carries a valid matching sent ETag", async () => {
     await expect(
       decodeReadResponse<CurrentState>(
         new Response(null, { status: 304, headers: { ETag: 'W/"revision-8"' } }),
         validateCurrentState,
         "validateCurrentState",
+        undefined,
+        { ifNoneMatch: asEntityTag('W/"revision-8"') },
       ),
     ).resolves.toEqual({
       kind: "not-modified",
@@ -67,6 +70,8 @@ describe("read response decoder", () => {
         new Response(null, { status: 304 }),
         validateCurrentState,
         "validateCurrentState",
+        undefined,
+        { ifNoneMatch: asEntityTag('W/"revision-8"') },
       ),
     ).rejects.toBeInstanceOf(ProtocolValidationError);
   });
@@ -77,6 +82,8 @@ describe("read response decoder", () => {
         streamedResponseAt304(""),
         validateCurrentState,
         "validateCurrentState",
+        undefined,
+        { ifNoneMatch: asEntityTag('W/"revision-8"') },
       ),
     ).resolves.toMatchObject({ kind: "not-modified" });
     await expect(
@@ -141,7 +148,13 @@ describe("read response decoder", () => {
           : new Response(null, { status, headers: { ETag: etag } });
 
       await expect(
-        decodeReadResponse<CurrentState>(response, validateCurrentState, "validateCurrentState"),
+        decodeReadResponse<CurrentState>(
+          response,
+          validateCurrentState,
+          "validateCurrentState",
+          undefined,
+          { ifNoneMatch: asEntityTag(etag) },
+        ),
       ).resolves.toMatchObject({ metadata: { status, etag } });
     },
   );

@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 import {
   runSequentialMacTrustSequence,
   SEQUENTIAL_MACOS_TRUST_MODE,
+  withActionDeadline,
 } from "./browser-trust-sequence.mjs";
 import {
   assertSafeBrowserArguments,
@@ -173,26 +174,37 @@ function trackBrowser(resources, browser) {
 }
 
 async function closeTrackedBrowser(resources, browser) {
-  await browser.close();
+  await withActionDeadline(() => browser.close(), "close tracked browser", 15_000);
   resources.browsers.delete(browser);
 }
 
-async function cleanupResources(resources) {
+export async function cleanupResources(resources, timeoutMs = 15_000) {
   const errors = [];
   for (const browser of resources.browsers) {
     try {
-      await closeTrackedBrowser(resources, browser);
+      await withActionDeadline(() => browser.close(), "close tracked browser", timeoutMs);
+      resources.browsers.delete(browser);
     } catch (error) {
       errors.push(error);
     }
   }
   if (resources.server?.listening) {
     try {
-      await new Promise((resolve, reject) => {
-        resources.server.close((error) => (error ? reject(error) : resolve()));
-      });
+      await withActionDeadline(
+        () =>
+          new Promise((resolve, reject) => {
+            resources.server.close((error) => (error ? reject(error) : resolve()));
+          }),
+        "close browser helper server",
+        timeoutMs,
+      );
     } catch (error) {
       errors.push(error);
+      try {
+        resources.server.closeAllConnections?.();
+      } catch (connectionError) {
+        errors.push(connectionError);
+      }
     }
   }
   return errors;
@@ -600,11 +612,16 @@ function trustCommand(name) {
   return command;
 }
 
-async function runTrustHook(command, payload) {
+export async function runTrustHook(command, payload, { timeoutMs = 10_000 } = {}) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 10_000) {
+    throw new Error("browser trust hook timeout must be an integer between 1 and 10000");
+  }
   const result = await execFileAsync(command[0], [...command.slice(1), JSON.stringify(payload)], {
     encoding: "utf8",
     maxBuffer: 1024 * 1024,
     shell: false,
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
   });
   const output = result.stdout.trim();
   if (output.length === 0) throw new Error("browser trust hook returned no JSON result");

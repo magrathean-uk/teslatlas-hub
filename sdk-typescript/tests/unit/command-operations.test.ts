@@ -53,7 +53,7 @@ describe("typed command operations", () => {
     const created = await client.createCommand(commandRequest, {
       idempotencyKey: asIdempotencyKey("11111111-1111-4111-8111-111111111111"),
     });
-    const read = await client.getCommand("command/demo", {
+    const read = await client.getCommand("command_demo_0001", {
       ifNoneMatch: asEntityTag('W/"command-1"'),
     });
 
@@ -92,7 +92,7 @@ describe("typed command operations", () => {
       },
       {
         method: "GET",
-        path: "/v1/commands/command%2Fdemo",
+        path: "/v1/commands/command_demo_0001",
         authorization: "Bearer caller-owned",
         protocolVersion: "1.2.0",
         idempotencyKey: null,
@@ -403,6 +403,11 @@ function createClient(
   authorization: () => string = () => "Bearer caller-owned",
   protocolVersion: ClientSession["protocolVersion"] = "1.2.0",
 ): TeslatlasClient {
+  const versionedFetch: FetchImplementation = async (input, init) => {
+    const response = await fetch(input, init);
+    response.headers.set("Teslatlas-Protocol-Version", protocolVersion);
+    return response;
+  };
   const session: ClientSession = {
     descriptor: sessionDescriptor,
     protocolVersion,
@@ -410,7 +415,7 @@ function createClient(
     apiTransport: new FetchTransport({
       baseUrl: "https://api.example.invalid",
       authorization,
-      fetch,
+      fetch: versionedFetch,
     }),
     eventTransport: new FetchTransport({ baseUrl: "https://events.example.invalid", fetch }),
   };

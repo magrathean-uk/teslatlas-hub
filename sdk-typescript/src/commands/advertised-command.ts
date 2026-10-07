@@ -1,7 +1,18 @@
-import { Ajv2020, type Schema } from "ajv/dist/2020.js";
+import { Ajv2020, type Schema, type ValidateFunction } from "ajv/dist/2020.js";
 import { ProtocolValidationError } from "../core/errors.js";
 import { requireCapability } from "../protocol/capabilities.js";
 import type { CommandRequest, HubDescriptor } from "../protocol/models.js";
+import { snapshotJsonRequest } from "../http/json-request-snapshot.js";
+
+interface CachedSchema {
+  readonly body: string;
+  readonly validate: ValidateFunction;
+}
+
+// One current compilation per live schema object. Replacing a descriptor does
+// not retain its schemas, and nested mutation replaces rather than grows an entry.
+const schemaValidators = new WeakMap<object, CachedSchema>();
+const booleanValidators = new Map<boolean, CachedSchema>();
 
 export function validateAdvertisedCommand(
   descriptor: HubDescriptor,
@@ -25,10 +36,22 @@ export function validateAdvertisedCommand(
 }
 
 function matchesJsonSchema(schema: unknown, value: unknown): boolean {
-  const synchronousSchema = asSynchronousSchema(schema);
-  if (synchronousSchema === undefined) return false;
   try {
-    return new Ajv2020({ allErrors: false, strict: false }).compile(synchronousSchema)(value);
+    const snapshot = snapshotJsonRequest(schema);
+    const synchronousSchema = asSynchronousSchema(snapshot.value);
+    if (synchronousSchema === undefined) return false;
+    const cached =
+      typeof schema === "boolean"
+        ? booleanValidators.get(schema)
+        : schema !== null && typeof schema === "object"
+          ? schemaValidators.get(schema)
+          : undefined;
+    if (cached?.body === snapshot.body) return cached.validate(value) === true;
+    const validate = new Ajv2020({ allErrors: false, strict: false }).compile(synchronousSchema);
+    const entry = { body: snapshot.body, validate };
+    if (typeof schema === "boolean") booleanValidators.set(schema, entry);
+    else if (schema !== null && typeof schema === "object") schemaValidators.set(schema, entry);
+    return validate(value) === true;
   } catch {
     return false;
   }

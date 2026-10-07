@@ -49,6 +49,11 @@ import {
 } from "../http/response-decoder.js";
 import { asIdempotencyKey } from "../commands/idempotency.js";
 import { asStrongEntityTag } from "../http/strong-etag.js";
+import {
+  InvalidRequestBodyError,
+  snapshotJsonRequest,
+  type JsonRequestSnapshot,
+} from "../http/json-request-snapshot.js";
 import { decodeProtocolValue, type ProtocolValidator } from "../protocol/validate.js";
 import { requireCapability } from "../protocol/capabilities.js";
 import type {
@@ -73,7 +78,10 @@ import type {
   VehiclePage,
 } from "../protocol/models.js";
 import type { ClientSession } from "./types.js";
-import type { SupportedProtocolVersion } from "../protocol/negotiation.js";
+import {
+  negotiateProtocolVersion,
+  type SupportedProtocolVersion,
+} from "../protocol/negotiation.js";
 import {
   InvalidReadOptionsError,
   type ConditionalReadOptions,
@@ -311,9 +319,14 @@ export class TeslatlasClient {
   ): Promise<WriteResult<MetadataRecord>> {
     requireCapability(this.#session.descriptor, "metadata.mutable");
     const normalizedOptions = normalizeRequestOptions(options);
+    throwIfAlreadyAborted(normalizedOptions.signal);
     const validatedVehicleId = validateId(vehicleId);
-    const value = decodeProtocolValue<MetadataCreate>(
+    const snapshot = snapshotJsonRequest(
       body,
+      this.#session.descriptor.limits.max_request_body_bytes,
+    );
+    const value = decodeProtocolValue<MetadataCreate>(
+      snapshot.value,
       validateMetadataCreate,
       "validateMetadataCreate",
     );
@@ -326,7 +339,7 @@ export class TeslatlasClient {
       "validateMetadataRecord",
       { vehicle_id: validatedVehicleId },
       {
-        body: value,
+        body: snapshot,
         ...(normalizedOptions.signal === undefined ? {} : { signal: normalizedOptions.signal }),
       },
       { successStatus: 201, requireStrongEntityTag: true, requireLocation: true },
@@ -355,20 +368,25 @@ export class TeslatlasClient {
     options: IfMatchOptions,
   ): Promise<WriteResult<MetadataRecord>> {
     requireCapability(this.#session.descriptor, "metadata.mutable");
-    const value = decodeProtocolValue<MetadataReplace>(
+    const ifMatch = asStrongEntityTag(options?.ifMatch as string);
+    const signal = options?.signal;
+    throwIfAlreadyAborted(signal);
+    const snapshot = snapshotJsonRequest(
       body,
+      this.#session.descriptor.limits.max_request_body_bytes,
+    );
+    decodeProtocolValue<MetadataReplace>(
+      snapshot.value,
       validateMetadataReplace,
       "validateMetadataReplace",
     );
-    const ifMatch = asStrongEntityTag(options?.ifMatch as string);
-    const signal = options?.signal;
     return this.#write(
       "replaceMetadata",
       validateMetadataRecord,
       "validateMetadataRecord",
       { metadata_id: validateId(metadataId) },
       {
-        body: value,
+        body: snapshot,
         ifMatch,
         ...(signal === undefined ? {} : { signal }),
       },
@@ -383,6 +401,7 @@ export class TeslatlasClient {
     requireCapability(this.#session.descriptor, "metadata.mutable");
     const ifMatch = asStrongEntityTag(options?.ifMatch as string);
     const signal = options?.signal;
+    throwIfAlreadyAborted(signal);
     return this.#write(
       "deleteMetadata",
       validateMetadataTombstone,
@@ -401,26 +420,31 @@ export class TeslatlasClient {
     options: CommandCreateOptions,
   ): Promise<WriteResult<CommandJob>> {
     requireCapability(this.#session.descriptor, "commands.async");
-    const value = decodeProtocolValue<CommandRequest>(
+    const idempotencyKey = asIdempotencyKey(options?.idempotencyKey as string);
+    const signal = options?.signal;
+    throwIfAlreadyAborted(signal);
+    const snapshot = snapshotCommandRequest(
       body,
+      this.#session.descriptor.limits.max_request_body_bytes,
+    );
+    const value = decodeProtocolValue<CommandRequest>(
+      snapshot.value,
       validateCommandRequest,
       "validateCommandRequest",
     );
     validateAdvertisedCommand(this.#session.descriptor, value);
-    const idempotencyKey = asIdempotencyKey(options?.idempotencyKey as string);
-    const signal = options?.signal;
-    throwIfAlreadyAborted(signal);
     return this.#writeCommand(
       "createCommand",
       validateCommandJob,
       "validateCommandJob",
       {},
       {
-        body: value,
+        body: snapshot,
         idempotencyKey,
         ...(signal === undefined ? {} : { signal }),
       },
       { successStatus: 202, requireEntityTag: true, requireLocation: true },
+      value,
     );
   }
 
@@ -459,7 +483,7 @@ export class TeslatlasClient {
     );
   }
 
-  #read<T>(
+  async #read<T>(
     operationName: ReadOperationName,
     validator: ProtocolValidator,
     validatorName: string,
@@ -469,6 +493,9 @@ export class TeslatlasClient {
     requirements: ReadResponseRequirements = {},
   ): Promise<ReadResult<T>> {
     const descriptor = readOperationDescriptors[operationName];
+    const acceptedProtocolVersions = descriptor.versioned
+      ? this.#acceptedResponseVersions()
+      : undefined;
     const request = buildReadRequest(
       descriptor,
       pathValues,
@@ -481,11 +508,17 @@ export class TeslatlasClient {
       operationName === "discoverHub"
         ? this.#session.discoveryTransport
         : this.#session.apiTransport;
-    return transport
-      .request(request.path, request.init)
-      .then((response) =>
-        decodeReadResponse<T>(response, validator, validatorName, options.signal, requirements),
-      );
+    const response = await transport.request(request.path, request.init);
+    const result = await decodeReadResponse<T>(response, validator, validatorName, options.signal, {
+      ...requirements,
+      ...(options.ifNoneMatch === undefined ? {} : { ifNoneMatch: options.ifNoneMatch }),
+      ...(acceptedProtocolVersions === undefined ? {} : { acceptedProtocolVersions }),
+    });
+    if (result.kind === "modified") {
+      validateReadIdentity(operationName, result.value, pathValues, query, validatorName);
+    }
+    throwIfAlreadyAborted(options.signal);
+    return result;
   }
 
   async #write<T>(
@@ -496,6 +529,7 @@ export class TeslatlasClient {
     options: WriteRequestOptions,
     requirements: WriteResponseRequirements,
   ): Promise<WriteResult<T>> {
+    const acceptedProtocolVersions = this.#acceptedResponseVersions();
     const request = buildWriteRequest(
       writeOperationDescriptors[operationName],
       pathValues,
@@ -503,7 +537,30 @@ export class TeslatlasClient {
       options,
     );
     const response = await this.#session.apiTransport.request(request.path, request.init);
-    return decodeWriteResponse<T>(response, validator, validatorName, requirements, options.signal);
+    const result = await decodeWriteResponse<T>(
+      response,
+      validator,
+      validatorName,
+      {
+        ...requirements,
+        acceptedProtocolVersions,
+      },
+      options.signal,
+    );
+    const entity = result.value as Record<string, unknown>;
+    if (operationName === "createMetadata") {
+      requireIdentity(entity, "vehicle_id", pathValues.vehicle_id, validatorName);
+      requireLocationIdentity(
+        result.metadata.location,
+        "/v1/metadata/",
+        entity.metadata_id,
+        validatorName,
+      );
+    } else {
+      requireIdentity(entity, "metadata_id", pathValues.metadata_id, validatorName);
+    }
+    throwIfAlreadyAborted(options.signal);
+    return result;
   }
 
   async #writeCommand<T>(
@@ -513,7 +570,9 @@ export class TeslatlasClient {
     pathValues: Readonly<Record<string, string>>,
     options: WriteRequestOptions,
     requirements: WriteResponseRequirements,
+    expectedCommand: CommandRequest,
   ): Promise<WriteResult<T>> {
+    const acceptedProtocolVersions = this.#acceptedResponseVersions();
     let dispatchStarted = false;
     const request = buildWriteRequest(
       writeOperationDescriptors[operationName],
@@ -534,19 +593,43 @@ export class TeslatlasClient {
       throw error;
     }
     try {
-      return await decodeWriteResponse<T>(
+      const result = await decodeWriteResponse<T>(
         response,
         validator,
         validatorName,
-        requirements,
+        { ...requirements, acceptedProtocolVersions },
         options.signal,
       );
+      const entity = result.value as Record<string, unknown>;
+      for (const key of ["vehicle_id", "command", "command_class"] as const) {
+        requireIdentity(entity, key, expectedCommand[key], validatorName);
+      }
+      requireLocationIdentity(
+        result.metadata.location,
+        "/v1/commands/",
+        entity.command_id,
+        validatorName,
+      );
+      throwIfAlreadyAborted(options.signal);
+      return result;
     } catch (error) {
       if (!(error instanceof ProtocolHttpError)) {
         throw new CommandUncertainError();
       }
       throw error;
     }
+  }
+
+  #acceptedResponseVersions(): readonly SupportedProtocolVersion[] {
+    const versions: readonly SupportedProtocolVersion[] = ["1.0.0", "1.1.0", "1.2.0"];
+    return versions.filter((version) => {
+      if (versions.indexOf(version) > versions.indexOf(this.#session.protocolVersion)) return false;
+      try {
+        return negotiateProtocolVersion(this.#session.descriptor, version) === version;
+      } catch {
+        return false;
+      }
+    });
   }
 
   #normalizePageOptions(options: PageReadOptions): PageReadOptions {
@@ -597,6 +680,71 @@ export class TeslatlasClient {
   }
 }
 
+function requireIdentity(
+  entity: Record<string, unknown>,
+  key: string,
+  expected: unknown,
+  validatorName: string,
+): void {
+  if (entity[key] !== expected) throw new ProtocolValidationError(`${validatorName}.${key}`);
+}
+
+function requireLocationIdentity(
+  location: string | undefined,
+  prefix: string,
+  id: unknown,
+  validatorName: string,
+): void {
+  if (typeof id !== "string" || location !== `${prefix}${encodeURIComponent(id)}`) {
+    throw new ProtocolValidationError(`${validatorName}.location`);
+  }
+}
+
+function validateReadIdentity(
+  operation: ReadOperationName,
+  value: unknown,
+  pathValues: Readonly<Record<string, string>>,
+  query: QueryValues,
+  validatorName: string,
+): void {
+  const entity = value as Record<string, unknown>;
+  const singletonKeys: Partial<Record<ReadOperationName, string>> = {
+    getVehicleCurrentState: "vehicle_id",
+    getDrive: "drive_id",
+    getCharge: "charge_id",
+    getMetadata: "metadata_id",
+    getCommand: "command_id",
+  };
+  const singletonKey = singletonKeys[operation];
+  if (singletonKey !== undefined) {
+    requireIdentity(entity, singletonKey, pathValues[singletonKey], validatorName);
+    return;
+  }
+  const ownerKeys: Partial<Record<ReadOperationName, string>> = {
+    listVehicleDrives: "vehicle_id",
+    listDrivePositions: "drive_id",
+    listVehicleCharges: "vehicle_id",
+    listChargeSamples: "charge_id",
+    listVehicleStates: "vehicle_id",
+    listVehicleUpdates: "vehicle_id",
+    listVehicleMetadata: "vehicle_id",
+  };
+  const ownerKey = ownerKeys[operation];
+  const expected = ownerKey === undefined ? undefined : (pathValues[ownerKey] ?? query[ownerKey]);
+  if (ownerKey !== undefined && expected !== undefined) {
+    for (const item of entity.items as Record<string, unknown>[]) {
+      requireIdentity(item, ownerKey, expected, `${validatorName}.items`);
+    }
+  }
+  if (operation === "listDataQuality" && query.vehicle_id !== undefined) {
+    for (const item of entity.items as Record<string, unknown>[]) {
+      if (item.subject_type === "vehicle") {
+        requireIdentity(item, "subject_id", query.vehicle_id, `${validatorName}.items`);
+      }
+    }
+  }
+}
+
 function normalizeConditionalOptions(options: ConditionalReadOptions): ConditionalReadOptions {
   const ifNoneMatch = normalizeEntityTag(options.ifNoneMatch);
   return {
@@ -609,7 +757,8 @@ function normalizeRequestOptions(options: RequestOptions): RequestOptions {
   if (options === null || typeof options !== "object") {
     throw new InvalidReadOptionsError();
   }
-  return options;
+  const signal = options.signal;
+  return signal === undefined ? {} : { signal };
 }
 
 function normalizeEntityTag(value: EntityTag | undefined): EntityTag | undefined {
@@ -677,6 +826,17 @@ function historyQuery(options: HistoryPageOptions): QueryValues {
     from: options.from,
     to: options.to,
   };
+}
+
+function snapshotCommandRequest(body: unknown, maximumBytes: number): JsonRequestSnapshot {
+  try {
+    return snapshotJsonRequest(body, maximumBytes);
+  } catch (error) {
+    if (error instanceof InvalidRequestBodyError) {
+      throw new ProtocolValidationError("validateCommandRequest");
+    }
+    throw error;
+  }
 }
 
 function validateMetadataEntity(value: unknown): boolean {

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,32 @@ import {
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const imageLockPath = join(repositoryRoot, "tools/node-image-lock.json");
+// Updating the registry lock alone must never authorize an unreviewed image.
+const trustedNodeImage = Object.freeze({
+  tag: "26.10.0-bookworm-slim",
+  index: "sha256:662933cf47f013bc8e4beb31a6116448427a82057ba7c42c97e4c5ba766504c2",
+  arm64: "sha256:131c9695bc02b79f4dbb1ca360f5822d5f67f248a621498c22de5883f94122d0",
+});
+
+export function validateOfficialNodeImageLock(imageLock, dockerfile) {
+  const baseImages = dockerfile.split(/\r?\n/u).filter((line) => /^FROM\s/iu.test(line));
+  if (
+    imageLock?.schema_version !== 1 ||
+    imageLock.registry !== "registry-1.docker.io" ||
+    imageLock.repository !== "library/node" ||
+    imageLock.official_image !== true ||
+    imageLock.tag_observed !== trustedNodeImage.tag ||
+    imageLock.index_media_type !== "application/vnd.oci.image.index.v1+json" ||
+    imageLock.index_digest !== trustedNodeImage.index ||
+    imageLock.linux_arm64_v8_child_digest !== trustedNodeImage.arm64 ||
+    baseImages[0] !==
+      `FROM --platform=linux/arm64 node:${trustedNodeImage.tag}@${trustedNodeImage.index} AS package-check` ||
+    baseImages.slice(1).some((line) => !/^FROM package-check AS (?:test|consumer)$/u.test(line))
+  ) {
+    throw new Error("official Node image provenance lock is invalid");
+  }
+  return imageLock;
+}
 
 export async function validateDockerGateInputs({
   tarball,
@@ -36,19 +62,27 @@ export async function validateDockerGateInputs({
     reviewedPackage: candidateAdmission,
   });
   const imageLock = parseStrictJson(await readFile(imageLockPath, "utf8"), "Node image lock");
-  if (
-    imageLock.schema_version !== 1 ||
-    imageLock.registry !== "registry-1.docker.io" ||
-    imageLock.repository !== "library/node" ||
-    imageLock.official_image !== true ||
-    imageLock.index_digest !==
-      "sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32" ||
-    imageLock.linux_arm64_v8_child_digest !==
-      "sha256:2b028cd57303b2761d24173789c85a013558d6cf20e78f51723385f368b6e34d"
-  ) {
-    throw new Error("official Node image provenance lock is invalid");
-  }
+  validateOfficialNodeImageLock(
+    imageLock,
+    await readFile(join(repositoryRoot, "Dockerfile"), "utf8"),
+  );
   return { archive, candidateAdmission, catalogBinding, imageLock };
+}
+
+export async function stageDockerPackageContext({ context, archivePath }) {
+  await cp(join(repositoryRoot, "Dockerfile"), join(context, "Dockerfile"));
+  await cp(archivePath, join(context, "teslatlas-sdk.tgz"));
+  await cp(join(repositoryRoot, "docker/package-smoke.mjs"), join(context, "package-smoke.mjs"));
+  const consumer = join(context, "consumer");
+  await mkdir(consumer, { mode: 0o700 });
+  await writeFile(
+    join(consumer, "package.json"),
+    `${JSON.stringify({ name: "teslatlas-docker-package-consumer", private: true, type: "module" })}\n`,
+    { mode: 0o600, flag: "wx" },
+  );
+  for (const name of ["node.mjs", "index.html", "app.js", "serve.mjs"]) {
+    await cp(join(repositoryRoot, "examples/hub", name), join(consumer, name));
+  }
 }
 
 export async function runDockerPackageGate(options) {
@@ -66,13 +100,7 @@ export async function runDockerPackageGate(options) {
   let result;
   let primaryError;
   try {
-    await cp(join(repositoryRoot, "Dockerfile"), join(context, "Dockerfile"));
-    await cp(admitted.archive.path, join(context, "teslatlas-sdk.tgz"));
-    await cp(join(repositoryRoot, "docker/package-smoke.mjs"), join(context, "package-smoke.mjs"));
-    await mkdir(join(context, "consumer"), { mode: 0o700 });
-    for (const name of ["package.json", "node.mjs", "index.html", "app.js", "serve.mjs"]) {
-      await cp(join(repositoryRoot, "examples/hub", name), join(context, "consumer", name));
-    }
+    await stageDockerPackageContext({ context, archivePath: admitted.archive.path });
     run("docker", [
       "build",
       "--platform",

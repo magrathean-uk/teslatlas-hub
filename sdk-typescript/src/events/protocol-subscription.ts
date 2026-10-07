@@ -6,13 +6,14 @@ import {
   TransportError,
   containsControlCharacters,
 } from "../core/errors.js";
-import { protocolEventCatalog } from "../generated/protocol-cases.js";
+import { protocolEventCatalog } from "../generated/event-catalog.js";
 import { validateEvent } from "../generated/validators.js";
 import { decodeProtocolProblemResponse } from "../http/response-decoder.js";
 import type { ClientSession } from "../client/types.js";
 import { requireCapability } from "../protocol/capabilities.js";
 import type { ProtocolEvent } from "../protocol/models.js";
 import type { SupportedProtocolVersion } from "../protocol/negotiation.js";
+import { parseProtocolJson } from "../http/bounded-json.js";
 import { decodeProtocolValue } from "../protocol/validate.js";
 import {
   subscribeToSse,
@@ -221,7 +222,7 @@ function decodeProtocolEvent(
 
   let rawValue: unknown;
   try {
-    rawValue = JSON.parse(event.data) as unknown;
+    rawValue = parseProtocolJson(event.data, "validateEvent.json");
   } catch {
     throw new ProtocolValidationError("validateEvent.json");
   }

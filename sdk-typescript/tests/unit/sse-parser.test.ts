@@ -85,6 +85,53 @@ describe("incremental SSE parser", () => {
       { type: "event", event: "message", data: "resumed", lastEventId: "event-6" },
     ]);
   });
+  it("rejects an unterminated UTF-8 line beyond the event budget plus framing and cancels upstream", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encode("🌍".repeat(Math.floor((8 * 1_024 * 1_024 + 6) / 4) + 1)));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    await expect(collect(parseSseStream(stream))).rejects.toMatchObject({
+      code: "protocol_validation",
+      validator: "Sse.lineSize",
+    });
+    expect(cancelled).toBe(true);
+  });
+
+  it("accepts a single data line at the exact aggregate byte bound", async () => {
+    const data = "a".repeat(8 * 1_024 * 1_024 - 1);
+    await expect(
+      collect(parseSseStream(streamFrom([encode(`data: ${data}\n\n`)]))),
+    ).resolves.toMatchObject([{ type: "event", data }]);
+  });
+
+  it("rejects a single data line beyond the aggregate byte bound", async () => {
+    await expect(
+      collect(parseSseStream(streamFrom([encode(`data: ${"a".repeat(8 * 1_024 * 1_024)}\n\n`)]))),
+    ).rejects.toMatchObject({ validator: "Sse.eventSize" });
+  });
+
+  it("bounds many data lines before an event terminator", async () => {
+    let cancelled = false;
+    const line = encode(`data: ${"a".repeat(65_000)}\n`);
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(line);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    await expect(collect(parseSseStream(stream))).rejects.toMatchObject({
+      code: "protocol_validation",
+      validator: "Sse.eventSize",
+    });
+    expect(cancelled).toBe(true);
+  });
 });
 
 function encode(value: string): Uint8Array {

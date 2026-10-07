@@ -75,6 +75,12 @@ export function validateReviewedPackageBinding(options: {
   archive: PackageArchiveBinding;
   sourceExport: string;
 }): Promise<ReviewedPackageBinding>;
+export function validatePackageAdmissionReceipt(options: {
+  role: "candidate" | "predecessor";
+  receipt: PackageAdmissionReceipt;
+  archive: PackageArchiveBinding;
+  source: SourceExportBinding;
+}): PackageAdmissionReceipt;
 export function readCatalogBinding(options: {
   catalogPath: string;
   catalogSha256: string;

@@ -1,17 +1,28 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import standaloneCode from "ajv/dist/standalone/index.js";
+import { _ } from "ajv/dist/compile/codegen/index.js";
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const installedRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const args = process.argv.slice(2);
+if (
+  args.length !== 0 &&
+  (args.length !== 2 || args[0] !== "--output-root" || !isAbsolute(args[1]))
+) {
+  throw new Error("Usage: generate-protocol.mjs [--output-root ABSOLUTE_STAGED_ROOT]");
+}
+const repositoryRoot = args.length === 0 ? installedRoot : args[1];
 const sourceRoot = join(repositoryRoot, "protocol/source");
 const outputRoot = resolve(
-  process.env.TESLATLAS_PROTOCOL_OUTPUT_DIR ?? join(repositoryRoot, "src/generated"),
+  args.length === 0
+    ? (process.env.TESLATLAS_PROTOCOL_OUTPUT_DIR ?? join(repositoryRoot, "src/generated"))
+    : join(repositoryRoot, "src/generated"),
 );
-const npmExecutable = process.platform === "win32" ? "npm.cmd" : "npm";
+const openapiExecutable = join(installedRoot, "node_modules/openapi-typescript/bin/cli.js");
 
 const validatorRefs = {
   validateDiscovery: "urn:teslatlas:protocol:schema:discovery:1.2.0",
@@ -55,14 +66,48 @@ async function readJson(path) {
   return JSON.parse(await readFile(path, "utf8"));
 }
 
+// Augment in-memory embedded schema inputs only; frozen Protocol files stay intact.
+function withExactIntegers(value) {
+  if (Array.isArray(value)) return value.map(withExactIntegers);
+  if (value === null || typeof value !== "object") return value;
+  const output = Object.fromEntries(
+    Object.entries(value).map(([key, child]) => [key, withExactIntegers(child)]),
+  );
+  if (value.type === "integer" || (Array.isArray(value.type) && value.type.includes("integer"))) {
+    output.exactWireInteger = true;
+  }
+  return output;
+}
+
+function createAjv() {
+  const ajv = new Ajv2020({
+    allErrors: false,
+    strictNumbers: true,
+    code: { esm: true, source: true },
+    strict: false,
+  });
+  ajv.addKeyword({
+    keyword: "exactWireInteger",
+    type: "number",
+    schemaType: "boolean",
+    code(context) {
+      const { gen, data, it } = context;
+      const check = gen.scopeValue("func", { ref: () => true, code: _`isExactJsonInteger` });
+      context.fail(_`!${check}(${data}, ${it.parentData}, ${it.parentDataProperty})`);
+    },
+  });
+  return ajv;
+}
+
 async function generateValidators() {
   const schemaDirectory = join(sourceRoot, "schemas");
   const schemaFiles = (await (await import("node:fs/promises")).readdir(schemaDirectory))
     .filter((file) => file.endsWith(".schema.json"))
     .sort();
-  const ajv = new Ajv2020({ allErrors: true, code: { esm: true, source: true }, strict: false });
+  const ajv = createAjv();
   addFormats(ajv);
-  for (const file of schemaFiles) ajv.addSchema(await readJson(join(schemaDirectory, file)));
+  for (const file of schemaFiles)
+    ajv.addSchema(withExactIntegers(await readJson(join(schemaDirectory, file))));
   const standalone = standaloneCode(ajv, validatorRefs)
     .replaceAll('require("ajv-formats/dist/formats").fullFormats', "ajvFormats.fullFormats")
     .replaceAll('require("ajv/dist/runtime/equal").default', "ajvEqualRuntime")
@@ -72,6 +117,7 @@ async function generateValidators() {
   }
   return `// @ts-nocheck
 // @generated
+import { isExactJsonInteger } from "../http/bounded-json.js";
 import ajvFormats from "ajv-formats/dist/formats.js";
 import ajvEqual from "ajv/dist/runtime/equal.js";
 import ajvUcs2Length from "ajv/dist/runtime/ucs2length.js";
@@ -82,7 +128,7 @@ ${standalone}`;
 
 async function generateHubValidators() {
   const profileDirectory = join(sourceRoot, "profiles/hub-http-v1/1.0.0");
-  const ajv = new Ajv2020({ allErrors: true, code: { esm: true, source: true }, strict: false });
+  const ajv = createAjv();
   addFormats(ajv);
   for (const file of [
     "auth.schema.json",
@@ -90,7 +136,7 @@ async function generateHubValidators() {
     "errors.schema.json",
     "resources.schema.json",
   ]) {
-    ajv.addSchema(await readJson(join(profileDirectory, file)));
+    ajv.addSchema(withExactIntegers(await readJson(join(profileDirectory, file))));
   }
   const standalone = standaloneCode(ajv, hubValidatorRefs)
     .replaceAll('require("ajv-formats/dist/formats").fullFormats', "ajvFormats.fullFormats")
@@ -100,6 +146,7 @@ async function generateHubValidators() {
     throw new Error("Generated Hub validators must not contain CommonJS runtime helpers");
   }
   return `// @generated
+import { isExactJsonInteger } from "../http/bounded-json.js";
 import ajvFormats from "ajv-formats/dist/formats.js";
 import ajvEqual from "ajv/dist/runtime/equal.js";
 import ajvUcs2Length from "ajv/dist/runtime/ucs2length.js";
@@ -149,14 +196,18 @@ async function generateCases() {
       bodyPaths.map(async (path) => [path, await readJson(join(sourceRoot, path))]),
     ),
   );
-  const eventCatalog = eventCatalogFromContract(
-    await readJson(join(sourceRoot, "events/teslatlas-v1.sse.json")),
-  );
   const documents = [
     ...(await Promise.all(compatibilityPaths.map((path) => readJson(join(sourceRoot, path))))),
     ...cases,
   ];
-  return `// @generated\nexport const protocolCases: readonly unknown[] = Object.freeze(${JSON.stringify(documents, null, 2)});\nexport const protocolCaseBodies: Readonly<Record<string, unknown>> = Object.freeze(${JSON.stringify(bodies, null, 2)});\nexport const protocolEventCatalog: readonly unknown[] = Object.freeze(${JSON.stringify(eventCatalog, null, 2)});\n`;
+  return `// @generated\nexport const protocolCases: readonly unknown[] = Object.freeze(${JSON.stringify(documents, null, 2)});\nexport const protocolCaseBodies: Readonly<Record<string, unknown>> = Object.freeze(${JSON.stringify(bodies, null, 2)});\n`;
+}
+
+async function generateEventCatalog() {
+  const catalog = eventCatalogFromContract(
+    await readJson(join(sourceRoot, "events/teslatlas-v1.sse.json")),
+  );
+  return `// @generated\nexport const protocolEventCatalog: readonly unknown[] = Object.freeze(${JSON.stringify(catalog, null, 2)});\n`;
 }
 
 function eventCatalogFromContract(contract) {
@@ -184,17 +235,14 @@ function eventCatalogFromContract(contract) {
 await mkdir(outputRoot, { recursive: true });
 const protocolOutput = join(outputRoot, "protocol.ts");
 execFileSync(
-  npmExecutable,
+  process.execPath,
   [
-    "exec",
-    "--offline",
-    "--",
-    "openapi-typescript",
-    "protocol/source/openapi/teslatlas-v1.openapi.json",
+    openapiExecutable,
+    join(sourceRoot, "openapi/teslatlas-v1.openapi.json"),
     "--output",
     protocolOutput,
   ],
-  { cwd: repositoryRoot, stdio: "inherit" },
+  { cwd: installedRoot, stdio: "inherit" },
 );
 await writeFile(
   protocolOutput,
@@ -202,20 +250,18 @@ await writeFile(
 );
 await writeFile(join(outputRoot, "validators.ts"), await generateValidators());
 await writeFile(join(outputRoot, "protocol-cases.ts"), await generateCases());
+await writeFile(join(outputRoot, "event-catalog.ts"), await generateEventCatalog());
 
 const hubProtocolOutput = join(outputRoot, "hub-protocol.ts");
 execFileSync(
-  npmExecutable,
+  process.execPath,
   [
-    "exec",
-    "--offline",
-    "--",
-    "openapi-typescript",
-    "protocol/source/profiles/hub-http-v1/1.0.0/openapi.json",
+    openapiExecutable,
+    join(sourceRoot, "profiles/hub-http-v1/1.0.0/openapi.json"),
     "--output",
     hubProtocolOutput,
   ],
-  { cwd: repositoryRoot, stdio: "inherit" },
+  { cwd: installedRoot, stdio: "inherit" },
 );
 await writeFile(
   hubProtocolOutput,

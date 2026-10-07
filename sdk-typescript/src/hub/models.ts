@@ -52,6 +52,11 @@ export interface HubCredential {
   readonly expiresAtMs: number;
 }
 
+/**
+ * Rotation uses one loaded credential snapshot for authentication and identity.
+ * Saves/clears through a single client are ordered. Callers sharing a store across
+ * clients must coordinate rotations and external writes; this interface has no CAS.
+ */
 export interface HubCredentialStore {
   load(): MaybePromise<HubCredential | undefined>;
   save(credential: HubCredential): MaybePromise<void>;

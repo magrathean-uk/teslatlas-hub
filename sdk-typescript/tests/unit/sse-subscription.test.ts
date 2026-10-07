@@ -389,6 +389,25 @@ describe("SSE subscription", () => {
     expect(error).not.toHaveProperty("cause");
     expect(String(error)).not.toContain("secret-value");
   });
+  it("treats resource violations as terminal despite a reconnect policy", async () => {
+    let fetches = 0;
+    let reconnects = 0;
+    const transport = transportWith(async () => {
+      fetches += 1;
+      return eventStreamResponse(`data: ${"a".repeat(8 * 1_024 * 1_024)}\n\n`);
+    });
+    const iterator = subscribeToSse({
+      transport,
+      path: "/events",
+      reconnect: () => {
+        reconnects += 1;
+        return 0;
+      },
+    })[Symbol.asyncIterator]();
+    await expect(iterator.next()).rejects.toMatchObject({ validator: "Sse.eventSize" });
+    expect(fetches).toBe(1);
+    expect(reconnects).toBe(0);
+  });
 });
 
 function transportWith(fetch: FetchImplementation): FetchTransport {

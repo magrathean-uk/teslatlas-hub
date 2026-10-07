@@ -1,3 +1,14 @@
+import { ProtocolValidationError } from "../core/errors.js";
+
+const encoder = new TextEncoder();
+const maximumEventDataBytes = 8 * 1_024 * 1_024;
+// A single data line can use the event budget plus its "data: " framing.
+// Aggregate data accounting below still includes each appended newline.
+const maximumLineBytes = maximumEventDataBytes + 6;
+
+/** @internal Resource violations are terminal, rather than reconnectable IO. */
+export class SseLimitError extends ProtocolValidationError {}
+
 export interface SseEvent {
   readonly event: string;
   readonly data: string;
@@ -19,6 +30,7 @@ export type SseStreamItem =
 
 export interface ParseSseStreamOptions {
   readonly initialLastEventId?: string;
+  readonly signal?: AbortSignal;
 }
 
 export async function* parseSseStream(
@@ -26,7 +38,8 @@ export async function* parseSseStream(
   options: ParseSseStreamOptions = {},
 ): AsyncIterable<SseStreamItem> {
   const parser = new IncrementalSseParser(options.initialLastEventId ?? "");
-  const decoder = new TextDecoder();
+  // Preserve the BOM for the parser to strip exactly one leading U+FEFF.
+  const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
   let reader: ReadableStreamDefaultReader<Uint8Array>;
   try {
     reader = stream.getReader();
@@ -34,29 +47,55 @@ export async function* parseSseStream(
     throw new SseStreamReadError();
   }
   let completed = false;
+  const throwIfAborted = () => {
+    if (options.signal?.aborted === true) {
+      throw options.signal.reason ?? new DOMException("Aborted", "AbortError");
+    }
+  };
+  const onAbort = () => {
+    void reader.cancel().catch(() => {});
+  };
+  options.signal?.addEventListener("abort", onAbort, { once: true });
 
   try {
+    throwIfAborted();
     while (true) {
       let result: ReadableStreamReadResult<Uint8Array>;
       try {
         result = await reader.read();
+        throwIfAborted();
       } catch {
+        throwIfAborted();
         throw new SseStreamReadError();
       }
       if (result.done) {
         completed = true;
         break;
       }
-      parser.feed(decoder.decode(result.value, { stream: true }));
-      yield* parser.takeItems();
+      // Feed bounded windows so a single transport chunk cannot queue an
+      // arbitrary number of complete events before backpressure reaches it.
+      for (let offset = 0; offset < result.value.byteLength; offset += 4_096) {
+        parser.feed(
+          decoder.decode(result.value.subarray(offset, offset + 4_096), { stream: true }),
+        );
+        for (const item of parser.takeItems()) {
+          throwIfAborted();
+          yield item;
+        }
+      }
     }
 
     parser.feed(decoder.decode());
-    yield* parser.takeItems();
+    for (const item of parser.takeItems()) {
+      throwIfAborted();
+      yield item;
+    }
   } finally {
+    options.signal?.removeEventListener("abort", onAbort);
     if (!completed) {
       try {
-        await reader.cancel();
+        // Initiate cleanup without making consumer return wait on upstream code.
+        void reader.cancel().catch(() => {});
       } catch {}
     }
     reader.releaseLock();
@@ -65,8 +104,13 @@ export async function* parseSseStream(
 
 class IncrementalSseParser {
   readonly #items: SseStreamItem[] = [];
-  readonly #dataLines: string[] = [];
-  #line = "";
+  readonly #dataFragments: string[] = [];
+  readonly #lineFragments: string[] = [];
+  #pendingData = "";
+  #pendingLine = "";
+  #emptyDataLines = 0;
+  #lineBytes = 0;
+  #eventDataBytes = 0;
   #skipLineFeed = false;
   #atStart = true;
   #eventType = "";
@@ -86,24 +130,29 @@ class IncrementalSseParser {
       }
     }
 
-    for (const character of value) {
+    const delimiter = /[\r\n]/gu;
+    let offset = 0;
+    while (offset < value.length) {
       if (this.#skipLineFeed) {
         this.#skipLineFeed = false;
-        if (character === "\n") {
+        if (value[offset] === "\n") {
+          offset += 1;
           continue;
         }
       }
-
-      if (character === "\r") {
-        this.#handleLine(this.#line);
-        this.#line = "";
-        this.#skipLineFeed = true;
-      } else if (character === "\n") {
-        this.#handleLine(this.#line);
-        this.#line = "";
-      } else {
-        this.#line += character;
-      }
+      delimiter.lastIndex = offset;
+      const end = delimiter.exec(value)?.index ?? value.length;
+      const fragment = value.slice(offset, end);
+      this.#lineBytes += fragment.length === 0 ? 0 : encoder.encode(fragment).byteLength;
+      if (this.#lineBytes > maximumLineBytes) throw new SseLimitError("Sse.lineSize");
+      this.#appendLine(fragment);
+      if (end === value.length) break;
+      this.#handleLine(this.#lineFragments.join("") + this.#pendingLine);
+      this.#lineFragments.length = 0;
+      this.#pendingLine = "";
+      this.#lineBytes = 0;
+      this.#skipLineFeed = value[end] === "\r";
+      offset = end + 1;
     }
   }
 
@@ -134,7 +183,13 @@ class IncrementalSseParser {
 
     switch (field) {
       case "data":
-        this.#dataLines.push(value);
+        this.#eventDataBytes += (value.length === 0 ? 0 : encoder.encode(value).byteLength) + 1;
+        if (this.#eventDataBytes > maximumEventDataBytes) throw new SseLimitError("Sse.eventSize");
+        if (value.length === 0) this.#emptyDataLines += 1;
+        else {
+          this.#flushEmptyData();
+          this.#appendData(`${value}\n`);
+        }
         break;
       case "event":
         this.#eventType = value;
@@ -159,19 +214,56 @@ class IncrementalSseParser {
     }
   }
 
+  #appendLine(value: string): void {
+    // Small transport chunks cannot create an entry for every byte of a line.
+    for (let offset = 0; offset < value.length; ) {
+      const take = Math.min(4096 - this.#pendingLine.length, value.length - offset);
+      this.#pendingLine += value.slice(offset, offset + take);
+      offset += take;
+      if (this.#pendingLine.length === 4096) {
+        this.#lineFragments.push(this.#pendingLine);
+        this.#pendingLine = "";
+      }
+    }
+  }
+
+  #appendData(value: string): void {
+    // Bounded segments avoid per-character line ropes and per-empty-line arrays.
+    for (let offset = 0; offset < value.length; ) {
+      const take = Math.min(4096 - this.#pendingData.length, value.length - offset);
+      this.#pendingData += value.slice(offset, offset + take);
+      offset += take;
+      if (this.#pendingData.length === 4096) {
+        this.#dataFragments.push(this.#pendingData);
+        this.#pendingData = "";
+      }
+    }
+  }
+
+  #flushEmptyData(): void {
+    if (this.#emptyDataLines > 0) {
+      this.#appendData("\n".repeat(this.#emptyDataLines));
+      this.#emptyDataLines = 0;
+    }
+  }
+
   #dispatchBlock(): void {
-    if (this.#dataLines.length > 0) {
+    if (this.#eventDataBytes > 0) {
+      this.#flushEmptyData();
       this.#items.push({
         type: "event",
         event: this.#eventType.length === 0 ? "message" : this.#eventType,
-        data: this.#dataLines.join("\n"),
+        data: (this.#dataFragments.join("") + this.#pendingData).slice(0, -1),
         lastEventId: this.#lastEventId,
       });
     } else if (this.#blockIdChanged) {
       this.#items.push({ type: "checkpoint", lastEventId: this.#lastEventId });
     }
 
-    this.#dataLines.length = 0;
+    this.#dataFragments.length = 0;
+    this.#pendingData = "";
+    this.#emptyDataLines = 0;
+    this.#eventDataBytes = 0;
     this.#eventType = "";
     this.#blockIdChanged = false;
   }

@@ -12,6 +12,14 @@ export function validateDockerGateInputs(
   options: DockerGateOptions,
 ): Promise<Record<string, unknown>>;
 export function runDockerPackageGate(options: DockerGateOptions): Promise<Record<string, unknown>>;
+export function validateOfficialNodeImageLock(
+  imageLock: unknown,
+  dockerfile: string,
+): Record<string, unknown>;
+export function stageDockerPackageContext(options: {
+  context: string;
+  archivePath: string;
+}): Promise<void>;
 export function cleanupDockerArtifacts(options: {
   tag: string;
   context: string;

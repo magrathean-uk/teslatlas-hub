@@ -4,7 +4,7 @@ This repository contains the browser and Node.js bindings for Teslatlas. Keep ch
 
 ## Development
 
-Use Node 26.7.0 and npm 11.19.0, as pinned in `package.json` and `.node-version`. These are reproducibility versions, not minimum supported versions. The package is private. Work from a source checkout and use a locally packed archive for external consumer checks.
+Use Node 26.10.0 and npm 12.1.0, as pinned in `package.json` and `.node-version`. These are reproducibility versions, not minimum supported versions. Historical runtime acceptance remains recorded separately in `package.json`. The package is private. Work from a source checkout and use a locally packed archive for external consumer checks.
 
 In the multi-repository workspace, follow its active instructions and command wrapper. The commands below are package-level commands. `npm ci` installs dependencies; `npm run build` replaces this checkout's `dist/` directory. The build script does not provide an output-directory override.
 

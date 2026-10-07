@@ -112,3 +112,21 @@ The SDK does not implement credential storage. `AuthorizationProvider` supplies
 one complete authorization value per request. `SseCheckpointStore` is also
 caller-owned; scope it to the authorization principal and stable stream filters
 that own the checkpoint.
+
+## Response resource bounds
+
+The rich-protocol discovery, success and problem JSON readers enforce a 16 MiB
+received-byte limit before parsing, including chunked bodies with no reliable
+Content-Length. Cancellation interrupts a stalled read and cancels its upstream
+reader. The current-Hub binding retains its separate 1 MiB response limit.
+
+SSE accepts at most 8 MiB plus 6 bytes per UTF-8 line and 8 MiB of data fields
+per event (including their appended line separators). These are local admission
+bounds; framing bytes can make total event wire input larger.
+Oversize lines/events cancel the reader and terminate the subscription without
+consulting the reconnect policy. IO failures retain the normal caller-owned
+reconnect policy and checkpoints. Parsing applies backpressure within large chunks.
+
+Current-Hub drive pages are admitted only within the requested limit and half-open
+start-time range, in descending start time and ID order, with matching vehicle
+identity. A malformed page is rejected before its cursor is retained.

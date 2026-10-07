@@ -21,7 +21,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 if (operation === "fail") {
   console.error("synthetic supervisor stderr");
   process.exitCode = 12;
-} else if (operation === "serve") {
+} else if (["serve", "serve-fail", "serve-signal"].includes(operation)) {
   await writeFile(statePath, '{"status":"serving"}\\n', { mode: 0o600 });
   while (true) {
     try {
@@ -34,6 +34,8 @@ if (operation === "fail") {
   }
   await writeFile(statePath, '{"status":"stopped"}\\n', { mode: 0o600 });
   console.log("fake supervisor stopped");
+  if (operation === "serve-fail") process.exitCode = 14;
+  if (operation === "serve-signal") process.kill(process.pid, "SIGTERM");
 } else {
   throw new Error("unsupported fake supervisor operation");
 }
@@ -260,6 +262,25 @@ async function main() {
     );
     await rm(success.caseRoot, { force: true, recursive: true });
 
+    for (const operation of ["serve-fail", "serve-signal"]) {
+      const failedClose = await runCase(fixtureRoot, scripts, operation, {
+        controls: ["start"],
+        runnerOperation: "success",
+        supervisorOperation: operation,
+      });
+      assert.equal(failedClose.invocation.code, 1);
+      assert.equal(failedClose.result.status, "failed");
+      assert.equal(failedClose.result.supervisorReady, true);
+      assert.equal(failedClose.result.children.runner.exit.code, 0);
+      assert.equal(failedClose.result.children.cleanup[0].exit.code, 0);
+      assert.equal(failedClose.result.cleanup.supervisorClosed, true);
+      assert.equal(failedClose.result.failure.phase, "supervisor-close");
+      if (operation === "serve-fail")
+        assert.equal(failedClose.result.children.supervisor.exit.code, 14);
+      else assert.equal(failedClose.result.children.supervisor.exit.signal, "SIGTERM");
+      await rm(failedClose.caseRoot, { force: true, recursive: true });
+    }
+
     const supervisorFailure = await runCase(fixtureRoot, scripts, "supervisor-failure", {
       controls: ["start"],
       runnerOperation: "success",
@@ -357,6 +378,8 @@ async function main() {
           "stale-receipt-before-preflight-mutation",
           "stale-capture-before-preflight-mutation",
           "success",
+          "post-readiness-supervisor-nonzero",
+          "post-readiness-supervisor-signal",
           "supervisor-failure",
           "runner-failure",
           "control-failure",

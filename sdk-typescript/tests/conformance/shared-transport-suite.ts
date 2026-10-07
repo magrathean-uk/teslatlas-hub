@@ -34,7 +34,10 @@ export function defineTransportConformanceSuite(runtimeName: string, sdk: Runtim
             return jsonGet(discovery, 'W/"discovery-1"');
           }
           observed.push({ url: String(input), headers: new Headers(init?.headers) });
-          return new Response(null, { status: 304, headers: { ETag: 'W/"revision-8"' } });
+          return new Response(null, {
+            status: 304,
+            headers: { ETag: 'W/"revision-7"', "Teslatlas-Protocol-Version": "1.2.0" },
+          });
         }),
       );
 
@@ -45,7 +48,7 @@ export function defineTransportConformanceSuite(runtimeName: string, sdk: Runtim
 
       expect(response).toEqual({
         kind: "not-modified",
-        metadata: { status: 304, etag: 'W/"revision-8"' },
+        metadata: { status: 304, etag: 'W/"revision-7"', protocolVersion: "1.2.0" },
       });
       expect(observed).toHaveLength(1);
       expect(observed[0]?.url).toBe(
@@ -92,10 +95,10 @@ export function defineTransportConformanceSuite(runtimeName: string, sdk: Runtim
           return jsonGet(discovery, 'W/"discovery-1"');
         }
         calls += 1;
+        controller.abort(reason);
         throw init?.signal?.reason;
       };
       const client = await sdk.createClient(options(fetch));
-      controller.abort(reason);
 
       await expect(client.listVehicles({ signal: controller.signal })).rejects.toBe(reason);
       expect(calls).toBe(1);

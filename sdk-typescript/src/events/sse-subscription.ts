@@ -1,7 +1,8 @@
 import type { MaybePromise } from "../auth/credential-store.js";
 import { containsControlCharacters, TeslatlasError, TransportError } from "../core/errors.js";
 import type { FetchTransport } from "../http/fetch-transport.js";
-import { parseSseStream, SseStreamReadError, type SseEvent } from "./sse-parser.js";
+import { cancelResponseBody } from "../http/response-ownership.js";
+import { parseSseStream, SseLimitError, SseStreamReadError, type SseEvent } from "./sse-parser.js";
 
 export type { SseEvent } from "./sse-parser.js";
 
@@ -69,9 +70,10 @@ export class SseBodyError extends TeslatlasError<"sse_body_error"> {
 
 export class InvalidSseCheckpointError extends TeslatlasError<"invalid_sse_checkpoint"> {
   constructor() {
-    super("SSE checkpoint must contain no control characters and remain caller-owned", {
-      code: "invalid_sse_checkpoint",
-    });
+    super(
+      "SSE checkpoint must be at most 2048 characters with no control characters and remain caller-owned",
+      { code: "invalid_sse_checkpoint" },
+    );
   }
 }
 
@@ -99,7 +101,9 @@ export async function* subscribeToSse<TEvent = SseEvent>(
   assertRetryBounds(minimumServerRetryMilliseconds, maximumServerRetryMilliseconds);
   validateProtocolVersion(options.protocolVersion);
 
+  throwIfAborted(options.signal);
   let committedLastEventId = await loadCheckpoint(options.checkpoint);
+  throwIfAborted(options.signal);
   validateCheckpoint(committedLastEventId);
   let reconnectAttempt = 1;
 
@@ -124,68 +128,81 @@ export async function* subscribeToSse<TEvent = SseEvent>(
         ...(options.redirect === undefined ? {} : { redirect: options.redirect }),
         ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
-      throwIfAborted(options.signal);
-
-      const action =
-        options.responseClassifier === undefined
-          ? response.ok
-            ? "continue"
-            : { error: new SseHttpError(response.status) }
-          : await options.responseClassifier(response);
-      if (action === "terminal") {
-        return;
-      }
-      if (action !== "continue") {
-        throw action.error;
-      }
-      if (!response.ok) {
-        throw new SseHttpError(response.status);
-      }
-      if (!isEventStreamContentType(response.headers.get("Content-Type"))) {
-        throw new SseContentTypeError();
-      }
-      if (response.body === null) {
-        throw new SseBodyError();
-      }
-
-      for await (const item of parseSseStream(response.body, {
-        ...(committedLastEventId === undefined ? {} : { initialLastEventId: committedLastEventId }),
-      })) {
+      let parserOwnsBody = false;
+      try {
         throwIfAborted(options.signal);
-        if (item.type === "retry") {
-          serverRetryMilliseconds = item.milliseconds;
-          continue;
+
+        const action =
+          options.responseClassifier === undefined
+            ? response.ok
+              ? "continue"
+              : { error: new SseHttpError(response.status) }
+            : await options.responseClassifier(response);
+        throwIfAborted(options.signal);
+        if (action === "terminal") {
+          return;
         }
-        if (item.type === "checkpoint") {
+        if (action !== "continue") {
+          throw action.error;
+        }
+        if (!response.ok) {
+          throw new SseHttpError(response.status);
+        }
+        if (!isEventStreamContentType(response.headers.get("Content-Type"))) {
+          throw new SseContentTypeError();
+        }
+        if (response.body === null) {
+          throw new SseBodyError();
+        }
+
+        parserOwnsBody = true;
+        for await (const item of parseSseStream(response.body, {
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+          ...(committedLastEventId === undefined
+            ? {}
+            : { initialLastEventId: committedLastEventId }),
+        })) {
+          throwIfAborted(options.signal);
+          if (item.type === "retry") {
+            serverRetryMilliseconds = item.milliseconds;
+            continue;
+          }
+          if (item.type === "checkpoint") {
+            committedLastEventId = normalizeCheckpoint(item.lastEventId);
+            await saveCheckpoint(options.checkpoint, committedLastEventId);
+            continue;
+          }
+
+          const rawEvent = {
+            event: item.event,
+            data: item.data,
+            lastEventId: item.lastEventId,
+          };
+          const mappedEvent =
+            options.eventMapper === undefined
+              ? (rawEvent as unknown as TEvent)
+              : await options.eventMapper(rawEvent);
+          throwIfAborted(options.signal);
+          if (mappedEvent === undefined) {
+            committedLastEventId = normalizeCheckpoint(item.lastEventId);
+            await saveCheckpoint(options.checkpoint, committedLastEventId);
+            continue;
+          }
+          yield mappedEvent;
+          throwIfAborted(options.signal);
           committedLastEventId = normalizeCheckpoint(item.lastEventId);
           await saveCheckpoint(options.checkpoint, committedLastEventId);
-          continue;
         }
-
-        const rawEvent = {
-          event: item.event,
-          data: item.data,
-          lastEventId: item.lastEventId,
-        };
-        const mappedEvent =
-          options.eventMapper === undefined
-            ? (rawEvent as unknown as TEvent)
-            : await options.eventMapper(rawEvent);
-        if (mappedEvent === undefined) {
-          committedLastEventId = normalizeCheckpoint(item.lastEventId);
-          await saveCheckpoint(options.checkpoint, committedLastEventId);
-          continue;
+      } finally {
+        if (!parserOwnsBody) {
+          await cancelResponseBody(response);
         }
-        yield mappedEvent;
-        throwIfAborted(options.signal);
-        committedLastEventId = normalizeCheckpoint(item.lastEventId);
-        await saveCheckpoint(options.checkpoint, committedLastEventId);
       }
     } catch (error) {
       if (options.signal?.aborted === true) {
         throw abortReason(options.signal);
       }
-      if (error instanceof InvalidSseCheckpointError) {
+      if (error instanceof InvalidSseCheckpointError || error instanceof SseLimitError) {
         throw error;
       }
       reconnectReason = "error";
@@ -256,7 +273,10 @@ function normalizeCheckpoint(value: string): string | undefined {
 function validateCheckpoint(value: unknown): asserts value is string | undefined {
   if (
     value !== undefined &&
-    (typeof value !== "string" || containsControlCharacters(value) || !isByteString(value))
+    (typeof value !== "string" ||
+      value.length > 2_048 ||
+      containsControlCharacters(value) ||
+      !isByteString(value))
   ) {
     throw new InvalidSseCheckpointError();
   }
@@ -323,23 +343,27 @@ function clamp(value: number, minimum: number, maximum: number): number {
 
 async function defaultSleep(milliseconds: number, signal: AbortSignal | undefined): Promise<void> {
   throwIfAborted(signal);
-  if (milliseconds === 0) {
-    return;
+  // Native timers can overflow larger delays into near-immediate callbacks.
+  // Preserve the selected total instead of shortening the reconnect wait.
+  let remaining = milliseconds;
+  while (remaining > 0) {
+    throwIfAborted(signal);
+    const delay = Math.min(remaining, 2_147_483_647);
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        signal?.removeEventListener("abort", onAbort);
+        resolve();
+      }, delay);
+      const onAbort = () => {
+        clearTimeout(timeout);
+        reject(
+          signal === undefined ? new DOMException("Aborted", "AbortError") : abortReason(signal),
+        );
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+    remaining -= delay;
   }
-
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, milliseconds);
-    const onAbort = () => {
-      clearTimeout(timeout);
-      reject(
-        signal === undefined ? new DOMException("Aborted", "AbortError") : abortReason(signal),
-      );
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
 }
 
 function throwIfAborted(signal: AbortSignal | undefined): void {

@@ -530,6 +530,8 @@ export async function runOwnedBrowserControl(config) {
     }
     if (children.supervisor !== null && captureRoot !== undefined) {
       await persistOutput(children.supervisor, captureRoot);
+      const failure = recordFailure("supervisor-close", children.supervisor);
+      if (failure !== null) cleanupFailures.push(failure);
     }
   }
 

@@ -27,15 +27,15 @@ const descriptor = decodeProtocolValue<HubDescriptor>(discovery, validateDiscove
 const reads = [
   ["discoverHub", "/.well-known/teslatlas-hub"],
   ["listVehicles", "/v1/vehicles"],
-  ["getVehicleCurrentState", "/v1/vehicles/vehicle%2Fdemo/current"],
-  ["listVehicleDrives", "/v1/vehicles/vehicle%2Fdemo/drives"],
-  ["getDrive", "/v1/drives/drive%2Fdemo"],
-  ["listDrivePositions", "/v1/drives/drive%2Fdemo/positions"],
-  ["listVehicleCharges", "/v1/vehicles/vehicle%2Fdemo/charges"],
-  ["getCharge", "/v1/charges/charge%2Fdemo"],
-  ["listChargeSamples", "/v1/charges/charge%2Fdemo/samples"],
-  ["listVehicleStates", "/v1/vehicles/vehicle%2Fdemo/states"],
-  ["listVehicleUpdates", "/v1/vehicles/vehicle%2Fdemo/updates"],
+  ["getVehicleCurrentState", "/v1/vehicles/vehicle_demo_alpha/current"],
+  ["listVehicleDrives", "/v1/vehicles/vehicle_demo_alpha/drives"],
+  ["getDrive", "/v1/drives/drive_demo_0001"],
+  ["listDrivePositions", "/v1/drives/drive_demo_0001/positions"],
+  ["listVehicleCharges", "/v1/vehicles/vehicle_demo_alpha/charges"],
+  ["getCharge", "/v1/charges/charge_demo_0001"],
+  ["listChargeSamples", "/v1/charges/charge_demo_0001/samples"],
+  ["listVehicleStates", "/v1/vehicles/vehicle_demo_alpha/states"],
+  ["listVehicleUpdates", "/v1/vehicles/vehicle_demo_alpha/updates"],
   ["listDataQuality", "/v1/data-quality"],
 ] as const;
 
@@ -87,7 +87,7 @@ describe("typed read operations", () => {
     const client = createClient(observed);
     const cursor = asOpaqueCursor("opaque_cursor_0001");
 
-    await client.listVehicleDrives("vehicle_demo", {
+    await client.listVehicleDrives("vehicle_demo_alpha", {
       cursor,
       limit: 50,
       from: "2026-01-01T00:00:00.000Z",
@@ -102,9 +102,17 @@ describe("typed read operations", () => {
     });
 
     expect(observed.map(({ path }) => path)).toEqual([
-      "/v1/vehicles/vehicle_demo/drives?cursor=opaque_cursor_0001&limit=50&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-02T00%3A00%3A00.000Z",
+      "/v1/vehicles/vehicle_demo_alpha/drives?cursor=opaque_cursor_0001&limit=50&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-02T00%3A00%3A00.000Z",
       "/v1/data-quality?cursor=opaque_cursor_0001&limit=25&from=2026-01-01T00%3A00%3A00.000Z&to=2026-01-02T00%3A00%3A00.000Z&vehicle_id=vehicle_demo",
     ]);
+  });
+
+  it("encodes path IDs without admitting a fixture for a different resource", async () => {
+    const observed: ObservedRequest[] = [];
+    await expect(createClient(observed).getDrive("drive/demo")).rejects.toMatchObject({
+      validator: "validateDrive.drive_id",
+    });
+    expect(observed[0]?.path).toBe("/v1/drives/drive%2Fdemo");
   });
 
   it.each([
@@ -206,7 +214,7 @@ function createClient(
         protocolVersion: new Headers(init?.headers).get("teslatlas-protocol-version"),
       });
       return Response.json(bodyForPath(url.pathname), {
-        headers: { ETag: 'W/"revision-1"' },
+        headers: { ETag: 'W/"revision-1"', "Teslatlas-Protocol-Version": "1.2.0" },
       });
     });
   const session: ClientSession = {
@@ -251,31 +259,31 @@ async function invokeRead(
       await client.listVehicles();
       return;
     case "getVehicleCurrentState":
-      await client.getVehicleCurrentState("vehicle/demo");
+      await client.getVehicleCurrentState("vehicle_demo_alpha");
       return;
     case "listVehicleDrives":
-      await client.listVehicleDrives("vehicle/demo");
+      await client.listVehicleDrives("vehicle_demo_alpha");
       return;
     case "getDrive":
-      await client.getDrive("drive/demo");
+      await client.getDrive("drive_demo_0001");
       return;
     case "listDrivePositions":
-      await client.listDrivePositions("drive/demo");
+      await client.listDrivePositions("drive_demo_0001");
       return;
     case "listVehicleCharges":
-      await client.listVehicleCharges("vehicle/demo");
+      await client.listVehicleCharges("vehicle_demo_alpha");
       return;
     case "getCharge":
-      await client.getCharge("charge/demo");
+      await client.getCharge("charge_demo_0001");
       return;
     case "listChargeSamples":
-      await client.listChargeSamples("charge/demo");
+      await client.listChargeSamples("charge_demo_0001");
       return;
     case "listVehicleStates":
-      await client.listVehicleStates("vehicle/demo");
+      await client.listVehicleStates("vehicle_demo_alpha");
       return;
     case "listVehicleUpdates":
-      await client.listVehicleUpdates("vehicle/demo");
+      await client.listVehicleUpdates("vehicle_demo_alpha");
       return;
     case "listDataQuality":
       await client.listDataQuality();

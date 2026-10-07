@@ -114,12 +114,12 @@ describe("fetch transport", () => {
   it("propagates an abort reason without retrying", async () => {
     const controller = new AbortController();
     const reason = new DOMException("Stopped", "AbortError");
-    controller.abort(reason);
     let calls = 0;
     const transport = new FetchTransport({
       baseUrl: "https://hub.example",
       fetch: async (_input, init) => {
         calls += 1;
+        controller.abort(reason);
         throw init?.signal?.reason;
       },
     });

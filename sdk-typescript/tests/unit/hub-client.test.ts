@@ -191,6 +191,45 @@ describe("current Hub client", () => {
     expect(queue.requests).toHaveLength(2);
   });
 
+  it.each(["limit", "from", "to", "order", "duplicate"])(
+    "rejects a drive page violating %s admission",
+    async (kind) => {
+      const payload = JSON.parse(await example("drives"));
+      const item = payload.items[0];
+      const timestamp = item.start_date_ms;
+      if (["limit", "order", "duplicate"].includes(kind)) {
+        payload.items.push({ ...item, id: kind === "duplicate" ? item.id : item.id + 1 });
+      }
+      const queue = queuedFetch([
+        await discoveryResponse(),
+        new Response(JSON.stringify(payload), {
+          headers: { ...jsonHeaders, ETag: '"drives"', "Cache-Control": "no-store" },
+        }),
+      ]);
+      const client = createHubClient({
+        endpoint,
+        expectedHubId: hubId,
+        credentials: new MemoryCredentials(),
+        fetch: queue.fetch,
+      });
+      await expect(
+        client.drives(hubId, {
+          limit: kind === "limit" ? 1 : 100,
+          ...(kind === "from" ? { fromMs: timestamp + 1 } : {}),
+          ...(kind === "to" ? { toMs: timestamp } : {}),
+        }),
+      ).rejects.toMatchObject({
+        code: "protocol_validation",
+        validator:
+          kind === "limit"
+            ? "HubDrives.limit"
+            : kind === "from" || kind === "to"
+              ? "HubDrives.timeRange"
+              : "HubDrives.order",
+      });
+    },
+  );
+
   it("sends exact millisecond drive filters and distinguishes page from notModified", async () => {
     const credentials = new MemoryCredentials();
     credentials.credential = {
@@ -296,19 +335,20 @@ describe("current Hub client", () => {
       fetch: queue.fetch,
     });
 
-    await expect(client.drives(hubId)).resolves.toEqual({
+    const conditional = { ifNoneMatch: asStrongEntityTag('"drive-page"') };
+    await expect(client.drives(hubId, conditional)).resolves.toEqual({
       kind: "notModified",
       metadata: { status: 304, etag: '"drive-page"', requestId: "request-1" },
     });
-    await expect(client.drives(hubId)).rejects.toMatchObject({
+    await expect(client.drives(hubId, conditional)).rejects.toMatchObject({
       code: "protocol_validation",
       validator: "HubDrives.304",
     });
-    await expect(client.drives(hubId)).rejects.toMatchObject({
+    await expect(client.drives(hubId, conditional)).rejects.toMatchObject({
       code: "protocol_validation",
       validator: "HubDrives.304",
     });
-    await expect(client.drives(hubId)).rejects.toMatchObject({
+    await expect(client.drives(hubId, conditional)).rejects.toMatchObject({
       code: "protocol_validation",
       validator: "HubDrives.304",
     });
@@ -508,32 +548,35 @@ describe("current Hub client", () => {
     },
   );
 
-  it("does not save malformed or expired claim replies", async () => {
-    const credentials = new MemoryCredentials();
-    const malformed = (await example("claim")).replace(
-      '"expires_at_ms":1788567300000',
-      '"expires_at_ms":1',
-    );
-    const queue = queuedFetch([
-      await discoveryResponse(),
-      new Response(malformed, { status: 200, headers: jsonHeaders }),
-    ]);
-    const client = createHubClient({
-      endpoint,
-      expectedHubId: hubId,
-      credentials,
-      fetch: queue.fetch,
-    });
-    const invitation = JSON.parse(await example("invitation"));
-    invitation.endpoint = endpoint;
-    invitation.expiresAtMs = Date.now() + 60_000;
-    invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${invitation.pairingId}&secret=${invitation.secret}&tls_pin=${invitation.tlsPin}`;
+  it.each(["malformed", "expired"] as const)(
+    "does not save a deliberately %s claim reply",
+    async (kind) => {
+      const credentials = new MemoryCredentials();
+      const reply = JSON.parse(await example("claim"));
+      reply.expires_at_ms = kind === "expired" ? Date.now() - 1 : "not-an-integer";
+      const queue = queuedFetch([
+        await discoveryResponse(),
+        Response.json(reply, { headers: jsonHeaders }),
+      ]);
+      const client = createHubClient({
+        endpoint,
+        expectedHubId: hubId,
+        credentials,
+        fetch: queue.fetch,
+      });
+      const invitation = JSON.parse(await example("invitation"));
+      invitation.endpoint = endpoint;
+      invitation.expiresAtMs = Date.now() + 60_000;
+      invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${invitation.pairingId}&secret=${invitation.secret}&tls_pin=${invitation.tlsPin}`;
 
-    await expect(client.claimPairing(invitation, "Device")).rejects.toMatchObject({
-      code: "protocol_validation",
-    });
-    expect(credentials.saves).toEqual([]);
-  });
+      await expect(client.claimPairing(invitation, "Device")).rejects.toMatchObject({
+        code: "protocol_validation",
+        validator: kind === "expired" ? "HubClaim.expiry" : "HubClaim",
+      });
+      expect(queue.requests).toHaveLength(2);
+      expect(credentials.saves).toEqual([]);
+    },
+  );
 
   it("does not save a claim that completes after logout", async () => {
     const credentials = new MemoryCredentials();
@@ -974,11 +1017,12 @@ describe("current Hub client", () => {
     };
     const client = createHubClient({ endpoint, expectedHubId: hubId, credentials, fetch });
     const stale = client.discover();
+    const staleRejection = expect(stale).rejects.toMatchObject({ name: "AbortError" });
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
     await client.logout();
     resolveOld?.(await discoveryResponse());
-    await expect(stale).rejects.toMatchObject({ name: "AbortError" });
+    await staleRejection;
     await client.vehicles();
 
     expect(requests.map((request) => new URL(request.url).pathname)).toEqual([

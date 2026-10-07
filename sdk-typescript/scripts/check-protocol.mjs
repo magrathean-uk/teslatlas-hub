@@ -18,6 +18,7 @@ const richerGeneratedPaths = [
   "src/generated/protocol.ts",
   "src/generated/validators.ts",
   "src/generated/protocol-cases.ts",
+  "src/generated/event-catalog.ts",
 ];
 const currentHubGeneratedPaths = [
   "src/generated/hub-protocol.ts",

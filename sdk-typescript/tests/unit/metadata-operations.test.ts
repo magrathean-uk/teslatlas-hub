@@ -77,7 +77,7 @@ describe("typed metadata operations", () => {
       throw new Error(`Unhandled request ${request.method} ${request.path}`);
     });
 
-    const page = await client.listVehicleMetadata("vehicle/demo", {
+    const page = await client.listVehicleMetadata("vehicle_demo_alpha", {
       cursor: asOpaqueCursor("opaque_cursor_0001"),
       limit: 25,
       kind: "note",
@@ -122,7 +122,7 @@ describe("typed metadata operations", () => {
     ).toEqual([
       {
         method: "GET",
-        path: "/v1/vehicles/vehicle%2Fdemo/metadata?cursor=opaque_cursor_0001&limit=25&kind=note",
+        path: "/v1/vehicles/vehicle_demo_alpha/metadata?cursor=opaque_cursor_0001&limit=25&kind=note",
         authorization: "Bearer caller-owned",
         protocolVersion: "1.2.0",
         ifNoneMatch: 'W/"metadata-page-1"',
@@ -229,24 +229,34 @@ describe("typed metadata operations", () => {
       async () => new Response(null, { status: 304, headers: { ETag: '"metadata-strong-1"' } }),
     );
 
-    await expect(client.getMetadata("metadata_demo_note_0001")).resolves.toEqual({
+    await expect(
+      client.getMetadata("metadata_demo_note_0001", {
+        ifNoneMatch: asEntityTag('"metadata-strong-1"'),
+      }),
+    ).resolves.toEqual({
       kind: "not-modified",
-      metadata: { status: 304, etag: '"metadata-strong-1"' },
+      metadata: { status: 304, etag: '"metadata-strong-1"', protocolVersion: "1.2.0" },
     });
   });
 
-  it.each([200, 304])("accepts a long strong metadata response ETag on %i", async (status) => {
-    const etag = `"${"x".repeat(512)}"`;
-    const client = createClient([], async () =>
-      status === 304
-        ? new Response(null, { status, headers: { ETag: etag } })
-        : Response.json(metadataRecord, { status, headers: { ETag: etag } }),
-    );
+  it.each([200, 304])(
+    "accepts a long strong metadata 200 ETag but rejects unsolicited 304 on %i",
+    async (status) => {
+      const etag = `"${"x".repeat(512)}"`;
+      const client = createClient([], async () =>
+        status === 304
+          ? new Response(null, { status, headers: { ETag: etag } })
+          : Response.json(metadataRecord, { status, headers: { ETag: etag } }),
+      );
 
-    await expect(client.getMetadata("metadata_demo_note_0001")).resolves.toMatchObject({
-      metadata: { status, etag },
-    });
-  });
+      const result = client.getMetadata("metadata_demo_note_0001");
+      if (status === 304)
+        await expect(result).rejects.toMatchObject({
+          validator: "validateMetadataEntity.304.etag",
+        });
+      else await expect(result).resolves.toMatchObject({ metadata: { status, etag } });
+    },
+  );
 
   it("rejects unsafe created metadata Location values", async () => {
     const client = createClient([], async () =>
@@ -453,6 +463,11 @@ function createClient(
   sessionDescriptor: HubDescriptor = descriptor,
   authorization: () => string = () => "Bearer caller-owned",
 ): TeslatlasClient {
+  const versionedFetch: FetchImplementation = async (input, init) => {
+    const response = await fetch(input, init);
+    response.headers.set("Teslatlas-Protocol-Version", "1.2.0");
+    return response;
+  };
   const session: ClientSession = {
     descriptor: sessionDescriptor,
     protocolVersion: "1.2.0",
@@ -460,7 +475,7 @@ function createClient(
     apiTransport: new FetchTransport({
       baseUrl: "https://api.example.invalid",
       authorization,
-      fetch,
+      fetch: versionedFetch,
     }),
     eventTransport: new FetchTransport({ baseUrl: "https://events.example.invalid", fetch }),
   };

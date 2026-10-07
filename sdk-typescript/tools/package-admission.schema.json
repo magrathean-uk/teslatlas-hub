@@ -57,10 +57,51 @@
       "required": ["verdict", "reviewer_model", "reasoning", "reviewed_at"],
       "properties": {
         "verdict": { "const": "ACCEPT" },
-        "reviewer_model": { "const": "GPT-5.6 Sol" },
-        "reasoning": { "const": "high" },
+        "reviewer_model": { "type": "string" },
+        "reasoning": { "type": "string" },
         "reviewed_at": { "type": "string", "format": "date-time" }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "role": { "const": "candidate" } }, "required": ["role"] },
+      "then": {
+        "properties": {
+          "review": {
+            "type": "object",
+            "properties": {
+              "reviewer_model": { "enum": ["gpt-6.1-sol", "GPT-6.1 Sol"] },
+              "reasoning": { "const": "ultra" }
+            }
+          },
+          "toolchain": {
+            "type": "object",
+            "properties": { "node": { "const": "26.10.0" }, "npm": { "const": "12.1.0" } }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "review": {
+            "type": "object",
+            "anyOf": [
+              {
+                "properties": {
+                  "reviewer_model": { "const": "GPT-5.6 Sol" },
+                  "reasoning": { "const": "high" }
+                }
+              },
+              {
+                "properties": {
+                  "reviewer_model": { "enum": ["gpt-6.1-sol", "GPT-6.1 Sol"] },
+                  "reasoning": { "const": "ultra" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
 }

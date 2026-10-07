@@ -1,9 +1,15 @@
 import type { EntityTag } from "../core/opaque-values.js";
 import type { IdempotencyKey } from "../commands/idempotency.js";
-import { TeslatlasError } from "../core/errors.js";
 import type { SupportedProtocolVersion } from "../protocol/negotiation.js";
 import type { StrongEntityTag } from "./strong-etag.js";
 import { InvalidRequestPathError, type ProtocolRequestInit } from "./fetch-transport.js";
+import {
+  InvalidRequestBodyError,
+  isJsonRequestSnapshot,
+  snapshotJsonRequest,
+} from "./json-request-snapshot.js";
+
+export { InvalidRequestBodyError } from "./json-request-snapshot.js";
 
 export type ReadOperationName =
   | "discoverHub"
@@ -187,7 +193,9 @@ export function buildWriteRequest(
   if (operation.hasJsonBody) {
     if (options.body === undefined) throw new InvalidRequestBodyError();
     headers.set("Content-Type", "application/json");
-    body = stringifyJsonBody(options.body);
+    body = isJsonRequestSnapshot(options.body)
+      ? options.body.body
+      : snapshotJsonRequest(options.body).body;
   } else if (options.body !== undefined) {
     throw new InvalidRequestBodyError();
   }
@@ -205,14 +213,6 @@ export function buildWriteRequest(
   };
 }
 
-export class InvalidRequestBodyError extends TeslatlasError<"invalid_request_body"> {
-  constructor() {
-    super("Protocol request body must be a lossless JSON value", {
-      code: "invalid_request_body",
-    });
-  }
-}
-
 function descriptor(
   pathTemplate: string,
   queryNames: readonly string[],
@@ -227,62 +227,4 @@ function writeDescriptor(
   hasJsonBody: boolean,
 ): WriteOperationDescriptor {
   return Object.freeze({ pathTemplate, method, hasJsonBody });
-}
-
-function stringifyJsonBody(value: unknown): string {
-  try {
-    if (!isLosslessJsonValue(value, new Set())) throw new InvalidRequestBodyError();
-    const body = JSON.stringify(value);
-    if (body === undefined) throw new InvalidRequestBodyError();
-    return body;
-  } catch (error) {
-    if (error instanceof InvalidRequestBodyError) throw error;
-    throw new InvalidRequestBodyError();
-  }
-}
-
-function isLosslessJsonValue(value: unknown, ancestors: Set<object>): boolean {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (typeof value !== "object") return false;
-  if (ancestors.has(value)) return false;
-
-  ancestors.add(value);
-  try {
-    if (Array.isArray(value)) return isLosslessJsonArray(value, ancestors);
-    return isLosslessJsonObject(value, ancestors);
-  } finally {
-    ancestors.delete(value);
-  }
-}
-
-function isLosslessJsonArray(value: unknown[], ancestors: Set<object>): boolean {
-  if (Object.getPrototypeOf(value) !== Array.prototype) return false;
-  for (const key of Reflect.ownKeys(value)) {
-    if (key === "length") continue;
-    if (typeof key !== "string" || !isArrayIndex(key, value.length)) return false;
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor?.enumerable !== true || !("value" in descriptor)) return false;
-  }
-  for (let index = 0; index < value.length; index += 1) {
-    if (!Object.hasOwn(value, index) || !isLosslessJsonValue(value[index], ancestors)) return false;
-  }
-  return true;
-}
-
-function isLosslessJsonObject(value: object, ancestors: Set<object>): boolean {
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) return false;
-  for (const key of Reflect.ownKeys(value)) {
-    if (typeof key !== "string") return false;
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor?.enumerable !== true || !("value" in descriptor)) return false;
-    if (!isLosslessJsonValue(descriptor.value, ancestors)) return false;
-  }
-  return true;
-}
-
-function isArrayIndex(value: string, length: number): boolean {
-  const index = Number(value);
-  return Number.isInteger(index) && index >= 0 && index < length && String(index) === value;
 }

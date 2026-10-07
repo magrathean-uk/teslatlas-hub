@@ -6,12 +6,14 @@ import {
   ProtocolHttpError,
   ProtocolValidationError,
 } from "../core/errors.js";
-import { asEntityTag } from "../core/opaque-values.js";
+import { asEntityTag, type EntityTag } from "../core/opaque-values.js";
 import { validateProblem } from "../generated/validators.js";
 import type { ProtocolProblem } from "../protocol/models.js";
 import { decodeProtocolValue, type ProtocolValidator } from "../protocol/validate.js";
 import { isStrongEntityTag } from "./strong-etag.js";
 import { requireEmptyResponseBody } from "./empty-body.js";
+import { readBoundedJson } from "./bounded-json.js";
+import { withResponseOwnership } from "./response-ownership.js";
 
 const protocolVersionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
 const safeLocationBase = "https://teslatlas-location.invalid";
@@ -22,10 +24,12 @@ interface ResponseMetadataRequirements {
   readonly requireEntityTag?: boolean;
   readonly requireStrongEntityTag?: boolean;
   readonly requireLocation?: boolean;
+  readonly acceptedProtocolVersions?: readonly string[];
 }
 
-export interface ReadResponseRequirements {
+export interface ReadResponseRequirements extends ResponseMetadataRequirements {
   readonly requireStrongEntityTag?: boolean;
+  readonly ifNoneMatch?: EntityTag;
 }
 
 export interface WriteResponseRequirements extends ResponseMetadataRequirements {
@@ -40,15 +44,23 @@ export async function decodeReadResponse<T>(
   requirements: ReadResponseRequirements = {},
 ): Promise<ReadResult<T>> {
   const metadataRequirements: ResponseMetadataRequirements = {
+    ...requirements,
     requireEntityTag: true,
     ...(requirements.requireStrongEntityTag === true ? { requireStrongEntityTag: true } : {}),
   };
   if (response.status === 304) {
-    await requireEmptyResponseBody(response, signal, `${validatorName}.304`);
-    return {
-      kind: "not-modified",
-      metadata: readResponseMetadata(response, validatorName, metadataRequirements),
-    };
+    return withResponseOwnership(response, async () => {
+      await requireEmptyResponseBody(response, signal, `${validatorName}.304`);
+      const metadata = readResponseMetadata(response, validatorName, metadataRequirements);
+      if (
+        requirements.ifNoneMatch === undefined ||
+        metadata.etag === undefined ||
+        requirements.ifNoneMatch.replace(/^W\//u, "") !== metadata.etag.replace(/^W\//u, "")
+      )
+        throw new ProtocolValidationError(`${validatorName}.304.etag`);
+      throwIfAborted(signal);
+      return { kind: "not-modified", metadata };
+    });
   }
 
   if (response.status === 200) {
@@ -87,16 +99,21 @@ async function decodeJsonSuccess<T>(
   signal: AbortSignal | undefined,
   requirements: ResponseMetadataRequirements,
 ): Promise<WriteResult<T>> {
-  requireMediaType(response, "application/json", validatorName);
-  const value = decodeProtocolValue<T>(
-    await readJson(response, signal, validatorName),
-    validator,
-    validatorName,
-  );
-  return {
-    value,
-    metadata: readResponseMetadata(response, validatorName, requirements),
-  };
+  return withResponseOwnership(response, async () => {
+    throwIfAborted(signal);
+    requireMediaType(response, "application/json", validatorName);
+    const metadata = readResponseMetadata(response, validatorName, requirements);
+    const value = decodeProtocolValue<T>(
+      await readJson(response, signal, validatorName),
+      validator,
+      validatorName,
+    );
+    throwIfAborted(signal);
+    return {
+      value,
+      metadata,
+    };
+  });
 }
 
 /** @internal */
@@ -104,43 +121,45 @@ export async function decodeProtocolProblemResponse(
   response: Response,
   signal: AbortSignal | undefined,
 ): Promise<never> {
-  requireMediaType(response, "application/problem+json", "validateProblem");
-  const problem = decodeProtocolValue<ProtocolProblem>(
-    await readJson(response, signal, "validateProblem"),
-    validateProblem,
-    "validateProblem",
-  );
-  if (problem.status !== response.status) {
-    throw new ProtocolValidationError("validateProblem.status");
-  }
-  if (
-    typeof problem.code !== "string" ||
-    typeof problem.request_id !== "string" ||
-    typeof problem.retryable !== "boolean" ||
-    (problem.retry_after_seconds !== undefined &&
-      (typeof problem.retry_after_seconds !== "number" ||
-        !Number.isInteger(problem.retry_after_seconds)))
-  ) {
-    throw new ProtocolValidationError("validateProblem.safeFields");
-  }
-
-  try {
-    const retryAfterSeconds = readRetryAfterSeconds(
-      response,
-      problem.retryable,
-      problem.retry_after_seconds,
+  return withResponseOwnership(response, async () => {
+    requireMediaType(response, "application/problem+json", "validateProblem");
+    const problem = decodeProtocolValue<ProtocolProblem>(
+      await readJson(response, signal, "validateProblem"),
+      validateProblem,
+      "validateProblem",
     );
-    throw new ProtocolHttpError({
-      code: asProtocolErrorCode(problem.code),
-      status: problem.status,
-      requestId: asSafeRequestId(problem.request_id),
-      retryable: problem.retryable,
-      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
-    });
-  } catch (error) {
-    if (error instanceof ProtocolHttpError) throw error;
-    throw new ProtocolValidationError("validateProblem.safeFields");
-  }
+    if (problem.status !== response.status) {
+      throw new ProtocolValidationError("validateProblem.status");
+    }
+    if (
+      typeof problem.code !== "string" ||
+      typeof problem.request_id !== "string" ||
+      typeof problem.retryable !== "boolean" ||
+      (problem.retry_after_seconds !== undefined &&
+        (typeof problem.retry_after_seconds !== "number" ||
+          !Number.isInteger(problem.retry_after_seconds)))
+    ) {
+      throw new ProtocolValidationError("validateProblem.safeFields");
+    }
+
+    try {
+      const retryAfterSeconds = readRetryAfterSeconds(
+        response,
+        problem.retryable,
+        problem.retry_after_seconds,
+      );
+      throw new ProtocolHttpError({
+        code: asProtocolErrorCode(problem.code),
+        status: problem.status,
+        requestId: asSafeRequestId(problem.request_id),
+        retryable: problem.retryable,
+        ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+      });
+    } catch (error) {
+      if (error instanceof ProtocolHttpError) throw error;
+      throw new ProtocolValidationError("validateProblem.safeFields");
+    }
+  });
 }
 
 function readRetryAfterSeconds(
@@ -186,6 +205,13 @@ function readResponseMetadata(
     const requestId = requestIdHeader === null ? undefined : asSafeRequestId(requestIdHeader);
     const protocolVersion = response.headers.get("Teslatlas-Protocol-Version") ?? undefined;
     if (protocolVersion !== undefined && !protocolVersionPattern.test(protocolVersion)) {
+      throw new ProtocolValidationError(`${validatorName}.protocolVersion`);
+    }
+    if (
+      requirements.acceptedProtocolVersions !== undefined &&
+      (protocolVersion === undefined ||
+        !requirements.acceptedProtocolVersions.includes(protocolVersion))
+    ) {
       throw new ProtocolValidationError(`${validatorName}.protocolVersion`);
     }
 
@@ -243,14 +269,24 @@ async function readJson(
   validatorName: string,
 ): Promise<unknown> {
   try {
-    return await response.json();
+    return await readBoundedJson(response, signal, validatorName);
   } catch (error) {
     if (signal?.aborted === true) throw signal.reason ?? error;
+    if (error instanceof ProtocolValidationError) throw error;
     throw new ProtocolValidationError(validatorName);
   }
 }
 
-function requireMediaType(response: Response, expected: string, validatorName: string): void {
+/** @internal */
+export function requireMediaType(
+  response: Response,
+  expected: string,
+  validatorName: string,
+): void {
   const value = response.headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase();
   if (value !== expected) throw new ProtocolValidationError(`${validatorName}.contentType`);
+}
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  if (signal?.aborted === true) throw signal.reason ?? new DOMException("Aborted", "AbortError");
 }

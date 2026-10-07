@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   FIREFOX_NSS_CERTUTIL,
+  FirefoxNssCleanupError,
   requireOwnerOnlyOutputPath,
   requireOwnerOnlyPath,
   withFirefoxNssProfile,
@@ -147,31 +148,45 @@ describe("disposable Firefox NSS profile", () => {
     await expect(access(launchedProfile)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("still removes the profile if Firefox close fails", async () => {
+  it("preserves the owned profile if Firefox close fails and permits explicit retry", async () => {
     const root = await ownerOnlyRoot();
     const certificatePath = join(root, "hub-ca.pem");
     await writeFile(certificatePath, "test Hub CA", { mode: 0o600 });
     let launchedProfile = "";
 
-    await expect(
-      withFirefoxNssProfile(
-        {
-          certificatePath,
-          firefox: {
-            launchPersistentContext: async (profile: string) => {
-              launchedProfile = profile;
-              return { close: async () => Promise.reject(new Error("close failed")) };
-            },
+    const failure = new Error("Firefox close failed");
+    const close = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue(undefined);
+    const result = withFirefoxNssProfile(
+      {
+        certificatePath,
+        firefox: {
+          launchPersistentContext: async (profile: string) => {
+            launchedProfile = profile;
+            return { close };
           },
-          temporaryParent: root,
         },
-        async () => "route-passed",
-        {
-          access: async () => undefined,
-          execFile: fakeCertutil,
-        },
-      ),
-    ).rejects.toThrow("close failed");
+        temporaryParent: root,
+      },
+      async () => "route-passed",
+      {
+        access: async () => undefined,
+        execFile: fakeCertutil,
+      },
+    );
+    const error = await result.catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(FirefoxNssCleanupError);
+    const cleanupError = error as FirefoxNssCleanupError;
+    expect(cleanupError.errors).toEqual([failure]);
+    expect(cleanupError.cause).toBe(failure);
+    expect(cleanupError.deferredCleanup).toMatchObject({
+      profilePath: launchedProfile,
+      state: "deferred",
+      reason: "close_rejected",
+    });
+    await expect(access(launchedProfile)).resolves.toBeUndefined();
+    await cleanupError.deferredCleanup.retry();
+    expect(close).toHaveBeenCalledTimes(2);
+    expect(cleanupError.deferredCleanup.state).toBe("removed");
     await expect(access(launchedProfile)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
@@ -193,7 +208,7 @@ describe("disposable Firefox NSS profile", () => {
         {
           access: async () => undefined,
           mkdtemp: async () => otherRoot,
-          remove,
+          rm: remove,
         },
       ),
     ).rejects.toThrow("escaped its private temporary parent");

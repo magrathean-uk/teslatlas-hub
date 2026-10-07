@@ -11,6 +11,25 @@ interface FirefoxLike {
 
 export const FIREFOX_NSS_CERTUTIL: "/opt/homebrew/opt/nss/bin/certutil";
 
+/** Private script boundary; authority/context are retained only in this process. */
+export interface DeferredFirefoxProfileCleanup {
+  readonly profilePath: string;
+  readonly reason:
+    | "close_timed_out"
+    | "close_rejected"
+    | "settlement_unknown"
+    | "remove_failed"
+    | "ownership_unknown"
+    | "ownership_changed";
+  readonly state: "deferred" | "removed";
+  retry(): Promise<void>;
+}
+
+export class FirefoxNssCleanupError extends AggregateError {
+  readonly deferredCleanup: DeferredFirefoxProfileCleanup;
+  constructor(errors: readonly unknown[], deferredCleanup: DeferredFirefoxProfileCleanup);
+}
+
 export function withFirefoxNssProfile<T>(
   options: {
     readonly certificatePath: string;
@@ -18,6 +37,8 @@ export function withFirefoxNssProfile<T>(
     readonly firefox: FirefoxLike;
     readonly headless?: boolean;
     readonly temporaryParent?: string;
+    readonly closeTimeoutMs?: number;
+    readonly certutilTimeoutMs?: number;
   },
   operation: (context: Awaited<ReturnType<FirefoxLike["launchPersistentContext"]>>) => Promise<T>,
   dependencies?: Record<string, unknown>,

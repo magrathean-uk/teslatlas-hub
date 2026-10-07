@@ -13,7 +13,9 @@ const client = await createClient({
       return Response.json(discovery, { headers: { ETag: 'W/"fixture-discovery-1"' } });
     }
     if (path === "/v1/vehicles") {
-      return Response.json(vehicles, { headers: { ETag: 'W/"fixture-vehicles-1"' } });
+      return Response.json(vehicles, {
+        headers: { ETag: 'W/"fixture-vehicles-1"', "Teslatlas-Protocol-Version": "1.2.0" },
+      });
     }
     throw new Error(`Unexpected fixture path ${path}`);
   },

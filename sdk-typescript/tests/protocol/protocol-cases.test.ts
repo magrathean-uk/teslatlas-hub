@@ -3,7 +3,7 @@ import eventContract from "../../protocol/source/events/teslatlas-v1.sse.json" w
   type: "json",
 };
 import { TeslatlasClient } from "../../src/client/client.js";
-import * as generatedProtocolCases from "../../src/generated/protocol-cases.js";
+import { protocolEventCatalog } from "../../src/generated/event-catalog.js";
 import { protocolCaseBodies, protocolCases } from "../../src/generated/protocol-cases.js";
 import type { ProtocolEvent } from "../../src/protocol/models.js";
 import {
@@ -117,16 +117,13 @@ describe("generated protocol case consumption", () => {
   });
 
   it("locks generated event names and introduced profiles to the authority event contract", () => {
-    const generated = generatedProtocolCases as typeof generatedProtocolCases & {
-      readonly protocolEventCatalog?: readonly unknown[];
-    };
     const expected = eventContract.events.map(({ name, introduced_in }) => ({
       name,
       introduced_in,
     }));
 
-    expect(generated.protocolEventCatalog).toEqual(expected);
-    expect(Object.isFrozen(generated.protocolEventCatalog)).toBe(true);
+    expect(protocolEventCatalog).toEqual(expected);
+    expect(Object.isFrozen(protocolEventCatalog)).toBe(true);
   });
 
   it("exposes the declared capability set for each generated profile", () => {

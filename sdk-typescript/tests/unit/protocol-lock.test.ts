@@ -101,6 +101,7 @@ describe("protocol lock", () => {
             "src/generated/protocol.ts",
             "src/generated/validators.ts",
             "src/generated/protocol-cases.ts",
+            "src/generated/event-catalog.ts",
           ].map((path) => [path, lock.generated[path]]),
         ),
       ),
@@ -182,7 +183,7 @@ describe("protocol lock", () => {
       const lockPath = join(sdk, "protocol/lock.json");
       const firstLock = await readFile(lockPath, "utf8");
       const firstGenerated = await Promise.all(
-        ["protocol.ts", "validators.ts", "protocol-cases.ts"].map((name) =>
+        ["protocol.ts", "validators.ts", "protocol-cases.ts", "event-catalog.ts"].map((name) =>
           readFile(join(sdk, "src/generated", name)),
         ),
       );
@@ -200,7 +201,7 @@ describe("protocol lock", () => {
 
       expect(await readFile(lockPath, "utf8")).toBe(firstLock);
       const secondGenerated = await Promise.all(
-        ["protocol.ts", "validators.ts", "protocol-cases.ts"].map((name) =>
+        ["protocol.ts", "validators.ts", "protocol-cases.ts", "event-catalog.ts"].map((name) =>
           readFile(join(sdk, "src/generated", name)),
         ),
       );
