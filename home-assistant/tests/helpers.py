@@ -23,6 +23,10 @@ from custom_components.teslatlas_hub.models import (
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURE_ACCESS_TOKEN = "a" * 64
+FIXTURE_ROTATED_ACCESS_TOKEN = "b" * 64
+FIXTURE_DEVICE_ID = "33333333-3333-4333-8333-333333333333"
+FIXTURE_EXPIRES_AT_MS = 2_000_000_000_000
 
 
 def load_fixture(name: str) -> dict[str, Any]:
@@ -49,6 +53,7 @@ def parse_vehicle(payload: dict[str, Any]) -> VehicleState:
         software_update_state=payload["software_update_state"],
         telemetry_age_seconds=payload["telemetry_age_seconds"],
         data_quality=payload["data_quality"],
+        current_read_failed=payload.get("current_read_failed", False),
     )
 
 
@@ -99,10 +104,12 @@ class FixtureHubClient:
         """Initialize deterministic responses and call records."""
         self.snapshot = initial_snapshot()
         self.info = self.snapshot.info
-        self.access_token = "fixture-device-bearer"
-        self.rotated_access_token = "rotated-device-bearer"
-        self.rotated_device_id = "device-fixture"
-        self.rotation_expires_at_ms = 2_000_000_000_000
+        self.access_token = FIXTURE_ACCESS_TOKEN
+        self.rotated_access_token = FIXTURE_ROTATED_ACCESS_TOKEN
+        self.device_id = FIXTURE_DEVICE_ID
+        self.pairing_expires_at_ms = FIXTURE_EXPIRES_AT_MS
+        self.rotated_device_id = FIXTURE_DEVICE_ID
+        self.rotation_expires_at_ms = FIXTURE_EXPIRES_AT_MS
         self.probe_error: HubClientError | None = None
         self.pair_error: HubClientError | None = None
         self.snapshot_error: HubClientError | None = None
@@ -130,10 +137,17 @@ class FixtureHubClient:
     async def async_pair(
         self,
         pairing_id: str,
-        pairing_secret: str,
-        device_name: str,
+        secret: str | None = None,
+        device_name: str | None = None,
+        *,
+        pairing_secret: str | None = None,
     ) -> PairingResult:
         """Record one transient secret and return a fixture bearer."""
+        if secret is not None and pairing_secret is not None:
+            raise TypeError("Use either secret or pairing_secret, not both")
+        pairing_secret = secret if pairing_secret is None else pairing_secret
+        if pairing_secret is None or device_name is None:
+            raise TypeError("A pairing secret and device_name are required")
         self.pairing_ids.append(pairing_id)
         self.pairing_secrets.append(pairing_secret)
         self.device_names.append(device_name)
@@ -142,8 +156,8 @@ class FixtureHubClient:
         return PairingResult(
             info=self.info,
             access_token=self.access_token,
-            device_id="device-fixture",
-            expires_at_ms=1_788_567_300_000,
+            device_id=self.device_id,
+            expires_at_ms=self.pairing_expires_at_ms,
         )
 
     async def async_snapshot(self) -> HubSnapshot:

@@ -31,7 +31,7 @@ from custom_components.teslatlas_hub.const import (
 from custom_components.teslatlas_hub.coordinator import TeslatlasDataCoordinator
 from custom_components.teslatlas_hub.current_hub_client import CurrentHubClient
 from custom_components.teslatlas_hub.models import HubEndpoint
-from tests.helpers import FixtureHubClient
+from tests.helpers import FIXTURE_ACCESS_TOKEN, FixtureHubClient
 
 
 def _entry(hass: HomeAssistant) -> MockConfigEntry:
@@ -44,7 +44,7 @@ def _entry(hass: HomeAssistant) -> MockConfigEntry:
             CONF_PORT: 7443,
             CONF_USE_TLS: True,
             CONF_HUB_ID: "hub-fixture",
-            CONF_ACCESS_TOKEN: "fixture-device-bearer",
+            CONF_ACCESS_TOKEN: FIXTURE_ACCESS_TOKEN,
         },
     )
     entry.add_to_hass(hass)
@@ -74,7 +74,7 @@ async def test_setup_loads_polling_coordinator_and_unloads_cleanly(
         assert client.snapshot_calls == 1
         factory.assert_called_once_with(
             HubEndpoint(host="hub-fixture.local", port=7443, use_tls=True),
-            bearer_token="fixture-device-bearer",
+            bearer_token=FIXTURE_ACCESS_TOKEN,
             expected_hub_id="hub-fixture",
             bearer_expires_at_ms=None,
             hass=hass,

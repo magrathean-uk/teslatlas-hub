@@ -16,7 +16,7 @@ from custom_components.teslatlas_hub.const import (
     CONF_USE_TLS,
     DOMAIN,
 )
-from tests.helpers import FixtureHubClient
+from tests.helpers import FIXTURE_ACCESS_TOKEN, FixtureHubClient
 
 
 async def test_minor_zero_entry_advances_without_invented_data_changes(
@@ -93,7 +93,7 @@ async def test_older_complete_entry_migrates_and_loads_without_losing_unknown_da
             CONF_PORT: 7443,
             CONF_USE_TLS: True,
             CONF_HUB_ID: "hub-fixture",
-            CONF_ACCESS_TOKEN: "fixture-device-bearer",
+            CONF_ACCESS_TOKEN: FIXTURE_ACCESS_TOKEN,
             "opaque": "preserved",
         },
     )

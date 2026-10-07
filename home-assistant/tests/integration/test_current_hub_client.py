@@ -207,9 +207,11 @@ async def test_probe_is_unauthenticated_and_wrong_identity_blocks_bearer(
     assert authenticated_requests == 0
 
 
+@pytest.mark.parametrize("call_style", ["positional", "secret", "pairing_secret"])
 async def test_pair_claims_exact_invitation_and_returns_device_credential(
     hass: HomeAssistant,
     aiohttp_server,
+    call_style: str,
 ) -> None:
     """Catch a wrong claim route/body or loss of returned credential metadata."""
     requests: list[tuple[str, dict[str, Any]]] = []
@@ -225,7 +227,7 @@ async def test_pair_claims_exact_invitation_and_returns_device_credential(
             {
                 "device_id": "55555555-5555-4555-8555-555555555555",
                 "access_token": TOKEN,
-                "expires_at_ms": 1_788_567_300_000,
+                "expires_at_ms": 2_000_000_000_000,
             }
         )
 
@@ -235,7 +237,14 @@ async def test_pair_claims_exact_invitation_and_returns_device_credential(
     server = await aiohttp_server(app)
     client = CurrentHubClient(async_get_clientsession(hass), _endpoint(server))
 
-    result = await client.async_pair(PAIRING_ID, "b" * 64, "Home Assistant")
+    if call_style == "positional":
+        result = await client.async_pair(PAIRING_ID, "b" * 64, "Home Assistant")
+    else:
+        result = await client.async_pair(
+            pairing_id=PAIRING_ID,
+            device_name="Home Assistant",
+            **{call_style: "b" * 64},
+        )
 
     assert requests == [
         (
@@ -246,7 +255,7 @@ async def test_pair_claims_exact_invitation_and_returns_device_credential(
     assert result.info.hub_id == HUB_ID
     assert result.access_token == TOKEN
     assert result.device_id == "55555555-5555-4555-8555-555555555555"
-    assert result.expires_at_ms == 1_788_567_300_000
+    assert result.expires_at_ms == 2_000_000_000_000
 
 
 async def test_snapshot_maps_current_fields_preserving_zero_null_and_no_sse(
@@ -364,11 +373,11 @@ async def test_snapshot_tracks_vehicle_add_remove_and_return_from_public_list(
     ]
 
 
-async def test_snapshot_rejects_non_finite_numeric_telemetry(
+async def test_snapshot_projects_unrepresentable_finite_exponent_as_unknown(
     hass: HomeAssistant,
     aiohttp_server,
 ) -> None:
-    """Do not publish JSON exponent overflow as live numeric telemetry."""
+    """A finite wire number beyond HA representation keeps healthy telemetry."""
 
     async def handler(request: web.Request) -> web.Response:
         if request.path == "/.well-known/teslatlas-hub":
@@ -396,8 +405,9 @@ async def test_snapshot_rejects_non_finite_numeric_telemetry(
         expected_hub_id=HUB_ID,
     )
 
-    with pytest.raises(HubContractError, match="charger_power"):
-        await client.async_snapshot()
+    snapshot = await client.async_snapshot()
+    assert snapshot.vehicles[VEHICLE_ID].charging_power_kw is None
+    assert snapshot.vehicles[VEHICLE_ID].state_of_charge == 0
 
 
 async def test_probe_rejects_non_json_content_type(
@@ -741,15 +751,24 @@ async def test_missing_current_observation_keeps_vehicle_with_unknown_values(
     snapshot = await client.async_snapshot()
     assert snapshot.vehicles[VEHICLE_ID].state_of_charge is None
     assert snapshot.vehicles[VEHICLE_ID].telemetry_age_seconds is None
+    assert snapshot.vehicles[VEHICLE_ID].current_read_failed is False
 
 
+@pytest.mark.parametrize("failure", ["503", "timeout"])
 async def test_one_vehicle_current_failure_keeps_other_observations(
     hass: HomeAssistant,
     aiohttp_server,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
 ) -> None:
     """Keep healthy vehicles updating when one current read is unavailable."""
     healthy_vehicle_id = VEHICLE_ID
     unavailable_vehicle_id = "66666666-6666-4666-8666-666666666666"
+    release_failed_request = asyncio.Event()
+    if failure == "timeout":
+        monkeypatch.setattr(
+            current_hub_client_module, "REQUEST_TIMEOUT", ClientTimeout(total=0.1)
+        )
 
     async def handler(request: web.Request) -> web.Response:
         if request.path == "/.well-known/teslatlas-hub":
@@ -767,6 +786,8 @@ async def test_one_vehicle_current_failure_keeps_other_observations(
                 }
             )
         if request.match_info.get("vehicle_id") == unavailable_vehicle_id:
+            if failure == "timeout":
+                await release_failed_request.wait()
             return web.Response(status=503)
         payload = _current(observed_at_ms=None, battery_level=42)
         payload["vehicle_id"] = healthy_vehicle_id
@@ -784,11 +805,16 @@ async def test_one_vehicle_current_failure_keeps_other_observations(
         expected_hub_id=HUB_ID,
     )
 
-    snapshot = await client.async_snapshot()
+    try:
+        snapshot = await client.async_snapshot()
+    finally:
+        release_failed_request.set()
 
     assert snapshot.vehicles[healthy_vehicle_id].state_of_charge == 42
     assert snapshot.vehicles[unavailable_vehicle_id].state_of_charge is None
     assert snapshot.vehicles[unavailable_vehicle_id].name == "Roadster"
+    assert snapshot.vehicles[unavailable_vehicle_id].current_read_failed is True
+    assert snapshot.vehicles[healthy_vehicle_id].current_read_failed is False
 
 
 async def test_fragmented_discovery_body_is_read_through_eof(
@@ -1066,3 +1092,339 @@ async def test_close_cancels_active_snapshot_and_prevents_new_dispatch(
     assert started == observed_after_close
     with pytest.raises(HubConnectionError, match="closed"):
         await client.async_snapshot()
+
+
+async def test_json_decoder_recursion_error_is_a_typed_contract_failure(
+    hass: HomeAssistant, aiohttp_server, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    body = b'{"audit_decoder_recursion_sentinel":true}'
+    original_decoder = json.loads
+
+    def decoder(raw: Any, *args: Any, **kwargs: Any) -> Any:
+        if raw == body:
+            raise RecursionError("synthetic decoder recursion failure")
+        return original_decoder(raw, *args, **kwargs)
+
+    monkeypatch.setattr(current_hub_client_module.json, "loads", decoder)
+
+    async def discovery(_request: web.Request) -> web.Response:
+        return web.Response(body=body, content_type="application/json")
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", discovery)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(async_get_clientsession(hass), _endpoint(server))
+    with pytest.raises(HubContractError, match="invalid JSON") as error:
+        await client.async_probe()
+    assert isinstance(error.value.__cause__, RecursionError)
+
+
+@pytest.mark.parametrize(
+    "observed_at_ms", [10**400, -(10**400), 2**63, -(2**63) - 1, True, 1.5]
+)
+async def test_observation_timestamp_rejects_invalid_integer_domain(
+    hass: HomeAssistant, aiohttp_server, observed_at_ms: object
+) -> None:
+    async def handler(request: web.Request) -> web.Response:
+        if request.path == "/.well-known/teslatlas-hub":
+            return web.json_response(_discovery())
+        if request.path == "/v1/vehicles":
+            return web.json_response(
+                {"vehicles": [{"vehicle_id": VEHICLE_ID, "display_name": None}]}
+            )
+        return web.json_response(_current(observed_at_ms=observed_at_ms))
+
+    app = web.Application()
+    app.router.add_get("/{tail:.*}", handler)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+    with pytest.raises(HubContractError, match="observed_at_ms"):
+        await client.async_snapshot()
+
+
+@pytest.mark.parametrize("operation", ["claim", "rotate"])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("access_token", "g" * 64),
+        ("access_token", "A" * 64),
+        ("access_token", "a" * 62 + "\r\n"),
+        ("device_id", "55555555555545558555555555555555"),
+        ("expires_at_ms", True),
+        ("expires_at_ms", 2**63),
+        ("expires_at_ms", 1_790_380_800_000),
+    ],
+)
+async def test_issued_credential_response_is_validated_before_return_or_activation(
+    hass: HomeAssistant,
+    aiohttp_server,
+    operation: str,
+    field: str,
+    value: object,
+) -> None:
+    now = datetime(2026, 9, 26, tzinfo=UTC)
+    credential = {
+        "access_token": "b" * 64,
+        "device_id": "55555555-5555-4555-8555-555555555555",
+        "expires_at_ms": 2_000_000_000_000,
+        field: value,
+    }
+    issued_requests = 0
+
+    async def discovery(_request: web.Request) -> web.Response:
+        return web.json_response(_discovery())
+
+    async def issue(request: web.Request) -> web.Response:
+        nonlocal issued_requests
+        issued_requests += 1
+        if operation == "rotate":
+            assert request.headers["Authorization"] == f"Bearer {TOKEN}"
+        else:
+            assert "Authorization" not in request.headers
+        return web.json_response(credential)
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", discovery)
+    app.router.add_post("/v1/pairings/{pairing_id}/claim", issue)
+    app.router.add_post("/v1/device/rotate", issue)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        bearer_expires_at_ms=2_000_000_000_000,
+        expected_hub_id=HUB_ID,
+        now=lambda: now,
+    )
+    with pytest.raises(HubContractError, match=field):
+        if operation == "claim":
+            await client.async_pair(PAIRING_ID, "c" * 64, "Home Assistant")
+        else:
+            await client.async_rotate()
+    assert issued_requests == 1
+    assert client._bearer_token == TOKEN
+    assert client._bearer_expires_at_ms == 2_000_000_000_000
+
+
+@pytest.mark.parametrize("operation", ["claim", "rotate"])
+async def test_issued_credential_accepts_signed64_maximum_expiry(
+    hass: HomeAssistant, aiohttp_server, operation: str
+) -> None:
+    async def discovery(_request: web.Request) -> web.Response:
+        return web.json_response(_discovery())
+
+    async def issue(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "access_token": "b" * 64,
+                "device_id": "55555555-5555-4555-8555-555555555555",
+                "expires_at_ms": 2**63 - 1,
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", discovery)
+    app.router.add_post("/v1/pairings/{pairing_id}/claim", issue)
+    app.router.add_post("/v1/device/rotate", issue)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+    if operation == "claim":
+        result = await client.async_pair(PAIRING_ID, "c" * 64, "Home Assistant")
+    else:
+        result = await client.async_rotate()
+    assert result.expires_at_ms == 2**63 - 1
+
+
+async def _numeric_snapshot(
+    hass: HomeAssistant, aiohttp_server, field: str, token: str
+):
+    """Send an exact numeric token through the ordinary HTTP snapshot path."""
+    payload = _current(observed_at_ms=None) | {field: "numeric_token"}
+    body = json.dumps(payload).replace('"numeric_token"', token).encode()
+
+    async def handler(request: web.Request) -> web.Response:
+        if request.path == "/.well-known/teslatlas-hub":
+            return web.json_response(_discovery())
+        if request.path == "/v1/vehicles":
+            return web.json_response(
+                {"vehicles": [{"vehicle_id": VEHICLE_ID, "display_name": None}]}
+            )
+        return web.Response(body=body, content_type="application/json")
+
+    app = web.Application()
+    app.router.add_get("/{tail:.*}", handler)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+    return await client.async_snapshot()
+
+
+@pytest.mark.parametrize("field", ["battery_level", "charge_limit_soc"])
+@pytest.mark.parametrize(
+    "token",
+    [
+        "1.5",
+        "1.00000000000000000001",
+        "9223372036854775808",
+        "-9223372036854775809",
+        "9223372036854775808.0",
+        "-9223372036854775809e0",
+        "1e400",
+        "true",
+    ],
+)
+async def test_consumed_integer_telemetry_rejects_invalid_mathematical_domain(
+    hass: HomeAssistant, aiohttp_server, field: str, token: str
+) -> None:
+    """Reject fractions and overflow before binary64 rounding can hide them."""
+    with pytest.raises(HubContractError, match=field):
+        await _numeric_snapshot(hass, aiohttp_server, field, token)
+
+
+@pytest.mark.parametrize(
+    ("field", "attribute"),
+    [
+        ("battery_level", "state_of_charge"),
+        ("charge_limit_soc", "charge_limit_percent"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [
+        ("null", None),
+        ("0", 0),
+        ("-1", -1),
+        ("101", 101),
+        ("1.0", 1),
+        ("1e2", 100),
+        ("9223372036854775807", 2**63 - 1),
+        ("-9223372036854775808", -(2**63)),
+        ("9223372036854775807.0", 2**63 - 1),
+        ("-9223372036854775808e0", -(2**63)),
+    ],
+)
+async def test_consumed_integer_telemetry_admits_signed64_and_exact_spellings(
+    hass: HomeAssistant,
+    aiohttp_server,
+    field: str,
+    attribute: str,
+    token: str,
+    expected: int | None,
+) -> None:
+    """Preserve mathematical integers without inventing percentage limits."""
+    snapshot = await _numeric_snapshot(hass, aiohttp_server, field, token)
+    value = getattr(snapshot.vehicles[VEHICLE_ID], attribute)
+    assert value == expected
+    assert value is None or type(value) is int
+
+
+@pytest.mark.parametrize(
+    ("field", "attribute"),
+    [
+        ("charger_power", "charging_power_kw"),
+        ("est_battery_range_km", "estimated_range_km"),
+        ("odometer", "odometer_km"),
+        ("inside_temp", "inside_temperature_c"),
+        ("outside_temp", "outside_temperature_c"),
+    ],
+)
+@pytest.mark.parametrize(
+    "token", ["1" + "0" * 400, "-1" + "0" * 400, "1e400", "-1e400"]
+)
+async def test_generic_telemetry_unrepresentable_number_is_unknown(
+    hass: HomeAssistant, aiohttp_server, field: str, attribute: str, token: str
+) -> None:
+    """Project a huge valid measurement to unknown while retaining healthy fields."""
+    snapshot = await _numeric_snapshot(hass, aiohttp_server, field, token)
+    vehicle = snapshot.vehicles[VEHICLE_ID]
+    assert getattr(vehicle, attribute) is None
+    assert vehicle.state_of_charge == 0
+    assert vehicle.current_read_failed is False
+
+
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [("null", None), ("0", 0), ("-1.25", -1.25), ("1e2", 100.0), (str(2**80), 2**80)],
+)
+async def test_generic_telemetry_preserves_representable_numbers(
+    hass: HomeAssistant, aiohttp_server, token: str, expected: float | int | None
+) -> None:
+    """A generic measurement is not restricted to the integer telemetry domain."""
+    snapshot = await _numeric_snapshot(hass, aiohttp_server, "odometer", token)
+    value = snapshot.vehicles[VEHICLE_ID].odometer_km
+    assert value == expected
+    assert value is None or type(value) in (int, float)
+
+
+@pytest.mark.parametrize("token", ["NaN", "Infinity", "1.e2", "1e9999999999999999999"])
+async def test_exact_numeric_decoder_retains_typed_invalid_json(
+    hass: HomeAssistant, aiohttp_server, token: str
+) -> None:
+    """Exact decimal parsing must preserve controlled malformed-JSON failures."""
+    with pytest.raises(HubContractError, match="invalid JSON"):
+        await _numeric_snapshot(hass, aiohttp_server, "odometer", token)
+
+
+@pytest.mark.parametrize("vehicle_count", [10_000, 10_001])
+async def test_vehicle_count_limit_is_enforced_before_current_dispatch(
+    hass: HomeAssistant, aiohttp_server, vehicle_count: int
+) -> None:
+    """Admit the contract maximum and reject its first excess before fan-out."""
+    summaries = [
+        {"vehicle_id": f"00000000-0000-4000-8000-{index:012d}", "display_name": None}
+        for index in range(vehicle_count)
+    ]
+    body = json.dumps({"vehicles": summaries}).encode()
+    assert len(body) < MAX_RESPONSE_BYTES
+    started = 0
+    four_started = asyncio.Event()
+    blocker = asyncio.Event()
+
+    async def handler(request: web.Request) -> web.Response:
+        nonlocal started
+        if request.path == "/.well-known/teslatlas-hub":
+            return web.json_response(_discovery())
+        if request.path == "/v1/vehicles":
+            return web.Response(body=body, content_type="application/json")
+        started += 1
+        if started == 4:
+            four_started.set()
+        await blocker.wait()
+        return web.Response(status=404)
+
+    app = web.Application()
+    app.router.add_get("/{tail:.*}", handler)
+    server = await aiohttp_server(app)
+    client = CurrentHubClient(
+        async_get_clientsession(hass),
+        _endpoint(server),
+        bearer_token=TOKEN,
+        expected_hub_id=HUB_ID,
+    )
+    snapshot_task = asyncio.create_task(client.async_snapshot())
+    try:
+        if vehicle_count > 10_000:
+            with pytest.raises(HubContractError, match="vehicles"):
+                await asyncio.wait_for(snapshot_task, timeout=2)
+            assert started == 0
+        else:
+            await asyncio.wait_for(four_started.wait(), timeout=2)
+            assert started == 4
+    finally:
+        await client.async_close()
+        blocker.set()
+        await asyncio.gather(snapshot_task, return_exceptions=True)

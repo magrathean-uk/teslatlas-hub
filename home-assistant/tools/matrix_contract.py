@@ -19,16 +19,54 @@ UNICODE_NAME = "Interop \N{EN DASH} Árvíztűrő 🚗"
 ARCHIVE_ROLE = "home_assistant_integration_archive"
 SOURCE_ROLE = "home_assistant_source"
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+CURRENT_MEMBER_PATHS = (
+    "__init__.py",
+    "client.py",
+    "config_flow.py",
+    "const.py",
+    "coordinator.py",
+    "credentials.py",
+    "current_hub_client.py",
+    "diagnostics.py",
+    "entity.py",
+    "manifest.json",
+    "models.py",
+    "profile/hub-http-v1/1.0.0/SHA256SUMS",
+    "profile/hub-http-v1/1.0.0/auth.schema.json",
+    "profile/hub-http-v1/1.0.0/cases.json",
+    "profile/hub-http-v1/1.0.0/discovery.schema.json",
+    "profile/hub-http-v1/1.0.0/errors.schema.json",
+    "profile/hub-http-v1/1.0.0/examples/claim.json",
+    "profile/hub-http-v1/1.0.0/examples/current.json",
+    "profile/hub-http-v1/1.0.0/examples/discovery.json",
+    "profile/hub-http-v1/1.0.0/examples/drives.json",
+    "profile/hub-http-v1/1.0.0/examples/health.json",
+    "profile/hub-http-v1/1.0.0/examples/invitation.json",
+    "profile/hub-http-v1/1.0.0/examples/ready.json",
+    "profile/hub-http-v1/1.0.0/examples/vehicles.json",
+    "profile/hub-http-v1/1.0.0/field-semantics.json",
+    "profile/hub-http-v1/1.0.0/openapi.json",
+    "profile/hub-http-v1/1.0.0/profile.json",
+    "profile/hub-http-v1/1.0.0/resources.schema.json",
+    "profile/hub-http-v1/1.0.0/sync-regression.json",
+    "sensor.py",
+    "strings.json",
+    "translations/en.json",
+)
 REQUIRED_LOADED_MODULES = {
     "custom_components.teslatlas_hub": "__init__.py",
     "custom_components.teslatlas_hub.client": "client.py",
     "custom_components.teslatlas_hub.config_flow": "config_flow.py",
     "custom_components.teslatlas_hub.const": "const.py",
     "custom_components.teslatlas_hub.coordinator": "coordinator.py",
+    "custom_components.teslatlas_hub.credentials": "credentials.py",
     "custom_components.teslatlas_hub.current_hub_client": "current_hub_client.py",
     "custom_components.teslatlas_hub.entity": "entity.py",
     "custom_components.teslatlas_hub.models": "models.py",
     "custom_components.teslatlas_hub.sensor": "sensor.py",
+}
+OPTIONAL_LOADED_MODULES = {
+    "custom_components.teslatlas_hub.diagnostics": "diagnostics.py",
 }
 
 DECISION_CODES = frozenset(
@@ -403,9 +441,7 @@ def _operation_sequences(
     context: AdmissionContext, operation: str
 ) -> tuple[int, int] | None:
     values = [
-        value
-        for value in context.raw.values()
-        if value.get("operation") == operation
+        value for value in context.raw.values() if value.get("operation") == operation
     ]
     if len(values) != 1:
         return None
@@ -439,9 +475,7 @@ def _same_observed_identity(*observations: Mapping[str, object]) -> bool:
     )
 
 
-def _missing_independent_observation(
-    case_id: str, context: AdmissionContext
-) -> bool:
+def _missing_independent_observation(case_id: str, context: AdmissionContext) -> bool:
     binding = CASE_BINDINGS.get(case_id)
     if binding is None:
         return False
@@ -458,9 +492,7 @@ def _missing_independent_observation(
             return True
         observation = context.controller_observations.get(after)
         transition = (
-            observation.get("transition")
-            if isinstance(observation, Mapping)
-            else None
+            observation.get("transition") if isinstance(observation, Mapping) else None
         )
         if operation == "later_poll" and isinstance(transition, Mapping):
             for key in ("from_sequence", "pre_advance_verify_sequence"):
@@ -587,7 +619,7 @@ def _running_observation(
     for identity in (value["store_id"], value["hub_id"]):
         try:
             parsed_identity = uuid.UUID(identity)
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             return None
         if str(parsed_identity) != identity:
             return None
@@ -607,7 +639,7 @@ def _running_observation(
             return None
         try:
             parsed = uuid.UUID(invitation.get("pairing_id"))
-        except (ValueError, AttributeError):
+        except ValueError, AttributeError:
             return None
         if str(parsed) != invitation["pairing_id"]:
             return None
@@ -620,9 +652,7 @@ def _running_observation(
     else:
         transition = value.get("transition")
         from_sequence = (
-            transition.get("from_sequence")
-            if isinstance(transition, Mapping)
-            else None
+            transition.get("from_sequence") if isinstance(transition, Mapping) else None
         )
         if (
             type(from_sequence) is not int
@@ -648,7 +678,7 @@ def _running_observation(
         if operation == "revoke":
             try:
                 device_id = uuid.UUID(transition.get("device_id"))
-            except (ValueError, AttributeError):
+            except ValueError, AttributeError:
                 return None
             if str(device_id) != transition["device_id"]:
                 return None
@@ -683,8 +713,7 @@ def _stopped_observation(
         or value.get("invitations") is not None
         or not isinstance(transition, Mapping)
         or set(transition) != {"kind", "from_sequence"}
-        or transition
-        != {"kind": "stop", "from_sequence": from_sequence}
+        or transition != {"kind": "stop", "from_sequence": from_sequence}
         or any(
             not isinstance(value.get(key), str)
             or HEX64.fullmatch(str(value[key])) is None
@@ -741,19 +770,15 @@ def _transition_matches(
 
 
 def _validate_context(context: AdmissionContext) -> str | None:
-    if (
-        context.adapter_id != ADAPTER_ID
-        or context.cell_id
-        not in {
-            "home_assistant__macos_arm64",
-            "home_assistant__debian13_arm64",
-            "home_assistant__debian13_amd64",
-        }
-    ):
+    if context.adapter_id != ADAPTER_ID or context.cell_id not in {
+        "home_assistant__macos_arm64",
+        "home_assistant__debian13_arm64",
+        "home_assistant__debian13_amd64",
+    }:
         return "wrong_context"
     try:
         parsed = uuid.UUID(context.session_id)
-    except (ValueError, AttributeError):
+    except ValueError, AttributeError:
         return "wrong_context"
     if parsed.version != 4 or str(parsed) != context.session_id:
         return "wrong_context"
@@ -772,9 +797,8 @@ def _validate_context(context: AdmissionContext) -> str | None:
     if not isinstance(facts, Mapping):
         return "raw_fact_mismatch"
     manifest_hashes = facts.get("actor_manifest_sha256s")
-    if (
-        not isinstance(manifest_hashes, Mapping)
-        or set(manifest_hashes) != set(expected)
+    if not isinstance(manifest_hashes, Mapping) or set(manifest_hashes) != set(
+        expected
     ):
         return "installed_manifest_mismatch"
     shared_runtime: dict[str, object] | None = None
@@ -843,7 +867,7 @@ def _validate_context(context: AdmissionContext) -> str | None:
             or artifact.get("installed_manifest_sha256")
             != facts.get("installed_manifest_sha256")
             or not isinstance(artifact.get("installed_members"), list)
-            or len(artifact["installed_members"]) != 31
+            or len(artifact["installed_members"]) != len(CURRENT_MEMBER_PATHS)
             or any(
                 not isinstance(row, Mapping)
                 or set(row) != {"path", "bytes", "mode", "sha256"}
@@ -857,9 +881,8 @@ def _validate_context(context: AdmissionContext) -> str | None:
                 or HEX64.fullmatch(str(row.get("sha256"))) is None
                 for row in artifact["installed_members"]
             )
-            or [row["path"] for row in artifact["installed_members"]]
-            != sorted(row["path"] for row in artifact["installed_members"])
-            or len({row["path"] for row in artifact["installed_members"]}) != 31
+            or tuple(row["path"] for row in artifact["installed_members"])
+            != CURRENT_MEMBER_PATHS
             or not isinstance(artifact.get("installed_root"), str)
             or not str(artifact["installed_root"]).startswith("/")
             or runtime.get("actor_input_manifest_sha256")
@@ -867,9 +890,7 @@ def _validate_context(context: AdmissionContext) -> str | None:
         ):
             return "installed_manifest_mismatch"
         candidate_shared = {
-            key: runtime[key]
-            for key in runtime
-            if key != "actor_input_manifest_sha256"
+            key: runtime[key] for key in runtime if key != "actor_input_manifest_sha256"
         }
         if shared_runtime is None:
             shared_runtime = candidate_shared
@@ -902,10 +923,8 @@ def _expected_case(case_id: str, context: AdmissionContext) -> dict | None:
         return {
             "archive_sha256": archive.get("sha256"),
             "integration_version": PRODUCT_VERSION,
-            "installed_manifest_sha256": runtime_facts.get(
-                "installed_manifest_sha256"
-            ),
-            "installed_members": 31,
+            "installed_manifest_sha256": runtime_facts.get("installed_manifest_sha256"),
+            "installed_members": len(CURRENT_MEMBER_PATHS),
         }
     if case_id == "installed_service_runtime":
         service_mode = (
@@ -973,13 +992,7 @@ def _expected_operation_facts(
             or any(
                 not isinstance(name, str)
                 or not isinstance(path, str)
-                or (
-                    "__init__.py"
-                    if name == "custom_components.teslatlas_hub"
-                    else name.removeprefix("custom_components.teslatlas_hub.")
-                    .replace(".", "/")
-                    + ".py"
-                )
+                or {**REQUIRED_LOADED_MODULES, **OPTIONAL_LOADED_MODULES}.get(name)
                 != path
                 or path not in members_by_path
                 for name, path in loaded_modules.items()
@@ -1090,9 +1103,7 @@ def _expected_operation_facts(
         transition = observation.get("transition") if observation else None
         initial_sequences = _operation_sequences(context, "initial_poll")
         from_sequence = (
-            transition.get("from_sequence")
-            if isinstance(transition, Mapping)
-            else None
+            transition.get("from_sequence") if isinstance(transition, Mapping) else None
         )
         verify_sequence = (
             transition.get("pre_advance_verify_sequence")
@@ -1116,17 +1127,14 @@ def _expected_operation_facts(
             or predecessor.get("operation") != "verify"
             or pre_advance_verify is None
             or pre_advance_verify.get("operation") != "verify"
-            or not _same_observed_identity(
-                predecessor, pre_advance_verify, observation
-            )
+            or not _same_observed_identity(predecessor, pre_advance_verify, observation)
             or predecessor.get("service_generation")
             != pre_advance_verify.get("service_generation")
             or observation.get("service_generation")
             == pre_advance_verify.get("service_generation")
             or transition.get("before_store_sha256")
             == transition.get("after_store_sha256")
-            or transition.get("scenario_sha256")
-            != observation.get("scenario_sha256")
+            or transition.get("scenario_sha256") != observation.get("scenario_sha256")
             or transition.get("seed_sha256") != observation.get("seed_sha256")
         ):
             return None
@@ -1193,9 +1201,7 @@ def _expected_operation_facts(
                 restarted, "start", transition["stopped_sequence"]
             )
             or not before < transition["stopped_sequence"] < after
-            or _stopped_observation(
-                context, transition["stopped_sequence"], before
-            )
+            or _stopped_observation(context, transition["stopped_sequence"], before)
             is None
             or prior["hub_id"] != restarted["hub_id"]
             or prior["service_generation"] == restarted["service_generation"]
@@ -1225,9 +1231,7 @@ def _expected_operation_facts(
                 restarted, "start", transition["stopped_sequence"]
             )
             or not before < transition["stopped_sequence"] < after
-            or _stopped_observation(
-                context, transition["stopped_sequence"], before
-            )
+            or _stopped_observation(context, transition["stopped_sequence"], before)
             is None
             or prior["service_generation"] == restarted["service_generation"]
         ):
@@ -1275,16 +1279,19 @@ def _expected_operation_facts(
             )
             if isinstance(request, Mapping)
         )
-        completed_attempts = sorted(
-            (attempt.get("method"), attempt.get("route"))
-            for attempt in attempts
-            if isinstance(attempt, Mapping)
-            and attempt.get("outcome") == "completed"
-        ) if isinstance(attempts, list) else []
+        completed_attempts = (
+            sorted(
+                (attempt.get("method"), attempt.get("route"))
+                for attempt in attempts
+                if isinstance(attempt, Mapping)
+                and attempt.get("outcome") == "completed"
+            )
+            if isinstance(attempts, list)
+            else []
+        )
         if (
             not all(type(facts.get(key)) is int and facts[key] >= 0 for key in counts)
-            or facts.get("attempted_requests")
-            != sum(facts[key] for key in counts[1:])
+            or facts.get("attempted_requests") != sum(facts[key] for key in counts[1:])
             or facts.get("pending_requests") != 0
             or not isinstance(attempts, list)
             or len(attempts) > 1024
@@ -1307,11 +1314,7 @@ def _expected_operation_facts(
             )
             or completed_attempts != transcript_attempts
             or len(
-                [
-                    attempt
-                    for attempt in attempts
-                    if attempt["phase"] == "after_unload"
-                ]
+                [attempt for attempt in attempts if attempt["phase"] == "after_unload"]
             )
             != facts.get("post_unload_attempts")
             or type(facts.get("scheduled_callback_deadline_ns")) is not int
@@ -1442,8 +1445,7 @@ def admit_case(case: dict, context: AdmissionContext) -> AdmissionDecision:
             or after_observation is None
             or before_observation["scenario_sha256"]
             != after_observation["scenario_sha256"]
-            or before_observation["seed_sha256"]
-            != after_observation["seed_sha256"]
+            or before_observation["seed_sha256"] != after_observation["seed_sha256"]
             or before_observation["store_id"] != after_observation["store_id"]
             or before_observation["store_schema_version"]
             != after_observation["store_schema_version"]

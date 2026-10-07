@@ -67,6 +67,7 @@ class VehicleState:
     software_update_state: str | None = None
     telemetry_age_seconds: int | None = None
     data_quality: str | None = None
+    current_read_failed: bool = False
 
 
 @dataclass(frozen=True, slots=True)

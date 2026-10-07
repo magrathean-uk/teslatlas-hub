@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import json
+import math
 from dataclasses import replace
+from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+from aiohttp import web
 from homeassistant.const import (
     ATTR_DEVICE_CLASS,
     ATTR_UNIT_OF_MEASUREMENT,
     CONF_HOST,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
+    UnitOfLength,
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
@@ -21,17 +27,217 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.teslatlas_hub.const import (
     CONF_ACCESS_TOKEN,
+    CONF_DEVICE_ID,
     CONF_HUB_ID,
     CONF_PORT,
+    CONF_TOKEN_EXPIRES_AT_MS,
     CONF_USE_TLS,
     DOMAIN,
 )
-from custom_components.teslatlas_hub.models import HubSnapshot
+from custom_components.teslatlas_hub.models import HubSnapshot, VehicleState
 from custom_components.teslatlas_hub.sensor import (
     HUB_SENSOR_DESCRIPTIONS,
     VEHICLE_SENSOR_DESCRIPTIONS,
 )
-from tests.helpers import FixtureHubClient, vehicle_update
+from tests.helpers import FIXTURE_ACCESS_TOKEN, FixtureHubClient, vehicle_update
+
+HTTP_HUB_ID = "11111111-1111-4111-8111-111111111111"
+HTTP_ALPHA_ID = "22222222-2222-4222-8222-222222222222"
+HTTP_BETA_ID = "33333333-3333-4333-8333-333333333333"
+
+
+async def _setup_http(hass: HomeAssistant, aiohttp_server):
+    """Exercise normal setup, real client decoding and actual HA publication."""
+    example = (
+        Path(__file__).parents[1]
+        / "custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/examples"
+        / "current.json"
+    )
+    template = json.loads(example.read_text())
+    current = {
+        HTTP_ALPHA_ID: template
+        | {"vehicle_id": HTTP_ALPHA_ID, "display_name": "HTTP Alpha", "odometer": 42},
+        HTTP_BETA_ID: template
+        | {
+            "vehicle_id": HTTP_BETA_ID,
+            "display_name": "HTTP Beta",
+            "battery_level": 40,
+        },
+    }
+
+    async def discovery(_request):
+        return web.json_response(
+            {
+                "hub_id": HTTP_HUB_ID,
+                "protocol": "teslatlas-sync",
+                "protocol_major": 1,
+                "api_versions": ["1.0"],
+                "capabilities": ["query.vehicles", "query.current"],
+            }
+        )
+
+    async def vehicles(_request):
+        return web.json_response(
+            {
+                "vehicles": [
+                    {"vehicle_id": key, "display_name": value["display_name"]}
+                    for key, value in current.items()
+                ]
+            }
+        )
+
+    async def projection(request):
+        return web.json_response(current[request.match_info["vehicle"]])
+
+    app = web.Application()
+    app.router.add_get("/.well-known/teslatlas-hub", discovery)
+    app.router.add_get("/v1/vehicles", vehicles)
+    app.router.add_get("/v1/vehicles/{vehicle}/current", projection)
+    server = await aiohttp_server(app)
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=HTTP_HUB_ID,
+        version=1,
+        minor_version=2,
+        data={
+            CONF_HOST: server.host,
+            CONF_PORT: server.port,
+            CONF_USE_TLS: False,
+            CONF_HUB_ID: HTTP_HUB_ID,
+            CONF_ACCESS_TOKEN: "a" * 64,
+            CONF_DEVICE_ID: "44444444-4444-4444-8444-444444444444",
+            CONF_TOKEN_EXPIRES_AT_MS: 2**63 - 1,
+        },
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry, current
+
+
+async def test_repeated_polls_refresh_source_name_preserving_customizations(
+    hass: HomeAssistant, aiohttp_server, socket_enabled
+) -> None:
+    """Follow two source renames without replacing IDs or user-provided names."""
+    entry, current = await _setup_http(hass, aiohttp_server)
+    devices = dr.async_get(hass)
+    alpha = _device_by_identifier(
+        hass, (DOMAIN, f"{HTTP_HUB_ID}:{HTTP_ALPHA_ID}"), entry.entry_id
+    )
+    beta = _device_by_identifier(
+        hass, (DOMAIN, f"{HTTP_HUB_ID}:{HTTP_BETA_ID}"), entry.entry_id
+    )
+    assert alpha is not None and alpha.name == "HTTP Alpha"
+    assert beta is not None and beta.name == "HTTP Beta"
+    devices.async_update_device(alpha.id, name_by_user="Garage Tesla")
+    registry = er.async_get(hass)
+    charge_id = _entity_id(hass, f"{HTTP_HUB_ID}_{HTTP_ALPHA_ID}_state_of_charge")
+    registry.async_update_entity(charge_id, name="My battery")
+    await hass.async_block_till_done()
+    original_entities = {
+        item.unique_id: (item.id, item.entity_id, item.device_id, item.name)
+        for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+    }
+    original_devices = {
+        item.id for item in dr.async_entries_for_config_entry(devices, entry.entry_id)
+    }
+
+    for source_name in ("HTTP Renamed", "HTTP Renamed Again", "HTTP Renamed Again"):
+        current[HTTP_ALPHA_ID]["display_name"] = source_name
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        renamed = _device_by_identifier(
+            hass, (DOMAIN, f"{HTTP_HUB_ID}:{HTTP_ALPHA_ID}"), entry.entry_id
+        )
+        assert renamed is not None
+        assert renamed.id == alpha.id
+        assert renamed.identifiers == alpha.identifiers
+        assert renamed.name == source_name
+        assert renamed.name_by_user == "Garage Tesla"
+        assert devices.async_get(beta.id).name == "HTTP Beta"
+        assert {
+            item.unique_id: (item.id, item.entity_id, item.device_id, item.name)
+            for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+        } == original_entities
+        assert {
+            item.id
+            for item in dr.async_entries_for_config_entry(devices, entry.entry_id)
+        } == original_devices
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+
+
+@pytest.mark.parametrize(
+    ("unit", "factor", "extreme", "expected", "control"),
+    [
+        (UnitOfLength.KILOMETERS, 1, 10**400, STATE_UNKNOWN, 1e300),
+        (UnitOfLength.METERS, 1000, 1e308, STATE_UNKNOWN, 1e305),
+        (UnitOfLength.MILLIMETERS, 1000000, 1e308, STATE_UNKNOWN, 1e302),
+        (UnitOfLength.KILOMETERS, 1, 1e308, "1e+308", 1e300),
+    ],
+)
+async def test_repeated_numeric_polls_publish_controlled_state_and_recover(
+    hass: HomeAssistant,
+    aiohttp_server,
+    socket_enabled,
+    caplog,
+    unit,
+    factor,
+    extreme,
+    expected,
+    control,
+) -> None:
+    """Never retain old success or publish infinity; siblings and recovery work."""
+    entry, current = await _setup_http(hass, aiohttp_server)
+    odometer_id = _entity_id(hass, f"{HTTP_HUB_ID}_{HTTP_ALPHA_ID}_odometer")
+    sibling_id = _entity_id(hass, f"{HTTP_HUB_ID}_{HTTP_BETA_ID}_state_of_charge")
+    registry = er.async_get(hass)
+    registry.async_update_entity_options(
+        odometer_id, "sensor", {"unit_of_measurement": unit}
+    )
+    await hass.async_block_till_done()
+    assert float(hass.states.get(odometer_id).state) == 42 * factor
+    original_entities = {
+        item.unique_id: (item.id, item.entity_id)
+        for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+    }
+
+    for sibling_value in (41, 42):
+        current[HTTP_ALPHA_ID]["odometer"] = extreme
+        current[HTTP_BETA_ID]["battery_level"] = sibling_value
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        assert entry.runtime_data.last_update_success
+        assert hass.states.get(odometer_id).state == expected
+        assert hass.states.get(sibling_id).state == str(sibling_value)
+
+    for value, expected_native in ((control, control), (43, 43), (0, 0), (None, None)):
+        current[HTTP_ALPHA_ID]["odometer"] = value
+        await entry.runtime_data.async_refresh()
+        await hass.async_block_till_done()
+        assert entry.runtime_data.last_update_success
+        vehicle = entry.runtime_data.data.vehicles[HTTP_ALPHA_ID]
+        assert vehicle.odometer_km == expected_native
+        state = hass.states.get(odometer_id)
+        assert state.attributes[ATTR_UNIT_OF_MEASUREMENT] == unit
+        if value is None:
+            assert state.state == STATE_UNKNOWN
+        else:
+            published = float(state.state)
+            assert math.isfinite(published)
+            assert published == pytest.approx(value * factor)
+
+    current[HTTP_ALPHA_ID]["odometer"] = 44
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+    assert float(hass.states.get(odometer_id).state) == 44 * factor
+    assert {
+        item.unique_id: (item.id, item.entity_id)
+        for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+    } == original_entities
+    assert "OverflowError" not in caplog.text
+    assert "Exception in callback" not in caplog.text
+    assert await hass.config_entries.async_unload(entry.entry_id)
 
 
 def _entry(hass: HomeAssistant) -> MockConfigEntry:
@@ -44,7 +250,7 @@ def _entry(hass: HomeAssistant) -> MockConfigEntry:
             CONF_PORT: 7443,
             CONF_USE_TLS: True,
             CONF_HUB_ID: "hub-fixture",
-            CONF_ACCESS_TOKEN: "fixture-device-bearer",
+            CONF_ACCESS_TOKEN: FIXTURE_ACCESS_TOKEN,
         },
     )
     entry.add_to_hass(hass)
@@ -147,6 +353,56 @@ async def test_disconnect_marks_all_entities_unavailable(
     assert charge_state is not None
     assert charge_state.state == STATE_UNAVAILABLE
 
+    assert await hass.config_entries.async_unload(entry.entry_id) is True
+
+
+async def test_current_failure_is_unavailable_but_missing_observation_is_unknown(
+    hass: HomeAssistant,
+) -> None:
+    client = FixtureHubClient()
+    entry = await _setup(hass, client)
+    coordinator = entry.runtime_data
+    before = coordinator.data
+    alpha_id = _entity_id(hass, "hub-fixture_vehicle-alpha_state_of_charge")
+    beta_id = _entity_id(hass, "hub-fixture_vehicle-beta_state_of_charge")
+    registry = er.async_get(hass)
+    original_ids = {
+        item.unique_id
+        for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+    }
+
+    failed = VehicleState(
+        vehicle_id="vehicle-alpha", name="Fixture Alpha", current_read_failed=True
+    )
+    healthy = replace(before.vehicles["vehicle-beta"], state_of_charge=0)
+    coordinator.async_set_updated_data(
+        HubSnapshot.create(
+            info=before.info,
+            status=before.status,
+            vehicles=[failed, healthy],
+            received_at=before.received_at,
+        )
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(alpha_id).state == STATE_UNAVAILABLE
+    assert hass.states.get(beta_id).state == "0"
+
+    coordinator.async_set_updated_data(
+        coordinator.data.with_vehicle(
+            replace(failed, current_read_failed=False), before.received_at
+        )
+    )
+    await hass.async_block_till_done()
+    assert hass.states.get(alpha_id).state == STATE_UNKNOWN
+    assert hass.states.get(beta_id).state == "0"
+
+    coordinator.async_set_updated_data(before)
+    await hass.async_block_till_done()
+    assert hass.states.get(alpha_id).state == "72.5"
+    assert {
+        item.unique_id
+        for item in er.async_entries_for_config_entry(registry, entry.entry_id)
+    } == original_ids
     assert await hass.config_entries.async_unload(entry.entry_id) is True
 
 

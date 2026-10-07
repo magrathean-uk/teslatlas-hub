@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any, override
 
 import voluptuous as vol
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST
+from homeassistant.core import callback
 from homeassistant.helpers.selector import (
     BooleanSelector,
     NumberSelector,
@@ -43,6 +46,11 @@ from .const import (
     CONFIG_ENTRY_VERSION,
     DEFAULT_PORT,
     DOMAIN,
+)
+from .credentials import (
+    HubCredentialExpiredError,
+    epoch_milliseconds,
+    validate_current_hub_credential,
 )
 from .models import HubEndpoint, HubInfo, PairingResult
 
@@ -92,6 +100,10 @@ PAIRING_SCHEMA = vol.Schema(
     }
 )
 VALIDATE_SCHEMA = vol.Schema({})
+APPROVE_NEW_TLS_PIN = "approve_new_tls_pin"
+TLS_APPROVAL_SCHEMA = vol.Schema(
+    {vol.Required(APPROVE_NEW_TLS_PIN, default=False): BooleanSelector()}
+)
 
 
 class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
@@ -105,6 +117,47 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         self._endpoint: HubEndpoint | None = None
         self._info: HubInfo | None = None
         self._pending_pairing_result: PairingResult | None = None
+        self._replacement_endpoint: HubEndpoint | None = None
+        self._replacement_hub_id: str | None = None
+        self._replacement_approved = False
+        self._flow_removed = False
+        self._reauth_generation = 0
+
+    @override
+    @callback
+    def async_remove(self) -> None:
+        """Invalidate pending mutations when HA removes this flow."""
+        self._flow_removed = True
+        self._reauth_generation += 1
+        if self.context.get("source") == SOURCE_REAUTH:
+            self._pending_pairing_result = None
+        super().async_remove()
+
+    def _reauth_is_current(self, generation: int) -> bool:
+        return not self._flow_removed and generation == self._reauth_generation
+
+    def _superseded_reauth_result(self) -> ConfigFlowResult:
+        """Leave a newer active operation's invitation or candidate intact."""
+        if self._flow_removed:
+            return self.async_abort(reason="reauth_cancelled")
+        step = (
+            "reauth_validate"
+            if self._pending_pairing_result is not None
+            else "reauth_confirm"
+        )
+        if (
+            self.cur_step is not None
+            and self.cur_step.get("type") == "form"
+            and self.cur_step.get("step_id") == step
+        ):
+            return self.cur_step
+        if self._pending_pairing_result is not None:
+            return self.async_show_form(
+                step_id="reauth_validate", data_schema=VALIDATE_SCHEMA
+            )
+        return self.async_show_form(
+            step_id="reauth_confirm", data_schema=PAIRING_SCHEMA
+        )
 
     async def _async_probe(
         self,
@@ -202,6 +255,44 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         return None
 
     @staticmethod
+    def _issued_credential_error(result: PairingResult) -> str | None:
+        """Check issued metadata and freshness at the point of use."""
+        try:
+            validate_current_hub_credential(
+                result.access_token,
+                result.device_id,
+                result.expires_at_ms,
+                now_ms=epoch_milliseconds(datetime.now(UTC)),
+            )
+        except HubCredentialExpiredError:
+            return "invalid_auth"
+        except HubContractError:
+            return "invalid_contract"
+        return None
+
+    async def _async_validate_issued_access(
+        self, endpoint: HubEndpoint, result: PairingResult, hub_id: str
+    ) -> str | None:
+        """Admit the complete credential before dispatch and entry mutation."""
+        if error := self._issued_credential_error(result):
+            return error
+        if result.info.hub_id != hub_id:
+            return "wrong_hub"
+        error = await self._async_validate_access(
+            endpoint,
+            hub_id=hub_id,
+            access_token=result.access_token,
+            expires_at_ms=result.expires_at_ms,
+        )
+        return error if error is not None else self._issued_credential_error(result)
+
+    def _clear_replacement(self) -> None:
+        self._replacement_endpoint = None
+        self._replacement_hub_id = None
+        self._replacement_approved = False
+        self._pending_pairing_result = None
+
+    @staticmethod
     def _has_saved_origin_binding(
         entry_data: Mapping[str, Any], endpoint: HubEndpoint
     ) -> bool:
@@ -296,15 +387,19 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
         if user_input is not None:
             result = self._pending_pairing_result
-            error = await self._async_validate_access(
-                self._endpoint,
-                hub_id=result.info.hub_id,
-                access_token=result.access_token,
-                expires_at_ms=result.expires_at_ms,
+            error = await self._async_validate_issued_access(
+                self._endpoint, result, result.info.hub_id
             )
             if error == "wrong_hub":
                 self._pending_pairing_result = None
                 return self.async_abort(reason="wrong_hub")
+            if error == "invalid_auth":
+                self._pending_pairing_result = None
+                return self.async_show_form(
+                    step_id="pair",
+                    data_schema=PAIRING_SCHEMA,
+                    errors={"base": "invalid_auth"},
+                )
             if error is not None:
                 errors["base"] = error
             else:
@@ -344,6 +439,8 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         """Claim a fresh device bearer and preserve stable Hub identity."""
         errors: dict[str, str] = {}
         if user_input is not None:
+            self._reauth_generation += 1
+            generation = self._reauth_generation
             entry = self._get_reauth_entry()
             endpoint = HubEndpoint(
                 host=entry.data[CONF_HOST],
@@ -356,6 +453,7 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 expected_hub_id=entry.data[CONF_HUB_ID],
                 hass=self.hass,
             )
+            result: PairingResult | None = None
             try:
                 result = await client.async_pair(
                     user_input[CONF_PAIRING_ID],
@@ -363,7 +461,7 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                     user_input[CONF_DEVICE_NAME],
                 )
             except HubIdentityError:
-                return self.async_abort(reason="wrong_hub")
+                errors["base"] = "wrong_hub"
             except HubPairingError:
                 errors["base"] = "invalid_pairing_secret"
             except HubConnectionError:
@@ -374,13 +472,20 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "protocol_not_ready"
             except HubContractError:
                 errors["base"] = "invalid_contract"
-            else:
+            finally:
+                await client.async_close()
+
+            if not self._reauth_is_current(generation):
+                return self._superseded_reauth_result()
+            if errors.get("base") == "wrong_hub":
+                return self.async_abort(reason="wrong_hub")
+            if result is not None:
                 await self.async_set_unique_id(result.info.hub_id)
+                if not self._reauth_is_current(generation):
+                    return self._superseded_reauth_result()
                 self._abort_if_unique_id_mismatch(reason="wrong_hub")
                 self._pending_pairing_result = result
                 return await self.async_step_reauth_validate({})
-            finally:
-                await client.async_close()
 
         return self.async_show_form(
             step_id="reauth_confirm",
@@ -404,15 +509,25 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         )
         errors: dict[str, str] = {}
         if user_input is not None:
-            error = await self._async_validate_access(
-                endpoint,
-                hub_id=entry.data[CONF_HUB_ID],
-                access_token=result.access_token,
-                expires_at_ms=result.expires_at_ms,
+            generation = self._reauth_generation
+            error = await self._async_validate_issued_access(
+                endpoint, result, entry.data[CONF_HUB_ID]
             )
+            if (
+                not self._reauth_is_current(generation)
+                or self._pending_pairing_result is not result
+            ):
+                return self._superseded_reauth_result()
             if error == "wrong_hub":
                 self._pending_pairing_result = None
                 return self.async_abort(reason="wrong_hub")
+            if error == "invalid_auth":
+                self._pending_pairing_result = None
+                return self.async_show_form(
+                    step_id="reauth_confirm",
+                    data_schema=PAIRING_SCHEMA,
+                    errors={"base": "invalid_auth"},
+                )
             if error is not None:
                 errors["base"] = error
             else:
@@ -448,6 +563,7 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
         if user_input is not None:
+            self._clear_replacement()
             endpoint = HubEndpoint(
                 host=user_input[CONF_HOST],
                 port=int(user_input[CONF_PORT]),
@@ -466,7 +582,16 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
                 finally:
                     await client.async_close()
                 if not self._has_saved_origin_binding(entry.data, endpoint):
-                    errors["base"] = "invalid_contract"
+                    if (
+                        not endpoint.use_tls
+                        or endpoint.tls_pin is None
+                        or re.fullmatch(r"[0-9a-f]{64}", endpoint.tls_pin) is None
+                    ):
+                        errors["base"] = "invalid_contract"
+                    else:
+                        self._replacement_endpoint = endpoint
+                        self._replacement_hub_id = entry.data[CONF_HUB_ID]
+                        return await self.async_step_reconfigure_tls()
                 else:
                     error = await self._async_validate_access(
                         endpoint,
@@ -493,4 +618,139 @@ class TeslatlasHubConfigFlow(ConfigFlow, domain=DOMAIN):
             step_id="reconfigure_confirm",
             data_schema=_endpoint_schema(dict(entry.data) | (user_input or {})),
             errors=errors,
+        )
+
+    async def async_step_reconfigure_tls(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Require explicit approval of the frozen replacement TLS channel."""
+        endpoint = self._replacement_endpoint
+        if endpoint is None or self._replacement_hub_id is None:
+            self._clear_replacement()
+            return self.async_abort(reason="replacement_not_approved")
+        if user_input is not None:
+            if user_input.get(APPROVE_NEW_TLS_PIN) is not True:
+                self._clear_replacement()
+                return self.async_abort(reason="replacement_not_approved")
+            self._replacement_approved = True
+            return await self.async_step_reconfigure_pair()
+        return self.async_show_form(
+            step_id="reconfigure_tls",
+            data_schema=TLS_APPROVAL_SCHEMA,
+            description_placeholders={
+                "host": endpoint.host,
+                "port": str(endpoint.port),
+                "tls_pin": endpoint.tls_pin or "",
+            },
+        )
+
+    async def async_step_reconfigure_pair(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Claim a fresh invitation without the saved bearer on the new channel."""
+        endpoint = self._replacement_endpoint
+        hub_id = self._replacement_hub_id
+        if not self._replacement_approved or endpoint is None or hub_id is None:
+            self._clear_replacement()
+            return self.async_abort(reason="replacement_not_approved")
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            client = create_client(endpoint, expected_hub_id=hub_id, hass=self.hass)
+            result: PairingResult | None = None
+            try:
+                result = await client.async_pair(
+                    user_input[CONF_PAIRING_ID],
+                    user_input[CONF_PAIRING_SECRET],
+                    user_input[CONF_DEVICE_NAME],
+                )
+            except HubIdentityError:
+                errors["base"] = "wrong_hub"
+            except HubPairingError:
+                errors["base"] = "invalid_pairing_secret"
+            except HubAuthenticationError:
+                errors["base"] = "invalid_auth"
+            except HubConnectionError:
+                errors["base"] = "cannot_connect"
+            except ProtocolContractUnavailable:
+                errors["base"] = "protocol_not_ready"
+            except HubContractError:
+                errors["base"] = "invalid_contract"
+            finally:
+                await client.async_close()
+            if (
+                not self._replacement_approved
+                or self._replacement_endpoint is not endpoint
+                or self._replacement_hub_id != hub_id
+            ):
+                return self.async_abort(reason="replacement_not_approved")
+            if errors.get("base") == "wrong_hub" or (
+                result is not None and result.info.hub_id != hub_id
+            ):
+                self._clear_replacement()
+                return self.async_abort(reason="wrong_hub")
+            if result is not None:
+                self._pending_pairing_result = result
+                return await self.async_step_reconfigure_validate({})
+        return self.async_show_form(
+            step_id="reconfigure_pair", data_schema=PAIRING_SCHEMA, errors=errors
+        )
+
+    async def async_step_reconfigure_validate(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Retry one issued bearer before replacing all endpoint credentials."""
+        endpoint = self._replacement_endpoint
+        hub_id = self._replacement_hub_id
+        result = self._pending_pairing_result
+        if (
+            not self._replacement_approved
+            or endpoint is None
+            or hub_id is None
+            or result is None
+        ):
+            self._clear_replacement()
+            return self.async_abort(reason="replacement_not_approved")
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            entry = self._get_reconfigure_entry()
+            if entry.data[CONF_HUB_ID] != hub_id:
+                self._clear_replacement()
+                return self.async_abort(reason="wrong_hub")
+            error = await self._async_validate_issued_access(endpoint, result, hub_id)
+            if entry.data[CONF_HUB_ID] != hub_id:
+                self._clear_replacement()
+                return self.async_abort(reason="wrong_hub")
+            if (
+                not self._replacement_approved
+                or self._replacement_endpoint is not endpoint
+                or self._replacement_hub_id != hub_id
+                or self._pending_pairing_result is not result
+            ):
+                return self.async_abort(reason="replacement_not_approved")
+            if error == "wrong_hub":
+                self._clear_replacement()
+                return self.async_abort(reason="wrong_hub")
+            if error == "invalid_auth":
+                self._pending_pairing_result = None
+                return self.async_show_form(
+                    step_id="reconfigure_pair",
+                    data_schema=PAIRING_SCHEMA,
+                    errors={"base": "invalid_auth"},
+                )
+            if error is not None:
+                errors["base"] = error
+            else:
+                updates = {
+                    CONF_HOST: endpoint.host,
+                    CONF_PORT: endpoint.port,
+                    CONF_USE_TLS: endpoint.use_tls,
+                    CONF_TLS_PIN: endpoint.tls_pin,
+                    CONF_ACCESS_TOKEN: result.access_token,
+                    CONF_DEVICE_ID: result.device_id,
+                    CONF_TOKEN_EXPIRES_AT_MS: result.expires_at_ms,
+                }
+                self._clear_replacement()
+                return self.async_update_reload_and_abort(entry, data_updates=updates)
+        return self.async_show_form(
+            step_id="reconfigure_validate", data_schema=VALIDATE_SCHEMA, errors=errors
         )

@@ -21,6 +21,8 @@ def test_snapshot_preserves_literal_fixture_values() -> None:
     assert snapshot.vehicles["vehicle-alpha"].inside_temperature_c is None
     assert snapshot.vehicles["vehicle-beta"].charging_power_kw == 7.2
     assert snapshot.vehicles["vehicle-beta"].data_quality == "partial"
+    assert snapshot.vehicles["vehicle-alpha"].current_read_failed is False
+    assert snapshot.vehicles["vehicle-beta"].current_read_failed is False
 
 
 def test_snapshot_vehicle_mapping_is_read_only() -> None:

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib.metadata
 import json
 import os
+import platform
 import secrets
 import ssl
+import sys
 import time
-from dataclasses import fields
 from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -53,6 +55,29 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _optional_telemetry(vehicle: VehicleState) -> dict:
+    """Project the telemetry evidence surface independently of read status."""
+    return {
+        name: getattr(vehicle, name)
+        for name in (
+            "state_of_charge",
+            "charging_state",
+            "charging_power_kw",
+            "charge_limit_percent",
+            "estimated_range_km",
+            "odometer_km",
+            "activity_state",
+            "inside_temperature_c",
+            "outside_temperature_c",
+            "access_state",
+            "software_version",
+            "software_update_state",
+            "telemetry_age_seconds",
+            "data_quality",
+        )
+    }
+
+
 def _require_credential_changed(before: str, after: str) -> None:
     unchanged = secrets.compare_digest(before, after)
     del before, after
@@ -75,6 +100,125 @@ def _entity_id(hass: HomeAssistant, unique_id: str) -> str:
     return entity_id
 
 
+def _integration_files(integration_root: Path) -> dict[str, bytes]:
+    files = {}
+    for path in sorted(integration_root.rglob("*")):
+        assert not path.is_symlink(), "integration inventory contains a symlink"
+        if path.is_file() and "__pycache__" not in path.parts:
+            files[str(path.relative_to(integration_root))] = path.read_bytes()
+    return files
+
+
+def _observe_runtime(integration_root: Path, original_files: dict[str, bytes]) -> dict:
+    """Check actual module origins and unchanged admitted source content."""
+    current_files = _integration_files(integration_root)
+    if current_files != original_files:
+        raise AssertionError("integration source changed during the run")
+    package = "custom_components.teslatlas_hub"
+    required = {
+        package,
+        *(
+            f"{package}.{name}"
+            for name in (
+                "client",
+                "config_flow",
+                "const",
+                "coordinator",
+                "credentials",
+                "current_hub_client",
+                "entity",
+                "models",
+                "sensor",
+            )
+        ),
+    }
+    loaded_modules = {}
+    for name, module in sorted(sys.modules.items()):
+        if name != package and not name.startswith(package + "."):
+            continue
+        origin = getattr(module, "__file__", None)
+        assert isinstance(origin, str), "loaded integration module has no source origin"
+        try:
+            relative = str(
+                Path(origin).resolve().relative_to(integration_root.resolve())
+            )
+        except ValueError:
+            raise AssertionError(
+                "loaded integration module is outside the candidate"
+            ) from None
+        expected = (
+            "__init__.py"
+            if name == package
+            else name.removeprefix(package + ".").replace(".", "/") + ".py"
+        )
+        assert relative == expected and relative in current_files, (
+            "loaded integration module is not admitted source"
+        )
+        cached = getattr(module, "__cached__", None)
+        if isinstance(cached, str) and Path(cached).exists():
+            raise AssertionError(
+                "loaded integration module has unadmitted cached bytecode"
+            )
+        loaded_modules[name] = relative
+    assert required.issubset(loaded_modules), (
+        "required integration modules were not loaded"
+    )
+    manifest = json.loads(current_files["manifest.json"])
+    assert manifest["domain"] == DOMAIN
+    source_manifest = hashlib.sha256(
+        "".join(
+            f"custom_components/teslatlas_hub/{relative} "
+            f"{hashlib.sha256(raw).hexdigest()}\n"
+            for relative, raw in current_files.items()
+        ).encode()
+    ).hexdigest()
+    home_assistant_version = importlib.metadata.version("homeassistant")
+    python_version = platform.python_version()
+    return {
+        "runtime": (
+            f"Home Assistant {home_assistant_version} on Python {python_version}"
+        ),
+        "home_assistant_version": home_assistant_version,
+        "python_version": python_version,
+        "integration_version": manifest["version"],
+        "loaded_module_origins": loaded_modules,
+        "source_files_unchanged": current_files == original_files,
+        "integration_source_manifest_sha256": source_manifest,
+    }
+
+
+async def _observe_unload(hass: HomeAssistant, entry, requests: list) -> dict:
+    """Observe cancellation and attempted dispatch past a real refresh deadline."""
+    entry.runtime_data.update_interval = timedelta(milliseconds=50)
+    entry.runtime_data._schedule_refresh()
+    scheduled_handle = getattr(entry.runtime_data._unsub_refresh, "__self__", None)
+    assert isinstance(scheduled_handle, asyncio.TimerHandle)
+    scheduled_deadline = scheduled_handle.when()
+    unload_started_mark = len(requests)
+    unloaded = await hass.config_entries.async_unload(entry.entry_id)
+    unload_completed_mark = len(requests)
+    assert unloaded and entry.state is ConfigEntryState.NOT_LOADED
+    assert scheduled_handle.cancelled()
+    delay_past_deadline = max(0.0, scheduled_deadline - hass.loop.time()) + 0.05
+    async with asyncio.timeout(1):
+        await asyncio.sleep(delay_past_deadline)
+    await hass.async_block_till_done()
+    observed_after_deadline = hass.loop.time()
+    assert observed_after_deadline > scheduled_deadline
+    post_unload_attempts = len(requests) - unload_completed_mark
+    assert post_unload_attempts == 0, "request dispatched after unload"
+    return {
+        "clean_unload": bool(unloaded and scheduled_handle.cancelled()),
+        "attempts_during_unload": unload_completed_mark - unload_started_mark,
+        "unload_started_attempt_count": unload_started_mark,
+        "unload_completed_attempt_count": unload_completed_mark,
+        "post_unload_attempts": post_unload_attempts,
+        "scheduled_callback_deadline_ns": int(scheduled_deadline * 1_000_000_000),
+        "observed_after_deadline_ns": int(observed_after_deadline * 1_000_000_000),
+        "scheduled_callback_cancelled": scheduled_handle.cancelled(),
+    }
+
+
 def _write_receipt(
     receipt_path: Path,
     ready_path: Path,
@@ -83,25 +227,17 @@ def _write_receipt(
     reauth_ready: dict,
     hub_id: str,
     request_count: int,
+    runtime_observation: dict,
+    unload_observation: dict,
 ) -> None:
     """Write a credential-free receipt outside Home Assistant's event loop."""
-    source_root = Path(__file__).parents[2]
-    integration_root = source_root / "custom_components" / "teslatlas_hub"
-    entries = []
-    for path in sorted(integration_root.rglob("*")):
-        if not path.is_file() or "__pycache__" in path.parts:
-            continue
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
-        entries.append(f"{path.relative_to(source_root)} {digest}\n")
-    source_manifest = hashlib.sha256("".join(entries).encode()).hexdigest()
     payload = {
         "schema_version": 1,
-        "runtime": "Home Assistant 2026.8.3 on Python 3.14.2",
+        **runtime_observation,
         "profile_id": PROFILE_ID,
         "profile_sha256": PROFILE_SHA256,
         "hub_binary_sha256": ready["binary_sha256"],
         "hub_id_sha256": hashlib.sha256(hub_id.encode()).hexdigest(),
-        "integration_source_manifest_sha256": source_manifest,
         "config_entry_loaded": True,
         "vehicles": 2,
         "initial_battery": 0,
@@ -122,7 +258,7 @@ def _write_receipt(
         "event_transport_evidence": "instrumented_aiohttp_request_boundary",
         "sse_subscriptions": 0,
         "last_event_id_requests": 0,
-        "clean_unload": True,
+        **unload_observation,
         "ready_descriptor_sha256": hashlib.sha256(ready_path.read_bytes()).hexdigest(),
         "reauth_ready_descriptor_sha256": hashlib.sha256(
             reauth_ready_path.read_bytes()
@@ -150,6 +286,10 @@ async def test_installed_config_entry_polls_and_unloads_real_hub(
     reauth_ready_path = Path(os.environ["TESLATLAS_HA_LIVE_REAUTH_READY"])
     reauth_request_path = Path(os.environ["TESLATLAS_HA_LIVE_REAUTH_REQUEST"])
     reauth_continue_path = Path(os.environ["TESLATLAS_HA_LIVE_REAUTH_CONTINUE"])
+    integration_root = Path(__file__).parents[2] / "custom_components" / "teslatlas_hub"
+    original_files = await hass.async_add_executor_job(
+        _integration_files, integration_root
+    )
     requests: list[tuple[str, str, dict[str, str]]] = []
     original_request = aiohttp.ClientSession._request
 
@@ -314,8 +454,10 @@ async def test_installed_config_entry_polls_and_unloads_real_hub(
     ]
     assert event_requests == []
     assert last_event_id_requests == []
-    assert await hass.config_entries.async_unload(entry.entry_id)
-    assert entry.state is ConfigEntryState.NOT_LOADED
+    unload_observation = await _observe_unload(hass, entry, requests)
+    runtime_observation = await hass.async_add_executor_job(
+        _observe_runtime, integration_root, original_files
+    )
 
     await hass.async_add_executor_job(
         _write_receipt,
@@ -326,14 +468,15 @@ async def test_installed_config_entry_polls_and_unloads_real_hub(
         reauth_ready,
         hub_id,
         len(requests),
+        runtime_observation,
+        unload_observation,
     )
 
 
 def _registry_ids(hass: HomeAssistant, entry_id: str) -> list[str]:
     registry = er.async_get(hass)
     return sorted(
-        item.entity_id
-        for item in er.async_entries_for_config_entry(registry, entry_id)
+        item.entity_id for item in er.async_entries_for_config_entry(registry, entry_id)
     )
 
 
@@ -381,8 +524,7 @@ async def test_installed_matrix_all_cases_against_real_hub(
         "protocol_major": 1,
         "version": "2026.36.2",
         "discovery_status": 200,
-        "authorization_headers": census.authorization_headers
-        - authorization_before,
+        "authorization_headers": census.authorization_headers - authorization_before,
         "credential_absent": True,
     }
     matrix_runtime.record_operation(
@@ -394,10 +536,9 @@ async def test_installed_matrix_all_cases_against_real_hub(
         requests=probe_requests,
     )
 
-    bad_secret = (
-        ("0" if invitation["secret"][0] != "0" else "1")
-        + invitation["secret"][1:]
-    )
+    bad_secret = ("0" if invitation["secret"][0] != "0" else "1") + invitation[
+        "secret"
+    ][1:]
     bad_mark = census.mark()
     client = create_client(endpoint, expected_hub_id=descriptor["hub_id"], hass=hass)
     with pytest.raises(HubPairingError):
@@ -572,11 +713,8 @@ async def test_installed_matrix_all_cases_against_real_hub(
     unknown = await unknown_client._async_current(
         {"vehicle_id": "33333333-3333-4333-8333-333333333333", "display_name": None}
     )
-    optional_fields = {
-        field.name: getattr(unknown, field.name)
-        for field in fields(VehicleState)
-        if field.name not in {"vehicle_id", "name"}
-    }
+    optional_fields = _optional_telemetry(unknown)
+    assert unknown.current_read_failed is False
     assert optional_fields == {
         "state_of_charge": None,
         "charging_state": None,
@@ -613,12 +751,8 @@ async def test_installed_matrix_all_cases_against_real_hub(
     primary_id, empty_id = matrix_runtime.scenario["vehicle_ids"]
     hub_id = descriptor["hub_id"]
     battery_entity = _entity_id(hass, f"{hub_id}_{primary_id}_state_of_charge")
-    temperature_entity = _entity_id(
-        hass, f"{hub_id}_{primary_id}_inside_temperature"
-    )
-    empty_battery_entity = _entity_id(
-        hass, f"{hub_id}_{empty_id}_state_of_charge"
-    )
+    temperature_entity = _entity_id(hass, f"{hub_id}_{primary_id}_inside_temperature")
+    empty_battery_entity = _entity_id(hass, f"{hub_id}_{empty_id}_state_of_charge")
     assert hass.states[battery_entity].state == "0"
     assert hass.states[temperature_entity].state == "21.5"
     assert hass.states[empty_battery_entity].state == STATE_UNKNOWN
@@ -739,9 +873,7 @@ async def test_installed_matrix_all_cases_against_real_hub(
     await hass.async_block_till_done()
     assert entry.entry_id == old_entry_id
     assert entry.state is ConfigEntryState.LOADED
-    matrix_runtime.require_secret_changed(
-        old_token, entry.data[CONF_ACCESS_TOKEN]
-    )
+    matrix_runtime.require_secret_changed(old_token, entry.data[CONF_ACCESS_TOKEN])
     assert _registry_ids(hass, entry.entry_id) == old_registry_ids
     assert hass.states[battery_entity].state == "1"
     reauth_facts = {
@@ -868,9 +1000,7 @@ async def test_installed_matrix_all_cases_against_real_hub(
         "pending_requests": outcomes["pending"],
         "post_unload_attempts": len(post_unload),
         "scheduled_callback_deadline_ns": int(scheduled_deadline * 1_000_000_000),
-        "observed_after_deadline_ns": int(
-            observed_after_deadline * 1_000_000_000
-        ),
+        "observed_after_deadline_ns": int(observed_after_deadline * 1_000_000_000),
         "scheduled_callback_cancelled": scheduled_handle.cancelled(),
         "attempts": retained_attempts,
     }

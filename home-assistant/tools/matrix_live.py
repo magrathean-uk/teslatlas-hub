@@ -25,7 +25,10 @@ sys.dont_write_bytecode = True
 try:
     from .matrix_contract import (
         CASE_BINDINGS,
+        CURRENT_MEMBER_PATHS,
+        OPTIONAL_LOADED_MODULES,
         REQUIRED_CASES,
+        REQUIRED_LOADED_MODULES,
         AdmissionContext,
         AdmittedActor,
         AdmittedInvocation,
@@ -43,7 +46,10 @@ try:
 except ImportError:
     from matrix_contract import (  # type: ignore[no-redef]
         CASE_BINDINGS,
+        CURRENT_MEMBER_PATHS,
+        OPTIONAL_LOADED_MODULES,
         REQUIRED_CASES,
+        REQUIRED_LOADED_MODULES,
         AdmissionContext,
         AdmittedActor,
         AdmittedInvocation,
@@ -236,10 +242,7 @@ class _MatrixRequestCensus:
 
     def since(self, mark: int) -> list[dict]:
         return [
-            {
-                key: item[key]
-                for key in ("method", "route", "status", "request_id")
-            }
+            {key: item[key] for key in ("method", "route", "status", "request_id")}
             for item in self.attempts[mark:]
             if item["outcome"] == "completed"
         ]
@@ -258,9 +261,7 @@ class _MatrixRequestCensus:
                 "method": item["method"],
                 "route": item["route"],
                 "outcome": item["outcome"],
-                "phase": (
-                    "before_unload" if index < unload_mark else "after_unload"
-                ),
+                "phase": ("before_unload" if index < unload_mark else "after_unload"),
             }
             for index, item in enumerate(self.attempts[mark:], start=mark)
         ]
@@ -437,8 +438,8 @@ class MatrixRuntime:
             expected.append(row)
         if [row["path"] for row in expected] != sorted(seen):
             raise MatrixWireError("installed integration members are not sorted")
-        if len(expected) != 31:
-            raise MatrixWireError("installed integration must contain 31 members")
+        if tuple(row["path"] for row in expected) != CURRENT_MEMBER_PATHS:
+            raise MatrixWireError("installed integration member inventory is invalid")
         installed_root = Path(product["local_root"])
         if (
             installed_root.name != "teslatlas_hub"
@@ -474,17 +475,7 @@ class MatrixRuntime:
     def validate_loaded_modules(self) -> dict[str, str]:
         """Bind every executed integration module to admitted source bytes."""
         package = "custom_components.teslatlas_hub"
-        required = {
-            package,
-            f"{package}.client",
-            f"{package}.config_flow",
-            f"{package}.const",
-            f"{package}.coordinator",
-            f"{package}.current_hub_client",
-            f"{package}.entity",
-            f"{package}.models",
-            f"{package}.sensor",
-        }
+        admitted_modules = {**REQUIRED_LOADED_MODULES, **OPTIONAL_LOADED_MODULES}
         installed_by_path = {
             row["path"]: row for row in self.installed_manifest["files"]
         }
@@ -503,7 +494,11 @@ class MatrixRuntime:
                     "loaded integration module is outside installed root"
                 ) from error
             row = installed_by_path.get(relative)
-            if row is None or source.suffix != ".py":
+            if (
+                row is None
+                or source.suffix != ".py"
+                or admitted_modules.get(name) != relative
+            ):
                 raise MatrixWireError(
                     "loaded integration module is not admitted source"
                 )
@@ -513,7 +508,7 @@ class MatrixRuntime:
             if isinstance(cached, str) and Path(cached).exists():
                 raise MatrixWireError("loaded integration module has cached bytecode")
             loaded[name] = relative
-        if not required.issubset(loaded):
+        if not set(REQUIRED_LOADED_MODULES).issubset(loaded):
             raise MatrixWireError("required integration modules were not executed")
         self._validate_installed_members()
         return loaded
@@ -597,9 +592,7 @@ class MatrixRuntime:
             "finished_monotonic_ns": time.monotonic_ns(),
             "observed_at_ms": int(time.time() * 1000),
             "proof_sha256": _proof_sha256(proof),
-            "result_sha256": hashlib.sha256(
-                canonical_json_bytes(result)
-            ).hexdigest(),
+            "result_sha256": hashlib.sha256(canonical_json_bytes(result)).hexdigest(),
             "scenario_sha256": proof["config"]["scenario_sha256"],
             "seed_sha256": proof["config"]["seed_sha256"],
             "store_id": proof["config"]["store_id"],
@@ -754,8 +747,7 @@ class MatrixRuntime:
                 not isinstance(advance.get(key), str)
                 or len(advance[key]) != 64
                 or any(
-                    character not in "0123456789abcdef"
-                    for character in advance[key]
+                    character not in "0123456789abcdef" for character in advance[key]
                 )
                 for key in advance
             )
@@ -776,6 +768,7 @@ class MatrixRuntime:
 
     def set_case_facts_from_raw(self) -> None:
         """Project enriched sealed operation facts into the fixed case shapes."""
+
         def facts(operation: str) -> dict:
             value = self.raw.get(f"raw-{operation}")
             if not isinstance(value, dict) or not isinstance(value.get("facts"), dict):
@@ -870,9 +863,7 @@ class MatrixRuntime:
                         "unicode_name",
                     ),
                     "later_battery": later["later_battery"],
-                    "later_inside_temperature_c": later[
-                        "later_inside_temperature_c"
-                    ],
+                    "later_inside_temperature_c": later["later_inside_temperature_c"],
                 },
                 "endpoint_restart": select(
                     "endpoint_restart_poll",
@@ -990,8 +981,9 @@ class MatrixRuntime:
                         dict(row) for row in self.installed_manifest["files"]
                     ],
                 },
-                "actor_input_manifest_sha256": spec["input_manifest"]["local"]
-                ["sha256"],
+                "actor_input_manifest_sha256": spec["input_manifest"]["local"][
+                    "sha256"
+                ],
             }
             actors[spec["id"]] = AdmittedActor(
                 id=spec["id"],
@@ -1029,9 +1021,7 @@ class MatrixRuntime:
                 )
         return tuple(invocations)
 
-    def _cases(
-        self, context: AdmissionContext
-    ) -> list[dict]:
+    def _cases(self, context: AdmissionContext) -> list[dict]:
         if self.case_facts is None:
             raise MatrixWireError("HA case facts were not supplied by the live test")
         invocations = context.invocations
@@ -1238,8 +1228,7 @@ class MatrixRuntime:
             "module_sha256": next(
                 row["sha256"]
                 for row in self.installed_manifest["files"]
-                if row["path"]
-                == loaded_modules["custom_components.teslatlas_hub"]
+                if row["path"] == loaded_modules["custom_components.teslatlas_hub"]
             ),
             "loaded_modules": loaded_modules,
             "manifest_domain": manifest["domain"],
@@ -1309,9 +1298,7 @@ def main(argv: list[str] | None = None) -> int:
             plugins=[AdapterPlugin()],
         )
         framework_log.finish()
-        _require_framework_success(
-            result, pytest.ExitCode.OK, framework_log.overflowed
-        )
+        _require_framework_success(result, pytest.ExitCode.OK, framework_log.overflowed)
         asyncio.run(runtime.finalize())
         broker.close()
         return 0

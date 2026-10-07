@@ -286,7 +286,7 @@
       "id": "ha-runtime-v1",
       "schema": {
         "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-runtime-v1.schema.json",
-        "sha256": "a49e3212ac07a64c8f27de6baa06418013f4ef0f5a3515436973c9969095f31c"
+        "sha256": "24cd69d0de428fa23fe85ff33cbb3d81d3b3e813ddef5d8a8f98aafa4e302f13"
       }
     },
     {
@@ -307,13 +307,13 @@
       "id": "ha-flow-v1",
       "schema": {
         "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-flow-v1.schema.json",
-        "sha256": "dd4bd1c39e00e35b11550c20a5f660489cfcd93c15269e3b44799101e84ea189"
+        "sha256": "72d0b795eef7fb554413c323309a8596dd583bb2b9b88e2d10df9c22d5c6bf2e"
       }
     }
   ],
   "phases": [],
   "validator": {
     "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_contract.py",
-    "sha256": "6b68dfa30a448130fccea7cbd1ff61ae301601438a0f908e7b8662807f4a4793"
+    "sha256": "ccd0ff198036d68dd6d6874e5f9957486d149fd9fb9a60d1b8d58e01c9fdeacb"
   }
 }

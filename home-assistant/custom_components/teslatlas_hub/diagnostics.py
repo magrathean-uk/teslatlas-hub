@@ -49,6 +49,10 @@ async def async_get_config_entry_diagnostics(
                 "protocol_version": snapshot.info.protocol_version,
                 "capabilities": sorted(snapshot.info.capabilities),
                 "vehicle_count": len(snapshot.vehicles),
+                "current_read_failure_count": sum(
+                    vehicle.current_read_failed
+                    for vehicle in snapshot.vehicles.values()
+                ),
                 "received_at": snapshot.received_at.isoformat(),
             }
         )
@@ -58,6 +62,7 @@ async def async_get_config_entry_diagnostics(
                 "protocol_version": None,
                 "capabilities": [],
                 "vehicle_count": 0,
+                "current_read_failure_count": 0,
                 "received_at": None,
             }
         )

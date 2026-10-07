@@ -1,0 +1,480 @@
+{
+  "acceptance_limits": [
+    "Source/provenance succession only; Hub owns exact final document pin adoption",
+    "The two2026-09-08 documents and their historical claims remain unchanged as history",
+    "No installed lifecycle, runtime registration, module-origin execution or registry acceptance",
+    "No live Hub, vehicle, frontend, phone, floor, VM, deployment or runtime assurance",
+    "No new test totals, checkout state or observed runtime versions are asserted here"
+  ],
+  "adapter": {
+    "actors": [
+      {
+        "artifact_roles": [
+          "home_assistant_integration_archive"
+        ],
+        "entrypoint_ref": "ha_matrix_flow",
+        "id": "ha_flow",
+        "kind": "installed_ha_flow",
+        "runtime_ref": "ha_container",
+        "source_roles": [
+          "home_assistant_source"
+        ]
+      },
+      {
+        "artifact_roles": [
+          "home_assistant_integration_archive"
+        ],
+        "entrypoint_ref": "ha_matrix_client",
+        "id": "ha_client",
+        "kind": "installed_ha_client",
+        "runtime_ref": "ha_container",
+        "source_roles": [
+          "home_assistant_source"
+        ]
+      }
+    ],
+    "contract_files": {
+      "manifest": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix-contract.json",
+        "sha256": "353fc69c40dc930a1880b5b936e92639898359bf40fecc927eaf028e41139bed"
+      },
+      "raw_schemas": [
+        {
+          "id": "ha-runtime-v1",
+          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-runtime-v1.schema.json",
+          "sha256": "24cd69d0de428fa23fe85ff33cbb3d81d3b3e813ddef5d8a8f98aafa4e302f13"
+        },
+        {
+          "id": "ha-initial-v1",
+          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-initial-v1.schema.json",
+          "sha256": "5e3525d5523e4162320bfdc2cdd6fc13f0203187d3fe2e141b9cdfe33f37f8e6"
+        },
+        {
+          "id": "ha-client-v1",
+          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-client-v1.schema.json",
+          "sha256": "dcf05f837e37fc6541d8d6d0e3c5ce068a0b0eb662d8e6b00cb723171b9b3b92"
+        },
+        {
+          "id": "ha-flow-v1",
+          "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/ha-flow-v1.schema.json",
+          "sha256": "72d0b795eef7fb554413c323309a8596dd583bb2b9b88e2d10df9c22d5c6bf2e"
+        }
+      ],
+      "validator": {
+        "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/tools/matrix_contract.py",
+        "sha256": "ccd0ff198036d68dd6d6874e5f9957486d149fd9fb9a60d1b8d58e01c9fdeacb"
+      }
+    },
+    "contract_revision": 1,
+    "id": "home_assistant",
+    "required_case_count": 18,
+    "source_manifest": {
+      "file_count": 10,
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/ha-admission-source-manifest-2026-10-07.json",
+      "sha256": "cc1f5e37e8678e492b0fdf664ab42ef0e1c5cb82a2ebf7a1cef0b1934b7966bc"
+    },
+    "source_manifest_refresh": {
+      "anchor_scope": "changed_file is the existing receiver compatibility anchor; it is not an assertion that only one source file changed",
+      "changed_file": "teslatlas-home-assistant/tests/test_matrix_live.py",
+      "changed_file_count": 7,
+      "changed_files": [
+        {
+          "current_attested_row": {
+            "bytes": 52149,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tools/matrix_live.py",
+            "sha256": "40161af1f138de170ae465c32a8cd6910e9337ec82c93c7df8d14b113e77bfbb"
+          },
+          "historical_document_row": {
+            "bytes": 52249,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tools/matrix_live.py",
+            "sha256": "cb9dfad5ffe5c86ec2c33f5160bbdd81593262f9f9985ace01d83463f9645b55"
+          },
+          "path": "teslatlas-home-assistant/tools/matrix_live.py"
+        },
+        {
+          "current_attested_row": {
+            "bytes": 57341,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tools/matrix_contract.py",
+            "sha256": "ccd0ff198036d68dd6d6874e5f9957486d149fd9fb9a60d1b8d58e01c9fdeacb"
+          },
+          "historical_document_row": {
+            "bytes": 56097,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tools/matrix_contract.py",
+            "sha256": "aa0c27880a59855e110a8a43c540c1e6127e449b63e1f834140c8c681014185f"
+          },
+          "path": "teslatlas-home-assistant/tools/matrix_contract.py"
+        },
+        {
+          "current_attested_row": {
+            "bytes": 6906,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tools/matrix-contract.json",
+            "sha256": "353fc69c40dc930a1880b5b936e92639898359bf40fecc927eaf028e41139bed"
+          },
+          "historical_document_row": {
+            "bytes": 6906,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tools/matrix-contract.json",
+            "sha256": "6b3f8a19bba579790bd554a589a82f273facdbdf5515feba2c83b9eda2091820"
+          },
+          "path": "teslatlas-home-assistant/tools/matrix-contract.json"
+        },
+        {
+          "current_attested_row": {
+            "bytes": 7250,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tools/ha-runtime-v1.schema.json",
+            "sha256": "24cd69d0de428fa23fe85ff33cbb3d81d3b3e813ddef5d8a8f98aafa4e302f13"
+          },
+          "historical_document_row": {
+            "bytes": 6959,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tools/ha-runtime-v1.schema.json",
+            "sha256": "a49e3212ac07a64c8f27de6baa06418013f4ef0f5a3515436973c9969095f31c"
+          },
+          "path": "teslatlas-home-assistant/tools/ha-runtime-v1.schema.json"
+        },
+        {
+          "current_attested_row": {
+            "bytes": 9770,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tools/ha-flow-v1.schema.json",
+            "sha256": "72d0b795eef7fb554413c323309a8596dd583bb2b9b88e2d10df9c22d5c6bf2e"
+          },
+          "historical_document_row": {
+            "bytes": 9769,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tools/ha-flow-v1.schema.json",
+            "sha256": "dd4bd1c39e00e35b11550c20a5f660489cfcd93c15269e3b44799101e84ea189"
+          },
+          "path": "teslatlas-home-assistant/tools/ha-flow-v1.schema.json"
+        },
+        {
+          "current_attested_row": {
+            "bytes": 110137,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tests/test_matrix_live.py",
+            "sha256": "522b48ab73f6f36ffc74c279a6b49254abcfbb710cc492c6af599f71e896619a"
+          },
+          "historical_document_row": {
+            "bytes": 92151,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tests/test_matrix_live.py",
+            "sha256": "5935c634766b397162fccfa74348a535bbcb8b70c69bb66223bd9e69f5cce108"
+          },
+          "path": "teslatlas-home-assistant/tests/test_matrix_live.py"
+        },
+        {
+          "current_attested_row": {
+            "bytes": 38987,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tests/integration/test_live_hub.py",
+            "sha256": "b719e9b438109b491c7ba9b5800e6435d2f4e1cea7c0d9cce4ddb6d2ac7049af"
+          },
+          "historical_document_row": {
+            "bytes": 33490,
+            "mode": "0644",
+            "path": "teslatlas-home-assistant/tests/integration/test_live_hub.py",
+            "sha256": "d42efba1341dfe3ae9db2f974189aa97e812caa58663b4d52de450010accf728"
+          },
+          "path": "teslatlas-home-assistant/tests/integration/test_live_hub.py"
+        }
+      ],
+      "current_file_sha256": "522b48ab73f6f36ffc74c279a6b49254abcfbb710cc492c6af599f71e896619a",
+      "previous_file_sha256": "5935c634766b397162fccfa74348a535bbcb8b70c69bb66223bd9e69f5cce108",
+      "refresh_kind": "source-set-refresh",
+      "supersedes_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/ha-admission-source-manifest-2026-09-08.json",
+      "supersedes_sha256": "e74a955374003be9820a450174715412b4a9c1d504b47eb33d1f93e6b2173832",
+      "unchanged_file_count": 3,
+      "unchanged_files": [
+        {
+          "bytes": 36936,
+          "mode": "0644",
+          "path": "teslatlas-home-assistant/tools/matrix_wire.py",
+          "sha256": "cd7f4a620f5aaab46bd4e311f7e350063d5f6db39da72e5b0e8129f46e8d1085"
+        },
+        {
+          "bytes": 1498,
+          "mode": "0644",
+          "path": "teslatlas-home-assistant/tools/ha-initial-v1.schema.json",
+          "sha256": "5e3525d5523e4162320bfdc2cdd6fc13f0203187d3fe2e141b9cdfe33f37f8e6"
+        },
+        {
+          "bytes": 7692,
+          "mode": "0644",
+          "path": "teslatlas-home-assistant/tools/ha-client-v1.schema.json",
+          "sha256": "dcf05f837e37fc6541d8d6d0e3c5ce068a0b0eb662d8e6b00cb723171b9b3b92"
+        }
+      ],
+      "verification_root": "/Users/bolyki/dev/source/teslatlas-service"
+    }
+  },
+  "component_identity": {
+    "files": [
+      {
+        "bytes": 3101,
+        "mode": 420,
+        "path": "__init__.py",
+        "sha256": "326c8243acb150e5eb557670527be2054348596e659bd1cb81b0e4604c5db5ad"
+      },
+      {
+        "bytes": 3779,
+        "mode": 420,
+        "path": "client.py",
+        "sha256": "4c547f427ca53260ca492d65dec0fef879839e7c06a0700670990eb8102ac0b3"
+      },
+      {
+        "bytes": 28842,
+        "mode": 420,
+        "path": "config_flow.py",
+        "sha256": "ca7b0f53744ad9f343248b3aecc016b492a48d9dc47326fe01cd9e0d4a52e457"
+      },
+      {
+        "bytes": 702,
+        "mode": 420,
+        "path": "const.py",
+        "sha256": "05ed51cd8081eb53062e5156bfbcaa419a138625b342f4b14bb1aab5e635229c"
+      },
+      {
+        "bytes": 5449,
+        "mode": 420,
+        "path": "coordinator.py",
+        "sha256": "30ee043c06eb9c6eef6d173c407830fe995a3f19673a0055fc2c1974e9894716"
+      },
+      {
+        "bytes": 2703,
+        "mode": 420,
+        "path": "credentials.py",
+        "sha256": "ff1e0565edd2e85508684a3d90d72d6bdd45f34f0a1a13f51c0220314cd17368"
+      },
+      {
+        "bytes": 22303,
+        "mode": 420,
+        "path": "current_hub_client.py",
+        "sha256": "fcbda066b2cf4d93927e7fab8bb8b854d3b1e142c009050148da8d3fd6050224"
+      },
+      {
+        "bytes": 2184,
+        "mode": 420,
+        "path": "diagnostics.py",
+        "sha256": "30794a4fb0fed79b8337f1cd8447abc649bfe4725d9d09019f2e6dd547037184"
+      },
+      {
+        "bytes": 385,
+        "mode": 420,
+        "path": "entity.py",
+        "sha256": "0567abb72c9d4c41a31f8336d475288eaadcbca41094bd2cbcffcdc905e837ff"
+      },
+      {
+        "bytes": 391,
+        "mode": 420,
+        "path": "manifest.json",
+        "sha256": "61e4a3143a392fe681908d1edff9db52a25ce5ac4bbd12e327ab36bcd9140449"
+      },
+      {
+        "bytes": 3477,
+        "mode": 420,
+        "path": "models.py",
+        "sha256": "7d1a4d92cacfd83852befde1625b2cc30ec40e7a85003c755552424c7b5c4cf7"
+      },
+      {
+        "bytes": 1457,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/SHA256SUMS",
+        "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+      },
+      {
+        "bytes": 2183,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/auth.schema.json",
+        "sha256": "27891c9cd96b57b5fa47db36b0d7caf22600b172a9150dcdaf735c64a8297b19"
+      },
+      {
+        "bytes": 3380,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/cases.json",
+        "sha256": "7743aa276b4c027abbd357304bfa065db79edec20cafac59b4311364e0d28201"
+      },
+      {
+        "bytes": 1332,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/discovery.schema.json",
+        "sha256": "3d45864e4296fdc14b0a3ef0ef5acdbfcca94cacda1ec60fccca396271851e18"
+      },
+      {
+        "bytes": 737,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/errors.schema.json",
+        "sha256": "835fe4a83f3c894bc706e5f575e4abd5d473c4b8406fc0d9b0cbf0e95172a5b4"
+      },
+      {
+        "bytes": 178,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/examples/claim.json",
+        "sha256": "8eb1ac46f72762321575d457d6bbd1ed7b1def904de9c07448b67d0659b15e1d"
+      },
+      {
+        "bytes": 2407,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/examples/current.json",
+        "sha256": "2246f7a4b98e559c4040877ecf9474d081df5f7ab8fdfb9bcde2a3fbceacf911"
+      },
+      {
+        "bytes": 357,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/examples/discovery.json",
+        "sha256": "e673ea82496110f6cbbe1c108b40eb098418bb95d781723753bdff4792c84136"
+      },
+      {
+        "bytes": 890,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/examples/drives.json",
+        "sha256": "fd326bd9476115bba05bbbeb61d40361e16d164984de7817e5cba58b7d29954f"
+      },
+      {
+        "bytes": 47,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/examples/health.json",
+        "sha256": "27cd5e17b843fd061cdec83140a87f30365f09f1d27704aa5ae98c58d303347b"
+      },
+      {
+        "bytes": 563,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/examples/invitation.json",
+        "sha256": "9ecf1cf49edac1fed91a0e92729d8d77c4ff13634f212555973a7003f1d4e926"
+      },
+      {
+        "bytes": 24,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/examples/ready.json",
+        "sha256": "9994e13386b29bde4071dd062d8c4ab8dbb6b4b877f968b4a34fb2c7b0ead65e"
+      },
+      {
+        "bytes": 123,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/examples/vehicles.json",
+        "sha256": "36b77389bac75fb247c6e0da2baf284511f40a808227b38d7543b2d199437150"
+      },
+      {
+        "bytes": 18972,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/field-semantics.json",
+        "sha256": "bd9b7162c94efbd3e570ffd785fe543dfb98299379ea81cf8b2e028496bd3ee7"
+      },
+      {
+        "bytes": 11524,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/openapi.json",
+        "sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7"
+      },
+      {
+        "bytes": 4543,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/profile.json",
+        "sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71"
+      },
+      {
+        "bytes": 44373,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/resources.schema.json",
+        "sha256": "6b2523de42f5860ddaaf83b0db78b6f172e3f15e1dab8048e221c1fa6337a4be"
+      },
+      {
+        "bytes": 1427,
+        "mode": 420,
+        "path": "profile/hub-http-v1/1.0.0/sync-regression.json",
+        "sha256": "6aebb1a5d5e250447435876d4cb64934b916e8cd61c2c8b148d2111c7f5fc691"
+      },
+      {
+        "bytes": 10249,
+        "mode": 420,
+        "path": "sensor.py",
+        "sha256": "b77aaa4861de9e04fab667c4fb7a11a4a738c77573c5595ede41848dc4460ddd"
+      },
+      {
+        "bytes": 5088,
+        "mode": 420,
+        "path": "strings.json",
+        "sha256": "d07eaf9fe34193b3b8478f7aea28dbff0e2f6a3444800772b4c9e539db716db8"
+      },
+      {
+        "bytes": 5088,
+        "mode": 420,
+        "path": "translations/en.json",
+        "sha256": "d07eaf9fe34193b3b8478f7aea28dbff0e2f6a3444800772b4c9e539db716db8"
+      }
+    ],
+    "integration_manifest": {
+      "domain": "teslatlas_hub",
+      "iot_class": "local_poll",
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/custom_components/teslatlas_hub/manifest.json",
+      "sha256": "61e4a3143a392fe681908d1edff9db52a25ce5ac4bbd12e327ab36bcd9140449",
+      "version": "2026.36.2"
+    },
+    "inventory_scope": "Internal source-pinned provenance inventory; existing Hub COMPONENT_ROWS archive/tree enforcement is unchanged",
+    "member_count": 32,
+    "module_scope": "Required package members and declared module roster only; diagnostics.py is a package member and an optional loaded module; no installed module-loading observation",
+    "optional_loaded_modules": {
+      "custom_components.teslatlas_hub.diagnostics": "diagnostics.py"
+    },
+    "profile": {
+      "checksummed_member_count": 17,
+      "openapi_json_sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7",
+      "package_member_count_including_sha256s": 18,
+      "profile_id": "hub-http-v1@1.0.0",
+      "profile_json_sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+      "selection": "existing frozen embedded profile",
+      "sha256s_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/custom_components/teslatlas_hub/profile/hub-http-v1/1.0.0/SHA256SUMS",
+      "sha256s_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+    },
+    "required_loaded_modules": {
+      "custom_components.teslatlas_hub": "__init__.py",
+      "custom_components.teslatlas_hub.client": "client.py",
+      "custom_components.teslatlas_hub.config_flow": "config_flow.py",
+      "custom_components.teslatlas_hub.const": "const.py",
+      "custom_components.teslatlas_hub.coordinator": "coordinator.py",
+      "custom_components.teslatlas_hub.credentials": "credentials.py",
+      "custom_components.teslatlas_hub.current_hub_client": "current_hub_client.py",
+      "custom_components.teslatlas_hub.entity": "entity.py",
+      "custom_components.teslatlas_hub.models": "models.py",
+      "custom_components.teslatlas_hub.sensor": "sensor.py"
+    }
+  },
+  "generated_at": "2026-10-07",
+  "kind": "teslatlas-home-assistant-hub-admission-handoff",
+  "schema_version": 1,
+  "scope": "Current source-only authority succession for the exact approved HA corpus; actor identities and refs are source declarations, not runtime observations",
+  "source_evidence": [
+    {
+      "path": "/Users/bolyki/dev/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/teslatlas-home-assistant/continuation/intake-verification.json",
+      "scope": "2026-10-07 exact approved source/document/component custody only"
+    },
+    {
+      "path": "/Users/bolyki/dev/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/hub/boundary/current32-receiver-acceptance-v2.json",
+      "scope": "Prior current32 archive/tree admission with old-document full-source refusal; not acceptance of this successor or installed runtime"
+    }
+  ],
+  "source_verification": {
+    "approved_inputs": "/Users/bolyki/dev/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/hub/boundary/approved-inputs.json",
+    "basis": "Current exact approved44-file corpus verified byte-for-byte against retained approved copies and approved sizes/current modes before succession",
+    "refresh_inputs": "/Users/bolyki/dev/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/hub/boundary/owner-refresh-inputs.json"
+  },
+  "supersedes": {
+    "handoff": {
+      "bytes": 18984,
+      "mode": "0644",
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/hub-admission-handoff-2026-09-08.json",
+      "sha256": "5d496de004faeb1880a78746a429823e7300d4597147ef9f36a7c7457c37648b"
+    },
+    "source_manifest": {
+      "bytes": 2137,
+      "mode": "0644",
+      "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-home-assistant/docs/ha-admission-source-manifest-2026-09-08.json",
+      "sha256": "e74a955374003be9820a450174715412b4a9c1d504b47eb33d1f93e6b2173832"
+    }
+  }
+}

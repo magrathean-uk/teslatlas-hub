@@ -48,8 +48,10 @@ class TeslatlasHubClient(Protocol):
     async def async_pair(
         self,
         pairing_id: str,
-        pairing_secret: str,
-        device_name: str,
+        secret: str | None = None,
+        device_name: str | None = None,
+        *,
+        pairing_secret: str | None = None,
     ) -> PairingResult:
         """Claim a transient secret and return a scoped device bearer."""
 

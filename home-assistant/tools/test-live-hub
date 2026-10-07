@@ -18,5 +18,6 @@ set -eu
 test "$SSL_CERT_FILE" = "$REQUESTS_CA_BUNDLE"
 
 export TESLATLAS_HA_LIVE=1
-exec .venv/bin/python -m pytest -q \
+export PYTHONDONTWRITEBYTECODE=1
+exec .venv/bin/python -B -m pytest -q --no-showlocals -p no:cacheprovider \
   tests/integration/test_live_hub.py::test_installed_config_entry_polls_and_unloads_real_hub

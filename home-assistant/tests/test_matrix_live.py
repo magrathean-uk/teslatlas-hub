@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import importlib.metadata
+import importlib.util
 import json
 import os
 import shutil
@@ -18,12 +20,21 @@ import uuid
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
+from unittest.mock import patch
+from urllib.parse import urlsplit
 
 import pytest
+from homeassistant.const import CONF_HOST
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.teslatlas_hub.current_hub_client import CurrentHubClient
+from custom_components.teslatlas_hub.models import HubEndpoint
+from tests.helpers import FixtureHubClient
+from tests.integration import test_live_hub as live_gate
 from tools.matrix_contract import (
     ADAPTER_ID,
     CONTRACT_REVISION,
+    CURRENT_MEMBER_PATHS,
     REQUIRED_CASES,
     AdmissionContext,
     AdmittedActor,
@@ -288,20 +299,17 @@ def test_session_input_rejects_profile_and_certificate_substitutions(
         value["inputs"]["profile_members"][1]["local"] = dict(
             value["inputs"]["profile_members"][0]["local"]
         )
-        value["inputs"]["profile_members"][1]["root"]["sha256"] = value[
-            "inputs"
-        ]["profile_members"][0]["local"]["sha256"]
+        value["inputs"]["profile_members"][1]["root"]["sha256"] = value["inputs"][
+            "profile_members"
+        ][0]["local"]["sha256"]
     elif mutation == "bad_layout":
-        value["inputs"]["profile_members"][0]["root"]["path"] = (
-            "/root/wrong/SHA256SUMS"
-        )
+        value["inputs"]["profile_members"][0]["root"]["path"] = "/root/wrong/SHA256SUMS"
     elif mutation == "wrong_der":
         value["inputs"]["certificate_der_sha256"] = "0" * 64
     else:
         replacement = tmp_path / "inputs/replacement-SHA256SUMS"
         replacement.write_bytes(
-            Path(value["inputs"]["profile_manifest"]["local"]["path"])
-            .read_bytes()
+            Path(value["inputs"]["profile_manifest"]["local"]["path"]).read_bytes()
             + b"0" * 64
             + b"  substituted.json\n"
         )
@@ -546,6 +554,7 @@ INSTALLED_MEMBER_PATHS = (
     "config_flow.py",
     "const.py",
     "coordinator.py",
+    "credentials.py",
     "current_hub_client.py",
     "diagnostics.py",
     "entity.py",
@@ -589,7 +598,7 @@ CASE_FACTS = {
         "archive_sha256": "d" * 64,
         "integration_version": "2026.36.2",
         "installed_manifest_sha256": "9" * 64,
-        "installed_members": 31,
+        "installed_members": 32,
     },
     "installed_service_runtime": {
         "service_mode": "installed-deb-systemd",
@@ -841,6 +850,7 @@ OPERATION_FACTS = {
             "custom_components.teslatlas_hub.config_flow": "config_flow.py",
             "custom_components.teslatlas_hub.const": "const.py",
             "custom_components.teslatlas_hub.coordinator": "coordinator.py",
+            "custom_components.teslatlas_hub.credentials": "credentials.py",
             "custom_components.teslatlas_hub.current_hub_client": (
                 "current_hub_client.py"
             ),
@@ -1075,6 +1085,7 @@ def _context() -> tuple[AdmissionContext, dict[str, dict]]:
         "outage_poll": (7, 9),
         "unload": (9, 9),
     }
+
     def actor_runtime(manifest_sha256: str) -> MappingProxyType:
         return MappingProxyType(
             {
@@ -1415,9 +1426,9 @@ def test_manifest_binds_validator_schemas_actors_and_all_cases() -> None:
         assert item["actor_ids"] == [actor_id]
         assert item["operations"] == list(operations)
 
-    bindings = [
-        item["schema"] for item in manifest["raw_schemas"]
-    ] + [manifest["validator"]]
+    bindings = [item["schema"] for item in manifest["raw_schemas"]] + [
+        manifest["validator"]
+    ]
     for binding in bindings:
         path = Path(binding["path"])
         assert path.is_absolute() and path.is_file()
@@ -1449,6 +1460,262 @@ def test_raw_schemas_are_valid_json_and_close_every_declared_object() -> None:
         schema = json.loads(path.read_text())
         assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
         inspect(schema)
+
+
+@pytest.mark.parametrize(
+    ("operation", "case_id", "request_count"),
+    [
+        ("config_flow_setup", "real_auth", 11),
+        ("reauthentication_flow", "credential_lifecycle_reauth", 10),
+    ],
+)
+def test_flow_records_fit_schema_request_budget_without_losing_census(
+    tmp_path: Path, operation: str, case_id: str, request_count: int
+) -> None:
+    """Check emitted instances against the array budget and semantic admission.
+
+    This checks the request-array budget, not every JSON Schema keyword.
+    """
+    context, raw = _context()
+    witness = copy.deepcopy(raw[f"raw-{operation}"])
+    runtime = object.__new__(MatrixRuntime)
+    runtime.session = {"session_id": context.session_id, "cell_id": context.cell_id}
+    runtime.session_input_sha256 = witness["session_input_sha256"]
+    runtime.raw_root = tmp_path
+    runtime.raw = {}
+    runtime.raw_bindings = {}
+    binding = runtime.record_operation(
+        operation,
+        actor_id=witness["actor_id"],
+        before=witness["session_sequence_before"],
+        after=witness["session_sequence_after"],
+        facts=witness["facts"],
+        requests=witness["requests"],
+    )
+    emitted = json.loads(Path(binding["path"]).read_text())
+    schema = json.loads(
+        (Path(__file__).parents[1] / "tools/ha-flow-v1.schema.json").read_text()
+    )
+    budget = schema["properties"]["requests"]
+    assert budget["type"] == "array"
+    assert len(emitted["requests"]) == request_count
+    assert emitted["requests"] == OPERATION_REQUESTS[operation]
+    assert len(emitted["requests"]) <= budget["maxItems"]
+    raw[f"raw-{operation}"] = emitted
+    assert admit_case(_case(case_id, context), context).status == "passed"
+
+    overflow = copy.deepcopy(emitted)
+    for index in range(budget["maxItems"] + 1 - len(overflow["requests"])):
+        overflow["requests"].append(
+            _request(f"overflow-{index}", "GET", "/v1/vehicles", 200)
+        )
+    assert len(overflow["requests"]) > budget["maxItems"]
+    raw[f"raw-{operation}"] = overflow
+    assert admit_case(_case(case_id, context), context).status == "failed"
+
+
+def _receipt_artifact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    package = "custom_components.teslatlas_hub"
+    for name in list(sys.modules):
+        if name == package or name.startswith(package + "."):
+            monkeypatch.delitem(sys.modules, name)
+    integration_root = tmp_path / "custom_components/teslatlas_hub"
+    integration_root.mkdir(parents=True)
+    manifest = {"domain": "teslatlas_hub", "version": "receipt-fixture-version"}
+    (integration_root / "manifest.json").write_text(json.dumps(manifest))
+    origins = {}
+    for suffix in (
+        "",
+        ".client",
+        ".config_flow",
+        ".const",
+        ".coordinator",
+        ".credentials",
+        ".current_hub_client",
+        ".entity",
+        ".models",
+        ".sensor",
+    ):
+        name = package + suffix
+        relative = "__init__.py" if not suffix else suffix[1:] + ".py"
+        path = integration_root / relative
+        path.write_text(f"def source_marker():\n    return {name!r}\n")
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        monkeypatch.setitem(sys.modules, name, module)
+        assert module.source_marker() == name
+        origins[name] = relative
+    return integration_root, live_gate._integration_files(integration_root), origins
+
+
+def test_receipt_runtime_measures_versions_origins_and_admitted_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, files, origins = _receipt_artifact(tmp_path, monkeypatch)
+    observed = live_gate._observe_runtime(root, files)
+
+    actual_python = ".".join(str(value) for value in sys.version_info[:3])
+    actual_home_assistant = importlib.metadata.version("homeassistant")
+    assert observed["python_version"] == actual_python
+    assert observed["home_assistant_version"] == actual_home_assistant
+    assert observed["runtime"] == (
+        f"Home Assistant {actual_home_assistant} on Python {actual_python}"
+    )
+    assert observed["integration_version"] == "receipt-fixture-version"
+    assert observed["loaded_module_origins"] == origins
+    assert observed["source_files_unchanged"] is True
+
+
+@pytest.mark.parametrize(
+    "mutation", ["changed_content", "outside_origin", "cached_code"]
+)
+def test_receipt_runtime_rejects_unadmitted_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    root, files, _origins = _receipt_artifact(tmp_path, monkeypatch)
+    if mutation == "changed_content":
+        (root / "client.py").write_text("def changed_source():\n    return True\n")
+        message = "source changed"
+    elif mutation == "outside_origin":
+        outside = tmp_path / "outside.py"
+        outside.write_text("def outside_source():\n    return True\n")
+        spec = importlib.util.spec_from_file_location(
+            "custom_components.teslatlas_hub.client", outside
+        )
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        monkeypatch.setitem(sys.modules, spec.name, module)
+        message = "outside the candidate"
+    else:
+        module = sys.modules["custom_components.teslatlas_hub.client"]
+        cache = Path(module.__cached__)
+        cache.parent.mkdir()
+        cache.write_bytes(b"unadmitted-bytecode")
+        message = "unadmitted cached bytecode"
+
+    with pytest.raises(AssertionError, match=message):
+        live_gate._observe_runtime(root, files)
+
+
+async def _receipt_config_entry(hass):
+    entry = MockConfigEntry(
+        domain=live_gate.DOMAIN,
+        unique_id="hub-fixture",
+        data={
+            CONF_HOST: "hub-fixture.invalid",
+            live_gate.CONF_PORT: 7443,
+            live_gate.CONF_USE_TLS: True,
+            live_gate.CONF_HUB_ID: "hub-fixture",
+            live_gate.CONF_ACCESS_TOKEN: "fixture-device-bearer",
+        },
+    )
+    entry.add_to_hass(hass)
+    with patch(
+        "custom_components.teslatlas_hub.create_client",
+        return_value=FixtureHubClient(),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+    return entry
+
+
+async def test_receipt_generator_uses_measured_runtime_and_unload(
+    hass, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = await _receipt_config_entry(hass)
+    unload = await live_gate._observe_unload(hass, entry, [])
+    assert unload["scheduled_callback_cancelled"] is True
+    assert (
+        unload["observed_after_deadline_ns"] > unload["scheduled_callback_deadline_ns"]
+    )
+    assert unload["post_unload_attempts"] == 0
+
+    def generate_receipt():
+        with monkeypatch.context() as scoped:
+            root, files, origins = _receipt_artifact(tmp_path, scoped)
+            runtime = live_gate._observe_runtime(root, files)
+            ready_path = tmp_path / "ready.json"
+            reauth_path = tmp_path / "reauth-ready.json"
+            ready_path.write_text("{}")
+            reauth_path.write_text("{}")
+            receipt_path = tmp_path / "receipt.json"
+            live_gate._write_receipt(
+                receipt_path,
+                ready_path,
+                {"binary_sha256": SHA, "hub_pid": 1},
+                reauth_path,
+                {"binary_sha256": SHA, "hub_pid": 2},
+                "fixture-hub",
+                5,
+                runtime,
+                unload,
+            )
+            return (
+                json.loads(receipt_path.read_text()),
+                origins,
+                importlib.metadata.version("homeassistant"),
+            )
+
+    receipt, origins, home_assistant_version = await hass.async_add_executor_job(
+        generate_receipt
+    )
+
+    assert receipt["integration_version"] == "receipt-fixture-version"
+    assert receipt["loaded_module_origins"] == origins
+    python_version = ".".join(str(value) for value in sys.version_info[:3])
+    assert receipt["python_version"] == python_version
+    assert receipt["home_assistant_version"] == home_assistant_version
+    assert receipt["runtime"] == (
+        f"Home Assistant {home_assistant_version} on Python {python_version}"
+    )
+    assert receipt["clean_unload"] is True
+    assert (
+        receipt["observed_after_deadline_ns"]
+        > receipt["scheduled_callback_deadline_ns"]
+    )
+    assert receipt["post_unload_attempts"] == 0
+    assert receipt["attempts_during_unload"] == 0
+
+
+async def test_receipt_unload_distinguishes_attempt_during_unload(hass) -> None:
+    entry = await _receipt_config_entry(hass)
+    requests = []
+    original_unload = hass.config_entries.async_unload
+
+    async def unload_with_attempt(entry_id):
+        requests.append(("GET", "/v1/vehicles", {}))
+        return await original_unload(entry_id)
+
+    with patch.object(hass.config_entries, "async_unload", new=unload_with_attempt):
+        observed = await live_gate._observe_unload(hass, entry, requests)
+
+    assert observed["unload_started_attempt_count"] == 0
+    assert observed["unload_completed_attempt_count"] == 1
+    assert observed["attempts_during_unload"] == 1
+    assert observed["post_unload_attempts"] == 0
+    assert observed["clean_unload"] is True
+
+
+async def test_receipt_unload_rejects_delayed_request_attempt(hass) -> None:
+    entry = await _receipt_config_entry(hass)
+    requests = []
+    original_unload = hass.config_entries.async_unload
+
+    async def unload_then_schedule_attempt(entry_id):
+        result = await original_unload(entry_id)
+        hass.loop.call_later(0.01, requests.append, ("GET", "/v1/vehicles", {}))
+        return result
+
+    with (
+        patch.object(
+            hass.config_entries, "async_unload", new=unload_then_schedule_attempt
+        ),
+        pytest.raises(AssertionError, match="request dispatched after unload"),
+    ):
+        await live_gate._observe_unload(hass, entry, requests)
+    assert len(requests) == 1
 
 
 def test_framework_log_isolates_all_standard_descriptors(tmp_path: Path) -> None:
@@ -1701,20 +1968,11 @@ async def test_initial_barrier_does_not_invent_internal_verify_observation() -> 
 def _installed_runtime(tmp_path: Path) -> MatrixRuntime:
     root = tmp_path / "product/custom_components/teslatlas_hub"
     root.mkdir(parents=True)
-    module_paths = [
-        "__init__.py",
-        "client.py",
-        "config_flow.py",
-        "const.py",
-        "coordinator.py",
-        "current_hub_client.py",
-        "entity.py",
-        "models.py",
-        "sensor.py",
-    ] + [f"resource-{index:02d}.json" for index in range(22)]
+    module_paths = INSTALLED_MEMBER_PATHS
     rows = []
     for relative in sorted(module_paths):
         path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"# {relative}\n")
         raw = path.read_bytes()
         rows.append(
@@ -1752,6 +2010,7 @@ def test_loaded_submodule_origin_must_match_installed_inventory(tmp_path: Path) 
         ".config_flow",
         ".const",
         ".coordinator",
+        ".credentials",
         ".current_hub_client",
         ".entity",
         ".models",
@@ -1777,6 +2036,175 @@ def test_loaded_submodule_origin_must_match_installed_inventory(tmp_path: Path) 
                 sys.modules.pop(name, None)
             else:
                 sys.modules[name] = value
+
+
+def test_current_package_inventory_matches_admission_and_closed_schema() -> None:
+    """Current source, independent fixture and closed module evidence agree."""
+    component = Path(__file__).parents[1] / "custom_components/teslatlas_hub"
+    actual = tuple(
+        str(path.relative_to(component))
+        for path in sorted(component.rglob("*"))
+        if path.is_file() and "__pycache__" not in path.parts
+    )
+    assert actual == INSTALLED_MEMBER_PATHS == CURRENT_MEMBER_PATHS
+    assert len(actual) == 32
+    schema = json.loads(
+        (Path(__file__).parents[1] / "tools/ha-runtime-v1.schema.json").read_text()
+    )
+    facts = schema["$defs"]["facts"]["properties"]
+    assert facts["installed_members"] == {"const": 32}
+    declared = facts["loaded_modules"]
+    expected = OPERATION_FACTS["observe_installed_runtime"]["loaded_modules"]
+    assert set(declared["required"]) == set(expected)
+    assert set(declared["properties"]) == {
+        *expected,
+        "custom_components.teslatlas_hub.diagnostics",
+    }
+    assert declared["additionalProperties"] is False
+
+
+@pytest.mark.parametrize("mutation", ["old31", "extra", "replacement", "duplicate"])
+def test_current_contract_rejects_noncurrent_member_inventory(mutation: str) -> None:
+    """Count-coherent substitutions do not become current candidate identity."""
+    context, _raw = _context()
+    members = copy.deepcopy(INSTALLED_MEMBERS)
+    if mutation == "old31":
+        members = [row for row in members if row["path"] != "credentials.py"]
+    elif mutation == "extra":
+        members.append(dict(members[-1], path="unexpected.py"))
+    elif mutation == "replacement":
+        members[5]["path"] = "credential-substitute.py"
+    else:
+        members[5]["path"] = members[4]["path"]
+    members.sort(key=lambda row: row["path"])
+    actors = {}
+    for name, actor in context.actors.items():
+        runtime = dict(actor.runtime)
+        runtime["artifact"] = dict(runtime["artifact"], installed_members=members)
+        actors[name] = replace(actor, runtime=MappingProxyType(runtime))
+    context = replace(context, actors=MappingProxyType(actors))
+    assert (
+        admit_case(_case("candidate_artifact_identity", context), context).status
+        == "failed"
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["valid", "missing_credentials", "content", "cache", "alias", "extra_file"],
+)
+def test_current_loaded_modules_preserve_strict_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mutation: str
+) -> None:
+    """Require credentials and bind every module name, origin and executed bytes."""
+    runtime = _installed_runtime(tmp_path)
+    package = "custom_components.teslatlas_hub"
+    for name in tuple(sys.modules):
+        if name == package or name.startswith(package + "."):
+            monkeypatch.delitem(sys.modules, name)
+    loaded = dict(OPERATION_FACTS["observe_installed_runtime"]["loaded_modules"])
+    loaded[package + ".diagnostics"] = "diagnostics.py"
+    for name, relative in loaded.items():
+        module = types.ModuleType(name)
+        module.__file__ = str(runtime.installed_root / relative)
+        monkeypatch.setitem(sys.modules, name, module)
+    if mutation == "missing_credentials":
+        monkeypatch.delitem(sys.modules, package + ".credentials")
+    elif mutation == "content":
+        (runtime.installed_root / "credentials.py").write_text("# replaced\n")
+    elif mutation == "cache":
+        cache = tmp_path / "credentials.pyc"
+        cache.write_bytes(b"admitted-looking-bytecode")
+        sys.modules[package + ".credentials"].__cached__ = str(cache)
+    elif mutation == "alias":
+        monkeypatch.setitem(
+            sys.modules, package + ".unexpected", sys.modules[package + ".credentials"]
+        )
+    elif mutation == "extra_file":
+        (runtime.installed_root / "unexpected.json").write_text("{}")
+    if mutation == "valid":
+        assert runtime.validate_loaded_modules() == loaded
+    else:
+        with pytest.raises(MatrixWireError):
+            runtime.validate_loaded_modules()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("response", [404, 503, "timeout"])
+async def test_live_telemetry_projection_keeps_read_failure_separate(response) -> None:
+    """The live consumer sees public snapshot telemetry and operational status."""
+    routes = []
+
+    class Content:
+        def __init__(self, raw):
+            self.raw = raw
+
+        async def iter_chunked(self, _maximum):
+            yield self.raw
+
+    class Response:
+        def __init__(self, status, payload):
+            self.status = status
+            raw = json.dumps(payload).encode()
+            self.content_length = len(raw)
+            self.content = Content(raw)
+            self.headers = {"Content-Type": "application/json"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class Session:
+        def request(self, method, url, **_kwargs):
+            path = urlsplit(url).path
+            routes.append((method, path))
+            if path == "/.well-known/teslatlas-hub":
+                return Response(
+                    200,
+                    {
+                        "hub_id": HUB_ID,
+                        "protocol": "teslatlas-sync",
+                        "protocol_major": 1,
+                        "api_versions": ["1.0"],
+                        "capabilities": ["query.vehicles", "query.current"],
+                    },
+                )
+            if path == "/v1/vehicles":
+                return Response(
+                    200,
+                    {
+                        "vehicles": [
+                            {"vehicle_id": UNKNOWN_VEHICLE, "display_name": None}
+                        ]
+                    },
+                )
+            assert path == f"/v1/vehicles/{UNKNOWN_VEHICLE}/current"
+            if response == "timeout":
+                raise TimeoutError
+            return Response(response, {})
+
+    client = CurrentHubClient(
+        Session(),
+        HubEndpoint(host="synthetic.invalid", port=7443, use_tls=False),
+        bearer_token="a" * 64,
+        expected_hub_id=HUB_ID,
+    )
+    try:
+        snapshot = await client.async_snapshot()
+    finally:
+        await client.async_close()
+    vehicle = snapshot.vehicles[UNKNOWN_VEHICLE]
+    expected = OPERATION_FACTS["unknown_current"]["optional_fields"]
+    assert len(expected) == 14
+    assert live_gate._optional_telemetry(vehicle) == expected
+    assert vehicle.current_read_failed is (response != 404)
+    assert routes == [
+        ("GET", "/.well-known/teslatlas-hub"),
+        ("GET", "/v1/vehicles"),
+        ("GET", f"/v1/vehicles/{UNKNOWN_VEHICLE}/current"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -2001,12 +2429,9 @@ def test_contract_rejects_missing_verify_and_substituted_initial_anchor() -> Non
     context, raw = _context()
     observations = dict(context.controller_observations)
     observations.pop(2)
-    missing = replace(
-        context, controller_observations=MappingProxyType(observations)
-    )
+    missing = replace(context, controller_observations=MappingProxyType(observations))
     assert (
-        admit_case(_case("exact_current_values", missing), missing).status
-        != "passed"
+        admit_case(_case("exact_current_values", missing), missing).status != "passed"
     )
 
     raw["raw-initial_poll"]["session_sequence_before"] = 2
@@ -2092,9 +2517,7 @@ def test_contract_rejects_pending_requests_even_when_counts_are_coherent() -> No
     facts["completed_requests"] -= 1
     facts["failed_requests"] += 1
     facts["attempts"][0]["outcome"] = "failed"
-    unbound_census = admit_case(
-        _case("polling_transport_zero_sse", context), context
-    )
+    unbound_census = admit_case(_case("polling_transport_zero_sse", context), context)
     assert unbound_census.status == "failed"
 
 
@@ -2195,7 +2618,9 @@ def test_main_composes_authentic_loading_all_cases_and_close_lifetime(
     runtime_facts = copy.deepcopy(OPERATION_FACTS["observe_installed_runtime"])
     runtime_facts.update(
         archive_sha256=product["staged"]["local"]["sha256"],
-        installed_manifest_sha256=hashlib.sha256(installed_path.read_bytes()).hexdigest(),
+        installed_manifest_sha256=hashlib.sha256(
+            installed_path.read_bytes()
+        ).hexdigest(),
         module_sha256=installed_manifest["files"][0]["sha256"],
         actor_manifest_sha256s={
             spec["id"]: spec["input_manifest"]["local"]["sha256"]
@@ -2253,8 +2678,8 @@ def test_main_composes_authentic_loading_all_cases_and_close_lifetime(
     )
     _write_private(session_path, session)
 
-    program = r'''
-import asyncio,json,sys,types
+    program = r"""
+import asyncio,importlib,json,sys,types
 from pathlib import Path
 from types import MappingProxyType
 from tools.matrix_contract import AdmittedActor
@@ -2265,16 +2690,16 @@ fake.fixture=lambda function:function
 fake.ExitCode=types.SimpleNamespace(OK=0)
 def framework_main(_arguments,plugins):
     runtime=plugins[0].matrix_runtime()
+    # Execute the real imports after main isolates the broker descriptors.
+    for suffix in ("", ".config_flow", ".current_hub_client", ".sensor"):
+        importlib.import_module("custom_components.teslatlas_hub"+suffix)
     asyncio.run(runtime.verify())
     for operation,row in fixture["operations"].items():
         runtime.record_operation(operation,actor_id=row["actor_id"],before=row["before"],after=row["after"],facts=row["facts"],requests=row["requests"])
     runtime.set_case_facts_from_raw()
-    loaded=fixture["operations"]["observe_installed_runtime"]["facts"]["loaded_modules"]
-    for name,relative in loaded.items():
-        module=types.ModuleType(name)
-        module.__file__=str(Path(fixture["installed_root"])/relative)
-        module.__cached__=None
-        sys.modules[name]=module
+    loaded=runtime.validate_loaded_modules()
+    facts=fixture["operations"]["observe_installed_runtime"]["facts"]
+    assert loaded == facts["loaded_modules"]
     def actors(_self):
         result={}
         product=runtime.session["inputs"]["product_inputs"][0]
@@ -2288,7 +2713,7 @@ def framework_main(_arguments,plugins):
 fake.main=framework_main
 sys.modules["pytest"]=fake
 raise SystemExit(matrix_live.main([sys.argv[1]]))
-'''.replace("\n+", "\n")
+""".replace("\n+", "\n")
     environment = dict(
         os.environ,
         PYTHONPATH=str(source_root),
@@ -2398,7 +2823,11 @@ raise SystemExit(matrix_live.main([sys.argv[1]]))
         if process.poll() is not None:
             break
         time.sleep(0.01)
-    assert ready_path.exists()
+    assert ready_path.exists(), (
+        (outputs / "framework.log").read_text()
+        if process.poll() is not None
+        else "child running"
+    )
     normalized = json.loads((outputs / "normalized.json").read_text())
     assert [case["id"] for case in normalized["cases"]] == list(REQUIRED_CASES)
     close_result = outputs / "close-result.json"

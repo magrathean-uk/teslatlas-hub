@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from unittest.mock import patch
 
 from homeassistant.const import CONF_HOST, CONF_LATITUDE, CONF_LONGITUDE
@@ -109,6 +110,7 @@ async def test_diagnostics_before_first_refresh_returns_safe_empty_runtime(
         "protocol_version": None,
         "capabilities": [],
         "vehicle_count": 0,
+        "current_read_failure_count": 0,
         "received_at": None,
     }
     await coordinator.async_shutdown()
@@ -140,6 +142,7 @@ async def test_diagnostics_without_runtime_data_returns_safe_empty_runtime(
         "protocol_version": None,
         "capabilities": [],
         "vehicle_count": 0,
+        "current_read_failure_count": 0,
         "received_at": None,
     }
 
@@ -172,4 +175,27 @@ async def test_diagnostics_after_outage_keeps_last_snapshot_but_marks_unavailabl
     assert diagnostics["runtime"]["available"] is False
     assert diagnostics["runtime"]["protocol_version"] == "0.0-fixture"
     assert diagnostics["runtime"]["vehicle_count"] == 2
+    await coordinator.async_shutdown()
+
+
+async def test_diagnostics_count_failed_current_reads_without_vehicle_identity(
+    hass: HomeAssistant,
+) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, data={})
+    entry.add_to_hass(hass)
+    client = FixtureHubClient()
+    snapshot = client.snapshot
+    failed = replace(snapshot.vehicles["vehicle-alpha"], current_read_failed=True)
+    coordinator = TeslatlasDataCoordinator(hass, entry, client)
+    coordinator.data = snapshot.with_vehicle(failed, snapshot.received_at)
+    coordinator.last_update_success = True
+    entry.runtime_data = coordinator
+
+    diagnostics = await async_get_config_entry_diagnostics(hass, entry)
+    assert diagnostics["runtime"]["available"] is True
+    assert diagnostics["runtime"]["current_read_failure_count"] == 1
+    assert diagnostics["runtime"]["vehicle_count"] == 2
+    serialized = json.dumps(diagnostics)
+    assert "vehicle-alpha" not in serialized
+    assert "Fixture Alpha" not in serialized
     await coordinator.async_shutdown()

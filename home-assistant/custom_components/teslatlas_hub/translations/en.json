@@ -43,6 +43,26 @@
         "title": "Verify repaired Teslatlas Hub access",
         "description": "The fresh invitation was claimed. Retry the authenticated check without creating another device credential."
       },
+      "reconfigure_tls": {
+        "title": "Approve a new Hub certificate",
+        "description": "Approve the certificate for {host}:{port} to replace the saved connection. Compare this fingerprint with the certificate shown by your Hub before approving: {tls_pin}. A fresh private invitation is required after approval.",
+        "data": {
+          "approve_new_tls_pin": "I have verified and approve this certificate"
+        }
+      },
+      "reconfigure_pair": {
+        "title": "Pair with the approved Hub endpoint",
+        "description": "Enter a fresh private invitation from the same Hub. The invitation is not stored.",
+        "data": {
+          "pairing_id": "Pairing ID",
+          "pairing_secret": "Pairing secret",
+          "device_name": "Device name"
+        }
+      },
+      "reconfigure_validate": {
+        "title": "Verify the replacement Hub connection",
+        "description": "The fresh invitation was claimed. Retry the authenticated check without creating another device credential. The saved connection is updated after this check succeeds."
+      },
       "reconfigure_confirm": {
         "title": "Change Teslatlas Hub endpoint",
         "description": "The new endpoint must resolve to the same Hub identity.",
@@ -65,8 +85,10 @@
       "already_configured": "This Hub is already configured",
       "cannot_connect": "The discovered service has no usable endpoint",
       "reauth_successful": "Authentication was repaired",
+      "reauth_cancelled": "Authentication repair was cancelled. The saved credential was kept.",
       "reconfigure_successful": "The endpoint was updated",
-      "wrong_hub": "The endpoint resolved to a different Hub identity"
+      "wrong_hub": "The endpoint resolved to a different Hub identity",
+      "replacement_not_approved": "The replacement certificate was not approved. The saved connection was kept."
     }
   },
   "entity": {

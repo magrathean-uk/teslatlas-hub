@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from math import isfinite
 from typing import Final, override
 
 from homeassistant.components.sensor import (
@@ -21,6 +22,7 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -208,7 +210,10 @@ class TeslatlasVehicleSensor(TeslatlasCoordinatorEntity, SensorEntity):
     @override
     def available(self) -> bool:
         """Require both the stream and this vehicle projection."""
-        return super().available and self._vehicle_id in self.coordinator.data.vehicles
+        if not super().available:
+            return False
+        vehicle = self.coordinator.data.vehicles.get(self._vehicle_id)
+        return vehicle is not None and not vehicle.current_read_failed
 
     @property
     @override
@@ -219,6 +224,18 @@ class TeslatlasVehicleSensor(TeslatlasCoordinatorEntity, SensorEntity):
             return None
         return self.entity_description.value_fn(vehicle)
 
+    @property
+    @override
+    def state(self) -> StateType:
+        """Publish unknown if the selected unit cannot represent this reading."""
+        try:
+            value = super().state
+        except OverflowError:
+            return None
+        if isinstance(value, (int, float)) and not isfinite(value):
+            return None
+        return value
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -228,6 +245,7 @@ async def async_setup_entry(
     """Create sensors and add new vehicles observed through push."""
     coordinator = entry.runtime_data
     registry = er.async_get(hass)
+    devices = dr.async_get(hass)
     for registry_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if any(registry_entry.unique_id.endswith(key) for key in RETIRED_SENSOR_KEYS):
             registry.async_remove(registry_entry.entity_id)
@@ -236,7 +254,7 @@ async def async_setup_entry(
 
     @callback
     def async_add_new_entities() -> None:
-        """Add each Hub or vehicle sensor set exactly once."""
+        """Refresh source names and add each sensor set exactly once."""
         nonlocal hub_added
         entities: list[SensorEntity] = []
         if not hub_added:
@@ -246,8 +264,19 @@ async def async_setup_entry(
             )
             hub_added = True
 
-        for vehicle_id in coordinator.data.vehicles:
+        for vehicle_id, vehicle in coordinator.data.vehicles.items():
             if vehicle_id in known_vehicle_ids:
+                identifier = (DOMAIN, f"{coordinator.data.info.hub_id}:{vehicle_id}")
+                get_by_identifier = getattr(
+                    devices, "async_get_device_by_identifier", None
+                )
+                device = (
+                    get_by_identifier(identifier, entry.entry_id)
+                    if get_by_identifier is not None
+                    else devices.async_get_device(identifiers={identifier})
+                )
+                if device is not None and device.name != vehicle.name:
+                    devices.async_update_device(device.id, name=vehicle.name)
                 continue
             entities.extend(
                 TeslatlasVehicleSensor(entry, vehicle_id, description)

@@ -83,7 +83,7 @@
     },
     "requests": {
       "type": "array",
-      "maxItems": 7,
+      "maxItems": 11,
       "items": {
         "$ref": "#/$defs/request"
       }

@@ -7,6 +7,7 @@ import hashlib
 import json
 import math
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import quote
 from uuid import UUID
@@ -28,6 +29,13 @@ from .client import (
     HubIdentityError,
     HubPairingError,
 )
+from .credentials import (
+    epoch_milliseconds,
+    validate_access_token,
+    validate_bearer,
+    validate_current_hub_credential,
+    validate_epoch_milliseconds,
+)
 from .models import (
     HubEndpoint,
     HubInfo,
@@ -41,6 +49,7 @@ PROFILE_ID = "hub-http-v1@1.0.0"
 PROFILE_SHA256 = "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
 MAX_RESPONSE_BYTES = 1_048_576
 MAX_CURRENT_READS = 4
+MAX_VEHICLES = 10_000
 CLOCK_SKEW_SECONDS = 300
 REQUEST_TIMEOUT = ClientTimeout(total=10, connect=5, sock_read=8)
 READ_CHUNK_BYTES = 64 * 1024
@@ -48,15 +57,13 @@ READ_CHUNK_BYTES = 64 * 1024
 
 def tls_pin_bytes(pin: str) -> bytes:
     """Decode one canonical SHA-256 leaf-certificate pin."""
-    if len(pin) != 64:
+    if (
+        not isinstance(pin, str)
+        or len(pin) != 64
+        or any(character not in "0123456789abcdef" for character in pin)
+    ):
         raise HubContractError("tls_pin must be a SHA-256 hex digest")
-    try:
-        expected = bytes.fromhex(pin)
-    except ValueError as err:
-        raise HubContractError("tls_pin must be a SHA-256 hex digest") from err
-    if pin != pin.lower():
-        raise HubContractError("tls_pin must use lowercase hexadecimal")
-    return expected
+    return bytes.fromhex(pin)
 
 
 def pinned_request_class(expected_pin: bytes) -> type[ClientRequest]:
@@ -109,11 +116,38 @@ def _optional_number(payload: dict[str, Any], key: str) -> float | int | None:
     value = payload.get(key)
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
         raise HubContractError(f"{key} must be numeric or null")
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise HubContractError(f"{key} must be finite")
+        value = float(value)
+        if not math.isfinite(value):
+            return None
     if isinstance(value, float) and not math.isfinite(value):
         raise HubContractError(f"{key} must be finite")
+    try:
+        math.isfinite(value)
+    except OverflowError:
+        # The wire permits generic numbers larger than HA can represent.
+        # Keep healthy fields updating while this measurement is unknown.
+        return None
     return value
+
+
+def _optional_integer(payload: dict[str, Any], key: str) -> int | None:
+    """Admit the profile's exact signed64 mathematical integer domain."""
+    value = payload.get(key)
+    if value is None:
+        return None
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, Decimal))
+        or not -(2**63) <= value <= 2**63 - 1
+        or (isinstance(value, Decimal) and value != value.to_integral_value())
+    ):
+        raise HubContractError(f"{key} must be a signed64 integer or null")
+    return int(value)
 
 
 def _optional_string(payload: dict[str, Any], key: str) -> str | None:
@@ -136,12 +170,11 @@ def _vehicle_summary(summary: Any) -> tuple[str, str]:
 def _telemetry_age(observed_at_ms: Any, now: datetime) -> int | None:
     if observed_at_ms is None:
         return None
-    if isinstance(observed_at_ms, bool) or not isinstance(observed_at_ms, int):
-        raise HubContractError("observed_at_ms must be an integer or null")
-    age = now.timestamp() - observed_at_ms / 1000
-    if age < -CLOCK_SKEW_SECONDS:
+    observed_at_ms = validate_epoch_milliseconds(observed_at_ms, "observed_at_ms")
+    age_ms = epoch_milliseconds(now) - observed_at_ms
+    if age_ms < -CLOCK_SKEW_SECONDS * 1000:
         raise HubContractError("observed_at_ms is too far in the future")
-    return max(0, int(age))
+    return max(0, age_ms // 1000)
 
 
 class CurrentHubClient:
@@ -174,6 +207,7 @@ class CurrentHubClient:
         self._request_tasks: set[asyncio.Task[Any]] = set()
         self._snapshot_tasks: set[asyncio.Task[Any]] = set()
         self._closed = False
+        self._close_task: asyncio.Task[None] | None = None
 
     @property
     def _base_url(self) -> str:
@@ -205,12 +239,14 @@ class CurrentHubClient:
     ) -> dict[str, Any] | None:
         if authenticated and self._bearer_token is None:
             raise HubAuthenticationError("No device credential is configured")
-        if (
-            authenticated
-            and self._bearer_expires_at_ms is not None
-            and int(self._now().timestamp() * 1000) >= self._bearer_expires_at_ms
-        ):
-            raise HubAuthenticationError("The device credential has expired")
+        if authenticated:
+            validate_access_token(self._bearer_token)
+            if self._bearer_expires_at_ms is not None:
+                expiry = validate_epoch_milliseconds(
+                    self._bearer_expires_at_ms, "expires_at_ms"
+                )
+                if epoch_milliseconds(self._now()) >= expiry:
+                    raise HubAuthenticationError("The device credential has expired")
         self._ensure_open()
         headers = {"Accept": "application/json"}
         if authenticated:
@@ -276,8 +312,16 @@ class CurrentHubClient:
         if content_type.lower() != "application/json":
             raise HubContractError("Teslatlas Hub response is not JSON")
         try:
-            payload = json.loads(raw, parse_constant=_reject_json_constant)
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as err:
+            payload = json.loads(
+                raw, parse_constant=_reject_json_constant, parse_float=Decimal
+            )
+        except (
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            ValueError,
+            RecursionError,
+            InvalidOperation,
+        ) as err:
             raise HubContractError("Teslatlas Hub returned invalid JSON") from err
         if not isinstance(payload, dict):
             raise HubContractError("Teslatlas Hub response must be a JSON object")
@@ -329,6 +373,8 @@ class CurrentHubClient:
                 vehicles = payload.get("vehicles")
                 if not isinstance(vehicles, list):
                     raise HubContractError("vehicles must be an array")
+                if len(vehicles) > MAX_VEHICLES:
+                    raise HubContractError("vehicles exceeds the 10000-item limit")
                 seen_vehicle_ids: set[str] = set()
                 for summary in vehicles:
                     vehicle_id, _ = _vehicle_summary(summary)
@@ -358,7 +404,11 @@ class CurrentHubClient:
                         if isinstance(result, HubConnectionError):
                             vehicle_id, name = _vehicle_summary(summary)
                             observations.append(
-                                VehicleState(vehicle_id=vehicle_id, name=name)
+                                VehicleState(
+                                    vehicle_id=vehicle_id,
+                                    name=name,
+                                    current_read_failed=True,
+                                )
                             )
                         elif isinstance(result, BaseException):
                             raise result
@@ -377,10 +427,17 @@ class CurrentHubClient:
     async def async_pair(
         self,
         pairing_id: str,
-        secret: str,
-        device_name: str,
+        secret: str | None = None,
+        device_name: str | None = None,
+        *,
+        pairing_secret: str | None = None,
     ) -> PairingResult:
         """Claim a pairing invitation."""
+        if secret is not None and pairing_secret is not None:
+            raise TypeError("Use either secret or pairing_secret, not both")
+        secret = secret if pairing_secret is None else pairing_secret
+        if secret is None or device_name is None:
+            raise TypeError("A pairing secret and device_name are required")
         info = await self.async_probe()
         if self._expected_hub_id is not None and info.hub_id != self._expected_hub_id:
             raise HubIdentityError("Teslatlas Hub identity changed")
@@ -394,14 +451,14 @@ class CurrentHubClient:
         assert payload is not None
         token = payload.get("access_token")
         expires_at_ms = payload.get("expires_at_ms")
-        if not isinstance(token, str) or len(token) != 64:
-            raise HubContractError("Claim returned an invalid access_token")
-        if isinstance(expires_at_ms, bool) or not isinstance(expires_at_ms, int):
-            raise HubContractError("Claim returned an invalid expires_at_ms")
+        device_id = payload.get("device_id")
+        validate_current_hub_credential(
+            token, device_id, expires_at_ms, now_ms=epoch_milliseconds(self._now())
+        )
         return PairingResult(
             info=info,
             access_token=token,
-            device_id=_uuid(payload.get("device_id"), "device_id"),
+            device_id=device_id,
             expires_at_ms=expires_at_ms,
         )
 
@@ -416,19 +473,22 @@ class CurrentHubClient:
         assert payload is not None
         token = payload.get("access_token")
         expires_at_ms = payload.get("expires_at_ms")
-        if not isinstance(token, str) or len(token) != 64:
-            raise HubContractError("Rotation returned an invalid access_token")
-        if isinstance(expires_at_ms, bool) or not isinstance(expires_at_ms, int):
-            raise HubContractError("Rotation returned an invalid expires_at_ms")
+        device_id = payload.get("device_id")
+        validate_current_hub_credential(
+            token, device_id, expires_at_ms, now_ms=epoch_milliseconds(self._now())
+        )
         return PairingResult(
             info=info,
             access_token=token,
-            device_id=_uuid(payload.get("device_id"), "device_id"),
+            device_id=device_id,
             expires_at_ms=expires_at_ms,
         )
 
     def set_bearer(self, access_token: str, expires_at_ms: int) -> None:
         """Switch to a credential that Home Assistant has already persisted."""
+        validate_bearer(
+            access_token, expires_at_ms, now_ms=epoch_milliseconds(self._now())
+        )
         self._bearer_token = access_token
         self._bearer_expires_at_ms = expires_at_ms
 
@@ -455,10 +515,10 @@ class CurrentHubClient:
         return VehicleState(
             vehicle_id=vehicle_id,
             name=name,
-            state_of_charge=_optional_number(payload, "battery_level"),
+            state_of_charge=_optional_integer(payload, "battery_level"),
             charging_state=_optional_string(payload, "charging_state"),
             charging_power_kw=_optional_number(payload, "charger_power"),
-            charge_limit_percent=_optional_number(payload, "charge_limit_soc"),
+            charge_limit_percent=_optional_integer(payload, "charge_limit_soc"),
             estimated_range_km=_optional_number(payload, "est_battery_range_km"),
             odometer_km=_optional_number(payload, "odometer"),
             activity_state=_optional_string(payload, "state"),
@@ -476,18 +536,24 @@ class CurrentHubClient:
 
     async def async_close(self) -> None:
         """Cancel owned reads and detach any HA-managed session wrapper."""
-        if self._closed:
-            return
-        self._closed = True
-        current = asyncio.current_task()
-        pending = {
-            task
-            for task in self._request_tasks | self._snapshot_tasks
-            if task is not current
-        }
-        for task in pending:
-            task.cancel()
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
-        if self._owns_session_wrapper:
-            self._session.detach()
+        if self._close_task is None:
+            self._closed = True
+            current = asyncio.current_task()
+            pending = {
+                task
+                for task in self._request_tasks | self._snapshot_tasks
+                if task is not current
+            }
+            self._close_task = asyncio.create_task(self._async_finalize_close(pending))
+        await asyncio.shield(self._close_task)
+
+    async def _async_finalize_close(self, pending: set[asyncio.Task[Any]]) -> None:
+        """Finish owned cleanup even if an individual close waiter is cancelled."""
+        try:
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+        finally:
+            if self._owns_session_wrapper:
+                self._session.detach()

@@ -25,7 +25,13 @@ from custom_components.teslatlas_hub.const import (
     DOMAIN,
 )
 from custom_components.teslatlas_hub.coordinator import TeslatlasDataCoordinator
-from tests.helpers import FixtureHubClient, initial_snapshot
+from tests.helpers import (
+    FIXTURE_ACCESS_TOKEN,
+    FIXTURE_DEVICE_ID,
+    FIXTURE_ROTATED_ACCESS_TOKEN,
+    FixtureHubClient,
+    initial_snapshot,
+)
 
 
 def _entry(hass: HomeAssistant) -> MockConfigEntry:
@@ -37,8 +43,8 @@ def _entry(hass: HomeAssistant) -> MockConfigEntry:
             CONF_PORT: 7443,
             CONF_USE_TLS: True,
             CONF_HUB_ID: "hub-fixture",
-            CONF_DEVICE_ID: "device-fixture",
-            CONF_ACCESS_TOKEN: "fixture-device-bearer",
+            CONF_DEVICE_ID: FIXTURE_DEVICE_ID,
+            CONF_ACCESS_TOKEN: FIXTURE_ACCESS_TOKEN,
         },
     )
     entry.add_to_hass(hass)
@@ -96,8 +102,8 @@ async def test_due_bearer_rotation_persists_before_switching_client(
         await coordinator._async_update_data()
 
     assert client.rotation_calls == 1
-    assert entry.data[CONF_ACCESS_TOKEN] == "rotated-device-bearer"
-    assert client.bearer_updates == [("rotated-device-bearer", 2_000_000_000_000)]
+    assert entry.data[CONF_ACCESS_TOKEN] == FIXTURE_ROTATED_ACCESS_TOKEN
+    assert client.bearer_updates == [(FIXTURE_ROTATED_ACCESS_TOKEN, 2_000_000_000_000)]
     await coordinator.async_shutdown()
 
 
@@ -114,7 +120,7 @@ async def test_rotation_failure_keeps_existing_credential(
     with pytest.raises(UpdateFailed, match="lost response"):
         await coordinator._async_update_data()
 
-    assert entry.data[CONF_ACCESS_TOKEN] == "fixture-device-bearer"
+    assert entry.data[CONF_ACCESS_TOKEN] == FIXTURE_ACCESS_TOKEN
     assert client.bearer_updates == []
     await coordinator.async_shutdown()
 
@@ -132,7 +138,7 @@ async def test_rotation_rejects_another_paired_device(
     with pytest.raises(ConfigEntryAuthFailed, match="authentication expired"):
         await coordinator._async_update_data()
 
-    assert entry.data[CONF_ACCESS_TOKEN] == "fixture-device-bearer"
+    assert entry.data[CONF_ACCESS_TOKEN] == FIXTURE_ACCESS_TOKEN
     assert client.bearer_updates == []
     await coordinator.async_shutdown()
 
@@ -147,12 +153,108 @@ async def test_rotation_rejects_out_of_range_expiry_before_persisting(
     client.rotation_expires_at_ms = 10**100
     coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
 
-    with pytest.raises(UpdateFailed, match="outside the supported range"):
+    with pytest.raises(UpdateFailed, match="signed64"):
         await coordinator._async_update_data()
 
-    assert entry.data[CONF_ACCESS_TOKEN] == "fixture-device-bearer"
+    assert entry.data[CONF_ACCESS_TOKEN] == FIXTURE_ACCESS_TOKEN
     assert client.bearer_updates == []
     await coordinator.async_shutdown()
+
+
+@pytest.mark.parametrize("expiry", [0, 1_790_380_800_000])
+async def test_rotation_rejects_expired_issued_credential_before_persistence(
+    hass: HomeAssistant, expiry: int
+) -> None:
+    now = datetime(2026, 9, 26, tzinfo=UTC)
+    entry = _entry(hass)
+    _set_expiry(hass, entry, now + timedelta(days=6))
+    client = FixtureHubClient()
+    client.rotation_expires_at_ms = expiry
+    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+
+    with pytest.raises(UpdateFailed, match="future"):
+        await coordinator._async_update_data()
+    assert entry.data[CONF_ACCESS_TOKEN] == FIXTURE_ACCESS_TOKEN
+    assert client.bearer_updates == []
+    await coordinator.async_shutdown()
+
+
+async def test_rotation_rejects_control_character_token_before_persistence(
+    hass: HomeAssistant,
+) -> None:
+    now = datetime(2026, 9, 26, tzinfo=UTC)
+    entry = _entry(hass)
+    _set_expiry(hass, entry, now + timedelta(days=6))
+    client = FixtureHubClient()
+    client.rotated_access_token = "a" * 62 + "\r\n"
+    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+
+    with pytest.raises(UpdateFailed, match="access_token"):
+        await coordinator._async_update_data()
+    assert entry.data[CONF_ACCESS_TOKEN] == FIXTURE_ACCESS_TOKEN
+    assert client.bearer_updates == []
+    await coordinator.async_shutdown()
+
+
+async def test_signed64_maximum_expiry_schedules_without_datetime_conversion(
+    hass: HomeAssistant,
+) -> None:
+    entry = _entry(hass)
+    hass.config_entries.async_update_entry(
+        entry, data={**entry.data, CONF_TOKEN_EXPIRES_AT_MS: 2**63 - 1}
+    )
+    client = FixtureHubClient()
+    coordinator = TeslatlasDataCoordinator(hass, entry, client)
+    await coordinator._async_update_data()
+    assert client.rotation_calls == 0
+    assert client.snapshot_calls == 1
+    await coordinator.async_shutdown()
+
+
+async def test_rotated_signed64_maximum_expiry_is_persisted_without_narrowing(
+    hass: HomeAssistant,
+) -> None:
+    now = datetime(2026, 9, 26, tzinfo=UTC)
+    entry = _entry(hass)
+    _set_expiry(hass, entry, now + timedelta(days=6))
+    client = FixtureHubClient()
+    client.rotation_expires_at_ms = 2**63 - 1
+    coordinator = TeslatlasDataCoordinator(hass, entry, client, now=lambda: now)
+    await coordinator._async_update_data()
+    assert entry.data[CONF_TOKEN_EXPIRES_AT_MS] == 2**63 - 1
+    assert client.bearer_updates == [(FIXTURE_ROTATED_ACCESS_TOKEN, 2**63 - 1)]
+    await coordinator.async_shutdown()
+
+
+async def test_cancelled_shutdown_waiter_rejoins_client_cleanup(
+    hass: HomeAssistant,
+) -> None:
+    client = FixtureHubClient()
+    coordinator = TeslatlasDataCoordinator(hass, _entry(hass), client)
+    cleanup_started = asyncio.Event()
+    finish_cleanup = asyncio.Event()
+    original_close = client.async_close
+
+    async def blocked_close() -> None:
+        cleanup_started.set()
+        await finish_cleanup.wait()
+        await original_close()
+
+    with patch.object(client, "async_close", side_effect=blocked_close) as close:
+        first = asyncio.create_task(coordinator.async_shutdown())
+        await asyncio.wait_for(cleanup_started.wait(), timeout=1)
+        first.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await first
+        retry = asyncio.create_task(coordinator.async_shutdown())
+        await asyncio.sleep(0)
+        assert not retry.done()
+        assert client.closed is False
+        finish_cleanup.set()
+        await asyncio.wait_for(retry, timeout=1)
+        await coordinator.async_shutdown()
+        close.assert_awaited_once()
+    assert client.closed is True
 
 
 async def test_due_rotation_is_not_attempted_concurrently(

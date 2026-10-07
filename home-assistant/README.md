@@ -49,6 +49,8 @@ For an isolated Linux Container installation, use the [Container guide](docs/gui
 
 Use the entry's reauthentication flow with a fresh invitation when a credential expires or is revoked. Reconfigure an endpoint through Home Assistant; the new endpoint must identify the same Hub. Stop if the certificate, pin or Hub identity is unexpected.
 
+For an intentional certificate replacement, or to pin an existing unpinned entry, reconfigure with HTTPS and the Hub's lowercase 64-character certificate fingerprint. Verify and approve the displayed fingerprint, then enter a fresh invitation from the same Hub. The integration validates the new credential before updating the saved connection and preserves the entry identity. A connection failure during validation can retry the issued credential without claiming the invitation again; an expired or rejected replacement returns to fresh invitation entry.
+
 A temporary outage makes affected entities unavailable. The integration retries with bounded backoff up to 300 seconds. Missing current-state values stay unknown. See [support](.github/SUPPORT.md) for setup and recovery checks.
 
 Protect the whole Home Assistant configuration directory, including `core.config_entries`, as credential-bearing data. To roll back, stop Home Assistant and restore the matching configuration backup and component version before restarting. Older components may not understand a newer configuration schema.

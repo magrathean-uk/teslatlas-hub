@@ -25,6 +25,11 @@ from .const import (
     CONF_TOKEN_EXPIRES_AT_MS,
     DOMAIN,
 )
+from .credentials import (
+    epoch_milliseconds,
+    validate_current_hub_credential,
+    validate_epoch_milliseconds,
+)
 from .models import HubSnapshot
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,16 +37,7 @@ _LOGGER = logging.getLogger(__name__)
 POLL_INTERVAL_SECONDS = 30
 POLL_BACKOFF_SECONDS = (30, 60, 120, 300)
 ROTATION_LEAD_TIME = timedelta(days=7)
-
-
-def _expiration_datetime(value: object, field_name: str) -> datetime:
-    """Validate an epoch-millisecond expiry before converting it to UTC."""
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise HubContractError(f"{field_name} must be an integer")
-    try:
-        return datetime.fromtimestamp(value / 1000, UTC)
-    except (OSError, OverflowError, ValueError) as err:
-        raise HubContractError(f"{field_name} is outside the supported range") from err
+ROTATION_LEAD_TIME_MS = ROTATION_LEAD_TIME // timedelta(milliseconds=1)
 
 
 class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
@@ -69,6 +65,7 @@ class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
         self._closed = False
         self._now = now or (lambda: datetime.now(UTC))
         self._rotation_lock = asyncio.Lock()
+        self._shutdown_task: asyncio.Task[None] | None = None
 
     @property
     def last_event_id(self) -> None:
@@ -103,8 +100,10 @@ class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
             expires_at_ms = self.config_entry.data.get(CONF_TOKEN_EXPIRES_AT_MS)
             if expires_at_ms is None:
                 return
-            expires_at = _expiration_datetime(expires_at_ms, CONF_TOKEN_EXPIRES_AT_MS)
-            if expires_at - self._now() > ROTATION_LEAD_TIME:
+            expires_at_ms = validate_epoch_milliseconds(
+                expires_at_ms, CONF_TOKEN_EXPIRES_AT_MS
+            )
+            if expires_at_ms - epoch_milliseconds(self._now()) > ROTATION_LEAD_TIME_MS:
                 return
 
             rotated = await self.client.async_rotate()
@@ -116,7 +115,12 @@ class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
                 raise HubAuthenticationError(
                     "Teslatlas Hub device identity changed during rotation"
                 )
-            _expiration_datetime(rotated.expires_at_ms, "rotated expires_at_ms")
+            validate_current_hub_credential(
+                rotated.access_token,
+                rotated.device_id,
+                rotated.expires_at_ms,
+                now_ms=epoch_milliseconds(self._now()),
+            )
 
             updated_data: dict[str, Any] = {
                 **self.config_entry.data,
@@ -131,8 +135,14 @@ class TeslatlasDataCoordinator(DataUpdateCoordinator[HubSnapshot]):
     @override
     async def async_shutdown(self) -> None:
         """Cancel coordinator timers and close the client exactly once."""
-        if self._closed:
-            return
-        self._closed = True
-        await super().async_shutdown()
-        await self.client.async_close()
+        if self._shutdown_task is None:
+            self._closed = True
+            self._shutdown_task = asyncio.create_task(self._async_finalize_shutdown())
+        await asyncio.shield(self._shutdown_task)
+
+    async def _async_finalize_shutdown(self) -> None:
+        """Keep cleanup joinable after a cancelled shutdown waiter."""
+        try:
+            await super().async_shutdown()
+        finally:
+            await self.client.async_close()

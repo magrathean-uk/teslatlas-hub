@@ -140,7 +140,7 @@
           "$ref": "#/$defs/sha256"
         },
         "installed_members": {
-          "const": 31
+          "const": 32
         },
         "home_assistant_version": {
           "const": "2026.8.3"
@@ -221,6 +221,7 @@
             "custom_components.teslatlas_hub.config_flow",
             "custom_components.teslatlas_hub.const",
             "custom_components.teslatlas_hub.coordinator",
+            "custom_components.teslatlas_hub.credentials",
             "custom_components.teslatlas_hub.current_hub_client",
             "custom_components.teslatlas_hub.entity",
             "custom_components.teslatlas_hub.models",
@@ -246,6 +247,12 @@
             "custom_components.teslatlas_hub.coordinator": {
               "type": "string",
               "pattern": "^[A-Za-z0-9_./-]+\\.py$"
+            },
+            "custom_components.teslatlas_hub.credentials": {
+              "const": "credentials.py"
+            },
+            "custom_components.teslatlas_hub.diagnostics": {
+              "const": "diagnostics.py"
             },
             "custom_components.teslatlas_hub.current_hub_client": {
               "type": "string",
