@@ -579,10 +579,35 @@ fn configure(connection: &Connection) -> Result<(), StoreError> {
             PRAGMA foreign_keys = ON;
             PRAGMA trusted_schema = OFF;
             PRAGMA busy_timeout = 5000;
-            PRAGMA application_id = 1413564501;
             ",
         )
         .map_err(StoreError::Configure)
+}
+
+/// Admit the existing catalogue before issuing any persistent PRAGMA or
+/// migration. An unmarked database is ours only when it is genuinely empty;
+/// a misplaced SQLite database must never be relabelled as a Hub catalogue.
+fn admit_writable_catalogue(connection: &Connection) -> Result<(), StoreError> {
+    let application_id: i32 = connection
+        .query_row("PRAGMA application_id", [], |row| row.get(0))
+        .map_err(StoreError::Query)?;
+    let version = schema_version(connection)?;
+    if application_id != APPLICATION_ID {
+        let empty: bool = connection
+            .query_row(
+                "SELECT NOT EXISTS(SELECT 1 FROM sqlite_schema)",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
+        if application_id != 0 || version != 0 || !empty {
+            return Err(StoreError::InvalidApplicationId(application_id));
+        }
+    }
+    if !(0..=SCHEMA_VERSION).contains(&version) {
+        return Err(StoreError::UnsupportedSchema(version));
+    }
+    Ok(())
 }
 
 fn configure_read_only(connection: &Connection) -> Result<(), StoreError> {

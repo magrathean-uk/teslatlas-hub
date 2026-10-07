@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, Statement, params};
 use tempfile::NamedTempFile;
 use thiserror::Error;
 
@@ -268,9 +268,11 @@ impl PhysicalDeltaComparison {
                     .join("sha256")
                     .join(format!("{}.sqlite.zst", pack.sha256));
                 let transaction = connection.transaction()?;
+                let mut inserter = PreparedInserter::new(&transaction)?;
                 scan_verified_physical_pack_2_2(pack, manifest, binding, &path, |row| {
-                    insert_row(&transaction, side, i64::from(pack.ordinal), row)
+                    inserter.insert(side, i64::from(pack.ordinal), row)
                 })?;
+                drop(inserter);
                 transaction.commit()?;
                 if available_bytes(&staging)? < minimum_free_bytes {
                     return Err(PhysicalCompareError::Capacity);
@@ -378,6 +380,82 @@ impl PhysicalDeltaComparison {
     }
 }
 
+// Statements are scoped to one pack transaction; verification still visits every row.
+struct PreparedInserter<'a> {
+    insert: Statement<'a>,
+    duplicate: Statement<'a>,
+    edge: Statement<'a>,
+}
+
+impl<'a> PreparedInserter<'a> {
+    fn new(tx: &'a rusqlite::Transaction<'_>) -> Result<Self, ProjectionPackError> {
+        Ok(Self {
+            insert: tx
+                .prepare(
+                    "INSERT OR IGNORE INTO row_versions
+         (side,table_name,id,digest,pack_ordinal,closed_drive,update_start_pg_us,month_date_pg_us)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
+                )
+                .map_err(ProjectionPackError::IntegrityCheck)?,
+            duplicate: tx
+                .prepare(
+                    "SELECT digest,closed_drive FROM row_versions
+             WHERE side=?1 AND table_name=?2 AND id=?3",
+                )
+                .map_err(ProjectionPackError::IntegrityCheck)?,
+            edge: tx
+                .prepare(
+                    "INSERT OR IGNORE INTO edges(side,from_table,from_id,to_table,to_id)
+             VALUES (?1,?2,?3,?4,?5)",
+                )
+                .map_err(ProjectionPackError::IntegrityCheck)?,
+        })
+    }
+
+    fn insert(
+        &mut self,
+        side: i64,
+        ordinal: i64,
+        row: PhysicalTypedRow,
+    ) -> Result<(), ProjectionPackError> {
+        let inserted = self
+            .insert
+            .execute(params![
+                side,
+                row.table,
+                row.id,
+                row.digest.as_slice(),
+                ordinal,
+                row.closed_drive.map(i64::from),
+                row.update_start_pg_us,
+                row.month_date_pg_us
+            ])
+            .map_err(ProjectionPackError::IntegrityCheck)?;
+        if inserted == 0 {
+            let existing: (Vec<u8>, Option<i64>) = self
+                .duplicate
+                .query_row(params![side, row.table, row.id], |r| {
+                    Ok((r.get(0)?, r.get(1)?))
+                })
+                .map_err(ProjectionPackError::IntegrityCheck)?;
+            if existing.0 != row.digest || existing.1 != row.closed_drive.map(i64::from) {
+                return Err(ProjectionPackError::Invalid(
+                    "repeated physical row differs across packs".to_owned(),
+                ));
+            }
+            return Ok(());
+        }
+        for (to_table, to_id) in row.edges {
+            self.edge
+                .execute(params![side, row.table, row.id, to_table, to_id])
+                .map_err(ProjectionPackError::IntegrityCheck)?;
+        }
+        Ok(())
+    }
+}
+
+// Exact pre-reuse inserter retained for test and measurement parity.
+#[cfg(test)]
 fn insert_row(
     tx: &rusqlite::Transaction<'_>,
     side: i64,
@@ -543,6 +621,10 @@ fn derive_changes(db: &Connection, car_id: i64) -> Result<(), rusqlite::Error> {
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "physical_delta_compare/statement_measurement_tests.rs"]
+mod statement_measurement_tests;
 
 #[cfg(test)]
 mod tests {

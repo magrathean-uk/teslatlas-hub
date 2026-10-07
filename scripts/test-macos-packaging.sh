@@ -9,6 +9,7 @@ ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 SCRIPTS="$ROOT/packaging/macos-service/scripts"
 COMMON="$SCRIPTS/common.sh"
 PREINSTALL="$SCRIPTS/preinstall"
+APP_PREINSTALL="$ROOT/packaging/macos-app/scripts/preinstall"
 POSTINSTALL="$SCRIPTS/postinstall"
 UNINSTALL="$SCRIPTS/uninstall-macos-service.sh"
 SUPERVISOR="$SCRIPTS/run-hub-service.sh"
@@ -25,7 +26,17 @@ APP_INFO="$ROOT/macos/TeslatlasHubApp/TeslatlasHubApp/Info.plist"
 APP_PROJECT="$ROOT/macos/TeslatlasHubApp/project.yml"
 APP_ICON="$ROOT/macos/TeslatlasHubApp/TeslatlasHubApp/Resources/AppIcon.icns"
 TEST_ROOT=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/teslatlas-hub-macos-package-test.XXXXXX")
-trap '/usr/bin/find "$TEST_ROOT" -depth -delete' EXIT HUP INT TERM
+test_process_pid=
+test_other_process_pid=
+cleanup_test_root() {
+    for owned_pid in "$test_process_pid" "$test_other_process_pid"; do
+        [ -n "$owned_pid" ] || continue
+        /bin/kill -TERM "$owned_pid" >/dev/null 2>&1 || true
+        wait "$owned_pid" >/dev/null 2>&1 || true
+    done
+    /usr/bin/find "$TEST_ROOT" -depth -delete
+}
+trap cleanup_test_root EXIT HUP INT TERM
 
 fail() {
     printf '%s\n' "test-macos-packaging: $*" >&2
@@ -52,7 +63,7 @@ assert_before_fixed() {
     [ "$first" -lt "$second" ] || fail "wrong operation order: $1 must precede $2"
 }
 
-for script in "$SCRIPTS/common.sh" "$PREINSTALL" "$POSTINSTALL" "$UNINSTALL" "$SUPERVISOR"; do
+for script in "$SCRIPTS/common.sh" "$PREINSTALL" "$APP_PREINSTALL" "$POSTINSTALL" "$UNINSTALL" "$SUPERVISOR"; do
     /bin/sh -n "$script" || fail "invalid shell syntax: $script"
 done
 /bin/sh -n "$APP_BUILD" || fail "invalid macOS app build script"
@@ -145,32 +156,55 @@ fi
     || fail "preinstall does not refuse unsafe multi-user shared-binary upgrades"
 /usr/bin/grep -Fq 'another user has a Hub LaunchAgent' "$COMMON" \
     || fail "multi-user upgrade refusal has no clear diagnostic"
-/usr/bin/grep -Fq '/usr/bin/pgrep -u "$expected_uid" -x "$process_name"' "$PREINSTALL" \
+/usr/bin/grep -Fq '/usr/bin/pgrep -u "$expected_uid" -x "$process_name"' "$COMMON" \
     || fail "preinstall does not scope the running app check to the console user and exact name"
-/usr/bin/grep -Fq '/usr/bin/pkill -TERM -u "$expected_uid" -x "$process_name"' "$PREINSTALL" \
+/usr/bin/grep -Fq '/usr/bin/pkill -TERM -u "$expected_uid" -x "$process_name"' "$COMMON" \
     || fail "preinstall does not request a bounded clean app exit before replacement"
-/usr/bin/grep -Fq '/usr/bin/pkill -KILL -u "$expected_uid" -x "$process_name"' "$PREINSTALL" \
+/usr/bin/grep -Fq '/usr/bin/pkill -KILL -u "$expected_uid" -x "$process_name"' "$COMMON" \
     || fail "preinstall cannot finish replacing an unresponsive old app"
-assert_before_fixed "stop_running_app_for_update 'Teslatlas Hub' \"\$CONSOLE_UID\"" \
+assert_before_fixed "prepare_gui_for_install service-only 'Teslatlas Hub' \"\$CONSOLE_UID\"" \
     'STATE_DIRECTORY=$(upgrade_state_directory)' "$PREINSTALL"
 
 gui_update_helper="$TEST_ROOT/gui-update-helper.sh"
 /usr/bin/sed -n '/^# BEGIN TESTABLE GUI UPDATE HELPER$/,/^# END TESTABLE GUI UPDATE HELPER$/p' \
-    "$PREINSTALL" > "$gui_update_helper"
+    "$COMMON" > "$gui_update_helper"
 # shellcheck source=/dev/null
 . "$gui_update_helper"
 test_process_name="tlhup$$"
 /usr/bin/perl -e '$0 = shift; sleep 30' "$test_process_name" &
 test_process_pid=$!
+/usr/bin/perl -e '$0 = shift; sleep 30' "${test_process_name}x" &
+test_other_process_pid=$!
 /bin/sleep 0.1
 /usr/bin/pgrep -u "$(/usr/bin/id -u)" -x "$test_process_name" >/dev/null \
     || fail "GUI update helper fixture did not start"
-stop_running_app_for_update "$test_process_name" "$(/usr/bin/id -u)" \
+prepare_gui_for_install service-only "$test_process_name" "$(/usr/bin/id -u)" \
+    || fail "service-only helper failed"
+/bin/kill -0 "$test_process_pid" >/dev/null 2>&1 \
+    || fail "service-only helper stopped the calling app process"
+other_uid=0
+[ "$(/usr/bin/id -u)" -ne 0 ] || other_uid=1
+prepare_gui_for_install app-replacement "$test_process_name" "$other_uid" \
+    || fail "GUI helper could not preserve a different user's process"
+/bin/kill -0 "$test_process_pid" >/dev/null 2>&1 \
+    || fail "GUI replacement helper stopped another user's process"
+prepare_gui_for_install app-replacement "$test_process_name" "$(/usr/bin/id -u)" \
     || fail "GUI update helper did not stop the old app process"
 if /bin/kill -0 "$test_process_pid" >/dev/null 2>&1; then
     fail "GUI update helper left the old app process running"
 fi
 wait "$test_process_pid" >/dev/null 2>&1 || true
+test_process_pid=
+/bin/kill -0 "$test_other_process_pid" >/dev/null 2>&1 \
+    || fail "GUI replacement helper stopped a differently named process"
+/bin/kill -TERM "$test_other_process_pid"
+wait "$test_other_process_pid" >/dev/null 2>&1 || true
+test_other_process_pid=
+
+/usr/bin/grep -Fq "prepare_gui_for_install app-replacement 'Teslatlas Hub' \"\$CONSOLE_UID\"" "$APP_PREINSTALL" \
+    || fail "combined app component does not request GUI replacement"
+/usr/bin/grep -Fq -- '--scripts "$APP_COMPONENT_SCRIPTS"' "$APP_BUILD" \
+    || fail "combined app component does not register its replacement scripts"
 
 assert_before_fixed '/usr/bin/plutil -lint "$rendered_plist"' '    stop_loaded_service_bounded' "$POSTINSTALL"
 assert_before_fixed '    stop_loaded_service_bounded' '"$BINARY" --config "$CONFIG" preflight' "$POSTINSTALL"
@@ -479,10 +513,14 @@ fi
 if /usr/bin/grep -Fq '"$PROXY" &' "$SUPERVISOR"; then
     fail "Fleet receiver supervisor must not start a duplicate command proxy"
 fi
-/usr/bin/grep -Fq 'stop_child "$hub_pid"' "$SUPERVISOR" \
+/usr/bin/grep -Fq 'stop_child "$hub_pid" 250' "$SUPERVISOR" \
     || fail "Fleet receiver supervisor does not stop Hub with its receiver"
-/usr/bin/grep -Fq 'stop_child "$receiver_pid"' "$SUPERVISOR" \
+/usr/bin/grep -Fq 'stop_child "$receiver_pid" 5' "$SUPERVISOR" \
     || fail "Fleet receiver supervisor does not stop receiver with Hub"
+[ "$(/usr/libexec/PlistBuddy -c 'Print :ExitTimeOut' "$PLIST")" -eq 270 ] \
+    || fail "LaunchAgent does not preserve the complete owned drain budget"
+/bin/sh "$ROOT/scripts/test-macos-supervisor-drain.sh" \
+    || fail "packaged supervisor does not drain and reap its owned children"
 
 SUPERVISOR_FUNCTIONS="$TEST_ROOT/supervisor-functions.sh"
 /usr/bin/awk 'index($0, "if [ \"$#\" -ne 6 ]") == 1 { exit } { print }' \

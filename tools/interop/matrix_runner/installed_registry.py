@@ -320,8 +320,8 @@ def _session_input(path: Path | str, supplied: Mapping[str, Any], entry: FixedIn
                 raise InstalledRegistryError("matrix evidence header provenance is invalid")
     if contract is not None:
         declared = contract.manifest.get("actors")
-        if isinstance(declared, list):
-            declared_by_id = {actor.get("id"): actor for actor in declared if isinstance(actor, dict)}
+        if isinstance(declared, (list, tuple)):
+            declared_by_id = {actor.get("id"): actor for actor in declared if isinstance(actor, Mapping)}
             for actor in actual["actors"]:
                 fixed = declared_by_id.get(actor["id"])
                 if (fixed is None or actor.get("kind") != fixed.get("kind")
@@ -346,6 +346,10 @@ def _session_input(path: Path | str, supplied: Mapping[str, Any], entry: FixedIn
     protected_roots = [Path(__file__).resolve().parents[3]]
     for name, binding in actual["inputs"].items():
         if name == "certificate_der_sha256":
+            continue
+        if name == "profile_members":
+            for index, member in enumerate(binding):
+                _staged_pair(member, f"matrix profile member {index}", deadline=deadline)
             continue
         if name == "product_inputs":
             if not isinstance(binding, list) or len(binding) > 4:
@@ -454,9 +458,9 @@ def dispatch(job: Mapping[str, Any], cell: Mapping[str, Any], config: Mapping[st
     if list(contract.manifest["required_cases"]) != list(required_cases):
         raise InstalledRegistryPending("pending: reviewed installed adapter contract and matrix case sets differ")
     actors = contract.manifest.get("actors")
-    if (not isinstance(actors, list)
-            or tuple(actor.get("id") for actor in actors if isinstance(actor, dict)) != entry.required_actor_ids
-            or any(not isinstance(actor, dict) or set(actor) != {"id", "kind", "required"}
+    if (not isinstance(actors, (list, tuple))
+            or tuple(actor.get("id") for actor in actors if isinstance(actor, Mapping)) != entry.required_actor_ids
+            or any(not isinstance(actor, Mapping) or set(actor) != {"id", "kind", "required"}
                    or actor["required"] is not True for actor in actors)):
         raise InstalledRegistryError("reviewed adapter contract changes fixed actors")
     expected_execution = dict(entry.execution_by_target).get(cell.get("hub_target"))

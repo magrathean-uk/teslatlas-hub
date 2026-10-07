@@ -35,6 +35,277 @@ fn private_imports(temporary: &tempfile::TempDir) -> PathBuf {
     temporary.path().join("imports")
 }
 
+/// Test-only counterpart of open_sealed: the sole configuration difference is
+/// an optional connection-local page-cache target, applied before validation.
+/// All descriptor, format, sealed-state, integrity and accounting checks remain.
+fn open_cache_measurement_stage(
+    path: &Path,
+    cache_kib: Option<u32>,
+) -> Result<(TeslaMateStage, [f64; 3]), TeslaMateStageError> {
+    let started = std::time::Instant::now();
+    let stage_path = ensure_private_stage_path(path)?;
+    let (file_descriptor, file_identity) = open_private_stage_file(&stage_path, false)?;
+    let connection = open_read_only_sqlite_from_descriptor(&file_descriptor)?;
+    if let Some(kib) = cache_kib {
+        assert!(
+            matches!(kib, 65_536 | 131_072),
+            "fixed bounded cache target"
+        );
+        connection.pragma_update(None, "cache_size", -i64::from(kib))?;
+    }
+    let cache: i64 = connection.query_row("PRAGMA cache_size", [], |row| row.get(0))?;
+    let page_size: i64 = connection.query_row("PRAGMA page_size", [], |row| row.get(0))?;
+    let target_bytes = if cache < 0 {
+        cache
+            .checked_abs()
+            .and_then(|value| value.checked_mul(1024))
+    } else {
+        cache.checked_mul(page_size)
+    }
+    .expect("bounded cache target bytes");
+    assert!(
+        (0..=128 * 1024 * 1024).contains(&target_bytes),
+        "cache target exceeds admitted maximum"
+    );
+    verify_stage_path_identity(
+        &stage_path.directory,
+        &stage_path.file_name,
+        &stage_path.path,
+        file_identity,
+    )?;
+    let format = read_stage_format(&connection)?;
+    let stage = TeslaMateStage {
+        path: stage_path.path,
+        connection,
+        writable: false,
+        format,
+        file_identity,
+        directory: stage_path.directory,
+        file_name: stage_path.file_name,
+        file_descriptor,
+    };
+    let stats = stage.stats()?;
+    if stats.state != TeslaMateStageState::Sealed {
+        return Err(TeslaMateStageError::StageNotSealed);
+    }
+    let open_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let started = std::time::Instant::now();
+    stage.verify_integrity()?;
+    let integrity_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let started = std::time::Instant::now();
+    stage.verify_accounting(stats)?;
+    let accounting_ms = started.elapsed().as_secs_f64() * 1000.0;
+    verify_stage_path_identity(
+        &stage.directory,
+        &stage.file_name,
+        &stage.path,
+        file_identity,
+    )?;
+    Ok((stage, [open_ms, integrity_ms, accounting_ms]))
+}
+
+#[test]
+fn measurement_cache_targets_preserve_digest_and_accounting_rejection() {
+    let temporary = tempdir().expect("temp dir");
+    let mut stage =
+        TeslaMateStage::create_physical_v3(private_imports(&temporary), limits()).expect("stage");
+    stage
+        .insert(
+            TeslaMateStageTable::Cars,
+            1,
+            &Row {
+                label: "fixture".into(),
+                ordinal: 1,
+            },
+        )
+        .expect("row");
+    stage.seal().expect("seal");
+    let path = stage.path().to_owned();
+    let digest = stage.sealed_content_digest().expect("reference digest");
+    for cache in [None, Some(65_536), Some(131_072)] {
+        let (reader, _) = open_cache_measurement_stage(&path, cache).expect("admission");
+        assert_eq!(reader.sealed_content_digest().expect("digest"), digest);
+    }
+    stage
+        .connection
+        .execute(
+            "UPDATE stage_meta SET value='2' WHERE key=?1",
+            [META_ROW_COUNT],
+        )
+        .expect("fixture accounting mismatch");
+    for cache in [None, Some(65_536), Some(131_072)] {
+        assert!(matches!(
+            open_cache_measurement_stage(&path, cache),
+            Err(TeslaMateStageError::PersistedAccountingMismatch { .. })
+        ));
+    }
+}
+
+/// Same retained input; connection caches start empty and OS caches are never
+/// purged. Warm-ups are reported separately from cyclically alternating repeats.
+#[test]
+#[ignore = "explicit retained sealed input SQLite cache comparison"]
+fn measure_retained_physical_stage_cache() {
+    use serde_json::json;
+    use std::{fs::File, time::Instant};
+    fn checked<T, E>(result: Result<T, E>, message: &'static str) -> T {
+        result.unwrap_or_else(|_| panic!("{message}"))
+    }
+    let input = PathBuf::from(
+        std::env::var_os("TESLATLAS_HUB_BENCH_STAGE").expect("private retained stage required"),
+    );
+    let output = PathBuf::from(
+        std::env::var_os("TESLATLAS_HUB_BENCH_OUTPUT_DIRECTORY")
+            .expect("private output directory required"),
+    );
+    assert!(
+        input.is_absolute() && output.is_absolute(),
+        "absolute paths required"
+    );
+    let output_fd = checked(
+        crate::runtime::development_event_log::validated_directory(&output),
+        "existing private output directory required",
+    );
+    // Explicit admission for one maximum 128 MiB cache plus 128 MiB headroom.
+    // cache_size is SQLite's advisory page-cache target, not an RSS hard limit.
+    let budget_mib: u32 = std::env::var("TESLATLAS_HUB_BENCH_MEMORY_BUDGET_MIB")
+        .expect("explicit memory budget required")
+        .parse()
+        .expect("memory budget integer");
+    assert!(
+        (256..=4096).contains(&budget_mib),
+        "budget must be 256 through 4096 MiB"
+    );
+    let repeats: usize = std::env::var("TESLATLAS_HUB_BENCH_CACHE_REPEATS")
+        .map_or(3, |value| value.parse().expect("repeat count"));
+    assert!(
+        matches!(repeats, 3 | 6),
+        "three or six balanced repeats required"
+    );
+    let caches = [None, Some(65_536), Some(131_072)];
+    let mut reference = None;
+    let mut runs = Vec::new();
+    let mut totals = [Vec::<f64>::new(), Vec::new(), Vec::new()];
+    // Three untimed-for-comparison warm-ups, then each mode occupies every
+    // position once per cycle. The second cycle reverses traversal order.
+    for round in 0..=repeats {
+        for turn in 0..3 {
+            let index = if round == 0 {
+                turn
+            } else if round <= 3 {
+                (round - 1 + turn) % 3
+            } else {
+                (round - 4 + 3 - turn) % 3
+            };
+            let warmup = round == 0;
+            eprintln!(
+                "{}",
+                json!({"event":"cache_validation_started", "warmup":warmup,
+                "round":round, "order":turn, "cache_kib":caches[index]})
+            );
+            let total_started = Instant::now();
+            let (stage, phases) = checked(
+                open_cache_measurement_stage(&input, caches[index]),
+                "sealed stage cache admission failed",
+            );
+            assert!(
+                checked(stage.format(), "format") == TeslaMateStageFormat::PhysicalV3,
+                "physical-v3 input required"
+            );
+            let stats = checked(stage.stats(), "statistics");
+            let pragma: i64 = checked(
+                stage
+                    .connection
+                    .query_row("PRAGMA cache_size", [], |row| row.get(0)),
+                "cache target read failed",
+            );
+            let page_size: i64 = checked(
+                stage
+                    .connection
+                    .query_row("PRAGMA page_size", [], |row| row.get(0)),
+                "page size read failed",
+            );
+            let target_bytes = if pragma < 0 {
+                pragma.checked_abs().and_then(|v| v.checked_mul(1024))
+            } else {
+                pragma.checked_mul(page_size)
+            }
+            .expect("bounded cache target bytes");
+            assert!(
+                (0..=128 * 1024 * 1024).contains(&target_bytes),
+                "cache target exceeds admitted maximum"
+            );
+            let started = Instant::now();
+            let digest = checked(
+                stage.sealed_content_digest(),
+                "full sealed content verification failed",
+            );
+            let digest_ms = started.elapsed().as_secs_f64() * 1000.0;
+            verify_stage_path_identity(
+                &stage.directory,
+                &stage.file_name,
+                &stage.path,
+                stage.file_identity,
+            )
+            .unwrap_or_else(|_| panic!("retained stage identity changed"));
+            let identity = (stage.file_identity, stage.format, stats, digest);
+            if let Some(expected) = &reference {
+                assert!(
+                    &identity == expected,
+                    "retained input or exact digest changed"
+                );
+            } else {
+                reference = Some(identity);
+            }
+            let total_ms = total_started.elapsed().as_secs_f64() * 1000.0;
+            if !warmup {
+                totals[index].push(total_ms);
+            }
+            let run = json!({"event":"cache_validation_complete", "warmup":warmup, "round":round,
+                "order":turn, "cache_kib":caches[index], "cache_size_pragma":pragma,
+                "page_size":page_size, "cache_target_bytes":target_bytes, "open_ms":phases[0],
+                "integrity_ms":phases[1], "accounting_ms":phases[2], "full_digest_ms":digest_ms,
+                "total_ms":total_ms, "source_rows":stats.row_count, "payload_bytes":stats.payload_bytes});
+            eprintln!("{run}");
+            runs.push(run);
+            drop(stage); // Exactly one SQLite connection/cache is live at a time.
+        }
+    }
+    let medians = totals.map(|mut values| {
+        values.sort_by(f64::total_cmp);
+        if values.len() % 2 == 1 {
+            values[values.len() / 2]
+        } else {
+            (values[values.len() / 2 - 1] + values[values.len() / 2]) / 2.0
+        }
+    });
+    let (_, _, stats, digest) = reference.expect("completed validation");
+    let receipt = json!({"event":"retained_physical_stage_cache", "debug_assertions":cfg!(debug_assertions),
+        "sqlite_version":rusqlite::version(), "stage_path":input, "stage_digest":digest,
+        "source_rows":stats.row_count, "payload_bytes":stats.payload_bytes, "repeats":repeats,
+        "stage_max_rows":stats.limits.max_rows, "stage_max_bytes":stats.limits.max_stage_bytes,
+        "stage_minimum_free_bytes":stats.limits.minimum_free_bytes,
+        "memory_budget_mib":budget_mib, "max_cache_target_mib":128, "single_live_connection":true,
+        "os_cache_purged":false, "exact_stats_identity_digest":true, "all_integrity_accounting_checks":true,
+        "default_64mib_128mib_total_median_ms":medians, "runs":runs, "catalogue_published":false});
+    let fd = checked(
+        openat(
+            &output_fd,
+            "cache-validation-receipt.json",
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::from_raw_mode(0o600),
+        ),
+        "receipt must be new",
+    );
+    let file = File::from(fd);
+    checked(
+        serde_json::to_writer_pretty(&file, &receipt),
+        "receipt write failed",
+    );
+    checked(file.sync_all(), "receipt sync failed");
+    eprintln!("{receipt}");
+}
+
 #[test]
 fn stage_format_is_explicit_and_compatibility_remains_the_default() {
     let temporary = tempdir().expect("temp dir");

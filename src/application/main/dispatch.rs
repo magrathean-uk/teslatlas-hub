@@ -211,8 +211,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(target_os = "macos")]
     if matches!(&cli.command, Command::Install) {
-        let config = HubConfig::load(&config_path)?;
-        let installed_binary = replace_macos_launch_agent(&config, &config_path)?;
+        let (config, digest) = HubConfig::load_with_digest(&config_path)?;
+        let installed_binary = replace_macos_launch_agent(&config, &config_path, digest)?;
         println!("installed {}; launch requested", installed_binary.display());
         return Ok(());
     }
@@ -272,8 +272,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         drop(admitted_user_hub);
         #[cfg(target_os = "macos")]
         if start_hub {
-            let config = HubConfig::load(&config_path)?;
-            let installed_binary = replace_macos_launch_agent(&config, &config_path)?;
+            let (config, digest) = HubConfig::load_with_digest(&config_path)?;
+            let installed_binary = replace_macos_launch_agent(&config, &config_path, digest)?;
             println!("installed {}; launch requested", installed_binary.display());
         }
         #[cfg(target_os = "linux")]
@@ -1004,6 +1004,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 fn replace_macos_launch_agent(
     config: &HubConfig,
     config_path: &Path,
+    config_digest: teslatlas_hub::protocol::Sha256Digest,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
     use teslatlas_hub::macos_launch_agent;
 
@@ -1027,7 +1028,8 @@ fn replace_macos_launch_agent(
                 )
                 .into());
             }
-            if let Err(readiness_error) = macos_launch_agent::wait_for_installed_readiness(config) {
+            if let Err(readiness_error) = macos_launch_agent::wait_for_current_installed_readiness()
+            {
                 return Err(format!(
                     "{error}; previous Hub service restarted but did not become ready: {readiness_error}"
                 )
@@ -1038,6 +1040,6 @@ fn replace_macos_launch_agent(
         Err(error) => return Err(error),
     };
 
-    macos_launch_agent::start_prepared(&installed, config, previously_loaded)?;
+    macos_launch_agent::start_prepared(&installed, config, config_digest, previously_loaded)?;
     Ok(installed.binary)
 }

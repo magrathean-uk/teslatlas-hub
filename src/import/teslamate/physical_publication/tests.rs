@@ -11,6 +11,653 @@ use crate::{
     teslamate_stage::{TeslaMateStageLimits, TeslaMateStageTable},
 };
 
+/// Replay one retained sealed source without PostgreSQL or catalogue writes.
+/// Full mode emits complete candidates; row mode is explicitly a component measurement.
+#[test]
+#[cfg(unix)]
+#[ignore = "explicit retained private physical stage measurement"]
+fn measure_retained_physical_stage() {
+    use crate::teslamate_projection::{TeslaMateCarPhysicalV2_2, TeslaMatePositionPhysicalV2_2};
+    use std::{
+        fs::{self, File, OpenOptions},
+        io::{Read, Write},
+        os::unix::fs::{DirBuilderExt, OpenOptionsExt},
+        path::{Path, PathBuf},
+        time::Instant,
+    };
+
+    fn checked<T, E>(value: Result<T, E>, message: &'static str) -> T {
+        value.unwrap_or_else(|_| panic!("{message}"))
+    }
+    fn retain_pack(source: &Path, target: &Path, expected: Sha256Digest) {
+        let mut source = checked(
+            OpenOptions::new()
+                .read(true)
+                .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
+                .open(source),
+            "pack read failed",
+        );
+        let mut target = checked(
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32)
+                .open(target),
+            "pack output failed",
+        );
+        let mut digest = Sha256::new();
+        let mut buffer = [0_u8; 65_536];
+        loop {
+            let count = checked(source.read(&mut buffer), "pack read failed");
+            if count == 0 {
+                break;
+            }
+            digest.update(&buffer[..count]);
+            checked(target.write_all(&buffer[..count]), "pack copy failed");
+        }
+        assert!(
+            Sha256Digest::from_bytes(digest.finalize().into()) == expected,
+            "retained pack digest differs from verified candidate"
+        );
+        checked(target.sync_all(), "retained pack sync failed");
+    }
+    fn same_bytes(left: &Path, right: &Path) -> bool {
+        let mut left = checked(File::open(left), "left pack read failed");
+        let mut right = checked(File::open(right), "right pack read failed");
+        let mut left_bytes = [0_u8; 65_536];
+        let mut right_bytes = [0_u8; 65_536];
+        loop {
+            let count = checked(left.read(&mut left_bytes), "left pack read failed");
+            if count == 0 {
+                return checked(right.read(&mut right_bytes[..1]), "right pack read failed") == 0;
+            }
+            if right.read_exact(&mut right_bytes[..count]).is_err()
+                || left_bytes[..count] != right_bytes[..count]
+            {
+                return false;
+            }
+        }
+    }
+
+    let input = PathBuf::from(
+        std::env::var_os("TESLATLAS_HUB_BENCH_STAGE")
+            .expect("retained private stage environment is required"),
+    );
+    assert!(input.is_absolute(), "benchmark input must be absolute");
+    let output = PathBuf::from(
+        std::env::var_os("TESLATLAS_HUB_BENCH_OUTPUT_DIRECTORY")
+            .expect("private benchmark output directory is required"),
+    );
+    assert!(output.is_absolute(), "benchmark output must be absolute");
+    let output_fd = checked(
+        crate::runtime::development_event_log::validated_directory(&output),
+        "benchmark output must be an existing private directory",
+    );
+    let full = match std::env::var("TESLATLAS_HUB_BENCH_MODE").as_deref() {
+        Ok("full") => true,
+        Ok("rows") | Err(_) => false,
+        _ => panic!("benchmark mode must be rows or full"),
+    };
+    let row_limit: u64 = std::env::var("TESLATLAS_HUB_BENCH_POSITION_ROWS")
+        .map_or(50_000, |value| value.parse().expect("benchmark row limit"));
+    assert!(
+        (1..=1_000_000).contains(&row_limit),
+        "component row limit must be 1 through 1000000"
+    );
+    let started = Instant::now();
+    let stage = checked(
+        TeslaMateStage::open_sealed(&input),
+        "sealed input admission failed",
+    );
+    let open_ms = started.elapsed().as_secs_f64() * 1000.0;
+    assert!(
+        checked(stage.format(), "stage format") == TeslaMateStageFormat::PhysicalV3,
+        "benchmark requires a physical-v3 stage"
+    );
+    let stats = checked(stage.stats(), "sealed input statistics");
+    let roots = checked(
+        stage.page::<TeslaMateCarPhysicalV2_2>(TeslaMateStageTable::Cars, 0, 2),
+        "car root read failed",
+    );
+    assert!(
+        roots.rows.len() == 1 && roots.next_after_id.is_none(),
+        "exactly one car root required"
+    );
+    let selected_car_id = i64::from(roots.rows[0].value.id);
+    let binding = ProjectionBinding {
+        installation_id: Uuid::from_u128(1),
+        account_id: Uuid::from_u128(2),
+        vehicle_id: Uuid::from_u128(3),
+        generation: 1,
+        selected_car_id,
+    };
+    let key = CursorKey::from_bytes([0x55; 32]);
+    let sequence = SequenceRange {
+        from_exclusive: 1,
+        to_inclusive: 1,
+    };
+    let limits = ProtocolLimits::hub_sync_v1_1_3_schema_2_2();
+    let fragment_limits = TeslaMatePhysicalFragmentLimits::default();
+    let started = Instant::now();
+    let stage_digest = checked(
+        stage.sealed_content_digest(),
+        "sealed content verification failed",
+    );
+    let digest_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let snapshot_id = physical_v3_snapshot_id(stage_digest, &binding);
+    eprintln!(
+        "{}",
+        json!({"event": "retained_stage_admitted", "open_ms": open_ms,
+        "digest_ms": digest_ms, "source_rows": stats.row_count, "payload_bytes": stats.payload_bytes})
+    );
+
+    let mut runs = Vec::new();
+    let mut deterministic = Vec::new();
+    let mut first_manifest = None;
+    let mut first_paths: Vec<PathBuf> = Vec::new();
+    for run in 0..2 {
+        let run_dir = output.join(format!("run-{run}"));
+        checked(
+            fs::DirBuilder::new().mode(0o700).create(&run_dir),
+            "run directory must be new",
+        );
+        if full {
+            let writer = ProjectionPackWriter::with_limits(run_dir.join("packs"), limits)
+                .with_minimum_free_bytes(stats.limits.minimum_free_bytes);
+            checked(
+                writer.ensure_full_snapshot_capacity_for_capture(
+                    stats.limits.max_stage_bytes,
+                    stats.limits.minimum_free_bytes,
+                ),
+                "pack capacity admission failed",
+            );
+            let started = Instant::now();
+            let candidate = checked(
+                write_staged_physical_updates_snapshot_v3_with_limits(
+                    &stage,
+                    &writer,
+                    binding.clone(),
+                    snapshot_id,
+                    sequence,
+                    &key,
+                    fragment_limits,
+                ),
+                "full physical reconstruction failed",
+            );
+            let packing_ms = started.elapsed().as_secs_f64() * 1000.0;
+            assert!(candidate.binding == binding, "candidate binding changed");
+            assert!(
+                candidate.logical_source_rows == stats.row_count,
+                "source row count changed"
+            );
+            let manifest_bytes = checked(
+                serde_json::to_vec(&candidate.manifest),
+                "manifest encode failed",
+            );
+            let manifest_digest = Sha256Digest::from_bytes(Sha256::digest(&manifest_bytes).into());
+            if let Some(first) = &first_manifest {
+                assert!(
+                    *first == candidate.manifest,
+                    "ordered manifest differs between identical-input runs"
+                );
+            } else {
+                first_manifest = Some(candidate.manifest.clone());
+            }
+            let started = Instant::now();
+            let mut paths = Vec::new();
+            let mut chunks = Vec::new();
+            for chunk in &candidate.chunks {
+                let retained = run_dir.join(format!("{}.sqlite.zst", chunk.metadata.ordinal));
+                retain_pack(&chunk.path, &retained, chunk.metadata.sha256);
+                if run == 1 {
+                    assert!(
+                        same_bytes(&first_paths[paths.len()], &retained),
+                        "compressed bytes differ between identical-input runs"
+                    );
+                }
+                paths.push(retained);
+                chunks.push(json!({"ordinal": chunk.metadata.ordinal, "sha256": chunk.metadata.sha256,
+                    "compressed_bytes": chunk.metadata.compressed_bytes,
+                    "uncompressed_bytes": chunk.metadata.uncompressed_bytes, "row_count": chunk.metadata.row_count}));
+            }
+            let metadata = json!({"manifest_sha256": manifest_digest,
+                "signed_rows": candidate.manifest.total_rows, "chunks": chunks});
+            deterministic.push(metadata.clone());
+            runs.push(json!({"run": run, "packing_ms": packing_ms,
+                "retain_compare_ms": started.elapsed().as_secs_f64() * 1000.0,
+                "outputs": paths, "metadata": metadata}));
+            if run == 0 {
+                first_paths = paths;
+            }
+            drop(candidate); // Remove only writer-created temporary candidates; retained copies stay private.
+        } else {
+            let started = Instant::now();
+            let mut after_id = 0;
+            let mut rows = 0_u64;
+            let mut projected_bytes = 0_u64;
+            let mut digest = Sha256::new();
+            while rows < row_limit {
+                let page_size =
+                    u32::try_from((row_limit - rows).min(10_000)).expect("bounded page size");
+                let page = checked(
+                    stage.page::<TeslaMatePositionPhysicalV2_2>(
+                        TeslaMateStageTable::Positions,
+                        after_id,
+                        page_size,
+                    ),
+                    "position page failed",
+                );
+                if page.rows.is_empty() {
+                    break;
+                }
+                for row in page.rows {
+                    assert!(
+                        row.source_id == i64::from(row.value.id)
+                            && i64::from(row.value.car_id) == selected_car_id,
+                        "position identity mismatch"
+                    );
+                    let projected: crate::hub_pack::ProjectionPositionV2_2 = row.value.into();
+                    let bytes = checked(
+                        serde_json::to_vec(&projected),
+                        "position serialization failed",
+                    );
+                    projected_bytes = projected_bytes
+                        .checked_add(bytes.len() as u64)
+                        .expect("byte count overflow");
+                    digest.update((bytes.len() as u64).to_be_bytes());
+                    digest.update(bytes);
+                    rows += 1;
+                }
+                match page.next_after_id {
+                    Some(next) => after_id = next,
+                    None => break,
+                }
+            }
+            assert!(rows > 0, "bounded component requires position rows");
+            let metadata = json!({"position_rows": rows, "projected_bytes": projected_bytes,
+                "serialized_digest": Sha256Digest::from_bytes(digest.finalize().into())});
+            deterministic.push(metadata.clone());
+            runs.push(
+                json!({"run": run, "decode_serialize_ms": started.elapsed().as_secs_f64() * 1000.0,
+                "metadata": metadata}),
+            );
+        }
+        eprintln!("{}", runs.last().expect("run timing"));
+    }
+    assert!(
+        deterministic[0] == deterministic[1],
+        "deterministic metadata differs"
+    );
+    let started = Instant::now();
+    assert!(
+        checked(
+            stage.sealed_content_digest(),
+            "final sealed input verification failed"
+        ) == stage_digest,
+        "sealed input changed during measurement"
+    );
+    let final_verification_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let receipt = json!({"event": "retained_physical_measurement", "mode": if full {"full"} else {"rows"},
+        "debug_assertions": cfg!(debug_assertions), "stage_path": input,
+        "stage_digest": stage_digest, "source_rows": stats.row_count, "payload_bytes": stats.payload_bytes,
+        "open_ms": open_ms, "digest_ms": digest_ms, "final_verification_ms": final_verification_ms,
+        "max_rows_per_chunk": fragment_limits.max_rows_per_chunk,
+        "max_projected_json_bytes": fragment_limits.max_projected_json_bytes,
+        "runs": runs, "identical_metadata": true, "catalogue_published": false});
+    let receipt_fd = checked(
+        rustix::fs::openat(
+            &output_fd,
+            "measurement-receipt.json",
+            rustix::fs::OFlags::WRONLY
+                | rustix::fs::OFlags::CREATE
+                | rustix::fs::OFlags::EXCL
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::from_raw_mode(0o600),
+        ),
+        "measurement receipt already exists or cannot be created",
+    );
+    let receipt_file = File::from(receipt_fd);
+    checked(
+        serde_json::to_writer_pretty(&receipt_file, &receipt),
+        "measurement receipt write failed",
+    );
+    checked(receipt_file.sync_all(), "measurement receipt sync failed");
+    eprintln!("{receipt}");
+    drop(stage); // Never consume/discard the retained source.
+}
+
+#[derive(Default)]
+struct BenchmarkCountingWriter {
+    bytes: u64,
+}
+
+impl std::io::Write for BenchmarkCountingWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let count = u64::try_from(bytes.len())
+            .map_err(|_| std::io::Error::other("JSON byte count overflow"))?;
+        self.bytes = self
+            .bytes
+            .checked_add(count)
+            .ok_or_else(|| std::io::Error::other("JSON byte count overflow"))?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn benchmark_counted_json_bytes<T: serde::Serialize + ?Sized>(
+    value: &T,
+) -> Result<u64, serde_json::Error> {
+    let mut writer = BenchmarkCountingWriter::default();
+    serde_json::to_writer(&mut writer, value)?;
+    Ok(writer.bytes)
+}
+
+struct BenchmarkDigestingWriter<'a> {
+    count: BenchmarkCountingWriter,
+    digest: &'a mut Sha256,
+}
+
+impl std::io::Write for BenchmarkDigestingWriter<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let count = std::io::Write::write(&mut self.count, bytes)?;
+        self.digest.update(bytes);
+        Ok(count)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn checked_json_sizing_matches_vec_lengths_digests_and_errors() {
+    use std::io::Write;
+    let values = [
+        json!(null),
+        json!(false),
+        json!("quoted\" slash\\ newline\n café 🚗"),
+        json!([0, -1, 9_007_199_254_740_991_i64, 0.125, 1.0e-20]),
+        json!({"empty": [], "nested": {"key": "value"}}),
+    ];
+    for value in values {
+        let reference = serde_json::to_vec(&value).unwrap();
+        assert_eq!(
+            benchmark_counted_json_bytes(&value).unwrap(),
+            reference.len() as u64
+        );
+        let mut digest = Sha256::new();
+        let mut writer = BenchmarkDigestingWriter {
+            count: BenchmarkCountingWriter::default(),
+            digest: &mut digest,
+        };
+        serde_json::to_writer(&mut writer, &value).unwrap();
+        assert_eq!(writer.count.bytes, reference.len() as u64);
+        assert!(
+            Sha256Digest::from_bytes(digest.finalize().into())
+                == Sha256Digest::from_bytes(Sha256::digest(&reference).into())
+        );
+    }
+    struct Reject;
+    impl serde::Serialize for Reject {
+        fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom(
+                "intentional serialization failure",
+            ))
+        }
+    }
+    let reference = serde_json::to_vec(&Reject).unwrap_err();
+    let counted = benchmark_counted_json_bytes(&Reject).unwrap_err();
+    assert!(reference.is_data() && counted.is_data());
+    assert_eq!(reference.to_string(), counted.to_string());
+    let mut overflowing = BenchmarkCountingWriter { bytes: u64::MAX };
+    let error = overflowing.write_all(b"x").unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::Other);
+    assert_eq!(overflowing.bytes, u64::MAX);
+}
+
+/// Decode each bounded page once, then compare sizing alone with identical rows.
+/// Full sealed-input validation and exact byte/digest parity are outside the timings.
+#[test]
+#[cfg(unix)]
+#[ignore = "explicit same retained input JSON sizing comparison"]
+fn measure_retained_physical_json_sizing() {
+    use crate::teslamate_projection::{TeslaMateCarPhysicalV2_2, TeslaMatePositionPhysicalV2_2};
+    use std::{
+        fs::File,
+        path::PathBuf,
+        time::{Duration, Instant},
+    };
+    fn checked<T, E>(value: Result<T, E>, message: &'static str) -> T {
+        value.unwrap_or_else(|_| panic!("{message}"))
+    }
+    let input = PathBuf::from(
+        std::env::var_os("TESLATLAS_HUB_BENCH_STAGE")
+            .expect("retained private stage environment is required"),
+    );
+    let output = PathBuf::from(
+        std::env::var_os("TESLATLAS_HUB_BENCH_OUTPUT_DIRECTORY")
+            .expect("private benchmark output directory is required"),
+    );
+    assert!(
+        input.is_absolute() && output.is_absolute(),
+        "benchmark paths must be absolute"
+    );
+    let output_fd = checked(
+        crate::runtime::development_event_log::validated_directory(&output),
+        "benchmark output must be an existing private directory",
+    );
+    let row_limit: u64 = std::env::var("TESLATLAS_HUB_BENCH_POSITION_ROWS")
+        .map_or(50_000, |value| value.parse().expect("benchmark row limit"));
+    assert!(
+        (1..=1_000_000).contains(&row_limit),
+        "component row limit must be 1 through 1000000"
+    );
+    let started = Instant::now();
+    let stage = checked(
+        TeslaMateStage::open_sealed(&input),
+        "sealed input admission failed",
+    );
+    let open_ms = started.elapsed().as_secs_f64() * 1000.0;
+    assert!(
+        checked(stage.format(), "stage format") == TeslaMateStageFormat::PhysicalV3,
+        "benchmark requires a physical-v3 stage"
+    );
+    let stats = checked(stage.stats(), "sealed input statistics");
+    let car = checked(
+        stage.page::<TeslaMateCarPhysicalV2_2>(TeslaMateStageTable::Cars, 0, 2),
+        "car root read failed",
+    );
+    assert!(
+        car.rows.len() == 1 && car.next_after_id.is_none(),
+        "exactly one car root required"
+    );
+    let selected_car_id = car.rows[0].value.id;
+    let started = Instant::now();
+    let stage_digest = checked(
+        stage.sealed_content_digest(),
+        "sealed content verification failed",
+    );
+    let digest_ms = started.elapsed().as_secs_f64() * 1000.0;
+    eprintln!(
+        "{}",
+        json!({"event": "json_sizing_input_admitted", "open_ms": open_ms,
+        "digest_ms": digest_ms, "source_rows": stats.row_count})
+    );
+    let mut vec_times = [Duration::ZERO; 3];
+    let mut counted_times = [Duration::ZERO; 3];
+    let mut decode_time = Duration::ZERO;
+    let mut parity_time = Duration::ZERO;
+    let mut reference_digest = Sha256::new();
+    let mut counted_digest = Sha256::new();
+    let mut projected_bytes = 0_u64;
+    let mut rows = 0_u64;
+    let mut after_id = 0;
+    let mut page_index = 0_usize;
+    while rows < row_limit {
+        let started = Instant::now();
+        let page_size = u32::try_from((row_limit - rows).min(10_000)).expect("bounded page size");
+        let page = checked(
+            stage.page::<TeslaMatePositionPhysicalV2_2>(
+                TeslaMateStageTable::Positions,
+                after_id,
+                page_size,
+            ),
+            "position page failed",
+        );
+        let mut projected = Vec::with_capacity(page.rows.len());
+        for row in page.rows {
+            assert!(
+                row.source_id == i64::from(row.value.id) && row.value.car_id == selected_car_id,
+                "position identity mismatch"
+            );
+            projected.push(crate::hub_pack::ProjectionPositionV2_2::from(row.value));
+        }
+        decode_time += started.elapsed();
+        if projected.is_empty() {
+            break;
+        }
+        let started = Instant::now();
+        let mut page_bytes = 0_u64;
+        for row in &projected {
+            let reference = checked(serde_json::to_vec(row), "reference serialization failed");
+            let count = checked(
+                benchmark_counted_json_bytes(row),
+                "counting serialization failed",
+            );
+            assert!(
+                count == reference.len() as u64,
+                "exact JSON byte length differs"
+            );
+            reference_digest.update(count.to_be_bytes());
+            reference_digest.update(&reference);
+            counted_digest.update(count.to_be_bytes());
+            let mut digesting = BenchmarkDigestingWriter {
+                count: BenchmarkCountingWriter::default(),
+                digest: &mut counted_digest,
+            };
+            checked(
+                serde_json::to_writer(&mut digesting, row),
+                "digesting serialization failed",
+            );
+            assert!(
+                digesting.count.bytes == count,
+                "digesting byte length differs"
+            );
+            page_bytes = page_bytes
+                .checked_add(count)
+                .expect("page byte count overflow");
+        }
+        projected_bytes = projected_bytes
+            .checked_add(page_bytes)
+            .expect("total byte count overflow");
+        parity_time += started.elapsed();
+        for repeat in 0..3 {
+            // Alternate order per page/repeat; both paths consume the same decoded page.
+            for turn in 0..2 {
+                let reference = (repeat + page_index + turn) % 2 == 0;
+                let started = Instant::now();
+                let mut bytes = 0_u64;
+                for row in &projected {
+                    let row = std::hint::black_box(row);
+                    let count = if reference {
+                        checked(
+                            serde_json::to_vec(row),
+                            "timed reference serialization failed",
+                        )
+                        .len() as u64
+                    } else {
+                        checked(
+                            benchmark_counted_json_bytes(row),
+                            "timed counting serialization failed",
+                        )
+                    };
+                    bytes = bytes
+                        .checked_add(std::hint::black_box(count))
+                        .expect("timed byte count overflow");
+                }
+                let elapsed = started.elapsed();
+                assert!(
+                    std::hint::black_box(bytes) == page_bytes,
+                    "timed sizing result differs"
+                );
+                if reference {
+                    vec_times[repeat] += elapsed;
+                } else {
+                    counted_times[repeat] += elapsed;
+                }
+            }
+        }
+        rows += projected.len() as u64;
+        page_index += 1;
+        match page.next_after_id {
+            Some(next) => after_id = next,
+            None => break,
+        }
+    }
+    assert!(rows > 0, "sizing comparison requires position rows");
+    let reference_digest = Sha256Digest::from_bytes(reference_digest.finalize().into());
+    let counted_digest = Sha256Digest::from_bytes(counted_digest.finalize().into());
+    assert!(
+        reference_digest == counted_digest,
+        "serialized JSON digests differ"
+    );
+    let vec_ms = vec_times.map(|time| time.as_secs_f64() * 1000.0);
+    let counted_ms = counted_times.map(|time| time.as_secs_f64() * 1000.0);
+    let mut sorted_vec = vec_ms;
+    let mut sorted_counted = counted_ms;
+    sorted_vec.sort_by(f64::total_cmp);
+    sorted_counted.sort_by(f64::total_cmp);
+    eprintln!(
+        "{}",
+        json!({"event": "json_sizing_timings", "position_rows": rows,
+        "vec_ms": vec_ms, "counted_ms": counted_ms, "vec_median_ms": sorted_vec[1],
+        "counted_median_ms": sorted_counted[1], "ratio": sorted_vec[1] / sorted_counted[1]})
+    );
+    let started = Instant::now();
+    assert!(
+        checked(
+            stage.sealed_content_digest(),
+            "final sealed input verification failed"
+        ) == stage_digest,
+        "sealed input changed during sizing measurement"
+    );
+    let receipt = json!({"event": "retained_physical_json_sizing", "debug_assertions": cfg!(debug_assertions),
+        "stage_path": input, "stage_digest": stage_digest, "source_rows": stats.row_count,
+        "position_rows": rows, "projected_bytes": projected_bytes, "serialized_digest": reference_digest,
+        "exact_lengths_and_digests": true, "open_ms": open_ms, "digest_ms": digest_ms,
+        "decode_ms": decode_time.as_secs_f64() * 1000.0, "parity_ms": parity_time.as_secs_f64() * 1000.0,
+        "final_verification_ms": started.elapsed().as_secs_f64() * 1000.0,
+        "vec_ms": vec_ms, "counted_ms": counted_ms, "vec_median_ms": sorted_vec[1],
+        "counted_median_ms": sorted_counted[1], "ratio": sorted_vec[1] / sorted_counted[1],
+        "catalogue_published": false});
+    let fd = checked(
+        rustix::fs::openat(
+            &output_fd,
+            "json-sizing-receipt.json",
+            rustix::fs::OFlags::WRONLY
+                | rustix::fs::OFlags::CREATE
+                | rustix::fs::OFlags::EXCL
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::from_raw_mode(0o600),
+        ),
+        "sizing receipt already exists or cannot be created",
+    );
+    let receipt_file = File::from(fd);
+    checked(
+        serde_json::to_writer_pretty(&receipt_file, &receipt),
+        "sizing receipt write failed",
+    );
+    checked(receipt_file.sync_all(), "sizing receipt sync failed");
+    eprintln!("{receipt}");
+    drop(stage);
+}
+
 fn physical_stage(root: &std::path::Path, name: &str, updates: &[i32]) -> TeslaMateStage {
     let mut stage = TeslaMateStage::create_physical_v3(root.join(name), stage_limits())
         .expect("physical stage");
@@ -18,6 +665,546 @@ fn physical_stage(root: &std::path::Path, name: &str, updates: &[i32]) -> TeslaM
     seed_updates(&mut stage, updates);
     stage.seal().expect("seal physical stage");
     stage
+}
+
+async fn blocked_successor(
+    store: &HubStore,
+    key: &CursorKey,
+    binding: &ProjectionBinding,
+    stage: &TeslaMateStage,
+    now_ms: i64,
+) -> PendingPhysicalV3Admission {
+    let snapshot_id = physical_v3_snapshot_id(stage.sealed_content_digest().unwrap(), binding);
+    let gate = store.acquire_publication_gate().await.unwrap();
+    let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
+        stage,
+        &ProjectionPackWriter::with_limits(
+            store.packs_dir(),
+            ProtocolLimits::hub_sync_v1_1_3_schema_2_2(),
+        ),
+        binding.clone(),
+        snapshot_id,
+        SequenceRange {
+            from_exclusive: 2,
+            to_inclusive: 2,
+        },
+        key,
+        TeslaMatePhysicalFragmentLimits::default(),
+    )
+    .unwrap();
+    store
+        .rotate_pending_physical_v3_admission_at(&gate, candidate, now_ms)
+        .unwrap()
+}
+
+#[tokio::test]
+async fn blocked_rotation_recovers_before_publishing_a_newer_source_snapshot() {
+    let temp = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(temp.path().join("hub")).unwrap();
+    let binding = registered_admission_binding(&store);
+    let key = CursorKey::from_bytes([0x53; 32]);
+    let first = publish_sealed_physical_v3_stage_at(
+        &store,
+        &key,
+        binding.clone(),
+        physical_stage(temp.path(), "first", &[10]),
+        1_000,
+    )
+    .await
+    .unwrap();
+    let interrupted = physical_stage(temp.path(), "interrupted", &[10, 11]);
+    let blocked = blocked_successor(&store, &key, &binding, &interrupted, 2_000).await;
+    interrupted.discard().unwrap();
+    drop(store);
+
+    let store = HubStore::initialize(temp.path().join("hub")).unwrap();
+    let latest = publish_sealed_physical_v3_stage_at(
+        &store,
+        &key,
+        binding.clone(),
+        physical_stage(temp.path(), "latest", &[10, 11, 12]),
+        3_000,
+    )
+    .await
+    .unwrap();
+    assert_eq!(latest.kind, PhysicalV3PublicationKind::Rotation);
+    assert_eq!(latest.admission.head_sequence, 3);
+    assert_ne!(latest.admission.snapshot_id, blocked.snapshot_id);
+    for prior in [&first.admission, &blocked] {
+        assert_eq!(
+            store
+                .retained_physical_v3_admission_for_receipt_at(
+                    binding.vehicle_id,
+                    &prior.receipt_id,
+                    3_000,
+                    true
+                )
+                .unwrap()
+                .unwrap()
+                .admission,
+            *prior
+        );
+    }
+    assert_eq!(
+        store
+            .pending_physical_v3_control_admission_for_vehicle(binding.vehicle_id)
+            .unwrap()
+            .unwrap(),
+        latest.admission
+    );
+}
+
+#[tokio::test]
+async fn blocked_rotation_recovery_rejects_corrupt_or_expired_persisted_artifacts() {
+    for target in [Some(true), Some(false), None] {
+        let temp = crate::private_tempdir().unwrap();
+        let store = HubStore::initialize(temp.path().join("hub")).unwrap();
+        let binding = registered_admission_binding(&store);
+        let key = CursorKey::from_bytes([0x54; 32]);
+        let first = publish_sealed_physical_v3_stage_at(
+            &store,
+            &key,
+            binding.clone(),
+            physical_stage(temp.path(), "first", &[10]),
+            1_000,
+        )
+        .await
+        .unwrap();
+        let interrupted = physical_stage(temp.path(), "interrupted", &[10, 11]);
+        let blocked = blocked_successor(&store, &key, &binding, &interrupted, 2_000).await;
+        interrupted.discard().unwrap();
+        if let Some(target) = target {
+            let admission = if target { &blocked } else { &first.admission };
+            let path = store.packs_dir().join("sha256").join(format!(
+                "{}.sqlite.zst",
+                admission.manifest.chunks.last().unwrap().sha256
+            ));
+            let mut bytes = std::fs::read(&path).unwrap();
+            *bytes.last_mut().unwrap() ^= 1;
+            std::fs::write(&path, bytes).unwrap();
+        }
+        let now_ms = if target.is_none() {
+            2_000 + crate::db::RETIRED_LINEAGE_PACK_RETENTION_MS
+        } else {
+            3_000
+        };
+        assert!(
+            publish_sealed_physical_v3_stage_at(
+                &store,
+                &key,
+                binding.clone(),
+                physical_stage(temp.path(), "latest", &[10, 11, 12]),
+                now_ms
+            )
+            .await
+            .is_err()
+        );
+        let (state, sequence): (String, i64) = store.open().unwrap().query_row("SELECT serve_state, head_sequence FROM pending_physical_v3_admissions WHERE vehicle_id=?1", [binding.vehicle_id.to_string()], |row| Ok((row.get(0)?, row.get(1)?))).unwrap();
+        assert_eq!(state, "blocked_rotation");
+        assert_eq!(sequence, 2);
+    }
+}
+
+#[tokio::test]
+async fn production_rotation_commits_public_head_and_retained_prior_atomically() {
+    use crate::durability_fault::{DurabilityFaultPoint, inject};
+    for point in [
+        DurabilityFaultPoint::CatalogueBeforeCommit,
+        DurabilityFaultPoint::CatalogueAfterCommit,
+    ] {
+        let temp = crate::private_tempdir().unwrap();
+        let store = HubStore::initialize(temp.path().join("hub")).unwrap();
+        let binding = registered_admission_binding(&store);
+        let key = CursorKey::from_bytes([0x56; 32]);
+        let first = publish_sealed_physical_v3_stage_at(
+            &store,
+            &key,
+            binding.clone(),
+            physical_stage(temp.path(), "first", &[10]),
+            1_000,
+        )
+        .await
+        .unwrap();
+        let stage = physical_stage(temp.path(), "next", &[10, 11]);
+        let snapshot_id = physical_v3_snapshot_id(stage.sealed_content_digest().unwrap(), &binding);
+        let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
+            &stage,
+            &ProjectionPackWriter::with_limits(
+                store.packs_dir(),
+                ProtocolLimits::hub_sync_v1_1_3_schema_2_2(),
+            ),
+            binding.clone(),
+            snapshot_id,
+            SequenceRange {
+                from_exclusive: 2,
+                to_inclusive: 2,
+            },
+            &key,
+            TeslaMatePhysicalFragmentLimits::default(),
+        )
+        .unwrap();
+        let target = crate::db::physical_v3_admission_from_manifest(
+            &candidate.manifest,
+            binding.selected_car_id,
+        )
+        .unwrap();
+        let delta = crate::import::teslamate::physical_delta_pack::prepare_changed_set(
+            &first.admission,
+            &target,
+            &binding,
+            &key,
+            stage.sealed_content_digest().unwrap(),
+            store.packs_dir(),
+            0,
+        )
+        .unwrap();
+        let gate = store.acquire_publication_gate().await.unwrap();
+        let result = {
+            let _fault = inject(point);
+            store.rotate_and_activate_physical_v3_admission_with_delta_at(
+                &gate,
+                candidate,
+                Some(delta),
+                2_000,
+            )
+        };
+        stage.discard().unwrap();
+        drop(gate);
+        drop(store);
+        let store = HubStore::initialize(temp.path().join("hub")).unwrap();
+        let stored_delta = store
+            .physical_v3_delta_receipt_for_base_at(
+                binding.vehicle_id,
+                &first.admission.receipt_id,
+                &target.receipt_id,
+                2_001,
+            )
+            .unwrap();
+        let expected = match point {
+            DurabilityFaultPoint::CatalogueBeforeCommit => {
+                assert!(matches!(
+                    result,
+                    Err(crate::db::StoreError::CatalogueDurability(_))
+                ));
+                assert!(stored_delta.is_none());
+                assert!(
+                    store
+                        .retained_physical_v3_admission_for_receipt_at(
+                            binding.vehicle_id,
+                            &first.admission.receipt_id,
+                            2_001,
+                            true
+                        )
+                        .unwrap()
+                        .is_none()
+                );
+                first.admission
+            }
+            _ => {
+                let committed = result.unwrap();
+                assert_eq!(committed.head_sequence, 2);
+                assert!(stored_delta.is_some());
+                assert_eq!(
+                    store
+                        .retained_physical_v3_admission_for_receipt_at(
+                            binding.vehicle_id,
+                            &first.admission.receipt_id,
+                            2_001,
+                            true
+                        )
+                        .unwrap()
+                        .unwrap()
+                        .admission,
+                    first.admission
+                );
+                committed
+            }
+        };
+        assert_eq!(
+            store
+                .pending_physical_v3_control_admission_for_vehicle(binding.vehicle_id)
+                .unwrap()
+                .unwrap(),
+            expected
+        );
+        assert!(
+            matches!(store.physical_v3_publication_state_for_vehicle_at(binding.vehicle_id, 2_000 + crate::db::RETIRED_LINEAGE_PACK_RETENTION_MS).unwrap(), PhysicalV3PublicationState::Public(current) if current == expected)
+        );
+    }
+}
+
+#[tokio::test]
+async fn unchanged_publication_reuses_exact_reconstruction_without_fragment_capacity() {
+    let temp = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(temp.path().join("hub")).unwrap();
+    let binding = registered_admission_binding(&store);
+    let key = CursorKey::from_bytes([0x57; 32]);
+    let first = publish_sealed_physical_v3_stage_at(
+        &store,
+        &key,
+        binding.clone(),
+        physical_stage(temp.path(), "first", &[10]),
+        1_000,
+    )
+    .await
+    .unwrap();
+    let stage = physical_stage(temp.path(), "same", &[10]);
+    let reconstructed = write_staged_physical_updates_snapshot_v3_with_limits(
+        &stage,
+        &ProjectionPackWriter::with_limits(
+            store.packs_dir(),
+            ProtocolLimits::hub_sync_v1_1_3_schema_2_2(),
+        ),
+        binding.clone(),
+        first.admission.snapshot_id,
+        SequenceRange {
+            from_exclusive: 1,
+            to_inclusive: 1,
+        },
+        &key,
+        TeslaMatePhysicalFragmentLimits::default(),
+    )
+    .unwrap();
+    assert_eq!(reconstructed.manifest, first.admission.manifest);
+    assert_eq!(reconstructed.binding, binding);
+    drop(reconstructed);
+    let limits = TeslaMatePhysicalFragmentLimits {
+        max_rows_per_chunk: 3,
+        ..Default::default()
+    };
+    assert!(
+        write_staged_physical_updates_snapshot_v3_with_limits(
+            &stage,
+            &ProjectionPackWriter::with_limits(
+                store.packs_dir(),
+                ProtocolLimits::hub_sync_v1_1_3_schema_2_2()
+            ),
+            binding.clone(),
+            first.admission.snapshot_id,
+            SequenceRange {
+                from_exclusive: 1,
+                to_inclusive: 1
+            },
+            &key,
+            limits,
+        )
+        .is_err(),
+        "full reconstruction exceeds the restricted fragment capacity"
+    );
+    let gate = store.acquire_publication_gate().await.unwrap();
+    let result = publish_sealed_physical_v3_stage_inner(
+        &store,
+        &key,
+        binding.clone(),
+        &stage,
+        &gate,
+        1_001,
+        limits,
+    )
+    .unwrap();
+    assert_eq!(result.kind, PhysicalV3PublicationKind::Unchanged);
+    assert_eq!(result.admission, first.admission);
+    stage.discard().unwrap();
+    drop(gate);
+
+    let path = store.packs_dir().join("sha256").join(format!(
+        "{}.sqlite.zst",
+        first.admission.manifest.chunks[0].sha256
+    ));
+    let mut bytes = std::fs::read(&path).unwrap();
+    *bytes.last_mut().unwrap() ^= 1;
+    std::fs::write(path, bytes).unwrap();
+    assert!(
+        publish_sealed_physical_v3_stage_at(
+            &store,
+            &key,
+            binding,
+            physical_stage(temp.path(), "corrupt-retry", &[10]),
+            1_002
+        )
+        .await
+        .is_err()
+    );
+}
+
+#[tokio::test]
+#[ignore = "explicit synthetic publication measurement"]
+async fn measure_unchanged_physical_publication() {
+    let temp = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(temp.path().join("hub")).unwrap();
+    let binding = registered_admission_binding(&store);
+    let key = CursorKey::from_bytes([0x55; 32]);
+    let rows: Vec<_> = (1..=5_000).collect();
+    let make_stage = |name: &str| {
+        let mut stage = TeslaMateStage::create_physical_v3(
+            temp.path().join(name),
+            TeslaMateStageLimits {
+                max_rows: 5_100,
+                max_stage_bytes: 16 * 1024 * 1024,
+                minimum_free_bytes: 0,
+            },
+        )
+        .unwrap();
+        seed_roots(&mut stage);
+        seed_updates(&mut stage, &rows);
+        stage.seal().unwrap();
+        stage
+    };
+    let first = publish_sealed_physical_v3_stage_at(
+        &store,
+        &key,
+        binding.clone(),
+        make_stage("first"),
+        1_000,
+    )
+    .await
+    .unwrap();
+    for run in 0..3 {
+        let stage = make_stage(&format!("repeat-{run}"));
+        let started = std::time::Instant::now();
+        let result =
+            publish_sealed_physical_v3_stage_at(&store, &key, binding.clone(), stage, 1_001)
+                .await
+                .unwrap();
+        let elapsed = started.elapsed();
+        assert_eq!(result.admission, first.admission);
+        let verified = std::time::Instant::now();
+        assert!(
+            matches!(store.physical_v3_publication_state_for_vehicle_at(binding.vehicle_id, 1_001).unwrap(), PhysicalV3PublicationState::Public(value) if value == first.admission)
+        );
+        eprintln!(
+            "synthetic rows={} chunks={} unchanged_ms={:.3} verified_existing_ms={:.3}",
+            first.admission.manifest.total_rows,
+            first.admission.chunk_count,
+            elapsed.as_secs_f64() * 1_000.0,
+            verified.elapsed().as_secs_f64() * 1_000.0
+        );
+    }
+
+    // Pair both paths on the same sealed stage, gate, store, binding and
+    // signed receipt. Stage creation, optional prepared maps and cleanup are
+    // outside these timings; the reconstruction reference matches the former
+    // unchanged inner path, including integrity/digest and persisted checks.
+    let stage = make_stage("paired-reference");
+    let gate = store.acquire_publication_gate().await.unwrap();
+    let expected_bytes = first
+        .admission
+        .manifest
+        .chunks
+        .iter()
+        .map(|chunk| {
+            std::fs::read(
+                store
+                    .packs_dir()
+                    .join("sha256")
+                    .join(format!("{}.sqlite.zst", chunk.sha256)),
+            )
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let mut reconstruction_ms = Vec::new();
+    let mut reuse_ms = Vec::new();
+    for run in 0..3 {
+        let started = std::time::Instant::now();
+        let digest = stage.sealed_content_digest().unwrap();
+        let snapshot_id = physical_v3_snapshot_id(digest, &binding);
+        let current = store
+            .physical_v3_publication_state_for_vehicle_at(binding.vehicle_id, 1_001)
+            .unwrap();
+        assert!(
+            matches!(current, PhysicalV3PublicationState::Public(value) if value == first.admission)
+        );
+        let limits = stage.stats().unwrap().limits;
+        let writer = ProjectionPackWriter::with_limits(
+            store.packs_dir(),
+            ProtocolLimits::hub_sync_v1_1_3_schema_2_2(),
+        )
+        .with_minimum_free_bytes(limits.minimum_free_bytes);
+        writer
+            .ensure_full_snapshot_capacity_for_capture(
+                limits.max_stage_bytes,
+                limits.minimum_free_bytes,
+            )
+            .unwrap();
+        let candidate = write_staged_physical_updates_snapshot_v3_with_limits(
+            &stage,
+            &writer,
+            binding.clone(),
+            snapshot_id,
+            SequenceRange {
+                from_exclusive: first.admission.head_sequence,
+                to_inclusive: first.admission.head_sequence,
+            },
+            &key,
+            TeslaMatePhysicalFragmentLimits::default(),
+        )
+        .unwrap();
+        assert_eq!(candidate.manifest, first.admission.manifest);
+        assert_eq!(candidate.binding, binding);
+        reconstruction_ms.push(started.elapsed().as_secs_f64() * 1_000.0);
+        assert_eq!(
+            candidate
+                .chunks
+                .iter()
+                .map(|chunk| &chunk.metadata)
+                .collect::<Vec<_>>(),
+            first.admission.manifest.chunks.iter().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            candidate
+                .chunks
+                .iter()
+                .map(|chunk| std::fs::read(&chunk.path).unwrap())
+                .collect::<Vec<_>>(),
+            expected_bytes
+        );
+        drop(candidate);
+        let started = std::time::Instant::now();
+        let reused = publish_sealed_physical_v3_stage_inner(
+            &store,
+            &key,
+            binding.clone(),
+            &stage,
+            &gate,
+            1_001,
+            TeslaMatePhysicalFragmentLimits::default(),
+        )
+        .unwrap();
+        reuse_ms.push(started.elapsed().as_secs_f64() * 1_000.0);
+        assert_eq!(reused.kind, PhysicalV3PublicationKind::Unchanged);
+        assert_eq!(reused.admission, first.admission);
+        assert_eq!(
+            reused
+                .admission
+                .manifest
+                .chunks
+                .iter()
+                .map(|chunk| {
+                    std::fs::read(
+                        store
+                            .packs_dir()
+                            .join("sha256")
+                            .join(format!("{}.sqlite.zst", chunk.sha256)),
+                    )
+                    .unwrap()
+                })
+                .collect::<Vec<_>>(),
+            expected_bytes,
+        );
+        eprintln!(
+            "paired run={run} reconstruction_ms={:.3} reuse_ms={:.3}",
+            reconstruction_ms[run], reuse_ms[run]
+        );
+    }
+    reconstruction_ms.sort_by(f64::total_cmp);
+    reuse_ms.sort_by(f64::total_cmp);
+    eprintln!(
+        "paired medians reconstruction_ms={:.3} reuse_ms={:.3} ratio={:.3}",
+        reconstruction_ms[1],
+        reuse_ms[1],
+        reconstruction_ms[1] / reuse_ms[1]
+    );
+    stage.discard().unwrap();
 }
 
 #[tokio::test]

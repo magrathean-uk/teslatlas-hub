@@ -27,6 +27,8 @@
   </dict>
   <key>ThrottleInterval</key>
   <integer>30</integer>
+  <key>ExitTimeOut</key>
+  <integer>270</integer>
   <key>ProcessType</key>
   <string>Background</string>
   <key>Umask</key>

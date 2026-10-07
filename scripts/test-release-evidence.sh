@@ -2,6 +2,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
+case "${CARGO_HOME:-}" in
+    /*) ;;
+    *) printf '%s\n' 'error: routed CARGO_HOME is required for release evidence tests' >&2; exit 1 ;;
+esac
+if [ ! -d "$CARGO_HOME" ]; then
+    printf 'error: CARGO_HOME is not an existing directory: %s\n' "$CARGO_HOME" >&2
+    exit 1
+fi
+
 ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
 SCRIPT="$ROOT/scripts/release-evidence.py"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-release-evidence-test.XXXXXX")
@@ -279,7 +288,7 @@ python3 "$TMP/signed-repo/scripts/legal-bundle.py" --repo "$TMP/signed-repo" \
 TEST_LEGAL_BUNDLE="$TMP/signed-repo/dependency-legal"
 python3 "$TMP/signed-repo/scripts/rust-source-evidence.py" \
     --repo "$TMP/signed-repo" \
-    --cargo-home "${CARGO_HOME:-$HOME/.cargo}" \
+    --cargo-home "$CARGO_HOME" \
     --bin fixture \
     --output-dir "$TMP/rust-source-evidence" >/dev/null
 TEST_RUST_SOURCE_EVIDENCE="$TMP/rust-source-evidence"

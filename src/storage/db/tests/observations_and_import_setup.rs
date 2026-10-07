@@ -492,6 +492,204 @@ fn imported_v2_base(store: &HubStore) -> (VehicleRecord, ProjectionBinding, Line
     (vehicle, binding, lineage)
 }
 
+fn compatibility_successor(
+    store: &HubStore,
+    binding: &ProjectionBinding,
+    prior: &LineageManifestV2,
+    pack_id: Uuid,
+) -> LineageDelta {
+    let payload = ProjectionDelta {
+        binding: binding.clone(),
+        sequence: SequenceRange {
+            from_exclusive: prior.head_sequence,
+            to_inclusive: prior.head_sequence + 1,
+        },
+        parent_digest: prior.head_digest,
+        cars: vec![import_delta_test_car(binding.selected_car_id)],
+        car_settings: Vec::new(),
+        drives: Vec::new(),
+        positions: Vec::new(),
+        charges: Vec::new(),
+        charge_samples: Vec::new(),
+        states: Vec::new(),
+        updates: Vec::new(),
+        tombstones: Vec::new(),
+    };
+    let written = ProjectionPackWriter::new(store.packs_dir())
+        .write_delta(&crate::hub_pack::ProjectionDeltaPackRequest {
+            pack_id,
+            snapshot_id: prior.base.snapshot_id,
+            ordinal: (prior.base.packs.len() + prior.deltas.len()) as u32,
+            delta: &payload,
+        })
+        .expect("real typed successor pack");
+    LineageDelta {
+        from_sequence: payload.sequence.from_exclusive,
+        to_sequence: payload.sequence.to_inclusive,
+        parent_chain_digest: prior.head_digest,
+        chain_digest: canonical_delta_chain_digest(prior.head_digest, written.metadata.sha256),
+        pack_digest: written.metadata.sha256,
+        pack: written.metadata,
+    }
+}
+
+fn compatibility_successor_catalogue_snapshot(
+    store: &HubStore,
+    vehicle_id: Uuid,
+) -> ((Vec<u8>, String, i64), [i64; 3]) {
+    let connection = store.open().unwrap();
+    let fingerprint = connection
+        .query_row(
+            "SELECT fingerprint_sha256, snapshot_id, head_sequence
+         FROM snapshot_fingerprints WHERE vehicle_id = ?1",
+            params![vehicle_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    let counts = ["sync_deltas", "sync_packs", "sync_manifests"].map(|table| {
+        connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .unwrap()
+    });
+    (fingerprint, counts)
+}
+
+fn assert_rejected_successor_preserves_catalogue(
+    store: &HubStore,
+    prior: &LineageManifestV2,
+    before: &((Vec<u8>, String, i64), [i64; 3]),
+) {
+    assert_eq!(
+        store
+            .lineage_manifest_for_vehicle(prior.vehicle_id)
+            .expect("prior reader remains valid"),
+        Some(prior.clone())
+    );
+    assert_eq!(
+        &compatibility_successor_catalogue_snapshot(store, prior.vehicle_id),
+        before
+    );
+    for pack in prior
+        .base
+        .packs
+        .iter()
+        .chain(prior.deltas.iter().map(|delta| &delta.pack))
+    {
+        assert!(
+            store
+                .pack_sha256_is_retained(&pack.sha256.to_string())
+                .unwrap()
+        );
+        assert!(store.pack_for_digest(pack.sha256).unwrap().is_some());
+    }
+}
+
+#[test]
+fn compatibility_import_successor_rejects_duplicate_id_and_preserves_retry() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, prior) = imported_v2_base(&store);
+    let duplicate = compatibility_successor(&store, &binding, &prior, prior.base.packs[0].pack_id);
+    let before = compatibility_successor_catalogue_snapshot(&store, vehicle.vehicle_id);
+    assert!(matches!(
+        store.finalize_import_delta_successor(
+            vehicle.vehicle_id,
+            &duplicate,
+            &import_delta_test_cursor_key(),
+            &import_delta_test_cursor(&binding, duplicate.to_sequence),
+            Sha256Digest::of_bytes(b"rejected duplicate"),
+            &[],
+        ),
+        Err(StoreError::Manifest(ProtocolError::DuplicatePackId))
+    ));
+    assert_rejected_successor_preserves_catalogue(&store, &prior, &before);
+    let valid = compatibility_successor(&store, &binding, &prior, Uuid::new_v4());
+    store
+        .finalize_import_delta_successor(
+            vehicle.vehicle_id,
+            &valid,
+            &import_delta_test_cursor_key(),
+            &import_delta_test_cursor(&binding, valid.to_sequence),
+            Sha256Digest::of_bytes(b"accepted retry"),
+            &[],
+        )
+        .expect("valid retry uses unchanged prior head and ordinal");
+    let current = store
+        .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(current.deltas, vec![valid]);
+    drop(store);
+    let reopened = HubStore::initialize(temporary.path()).expect("restart after retry");
+    assert_eq!(
+        reopened
+            .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+            .unwrap(),
+        Some(current)
+    );
+}
+
+#[test]
+fn compatibility_import_successor_rejects_pack_513_and_preserves_exact_limit() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, mut prior) = imported_v2_base(&store);
+    assert_eq!(ProtocolLimits::default().max_chunks, 512);
+    // All 512 packs are created and admitted through the real typed public
+    // writer/finalizer. This is the protocol boundary, not a stress workload.
+    for _ in 1..512 {
+        let delta = compatibility_successor(&store, &binding, &prior, Uuid::new_v4());
+        let cursor = import_delta_test_cursor(&binding, delta.to_sequence);
+        store
+            .finalize_import_delta_successor(
+                vehicle.vehicle_id,
+                &delta,
+                &import_delta_test_cursor_key(),
+                &cursor,
+                Sha256Digest::of_bytes(&delta.to_sequence.to_le_bytes()),
+                &[],
+            )
+            .expect("successor through exact aggregate limit");
+        prior.head_sequence = delta.to_sequence;
+        prior.head_digest = delta.chain_digest;
+        prior.terminal_cursor = cursor;
+        prior.deltas.push(delta);
+    }
+    assert_eq!(prior.base.packs.len() + prior.deltas.len(), 512);
+    assert_eq!(
+        store
+            .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+            .unwrap(),
+        Some(prior.clone())
+    );
+    let overflow = compatibility_successor(&store, &binding, &prior, Uuid::new_v4());
+    let before = compatibility_successor_catalogue_snapshot(&store, vehicle.vehicle_id);
+    assert!(matches!(
+        store.finalize_import_delta_successor(
+            vehicle.vehicle_id,
+            &overflow,
+            &import_delta_test_cursor_key(),
+            &import_delta_test_cursor(&binding, overflow.to_sequence),
+            Sha256Digest::of_bytes(b"rejected overflow"),
+            &[],
+        ),
+        Err(StoreError::Manifest(
+            ProtocolError::LineageAggregateLimitExceeded
+        ))
+    ));
+    assert_rejected_successor_preserves_catalogue(&store, &prior, &before);
+    drop(store);
+    let reopened = HubStore::initialize(temporary.path()).expect("restart at aggregate limit");
+    assert_eq!(
+        reopened
+            .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+            .unwrap(),
+        Some(prior)
+    );
+}
+
 #[test]
 fn imported_selection_returns_one_durable_eid_and_settings() {
     let temporary = crate::private_tempdir().expect("temporary store");

@@ -1,5 +1,7 @@
 # TypeScript T7 Installed-Cell Handoff Implementation Plan
 
+> **Historical plan — do not dispatch.** The [current workspace plan pointer](../../development/PLAN.md) governs scope, order and acceptance. The instructions below are retained as historical technical evidence and grant no current agent, runtime or deployment authority.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Produce a source-fixed, target-specific handoff for six TypeScript installed Node/browser matrix cells without launching a target or claiming acceptance.

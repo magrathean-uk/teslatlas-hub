@@ -388,7 +388,13 @@ pub(super) async fn changes_since(
         }
     };
 
-    serve_changes_since(&state, vehicle_id, request)
+    if request.base_manifest_schema == "2.1" {
+        state
+            .sync_control_response(move |state| serve_changes_since(&state, vehicle_id, request))
+            .await
+    } else {
+        serve_changes_since(&state, vehicle_id, request)
+    }
 }
 
 fn request_error_response(error: RequestValidationError) -> Response {

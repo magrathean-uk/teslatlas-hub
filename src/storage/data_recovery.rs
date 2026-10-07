@@ -254,6 +254,14 @@ pub fn create_data_backup(
     store: &HubStore,
     destination: &Path,
 ) -> Result<DataRecoveryReport, DataRecoveryError> {
+    create_data_backup_with_member_limit(store, destination, MAX_BACKUP_MEMBERS)
+}
+
+fn create_data_backup_with_member_limit(
+    store: &HubStore,
+    destination: &Path,
+    member_limit: usize,
+) -> Result<DataRecoveryReport, DataRecoveryError> {
     let (destination, parent) = prepare_new_destination(destination)?;
     let live_data = store
         .database_path()
@@ -276,7 +284,11 @@ pub fn create_data_backup(
     let source_installation_id = store.installation_id()?;
     store.catalogue_check()?;
     let backup_snapshot = store.begin_backup_snapshot()?;
-    admit_staging_capacity(&parent, backup_snapshot.copy_bytes()?)?;
+    let (copy_bytes, members) = backup_snapshot.copy_admission()?;
+    if members > member_limit {
+        return Err(invalid("backup contains too many members"));
+    }
+    admit_staging_capacity(&parent, copy_bytes)?;
     let staging = StagingDirectory::create(&parent)?;
     let payload = staging.path.join(DATA_DIRECTORY);
     backup_snapshot.copy_to(&payload)?;

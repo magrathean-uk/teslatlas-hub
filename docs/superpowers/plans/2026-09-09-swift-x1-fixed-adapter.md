@@ -1,5 +1,7 @@
 # Swift X1 Fixed Adapter Implementation Plan
 
+> **Historical plan — do not dispatch.** The [current workspace plan pointer](../../development/PLAN.md) governs scope, order and acceptance. The instructions below are retained as historical technical evidence and grant no current agent, runtime or deployment authority.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Register the reviewed Swift adapter in Hub and make its installed-runner callbacks source-fixed, fail-closed, and ready for target-specific X1 SessionInputs and receipts.

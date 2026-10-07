@@ -492,7 +492,7 @@ final class HubSettingsView: HubCompactPageView {
            let index = stack.arrangedSubviews.firstIndex(of: importRow), index > 0 {
             stack.arrangedSubviews[index - 1].isHidden = hideImport
         }
-        serviceRow.value = snapshot.health.title
+        serviceRow.value = snapshot.checkingStatus ? "Checking Hub" : snapshot.health.title
         serviceRow.tone = snapshot.health == .running ? .success
             : (snapshot.health == .degraded ? .danger : .warning)
     }

@@ -40,26 +40,26 @@ class ReviewedFile:
 
 
 HANDOFF = ReviewedFile(
-    HA_ROOT / "docs/hub-admission-handoff-2026-09-08.json",
-    "6ab5147162a34c61dd8f1fb38361b2dd7db2dc4684864b1c3ac6a3c1076413a6",
+    HA_ROOT / "docs/hub-admission-handoff-2026-10-07.json",
+    "08ad12cfee7e05aaca92c61ea81b1c5e169328416c88e0b46944a0e106db5f11",
 )
 SOURCE_MANIFEST = ReviewedFile(
-    HA_ROOT / "docs/ha-admission-source-manifest-2026-09-08.json",
-    "e74a955374003be9820a450174715412b4a9c1d504b47eb33d1f93e6b2173832",
+    HA_ROOT / "docs/ha-admission-source-manifest-2026-10-07.json",
+    "cc1f5e37e8678e492b0fdf664ab42ef0e1c5cb82a2ebf7a1cef0b1934b7966bc",
 )
 
 CONTRACT = ReviewedContract(
     str(HA_ROOT / "tools/matrix-contract.json"),
-    "6b3f8a19bba579790bd554a589a82f273facdbdf5515feba2c83b9eda2091820",
+    "353fc69c40dc930a1880b5b936e92639898359bf40fecc927eaf028e41139bed",
     str(HA_ROOT / "tools/matrix_contract.py"),
-    "aa0c27880a59855e110a8a43c540c1e6127e449b63e1f834140c8c681014185f",
+    "ccd0ff198036d68dd6d6874e5f9957486d149fd9fb9a60d1b8d58e01c9fdeacb",
 )
 
 RAW_SCHEMAS = MappingProxyType(
     {
         "ha-runtime-v1": (
             HA_ROOT / "tools/ha-runtime-v1.schema.json",
-            "a49e3212ac07a64c8f27de6baa06418013f4ef0f5a3515436973c9969095f31c",
+            "24cd69d0de428fa23fe85ff33cbb3d81d3b3e813ddef5d8a8f98aafa4e302f13",
         ),
         "ha-initial-v1": (
             HA_ROOT / "tools/ha-initial-v1.schema.json",
@@ -71,22 +71,22 @@ RAW_SCHEMAS = MappingProxyType(
         ),
         "ha-flow-v1": (
             HA_ROOT / "tools/ha-flow-v1.schema.json",
-            "dd4bd1c39e00e35b11550c20a5f660489cfcd93c15269e3b44799101e84ea189",
+            "72d0b795eef7fb554413c323309a8596dd583bb2b9b88e2d10df9c22d5c6bf2e",
         ),
     }
 )
 
 REVIEWED_SOURCES = MappingProxyType(
     {
-        "tests/integration/test_live_hub.py": "d42efba1341dfe3ae9db2f974189aa97e812caa58663b4d52de450010accf728",
-        "tests/test_matrix_live.py": "5935c634766b397162fccfa74348a535bbcb8b70c69bb66223bd9e69f5cce108",
+        "tests/integration/test_live_hub.py": "b719e9b438109b491c7ba9b5800e6435d2f4e1cea7c0d9cce4ddb6d2ac7049af",
+        "tests/test_matrix_live.py": "522b48ab73f6f36ffc74c279a6b49254abcfbb710cc492c6af599f71e896619a",
         "tools/ha-client-v1.schema.json": "dcf05f837e37fc6541d8d6d0e3c5ce068a0b0eb662d8e6b00cb723171b9b3b92",
-        "tools/ha-flow-v1.schema.json": "dd4bd1c39e00e35b11550c20a5f660489cfcd93c15269e3b44799101e84ea189",
+        "tools/ha-flow-v1.schema.json": "72d0b795eef7fb554413c323309a8596dd583bb2b9b88e2d10df9c22d5c6bf2e",
         "tools/ha-initial-v1.schema.json": "5e3525d5523e4162320bfdc2cdd6fc13f0203187d3fe2e141b9cdfe33f37f8e6",
-        "tools/ha-runtime-v1.schema.json": "a49e3212ac07a64c8f27de6baa06418013f4ef0f5a3515436973c9969095f31c",
-        "tools/matrix-contract.json": "6b3f8a19bba579790bd554a589a82f273facdbdf5515feba2c83b9eda2091820",
-        "tools/matrix_contract.py": "aa0c27880a59855e110a8a43c540c1e6127e449b63e1f834140c8c681014185f",
-        "tools/matrix_live.py": "cb9dfad5ffe5c86ec2c33f5160bbdd81593262f9f9985ace01d83463f9645b55",
+        "tools/ha-runtime-v1.schema.json": "24cd69d0de428fa23fe85ff33cbb3d81d3b3e813ddef5d8a8f98aafa4e302f13",
+        "tools/matrix-contract.json": "353fc69c40dc930a1880b5b936e92639898359bf40fecc927eaf028e41139bed",
+        "tools/matrix_contract.py": "ccd0ff198036d68dd6d6874e5f9957486d149fd9fb9a60d1b8d58e01c9fdeacb",
+        "tools/matrix_live.py": "40161af1f138de170ae465c32a8cd6910e9337ec82c93c7df8d14b113e77bfbb",
         "tools/matrix_wire.py": "cd7f4a620f5aaab46bd4e311f7e350063d5f6db39da72e5b0e8129f46e8d1085",
     }
 )
@@ -99,15 +99,15 @@ COMPONENT_ROWS = (
     },
     {
         "path": "client.py",
-        "bytes": 3557,
+        "bytes": 3779,
         "mode": 420,
-        "sha256": "bcc65d205124b65ba22ca51b1ea3c0e8009648af6aa1f66dbf01034d53058b82",
+        "sha256": "4c547f427ca53260ca492d65dec0fef879839e7c06a0700670990eb8102ac0b3",
     },
     {
         "path": "config_flow.py",
-        "bytes": 12540,
+        "bytes": 28842,
         "mode": 420,
-        "sha256": "96a78e8563dd49ca914ebd67d77089b7aca52b5f5db2798b9c33e38e6fd80208",
+        "sha256": "ca7b0f53744ad9f343248b3aecc016b492a48d9dc47326fe01cd9e0d4a52e457",
     },
     {
         "path": "const.py",
@@ -117,21 +117,27 @@ COMPONENT_ROWS = (
     },
     {
         "path": "coordinator.py",
-        "bytes": 2780,
+        "bytes": 5449,
         "mode": 420,
-        "sha256": "64aa33b34c23437fa0efdaf3d1355e368a4cf88e6ca349b11ec40cd8628b0858",
+        "sha256": "30ee043c06eb9c6eef6d173c407830fe995a3f19673a0055fc2c1974e9894716",
+    },
+    {
+        "path": "credentials.py",
+        "bytes": 2703,
+        "mode": 420,
+        "sha256": "ff1e0565edd2e85508684a3d90d72d6bdd45f34f0a1a13f51c0220314cd17368",
     },
     {
         "path": "current_hub_client.py",
-        "bytes": 18349,
+        "bytes": 22303,
         "mode": 420,
-        "sha256": "4b60538e8c40ab0c1f764e0cd20c1c991cb625c254115cfdd07f333652115d53",
+        "sha256": "fcbda066b2cf4d93927e7fab8bb8b854d3b1e142c009050148da8d3fd6050224",
     },
     {
         "path": "diagnostics.py",
-        "bytes": 1955,
+        "bytes": 2184,
         "mode": 420,
-        "sha256": "ef779a20632b3a04abaf5d088f41601f1bc47062ff6a09bf2a320331d7716657",
+        "sha256": "30794a4fb0fed79b8337f1cd8447abc649bfe4725d9d09019f2e6dd547037184",
     },
     {
         "path": "entity.py",
@@ -147,9 +153,9 @@ COMPONENT_ROWS = (
     },
     {
         "path": "models.py",
-        "bytes": 3439,
+        "bytes": 3477,
         "mode": 420,
-        "sha256": "7772c2751eb74d4a012d9e523d77c75248ef99f2d282544ac41682125e3c2fe6",
+        "sha256": "7d1a4d92cacfd83852befde1625b2cc30ec40e7a85003c755552424c7b5c4cf7",
     },
     {
         "path": "profile/hub-http-v1/1.0.0/SHA256SUMS",
@@ -261,21 +267,21 @@ COMPONENT_ROWS = (
     },
     {
         "path": "sensor.py",
-        "bytes": 9029,
+        "bytes": 10249,
         "mode": 420,
-        "sha256": "7459e21bee5811307648f7fc1fcc4d516218e971e3f2cbe3e71a4d94e1e21724",
+        "sha256": "b77aaa4861de9e04fab667c4fb7a11a4a738c77573c5595ede41848dc4460ddd",
     },
     {
         "path": "strings.json",
-        "bytes": 3356,
+        "bytes": 5088,
         "mode": 420,
-        "sha256": "e29e2c01759348c66c9f91cd5ad1d97080f6508fdc11fd714a48ef8c9da29bfe",
+        "sha256": "d07eaf9fe34193b3b8478f7aea28dbff0e2f6a3444800772b4c9e539db716db8",
     },
     {
         "path": "translations/en.json",
-        "bytes": 3356,
+        "bytes": 5088,
         "mode": 420,
-        "sha256": "e29e2c01759348c66c9f91cd5ad1d97080f6508fdc11fd714a48ef8c9da29bfe",
+        "sha256": "d07eaf9fe34193b3b8478f7aea28dbff0e2f6a3444800772b4c9e539db716db8",
     },
 )
 COMPONENT_MANIFEST_SHA256 = (

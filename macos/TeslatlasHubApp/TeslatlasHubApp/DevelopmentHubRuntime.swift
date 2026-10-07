@@ -2,6 +2,8 @@
 
 import Darwin
 import Foundation
+import Security
+import CryptoKit
 
 enum HistoryOnlyControl {
     private static let contents = Array("history-only-v1\n".utf8)
@@ -439,7 +441,236 @@ typealias DevelopmentHubReadinessScheduler = (
 
 typealias DevelopmentHubReadinessClock = () -> TimeInterval
 
-final class DevelopmentLaunchctlServiceController: HubServiceControlling {
+/// Live serving readiness is separate from launchd ownership and offline catalogue health.
+protocol HubLiveReadinessChecking {
+    func checkLiveReadiness(completion: @escaping (Bool) -> Void)
+}
+
+typealias DevelopmentHubHTTPSProbe = (
+    DevelopmentHubConfiguration, Int, TimeInterval, @escaping (Bool) -> Void
+) -> Void
+
+/// This endpoint is public readiness, not a pairing or credential operation. Trust
+/// is limited to the selected configuration's certificate, with normal SSL policy.
+final class DevelopmentHubHTTPSReadiness: NSObject, URLSessionDataDelegate {
+    private static let readLock = NSLock()
+    private static var readsInProgress = Set<String>()
+    private let lock = NSLock()
+    private var completion: ((Bool) -> Void)?
+    private var session: URLSession?
+    private var certificate: SecCertificate?
+    private var host: String?
+    private var configDigest: String?
+    private var processID: Int?
+    private var body = Data()
+    private static let maximumBytes = 16_384
+
+    private init(completion: @escaping (Bool) -> Void) { self.completion = completion }
+
+    static func probe(configuration: DevelopmentHubConfiguration, processID: Int, timeout: TimeInterval,
+                      completion: @escaping (Bool) -> Void) {
+        probe(configuration: configuration, processID: processID, timeout: timeout,
+              sessionConfiguration: .ephemeral, completion: completion)
+    }
+
+    // The configuration seam is internal and used only for deterministic transport tests.
+    static func probe(configuration: DevelopmentHubConfiguration, processID: Int, timeout: TimeInterval,
+                      sessionConfiguration: URLSessionConfiguration,
+                      completion: @escaping (Bool) -> Void) {
+        let probe = DevelopmentHubHTTPSReadiness(completion: completion)
+        let boundedTimeout = min(5, max(0.1, timeout))
+        readLock.lock()
+        let acquired = readsInProgress.insert(configuration.config.path).inserted
+        readLock.unlock()
+        guard acquired else { completion(false); return }
+        // Also bounds protected file reads: a volume permission prompt must not
+        // hold the app-facing startup completion indefinitely.
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + boundedTimeout) {
+            probe.finish(false)
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            defer {
+                readLock.lock(); readsInProgress.remove(configuration.config.path); readLock.unlock()
+            }
+            do {
+                let config = try protectedData(configuration.config)
+                let target = try endpoint(config)
+                // TLS material may live below the same owned, current-group
+                // writable volume ancestors admitted for the state and logs.
+                // The configuration and executable retain their stricter policy.
+                let pem = try protectedData(target.certificate, allowOwnedGroupWritableAncestors: true)
+                guard let text = String(data: pem, encoding: .utf8),
+                      let start = text.range(of: "-----BEGIN CERTIFICATE-----"),
+                      let end = text.range(of: "-----END CERTIFICATE-----", range: start.upperBound..<text.endIndex),
+                      let der = Data(base64Encoded: String(text[start.upperBound..<end.lowerBound]), options: .ignoreUnknownCharacters),
+                      let certificate = SecCertificateCreateWithData(nil, der as CFData) else {
+                    probe.finish(false); return
+                }
+                let settings = sessionConfiguration
+                settings.timeoutIntervalForRequest = boundedTimeout
+                settings.timeoutIntervalForResource = boundedTimeout
+                settings.urlCache = nil
+                settings.httpCookieStorage = nil
+                settings.urlCredentialStorage = nil
+                settings.requestCachePolicy = .reloadIgnoringLocalCacheData
+                probe.lock.lock()
+                guard probe.completion != nil else { probe.lock.unlock(); return }
+                probe.certificate = certificate
+                probe.host = target.url.host
+                probe.configDigest = digest(config)
+                probe.processID = processID
+                let session = URLSession(configuration: settings, delegate: probe, delegateQueue: nil)
+                probe.session = session
+                var request = URLRequest(url: target.url)
+                request.httpMethod = "GET"
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                let task = session.dataTask(with: request)
+                probe.lock.unlock()
+                task.resume()
+            } catch { probe.finish(false) }
+        }
+    }
+
+    /// Accept the ordinary generated [tls] scalar strings. Unsupported TOML
+    /// forms fail closed; the Rust serve preflight remains the full validator.
+    static func endpoint(_ data: Data) throws -> (url: URL, certificate: URL) {
+        guard let text = String(data: data, encoding: .utf8) else { throw POSIXError(.EINVAL) }
+        var inTLS = false
+        var seenTLS = false
+        var values: [String: String] = [:]
+        let assignment = try NSRegularExpression(pattern: #"^\s*(public_url|certificate_path)\s*=\s*(\"(?:[^\"\\]|\\.)*\"|'[^']*')\s*(?:#.*)?$"#)
+        for rawLine in text.split(whereSeparator: \.isNewline) {
+            let line = String(rawLine).trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") {
+                inTLS = line.range(of: #"^\[tls\]\s*(?:#.*)?$"#, options: .regularExpression) != nil
+                if inTLS { guard !seenTLS else { throw POSIXError(.EINVAL) }; seenTLS = true }
+                continue
+            }
+            guard inTLS, !line.isEmpty, !line.hasPrefix("#") else { continue }
+            guard let match = assignment.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)) else {
+                // Other TLS fields (including the private key) are never read.
+                if line.hasPrefix("public_url") || line.hasPrefix("certificate_path") { throw POSIXError(.EINVAL) }
+                continue
+            }
+            let key = String(line[Range(match.range(at: 1), in: line)!])
+            let quoted = String(line[Range(match.range(at: 2), in: line)!])
+            guard values[key] == nil else { throw POSIXError(.EINVAL) }
+            if quoted.hasPrefix("'") { values[key] = String(quoted.dropFirst().dropLast()) }
+            else {
+                guard let value = try JSONSerialization.jsonObject(with: Data(quoted.utf8), options: .fragmentsAllowed) as? String else { throw POSIXError(.EINVAL) }
+                values[key] = value
+            }
+        }
+        guard let publicURL = values["public_url"], var components = URLComponents(string: publicURL),
+              components.scheme == "https", components.host?.isEmpty == false,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil,
+              components.path.isEmpty || components.path == "/",
+              let certificate = values["certificate_path"], certificate.hasPrefix("/"),
+              URL(fileURLWithPath: certificate).standardizedFileURL.path == certificate else { throw POSIXError(.EINVAL) }
+        components.path = "/readyz"
+        guard let url = components.url else { throw POSIXError(.EINVAL) }
+        return (url, URL(fileURLWithPath: certificate))
+    }
+
+    static func protectedData(_ file: URL, allowOwnedGroupWritableAncestors: Bool = false) throws -> Data {
+        let parent = try DevelopmentEventLog.validateDirectoryReadOnly(file.deletingLastPathComponent(),
+                                                                       allowOwnedGroupWritableAncestors: allowOwnedGroupWritableAncestors)
+        defer { close(parent) }
+        let fd = openat(parent, file.lastPathComponent, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { throw POSIXError(.EPERM) }
+        defer { close(fd) }
+        var before = stat()
+        guard fstat(fd, &before) == 0, before.st_mode & S_IFMT == S_IFREG,
+              before.st_uid == getuid(), before.st_mode & 0o777 == 0o600,
+              before.st_nlink == 1, before.st_size > 0, before.st_size <= 65_536 else { throw POSIXError(.EPERM) }
+        var bytes = [UInt8](repeating: 0, count: Int(before.st_size))
+        var offset = 0
+        while offset < bytes.count {
+            let count = bytes.withUnsafeMutableBytes { buffer in
+                Darwin.read(fd, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
+            }
+            if count < 0 && errno == EINTR { continue }
+            guard count > 0 else { throw POSIXError(.EIO) }
+            offset += count
+        }
+        var after = stat()
+        guard fstat(fd, &after) == 0, before.st_dev == after.st_dev, before.st_ino == after.st_ino,
+              before.st_size == after.st_size, before.st_mode == after.st_mode,
+              before.st_uid == after.st_uid, before.st_nlink == after.st_nlink,
+              before.st_mtimespec.tv_sec == after.st_mtimespec.tv_sec,
+              before.st_mtimespec.tv_nsec == after.st_mtimespec.tv_nsec else { throw POSIXError(.EPERM) }
+        return Data(bytes)
+    }
+
+    static func accepts(trust: SecTrust, certificate: SecCertificate, host: String) -> Bool {
+        guard let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate], let leaf = chain.first,
+              SecCertificateCopyData(leaf) as Data == SecCertificateCopyData(certificate) as Data,
+              SecTrustSetPolicies(trust, SecPolicyCreateSSL(true, host as CFString)) == errSecSuccess,
+              SecTrustSetAnchorCertificates(trust, [certificate] as CFArray) == errSecSuccess,
+              SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess else { return false }
+        SecTrustSetNetworkFetchAllowed(trust, false)
+        return SecTrustEvaluateWithError(trust, nil)
+    }
+
+    static func digest(_ bytes: Data) -> String {
+        SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func accepts(response: URLResponse, configDigest: String, processID: Int) -> Bool {
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+              response.expectedContentLength <= Self.maximumBytes,
+              let loadedDigest = http.value(forHTTPHeaderField: "x-teslatlas-native-config-sha256"),
+              loadedDigest.range(of: #"^[0-9a-f]{64}$"#, options: .regularExpression) != nil,
+              loadedDigest == configDigest,
+              processID > 0,
+              http.value(forHTTPHeaderField: "x-teslatlas-native-process-id") == String(processID) else { return false }
+        return true
+    }
+
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge,
+                    completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let trust = challenge.protectionSpace.serverTrust, let certificate, let host,
+              Self.accepts(trust: trust, certificate: certificate, host: host) else {
+            completionHandler(.cancelAuthenticationChallenge, nil); return
+        }
+        completionHandler(.useCredential, URLCredential(trust: trust))
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+                    completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        guard let configDigest, let processID, Self.accepts(response: response, configDigest: configDigest, processID: processID) else {
+            completionHandler(.cancel); finish(false); return
+        }
+        completionHandler(.allow)
+    }
+
+    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        guard body.count + data.count <= Self.maximumBytes else { finish(false); return }
+        body.append(data)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+        finish(error == nil && object?["status"] as? String == "ready")
+    }
+
+    private func finish(_ ready: Bool) {
+        lock.lock()
+        let callback = completion; completion = nil
+        let session = session; self.session = nil
+        lock.unlock()
+        session?.invalidateAndCancel()
+        callback?(ready)
+    }
+}
+
+final class DevelopmentLaunchctlServiceController: HubServiceControlling, HubLiveReadinessChecking {
     private let configuration: DevelopmentHubConfiguration
     private let processRunner: DevelopmentHubProcessRunner
     private let readinessPollInterval: TimeInterval
@@ -447,6 +678,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
     private let readinessTimeout: TimeInterval
     private let readinessSchedule: DevelopmentHubReadinessScheduler
     private let readinessClock: DevelopmentHubReadinessClock
+    private let httpsProbe: DevelopmentHubHTTPSProbe
     private var domain: String { "gui/\(configuration.ownerUID)" }
     private var service: String { "\(domain)/\(configuration.serviceLabel)" }
 
@@ -469,7 +701,8 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
          },
          readinessClock: @escaping DevelopmentHubReadinessClock = {
              ProcessInfo.processInfo.systemUptime
-         }) {
+         },
+         httpsProbe: @escaping DevelopmentHubHTTPSProbe = DevelopmentHubHTTPSReadiness.probe) {
         self.configuration = configuration
         self.processRunner = processRunner
         self.readinessPollInterval = max(0, readinessPollInterval)
@@ -477,6 +710,20 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
         self.readinessTimeout = max(0.1, readinessTimeout)
         self.readinessSchedule = readinessSchedule
         self.readinessClock = readinessClock
+        self.httpsProbe = httpsProbe
+    }
+
+    func checkLiveReadiness(completion: @escaping (Bool) -> Void) {
+        runLaunchctl(["print", service], timeout: 5) { [weak self] result in
+            guard let self, case let .success(output) = result,
+                  let pid = Self.runningProcessIdentifier(in: output,
+                    expectedBinary: self.configuration.binary.path,
+                    expectedConfig: self.configuration.config.path) else {
+                completion(false)
+                return
+            }
+            self.httpsProbe(self.configuration, pid, 5, completion)
+        }
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
@@ -790,9 +1037,22 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling {
                     switch statusResult {
                     case let .success(statusOutput)
                         where Self.isUsableStatusOutput(statusOutput):
-                        if previousReadyPID == pid {
-                            completion(.success(HubL10n.format("hub.DevelopmentHubRuntime.751.181", fallback: "Development Hub is running as PID %1$@.", arguments: [String(describing: pid)])))
-                        } else {
+                        guard let probeTimeout = self.readinessRequestTimeout(deadline: deadline) else {
+                            self.failStartupAndStop(self.startupFailure(lastFailure: "The HTTPS readiness deadline expired."), completion: completion)
+                            return
+                        }
+                        self.httpsProbe(self.configuration, pid, min(5, probeTimeout)) { ready in
+                            guard ready, self.readinessClock() < deadline else {
+                                self.retryReadiness(previousReadyPID: nil,
+                                    attemptsRemaining: attemptsRemaining, deadline: deadline,
+                                    failure: "The intended process has not become ready over HTTPS. Check the selected runtime's volume access and logs.",
+                                    completion: completion)
+                                return
+                            }
+                            if previousReadyPID == pid {
+                                completion(.success(HubL10n.format("hub.DevelopmentHubRuntime.751.181", fallback: "Development Hub is running as PID %1$@.", arguments: [String(describing: pid)])))
+                                return
+                            }
                             self.retryReadiness(
                                 previousReadyPID: pid,
                                 attemptsRemaining: attemptsRemaining,

@@ -10,7 +10,7 @@
 //!   changes; or an explicitly retained base rotation when that import lineage
 //!   has no room for the changed rows. Full captures never masquerade as deltas.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[path = "performance_profile.rs"]
 mod performance_profile;
@@ -141,12 +141,15 @@ pub fn reconcile_open_session_cutover(
     let drive_parent_changed = active_parent_changed(first.drive.as_ref(), second.drive.as_ref());
     let charge_parent_changed =
         active_parent_changed(first.charge.as_ref(), second.charge.as_ref());
-    let standalone_continues = second.standalone_positions.iter().any(|row| {
-        !first
-            .standalone_positions
-            .iter()
-            .any(|old| old.id == row.id)
-    });
+    let standalone_ids: HashSet<_> = first
+        .standalone_positions
+        .iter()
+        .map(|row| row.id)
+        .collect();
+    let standalone_continues = second
+        .standalone_positions
+        .iter()
+        .any(|row| !standalone_ids.contains(&row.id));
     let mut session = second.clone();
     if same_id(first.drive.as_ref(), second.drive.as_ref()) && second.drive.is_some() {
         session.drive_positions = union_positions(&first.drive_positions, &second.drive_positions);
@@ -171,15 +174,23 @@ fn reconcile_direct_snapshot_cutover(
     captured: &TeslaMateOpenSession,
     observed_later: &TeslaMateOpenSession,
 ) -> Result<TeslaMateCutoverReconciliation, TeslaMateImportError> {
-    let source_moved = captured != observed_later;
-    let mut reconciliation = reconcile_open_session_cutover(captured, observed_later)?;
+    captured
+        .validate()
+        .map_err(TeslaMateImportError::Projection)?;
+    observed_later
+        .validate()
+        .map_err(TeslaMateImportError::Projection)?;
+    if captured.car_id != observed_later.car_id {
+        return Err(TeslaMateImportError::CutoverCarMismatch);
+    }
     // Direct publication is allowed only after two source snapshots are
     // identical. This covers completed-history watermarks, parent updates,
     // child value changes, open states, and short sessions that began and
     // ended between reads, not only newly appended child IDs.
-    reconciliation.cutover_unsettled |= source_moved;
-    reconciliation.session = captured.clone();
-    Ok(reconciliation)
+    Ok(TeslaMateCutoverReconciliation {
+        cutover_unsettled: captured != observed_later,
+        session: captured.clone(),
+    })
 }
 
 fn require_settled_direct_cutover(
@@ -190,6 +201,41 @@ fn require_settled_direct_cutover(
     } else {
         Ok(())
     }
+}
+
+#[derive(Clone, Copy)]
+enum CaptureCutoverPolicy {
+    RequireSettled,
+    HistorySnapshot,
+}
+
+async fn settle_captured_session<F, Fut>(
+    captured: TeslaMateOpenSession,
+    policy: CaptureCutoverPolicy,
+    observe_later: F,
+) -> Result<TeslaMateCutoverReconciliation, TeslaMateImportError>
+where
+    F: FnOnce() -> Fut,
+    Fut: std::future::Future<
+            Output = Result<TeslaMateOpenSession, crate::teslamate_reader::TeslaMateReaderError>,
+        >,
+{
+    captured
+        .validate()
+        .map_err(TeslaMateImportError::Projection)?;
+    if matches!(policy, CaptureCutoverPolicy::HistorySnapshot) {
+        // This path never transfers Tesla credentials or collector authority.
+        // Completed history and open rows already belong to one exported
+        // repeatable-read snapshot; later source movement cannot invalidate it.
+        return Ok(TeslaMateCutoverReconciliation {
+            session: captured,
+            cutover_unsettled: false,
+        });
+    }
+    let observed_later = observe_later().await?;
+    let cutover = reconcile_direct_snapshot_cutover(&captured, &observed_later)?;
+    require_settled_direct_cutover(&cutover)?;
+    Ok(cutover)
 }
 
 fn same_id<T>(first: Option<&T>, second: Option<&T>) -> bool
@@ -226,18 +272,20 @@ impl HasSourceId for crate::teslamate_projection::TeslaMateChargingProcess {
 }
 
 fn has_new_positions(first: &TeslaMateOpenSession, second: &TeslaMateOpenSession) -> bool {
+    let ids: HashSet<_> = first.drive_positions.iter().map(|row| row.id).collect();
     second
         .drive_positions
         .iter()
-        .any(|row| !first.drive_positions.iter().any(|old| old.id == row.id))
+        .any(|row| !ids.contains(&row.id))
         || second.watermarks.positions.max_id > first.watermarks.positions.max_id
 }
 
 fn has_new_samples(first: &TeslaMateOpenSession, second: &TeslaMateOpenSession) -> bool {
+    let ids: HashSet<_> = first.charge_samples.iter().map(|row| row.id).collect();
     second
         .charge_samples
         .iter()
-        .any(|row| !first.charge_samples.iter().any(|old| old.id == row.id))
+        .any(|row| !ids.contains(&row.id))
         || second.watermarks.charges.max_id > first.watermarks.charges.max_id
 }
 
@@ -246,10 +294,15 @@ fn union_positions(
     second: &[crate::teslamate_projection::TeslaMatePosition],
 ) -> Vec<crate::teslamate_projection::TeslaMatePosition> {
     let mut rows = first.to_vec();
+    let mut indices = HashMap::new();
+    for (index, row) in first.iter().enumerate() {
+        indices.entry(row.id).or_insert(index);
+    }
     for row in second {
-        if let Some(existing) = rows.iter_mut().find(|old| old.id == row.id) {
-            *existing = row.clone();
+        if let Some(index) = indices.get(&row.id) {
+            rows[*index] = row.clone();
         } else {
+            indices.insert(row.id, rows.len());
             rows.push(row.clone());
         }
     }
@@ -262,10 +315,15 @@ fn union_samples(
     second: &[crate::teslamate_projection::TeslaMateCharge],
 ) -> Vec<crate::teslamate_projection::TeslaMateCharge> {
     let mut rows = first.to_vec();
+    let mut indices = HashMap::new();
+    for (index, row) in first.iter().enumerate() {
+        indices.entry(row.id).or_insert(index);
+    }
     for row in second {
-        if let Some(existing) = rows.iter_mut().find(|old| old.id == row.id) {
-            *existing = row.clone();
+        if let Some(index) = indices.get(&row.id) {
+            rows[*index] = row.clone();
         } else {
+            indices.insert(row.id, rows.len());
             rows.push(row.clone());
         }
     }
@@ -640,6 +698,34 @@ pub async fn import_selected_from_postgres_with_schema_22_and_progress(
     finish_selected_schema_22_publication(store, cursor_key, captured)
 }
 
+/// Credential-free history publication from one coherent online source
+/// snapshot. Source rows may advance during capture; no collector handover or
+/// Tesla token capture occurs, and all other importer routes remain settled.
+pub async fn import_selected_history_snapshot_from_postgres_with_schema_22_and_progress(
+    store: &HubStore,
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    cursor_key: &CursorKey,
+    request: &TeslaMateImportRequest,
+    limits: TeslaMateReadLimits,
+    progress: TeslaMateMigrationProgressReporter,
+) -> Result<TeslaMateSelectedImportReport, TeslaMateImportError> {
+    let captured = import_from_postgres_with_updates_capture_policy(
+        store,
+        source,
+        password,
+        cursor_key,
+        request,
+        limits,
+        false,
+        true,
+        progress,
+        CaptureCutoverPolicy::HistorySnapshot,
+    )
+    .await?;
+    finish_selected_schema_22_publication(store, cursor_key, captured)
+}
+
 /// As [`import_selected_from_postgres_with_schema_22`], while retaining the
 /// source's encrypted legacy token pair from the exact exported snapshot.
 /// The ciphertext stays opaque here and is returned only to the migration CLI.
@@ -806,6 +892,37 @@ async fn import_from_postgres_with_updates_capture(
     prepare_schema_22: bool,
     progress: TeslaMateMigrationProgressReporter,
 ) -> Result<CapturedTeslaMateImport, TeslaMateImportError> {
+    import_from_postgres_with_updates_capture_policy(
+        store,
+        source,
+        password,
+        cursor_key,
+        request,
+        limits,
+        capture_legacy_token,
+        prepare_schema_22,
+        progress,
+        CaptureCutoverPolicy::RequireSettled,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn import_from_postgres_with_updates_capture_policy(
+    store: &HubStore,
+    source: &ReadOnlySource,
+    password: &TeslaMatePostgresPassword,
+    cursor_key: &CursorKey,
+    request: &TeslaMateImportRequest,
+    limits: TeslaMateReadLimits,
+    capture_legacy_token: bool,
+    prepare_schema_22: bool,
+    progress: TeslaMateMigrationProgressReporter,
+    cutover_policy: CaptureCutoverPolicy,
+) -> Result<CapturedTeslaMateImport, TeslaMateImportError> {
+    if capture_legacy_token && matches!(cutover_policy, CaptureCutoverPolicy::HistorySnapshot) {
+        return Err(TeslaMateImportError::CutoverUnsettled);
+    }
     tracing::info!(
         host = source.host(),
         port = source.port(),
@@ -959,25 +1076,20 @@ async fn import_from_postgres_with_updates_capture(
     let updates_v2_2 = first_capture.updates_v2_2;
     let legacy_tokens = first_capture.legacy_tokens;
     let physical_stage = first_capture.physical_stage;
-    let second_open_session =
-        match read_open_session(source, password, selected_car_id, limits).await {
-            Ok(value) => value,
-            Err(error) => {
-                store.abort_import_generation(run_id)?;
-                return Err(error.into());
-            }
-        };
-    let cutover = match reconcile_direct_snapshot_cutover(&open_session, &second_open_session) {
+    let cutover = match settle_captured_session(open_session, cutover_policy, || {
+        read_open_session(source, password, selected_car_id, limits)
+    })
+    .await
+    {
         Ok(value) => value,
         Err(error) => {
             store.abort_import_generation(run_id)?;
             return Err(error);
         }
     };
-    // Publish only a tail captured atomically with the selected direct history.
-    // Any later movement aborts this unpublished generation so credentials and
-    // Hub startup cannot proceed until a bounded retry observes a settled tail.
-    require_settled_direct_cutover(&cutover)?;
+    // The tail always comes from the history snapshot. Credential/collector
+    // handover additionally requires a settled source; explicit history-only
+    // publication needs no ownership transfer or later source observation.
     store.stage_import_generation_session(run_id, &cutover.session)?;
     direct.fingerprint = direct_snapshot_fingerprint(&direct.fingerprint, &direct.geofences)?;
     if legacy_bridge {

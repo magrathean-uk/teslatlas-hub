@@ -508,6 +508,9 @@ impl TerrainCache {
             return Err(TerrainCacheError::InvalidArchive);
         }
         let (compressed, compressed_path) = create_private_temp(&self.options.root, "archive")?;
+        let archive_cleanup = TemporaryPathGuard {
+            path: compressed_path,
+        };
         let mut output = tokio::fs::File::from_std(compressed);
         let download_result = async {
             let mut total = 0_u64;
@@ -527,12 +530,8 @@ impl TerrainCache {
         }
         .await;
         drop(output);
-        if let Err(error) = download_result {
-            let _ = fs::remove_file(&compressed_path);
-            return Err(error);
-        }
-        let result = decompress_to_hgt(&compressed_path, destination, aws, &name);
-        let _ = fs::remove_file(&compressed_path);
+        download_result?;
+        let result = decompress_to_hgt(&archive_cleanup.path, destination, aws, &name);
         result.map(|_| if aws { "aws" } else { "esa" })
     }
 
@@ -602,6 +601,16 @@ fn write_source_atomic(path: &Path, source: &str) -> Result<(), TerrainCacheErro
     file.sync_all().map_err(TerrainCacheError::Io)?;
     drop(file);
     fs::rename(temporary, path).map_err(TerrainCacheError::Io)
+}
+
+struct TemporaryPathGuard {
+    path: PathBuf,
+}
+
+impl Drop for TemporaryPathGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
 }
 
 fn create_private_temp(dir: &Path, label: &str) -> Result<(File, PathBuf), TerrainCacheError> {

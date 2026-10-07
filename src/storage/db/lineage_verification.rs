@@ -1207,18 +1207,18 @@ impl HubStore {
             .map_err(StoreError::LineageCatalog)?;
         for row in rows {
             let (head_digest, manifest_json) = row.map_err(StoreError::LineageCatalog)?;
-            let manifest: LineageManifestV2 = serde_json::from_slice(&manifest_json)
-                .map_err(StoreError::DeserializeManifest)?;
+            let manifest: LineageManifestV2 =
+                serde_json::from_slice(&manifest_json).map_err(StoreError::DeserializeManifest)?;
             manifest.validate().map_err(StoreError::Manifest)?;
-            if manifest.vehicle_id != vehicle_id
-                || manifest.head_digest.to_string() != head_digest
+            if manifest.vehicle_id != vehicle_id || manifest.head_digest.to_string() != head_digest
             {
                 return Err(StoreError::LineageCatalogConflict);
             }
             if (manifest.base.sequence == sequence && manifest.base.digest == receipt)
-                || manifest.deltas.iter().any(|delta| {
-                    delta.to_sequence == sequence && delta.chain_digest == receipt
-                })
+                || manifest
+                    .deltas
+                    .iter()
+                    .any(|delta| delta.to_sequence == sequence && delta.chain_digest == receipt)
             {
                 return Ok(true);
             }
@@ -1325,15 +1325,72 @@ impl HubStore {
         }
         let terminal_cursor: OpaqueCursor =
             serde_json::from_str(&terminal_cursor).map_err(StoreError::DeserializeManifest)?;
-        let binding = self.v2_projection_binding(vehicle_id)?;
+        // Generic schema-1 publication retains its identity in the immutable
+        // manifest envelope; it has no typed ProjectionBinding. Typed bases
+        // must continue to use the persisted binding and fail if it is lost.
+        let (installation_id, account_id, generation) =
+            if base_packs[0].schema.support() == Some(SchemaSupport::GenericTransport) {
+                let payload: Vec<u8> = connection
+                    .query_row(
+                        "SELECT manifest_json FROM sync_manifests
+                         WHERE snapshot_id = ?1 AND vehicle_id = ?2",
+                        params![snapshot_id.as_str(), vehicle_id.to_string()],
+                        |row| row.get(0),
+                    )
+                    .optional()
+                    .map_err(StoreError::LineageCatalog)?
+                    .ok_or(StoreError::LineageCatalogConflict)?;
+                if let Ok(manifest) = serde_json::from_slice::<SyncManifest>(&payload) {
+                    validate_manifest_for_catalogue(&manifest)?;
+                    if manifest.schema != base_packs[0].schema
+                        || manifest.vehicle_id != vehicle_id
+                        || manifest.snapshot_id != base_snapshot_id
+                        || manifest.base_sequence != base_sequence
+                        || manifest.chunks != base_packs
+                        || manifest.mode != crate::protocol::TransferMode::FullSnapshot
+                    {
+                        return Err(StoreError::LineageCatalogConflict);
+                    }
+                    (
+                        manifest.installation_id,
+                        manifest.account_id,
+                        manifest.generation,
+                    )
+                } else {
+                    let manifest: LineageManifestV2 = serde_json::from_slice(&payload)
+                        .map_err(StoreError::DeserializeManifest)?;
+                    manifest.validate().map_err(StoreError::Manifest)?;
+                    if manifest.schema != base_packs[0].schema
+                        || manifest.vehicle_id != vehicle_id
+                        || manifest.base.snapshot_id != base_snapshot_id
+                        || manifest.base.sequence != base_sequence
+                        || manifest.base.digest != base_digest
+                        || manifest.base.packs != base_packs
+                    {
+                        return Err(StoreError::LineageCatalogConflict);
+                    }
+                    (
+                        manifest.installation_id,
+                        manifest.account_id,
+                        manifest.generation,
+                    )
+                }
+            } else {
+                let binding = self.v2_projection_binding(vehicle_id)?;
+                (
+                    binding.installation_id,
+                    binding.account_id,
+                    binding.generation,
+                )
+            };
         let lineage = LineageManifestV2 {
             protocol: LINEAGE_PROTOCOL_V2,
             capability: LineageCapability::ImmutableBaseOrderedDeltas,
             schema: base_packs[0].schema,
-            installation_id: binding.installation_id,
-            account_id: binding.account_id,
+            installation_id,
+            account_id,
             vehicle_id,
-            generation: binding.generation,
+            generation,
             base: LineageBase {
                 snapshot_id: base_snapshot_id,
                 sequence: base_sequence,

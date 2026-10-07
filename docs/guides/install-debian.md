@@ -9,6 +9,11 @@ before installing. For an existing deployment, follow
 [Upgrade and rollback](../releases/upgrade.md). The historical `2026.36.1`
 limits remain in its [release note](../releases/release-notes-2026.36.1.md).
 
+For the verified local development route, see
+[Mac to Debian ARM64 builds](build-from-source.md#mac-to-debian-arm64-development-build).
+That route produces an unbound executable for an isolated service test; it does
+not install the package or its service account and paths described below.
+
 ## Select the package
 
 ```sh
@@ -68,6 +73,14 @@ sudo /usr/bin/teslatlas-hub service start
 sudo /usr/bin/teslatlas-hub service stop
 sudo /usr/bin/teslatlas-hub service restart
 ```
+
+On Linux, these controls report systemd's `ActiveState`; `running` means the unit
+is active, not that its HTTPS listener is ready. Check the configured `/readyz`
+endpoint separately using the intended certificate trust and hostname. A readiness
+check should confirm its `ready` response and match
+`x-teslatlas-native-config-sha256` to the loaded config bytes and
+`x-teslatlas-native-process-id` to the selected unit's `MainPID`. Do not send pairing
+or bearer credentials over the packaged default's plain loopback HTTP listener.
 
 ## Paths and sandboxing
 

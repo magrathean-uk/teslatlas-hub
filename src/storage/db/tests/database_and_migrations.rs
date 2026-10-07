@@ -1,6 +1,92 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[test]
+fn writable_catalogue_admission_rejects_foreign_and_future_databases_without_mutation() {
+    for (application_id, version) in [(0, 0), (123456, 0), (APPLICATION_ID, SCHEMA_VERSION + 1)] {
+        let temporary = crate::private_tempdir().expect("temporary database");
+        let path = temporary.path().join("hub.sqlite");
+        let connection = Connection::open(&path).expect("foreign database");
+        connection
+            .execute_batch(&format!(
+                "CREATE TABLE owner_data(value TEXT); INSERT INTO owner_data VALUES ('preserved');
+                 PRAGMA application_id = {application_id}; PRAGMA user_version = {version};"
+            ))
+            .expect("seed foreign identity");
+        drop(connection);
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        let before = fs::read(&path).unwrap();
+
+        let error = HubStore::initialize(temporary.path()).expect_err("reject foreign catalogue");
+        if application_id == APPLICATION_ID {
+            assert!(matches!(error, StoreError::UnsupportedSchema(found) if found == version));
+        } else {
+            assert!(
+                matches!(error, StoreError::InvalidApplicationId(found) if found == application_id)
+            );
+        }
+        assert_eq!(
+            fs::read(&path).unwrap(),
+            before,
+            "original SQLite bytes remain unchanged"
+        );
+        assert!(!temporary.path().join("hub.sqlite-wal").exists());
+        assert!(!temporary.path().join("hub.sqlite-shm").exists());
+    }
+}
+
+#[test]
+fn rejected_0640_catalogue_and_live_wal_sidecars_keep_their_permissions() {
+    for (application_id, version) in [(123456, 0), (APPLICATION_ID, SCHEMA_VERSION + 1)] {
+        let temporary = crate::private_tempdir().unwrap();
+        let path = temporary.path().join("hub.sqlite");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(&format!(
+                "PRAGMA journal_mode=WAL; CREATE TABLE owner_data(value TEXT);
+             INSERT INTO owner_data VALUES ('preserved');
+             PRAGMA application_id={application_id}; PRAGMA user_version={version};"
+            ))
+            .unwrap();
+        // Keep the source handle alive so the real WAL and SHM survive; the
+        // attempted Hub admission must not repair another catalogue's modes.
+        let paths = [
+            path.clone(),
+            temporary.path().join("hub.sqlite-wal"),
+            temporary.path().join("hub.sqlite-shm"),
+        ];
+        for file in &paths {
+            fs::set_permissions(file, fs::Permissions::from_mode(0o640)).unwrap();
+        }
+        let database_before = fs::read(&path).unwrap();
+        let wal_before = fs::read(&paths[1]).unwrap();
+        assert!(HubStore::initialize(temporary.path()).is_err());
+        assert_eq!(fs::read(&path).unwrap(), database_before);
+        assert_eq!(fs::read(&paths[1]).unwrap(), wal_before);
+        for file in &paths {
+            assert_eq!(
+                fs::symlink_metadata(file).unwrap().permissions().mode() & 0o777,
+                0o640,
+                "rejected file mode preserved: {}",
+                file.display()
+            );
+        }
+        drop(connection);
+    }
+}
+
+#[test]
+fn routine_writable_open_does_not_recreate_a_missing_catalogue() {
+    let temporary = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(temporary.path()).unwrap();
+    fs::remove_file(store.database_path()).unwrap();
+    assert!(matches!(
+        store.open(),
+        Err(StoreError::InspectSharedSqlite(_))
+    ));
+    assert!(!store.database_path().exists());
+}
+
+#[test]
 fn teslamate_current_migration_preserves_populated_v66_and_adds_truthful_provenance() {
     let temporary = crate::private_tempdir().unwrap();
     let store = HubStore::initialize(temporary.path()).unwrap();

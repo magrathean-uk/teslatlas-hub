@@ -28,6 +28,59 @@ fn app() -> (tempfile::TempDir, Router) {
 }
 
 #[tokio::test]
+async fn cors_unlisted_sync_routes_reject_browser_requests_but_retain_native_auth_path() {
+    let (_root, app) = app();
+    let vehicle = Uuid::nil();
+    for (method, suffix) in [
+        ("GET", "signing-keys"),
+        (
+            "GET",
+            "prepared-artefacts/00000000-0000-0000-0000-000000000000",
+        ),
+        ("POST", "changes-since"),
+    ] {
+        let path = format!("/v1/vehicles/{vehicle}/sync/{suffix}");
+        for preflight in [false, true] {
+            let mut request = Request::builder()
+                .method(if preflight { "OPTIONS" } else { method })
+                .uri(&path)
+                .header("Origin", "https://client.example");
+            if preflight {
+                request = request.header("Access-Control-Request-Method", method);
+            }
+            let response = app
+                .clone()
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{method} {path}");
+            assert!(
+                response
+                    .headers()
+                    .get("access-control-allow-origin")
+                    .is_none()
+            );
+        }
+        let native = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(method)
+                    .uri(&path)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            native.status(),
+            StatusCode::UNAUTHORIZED,
+            "native request reaches paired auth for {path}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn cors_public_preflight_is_explicit_and_auth_failures_remain_readable() {
     let (_root, app) = app();
     let response = app

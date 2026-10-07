@@ -14,6 +14,188 @@ use crate::{
     },
 };
 
+/// Explicit laboratory capture: no catalogue, token handover or publication.
+/// The sealed source file is retained for repeated offline measurements.
+#[tokio::test]
+#[cfg(unix)]
+#[ignore = "explicit read-only PostgreSQL capture for retained-input measurement"]
+async fn measure_retained_physical_capture() {
+    use rustix::fs::{Mode, OFlags, openat};
+    use std::{fs::File, io::Read, os::unix::fs::MetadataExt, path::PathBuf, time::Instant};
+
+    fn checked<T, E>(value: Result<T, E>, message: &'static str) -> T {
+        value.unwrap_or_else(|_| panic!("{message}"))
+    }
+    fn number(name: &str, default: u64) -> u64 {
+        std::env::var(name).map_or(default, |value| {
+            value.parse().expect("benchmark numeric option")
+        })
+    }
+    fn phase(name: &str, started: Instant) {
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "event": "retained_capture_phase", "phase": name,
+                "elapsed_ms": started.elapsed().as_secs_f64() * 1000.0
+            })
+        );
+    }
+
+    let output = PathBuf::from(
+        std::env::var_os("TESLATLAS_HUB_BENCH_OUTPUT_DIRECTORY")
+            .expect("private benchmark output directory is required"),
+    );
+    assert!(output.is_absolute(), "benchmark output must be absolute");
+    let output_fd = checked(
+        crate::runtime::development_event_log::validated_directory(&output),
+        "benchmark output must be an existing private directory",
+    );
+    let source = checked(
+        ReadOnlySource::parse(
+            &std::env::var("TESLATLAS_HUB_BENCH_POSTGRES_URL")
+                .expect("private read-only source environment is required"),
+        ),
+        "invalid benchmark source",
+    );
+    assert!(
+        source.is_loopback(),
+        "capture benchmark requires literal loopback"
+    );
+    let password_path = PathBuf::from(
+        std::env::var_os("TESLATLAS_HUB_BENCH_PASSWORD_FILE")
+            .expect("private password file environment is required"),
+    );
+    assert!(
+        password_path.is_absolute(),
+        "password file must be absolute"
+    );
+    let password_parent = checked(
+        crate::runtime::development_event_log::validated_directory(
+            password_path.parent().expect("password parent"),
+        ),
+        "unsafe password parent",
+    );
+    let password_fd = checked(
+        openat(
+            &password_parent,
+            password_path.file_name().expect("password leaf"),
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+            Mode::empty(),
+        ),
+        "cannot open private password file",
+    );
+    let password_file = File::from(password_fd);
+    let before = checked(password_file.metadata(), "password metadata");
+    assert!(
+        before.is_file()
+            && before.uid() == rustix::process::getuid().as_raw()
+            && before.mode() & 0o777 == 0o600
+            && before.nlink() == 1,
+        "unsafe password file"
+    );
+    let mut password_bytes = zeroize::Zeroizing::new(Vec::new());
+    checked(
+        (&password_file)
+            .take(16 * 1024 + 1)
+            .read_to_end(&mut password_bytes),
+        "password read failed",
+    );
+    let after = checked(password_file.metadata(), "password metadata after read");
+    assert!(
+        password_bytes.len() <= 16 * 1024
+            && before.len() == after.len()
+            && before.mtime() == after.mtime()
+            && before.mtime_nsec() == after.mtime_nsec()
+            && before.mode() == after.mode()
+            && before.nlink() == after.nlink(),
+        "password changed while reading"
+    );
+    let password = checked(
+        TeslaMatePostgresPassword::from_bytes(&password_bytes),
+        "invalid password file",
+    );
+    drop(password_bytes);
+    let limits = TeslaMateReadLimits {
+        maximum_rows: usize::try_from(number("TESLATLAS_HUB_BENCH_MAX_ROWS", 20_000_000))
+            .expect("row limit"),
+        maximum_stage_bytes: number(
+            "TESLATLAS_HUB_BENCH_MAX_STAGE_BYTES",
+            16 * 1024 * 1024 * 1024,
+        ),
+        minimum_free_bytes: number(
+            "TESLATLAS_HUB_BENCH_MIN_FREE_BYTES",
+            30 * 1024 * 1024 * 1024,
+        ),
+        parallel_copy_lanes: usize::try_from(number("TESLATLAS_HUB_BENCH_COPY_LANES", 4))
+            .expect("lane limit"),
+        ..TeslaMateReadLimits::default()
+    };
+    checked(limits.validate(), "invalid capture limits");
+    let car_id =
+        i64::try_from(number("TESLATLAS_HUB_BENCH_CAR_ID", 1)).expect("selected car option");
+    let total = Instant::now();
+    let started = Instant::now();
+    let (stage, owner, selected_car_id) = checked(
+        begin_physical_v3_capture(&source, &password, car_id, limits, &output.join("imports"))
+            .await,
+        "snapshot admission failed",
+    );
+    let mut owned = crate::teslamate_stage::OwnedTeslaMateStage::new(stage);
+    let admission_ms = started.elapsed().as_secs_f64() * 1000.0;
+    phase("snapshot_admission", started);
+    let started = Instant::now();
+    checked(
+        capture_physical_v3_from_exported_snapshot(
+            &owner,
+            &source,
+            &password,
+            selected_car_id,
+            limits,
+            owned.stage_mut(),
+        )
+        .await,
+        "physical capture failed",
+    );
+    let capture_ms = started.elapsed().as_secs_f64() * 1000.0;
+    phase("physical_copy", started);
+    let started = Instant::now();
+    checked(owner.finish().await, "snapshot drain failed");
+    let drain_ms = started.elapsed().as_secs_f64() * 1000.0;
+    phase("snapshot_drain", started);
+    let started = Instant::now();
+    let stats = checked(owned.stage_mut().seal(), "stage sealing failed");
+    let seal_ms = started.elapsed().as_secs_f64() * 1000.0;
+    phase("seal_integrity_accounting", started);
+    let stage = owned.take(); // Explicitly release deletion ownership only after successful sealing.
+    let receipt = serde_json::json!({
+        "event": "retained_physical_capture", "debug_assertions": cfg!(debug_assertions),
+        "stage_path": stage.path(), "source_rows": stats.row_count,
+        "payload_bytes": stats.payload_bytes, "snapshot_admission_ms": admission_ms,
+        "physical_copy_ms": capture_ms, "snapshot_drain_ms": drain_ms,
+        "seal_integrity_accounting_ms": seal_ms, "total_ms": total.elapsed().as_secs_f64() * 1000.0,
+        "max_rows": limits.maximum_rows, "max_stage_bytes": limits.maximum_stage_bytes,
+        "minimum_free_bytes": limits.minimum_free_bytes, "copy_lanes": limits.parallel_copy_lanes,
+        "catalogue_published": false, "credentials_inspected": false
+    });
+    let receipt_fd = checked(
+        openat(
+            &output_fd,
+            "capture-receipt.json",
+            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+            Mode::from_raw_mode(0o600),
+        ),
+        "capture receipt already exists or cannot be created",
+    );
+    let receipt_file = File::from(receipt_fd);
+    checked(
+        serde_json::to_writer_pretty(&receipt_file, &receipt),
+        "capture receipt write failed",
+    );
+    checked(receipt_file.sync_all(), "capture receipt sync failed");
+    eprintln!("{receipt}");
+    drop(stage); // TeslaMateStage closes its descriptors; it has no automatic discard.
+}
+
 #[test]
 fn teslamate_check_snapshot_json_covers_connection_and_redacts_vin() {
     let snapshot = TeslaMateCheckSnapshot {

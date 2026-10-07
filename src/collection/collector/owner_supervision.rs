@@ -617,6 +617,29 @@ where
     if collection_result.is_ok() {
         collection_result = terrain_result;
     }
+    finish_supervised_collector(
+        store,
+        collector_lease,
+        collection_result,
+        &mut heartbeat_task,
+        heartbeat_shutdown,
+        heartbeat_finished,
+    )
+    .await
+}
+
+async fn finish_supervised_collector(
+    store: &HubStore,
+    collector_lease: SupervisedCollectorLease,
+    mut collection_result: Result<(), CollectorError>,
+    heartbeat_task: &mut JoinHandle<Result<(), CollectorError>>,
+    heartbeat_shutdown: oneshot::Sender<()>,
+    heartbeat_finished: bool,
+) -> Result<(), CollectorError> {
+    // Each blocking replay owns this gate before it is spawned. Reacquiring it
+    // drains those jobs after collection stops, while heartbeat renewal stays
+    // active; hold it through lease release so removal cannot precede commit.
+    let publication_gate = store.acquire_publication_gate().await;
     if !heartbeat_finished {
         let _ = heartbeat_shutdown.send(());
         let heartbeat_result = heartbeat_task
@@ -627,9 +650,12 @@ where
             collection_result = heartbeat_result;
         }
     }
-    let release_result = store
-        .release_supervised_collector_lease(collector_lease)
-        .map_err(CollectorError::from);
+    let release_result = match publication_gate {
+        Ok(_publication_gate) => store
+            .release_supervised_collector_lease(collector_lease)
+            .map_err(CollectorError::from),
+        Err(error) => Err(CollectorError::from(error)),
+    };
     if collection_result.is_ok() {
         collection_result = release_result;
     }

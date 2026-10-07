@@ -108,6 +108,7 @@ final class HubDashboardView: HubSurfaceView {
     private let activityStack = NSStackView()
     private let versionLabel = NSTextField(labelWithString: "")
     private var renderedVehicles: [HubControlVehicle]?
+    private var renderedStatusUnavailable = false
     private var renderedActivity: [String]?
     private var selectedVehicleID: UUID?
     private var interactionsEnabled = true
@@ -262,18 +263,19 @@ final class HubDashboardView: HubSurfaceView {
     func apply(snapshot: HubSnapshot,
                transition: HubServiceTransition?,
                activity: [HubActivity]) {
-        let title = transition?.title ?? snapshot.health.title
+        let title = transition?.title ?? (snapshot.checkingStatus ? "Checking Hub" : snapshot.health.title)
         if !heroTitle.stringValue.isEmpty, heroTitle.stringValue != title { HubMotion.transition(hero) }
         heroTitle.stringValue = title
-        heroSubtitle.stringValue = transition?.subtitle ?? subtitle(for: snapshot.health)
+        heroSubtitle.stringValue = transition?.subtitle ?? (snapshot.checkingStatus ? "Waiting for the initial Hub status report." : subtitle(for: snapshot.health))
         heroSymbol.image = NSImage(systemSymbolName: transition?.symbol ?? symbol(for: snapshot.health),
                                    accessibilityDescription: nil)
-        let tone = tone(for: snapshot.health)
+        let tone: HubStatusTone = snapshot.checkingStatus ? .neutral : tone(for: snapshot.health)
         heroTile.tone = tone
         heroSymbol.contentTintColor = tone.color
-        heroSymbol.isHidden = transition != nil
-        heroProgress.isHidden = transition == nil
-        if transition == nil { heroProgress.stopAnimation(nil) } else { heroProgress.startAnimation(nil) }
+        let waiting = transition != nil || snapshot.checkingStatus
+        heroSymbol.isHidden = waiting
+        heroProgress.isHidden = !waiting
+        if waiting { heroProgress.startAnimation(nil) } else { heroProgress.stopAnimation(nil) }
 
         serviceRow.value = transition?.service ?? compactServiceValue(snapshot)
         serviceRow.statusTone = tone
@@ -297,7 +299,7 @@ final class HubDashboardView: HubSurfaceView {
                           enabled: controlsEnabled,
                           emptyTitle: snapshot.vehicleName,
                           emptyStatus: snapshot.vehicle)
-        renderVehicles(snapshot.controlVehicles)
+        renderVehicles(snapshot.controlVehicles, statusUnavailable: snapshot.statusUnavailable)
         updateHeroActions(snapshot: snapshot, transition: transition)
         render(activity: activity.isEmpty ? snapshot.activity : activity)
     }
@@ -423,17 +425,18 @@ final class HubDashboardView: HubSurfaceView {
         }
     }
 
-    private func renderVehicles(_ vehicles: [HubControlVehicle]) {
-        guard renderedVehicles != vehicles else { return }
+    private func renderVehicles(_ vehicles: [HubControlVehicle], statusUnavailable: Bool) {
+        guard renderedVehicles != vehicles || renderedStatusUnavailable != statusUnavailable else { return }
         if renderedVehicles != nil { HubMotion.transition(vehicleSummaryStack) }
         renderedVehicles = vehicles
+        renderedStatusUnavailable = statusUnavailable
         vehicleSummaryStack.arrangedSubviews.forEach {
             vehicleSummaryStack.removeArrangedSubview($0)
             $0.removeFromSuperview()
         }
         let entries = vehicles.isEmpty
-            ? [HubControlVehicle(id: UUID(), displayName: HubL10n.text("hub.HubDashboardView.430.1384", fallback: "No vehicles yet"),
-                                 status: HubL10n.text("hub.HubDashboardView.431.1385", fallback: "Connect a Tesla account to see vehicles here."))]
+            ? [HubControlVehicle(id: UUID(), displayName: statusUnavailable ? "Vehicle status unavailable" : HubL10n.text("hub.HubDashboardView.430.1384", fallback: "No vehicles yet"),
+                                 status: statusUnavailable ? "Hub has not returned a status report." : HubL10n.text("hub.HubDashboardView.431.1385", fallback: "Connect a Tesla account to see vehicles here."))]
             : vehicles
         for (index, vehicle) in entries.enumerated() {
             if index > 0 {

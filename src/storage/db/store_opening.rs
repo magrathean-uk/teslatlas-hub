@@ -40,9 +40,9 @@ impl HubStore {
             #[cfg(test)]
             projection_state_detach_fault: Arc::new(Mutex::new(false)),
         };
-        store.ensure_schema_22_noop_directory()?;
-        ensure_shared_sqlite_catalogue_file(&store.database_path)?;
+        ensure_shared_sqlite_catalogue_file_with_repair(&store.database_path, false)?;
         let mut connection = store.open()?;
+        store.ensure_schema_22_noop_directory()?;
         migrate(&connection)?;
         ensure_installation_id(&connection)?;
         store.recover_legacy_v2_base_bindings(&mut connection)?;
@@ -56,15 +56,25 @@ impl HubStore {
     }
 
     pub fn open(&self) -> Result<Connection, StoreError> {
-        admit_or_repair_shared_sqlite_sidecars(&self.database_path)?;
+        let metadata =
+            fs::symlink_metadata(&self.database_path).map_err(StoreError::InspectSharedSqlite)?;
+        admit_shared_sqlite_file(
+            &self.database_path,
+            &metadata,
+            shared_sqlite_group_id(&self.database_path)?,
+            false,
+        )?;
+        admit_shared_sqlite_sidecars(&self.database_path, false)?;
         let connection = Connection::open_with_flags(
             &self.database_path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_CREATE
                 | OpenFlags::SQLITE_OPEN_URI
                 | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(StoreError::Open)?;
+        admit_writable_catalogue(&connection)?;
+        ensure_shared_sqlite_catalogue_file(&self.database_path)?;
+        admit_or_repair_shared_sqlite_sidecars(&self.database_path)?;
         configure(&connection)?;
         admit_or_repair_shared_sqlite_sidecars(&self.database_path)?;
         Ok(connection)

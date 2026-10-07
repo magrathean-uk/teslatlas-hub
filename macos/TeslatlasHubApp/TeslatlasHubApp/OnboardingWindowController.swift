@@ -187,6 +187,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private let spinner = NSProgressIndicator()
     private let migrationSpinner = NSProgressIndicator()
     private let migrationProgress = NSProgressIndicator()
+    private let migrationProgressCaption = NSTextField(labelWithString: "")
+    private var migrationProgressPhase: String?
     private let footerSpinner = NSProgressIndicator()
     private var continueWidthConstraint: NSLayoutConstraint?
     private var continueHeightConstraint: NSLayoutConstraint?
@@ -1031,7 +1033,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let title = NSTextField(labelWithString: HubL10n.text("hub.OnboardingWindowController.304.1870", fallback: "Importing data…"))
         title.font = HubTypography.heading
         title.textColor = HubPalette.foreground
-        let subtitle = NSTextField(labelWithString: HubL10n.text("hub.OnboardingWindowController.1016.2012", fallback: "Copying your TeslaMate history into Hub."))
+        let subtitle = migrationProgressCaption
+        subtitle.stringValue = migrationProgressCaptionText
         subtitle.font = HubTypography.body
         subtitle.textColor = HubPalette.mutedForeground
 
@@ -1045,6 +1048,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func startMigrationProgress() {
+        migrationProgressPhase = nil
+        migrationProgressCaption.stringValue = migrationProgressCaptionText
         migrationProgress.minValue = 0
         migrationProgress.maxValue = 1
         migrationProgress.doubleValue = 0
@@ -1052,6 +1057,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     func updateMigrationProgress(_ progress: HubMigrationProgress) {
         guard focusedOperation == .importing else { return }
+        if let phase = progress.phase {
+            migrationProgressPhase = phase
+        }
+        migrationProgressCaption.stringValue = migrationProgressCaptionText
         let total = max(1, Double(progress.totalRows))
         let completed = min(Double(progress.completedRows), total)
         let previousTotal = migrationProgress.maxValue
@@ -1065,10 +1074,21 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func resetMigrationProgress() {
+        migrationProgressPhase = nil
+        migrationProgressCaption.stringValue = migrationProgressCaptionText
         migrationProgress.stopAnimation(nil)
         migrationProgress.minValue = 0
         migrationProgress.maxValue = 1
         migrationProgress.doubleValue = 0
+    }
+
+    private var migrationProgressCaptionText: String {
+        if migrationProgressPhase == "finalizing" || migrationProgressPhase == "complete" {
+            return HubL10n.text("hub.OnboardingWindowController.migration_preparing_history",
+                                fallback: "Preparing imported history…")
+        }
+        return HubL10n.text("hub.OnboardingWindowController.1016.2012",
+                            fallback: "Copying your TeslaMate history into Hub.")
     }
 
     private func migrationDiagnosticView(_ diagnostic: TeslaMateSSHDiagnostic) -> NSView {
@@ -2019,6 +2039,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let wasFocused = focusedOperation != nil
         let wasBusy = busy
         let previousMessage = busyMessage
+        if value, !wasBusy, case .importing? = operation {
+            migrationProgressPhase = nil
+            migrationProgressCaption.stringValue = migrationProgressCaptionText
+        }
         busy = value
         busyOperation = value ? operation : nil
         busyMessage = value ? (message ?? operation?.message) : nil

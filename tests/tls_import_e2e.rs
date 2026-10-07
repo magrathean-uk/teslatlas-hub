@@ -355,16 +355,19 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
         owner_api = format!("https://{}/", owner_api_sink.local_addr().expect("sink address")),
     )).expect("smoke config");
     fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).expect("private config");
-    let production_rejection = teslatlas_hub::macos_launch_agent::preflight_hub_for_config(
-        &teslatlas_hub::config::HubConfig::load(&config).expect("smoke config loads"),
-    )
-    .expect_err("collector-disabled smoke config is not admitted for production Serve");
-    assert!(
-        production_rejection
-            .to_string()
-            .contains("production Hub requires an enabled collector path"),
-        "unexpected production admission failure: {production_rejection}"
-    );
+    #[cfg(target_os = "macos")]
+    {
+        let production_rejection = teslatlas_hub::macos_launch_agent::preflight_hub_for_config(
+            &teslatlas_hub::config::HubConfig::load(&config).expect("smoke config loads"),
+        )
+        .expect_err("collector-disabled smoke config is not admitted for production Serve");
+        assert!(
+            production_rejection
+                .to_string()
+                .contains("production Hub requires an enabled collector path"),
+            "unexpected production admission failure: {production_rejection}"
+        );
+    }
     let binary = std::env::var_os("TESLATLAS_HUB_SMOKE_BINARY")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_teslatlas-hub")));
@@ -643,10 +646,11 @@ fn write_self_signed_localhost_cert(dir: &Path) -> (PathBuf, PathBuf) {
             .expect("local TLS identity");
     fs::write(&cert, identity.cert.pem()).expect("certificate");
     fs::write(&key, identity.signing_key.serialize_pem()).expect("private key");
-    // Restrict key mode the way production expects for private material.
+    // Do not inherit a group-writable umask for either TLS identity file.
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&cert, fs::Permissions::from_mode(0o600)).expect("certificate mode");
         fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).expect("key mode");
     }
     (cert, key)

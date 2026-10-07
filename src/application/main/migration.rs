@@ -235,7 +235,7 @@ async fn run_macos_migration(
             &postgres_password,
             car_id,
             limits,
-            false,
+            MigrationCaptureScope::HistorySnapshot,
             progress.clone(),
         )
         .await?;
@@ -301,7 +301,7 @@ async fn run_macos_migration(
             &postgres_password,
             car_id,
             limits,
-            false,
+            MigrationCaptureScope::SettledWithoutCredentials,
             initial_progress,
         )
         .await?;
@@ -347,7 +347,11 @@ async fn run_macos_migration(
         &postgres_password,
         car_id,
         limits,
-        capture_teslamate_ciphertext,
+        if capture_teslamate_ciphertext {
+            MigrationCaptureScope::SettledWithCredentials
+        } else {
+            MigrationCaptureScope::SettledWithoutCredentials
+        },
         progress.clone(),
     )
     .await?;
@@ -455,6 +459,14 @@ async fn run_macos_migration(
 }
 
 #[cfg(unix)]
+#[derive(Clone, Copy)]
+enum MigrationCaptureScope {
+    HistorySnapshot,
+    SettledWithoutCredentials,
+    SettledWithCredentials,
+}
+
+#[cfg(unix)]
 #[allow(clippy::too_many_arguments)]
 async fn import_direct_migration_snapshot(
     store: &HubStore,
@@ -463,7 +475,7 @@ async fn import_direct_migration_snapshot(
     postgres_password: &TeslaMatePostgresPassword,
     car_id: i64,
     limits: teslatlas_hub::teslamate_reader::TeslaMateReadLimits,
-    include_legacy_token: bool,
+    scope: MigrationCaptureScope,
     progress: TeslaMateMigrationProgressReporter,
 ) -> Result<
     (
@@ -472,6 +484,7 @@ async fn import_direct_migration_snapshot(
     ),
     Box<dyn std::error::Error>,
 > {
+    let include_legacy_token = matches!(scope, MigrationCaptureScope::SettledWithCredentials);
     tracing::info!(
         host = source.host(),
         port = source.port(),
@@ -500,16 +513,35 @@ async fn import_direct_migration_snapshot(
             .await?;
         Ok((selected.import, Some(tokens)))
     } else {
-        let selected = import_selected_from_postgres_with_schema_22_and_progress(
-            store,
-            source,
-            postgres_password,
-            cursor_key,
-            &request,
-            limits,
-            progress,
-        )
-        .await?;
+        let selected = match scope {
+            MigrationCaptureScope::HistorySnapshot => {
+                import_selected_history_snapshot_from_postgres_with_schema_22_and_progress(
+                    store,
+                    source,
+                    postgres_password,
+                    cursor_key,
+                    &request,
+                    limits,
+                    progress,
+                )
+                .await?
+            }
+            MigrationCaptureScope::SettledWithoutCredentials => {
+                import_selected_from_postgres_with_schema_22_and_progress(
+                    store,
+                    source,
+                    postgres_password,
+                    cursor_key,
+                    &request,
+                    limits,
+                    progress,
+                )
+                .await?
+            }
+            MigrationCaptureScope::SettledWithCredentials => {
+                unreachable!("credential capture handled above")
+            }
+        };
         Ok((selected.import, None))
     }
 }

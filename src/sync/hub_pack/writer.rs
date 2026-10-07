@@ -61,9 +61,10 @@ impl ProjectionPackWriter {
             .map_err(|_| ProjectionPackError::CapacityOverflow)?
             .checked_mul(self.limits.max_compressed_pack_bytes)
             .ok_or(ProjectionPackError::CapacityOverflow)?;
-        let capture_final_bytes = capture_bound_bytes
-            .checked_mul(2)
-            .ok_or(ProjectionPackError::CapacityOverflow)?;
+        // An unbounded capture means the protocol ceiling, not an arithmetic
+        // failure. Saturation is safe because the negotiated final cap is
+        // applied immediately below.
+        let capture_final_bytes = capture_bound_bytes.saturating_mul(2);
         let final_bytes = protocol_final_bytes.min(capture_final_bytes);
         let required = final_bytes
             .checked_add(self.transient_write_bytes()?)

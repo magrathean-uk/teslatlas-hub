@@ -125,6 +125,21 @@ struct VehicleScheduler {
     vehicle_fuses: HashMap<VehicleId, VehicleFuseState>,
 }
 
+fn rate_limit_retry_after_seconds(error: &CollectorError) -> Option<u64> {
+    match error {
+        CollectorError::OwnerApi(OwnerApiError::RateLimited {
+            retry_after_seconds,
+        })
+        | CollectorError::OwnerApiAuth(OwnerApiAuthError::Owner(OwnerApiError::RateLimited {
+            retry_after_seconds,
+        }))
+        | CollectorError::FleetApi(FleetApiError::RateLimited {
+            retry_after_seconds,
+        }) => Some(*retry_after_seconds),
+        _ => None,
+    }
+}
+
 impl VehicleScheduler {
     fn new(cadence: CollectorCadence, now: Instant) -> Self {
         Self {
@@ -457,12 +472,9 @@ impl VehicleScheduler {
     }
 
     fn discovery_failed_for_error(&mut self, error: &CollectorError, now: Instant) -> Duration {
-        if let Some(OwnerApiError::RateLimited {
-            retry_after_seconds,
-        }) = owner_api_error(error)
-        {
-            let delay = Duration::from_secs(*retry_after_seconds);
-            self.next_discovery = retry_deadline(now, *retry_after_seconds);
+        if let Some(retry_after_seconds) = rate_limit_retry_after_seconds(error) {
+            let delay = Duration::from_secs(retry_after_seconds);
+            self.next_discovery = retry_deadline(now, retry_after_seconds);
             return delay;
         }
         self.discovery_failed(now)
@@ -561,7 +573,7 @@ impl VehicleScheduler {
             GENERIC_OTHER_RETRY
         };
         if let Some(scheduled) = self.vehicles.get_mut(&id) {
-            let due = now.checked_add(delay).unwrap_or(now);
+            let due = retry_deadline(now, delay.as_secs());
             scheduled.offline_state_fetch_due = Some(due);
             scheduled.next_poll = due;
         }

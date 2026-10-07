@@ -17,6 +17,37 @@ installer_error() {
     exit 1
 }
 
+# BEGIN TESTABLE GUI UPDATE HELPER
+prepare_gui_for_install() {
+    install_kind=$1
+    process_name=$2
+    expected_uid=$3
+    case "$install_kind" in
+        service-only) return 0 ;;
+        app-replacement) ;;
+        *) return 1 ;;
+    esac
+    if ! /usr/bin/pgrep -u "$expected_uid" -x "$process_name" >/dev/null 2>&1; then
+        return 0
+    fi
+    /usr/bin/pkill -TERM -u "$expected_uid" -x "$process_name" >/dev/null 2>&1 || true
+    attempt=1
+    while [ "$attempt" -le 50 ]; do
+        /usr/bin/pgrep -u "$expected_uid" -x "$process_name" >/dev/null 2>&1 || return 0
+        /bin/sleep 0.1
+        attempt=$((attempt + 1))
+    done
+    /usr/bin/pkill -KILL -u "$expected_uid" -x "$process_name" >/dev/null 2>&1 || true
+    attempt=1
+    while [ "$attempt" -le 20 ]; do
+        /usr/bin/pgrep -u "$expected_uid" -x "$process_name" >/dev/null 2>&1 || return 0
+        /bin/sleep 0.1
+        attempt=$((attempt + 1))
+    done
+    return 1
+}
+# END TESTABLE GUI UPDATE HELPER
+
 require_root() {
     [ "$(/usr/bin/id -u)" -eq 0 ] || installer_error "must run as root"
 }

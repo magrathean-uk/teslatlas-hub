@@ -1775,3 +1775,7 @@ pub enum TeslaMateStageError {
 #[cfg(test)]
 #[path = "stage/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "stage/positions_compression_measurement.rs"]
+mod positions_compression_measurement;

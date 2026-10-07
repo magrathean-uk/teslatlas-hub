@@ -366,6 +366,20 @@ impl EdgeConsumer {
     where
         F: std::future::Future<Output = ()>,
     {
+        self.run_until_with_publication_clock(store, cursor_key, shutdown, now_ms)
+            .await
+    }
+
+    async fn run_until_with_publication_clock<F>(
+        &self,
+        store: &HubStore,
+        cursor_key: &crate::protocol::CursorKey,
+        shutdown: F,
+        mut publication_clock: impl FnMut() -> Result<i64, EdgeDeliveryError>,
+    ) -> Result<(), EdgeDeliveryError>
+    where
+        F: std::future::Future<Output = ()>,
+    {
         tokio::pin!(shutdown);
         let mut backoff = self.poll_interval;
         loop {
@@ -377,7 +391,8 @@ impl EdgeConsumer {
                 }
                 _ = std::future::ready(()) => {}
             }
-            let publication = self.recover_pending_publications(store, cursor_key)?;
+            let publication =
+                self.recover_pending_publications_at(store, cursor_key, publication_clock()?)?;
             tokio::select! {
                 _ = &mut shutdown => {
                     let _ = store.set_edge_diagnostic(&self.binding, "stopped", "shutdown", now_ms()?);
@@ -420,26 +435,26 @@ impl EdgeConsumer {
         }
     }
 
-    fn recover_pending_publications(
+    fn recover_pending_publications_at(
         &self,
         store: &HubStore,
         cursor_key: &crate::protocol::CursorKey,
+        now: i64,
     ) -> Result<PublicationRecovery, EdgeDeliveryError> {
         if !store.edge_has_pending_publications(&self.binding)? {
             return Ok(PublicationRecovery::None);
         }
-        let now = now_ms()?;
         match crate::collector::publish_edge_pending_mutations(
             store,
             cursor_key,
             self.binding.vehicle_id,
             now,
         ) {
-            Ok(_) => {
+            Ok(_) if !store.has_unpublished_sync_mutations(self.binding.vehicle_id)? => {
                 store.complete_edge_publications(&self.binding, now)?;
                 Ok(PublicationRecovery::Completed)
             }
-            Err(_) => {
+            Ok(_) | Err(_) => {
                 store.fail_edge_publications(&self.binding, now, "publication_failed")?;
                 store.set_edge_diagnostic(
                     &self.binding,
@@ -871,6 +886,195 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn held_publication_claim_survives_reopen_and_idle_polls_recover_after_expiry() {
+        crate::crypto::install_default_provider();
+        use crate::{
+            db::{SourceDescriptor, VehicleDescriptor},
+            hub_pack::{
+                ProjectionBinding, ProjectionCar, ProjectionPackRequest, ProjectionPackWriter,
+                ProjectionSnapshot,
+            },
+            protocol::{CursorKey, SequenceRange, Sha256Digest},
+        };
+        use std::sync::{Arc, Mutex};
+        let temporary = crate::private_tempdir().unwrap();
+        let store = HubStore::initialize(temporary.path()).unwrap();
+        let now = 1_800_000_061_000;
+        let source = store
+            .register_source(
+                &SourceDescriptor::new("fleet_api_compat", "held-claim"),
+                now,
+            )
+            .unwrap();
+        let mut descriptor = VehicleDescriptor::new(source.source_id, "123456789")
+            .with_tesla_identity(Some(123456789), None);
+        descriptor.vin = Some("5YJ3E1EA7KF000001".into());
+        let vehicle = store.register_vehicle(&descriptor, now).unwrap();
+        let binding = EdgeBinding {
+            installation_id: "home-edge".into(),
+            lineage: "held-claim".into(),
+            source_id: source.source_id,
+            vehicle_id: vehicle.vehicle_id,
+            vin: "5YJ3E1EA7KF000001".into(),
+            car_id: 123456789,
+        };
+        let cursor_key = CursorKey::from_bytes([27; 32]);
+        let car: ProjectionCar = serde_json::from_value(serde_json::json!({
+            "id": binding.car_id, "name": "Held claim", "model": "model3",
+            "vin": binding.vin, "source_eid": binding.car_id,
+        }))
+        .unwrap();
+        store
+            .persist_materialised_car_if_absent(vehicle.vehicle_id, &car)
+            .unwrap();
+        let snapshot = ProjectionSnapshot {
+            cars: vec![car],
+            drives: vec![],
+            positions: vec![],
+            charges: vec![],
+            charge_samples: vec![],
+        };
+        let sequence = store
+            .next_full_snapshot_sequence(vehicle.vehicle_id)
+            .unwrap();
+        let request = ProjectionPackRequest {
+            pack_id: uuid::Uuid::new_v4(),
+            snapshot_id: uuid::Uuid::new_v4(),
+            ordinal: 0,
+            binding: ProjectionBinding {
+                installation_id: store.installation_id().unwrap(),
+                account_id: source.source_id,
+                vehicle_id: vehicle.vehicle_id,
+                generation: source.generation,
+                selected_car_id: binding.car_id,
+            },
+            sequence: SequenceRange {
+                from_exclusive: sequence,
+                to_inclusive: sequence,
+            },
+            snapshot: &snapshot,
+        };
+        let built = ProjectionPackWriter::new(store.packs_dir())
+            .write_full_snapshot_with_states_and_updates(&request, &[], &[])
+            .unwrap();
+        let manifest = request
+            .signed_manifest_with_states_and_updates(&built, &[], &[], &cursor_key)
+            .unwrap();
+        store
+            .finalize_import_snapshot_with_binding(
+                &manifest,
+                Sha256Digest::from_bytes([27; 32]),
+                &[],
+                &request.binding,
+            )
+            .unwrap();
+        let bytes = include_bytes!(
+            "../../../teslatlas-protocol/profiles/edge-delivery-v2/2.0.0/examples/batch.json"
+        );
+        let batch: Batch = serde_json::from_slice(bytes).unwrap();
+        let item = verify_record(&batch.records[0], &binding.vin).unwrap();
+        store
+            .accept_verified_edge_item(&binding, &item, now, Duration::from_secs(900))
+            .unwrap();
+        assert!(store.edge_has_pending_publications(&binding).unwrap());
+        let claim = store
+            .claim_sync_mutations(vehicle.vehicle_id, now, 10_000)
+            .unwrap()
+            .expect("genuine durable mutation claim");
+        assert!(!claim.mutations.is_empty());
+        let before_packs = store.v2_lineage_pack_count(vehicle.vehicle_id).unwrap();
+        drop(store);
+        let store = HubStore::open_existing(temporary.path()).unwrap();
+        assert!(
+            store
+                .claim_sync_mutations(vehicle.vehicle_id, now + 1, 10_000)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            store
+                .has_unpublished_sync_mutations(vehicle.vehicle_id)
+                .unwrap()
+        );
+
+        let mut empty = Batch {
+            version: 2,
+            batch_id: String::new(),
+            records: vec![],
+            gaps: vec![],
+        };
+        empty.batch_id = batch_digest(&empty).unwrap();
+        let body =
+            serde_json::json!({"version":2,"batch_id":empty.batch_id,"records":[],"gaps":[]});
+        let (done, shutdown) = tokio::sync::oneshot::channel();
+        let done = Arc::new(Mutex::new(Some(done)));
+        let observations = Arc::new(Mutex::new(Vec::new()));
+        let observed = Arc::clone(&observations);
+        let poll_store = store.clone();
+        let poll_binding = binding.clone();
+        let app = axum::Router::new().route(
+            "/v2/hub/batches/next",
+            axum::routing::get(move || {
+                let body = body.clone();
+                let done = Arc::clone(&done);
+                let observed = Arc::clone(&observed);
+                let store = poll_store.clone();
+                let binding = poll_binding.clone();
+                async move {
+                    let observation = (
+                        store.edge_has_pending_publications(&binding).unwrap(),
+                        store
+                            .has_unpublished_sync_mutations(binding.vehicle_id)
+                            .unwrap(),
+                        store.v2_lineage_pack_count(binding.vehicle_id).unwrap(),
+                    );
+                    let mut observations = observed.lock().unwrap();
+                    observations.push(observation);
+                    if observations.len() == 3 {
+                        done.lock().unwrap().take().unwrap().send(()).unwrap();
+                    }
+                    axum::Json(body)
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let consumer = EdgeConsumer {
+            client: Client::builder().no_proxy().build().unwrap(),
+            base_url: format!("http://{address}"),
+            bearer: "synthetic".into(),
+            binding: binding.clone(),
+            poll_interval: Duration::from_millis(1),
+            maximum_backoff: Duration::from_millis(1),
+            offline_drive_timeout: Duration::from_secs(900),
+        };
+        let mut times = [now + 1, now + 60_000, now + 60_001].into_iter();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            consumer.run_until_with_publication_clock(
+                &store,
+                &cursor_key,
+                async { shutdown.await.unwrap() },
+                || Ok(times.next().expect("only three publication passes")),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        server.abort();
+        let _ = server.await;
+        let observations = observations.lock().unwrap();
+        assert_eq!(observations.len(), 3);
+        assert_eq!(observations[0], (true, true, before_packs));
+        assert_eq!(observations[1], (false, false, before_packs + 1));
+        assert_eq!(
+            observations[2], observations[1],
+            "idle polling does not republish cleared work"
+        );
+    }
 
     #[test]
     fn accepted_profile_literal_batch_and_records_verify() {

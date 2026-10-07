@@ -401,6 +401,145 @@ fn direct_successor_reconciles_imported_drives_and_preserves_live_only_rows() {
 }
 
 #[test]
+fn sparse_direct_successor_writes_only_changed_projection_and_drive_rows() {
+    for count in [8_i64, 24] {
+        let temporary = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let mut drives: Vec<_> = (0..count)
+            .map(|index| import_materialised_test_drive(7 + index, 10, 4.0 + index as f64))
+            .collect();
+        let (vehicle, binding, car, base) = direct_materialised_base(&store, &drives);
+        let run_id = store
+            .begin_import_generation(
+                binding.account_id,
+                vehicle.vehicle_id,
+                binding.selected_car_id,
+                3_000,
+            )
+            .expect("successor generation");
+        store
+            .stage_import_generation_session(
+                run_id,
+                &TeslaMateOpenSession {
+                    car_id: binding.selected_car_id,
+                    ..Default::default()
+                },
+            )
+            .expect("session");
+        let prior = store
+            .teslamate_import_projection_state_lookup(
+                vehicle.vehicle_id,
+                binding.account_id,
+                binding.selected_car_id,
+            )
+            .expect("prior state");
+        let state = create_direct_import_projection_state(&store, run_id, 32);
+        let mut capture =
+            crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_successor(
+                state,
+                Box::new(prior),
+            );
+        capture.record_car(&car).expect("car");
+        drives[0] = import_materialised_test_drive(7, binding.selected_car_id, 6.0);
+        let mut changed = 0;
+        for drive in &drives {
+            let change = capture.record_drive(drive).expect("capture drive");
+            changed += usize::from(
+                change
+                    != crate::teslamate_projection_state::TeslaMateProjectionStateChange::Unchanged,
+            );
+        }
+        assert_eq!(changed, 1);
+        capture.seal().expect("seal");
+        let state = capture.into_state();
+        let connection = store.open().expect("measurement connection");
+        connection.execute(
+            "UPDATE materialised_drives SET inside_temp_avg=12345 WHERE vehicle_id=?1 AND drive_id=?2",
+            params![vehicle.vehicle_id.to_string(), drives[1].id],
+        ).expect("stale derived-only column with unchanged canonical JSON");
+        connection.execute_batch(
+            "CREATE TABLE remediation_write_counts(kind TEXT PRIMARY KEY, n INTEGER NOT NULL);
+             INSERT INTO remediation_write_counts VALUES ('projection', 0), ('drive', 0);
+             CREATE TRIGGER remediation_projection_delete AFTER DELETE ON teslamate_import_projection_state_rows
+               BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='projection'; END;
+             CREATE TRIGGER remediation_projection_insert AFTER INSERT ON teslamate_import_projection_state_rows
+               BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='projection'; END;
+             CREATE TRIGGER remediation_projection_update AFTER UPDATE ON teslamate_import_projection_state_rows
+               BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='projection'; END;
+             CREATE TRIGGER remediation_drive_update AFTER UPDATE ON materialised_drives
+               BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='drive'; END;
+             CREATE TRIGGER remediation_drive_insert AFTER INSERT ON materialised_drives
+               BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='drive'; END;
+             CREATE TRIGGER remediation_drive_delete AFTER DELETE ON materialised_drives
+               BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='drive'; END;
+             PRAGMA wal_checkpoint(TRUNCATE);"
+        ).expect("bounded fixture write counters");
+        let delta = imported_typed_delta(&store, &binding, &base);
+        let started = std::time::Instant::now();
+        store
+            .finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
+                run_id,
+                binding.account_id,
+                vehicle.vehicle_id,
+                binding.selected_car_id,
+                3_000,
+                std::slice::from_ref(&delta),
+                &import_delta_test_cursor_key(),
+                &import_delta_test_cursor(&binding, delta.to_sequence),
+                Sha256Digest::of_bytes(b"sparse-write-budget"),
+                &[],
+                &state,
+                &car,
+                &drives,
+            )
+            .expect("sparse atomic finalization");
+        let elapsed_us = started.elapsed().as_micros();
+        let writes = |kind: &str| -> i64 {
+            connection
+                .query_row(
+                    "SELECT n FROM remediation_write_counts WHERE kind=?1",
+                    params![kind],
+                    |row| row.get(0),
+                )
+                .expect("write count")
+        };
+        assert_eq!(
+            writes("projection"),
+            1,
+            "unchanged authenticated rows are retained"
+        );
+        assert_eq!(
+            writes("drive"),
+            2,
+            "one changed drive and one derived-only repair"
+        );
+        let repaired: Option<f64> = connection.query_row(
+            "SELECT inside_temp_avg FROM materialised_drives WHERE vehicle_id=?1 AND drive_id=?2",
+            params![vehicle.vehicle_id.to_string(), drives[1].id], |row| row.get(0),
+        ).expect("repaired derived column");
+        assert_eq!(repaired, drives[1].inside_temp_avg);
+        for drive in &drives {
+            let actual = store
+                .materialised_drive_for_vehicle(vehicle.vehicle_id, drive.id)
+                .expect("drive query")
+                .expect("drive");
+            assert_eq!(
+                serde_json::to_value(actual).expect("actual"),
+                serde_json::to_value(drive).expect("expected")
+            );
+        }
+        let wal = PathBuf::from(format!("{}-wal", store.database_path().display()));
+        let wal_bytes = fs::metadata(wal)
+            .map(|metadata| metadata.len())
+            .unwrap_or(0);
+        println!(
+            "{}",
+            serde_json::json!({"check":"sparse_finalization_write_budget", "history_drives":count, "changed_drives":changed, "projection_writes":writes("projection"), "drive_writes":writes("drive"), "finalization_us":elapsed_us, "wal_bytes":wal_bytes, "scope":"synthetic small history; instrumentation included; full authentication/validation retained"})
+        );
+    }
+}
+
+#[test]
 fn direct_successor_rejects_a_new_import_id_owned_by_live_collection_atomically() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");

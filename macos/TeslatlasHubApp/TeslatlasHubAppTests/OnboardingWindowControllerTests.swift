@@ -169,6 +169,78 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(manager.fileExists(atPath: outside.path))
     }
 
+    func testStaleSSHSecretCleanupPreservesHeldOwnerAndRemovesReleasedOwner() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? manager.removeItem(at: root) }
+        let owner = try TeslaMateImportDirectoryOwner.create(in: root)
+        let secret = owner.directory.appendingPathComponent("ssh-password")
+        try Data("synthetic secret".utf8).write(to: secret)
+
+        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 0)
+        XCTAssertEqual(try String(contentsOf: secret, encoding: .utf8), "synthetic secret")
+        owner.release()
+        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
+        XCTAssertFalse(manager.fileExists(atPath: owner.directory.path))
+    }
+
+    func testStaleSSHSecretCleanupExcludesAnotherProcessesOwnerLock() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try manager.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? manager.removeItem(at: root) }
+        let owner = try TeslaMateImportDirectoryOwner.create(in: root)
+        let directory = owner.directory
+        owner.release()
+        let ready = root.appendingPathComponent("owner-ready")
+        let child = Process()
+        child.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+        child.arguments = ["-e", """
+            use Fcntl qw(:flock);
+            open(my $lock, '+<', $ARGV[0]) or die $!;
+            flock($lock, LOCK_EX | LOCK_NB) or die $!;
+            open(my $ready, '>', $ARGV[1]) or die $!;
+            close($ready);
+            sleep 20;
+            """, directory.appendingPathComponent(TeslaMateImportDirectoryOwner.lockFileName).path,
+            ready.path]
+        try child.run()
+        defer {
+            if child.isRunning { Darwin.kill(child.processIdentifier, SIGKILL) }
+            child.waitUntilExit()
+        }
+        let deadline = Date().addingTimeInterval(2)
+        while !manager.fileExists(atPath: ready.path) && child.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        XCTAssertTrue(manager.fileExists(atPath: ready.path))
+        guard manager.fileExists(atPath: ready.path) else { return }
+        let abandoned = try TeslaMateImportDirectoryOwner.create(in: root)
+        abandoned.release()
+        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
+        XCTAssertTrue(manager.fileExists(atPath: directory.path))
+        XCTAssertFalse(manager.fileExists(atPath: abandoned.directory.path))
+        Darwin.kill(child.processIdentifier, SIGKILL)
+        child.waitUntilExit()
+        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
+    }
+
+    func testStaleSSHSecretCleanupRejectsSymlinkOwnerLock() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let directory = root.appendingPathComponent("th-\(UUID().uuidString)", isDirectory: true)
+        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        let unrelated = root.appendingPathComponent("unrelated")
+        try Data("preserve".utf8).write(to: unrelated)
+        try manager.createSymbolicLink(at: directory.appendingPathComponent(TeslaMateImportDirectoryOwner.lockFileName),
+                                       withDestinationURL: unrelated)
+        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 0)
+        XCTAssertTrue(manager.fileExists(atPath: directory.path))
+        XCTAssertEqual(try String(contentsOf: unrelated, encoding: .utf8), "preserve")
+    }
+
     func testStaleSSHSecretCleanupRecordsAnUnavailableTemporaryRoot() {
         let missingRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("teslatlas-hub-missing-cleanup-\(UUID().uuidString)",
@@ -265,9 +337,11 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let root = try XCTUnwrap(onboarding.window?.contentView)
         let acknowledgements = buttons(in: root).compactMap { $0.accessibilityLabel() }
         XCTAssertTrue(controller.pendingMigrationHandoverIsHistoryOnly)
-        XCTAssertTrue(acknowledgements.contains(
-            "I understand collection remains disabled; this Hub serves imported history only"
-        ))
+        XCTAssertTrue(acknowledgements.contains {
+            $0.hasPrefix("I understand")
+                && $0.contains("collection remains disabled")
+                && $0.contains("serves imported history only")
+        })
         XCTAssertFalse(acknowledgements.contains(
             "I have disabled Tesla access in TeslaMate to avoid duplicate requests"
         ))
@@ -919,7 +993,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let inputFields = labels(in: root).filter { $0.isEditable }
         XCTAssertTrue(inputFields.allSatisfy { $0.controlSize != .large })
         let heading = try XCTUnwrap(labels(in: root).first { $0.stringValue == "Migrate from TeslaMate" })
-        XCTAssertEqual(heading.alignment, .left)
+        XCTAssertEqual(heading.alignment, .natural)
         let server = try XCTUnwrap(inputFields.first { $0.placeholderString == "teslamate.local" })
         let user = try XCTUnwrap(inputFields.first { $0.stringValue == "user" })
         let key = try XCTUnwrap(inputFields.first {
@@ -1110,6 +1184,58 @@ final class OnboardingWindowControllerTests: XCTestCase {
         })
         XCTAssertGreaterThanOrEqual(buttons(in: view).count, 2,
                                       "Focused import retains the shared footer controls")
+    }
+
+    func testMigrationFinalizingCaptionUsesCLIPhaseWithoutChangingProgressOrControls() throws {
+        let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
+        let onboarding = OnboardingWindowController(controller: controller,
+                                                     previewRoute: "migration",
+                                                     onComplete: { _ in })
+        onboarding.setBusy(true, operation: .importing)
+        let view = onboarding.window?.contentView
+        let bar = try XCTUnwrap(progressIndicators(in: view).first {
+            $0.identifier?.rawValue == "onboarding.migration-progress"
+        })
+        let controls = buttons(in: view)
+        let enabled = controls.map(\.isEnabled)
+        let copying = try XCTUnwrap(HubController.parseMigrationProgress(
+            #"{"event":"migration_progress","completedRows":25,"totalRows":100,"phase":"positions"}"#
+        ))
+        onboarding.updateMigrationProgress(copying)
+        XCTAssertTrue(labels(in: view).contains {
+            $0.stringValue == "Copying your TeslaMate history into Hub."
+        })
+        let finalizing = try XCTUnwrap(HubController.parseMigrationProgress(
+            #"{"event":"migration_progress","completedRows":80,"totalRows":100,"phase":"finalizing"}"#
+        ))
+        onboarding.updateMigrationProgress(finalizing)
+        XCTAssertTrue(labels(in: view).contains { $0.stringValue == "Preparing imported history…" })
+        XCTAssertFalse(labels(in: view).contains {
+            $0.stringValue == "Copying your TeslaMate history into Hub."
+        })
+        XCTAssertEqual(bar.maxValue, 100)
+        XCTAssertEqual(bar.doubleValue, 80)
+        XCTAssertFalse(bar.isIndeterminate)
+        XCTAssertEqual(controls.map(\.isEnabled), enabled)
+
+        // Older events without a phase must not erase an already known phase.
+        onboarding.updateMigrationProgress(HubMigrationProgress(completedRows: 70,
+                                                                 totalRows: 100,
+                                                                 phase: nil))
+        XCTAssertTrue(labels(in: view).contains { $0.stringValue == "Preparing imported history…" })
+        XCTAssertEqual(bar.doubleValue, 80)
+        onboarding.updateMigrationProgress(HubMigrationProgress(completedRows: 100,
+                                                                 totalRows: 100,
+                                                                 phase: "complete"))
+        XCTAssertTrue(labels(in: view).contains { $0.stringValue == "Preparing imported history…" })
+        XCTAssertEqual(bar.doubleValue, 100)
+        XCTAssertEqual(controls.map(\.isEnabled), enabled)
+
+        onboarding.setBusy(false)
+        onboarding.setBusy(true, operation: .importing)
+        XCTAssertTrue(labels(in: onboarding.window?.contentView).contains {
+            $0.stringValue == "Copying your TeslaMate history into Hub."
+        }, "a later import must start with its own progress phase")
     }
 
     func testNewInstallationBusyStateShowsOnlyCleanSetupFlow() {
@@ -1405,7 +1531,11 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(Set(["Refresh", "Run Diagnostics", "Copy", "Save…"])
             .isSubset(of: Set(titles)))
         XCTAssertTrue(labels(in: logs.window?.contentView).contains {
-            $0.stringValue.contains("redact credentials")
+            let notice = $0.stringValue
+            return (notice.contains("logs redact known credentials")
+                    || notice.contains("logs redact credentials"))
+                && notice.contains("private identifiers")
+                && notice.contains("Review before sharing")
         })
     }
 

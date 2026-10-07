@@ -187,10 +187,26 @@ def build_controller_admission_view(
                     if isinstance(item, Mapping) and item.get("status") == "admitted"
                     and item.get("operation") == "stop"
                     and isinstance(item.get("processed_binding"), Mapping)
+                    and type(item["processed_binding"].get("sequence")) is int
+                    and previous_sequence < item["processed_binding"]["sequence"] < sequence
                 ]
-                if not stopped or type(stopped[-1]["processed_binding"].get("sequence")) is not int:
+                if not stopped:
                     raise InstalledExecutionError("controller start transition lacks its stopped sequence")
-                transition["stopped_sequence"] = stopped[-1]["processed_binding"]["sequence"]
+                stopped_sequences = [item["processed_binding"]["sequence"] for item in stopped]
+                if len(stopped_sequences) != len(set(stopped_sequences)):
+                    raise InstalledExecutionError("controller start transition has duplicated stopped sequence")
+                selected_stop = max(stopped, key=lambda item: item["processed_binding"]["sequence"])
+                binding = selected_stop["processed_binding"]
+                request = selected_stop.get("request")
+                if (
+                    selected_stop.get("state") != "stopped"
+                    or selected_stop.get("proof") is not None
+                    or not isinstance(request, Mapping) or request.get("op") != "stop"
+                    or binding.get("op") != "stop"
+                    or selected_stop.get("request_binding") != binding
+                ):
+                    raise InstalledExecutionError("controller start transition has malformed stopped record")
+                transition["stopped_sequence"] = binding["sequence"]
         active_invitation = invitation(record.get("invitation"))
         expired_invitation = invitation(record.get("expired_invitation"))
         if active_invitation is None or expired_invitation is None:
@@ -573,6 +589,29 @@ def _cleanup_process(owner, process):
     return cleanup_errors
 
 
+def _read_session_input_hash(session_input_path, session_input, *, deadline):
+    """Bind the safely read original bytes, preserving serialization authority."""
+    input_raw = read_bound_file(
+        file_binding(Path(session_input_path), maximum=1_048_576, deadline=deadline),
+        label="session input", maximum=1_048_576, deadline=deadline,
+    )
+    if strict_json(input_raw) != session_input:
+        raise InstalledExecutionError("session input bytes differ from the staged contract")
+    return sha256_bytes(input_raw)
+
+
+def _build_admission_views(session, session_input, session_hash, *, deadline):
+    views = {
+        "controller_observations": build_controller_admission_view(
+            session, session_input, deadline=deadline,
+        ),
+    }
+    if session_input.get("adapter_id") == "protocol_actual_hub":
+        views["protocol_input"] = _freeze({"session_input_sha256": session_hash})
+        return _freeze(views)
+    return views
+
+
 def supervise_completion(
     session: Any, process: subprocess.Popen, session_input_path: Path | str,
     session_input: Mapping[str, Any], *, initial_observation: Mapping[str, Any],
@@ -601,13 +640,7 @@ def supervise_completion(
             owner = OwnedProcess(process, deadline)
             owner_acquired = True
         input_path = Path(session_input_path)
-        input_raw = read_bound_file(
-            file_binding(input_path, maximum=1_048_576, deadline=deadline),
-            label="session input", maximum=1_048_576, deadline=deadline,
-        )
-        if strict_json(input_raw) != session_input:
-            raise InstalledExecutionError("session input bytes differ from the staged contract")
-        session_hash = sha256_bytes(input_raw)
+        session_hash = _read_session_input_hash(input_path, session_input, deadline=deadline)
         outputs, bounds = session_input.get("outputs"), session_input.get("bounds")
         if not isinstance(outputs, Mapping) or not isinstance(bounds, Mapping):
             raise InstalledExecutionError("session input lacks completion contract")
@@ -701,11 +734,9 @@ def supervise_completion(
         if not isinstance(normalized, dict) or not isinstance(actors, dict):
             raise InstalledExecutionError("adapter evidence is not an object")
         if _accepts_keyword(admit, "admission_views", include_var_kwargs=False):
-            admission_views = {
-                "controller_observations": build_controller_admission_view(
-                    session, session_input, deadline=deadline,
-                ),
-            }
+            admission_views = _build_admission_views(
+                session, session_input, session_hash, deadline=deadline,
+            )
             admission_result = _call_with_deadline(
                 admit, normalized, actors, admission_views=admission_views,
                 deadline=deadline,

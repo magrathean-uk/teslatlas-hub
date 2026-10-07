@@ -394,10 +394,15 @@ struct HubSnapshot {
     var version: String
     var dataDirectory: URL?
     var diagnosticLines: [String]
+    var checkingStatus = false
 
     var accountDisplay: String {
         guard accountState == .connected, let provider else { return account }
         return HubL10n.format("hub.HubController.389.342", fallback: "%1$@ · %2$@", arguments: [String(describing: account), String(describing: provider.displayName)])
+    }
+
+    var statusUnavailable: Bool {
+        checkingStatus || (accountState == .unknown && databaseState == .unknown && health != .needsInstall)
     }
 
     var shouldOfferTeslaMateImport: Bool {
@@ -719,8 +724,48 @@ final class ProcessOutputPipeReader {
     }
 }
 
+/// Only foreground catalogue status readers belong to this lifecycle. Launchd
+/// services and mutation commands retain their existing ownership and quit guards.
+final class HubStatusProcessLifecycle {
+    static let shared = HubStatusProcessLifecycle()
+    private let lock = NSLock()
+    private var stopping = false
+    private var processes: [ObjectIdentifier: Process] = [:]
+
+    static func isStatusRead(_ arguments: [String]) -> Bool {
+        arguments.count == 3 && arguments[0] == "--config" && arguments[2] == "status"
+    }
+
+    func launch(_ process: Process) throws {
+        lock.lock(); defer { lock.unlock() }
+        guard !stopping else { throw HubActionError.commandFailed("Hub status read cancelled during application shutdown.") }
+        let identity = ObjectIdentifier(process)
+        processes[identity] = process
+        do { try process.run() }
+        catch { processes.removeValue(forKey: identity); throw error }
+    }
+
+    func finished(_ process: Process) {
+        lock.lock(); processes.removeValue(forKey: ObjectIdentifier(process)); lock.unlock()
+    }
+
+    func shutdown() {
+        lock.lock()
+        stopping = true
+        let owned = Array(processes.values)
+        processes.removeAll()
+        lock.unlock()
+        for process in owned where process.isRunning { process.terminate() }
+    }
+
+    var activeCount: Int {
+        lock.lock(); defer { lock.unlock() }; return processes.count
+    }
+}
+
 enum HubProcessExecutor {
     static let defaultMaximumOutputBytes = 256 * 1024
+    static let maximumStandardInputBytes = 8 * 1024 * 1024
     static let defaultTimeout: TimeInterval = 5 * 60
     static let defaultTerminationGrace: TimeInterval = 2
     static let defaultOutputDrainTimeout: TimeInterval = 2
@@ -733,10 +778,18 @@ enum HubProcessExecutor {
                     timeout: TimeInterval = defaultTimeout,
                     terminationGrace: TimeInterval = defaultTerminationGrace,
                     outputDrainTimeout: TimeInterval = defaultOutputDrainTimeout,
+                    statusLifecycle: HubStatusProcessLifecycle = .shared,
+                    processFactory: @escaping () -> Process = Process.init,
                     onOutputLine: ((String) -> Void)? = nil,
                     completion: @escaping (Result<String, Error>) -> Void) {
         DispatchQueue.global(qos: .userInitiated).async {
-            let process = Process()
+            guard (stdin?.utf8.prefix(maximumStandardInputBytes + 1).count ?? 0)
+                    <= maximumStandardInputBytes else {
+                completion(.failure(HubActionError.commandFailed("Hub command input exceeds its size limit.")))
+                return
+            }
+            let standardInput = stdin.map { Data($0.utf8) }
+            let process = processFactory()
             let output = Pipe()
             let retained = BoundedProcessOutput(maximumBytes: maximumOutputBytes)
             let callbackGate = ProcessOutputLineCallbackGate(callback: onOutputLine)
@@ -757,33 +810,31 @@ enum HubProcessExecutor {
             process.standardOutput = output
             process.standardError = output
             if stdin != nil { process.standardInput = Pipe() }
-            process.terminationHandler = { _ in terminated.signal() }
+            process.terminationHandler = { [weak process] _ in
+                if let process { statusLifecycle.finished(process) }
+                terminated.signal()
+            }
+            defer {
+                if let input = process.standardInput as? Pipe {
+                    try? input.fileHandleForWriting.close()
+                }
+            }
             do {
-                try process.run()
+                let deadline = DispatchTime.now() + max(0.001, timeout)
+                if HubStatusProcessLifecycle.isStatusRead(arguments) { try statusLifecycle.launch(process) }
+                else { try process.run() }
                 reader.enter()
                 DispatchQueue.global(qos: .userInitiated).async {
                     pipeReader.run()
                     lineDecoder.finish()
                     reader.leave()
                 }
-                if let stdin, let input = process.standardInput as? Pipe {
-                    input.fileHandleForWriting.write(Data(stdin.utf8))
-                    input.fileHandleForWriting.closeFile()
+                if let standardInput, let input = process.standardInput as? Pipe {
+                    try writeStandardInput(standardInput, to: input.fileHandleForWriting, deadline: deadline)
+                    try input.fileHandleForWriting.close()
                 }
-                if terminated.wait(timeout: .now() + max(0.001, timeout)) == .timedOut {
-                    callbackGate.cancel()
-                    let pid = process.processIdentifier
-                    if process.isRunning { process.terminate() }
-                    if terminated.wait(timeout: .now() + max(0.001, terminationGrace)) == .timedOut {
-                        if process.isRunning { Darwin.kill(pid, SIGKILL) }
-                        _ = terminated.wait(timeout: .now() + max(0.001, terminationGrace))
-                    }
-                    if reader.wait(timeout: .now() + max(0.001, outputDrainTimeout)) == .timedOut {
-                        pipeReader.cancel()
-                        _ = reader.wait(timeout: .now() + max(0.001, outputDrainTimeout))
-                    }
-                    completion(.failure(HubActionError.commandTimedOut))
-                    return
+                if terminated.wait(timeout: deadline) == .timedOut {
+                    throw HubActionError.commandTimedOut
                 }
                 guard reader.wait(timeout: .now() + max(0.001, outputDrainTimeout)) == .success else {
                     callbackGate.cancel()
@@ -810,8 +861,56 @@ enum HubProcessExecutor {
                 }
             } catch {
                 callbackGate.cancel()
+                if let input = process.standardInput as? Pipe {
+                    try? input.fileHandleForWriting.close()
+                }
+                if process.isRunning {
+                    let pid = process.processIdentifier
+                    process.terminate()
+                    if terminated.wait(timeout: .now() + max(0.001, terminationGrace)) == .timedOut {
+                        if process.isRunning { Darwin.kill(pid, SIGKILL) }
+                        _ = terminated.wait(timeout: .now() + max(0.001, terminationGrace))
+                    }
+                }
+                if reader.wait(timeout: .now() + max(0.001, outputDrainTimeout)) == .timedOut {
+                    pipeReader.cancel()
+                    _ = reader.wait(timeout: .now() + max(0.001, outputDrainTimeout))
+                }
+                pipeReader.cancel()
                 try? output.fileHandleForReading.close()
                 completion(.failure(error))
+            }
+        }
+    }
+
+    private static func writeStandardInput(_ data: Data, to handle: FileHandle,
+                                           deadline: DispatchTime) throws {
+        let descriptor = handle.fileDescriptor
+        let flags = fcntl(descriptor, F_GETFL)
+        guard flags >= 0, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) == 0,
+              fcntl(descriptor, F_SETNOSIGPIPE, 1) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        try data.withUnsafeBytes { storage in
+            var offset = 0
+            while offset < storage.count {
+                guard DispatchTime.now() < deadline else { throw HubActionError.commandTimedOut }
+                let written = Darwin.write(descriptor, storage.baseAddress!.advanced(by: offset),
+                                           min(16 * 1024, storage.count - offset))
+                if written > 0 { offset += written; continue }
+                let writeError = errno
+                if written < 0 && writeError == EINTR { continue }
+                guard written < 0 && (writeError == EAGAIN || writeError == EWOULDBLOCK) else {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(written == 0 ? EIO : writeError))
+                }
+                var readiness = pollfd(fd: descriptor, events: Int16(POLLOUT), revents: 0)
+                let now = DispatchTime.now().uptimeNanoseconds
+                guard now < deadline.uptimeNanoseconds else { throw HubActionError.commandTimedOut }
+                let remaining = deadline.uptimeNanoseconds - now
+                let milliseconds = Int32(min(20, max(1, remaining / 1_000_000)))
+                if Darwin.poll(&readiness, 1, milliseconds) < 0 && errno != EINTR {
+                    throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+                }
             }
         }
     }
@@ -1174,6 +1273,16 @@ final class LaunchctlServiceController: HubServiceControlling {
 }
 
 final class HubController {
+    private static let diagnosticsCustodyLock = NSLock()
+    private static var diagnosticsCustody: Set<UUID> = []
+
+    /// Custody survives an entry-point window closing, until the service resume
+    /// callback settles. Every application termination path shares this guard.
+    static var diagnosticsPreventQuit: Bool {
+        diagnosticsCustodyLock.lock(); defer { diagnosticsCustodyLock.unlock() }
+        return !diagnosticsCustody.isEmpty
+    }
+
     static let previewOnboardingChecks = [
         HubOnboardingCheck(title: HubL10n.text("hub.HubController.1161.477", fallback: "Service"), detail: HubL10n.text("hub.HubController.1161.478", fallback: "Launch agent installed and responsive"), passed: true),
         HubOnboardingCheck(title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"), detail: HubL10n.text("hub.HubController.1162.480", fallback: "Credentials stored and valid"), passed: true),
@@ -1379,31 +1488,42 @@ final class HubController {
             let installed = self.isServiceInstalled
             let runner = installed ? self.installedCommandRunner : self.commandRunner
             runner.run(arguments: ["--config", self.configPath.path, "status"]) { result in
-                DispatchQueue.main.async {
-                    guard self.isNewestRefreshRequest(request) else {
-                        completion(self.snapshot)
-                        return
-                    }
-                    switch result {
-                    case let .success(output):
-                        if let status = self.parseStatus(output) {
-                            if let previousCode = self.lastStatusFailureCode {
-                                HubAppLog.shared.record("status.recovered", category: "dashboard",
-                                                        fields: ["previous_error_code": previousCode])
+                let settle: (Bool) -> Void = { liveReady in
+                    DispatchQueue.main.async {
+                        guard self.isNewestRefreshRequest(request) else {
+                            completion(self.snapshot)
+                            return
+                        }
+                        switch result {
+                        case let .success(output):
+                            if let status = self.parseStatus(output) {
+                                if let previousCode = self.lastStatusFailureCode {
+                                    HubAppLog.shared.record("status.recovered", category: "dashboard",
+                                                            fields: ["previous_error_code": previousCode])
+                                }
+                                self.lastStatusFailureCode = nil
+                                self.snapshot = self.statusSnapshot(status, installed: installed,
+                                                                    loaded: loaded)
+                                if !liveReady, case .loaded = loaded {
+                                    self.snapshot.health = .degraded
+                                    self.snapshot.service = "Development Hub · HTTPS readiness unavailable"
+                                    self.snapshot.controlVehicleID = nil
+                                    self.snapshot.diagnosticLines.insert("The selected process has not returned a trusted HTTPS readiness response. Stored data remains available.", at: 0)
+                                }
+                            } else {
+                                self.recordStatusFailure("invalid_status_output", installed: installed)
+                                self.snapshot = self.fallbackSnapshot(installed: installed, loaded: loaded)
                             }
-                            self.lastStatusFailureCode = nil
-                            self.snapshot = self.statusSnapshot(status, installed: installed,
-                                                                loaded: loaded)
-                        } else {
-                            self.recordStatusFailure("invalid_status_output", installed: installed)
+                        case let .failure(error):
+                            self.recordStatusFailure(HubAppLog.errorCode(error), installed: installed)
                             self.snapshot = self.fallbackSnapshot(installed: installed, loaded: loaded)
                         }
-                    case let .failure(error):
-                        self.recordStatusFailure(HubAppLog.errorCode(error), installed: installed)
-                        self.snapshot = self.fallbackSnapshot(installed: installed, loaded: loaded)
+                        completion(self.snapshot)
                     }
-                    completion(self.snapshot)
                 }
+                if case .loaded = loaded, let live = self.serviceRunner as? HubLiveReadinessChecking {
+                    live.checkLiveReadiness(completion: settle)
+                } else { settle(true) }
             }
         }
     }
@@ -3131,8 +3251,17 @@ final class HubController {
                 + snapshot.diagnosticLines.joined(separator: "\n"))
             return
         }
-        serviceRunner.loadedState { [weak self] state in
-            guard let self else { return }
+        let operationID = UUID()
+        Self.diagnosticsCustodyLock.lock()
+        Self.diagnosticsCustody.insert(operationID)
+        Self.diagnosticsCustodyLock.unlock()
+        let finish: (String) -> Void = { report in
+            Self.diagnosticsCustodyLock.lock()
+            Self.diagnosticsCustody.remove(operationID)
+            Self.diagnosticsCustodyLock.unlock()
+            completion(report)
+        }
+        serviceRunner.loadedState { state in
             switch state {
             case .loaded:
                 self.serviceRunner.run(arguments: ["service", "stop"]) { stopResult in
@@ -3143,24 +3272,24 @@ final class HubController {
                                 switch policyResult {
                                 case .success:
                                     self.serviceRunner.run(arguments: ["service", "start"]) { startResult in
-                                        completion(report + "\n\n" + Self.serviceResumeSection(startResult))
+                                        finish(report + "\n\n" + Self.serviceResumeSection(startResult))
                                     }
                                 case let .failure(error):
-                                    completion(report + "\n\n" + Self.serviceResumeSection(.failure(error)))
+                                    finish(report + "\n\n" + Self.serviceResumeSection(.failure(error)))
                                 }
                             }
                         }
                     case let .failure(error):
                         self.runFullDiagnosticsWhileStopped { report in
-                            completion(Self.servicePauseFailureSection(error) + "\n\n" + report)
+                            finish(Self.servicePauseFailureSection(error) + "\n\n" + report)
                         }
                     }
                 }
             case .unloaded:
-                self.runFullDiagnosticsWhileStopped(completion: completion)
+                self.runFullDiagnosticsWhileStopped(completion: finish)
             case let .unknown(error):
                 self.runFullDiagnosticsWhileStopped { report in
-                    completion(Self.serviceStateFailureSection(error) + "\n\n" + report)
+                    finish(Self.serviceStateFailureSection(error) + "\n\n" + report)
                 }
             }
         }
@@ -3928,7 +4057,25 @@ final class HubController {
             case .unknown: descriptionState = .serviceStateUnavailable
             }
             let developmentService = Self.developmentServiceDescription(descriptionState)
-            return HubSnapshot(health: health, service: developmentService, account: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), accountState: .unknown, provider: nil, vehicleName: HubL10n.text("hub.HubController.1163.481", fallback: "Vehicle"), vehicle: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), hasConfiguredVehicle: false, controlVehicleID: nil, controlVehicles: [], database: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), databaseState: .unknown, activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [developmentService, "Development runtime: \(developmentConfiguration.serviceLabel)", "Mode: \(developmentConfiguration.mode.rawValue)", "Binary: \(developmentConfiguration.binary.path)", "Configuration: \(developmentConfiguration.config.path)", "State: \(developmentConfiguration.stateDirectory.path)", "Logs: \(developmentConfiguration.logDirectory.path)", "Hub status command did not return a valid report."])
+            var retained = snapshot
+            retained.health = health
+            retained.service = developmentService
+            retained.accountState = .unknown
+            retained.account = HubL10n.text("hub.HubController.344.340", fallback: "Unknown")
+            retained.controlVehicleID = nil
+            retained.databaseState = .unknown
+            retained.database = snapshot.databaseState == .awaitingSetup ? "Unknown"
+                : snapshot.database == "Unknown" || snapshot.database.hasPrefix("Last known: ")
+                    ? snapshot.database : "Last known: \(snapshot.database)"
+            retained.dataDirectory = snapshot.dataDirectory ?? dataDirectory
+            retained.controlVehicles = snapshot.controlVehicles.map {
+                HubControlVehicle(id: $0.id, displayName: $0.displayName, status: $0.status,
+                                  activityState: $0.activityState, batteryLevel: $0.batteryLevel,
+                                  locationName: $0.locationName,
+                                  telemetryStatus: $0.telemetryStatus == .current ? .cached : $0.telemetryStatus)
+            }
+            retained.diagnosticLines = [developmentService, "Development runtime: \(developmentConfiguration.serviceLabel)", "Mode: \(developmentConfiguration.mode.rawValue)", "Binary: \(developmentConfiguration.binary.path)", "Configuration: \(developmentConfiguration.config.path)", "State: \(developmentConfiguration.stateDirectory.path)", "Logs: \(developmentConfiguration.logDirectory.path)", "Hub status is unavailable. Vehicle and database summaries are last known values, not a fresh report."]
+            return retained
         }
         return HubSnapshot(health: health, service: service, account: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), accountState: .unknown, provider: nil, vehicleName: HubL10n.text("hub.HubController.1163.481", fallback: "Vehicle"), vehicle: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), hasConfiguredVehicle: false, controlVehicleID: nil, controlVehicles: [], database: HubL10n.text("hub.HubController.344.340", fallback: "Unknown"), databaseState: .unknown, activity: [], version: HubRelease.fallbackVersion, dataDirectory: dataDirectory, diagnosticLines: [service, "Hub status command did not return a valid report."])
     }

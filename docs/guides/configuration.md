@@ -54,12 +54,30 @@ are omitted. Duplicate values, wildcards and `null` are rejected. There may
 be at most 32 origins, each at most 2048 bytes. The configured Hub public
 origin also supports same-origin requests without being listed.
 
-CORS applies to the public HTTP routes, including pairing and rotation, with
-route-specific GET/POST preflights. It never exposes the internal Fleet
-ingress. Manifest and no-op requests admit only their sync-negotiation headers;
-`Range` and `If-Range` are admitted only for pack downloads. Responses vary by
-origin and expose ETags, request IDs and required sync/range response headers.
-An allowed-origin public request that reaches the bounded handler/queue timeout
+CORS permits the following routes for an admitted origin, with preflights for
+the listed method. The common request headers are `Authorization`,
+`Content-Type`, `If-None-Match` and `Accept`.
+
+| Routes | Method | Additional request headers |
+| --- | --- | --- |
+| `/healthz`, `/readyz`, `/.well-known/teslatlas-hub`, `/v1/vehicles` | GET | None |
+| `/v1/vehicles/{vehicle_id}/current`, `/v1/vehicles/{vehicle_id}/drives` | GET | None |
+| `/v1/pairings/{pairing_id}/claim`, `/v1/device/rotate` | POST | None |
+| `/v1/vehicles/{vehicle_id}/sync/manifest`, `/v1/vehicles/{vehicle_id}/sync/noop` | GET | `X-Teslatlas-Supported-Schemas`, `X-Teslatlas-Sync-Capability`, `X-Teslatlas-Sync-Profile` |
+| `/v1/packs/sha256/{object_name}` | GET | `Range`, `If-Range` |
+
+The registered `sync/signing-keys`, `sync/prepared-artefacts/{artifact_id}` and
+`sync/changes-since` routes are outside this browser allowlist. Requests carrying
+`Origin`, including same-origin requests and preflights, receive 403 on those
+routes once they reach CORS admission. An outer queue timeout can first return
+503. Requests without `Origin` retain their ordinary native authentication
+path. Browser support for those capabilities has not been selected.
+
+Internal Fleet ingress has no CORS access. Allowed responses vary by origin and
+expose `ETag`, `X-Request-ID`, `Accept-Ranges`, `Content-Range`, `Content-Length`,
+`Content-Encoding`, `X-Teslatlas-Manifest-Signature` and
+`X-Teslatlas-Native-Config-Sha256`.
+An allowed-route non-preflight request that reaches the bounded handler/queue timeout
 retains CORS metadata on its 503 response. Cookies are not enabled; clients use
 dedicated paired-device bearer tokens. An allowed origin does not bypass
 authentication or certificate validation. Browsers must trust Hub's TLS

@@ -111,7 +111,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     static func details(for snapshot: HubSnapshot) -> [HubServiceDetail] {
         [
             .init(label: HubL10n.text("hub.ServiceDetailsWindowController.113.2182", fallback: "Version"), value: HubL10n.format("hub.HubDashboardView.279.1374", fallback: "Teslatlas Hub %1$@", arguments: [String(describing: snapshot.version)])),
-            .init(label: HubL10n.text("hub.ServiceDetailsWindowController.114.2184", fallback: "Service"), value: snapshot.health == .running ? HubL10n.text("hub.ServiceDetailsWindowController.114.2185", fallback: "Active") : snapshot.service),
+            .init(label: HubL10n.text("hub.ServiceDetailsWindowController.114.2184", fallback: "Service"), value: snapshot.checkingStatus ? "Checking Hub" : (snapshot.health == .running ? HubL10n.text("hub.ServiceDetailsWindowController.114.2185", fallback: "Active") : snapshot.service)),
             .init(label: HubL10n.text("hub.ServiceDetailsWindowController.115.2186", fallback: "Provider"), value: snapshot.provider?.displayName ?? HubL10n.text("hub.HubController.393.343", fallback: "Not configured")),
             .init(label: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"), value: snapshot.accountDisplay),
             .init(label: HubL10n.text("hub.DiagnosticsWindowController.374.248", fallback: "Database"), value: snapshot.database),

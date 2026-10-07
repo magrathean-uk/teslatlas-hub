@@ -5,8 +5,8 @@
 use std::{
     ffi::OsStr,
     fs::{self, File, OpenOptions},
-    io::{self, Write},
-    net::{IpAddr, SocketAddr, TcpStream},
+    io::{self, Read, Write},
+    net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -370,9 +370,10 @@ fn preflight_private_lan_serve(config: &crate::config::HubConfig) -> io::Result<
 pub fn start_prepared(
     paths: &InstallPaths,
     config: &crate::config::HubConfig,
+    config_digest: crate::protocol::Sha256Digest,
     previously_loaded: bool,
 ) -> io::Result<()> {
-    launch(paths, config, previously_loaded)
+    launch(paths, config, config_digest, previously_loaded)
 }
 
 /// Query the per-user LaunchAgent without changing it.
@@ -397,13 +398,23 @@ pub fn admit_after_service_stop(
 }
 
 /// Prove that the installed job is running, owns the Hub lifetime lock, and
-/// has bound its configured listener for a stable bounded interval.
-pub fn wait_for_installed_readiness(config: &crate::config::HubConfig) -> io::Result<()> {
+/// returns application readiness bound to that PID and exact loaded configuration.
+pub fn wait_for_installed_readiness(
+    config: &crate::config::HubConfig,
+    config_digest: crate::protocol::Sha256Digest,
+) -> io::Result<()> {
     let (_, service) = service_identifiers();
     let mut ready_pid = None;
     wait_for_service_ready_with_probe(&mut || {
-        installed_service_is_ready(config, &service, &mut ready_pid)
+        installed_service_is_ready(config, config_digest, &service, &mut ready_pid)
     })
+}
+
+/// Recovery after preparation failed must identify the configuration of the
+/// existing job, which may differ from the requested replacement.
+pub fn wait_for_current_installed_readiness() -> io::Result<()> {
+    let (config, digest) = configured_identity_from_plist(&installed_plist()?)?;
+    wait_for_installed_readiness(&config, digest)
 }
 
 /// Start an already-installed Hub LaunchAgent after revalidating Hub data.
@@ -612,12 +623,26 @@ fn install_files(
 fn launch(
     paths: &InstallPaths,
     config: &crate::config::HubConfig,
+    config_digest: crate::protocol::Sha256Digest,
     previously_loaded: bool,
 ) -> io::Result<()> {
     let (domain, service) = service_identifiers();
     let mut runner = real_launchctl;
-    let mut ready_pid = None;
-    let mut readiness = || installed_service_is_ready(config, &service, &mut ready_pid);
+    let previous = if previously_loaded {
+        paths
+            .previous_plist
+            .as_deref()
+            .map(configured_identity_from_plist)
+            .transpose()
+    } else {
+        Ok(None)
+    };
+    let mut readiness = ConfiguredServiceReadiness {
+        replacement: (config, config_digest),
+        previous,
+        service: &service,
+        ready_pid: None,
+    };
     launch_with_runner(
         paths,
         previously_loaded,
@@ -626,6 +651,91 @@ fn launch(
         &mut runner,
         &mut readiness,
     )
+}
+
+fn configured_identity_from_plist(
+    plist: &Path,
+) -> io::Result<(crate::config::HubConfig, crate::protocol::Sha256Digest)> {
+    if fs::metadata(plist)?.len() > 1024 * 1024 {
+        return Err(io::Error::other("installed plist is too large"));
+    }
+    let output = Command::new("/usr/bin/plutil")
+        .args(["-convert", "json", "-o", "-", "--"])
+        .arg(plist)
+        .output()?;
+    if !output.status.success() || output.stdout.len() > 1024 * 1024 {
+        return Err(io::Error::other("installed plist could not be decoded"));
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(io::Error::other)?;
+    let args = value
+        .get("ProgramArguments")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| io::Error::other("installed plist has no program arguments"))?;
+    if args.len() != 4 || args[1].as_str() != Some("--config") || args[3].as_str() != Some("serve")
+    {
+        return Err(io::Error::other(
+            "installed plist has unsupported program arguments",
+        ));
+    }
+    let config_path = Path::new(
+        args[2]
+            .as_str()
+            .ok_or_else(|| io::Error::other("installed plist config path is absent"))?,
+    );
+    if !config_path.is_absolute() {
+        return Err(io::Error::other(
+            "installed plist config path must be absolute",
+        ));
+    }
+    crate::config::HubConfig::load_with_digest(config_path).map_err(io::Error::other)
+}
+
+trait ServiceReadiness {
+    fn observe(&mut self, restored: bool) -> io::Result<bool>;
+}
+
+impl<F: FnMut() -> io::Result<bool>> ServiceReadiness for F {
+    fn observe(&mut self, _restored: bool) -> io::Result<bool> {
+        self()
+    }
+}
+
+struct ConfiguredServiceReadiness<'a> {
+    replacement: (&'a crate::config::HubConfig, crate::protocol::Sha256Digest),
+    previous: io::Result<Option<(crate::config::HubConfig, crate::protocol::Sha256Digest)>>,
+    service: &'a str,
+    ready_pid: Option<u32>,
+}
+
+impl ConfiguredServiceReadiness<'_> {
+    fn identity(
+        &self,
+        restored: bool,
+    ) -> io::Result<(&crate::config::HubConfig, crate::protocol::Sha256Digest)> {
+        if restored {
+            self.previous
+                .as_ref()
+                .map_err(|error| io::Error::new(error.kind(), error.to_string()))?
+                .as_ref()
+                .map(|(config, digest)| (config, *digest))
+                .ok_or_else(|| {
+                    io::Error::other("previous service readiness identity is unavailable")
+                })
+        } else {
+            Ok(self.replacement)
+        }
+    }
+}
+
+impl ServiceReadiness for ConfiguredServiceReadiness<'_> {
+    fn observe(&mut self, restored: bool) -> io::Result<bool> {
+        let mut ready_pid = self.ready_pid;
+        let (config, digest) = self.identity(restored)?;
+        let result = installed_service_is_ready(config, digest, self.service, &mut ready_pid);
+        self.ready_pid = ready_pid;
+        result
+    }
 }
 
 fn service_identifiers() -> (String, String) {
@@ -776,6 +886,7 @@ fn wait_for_service_ready_with_probe(
 
 fn installed_service_is_ready(
     config: &crate::config::HubConfig,
+    config_digest: crate::protocol::Sha256Digest,
     service: &str,
     ready_pid: &mut Option<u32>,
 ) -> io::Result<bool> {
@@ -792,7 +903,9 @@ fn installed_service_is_ready(
         }
         Err(error) => return Err(io::Error::other(error)),
     }
-    readiness_observation(ready_pid, pid, &mut || listener_is_reachable(config.bind))
+    readiness_observation(ready_pid, pid, &mut || {
+        configured_application_is_ready(config, config_digest, pid)
+    })
 }
 
 fn readiness_observation(
@@ -806,24 +919,121 @@ fn readiness_observation(
     Ok(same_pid && listener_ready)
 }
 
-fn listener_is_reachable(configured: SocketAddr) -> io::Result<bool> {
-    match TcpStream::connect_timeout(&readiness_address(configured), READINESS_CONNECT_TIMEOUT) {
-        Ok(stream) => {
-            drop(stream);
-            Ok(true)
+fn configured_application_is_ready(
+    config: &crate::config::HubConfig,
+    config_digest: crate::protocol::Sha256Digest,
+    pid: u32,
+) -> io::Result<bool> {
+    let address = readiness_address(config.bind);
+    let mut builder = reqwest::Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(READINESS_CONNECT_TIMEOUT)
+        .timeout(Duration::from_millis(500));
+    let endpoint = if let Some(tls) = &config.tls {
+        let mut pem = Vec::new();
+        File::open(&tls.certificate_path)?
+            .take(1024 * 1024 + 1)
+            .read_to_end(&mut pem)?;
+        if pem.len() > 1024 * 1024 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "readiness certificate is too large",
+            ));
         }
-        Err(error)
-            if matches!(
-                error.kind(),
-                io::ErrorKind::ConnectionRefused
-                    | io::ErrorKind::TimedOut
-                    | io::ErrorKind::AddrNotAvailable
-            ) =>
-        {
-            Ok(false)
+        let certificates = reqwest::Certificate::from_pem_bundle(&pem).map_err(io::Error::other)?;
+        if certificates.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "readiness certificate is empty",
+            ));
         }
-        Err(error) => Err(error),
+        let mut endpoint = reqwest::Url::parse(&tls.public_url).map_err(io::Error::other)?;
+        let host = endpoint
+            .host_str()
+            .ok_or_else(|| io::Error::other("readiness TLS hostname is absent"))?;
+        builder = builder
+            .https_only(true)
+            .tls_certs_only(certificates)
+            .resolve(host, address);
+        endpoint
+            .set_port(Some(address.port()))
+            .map_err(|_| io::Error::other("readiness TLS port is invalid"))?;
+        endpoint.set_path("/readyz");
+        endpoint
+    } else {
+        if !address.ip().is_loopback() {
+            return Err(io::Error::other("plaintext readiness requires loopback"));
+        }
+        reqwest::Url::parse(&format!("http://{address}/readyz")).map_err(io::Error::other)?
+    };
+    // These synchronous service APIs are also called from the CLI's async
+    // runtime. Give the bounded probe its own thread to avoid nested runtimes.
+    std::thread::spawn(move || {
+        crate::crypto::install_default_provider();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
+        runtime.block_on(async move {
+            use futures_util::StreamExt as _;
+            let client = builder.build().map_err(io::Error::other)?;
+            let response = match client
+                .get(endpoint)
+                .header("accept-encoding", "identity")
+                .send()
+                .await
+            {
+                Ok(response) => response,
+                Err(_) => return Ok(false),
+            };
+            let status = response.status();
+            let headers = response.headers().clone();
+            let mut body = Vec::new();
+            let mut stream = response.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let Ok(chunk) = chunk else {
+                    return Ok(false);
+                };
+                if body.len().saturating_add(chunk.len()) > 16 * 1024 {
+                    return Ok(false);
+                }
+                body.extend_from_slice(&chunk);
+            }
+            Ok(application_readiness_matches(
+                status,
+                &headers,
+                &body,
+                pid,
+                config_digest,
+            ))
+        })
+    })
+    .join()
+    .map_err(|_| io::Error::other("readiness probe thread failed"))?
+}
+
+fn application_readiness_matches(
+    status: reqwest::StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    body: &[u8],
+    pid: u32,
+    config_digest: crate::protocol::Sha256Digest,
+) -> bool {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Ready {
+        status: String,
     }
+    status == reqwest::StatusCode::OK
+        && headers
+            .get("x-teslatlas-native-process-id")
+            .and_then(|value| value.to_str().ok())
+            == Some(pid.to_string().as_str())
+        && headers
+            .get(crate::server::NATIVE_CONFIG_DIGEST_HEADER)
+            .and_then(|value| value.to_str().ok())
+            == Some(config_digest.to_string().as_str())
+        && serde_json::from_slice::<Ready>(body).is_ok_and(|ready| ready.status == "ready")
 }
 
 fn readiness_address(configured: SocketAddr) -> SocketAddr {
@@ -853,7 +1063,7 @@ fn launch_with_runner(
     domain: &str,
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
-    readiness: &mut impl FnMut() -> io::Result<bool>,
+    readiness: &mut impl ServiceReadiness,
 ) -> io::Result<()> {
     let print = [std::ffi::OsStr::new("print"), std::ffi::OsStr::new(service)];
     if let Err(error) = runner(&print) {
@@ -930,7 +1140,7 @@ fn launch_with_runner(
             readiness,
         ));
     }
-    if let Err(error) = wait_for_service_ready_with_probe(readiness) {
+    if let Err(error) = wait_for_service_ready_with_probe(&mut || readiness.observe(false)) {
         return Err(with_rollback_context(
             error,
             previously_loaded,
@@ -954,7 +1164,7 @@ fn with_rollback_context(
     domain: &str,
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
-    readiness: &mut impl FnMut() -> io::Result<bool>,
+    readiness: &mut impl ServiceReadiness,
 ) -> io::Error {
     let kind = error.kind();
     let rollback = if previously_loaded {
@@ -1023,7 +1233,7 @@ fn restore_previous_service(
     domain: &str,
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
-    readiness: &mut impl FnMut() -> io::Result<bool>,
+    readiness: &mut impl ServiceReadiness,
 ) -> io::Result<()> {
     let bootout = [
         std::ffi::OsStr::new("bootout"),
@@ -1049,7 +1259,7 @@ fn restore_previous_service(
         std::ffi::OsStr::new(service),
     ];
     run_launchctl(runner, &kickstart)?;
-    wait_for_service_ready_with_probe(readiness)?;
+    wait_for_service_ready_with_probe(&mut || readiness.observe(true))?;
     if let Some(previous_binary) = previous_binary {
         let _ = fs::remove_file(previous_binary);
     }

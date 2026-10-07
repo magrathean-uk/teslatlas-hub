@@ -20,14 +20,19 @@ fn catalogue_quick_check_label(connection: &Connection) -> Result<String, StoreE
 }
 
 impl HubBackupSnapshot<'_> {
+    #[cfg(test)]
     pub(crate) fn copy_bytes(&self) -> Result<u64, StoreError> {
+        self.copy_admission().map(|(bytes, _)| bytes)
+    }
+
+    pub(crate) fn copy_admission(&self) -> Result<(u64, usize), StoreError> {
         self.store
-            .backup_copy_bytes_with_gate(&self.publication_gate)
+            .backup_copy_admission_with_gate(&self.publication_gate, self.selection_time_ms)
     }
 
     pub(crate) fn copy_to(&self, destination: &Path) -> Result<(), StoreError> {
         self.store
-            .backup_to_with_gate(destination, &self.publication_gate)
+            .backup_to_with_gate(destination, &self.publication_gate, self.selection_time_ms)
     }
 }
 

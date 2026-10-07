@@ -1,0 +1,11 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH='' cd "$(dirname "$0")" && pwd)
+. "$SCRIPT_DIR/common.sh"
+
+require_root
+read_console_user
+prepare_gui_for_install app-replacement 'Teslatlas Hub' "$CONSOLE_UID" \
+    || installer_error "cannot stop the running Teslatlas Hub app for replacement"

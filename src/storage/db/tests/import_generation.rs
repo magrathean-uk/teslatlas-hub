@@ -116,7 +116,19 @@ fn lineage_catalog_requires_verified_packs_and_is_restart_safe() {
     store
         .commit_lineage_catalog(&lineage)
         .expect("same commit is idempotent");
+    assert_eq!(
+        store
+            .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+            .expect("generic reader"),
+        Some(lineage.clone())
+    );
     let reopened = HubStore::initialize(temp.path()).expect("reopen");
+    assert_eq!(
+        reopened
+            .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+            .expect("generic reopen reader"),
+        Some(lineage.clone())
+    );
     let count: i64 = reopened
         .open()
         .expect("open")
@@ -142,6 +154,50 @@ fn lineage_catalog_requires_verified_packs_and_is_restart_safe() {
             .expect("head after conflicting replay"),
         head_before_conflict
     );
+    // Identity is recovered from the immutable envelope, and must still be
+    // bound to this route/base instead of silently accepting a changed row.
+    let mut wrong_vehicle = lineage;
+    wrong_vehicle.vehicle_id = Uuid::new_v4();
+    reopened
+        .open()
+        .unwrap()
+        .execute(
+            "UPDATE sync_manifests SET manifest_json = ?1 WHERE snapshot_id = ?2",
+            params![
+                serde_json::to_vec(&wrong_vehicle).unwrap(),
+                base_snapshot_id.to_string()
+            ],
+        )
+        .expect("inject mismatched generic envelope");
+    assert!(matches!(
+        reopened.lineage_manifest_for_vehicle(vehicle.vehicle_id),
+        Err(StoreError::LineageCatalogConflict)
+    ));
+}
+
+#[test]
+fn typed_lineage_reader_still_requires_immutable_binding() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, _, prior) = imported_v2_base(&store);
+    assert_eq!(
+        store
+            .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+            .unwrap(),
+        Some(prior)
+    );
+    store
+        .open()
+        .unwrap()
+        .execute(
+            "DELETE FROM v2_base_bindings WHERE vehicle_id = ?1",
+            params![vehicle.vehicle_id.to_string()],
+        )
+        .expect("remove immutable binding");
+    assert!(matches!(
+        store.lineage_manifest_for_vehicle(vehicle.vehicle_id),
+        Err(StoreError::ImmutableBaseBindingMissing(id)) if id == vehicle.vehicle_id
+    ));
 }
 
 #[test]
@@ -915,6 +971,7 @@ fn upgrades_a_v2_database_without_losing_existing_tables() {
                     uncompressed_bytes INTEGER NOT NULL CHECK (uncompressed_bytes >= 100),
                     UNIQUE(snapshot_id, ordinal)
                 ) STRICT;
+                PRAGMA application_id = 1413564501;
                 PRAGMA user_version = 2;
                 ",
             )
@@ -983,6 +1040,7 @@ fn upgrades_a_v1_database_through_v2_and_v3() {
                     committed_at_ms INTEGER NOT NULL,
                     PRIMARY KEY (source_id, sequence, entity_kind, entity_key)
                 ) STRICT;
+                PRAGMA application_id = 1413564501;
                 PRAGMA user_version = 1;
                 ",
         )

@@ -1,5 +1,7 @@
 # Viewer R1 51-Drive Fixture Implementation Plan
 
+> **Historical plan — do not dispatch.** The [current workspace plan pointer](../../development/PLAN.md) governs scope, order and acceptance. The instructions below are retained as historical technical evidence and grant no current agent, runtime or deployment authority.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Prepare a fresh, private Hub-owned R1 fixture that supplies a synthetic 51-drive `25/25/1` browser session and bounded Hub recovery controls.

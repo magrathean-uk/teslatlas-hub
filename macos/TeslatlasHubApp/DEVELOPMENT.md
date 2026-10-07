@@ -42,6 +42,12 @@ absolute paths. On this Mac use private runtime executable/configuration copies
 under the existing `~/dev/runtime`, following the accepted source-run runtime pattern;
 the original build artifacts and data remain external. State and journal ancestors
 may be group-writable only when their UID and primary GID are the current owner's.
+The readiness certificate read uses that same descriptor-checked ancestor policy:
+group-writable ancestors must belong to the current user and current primary group.
+Its private parent remains mode `0700`, and the certificate remains a regular,
+current-user, single-link mode-`0600` file. Symlinks, world-writable directories and
+group-writable ancestors owned by another user or group are rejected. Executable,
+configuration and launchd control ancestry remains strict.
 
 Set these variables in the Xcode scheme, or run the built app executable directly
 from the configured shell. Do not rely on Finder to inherit shell variables.
@@ -71,6 +77,40 @@ used by the long-lived process. A mode mismatch, unsafe listener/TLS identity, e
 fixture, or invalid Edge binding is returned directly to the app; no listener,
 collector, property-list replacement, bootstrap, or kickstart occurs. Stop remains
 available without preflight so a damaged or obsolete job can always be booted out.
+
+Start and Restart complete only after the exact owned binary/configuration has a
+stable live PID, usable catalogue status, and a successful HTTPS `GET /readyz`
+response. A live PID alone does not prove that the listener has opened: macOS may
+hold a newly built CLI at a removable-volume permission prompt before Serve begins.
+Readiness uses the selected `[tls]` `public_url` and `certificate_path`, pins that
+certificate and checks its hostname and validity. It sends no credentials, follows
+no redirects and limits the response and each probe's deadline. The response must
+also attest the digest of the exact protected configuration bytes through the
+existing native configuration header; a different loaded contract is unavailable.
+The native process header must also match the exact launchd PID, so a stale manual
+or other-label listener with the same certificate and configuration cannot complete
+startup or make the selected development service appear running.
+The app accepts
+ordinary single-line TOML basic or literal strings for these two fields; unsupported
+representations report unavailable rather than silently choosing another endpoint.
+The AppKit development modes already require TLS through Rust serve preflight.
+
+The existing startup deadline bounds failure and unloads only the selected owned
+LaunchAgent before completing. A loaded but unready service remains unavailable on
+the dashboard and can be stopped through the ordinary Stop action after the pending
+transaction settles. Status failure retains last known vehicle/database summaries,
+marks them unavailable and disables vehicle controls. If no status report has been
+read, the empty vehicle view says unavailable; it does not infer an empty catalogue.
+These checks neither grant volume access nor alter stored data or pairing.
+The initial window renders Checking Hub and explicit unavailable values before the
+first status query finishes. Service, account and vehicle mutations remain disabled
+until that initial refresh settles; the window does not infer missing configuration
+or an empty catalogue while a volume-blocked status command is pending. Known account
+and database captions remain marked as last known. The intentional immediate first-run
+and pending-handover onboarding policy remains available without waiting for a
+nonexistent catalogue report. Normal Quit prevents new background status reads and sends termination to only
+the exact registered status helper Process objects, including blocked reads;
+it does not cancel the launchd Serve process.
 
 The dashboard's Start, Stop, and Restart actions control only that development label.
 Status, diagnostics, setup, migration, and account commands use the same source binary
@@ -155,3 +195,59 @@ and backs off failures to at most five minutes. Failures preserve the current ca
 unchanged source rows do not advance timestamps or allocate repeated cache records.
 Schema 67 adds truthful internal `teslamate_position_v1` provenance and preserves
 existing current records. It does not publish a new signed history checkpoint.
+
+## Refresh imported TeslaMate history
+
+Historical delivery changes only after an explicit import and publication. The
+current-telemetry worker above refreshes the current cache; it does not import new
+drives, charges or historical positions. There is no automatic history scheduler.
+
+For a credential-free history refresh, use a configuration with every collector
+and Legacy authentication disabled. The read-only PostgreSQL endpoint must be a
+numeric loopback address and must not contain a password. Keep the password in a
+private file outside source control. Stop the selected source-run Hub through its
+control app before running this command against the same configuration and data:
+
+```sh
+/absolute/path/to/teslatlas-hub --config /absolute/path/to/config.toml migrate \
+  --source postgresql://reader@127.0.0.1:PORT/DATABASE \
+  --car-id 1 \
+  --postgres-password-file /Users/owner/dev/creds/teslatlas/postgres-password \
+  --history-only --online-snapshot --acknowledge-v4-2-compatible-schema
+```
+
+Use the existing source-run environment and the exact executable/configuration
+selected by the control app. Serve holds the exclusive instance lock for its
+lifetime, so an import against a serving store is refused. The import leaves the
+Hub stopped. Check its final JSON result and restart that selected Hub through the
+control app after successful publication. Do not stop an unrelated Hub or the
+TeslaMate source to perform this history-only operation.
+
+CLI stdout contains progress objects followed by the final legacy import report;
+neither alone proves App-facing PhysicalV3 publication. Correlate the owned command's
+typed Publication `complete` event with its successful exit and the actual public
+signed offer after restart. The event's `target_sequence`, `chunks` and `rows`
+describe the physical admission. The final legacy report and PhysicalV3 offer have
+distinct sequence counters; do not require them to match.
+
+The capture uses one exported read-only repeatable-read PostgreSQL snapshot for
+completed history and its open-session tail. TeslaMate can continue collecting;
+source rows added after the snapshot belong to the next refresh. This route does
+not inspect, transfer or replace Tesla credentials, and does not transfer collector
+authority. Credential migration continues to require a settled source cutover.
+Schema admission and all capture, integrity and publication failures still reject
+the import; an unsuccessful capture is not a new published history checkpoint.
+
+A temporary read-only bridge must support the entire COPY and exported-snapshot
+session. Valid traffic can be idle in one direction for more than 30 seconds while
+another lane copies history or the snapshot keeper waits. Do not disconnect on an
+independent directional inactivity timer. Retain the bridge's pinned route, session
+and connection limits, bounded connection establishment and orderly drain; finish
+the migration before stopping its temporary reader.
+
+Repeated imports of identical history retain the exact signed PhysicalV3 admission
+after checking the sealed capture and every referenced existing pack. Changed
+history publishes a successor; when a changed-set cannot fit, delivery uses the
+explicit full-snapshot replacement path. Clients refresh from the signed history
+head after the Hub restarts. The schema acknowledgement confirms operator knowledge
+of the TeslaMate application version; the database alone cannot prove that version.

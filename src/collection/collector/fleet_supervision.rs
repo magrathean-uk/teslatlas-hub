@@ -389,23 +389,15 @@ where
     if collection_result.is_ok() {
         collection_result = terrain_result;
     }
-    if !heartbeat_finished {
-        let _ = heartbeat_shutdown.send(());
-        let heartbeat_result = heartbeat_task
-            .await
-            .map_err(|_| CollectorError::SupervisedHeartbeatTask)
-            .and_then(|result| result);
-        if collection_result.is_ok() {
-            collection_result = heartbeat_result;
-        }
-    }
-    let release_result = store
-        .release_supervised_collector_lease(collector_lease)
-        .map_err(CollectorError::from);
-    if collection_result.is_ok() {
-        collection_result = release_result;
-    }
-    collection_result
+    finish_supervised_collector(
+        store,
+        collector_lease,
+        collection_result,
+        &mut heartbeat_task,
+        heartbeat_shutdown,
+        heartbeat_finished,
+    )
+    .await
 }
 
 /// Keep Fleet credentials, deferred publication, and local enrichment healthy

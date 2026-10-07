@@ -47,6 +47,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var refreshTimer: Timer?
     private var dashboardRefreshToken: UUID?
     private var refreshPending = false
+    private var initialRefreshPending = true
     private var presentationGeneration: UInt64 = 0
     private var serviceTransition: HubServiceTransition?
     private var serviceTransitionToken: UUID?
@@ -92,6 +93,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         self.serviceTransitionPollInterval = max(0.001, serviceTransitionPollInterval)
         self.errorPresenter = errorPresenter
         self.lastPresentedSnapshot = controller.snapshot
+        self.initialRefreshPending = !controller.previewMode
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: HubMetrics.windowSize),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
@@ -127,6 +129,27 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             HubAccessibility.refreshDisplayOptions()
         }
         window.center()
+        var firstFrame = controller.snapshot
+        if initialRefreshPending {
+            firstFrame.checkingStatus = true
+            firstFrame.health = .degraded
+            firstFrame.service = "Checking Hub · status unavailable"
+            if firstFrame.accountState == .connected || firstFrame.accountState == .historyOnly {
+                firstFrame.account = "Last known: \(firstFrame.account)"
+            } else {
+                firstFrame.account = "Status unavailable"
+                firstFrame.accountState = .unknown
+            }
+            firstFrame.database = firstFrame.databaseState == .healthy
+                ? "Last known: \(firstFrame.database)" : "Status unavailable"
+            firstFrame.databaseState = .unknown
+            firstFrame.controlVehicleID = nil
+            if firstFrame.controlVehicles.isEmpty {
+                firstFrame.vehicleName = "Vehicle status unavailable"
+                firstFrame.vehicle = "Waiting for the initial Hub status report."
+            }
+        }
+        applySnapshotPresentation(firstFrame)
         update()
         let refreshTimer = Timer(timeInterval: 15, repeats: true) { [weak self] _ in
             guard let self,
@@ -249,6 +272,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     var operationPreventsQuit: Bool {
         serviceTransition != nil || vehicleControlPending
             || serviceDetailsMutationPending || diagnosticsOperationPending
+            || HubController.diagnosticsPreventQuit
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -334,6 +358,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let refreshGeneration = presentationGeneration
         controller.refresh { [weak self] snapshot in
             guard let self else { return }
+            self.initialRefreshPending = false
             defer {
                 if self.dashboardRefreshToken == refreshToken {
                     self.dashboardRefreshToken = nil
@@ -367,6 +392,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private func applySnapshotPresentation(_ snapshot: HubSnapshot) {
         lastPresentedSnapshot = snapshot
         dashboardView.setInteractionsEnabled(serviceTransition == nil
+                                             && !initialRefreshPending
                                              && !accountWorkflowActive
                                              && !serviceDetailsMutationPending)
         let vehicleControlsEnabled = acceptedVehicleControlsEnabled(for: snapshot)
@@ -402,6 +428,13 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             heroStateIcon.contentTintColor = .systemOrange
             heroSubtitle.stringValue = HubL10n.text("hub.HubDashboardView.517.1392", fallback: "Open diagnostics for details.")
         }
+        if snapshot.checkingStatus {
+            heroTitle.stringValue = "Checking Hub"
+            heroSubtitle.stringValue = "Waiting for the initial Hub status report."
+            heroProgress.isHidden = false
+            heroProgress.startAnimation(nil)
+            heroStateIcon.isHidden = true
+        }
         serviceValue.stringValue = snapshot.service
         accountValue.stringValue = snapshot.accountDisplay
         updateVehicleSelection(snapshot)
@@ -421,6 +454,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         restartButton.isHidden = snapshot.health != .degraded
         heroDiagnosticsButton.isHidden = snapshot.health != .degraded
         let mutableActionsAvailable = serviceTransition == nil
+            && !initialRefreshPending
             && !accountWorkflowActive
             && !serviceDetailsMutationPending
             && !diagnosticsOperationPending
@@ -451,6 +485,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         navigationBar.apply(snapshot: snapshot, enabled: accountActionsAvailable)
         mainToolbar?.apply(snapshot: snapshot, enabled: accountActionsAvailable)
         let controlsAvailable = !controller.previewMode
+            && !initialRefreshPending
             && snapshot.health == .running
             && snapshot.accountState == .connected
             && selectedControlVehicleID != nil
@@ -653,7 +688,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func vehicleCommand(_ action: HubVehicleControl, vehicleID: UUID) {
-        guard serviceTransition == nil, !accountWorkflowActive,
+        guard !initialRefreshPending, serviceTransition == nil, !accountWorkflowActive,
               !serviceDetailsMutationPending, !diagnosticsOperationPending,
               let vehicle = controlVehicles.first(where: { $0.id == vehicleID }) else { return }
         selectVehicle(vehicleID)
@@ -668,7 +703,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             serviceDetailsMutationPending: serviceDetailsMutationPending,
             vehicleControlPending: vehicleControlPending,
             vehicleControlOutcomeUnknown: vehicleControlOutcomeUnknown
-        ) && !diagnosticsOperationPending
+        ) && !initialRefreshPending && !diagnosticsOperationPending
     }
 
     static func acceptedVehicleControlsEnabled(
@@ -716,8 +751,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return alert
     }
 
-    private func beginServiceTransition(_ transition: HubServiceTransition) -> UUID? {
-        guard serviceTransition == nil else { return nil }
+    private func beginServiceTransition(_ transition: HubServiceTransition,
+                                        completedOnboarding: Bool = false) -> UUID? {
+        guard (!initialRefreshPending || completedOnboarding), serviceTransition == nil else { return nil }
         presentationGeneration &+= 1
         serviceTransition = transition
         let token = UUID()
@@ -864,7 +900,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         serviceTransition = nil
         dashboardRefreshToken = nil
         refreshPending = false
-        detailsWindow?.setMutationsEnabled(!accountWorkflowActive
+        detailsWindow?.setMutationsEnabled(!initialRefreshPending && !accountWorkflowActive
                                            && !serviceDetailsMutationPending)
         detailsWindow?.setServiceTransition(nil)
         (embeddedDetailView as? HubEmbeddedUtilityPage)?.setNavigationEnabled(
@@ -878,8 +914,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func settleStartedHubFromOnboarding() {
+        // A completed immediate onboarding operation can settle its already-started
+        // service before the original catalogue status read returns.
         guard serviceTransition == nil else { return }
-        guard let token = beginServiceTransition(.starting) else { return }
+        guard let token = beginServiceTransition(.starting, completedOnboarding: true) else { return }
         armServiceTransitionDeadline(.starting, token: token)
         DispatchQueue.main.asyncAfter(deadline: .now() + serviceTransitionPollInterval) {
             [weak self] in
@@ -1010,7 +1048,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func showEmbeddedDiagnostics() {
-        guard canPresentEmbeddedDetail else { NSSound.beep(); return }
+        guard !initialRefreshPending, canPresentEmbeddedDetail else { NSSound.beep(); return }
         let diagnostics = DiagnosticsWindowController(
             controller: controller,
             embedded: true,
@@ -1031,12 +1069,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     func showEmbeddedServiceDetails() {
         guard canPresentEmbeddedDetail else { NSSound.beep(); return }
         let details = ServiceDetailsWindowController(
-            snapshot: controller.snapshot,
+            snapshot: lastPresentedSnapshot,
             controller: controller,
             lifecycleActions: makeServiceLifecycleActions(),
             mutationAllowed: { [weak self] in
                 guard let self else { return false }
-                return self.serviceTransition == nil
+                return !self.initialRefreshPending && self.serviceTransition == nil
                     && !self.accountWorkflowActive && !self.serviceDetailsMutationPending
                     && !self.diagnosticsOperationPending
             },
@@ -1047,7 +1085,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             onDismiss: { [weak self] in self?.dismissEmbeddedDetail() },
             embedded: true
         )
-        details.setMutationsEnabled(serviceTransition == nil
+        details.setMutationsEnabled(!initialRefreshPending && serviceTransition == nil
                                     && !accountWorkflowActive && !serviceDetailsMutationPending
                                     && !diagnosticsOperationPending)
         detailsWindow = details
@@ -1196,7 +1234,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                         dismissalPolicy: HubOnboardingDismissalPolicy = .accountManagement,
                         previewRoute: String? = nil)
         -> OnboardingWindowController? {
-        guard serviceTransition == nil, !vehicleControlPending,
+        let immediateSetup = dismissalPolicy == .firstRun && controller.shouldShowOnboardingBeforeInitialRefresh
+        guard (!initialRefreshPending || immediateSetup), serviceTransition == nil, !vehicleControlPending,
               !serviceDetailsMutationPending else {
             NSSound.beep()
             return nil
@@ -1360,6 +1399,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                                           refreshOnDeactivation: Bool = true) {
         accountWorkflowActive = active
         let mutableActionsAvailable = serviceTransition == nil
+            && !initialRefreshPending
             && !active && !serviceDetailsMutationPending
         stopButton.isEnabled = mutableActionsAvailable
         restartButton.isEnabled = mutableActionsAvailable
@@ -1377,7 +1417,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                            selectedVehicleID: selectedControlVehicleID,
                            enabled: vehicleControlsEnabled)
         detailsButton.isEnabled = !active
-        detailsWindow?.setMutationsEnabled(!active)
+        detailsWindow?.setMutationsEnabled(!initialRefreshPending && !active)
         dashboardView.setInteractionsEnabled(mutableActionsAvailable)
         dashboardView.setVehicleControlsEnabled(vehicleControlsEnabled)
         dashboardView.apply(snapshot: lastPresentedSnapshot,
@@ -1394,6 +1434,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         serviceDetailsMutationPending = pending
         (embeddedDetailView as? HubEmbeddedUtilityPage)?.setNavigationEnabled(!pending)
         let mutableActionsAvailable = serviceTransition == nil
+            && !initialRefreshPending
             && !pending && !accountWorkflowActive
         stopButton.isEnabled = mutableActionsAvailable
         restartButton.isEnabled = mutableActionsAvailable
@@ -1435,7 +1476,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func startPressed() {
-        guard serviceTransition == nil, !accountWorkflowActive,
+        guard !initialRefreshPending, serviceTransition == nil, !accountWorkflowActive,
               !serviceDetailsMutationPending, !diagnosticsOperationPending else { return }
         guard let token = beginServiceTransition(.starting) else { return }
         controller.startHub { [weak self] result in
@@ -1450,7 +1491,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func stopPressed() {
-        guard serviceTransition == nil, !accountWorkflowActive,
+        guard !initialRefreshPending, serviceTransition == nil, !accountWorkflowActive,
               !serviceDetailsMutationPending, !diagnosticsOperationPending, let window else { return }
         let alert = Self.stopHubConfirmation()
         alert.beginSheetModal(for: window) { [weak self] response in
@@ -1460,7 +1501,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func stopHubAfterConfirmation() {
-        guard serviceTransition == nil else { return }
+        guard !initialRefreshPending, serviceTransition == nil else { return }
         guard let token = beginServiceTransition(.stopping) else { return }
         controller.stopHub { [weak self] result in
             switch result {
@@ -1474,7 +1515,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func restartPressed() {
-        guard serviceTransition == nil, !accountWorkflowActive,
+        guard !initialRefreshPending, serviceTransition == nil, !accountWorkflowActive,
               !serviceDetailsMutationPending, !diagnosticsOperationPending else { return }
         guard let token = beginServiceTransition(.restarting) else { return }
         controller.restartHub { [weak self] result in
@@ -1489,7 +1530,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func vehicleCardButtonPressed(_ sender: NSButton) {
-        guard serviceTransition == nil, !accountWorkflowActive,
+        guard !initialRefreshPending, serviceTransition == nil, !accountWorkflowActive,
               !serviceDetailsMutationPending, !diagnosticsOperationPending else { return }
         guard let rawValue = sender.identifier?.rawValue,
               let action = HubVehicleControl(rawValue: rawValue) else { return }
@@ -1503,14 +1544,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @discardableResult
     func showServiceDetails() -> ServiceDetailsWindowController? {
-        guard serviceTransition == nil, !vehicleControlPending, !diagnosticsOperationPending else {
+        guard !initialRefreshPending, serviceTransition == nil, !vehicleControlPending, !diagnosticsOperationPending else {
             NSSound.beep()
             return nil
         }
         if let detailsWindow = activeModalController as? ServiceDetailsWindowController,
            modalState.active == .serviceDetails {
             detailsWindow.update(snapshot: controller.snapshot)
-            detailsWindow.setMutationsEnabled(!accountWorkflowActive && !serviceDetailsMutationPending
+            detailsWindow.setMutationsEnabled(!initialRefreshPending && !accountWorkflowActive && !serviceDetailsMutationPending
                                               && !diagnosticsOperationPending)
             detailsWindow.window?.makeKeyAndOrderFront(nil)
             return detailsWindow

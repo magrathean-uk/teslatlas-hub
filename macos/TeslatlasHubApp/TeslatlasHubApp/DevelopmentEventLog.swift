@@ -82,10 +82,9 @@ final class DevelopmentEventLog {
         do {
             func validate(_ leaf: Bool) throws {
                 var entry = stat()
-                guard fstat(descriptor, &entry) == 0, entry.st_mode & S_IFMT == S_IFDIR,
-                      entry.st_uid == 0 || entry.st_uid == getuid(), entry.st_mode & 0o002 == 0,
-                      entry.st_mode & 0o020 == 0 || (allowOwnedGroupWritableAncestors && entry.st_uid == getuid() && entry.st_gid == getgid()),
-                      !leaf || (entry.st_uid == getuid() && entry.st_mode & 0o777 == 0o700) else { throw POSIXError(.EPERM) }
+                guard fstat(descriptor, &entry) == 0,
+                      admitsDirectoryEntry(entry, leaf: leaf,
+                                           allowOwnedGroupWritableAncestors: allowOwnedGroupWritableAncestors) else { throw POSIXError(.EPERM) }
             }
             try validate(components.isEmpty)
             var opened = ""
@@ -103,6 +102,14 @@ final class DevelopmentEventLog {
             close(descriptor)
             throw error
         }
+    }
+    static func admitsDirectoryEntry(_ entry: stat, leaf: Bool,
+                                     allowOwnedGroupWritableAncestors: Bool) -> Bool {
+        entry.st_mode & S_IFMT == S_IFDIR
+            && (entry.st_uid == 0 || entry.st_uid == getuid())
+            && entry.st_mode & 0o002 == 0
+            && (entry.st_mode & 0o020 == 0 || (allowOwnedGroupWritableAncestors && entry.st_uid == getuid() && entry.st_gid == getgid()))
+            && (!leaf || (entry.st_uid == getuid() && entry.st_mode & 0o777 == 0o700))
     }
     private func append(_ payload: Data) throws {
         let dir = try Self.validateDirectoryReadOnly(directory)

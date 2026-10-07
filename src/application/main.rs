@@ -52,6 +52,7 @@ use teslatlas_hub::{
         TeslaMateImportReport, TeslaMateImportRequest, TeslaMateImportScope,
         import_selected_from_postgres_with_schema_22_and_legacy_token_and_progress,
         import_selected_from_postgres_with_schema_22_and_progress,
+        import_selected_history_snapshot_from_postgres_with_schema_22_and_progress,
     },
     teslamate_progress::{
         TeslaMateMigrationPhase, TeslaMateMigrationProgressEvent,

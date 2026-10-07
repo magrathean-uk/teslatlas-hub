@@ -141,8 +141,10 @@ final class HubControllerTests: XCTestCase {
             serviceInstalledOverride: true,
             initialSnapshot: .previewRunning
         )
-        let dashboard = MainWindowController(controller: controller)
+        let initialStatus = expectation(description: "initial status settled before service mutation")
+        let dashboard = MainWindowController(controller: controller) { _ in initialStatus.fulfill() }
         dashboard.showWindow(nil)
+        wait(for: [initialStatus], timeout: 1)
         let details = try XCTUnwrap(dashboard.showServiceDetails())
         let update = try XCTUnwrap(buttons(in: details.window?.contentView)
             .first { $0.title == "Update Service…" })
@@ -594,6 +596,8 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testEmbeddedDiagnosticsOwnsNavigationAndQuitUntilServiceResumeCompletes() throws {
+        let keeper = makeQuitControlKeeperWindow()
+        defer { keeper.orderOut(nil) }
         let runner = PendingCommandRunner()
         let service = PendingServiceRunner(loadState: .loaded)
         let controller = HubController(commandRunner: runner,
@@ -601,11 +605,13 @@ final class HubControllerTests: XCTestCase {
                                        serviceRunner: service,
                                        serviceInstalledOverride: false,
                                        initialSnapshot: .previewRunning)
-        let dashboard = MainWindowController(controller: controller)
+        let initialStatus = expectation(description: "initial status settled before diagnostics")
+        let dashboard = MainWindowController(controller: controller) { _ in initialStatus.fulfill() }
         dashboard.showWindow(nil)
         runner.complete(.success("""
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[],"credentials":{"present":true}}
         """))
+        wait(for: [initialStatus], timeout: 1)
         dashboard.showEmbeddedDiagnostics()
         let root = try XCTUnwrap(dashboard.window?.contentView)
         let run = try XCTUnwrap(buttons(in: root).first { $0.title == "Run Again" })
@@ -653,6 +659,63 @@ final class HubControllerTests: XCTestCase {
         })
         mainWindow.performClose(nil)
         XCTAssertFalse(mainWindow.isVisible)
+    }
+
+    func testLogsDiagnosticsCustodySurvivesClosedWindowUntilResumeAndAllowsIdleQuit() throws {
+        let keeper = makeQuitControlKeeperWindow()
+        defer { keeper.orderOut(nil) }
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let runner = PendingCommandRunner()
+        let service = PendingServiceRunner(loadState: .loaded)
+        let controller = HubController(commandRunner: runner,
+                                       installedCommandRunner: runner,
+                                       serviceRunner: service,
+                                       homeDirectory: home,
+                                       serviceInstalledOverride: false)
+        var logs: LogsWindowController? = LogsWindowController(controller: controller)
+        let delegate = AppDelegate()
+        let item = try XCTUnwrap(logs?.secondaryActionsMenu.items.first { $0.title == "Run Diagnostics" })
+        let initialLogs = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            item.isEnabled
+        }, object: nil)
+        wait(for: [initialLogs], timeout: 2)
+        XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: []))
+        XCTAssertTrue(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
+        XCTAssertEqual(service.arguments, [["service", "stop"]])
+        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: []))
+        XCTAssertFalse(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApp), .terminateCancel)
+
+        logs?.close()
+        logs = nil
+        service.complete(.success(""))
+        for command in ["doctor", "preflight", "status"] {
+            XCTAssertEqual(runner.arguments.last?.last, command)
+            runner.complete(.success("{\"status\":\"ok\"}"))
+        }
+        let awaitingResume = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            service.arguments.count == 2
+        }, object: nil)
+        wait(for: [awaitingResume], timeout: 2)
+        XCTAssertEqual(service.arguments.last, ["service", "start"])
+        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: []))
+        service.complete(.success(""))
+        XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: []))
+        XCTAssertTrue(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApp), .terminateNow)
+    }
+
+    private func makeQuitControlKeeperWindow() -> NSWindow {
+        // Closing the tested window must not terminate the XCTest host while
+        // the next selected test is running. Quit assertions use the real guard.
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 160, height: 80),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.title = "Owned quit-control test keeper"
+        window.orderFront(nil)
+        return window
     }
 
     func testDiagnosticsRowsHaveNonzeroDocumentAndRowFramesAfterRendering() throws {
@@ -710,6 +773,9 @@ final class HubControllerTests: XCTestCase {
         let run = try XCTUnwrap(buttons(in: root).first { $0.title == "Run Again" })
 
         run.performClick(nil)
+        // NSStackView detaches hidden arranged views; disclose the report before
+        // finding its NSTextView through the visible view hierarchy.
+        try XCTUnwrap(buttons(in: root).first { $0.title == "Show raw redacted report" }).performClick(nil)
         wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             self.descendantViews(in: root).compactMap { $0 as? NSTextView }.contains { $0.string.contains("old") }
         }, object: nil)], timeout: 3)
@@ -720,7 +786,6 @@ final class HubControllerTests: XCTestCase {
             }
             XCTAssertTrue(raw?.string.contains("old") == true)
             XCTAssertTrue(self.labels(in: root).contains { $0.stringValue == "Environment doctor" })
-            try? XCTUnwrap(self.buttons(in: root).first { $0.title == "Show raw redacted report" }).performClick(nil)
             run.performClick(nil)
             XCTAssertEqual(raw?.string, "")
             XCTAssertTrue(raw?.enclosingScrollView?.isHidden == true)
@@ -1121,8 +1186,8 @@ final class HubControllerTests: XCTestCase {
         let rendered = expectation(description: "accepted activity rendered")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             let text = self.labels(in: dashboard.window?.contentView).map(\.stringValue).joined(separator: " ")
-            XCTAssertTrue(text.contains("Wake Vehicle accepted for One"))
-            XCTAssertFalse(text.contains("Wake Vehicle accepted for Two"))
+            XCTAssertTrue(text.contains("The Wake Vehicle command was accepted for One."))
+            XCTAssertFalse(text.contains("The Wake Vehicle command was accepted for Two."))
             rendered.fulfill()
         }
         wait(for: [rendered], timeout: 1)
@@ -1160,6 +1225,7 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(snapshot.accountDisplay, "Connected · Legacy token")
 
         snapshot.account = "Not configured"
+        snapshot.accountState = .notConfigured
         XCTAssertEqual(snapshot.accountDisplay, "Not configured")
         snapshot.provider = nil
         XCTAssertEqual(snapshot.accountDisplay, "Not configured")
@@ -1490,7 +1556,8 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true,
                                        initialSnapshot: .previewRunning)
         let timedOut = expectation(description: "transition deadline fired")
-        let started = Date()
+        let initialStatus = expectation(description: "initial status settled before transition probes")
+        var started = Date()
         let dashboard = MainWindowController(
             controller: controller,
             serviceTransitionTimeout: 0.1,
@@ -1499,9 +1566,15 @@ final class HubControllerTests: XCTestCase {
                 XCTAssertTrue(error.localizedDescription.contains("did not finish"))
                 XCTAssertLessThan(Date().timeIntervalSince(started), 0.4)
                 timedOut.fulfill()
-            }
+            },
+            onInitialRefresh: { _ in initialStatus.fulfill() }
         )
 
+        runner.complete(.success("""
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","ready":true,"provider":"fleet","credentials":{"present":true}}
+        """))
+        wait(for: [initialStatus], timeout: 1)
+        started = Date()
         dashboard.settleStartedHubFromOnboarding()
         XCTAssertTrue(labels(in: dashboard.window?.contentView)
             .contains { $0.stringValue == "Starting Hub…" })
@@ -1630,7 +1703,7 @@ final class HubControllerTests: XCTestCase {
                 XCTAssertFalse(button?.isEnabled ?? true, "enabled \(title)")
             }
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
-                .contains { $0.stringValue.contains("Vehicle commands are available") })
+                .contains { $0.stringValue == "Vehicle commands require Tesla Fleet API." })
             XCTAssertTrue(self.labels(in: windowController.window?.contentView)
                 .contains { $0.stringValue == "Connected · Legacy token" })
             settled.fulfill()
@@ -1839,6 +1912,7 @@ final class HubControllerTests: XCTestCase {
     func testFleetProviderWithoutConnectionShowsAccountNeedsConfiguration() throws {
         var snapshot = HubSnapshot.previewRunning
         snapshot.account = "Not configured"
+        snapshot.accountState = .notConfigured
         snapshot.provider = .fleet
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
                                        initialSnapshot: snapshot)
@@ -1858,7 +1932,7 @@ final class HubControllerTests: XCTestCase {
         let cases: [(HubSnapshot, Bool, Bool, Bool, Bool, Bool)] = [
             (valid, false, false, false, false, true),
             ({ var snapshot = valid; snapshot.health = .stopped; return snapshot }(), false, false, false, false, false),
-            ({ var snapshot = valid; snapshot.account = "Not configured"; return snapshot }(), false, false, false, false, false),
+            ({ var snapshot = valid; snapshot.account = "Not configured"; snapshot.accountState = .notConfigured; return snapshot }(), false, false, false, false, false),
             ({ var snapshot = valid; snapshot.provider = .legacy; return snapshot }(), false, false, false, false, false),
             (valid, true, false, false, false, false),
             (valid, false, true, false, false, false),
@@ -2917,6 +2991,204 @@ final class HubControllerTests: XCTestCase {
             finished.fulfill()
         }
         wait(for: [finished], timeout: 5)
+    }
+
+    func testProcessExecutorBoundsNonreadingStandardInputAndReapsChild() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString,
+                                                                                 isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pidFile = root.appendingPathComponent("child-pid")
+        let releaseFile = root.appendingPathComponent("release-owned-fixture")
+        let ownedProcess = Process()
+        let finished = expectation(description: "nonreading child timed out")
+        let started = Date()
+        let stopChild: () -> Void = {
+            // Release only this uniquely named fixture, even if an erroneous
+            // executor completion has already fired. Never signal a reused PID.
+            Self.cleanupNonreadingFixture(ownedProcess, releaseFile: releaseFile)
+        }
+        let watchdog = DispatchWorkItem(block: stopChild)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3, execute: watchdog)
+        defer { watchdog.cancel(); stopChild() }
+        HubProcessExecutor.run(
+            executable: URL(fileURLWithPath: "/usr/bin/perl"),
+            arguments: Self.nonreadingFixtureArguments(pidFile: pidFile, releaseFile: releaseFile),
+            stdin: String(repeating: "synthetic input", count: 200_000),
+            timeout: 0.2,
+            terminationGrace: 0.1,
+            outputDrainTimeout: 0.1,
+            processFactory: { ownedProcess }
+        ) { result in
+            let completionElapsed = Date().timeIntervalSince(started)
+            let publishedPID = (try? String(contentsOf: pidFile, encoding: .utf8)).flatMap { Int32($0) }
+            let reapingProbe = publishedPID.map { pid -> (result: Int32, error: Int32) in
+                let result = Darwin.kill(pid, 0)
+                return (result, errno)
+            }
+            Self.validateNonreadingFixtureCompletion(ownedProcess, releaseFile: releaseFile) {
+                XCTFail($0)
+            }
+            guard case let .failure(error) = result else {
+                finished.fulfill()
+                return XCTFail("nonreading child unexpectedly succeeded")
+            }
+            XCTAssertEqual(error.localizedDescription, "Hub command timed out.")
+            XCTAssertLessThan(completionElapsed, 1.5)
+            if let reapingProbe {
+                XCTAssertEqual(reapingProbe.result, -1)
+                XCTAssertEqual(reapingProbe.error, ESRCH)
+            } else { XCTFail("child did not publish its PID") }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+    }
+
+    func testNonreadingFixtureCleanupAfterInjectedEarlyCompletionReapsExactOwnedProcess() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString,
+                                                                                 isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pidFile = root.appendingPathComponent("child-pid")
+        let releaseFile = root.appendingPathComponent("release-owned-fixture")
+        let process = Process()
+        let readyPipe = Pipe()
+        let errorPipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+        process.arguments = Self.nonreadingFixtureArguments(pidFile: pidFile, releaseFile: releaseFile)
+        process.standardOutput = readyPipe
+        process.standardError = errorPipe
+        try process.run()
+        defer { Self.cleanupNonreadingFixture(process, releaseFile: releaseFile) }
+        try readyPipe.fileHandleForWriting.close()
+        try errorPipe.fileHandleForWriting.close()
+        // The fixture emits READY only after publishing its PID. Its autonomous
+        // lifetime bounds EOF even when startup fails; no XCTest waiter race.
+        let ready = try readyPipe.fileHandleForReading.read(upToCount: 6) ?? Data()
+        guard ready == Data("READY\n".utf8) else {
+            Self.cleanupNonreadingFixture(process, releaseFile: releaseFile)
+            let error = String(decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            XCTFail("Owned fixture did not become ready (exit \(process.terminationStatus)): \(error)")
+            return
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: pidFile.path))
+        // Inject completion before exit. Capture the real validator's failure
+        // callback rather than intentionally entering XCTest symbolication.
+        var reportedFailures: [String] = []
+        var reapedBeforeReporting = false
+        Self.validateNonreadingFixtureCompletion(process, releaseFile: releaseFile) { diagnostic in
+            reportedFailures.append(diagnostic)
+            reapedBeforeReporting = !process.isRunning
+        }
+        XCTAssertEqual(reportedFailures, ["Executor reported completion while its fixture still runs"])
+        XCTAssertTrue(reapedBeforeReporting)
+        XCTAssertFalse(process.isRunning)
+        XCTAssertEqual(process.terminationStatus, 0)
+    }
+
+    private static func cleanupNonreadingFixture(_ process: Process, releaseFile: URL) {
+        try? Data().write(to: releaseFile)
+        if process.processIdentifier > 0 { process.waitUntilExit() }
+    }
+
+    private static func validateNonreadingFixtureCompletion(
+        _ process: Process,
+        releaseFile: URL,
+        reportFailure: (String) -> Void
+    ) {
+        let completedWhileRunning = process.isRunning
+        cleanupNonreadingFixture(process, releaseFile: releaseFile)
+        if completedWhileRunning {
+            reportFailure("Executor reported completion while its fixture still runs")
+        }
+    }
+
+    private static func nonreadingFixtureArguments(pidFile: URL, releaseFile: URL) -> [String] {
+        ["-e", """
+        $| = 1;
+        $SIG{TERM} = 'IGNORE';
+        open(my $pid, '>', $ARGV[0]) or die $!;
+        print $pid $$;
+        close($pid);
+        print 'READY', chr(10);
+        my $deadline = time() + 5;
+        while (!-e $ARGV[1] && time() < $deadline) { select(undef, undef, undef, 0.01); }
+        """, pidFile.path, releaseFile.path]
+    }
+
+    func testProcessExecutorTransfersLargeStandardInputThroughEOF() {
+        let input = String(repeating: "abcdef", count: 200_000)
+        let finished = expectation(description: "large input consumed")
+        HubProcessExecutor.run(executable: URL(fileURLWithPath: "/usr/bin/wc"),
+                               arguments: ["-c"], stdin: input, timeout: 3) { result in
+            switch result {
+            case let .success(output):
+                XCTAssertEqual(Int(output.trimmingCharacters(in: .whitespacesAndNewlines)), input.utf8.count)
+            case let .failure(error): XCTFail(error.localizedDescription)
+            }
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 4)
+    }
+
+    func testProcessExecutorUsesOneDeadlineForInputAndChildExit() {
+        let finished = expectation(description: "input and exit share deadline")
+        HubProcessExecutor.run(
+            executable: URL(fileURLWithPath: "/usr/bin/perl"),
+            arguments: ["-e", """
+                select(undef, undef, undef, 0.4);
+                local $/;
+                my $input = <STDIN>;
+                select(undef, undef, undef, 0.4);
+                print length($input);
+                """],
+            stdin: String(repeating: "a", count: 2 * 1024 * 1024),
+            timeout: 0.6, terminationGrace: 0.1, outputDrainTimeout: 0.1
+        ) { result in
+            guard case let .failure(error) = result else {
+                finished.fulfill()
+                return XCTFail("input transfer incorrectly reset the child deadline")
+            }
+            XCTAssertEqual(error.localizedDescription, "Hub command timed out.")
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+    }
+
+    func testProcessExecutorRejectsOversizedInputBeforeLaunchingChild() {
+        let marker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: marker) }
+        let finished = expectation(description: "oversized input rejected")
+        HubProcessExecutor.run(executable: URL(fileURLWithPath: "/bin/sh"),
+                               arguments: ["-c", "touch \"$TESLATLAS_INPUT_MARKER\""],
+                               stdin: String(repeating: "a", count: HubProcessExecutor.maximumStandardInputBytes + 1),
+                               environment: ["TESLATLAS_INPUT_MARKER": marker.path]) { result in
+            guard case let .failure(error) = result else {
+                finished.fulfill()
+                return XCTFail("oversized input unexpectedly succeeded")
+            }
+            XCTAssertEqual(error.localizedDescription, "Hub command input exceeds its size limit.")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: marker.path))
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
+    }
+
+    func testProcessExecutorReportsClosedInputWithoutSIGPIPE() {
+        let finished = expectation(description: "closed stdin fails safely")
+        HubProcessExecutor.run(executable: URL(fileURLWithPath: "/usr/bin/perl"),
+                               arguments: ["-e", "close(STDIN); sleep 5;"],
+                               stdin: String(repeating: "a", count: 2 * 1024 * 1024),
+                               timeout: 1, terminationGrace: 0.1, outputDrainTimeout: 0.1) { result in
+            guard case let .failure(error) = result else {
+                finished.fulfill()
+                return XCTFail("closed stdin unexpectedly succeeded")
+            }
+            XCTAssertEqual((error as NSError).domain, NSPOSIXErrorDomain)
+            XCTAssertEqual((error as NSError).code, Int(EPIPE))
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 2)
     }
 
     func testProcessExecutorDeliversLineBeforeChildExit() {

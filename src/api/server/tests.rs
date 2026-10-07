@@ -24,6 +24,9 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 use super::*;
+
+#[path = "tests/drive_byte_budget.rs"]
+mod drive_byte_budget;
 use crate::{
     config::{HubConfig, TlsListenerConfig},
     db::{
@@ -706,6 +709,15 @@ async fn native_readiness_binds_the_loaded_config_contract_digest() {
         )
         .await
         .expect("readiness response");
+    assert_eq!(
+        response
+            .headers()
+            .get("x-teslatlas-native-process-id")
+            .expect("native process ID")
+            .to_str()
+            .expect("decimal process ID"),
+        std::process::id().to_string()
+    );
     assert_eq!(
         response
             .headers()
@@ -2926,6 +2938,189 @@ async fn stalled_pack_body_releases_global_and_device_slots() {
         .expect("stalled device slot released");
     drop(recovered);
     writer_task.abort();
+}
+
+#[tokio::test]
+async fn stalled_verified_pack_body_releases_real_global_and_device_slots() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let state = AppState::new(
+        HubStore::initialize(temporary.path()).expect("store"),
+        false,
+        true,
+        true,
+        None,
+        None,
+        None,
+        None,
+    );
+    let device_id = Uuid::new_v4();
+    let first_device = state
+        .try_acquire_pack_device_slot(device_id)
+        .expect("first slot");
+    let second_device = state
+        .try_acquire_pack_device_slot(device_id)
+        .expect("second slot");
+    assert!(state.try_acquire_pack_device_slot(device_id).is_none());
+    let permit = state
+        .pack_stream_slots
+        .clone()
+        .try_acquire_owned()
+        .expect("global slot");
+    let body = verified_pack_body(
+        Bytes::from(vec![7; 512 * 1024]),
+        permit,
+        first_device,
+        Duration::from_millis(10),
+    );
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while state.pack_stream_slots.available_permits() != MAX_ACTIVE_PACK_STREAMS {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("unread verified body releases without being polled or dropped");
+    let recovered = state
+        .try_acquire_pack_device_slot(device_id)
+        .expect("device slot recovered");
+    drop((body, recovered, second_device));
+}
+
+#[tokio::test]
+async fn verified_pack_body_preserves_selected_bytes() {
+    let bytes = Bytes::from((0..512 * 1024).map(|n| (n % 251) as u8).collect::<Vec<_>>());
+    let slots = Arc::new(tokio::sync::Semaphore::new(1));
+    let counts = Arc::new(Mutex::new(HashMap::from([(Uuid::nil(), 1)])));
+    let body = verified_pack_body(
+        bytes.slice(17..200_003),
+        slots.clone().acquire_owned().await.expect("slot"),
+        PackDeviceSlot {
+            device_id: Uuid::nil(),
+            counts: counts.clone(),
+        },
+        Duration::from_secs(2),
+    );
+    let received = body.collect().await.expect("body").to_bytes();
+    assert_eq!(received, bytes.slice(17..200_003));
+    assert_eq!(slots.available_permits(), 1);
+    assert!(counts.lock().expect("counts").is_empty());
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn sync_control_work_retains_bounded_admission_after_caller_cancellation() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let state = AppState::new(
+        HubStore::initialize(temporary.path()).expect("store"),
+        false,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+    );
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let first_state = state.clone();
+    let first = tokio::spawn(async move {
+        first_state
+            .sync_control_response(move |_| {
+                started_tx.send(()).expect("signal started");
+                release_rx
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("release worker");
+                StatusCode::OK.into_response()
+            })
+            .await
+    });
+    tokio::time::timeout(Duration::from_secs(2), started_rx)
+        .await
+        .expect("started")
+        .expect("signal");
+    first.abort();
+    assert!(first.await.expect_err("caller aborted").is_cancelled());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let second_calls = calls.clone();
+    let second_state = state.clone();
+    let mut second = tokio::spawn(async move {
+        second_state
+            .sync_control_response(move |_| {
+                second_calls.fetch_add(1, Ordering::SeqCst);
+                StatusCode::OK.into_response()
+            })
+            .await
+    });
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut second)
+            .await
+            .is_err()
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(state.sync_control_slots.available_permits(), 0);
+    release_tx.send(()).expect("release first worker");
+    let response = tokio::time::timeout(Duration::from_secs(2), second)
+        .await
+        .expect("second completes")
+        .expect("task");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(state.sync_control_slots.available_permits(), 1);
+}
+
+#[tokio::test]
+async fn physical_changes_since_does_not_wait_for_legacy_verification_admission() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let source = store
+        .register_source(
+            &SourceDescriptor::new("tesla_owner_api", "profile-isolation"),
+            1,
+        )
+        .expect("source");
+    let vehicle = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "vehicle"), 2)
+        .expect("vehicle");
+    let key = CursorKey::from_bytes([57; 32]);
+    let state = AppState::new(
+        store,
+        false,
+        false,
+        false,
+        Some(ManifestSigning::from_cursor_key(&key)),
+        Some(key),
+        None,
+        None,
+    );
+    let _legacy_permit = state
+        .sync_control_slots
+        .clone()
+        .acquire_owned()
+        .await
+        .expect("hold legacy admission");
+    let request = serde_json::json!({
+        "base_receipt_id": "0".repeat(64),
+        "base_manifest_schema": "2.2",
+        "from_sequence": 0,
+        "schema_version_range": {"minimum":"2.2", "maximum":"2.2"}
+    });
+    let response = tokio::time::timeout(
+        Duration::from_secs(2),
+        hub_sync_v1::changes_since(
+            State(state.clone()),
+            Path(vehicle.vehicle_id.to_string()),
+            Request::builder()
+                .method("POST")
+                .body(Body::from(serde_json::to_vec(&request).expect("request")))
+                .expect("HTTP request"),
+        ),
+    )
+    .await
+    .expect("physical profile dispatch stays independent of legacy admission");
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_ACCEPTABLE,
+        "no physical head; handler still completes"
+    );
+    assert_eq!(state.sync_control_slots.available_permits(), 0);
 }
 
 #[test]

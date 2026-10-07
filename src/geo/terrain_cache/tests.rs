@@ -7,7 +7,7 @@ use std::{
 
 use axum::{
     Router,
-    body::Body,
+    body::{Body, Bytes},
     http::{StatusCode, Uri},
     response::Response,
     routing::any,
@@ -242,6 +242,111 @@ async fn active_lookup_enforces_budget() {
         cache.lookup(f64::NAN, -0.1, Duration::ZERO).await,
         Err(TerrainCacheError::Timeout)
     ));
+}
+
+fn stalled_archive_response() -> Response<Body> {
+    let chunks = futures_util::stream::once(async {
+        Ok::<_, io::Error>(Bytes::from_static(b"partial archive"))
+    })
+    .chain(futures_util::stream::pending::<Result<Bytes, io::Error>>());
+    Response::new(Body::from_stream(chunks))
+}
+
+fn temporary_paths(root: &Path) -> Vec<PathBuf> {
+    fs::read_dir(root)
+        .unwrap()
+        .map(|entry| entry.unwrap())
+        .filter(|entry| is_owned_temporary_name(&entry.file_name()))
+        .map(|entry| entry.path())
+        .collect()
+}
+
+async fn wait_for_partial_archive(root: &Path) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if temporary_paths(root).iter().any(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_str()
+                    .unwrap()
+                    .starts_with(".archive.")
+                    && fs::metadata(path).is_ok_and(|metadata| metadata.len() > 0)
+            }) {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("download must create and write its archive before cancellation");
+}
+
+#[tokio::test]
+async fn lookup_timeout_removes_in_progress_archive() {
+    let dir = tempdir().unwrap();
+    let (endpoint, server_task) = server(|_| stalled_archive_response()).await;
+    let cache = Arc::new(TerrainCache::new(options(dir.path(), &endpoint)).unwrap());
+    let lookup_cache = Arc::clone(&cache);
+    let lookup = tokio::spawn(async move {
+        lookup_cache
+            .lookup(51.5, -0.1, Duration::from_secs(1))
+            .await
+    });
+
+    wait_for_partial_archive(dir.path()).await;
+    assert!(matches!(
+        lookup.await.unwrap(),
+        Err(TerrainCacheError::Timeout)
+    ));
+    assert!(temporary_paths(dir.path()).is_empty());
+    server_task.abort();
+    assert!(server_task.await.unwrap_err().is_cancelled());
+}
+
+#[tokio::test]
+async fn cancelled_downloads_do_not_exhaust_archive_names() {
+    let dir = tempdir().unwrap();
+    let complete = Arc::new(AtomicBool::new(false));
+    let requests = Arc::new(AtomicUsize::new(0));
+    let complete_for_server = Arc::clone(&complete);
+    let requests_for_server = Arc::clone(&requests);
+    let (endpoint, server_task) = server(move |uri| {
+        requests_for_server.fetch_add(1, Ordering::SeqCst);
+        if !complete_for_server.load(Ordering::Acquire) {
+            stalled_archive_response()
+        } else if uri.path().ends_with(".gz") {
+            Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::empty())
+                .unwrap()
+        } else {
+            Response::new(Body::from(zip_bytes()))
+        }
+    })
+    .await;
+    let cache = Arc::new(TerrainCache::new(options(dir.path(), &endpoint)).unwrap());
+
+    for _ in 0..20 {
+        let lookup_cache = Arc::clone(&cache);
+        let lookup = tokio::spawn(async move {
+            lookup_cache
+                .lookup(51.5, -0.1, Duration::from_secs(10))
+                .await
+        });
+        wait_for_partial_archive(dir.path()).await;
+        lookup.abort();
+        assert!(lookup.await.unwrap_err().is_cancelled());
+        assert!(temporary_paths(dir.path()).is_empty());
+    }
+
+    complete.store(true, Ordering::Release);
+    let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
+    assert_eq!(cache.get(tile).await.unwrap().side(), SRTM3_SIDE);
+    assert_eq!(cache.read_source(tile), "esa");
+    assert_eq!(requests.load(Ordering::SeqCst), 22);
+    assert!(temporary_paths(dir.path()).is_empty());
+    server_task.abort();
+    assert!(server_task.await.unwrap_err().is_cancelled());
 }
 
 #[tokio::test]

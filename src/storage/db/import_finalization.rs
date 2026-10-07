@@ -484,6 +484,19 @@ impl HubStore {
         {
             return Err(StoreError::LineageCatalogConflict);
         }
+        // Admission applies to the complete prospective lineage, not just
+        // this pack: IDs and aggregate limits include the immutable base
+        // and every earlier successor. Reject before any catalogue write.
+        let mut candidate = self
+            .lineage_manifest_for_vehicle(vehicle_id)?
+            .ok_or(StoreError::LineageCatalogConflict)?;
+        candidate.deltas.push(delta.clone());
+        candidate.head_sequence = delta.to_sequence;
+        candidate.head_digest = delta.chain_digest;
+        candidate.terminal_cursor = terminal_cursor.clone();
+        candidate
+            .validate_with_limits(ProtocolLimits::default())
+            .map_err(StoreError::Manifest)?;
         let terminal_cursor_json =
             serde_json::to_string(terminal_cursor).map_err(StoreError::SerializeManifest)?;
         let vehicle_key = vehicle_id.to_string();
@@ -2655,7 +2668,9 @@ fn reconcile_imported_materialisation_in_transaction(
              VALUES (?1, ?2, ?3)
              ON CONFLICT(vehicle_id) DO UPDATE SET
                 car_id = excluded.car_id,
-                car_json = excluded.car_json",
+                car_json = excluded.car_json
+             WHERE materialised_cars.car_id IS NOT excluded.car_id
+                OR materialised_cars.car_json IS NOT excluded.car_json",
             params![vehicle_key.as_str(), car_id, car_json],
         )
         .map_err(StoreError::LifecycleWrite)?;
@@ -2678,7 +2693,16 @@ fn reconcile_imported_materialisation_in_transaction(
                     start_ideal_range_km = excluded.start_ideal_range_km,
                     end_ideal_range_km = excluded.end_ideal_range_km,
                     ascent = excluded.ascent,
-                    descent = excluded.descent",
+                    descent = excluded.descent
+                 WHERE materialised_drives.car_id IS NOT excluded.car_id
+                    OR materialised_drives.drive_json IS NOT excluded.drive_json
+                    OR materialised_drives.inside_temp_avg IS NOT excluded.inside_temp_avg
+                    OR materialised_drives.power_max IS NOT excluded.power_max
+                    OR materialised_drives.power_min IS NOT excluded.power_min
+                    OR materialised_drives.start_ideal_range_km IS NOT excluded.start_ideal_range_km
+                    OR materialised_drives.end_ideal_range_km IS NOT excluded.end_ideal_range_km
+                    OR materialised_drives.ascent IS NOT excluded.ascent
+                    OR materialised_drives.descent IS NOT excluded.descent",
                 params![
                     vehicle_key.as_str(),
                     drive.id,

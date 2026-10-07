@@ -398,6 +398,13 @@ def _staged(value: Any, label: str) -> tuple[Mapping[str, Any], Mapping[str, Any
 
 def validate_profile_inputs(manifest: Any, members: Any, expected_digest: str, deadline=None) -> None:
     """Admit the real 18-member profile and its SHA256SUMS manifest."""
+    def safe_relative_name(name):
+        if (not isinstance(name, str) or not name or name.startswith("/")
+                or any(item in name for item in ("\\", "\x00", "\r", "\n"))
+                or any(part in {"", ".", ".."} for part in name.split("/"))):
+            raise WireError("profile relative member name is invalid")
+        return name
+
     root_manifest, local_manifest = _staged(manifest, "profile manifest")
     if root_manifest["sha256"] != expected_digest or local_manifest["sha256"] != expected_digest:
         raise WireError("profile manifest digest does not match admitted profile")
@@ -408,11 +415,16 @@ def validate_profile_inputs(manifest: Any, members: Any, expected_digest: str, d
     local_paths = []
     local_bindings = {}
     ids = []
+    profile_root = Path(local_manifest["path"]).parent
     for index, member in enumerate(members):
         _root, local = _staged(member, f"profile member {index}")
         path = Path(local["path"])
+        try:
+            name = safe_relative_name(path.relative_to(profile_root).as_posix())
+        except ValueError as error:
+            raise WireError("profile member is outside the staged profile root") from error
         local_paths.append(path)
-        local_bindings[path.name] = local
+        local_bindings[name] = local
         ids.append(member["id"])
     if len(set(ids)) != 18 or len(set(local_paths)) != 18 or len(local_bindings) != 18:
         raise WireError("profile members are duplicated")
@@ -424,11 +436,14 @@ def validate_profile_inputs(manifest: Any, members: Any, expected_digest: str, d
     except UnicodeDecodeError as error:
         raise WireError("profile SHA256SUMS is not UTF-8") from error
     declared = {}
-    for line in text.splitlines():
-        match = re.fullmatch(r"([0-9a-f]{64})  ([^/\x00\r\n]+)", line)
+    lines = text.split("\n")
+    if lines[-1] == "":
+        lines.pop()
+    for line in lines:
+        match = re.fullmatch(r"([0-9a-f]{64})  ([^\x00\r\n]+)", line)
         if match is None or match.group(2) == "SHA256SUMS" or match.group(2) in declared:
             raise WireError("profile SHA256SUMS line is invalid")
-        declared[match.group(2)] = match.group(1)
+        declared[safe_relative_name(match.group(2))] = match.group(1)
     content_names = set(local_bindings) - {"SHA256SUMS"}
     if set(declared) != content_names or len(declared) != 17:
         raise WireError("profile SHA256SUMS does not enumerate 17 content members")

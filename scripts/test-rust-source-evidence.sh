@@ -2,6 +2,15 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 set -eu
 
+case "${CARGO_HOME:-}" in
+  /*) ;;
+  *) printf '%s\n' 'error: routed CARGO_HOME is required for Rust source evidence tests' >&2; exit 1 ;;
+esac
+if [ ! -d "$CARGO_HOME" ]; then
+  printf 'error: CARGO_HOME is not an existing directory: %s\n' "$CARGO_HOME" >&2
+  exit 1
+fi
+
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 HELPER="$ROOT/scripts/rust-source-evidence.py"
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-rust-source-evidence.XXXXXX")
@@ -96,12 +105,12 @@ PY
 fi
 python3 "$HELPER" \
   --repo "$TMP/repo" \
-  --cargo-home "${CARGO_HOME:-$HOME/.cargo}" \
+  --cargo-home "$CARGO_HOME" \
   --bin rust-source-fixture \
   --output-dir "$TMP/evidence-a" >/dev/null
 python3 "$HELPER" \
   --repo "$TMP/repo" \
-  --cargo-home "${CARGO_HOME:-$HOME/.cargo}" \
+  --cargo-home "$CARGO_HOME" \
   --bin rust-source-fixture \
   --output-dir "$TMP/evidence-b" >/dev/null
 
@@ -269,7 +278,7 @@ expect_failure python3 "$HELPER" \
   --output-dir "$TMP/missing-source"
 
 mkdir "$TMP/symlink-cargo-home"
-ln -s "${CARGO_HOME:-$HOME/.cargo}/registry" "$TMP/symlink-cargo-home/registry"
+ln -s "$CARGO_HOME/registry" "$TMP/symlink-cargo-home/registry"
 expect_failure python3 "$HELPER" \
   --repo "$TMP/repo" \
   --cargo-home "$TMP/symlink-cargo-home" \
@@ -296,7 +305,7 @@ EOF
 (cd "$TMP/repo" && cargo generate-lockfile --offline)
 expect_failure python3 "$HELPER" \
   --repo "$TMP/repo" \
-  --cargo-home "${CARGO_HOME:-$HOME/.cargo}" \
+  --cargo-home "$CARGO_HOME" \
   --bin rust-source-fixture \
   --output-dir "$TMP/path-source"
 

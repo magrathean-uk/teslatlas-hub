@@ -372,6 +372,7 @@ pub struct AppState {
     native_config_digest: Option<Sha256Digest>,
     readiness_cache: Arc<Mutex<Option<CachedReadiness>>>,
     readiness_singleflight: Arc<tokio::sync::Semaphore>,
+    sync_control_slots: Arc<tokio::sync::Semaphore>,
     pack_stream_slots: Arc<tokio::sync::Semaphore>,
     pack_streams_by_device: Arc<Mutex<HashMap<Uuid, usize>>>,
     fleet_telemetry: Option<Arc<FleetTelemetryIngress>>,
@@ -539,6 +540,7 @@ impl AppState {
             native_config_digest,
             readiness_cache: Arc::new(Mutex::new(None)),
             readiness_singleflight: Arc::new(tokio::sync::Semaphore::new(1)),
+            sync_control_slots: Arc::new(tokio::sync::Semaphore::new(1)),
             pack_stream_slots: Arc::new(tokio::sync::Semaphore::new(MAX_ACTIVE_PACK_STREAMS)),
             pack_streams_by_device: Arc::new(Mutex::new(HashMap::new())),
             fleet_telemetry: fleet_telemetry.map(Arc::new),
@@ -605,6 +607,23 @@ impl AppState {
         })
         .await
         .unwrap_or(Err(ReadinessReasonCode::CatalogueUnavailable))
+    }
+
+    async fn sync_control_response(
+        &self,
+        work: impl FnOnce(AppState) -> Response + Send + 'static,
+    ) -> Response {
+        let Ok(permit) = self.sync_control_slots.clone().acquire_owned().await else {
+            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+        };
+        let state = self.clone();
+        tokio::task::spawn_blocking(move || {
+            // The worker owns admission even if its HTTP caller times out.
+            let _permit = permit;
+            work(state)
+        })
+        .await
+        .unwrap_or_else(|_| StatusCode::SERVICE_UNAVAILABLE.into_response())
     }
 }
 
@@ -1212,6 +1231,10 @@ async fn ready(State(state): State<AppState>) -> impl IntoResponse {
         )
             .into_response(),
     };
+    response.headers_mut().insert(
+        header::HeaderName::from_static("x-teslatlas-native-process-id"),
+        HeaderValue::from_str(&std::process::id().to_string()).expect("process ID is decimal"),
+    );
     if let Some(digest) = state.native_config_digest {
         response.headers_mut().insert(
             header::HeaderName::from_static(NATIVE_CONFIG_DIGEST_HEADER),
@@ -1452,17 +1475,28 @@ async fn drives(
     if has_more {
         items.truncate(query.limit as usize);
     }
-    let next_cursor = has_more.then(|| {
-        let last = items
-            .last()
-            .expect("one-row lookahead requires a retained page item");
-        query.next_cursor(cursor_key, vehicle_id, (last.start_date_ms, last.id))
-    });
     let items = items
         .into_iter()
         .map(|drive| PublicDrive::from_projection(vehicle_id, drive))
         .collect();
-    let page = PublicDrivePage { items, next_cursor };
+    let page = match bounded_public_drive_page(items, has_more, query, cursor_key, vehicle_id) {
+        Ok(Some(page)) => page,
+        Ok(None) => {
+            return public_api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service_unavailable",
+                "a drive exceeds the response byte limit",
+            );
+        }
+        Err(error) => {
+            tracing::error!(%error, %vehicle_id, "cannot size public drive page");
+            return public_api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "service_unavailable",
+                "drive history is temporarily unavailable",
+            );
+        }
+    };
     match public_json_response_with_etag(&headers, &page) {
         Ok(response) => response,
         Err(error) => {
@@ -1474,6 +1508,43 @@ async fn drives(
             )
         }
     }
+}
+
+const MAX_PUBLIC_DRIVE_PAGE_BYTES: usize = 1024 * 1024;
+
+/// Size the exact serialized rows and envelope once per candidate. The cursor
+/// always names the last emitted row, including when bytes shorten a row page.
+fn bounded_public_drive_page(
+    mut items: Vec<PublicDrive>,
+    fetched_has_more: bool,
+    query: DriveQuery,
+    cursor_key: &CursorKey,
+    vehicle_id: Uuid,
+) -> Result<Option<PublicDrivePage>, serde_json::Error> {
+    let mut row_bytes = 0;
+    let mut retained = 0;
+    let mut next_cursor = None;
+    for (index, item) in items.iter().enumerate() {
+        let candidate_bytes = row_bytes + usize::from(index > 0) + serde_json::to_vec(item)?.len();
+        let cursor = (fetched_has_more || index + 1 < items.len())
+            .then(|| query.next_cursor(cursor_key, vehicle_id, (item.start_date_ms, item.id)));
+        let envelope_bytes = serde_json::to_vec(&PublicDrivePage {
+            items: Vec::new(),
+            next_cursor: cursor.clone(),
+        })?
+        .len();
+        if candidate_bytes + envelope_bytes > MAX_PUBLIC_DRIVE_PAGE_BYTES {
+            break;
+        }
+        row_bytes = candidate_bytes;
+        retained = index + 1;
+        next_cursor = cursor;
+    }
+    if retained == 0 && !items.is_empty() {
+        return Ok(None);
+    }
+    items.truncate(retained);
+    Ok(Some(PublicDrivePage { items, next_cursor }))
 }
 
 fn public_json_response_with_etag<T: Serialize>(
@@ -1756,8 +1827,12 @@ async fn prepared_artefact(
     if let Err(response) = require_active_vehicle(&state, vehicle_id) {
         return response;
     }
+    let Some(cursor_key) = state.cursor_key.as_deref() else {
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
     match crate::import::teslamate::prepared_map::current_receipt(
         &state.store,
+        cursor_key,
         vehicle_id,
         &artifact_id,
     ) {
@@ -1943,17 +2018,23 @@ async fn pack(
                         delta_pack = true;
                         (pack, true)
                     }
-                    Ok(None) => match crate::import::teslamate::prepared_map::current_pack(
-                        &state.store,
-                        digest,
-                    ) {
-                        Ok(Some(pack)) => (pack, true),
-                        Ok(None) => return StatusCode::NOT_FOUND.into_response(),
-                        Err(error) => {
-                            tracing::error!(%error, %digest, "cannot load admitted prepared pack");
+                    Ok(None) => {
+                        let Some(cursor_key) = state.cursor_key.as_deref() else {
                             return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                        };
+                        match crate::import::teslamate::prepared_map::current_pack(
+                            &state.store,
+                            cursor_key,
+                            digest,
+                        ) {
+                            Ok(Some(pack)) => (pack, true),
+                            Ok(None) => return StatusCode::NOT_FOUND.into_response(),
+                            Err(error) => {
+                                tracing::error!(%error, %digest, "cannot load admitted prepared pack");
+                                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                            }
                         }
-                    },
+                    }
                     Err(error) => {
                         tracing::error!(%error, %digest, "cannot load admitted changed-set pack");
                         return StatusCode::SERVICE_UNAVAILABLE.into_response();
@@ -2293,7 +2374,12 @@ async fn stream_pack(
     let body = if let Some(bytes) = verified_bytes {
         let start = usize::try_from(range.start).expect("physical pack start fits usize");
         let end = usize::try_from(range.end + 1).expect("physical pack end fits usize");
-        verified_pack_body(bytes.slice(start..end), permit, device_slot)
+        verified_pack_body(
+            bytes.slice(start..end),
+            permit,
+            device_slot,
+            PACK_STREAM_IDLE_TIMEOUT,
+        )
     } else {
         pack_stream_body(
             tokio::io::AsyncReadExt::take(file, range.len()),
@@ -2346,21 +2432,14 @@ fn verified_pack_body(
     bytes: Bytes,
     permit: tokio::sync::OwnedSemaphorePermit,
     device_slot: PackDeviceSlot,
+    idle_timeout: Duration,
 ) -> Body {
-    Body::from_stream(stream::unfold(
-        (bytes, 0_usize, permit, device_slot),
-        |(bytes, offset, permit, device_slot)| async move {
-            if offset == bytes.len() {
-                return None;
-            }
-            let end = (offset + 64 * 1024).min(bytes.len());
-            let chunk = bytes.slice(offset..end);
-            Some((
-                Ok::<Bytes, std::io::Error>(chunk),
-                (bytes, end, permit, device_slot),
-            ))
-        },
-    ))
+    pack_stream_body(
+        std::io::Cursor::new(bytes),
+        permit,
+        device_slot,
+        idle_timeout,
+    )
 }
 
 fn pack_stream_body<R>(

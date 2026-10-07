@@ -128,11 +128,8 @@ impl HubStore {
         Ok(admission)
     }
 
-    /// Atomically replace the first admitted physical head while retaining its
-    /// exact signed checkpoint for a bounded future rebase response. The new
-    /// head is deliberately blocked from public control and pack routes until
-    /// the retained-prior 409 adapter is installed in a later cut.
-    // Exercised by tests until the retained-prior 409 adapter lands.
+    /// Fixture/recovery support for the historical two-commit rotation. Normal
+    /// production uses the atomic public replacement method below.
     #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn rotate_pending_physical_v3_admission_at(
         &self,
@@ -145,15 +142,41 @@ impl HubStore {
         )
     }
 
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn rotate_pending_physical_v3_admission_with_delta_at(
+        &self,
+        publication_gate: &PublicationGate,
+        candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        delta: Option<crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta>,
+        retained_at_ms: i64,
+    ) -> Result<PendingPhysicalV3Admission, StoreError> {
+        self.rotate_physical_v3_admission_at(publication_gate, candidate, delta, retained_at_ms, false)
+    }
+
+    /// Production has retained-prior rebase support, so replacement and public
+    /// activation commit together. A crash cannot persist an unservable head
+    /// whose activation later depends on the predecessor's retention deadline.
+    pub(crate) fn rotate_and_activate_physical_v3_admission_with_delta_at(
+        &self,
+        publication_gate: &PublicationGate,
+        candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        delta: Option<crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta>,
+        retained_at_ms: i64,
+    ) -> Result<PendingPhysicalV3Admission, StoreError> {
+        self.rotate_physical_v3_admission_at(publication_gate, candidate, delta, retained_at_ms, true)
+    }
+
+    fn rotate_physical_v3_admission_at(
         &self,
         publication_gate: &PublicationGate,
         mut candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
         mut delta: Option<crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta>,
         retained_at_ms: i64,
+        public: bool,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
+        let serve_state = if public { "public_first" } else { "blocked_rotation" };
         let result = self.rotate_pending_physical_v3_admission_inner(
-            &candidate, delta.as_ref(), retained_at_ms,
+            &candidate, delta.as_ref(), retained_at_ms, serve_state,
         );
         candidate.retain_catalogued_objects();
         match result {
@@ -185,6 +208,7 @@ impl HubStore {
         candidate: &crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
         delta: Option<&crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta>,
         retained_at_ms: i64,
+        serve_state: &'static str,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
         let expires_at_ms = retained_at_ms
             .checked_add(RETIRED_LINEAGE_PACK_RETENTION_MS)
@@ -199,6 +223,11 @@ impl HubStore {
             .pending_physical_v3_admission_for_vehicle(next.vehicle_id)?
             .ok_or(StoreError::PhysicalV3AdmissionConflict)?;
         if next == prior {
+            if serve_state == "public_first"
+                && self.pending_physical_v3_control_admission_for_vehicle(next.vehicle_id)?.as_ref() != Some(&prior)
+            {
+                return Err(StoreError::PhysicalV3AdmissionConflict);
+            }
             return Ok(prior);
         }
         if next.installation_id != prior.installation_id
@@ -239,7 +268,7 @@ impl HubStore {
                 [next.vehicle_id.to_string()],
             )
             .map_err(StoreError::PublishManifest)?;
-        insert_pending_physical_v3_admission(&transaction, &next, "blocked_rotation")?;
+        insert_pending_physical_v3_admission(&transaction, &next, serve_state)?;
         if let Some(delta) = delta {
             insert_physical_v3_delta_transition(&transaction, &prior, &next, delta, &self.packs_dir)?;
         }
@@ -249,6 +278,7 @@ impl HubStore {
             &next,
             retained_at_ms,
             expires_at_ms,
+            serve_state,
         )?;
         Ok(next)
     }
@@ -356,6 +386,7 @@ impl HubStore {
         next: &PendingPhysicalV3Admission,
         retained_at_ms: i64,
         expires_at_ms: i64,
+        serve_state: &str,
     ) -> Result<(), StoreError> {
         if let Err(source) = crate::durability_fault::check(
             crate::durability_fault::DurabilityFaultPoint::CatalogueBeforeCommit,
@@ -366,6 +397,7 @@ impl HubStore {
                 next,
                 retained_at_ms,
                 expires_at_ms,
+                serve_state,
             )? {
                 ManifestCommitState::Absent => Err(StoreError::CatalogueDurability(source)),
                 ManifestCommitState::Exact | ManifestCommitState::Conflicting => {
@@ -379,6 +411,7 @@ impl HubStore {
                 next,
                 retained_at_ms,
                 expires_at_ms,
+                serve_state,
             )? {
                 ManifestCommitState::Exact => Ok(()),
                 ManifestCommitState::Absent | ManifestCommitState::Conflicting => {
@@ -396,6 +429,7 @@ impl HubStore {
                 next,
                 retained_at_ms,
                 expires_at_ms,
+                serve_state,
             )? {
                 ManifestCommitState::Exact => Ok(()),
                 ManifestCommitState::Absent | ManifestCommitState::Conflicting => {
@@ -412,8 +446,13 @@ impl HubStore {
         next: &PendingPhysicalV3Admission,
         retained_at_ms: i64,
         expires_at_ms: i64,
+        serve_state: &str,
     ) -> Result<ManifestCommitState, StoreError> {
         let current = self.pending_physical_v3_admission_for_vehicle(next.vehicle_id);
+        let actual_serve_state: Option<String> = self.open_read_only_connection()?.query_row(
+            "SELECT serve_state FROM pending_physical_v3_admissions WHERE vehicle_id = ?1",
+            [next.vehicle_id.to_string()], |row| row.get(0),
+        ).optional().map_err(StoreError::Query)?;
         let retained = self.retained_physical_v3_admission_for_receipt_at(
             next.vehicle_id,
             &prior.receipt_id,
@@ -423,6 +462,7 @@ impl HubStore {
         match (current, retained) {
             (Ok(Some(current)), Ok(Some(retained)))
                 if current == *next
+                    && actual_serve_state.as_deref() == Some(serve_state)
                     && retained.admission == *prior
                     && retained.retained_at_ms == retained_at_ms
                     && retained.expires_at_ms == expires_at_ms =>
@@ -437,10 +477,9 @@ impl HubStore {
         }
     }
 
-    /// Promote one already-rotated PhysicalV3 successor after the runtime has
-    /// gained retained-prior rebase support. This method has no production
-    /// caller yet: a later source publication cut must invoke it while holding
-    /// the same publication gate used for rotation.
+    /// Promote one already-rotated, verified PhysicalV3 successor while holding
+    /// the same publication gate used for rotation. Recovery uses its persisted
+    /// identity independently of any newer source snapshot.
     pub(crate) fn activate_pending_physical_v3_rotation_at(
         &self,
         _publication_gate: &PublicationGate,

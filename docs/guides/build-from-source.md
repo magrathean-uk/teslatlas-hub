@@ -27,24 +27,23 @@ there instead of these standalone commands. The workspace pins Rust 1.98.1.
 ## Teslatlas Compute
 
 Hub uses the Teslatlas Compute library (`teslatlas-compute`, Apache-2.0) from
-<https://github.com/magrathean-uk/teslatlas-compute>. `Cargo.toml` pins it to
-one full commit and `Cargo.lock` records that commit, so a Hub clone builds
-without a separate library checkout. Cargo fetches the library with the other
-locked dependencies; `cargo fetch --locked` also fetches it for offline builds.
+<https://github.com/magrathean-uk/teslatlas-compute>. `Cargo.toml` pins the
+corresponding published Compute source to one full commit; `Cargo.lock` records
+the same commit. That source includes the bounded paged-generation API and
+algorithm identity 0.1.1, while its package version remains 0.1.0. Cargo fetches
+the library with the other locked dependencies, so no sibling checkout is
+required. `cargo fetch --locked` also fetches it for offline builds.
 
-To test Hub against a local library checkout beside the Hub checkout, add a
-Cargo path override to the command. The override leaves `Cargo.lock` unchanged
-and is never committed:
+For an ordinary local library check, an explicit Cargo path override may select
+the sibling checkout without changing the manifest or lockfile:
 
 ```sh
 cargo check --locked --config 'paths=["../teslatlas-compute"]'
 ```
 
-The override applies only to that command. Do not use it for a source-bound or
-distributed build; the Rust source-evidence gate fails while one is configured.
-To adopt a new library commit, push that commit to the library's `main`, set
-`rev` in `Cargo.toml` to the full commit and run
-`cargo update -p teslatlas-compute`.
+Do not use that override for a source-bound or distributed build. The existing
+source-evidence gates remain enabled. A source commit and dependency binding
+do not establish package, installed, live or platform acceptance.
 
 ## Source identity
 
@@ -66,8 +65,8 @@ git cat-file -e "${HUB_SOURCE_COMMIT}^{commit}"
 git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
 ```
 
-The Hub commit's `Cargo.lock` fixes the Teslatlas Compute commit. Keep the
-commit, toolchain versions and artifact checksums with your build record.
+The Hub commit's `Cargo.lock` fixes the Compute source commit. Keep the commit,
+toolchain versions and artifact checksums with your build record.
 Build identity does not confer signing, notarisation or support.
 
 ## macOS app and combined installer
@@ -114,12 +113,63 @@ controls to install one. Once you have a validated package, follow
 [source-run control app](../../macos/TeslatlasHubApp/DEVELOPMENT.md) describes
 unsigned development mode separately.
 
+## Mac to Debian ARM64 development build
+
+The maintained workspace can cross-build the Rust service on Apple silicon with
+Rust 1.98.1, cargo-zigbuild 0.23.4 and Zig 0.16.0. Install the official Rust target
+`aarch64-unknown-linux-gnu` on the build host; no guest toolchain is needed.
+The `.2.28` suffix below selects the glibc ABI baseline.
+
+Run from the workspace root after loading its Debian ARM64 tool and cache setup
+in `docs/development/ENVIRONMENT.md`. That parent-workspace document and its runners
+are not part of a standalone Hub clone. Keep Cargo output and Zig caches outside
+the source tree, and invoke Cargo directly through the managed runner:
+
+```sh
+source ~/dev/env.zsh
+scripts/dev/with-heavy-build-lock.sh scripts/dev/run.sh hub \
+  cargo zigbuild --locked --release --target aarch64-unknown-linux-gnu.2.28 \
+  --bin teslatlas-hub --message-format json-render-diagnostics
+scripts/dev/with-heavy-build-lock.sh scripts/dev/run.sh hub \
+  cargo zigbuild --locked --release --target aarch64-unknown-linux-gnu.2.28 \
+  --test tls_import_e2e --message-format json-render-diagnostics
+```
+
+The second command builds the existing TLS test executable without running it.
+Resolve each executable from Cargo's JSON artifact record; do not assume a managed
+target path or wrap Cargo inside another shell command. Copy the regular executable
+files to the Debian guest. On the guest, select the copied CLI explicitly and run
+the copied test harness directly:
+
+```sh
+TESLATLAS_HUB_SMOKE_BINARY=/absolute/path/to/teslatlas-hub \
+  /absolute/path/to/tls_import_e2e-TEST_ARTIFACT --test-threads=1
+```
+
+The local 2026-10-01 check ran the exact 20,188,176-byte unbound development CLI on
+Debian 13.7 ARM64 with glibc 2.41. Its isolated, credential-free service passed
+start/restart/stop, certificate and hostname validation, config/PID-bound HTTPS
+readiness, all eight doctor checks, persistent identity across restart and data-only
+backup/restore. Both signed TLS tests passed under the guest's normal `0002` umask.
+This establishes the bounded development route, not an official package,
+companion-service installation, live collection or Mac App-to-Debian acceptance.
+
+Linux runs ordinary `serve` with CLI/systemd controls; the macOS source-run control
+app and its development-mode admission remain separate. See
+[Debian service operation](install-debian.md#start-and-inspect).
+
 ## Debian core package
 
 `scripts/build-deb.sh` accepts a prebuilt service binary, legal bundle, exact
 source commit, version, architecture and output path. It supports `amd64` and
 `arm64` package metadata. Package construction does not prove the resulting
 binary works on Debian 13 or on either architecture.
+
+The cross-built development ELF above is unbound and cannot be presented as an
+official package. The existing builder executes the supplied binary to validate
+version and source identity, and requires Linux ELF and Debian dependency tools;
+it does not package a Linux executable directly on macOS. Keep its source and
+provenance checks intact.
 
 The following recipe is for a standalone native Debian build host with Python 3,
 Rust, a C toolchain and Debian packaging tools. The owner's test VMs run host-built

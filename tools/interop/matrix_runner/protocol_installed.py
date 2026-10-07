@@ -36,20 +36,20 @@ PROTOCOL_ROOT = WORKSPACE / "teslatlas-protocol"
 
 CONTRACT = ReviewedContract(
     str(PROTOCOL_ROOT / "tools/matrix-contract.json"),
-    "75bdb6380f70dc30b0f91abf92edbe7024fe0617402c67025bd5ec5dca609ca8",
+    "ab9e1ff4cd3b3f9080d64040d0faddad7597135f5c4286f657bf5914be5ee02e",
     str(PROTOCOL_ROOT / "tools/matrix_contract.py"),
-    "eef926e5d732a4c7ad46a9fe02a6089ea28d5c36b4e2523607212603b4994b24",
+    "656760e27a4c15641644600a5fe4c7fe2ba1838eed0c8ff9144d6abac36f697b",
 )
 
 # The coordinator imports these files directly.  Staging the exact bytes into
 # a private tree prevents the child from resolving a later checkout change.
 REVIEWED_SOURCES = MappingProxyType({
     "conformance/hub_control.py":
-        "907065ee7b0a0665533f6ca674bee577bf70c6004fc58dbf0bd866c7dd674430",
+        "c1c6eca3a0f5be61234b508e03673794607767007ca2caefc8d13f0aa36f9233",
     "conformance/hub_http.py":
-        "d1b31ce65550837b032044ebb8b54cecdc69044fa0df6e488c7d59321a70f5d1",
+        "d9b3d5be70ef7c72af66e422172d1b273eb676089725f71a41edab2e108c709a",
     "conformance/hub_matrix.py":
-        "c3b9ee8f17e59ab70e27aca21faada550eb50b2979439cca9f36e7bcd2fa75b4",
+        "d66ab2dee97169c34eb1b467816133512269080fc775d4d4edf05e735baedb99",
     "conformance/hub_native_evidence.py":
         "09fdd31510470577c1e22da0969c6762f933aa06b087b6959a7d520b29159bd0",
 })
@@ -666,6 +666,14 @@ def admit(
         deadline.remaining()
     if not isinstance(admission_views, Mapping):
         raise ProtocolInstalledPending("runner-owned controller admission view is required")
+    authority = admission_views.get("protocol_input")
+    expected_input_hash = authority.get("session_input_sha256") if isinstance(authority, Mapping) else None
+    if (
+        not isinstance(authority, Mapping) or set(authority) != {"session_input_sha256"}
+        or not isinstance(expected_input_hash, str) or len(expected_input_hash) != 64
+        or any(character not in "0123456789abcdef" for character in expected_input_hash)
+    ):
+        raise ProtocolInstalledPending("runner-owned Protocol SessionInput binding is unavailable")
     if (
         not isinstance(runtime_context, Mapping)
         or not isinstance(runtime_context.get("session_input"), Mapping)
@@ -698,6 +706,24 @@ def admit(
         or not isinstance(actors.get("invocations"), list)
     ):
         raise ProtocolInstalledPending("installed Protocol actor evidence is invalid")
+    if actors["session_input_sha256"] != expected_input_hash:
+        raise ProtocolInstalledPending("installed Protocol actor SessionInput binding differs")
+    session_actors = session_input.get("actors")
+    expected_manifest = None
+    if isinstance(session_actors, (list, tuple)) and len(session_actors) == 1 and isinstance(session_actors[0], Mapping):
+        manifests = session_actors[0].get("input_manifest")
+        if isinstance(manifests, Mapping):
+            expected_manifest = manifests.get("local")
+    if (
+        not isinstance(expected_manifest, Mapping) or set(expected_manifest) != {"path", "sha256"}
+        or not isinstance(expected_manifest.get("path"), str)
+        or not isinstance(expected_manifest.get("sha256"), str)
+        or len(expected_manifest["sha256"]) != 64
+        or any(character not in "0123456789abcdef" for character in expected_manifest["sha256"])
+        or actors["actors"][0]["installed_manifest"] != expected_manifest
+    ):
+        raise ProtocolInstalledPending("installed Protocol actor manifest differs from SessionInput")
+    _canonical(Path(expected_manifest["path"]), "trusted Protocol actor manifest")
     raw = {}
     for item in actors["actors"][0]["raw_evidence"]:
         if (
@@ -707,6 +733,8 @@ def admit(
         ):
             raise ProtocolInstalledPending("installed Protocol raw evidence inventory is invalid")
         raw[item["id"]] = _bound_json(item["binding"], "installed Protocol raw evidence")
+        if raw[item["id"]].get("session_input_sha256") != expected_input_hash:
+            raise ProtocolInstalledPending("installed Protocol raw SessionInput binding differs")
     context = _controller_context(
         contract.module, cell, session_input, actors, raw, runtime, admission_views,
     )

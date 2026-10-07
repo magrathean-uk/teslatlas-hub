@@ -17,6 +17,175 @@ fn sample(id: i64, at_ms: i64, vehicle_data: Value) -> LifecycleSample {
     }
 }
 
+#[test]
+fn imported_group_watermarks_block_cached_openers_and_preserve_fresh_authority() {
+    let at = 1_700_000_000_000;
+    let mut state = OpenSessionState::new();
+    state.imported_drive_watermark_ms = Some(at);
+    state.imported_charge_watermark_ms = Some(at);
+    let mixed = sample(
+        1,
+        at + 10_000,
+        json!({
+            "drive_state": {"timestamp": at + 10_000, "shift_state":"P", "latitude":51.0,"longitude":0.0},
+            "vehicle_state": {"timestamp":at + 10_000},
+            "charge_state": {"timestamp":at,"charging_state":"Charging","charger_power":7.0}
+        }),
+    );
+    let stale = apply_sample(state, 1, &mixed).expect("mixed replay accepted");
+    assert!(stale.state.open_charge.is_none());
+    assert!(stale.delta.charge_samples.is_empty());
+    assert_eq!(stale.state.phase, VehiclePhase::Online);
+    let mut fresh_charge = mixed.clone();
+    fresh_charge.observation_id = 2;
+    fresh_charge.payload["vehicle_data"]["charge_state"]["timestamp"] = json!(at + 10_001);
+    let fresh = apply_sample(stale.state, 1, &fresh_charge).expect("fresh charge accepted");
+    let open = fresh
+        .state
+        .open_charge
+        .as_ref()
+        .expect("fresh charge opened");
+    assert_eq!(open.start_date_ms, at + 10_001);
+    let restored = OpenSessionState::decode(&fresh.state.encode().unwrap()).unwrap();
+    assert_eq!(restored.open_charge, fresh.state.open_charge);
+    let mixed_terminal = sample(
+        3,
+        at + 20_000,
+        json!({
+            "drive_state":{"timestamp":at + 20_000,"shift_state":"P"},
+            "vehicle_state":{"timestamp":at + 20_000},
+            "charge_state":{"timestamp":at,"charging_state":"Complete","charge_energy_added":100.0}
+        }),
+    );
+    let retained = apply_sample(restored, 1, &mixed_terminal).expect("stale terminal replay");
+    assert!(
+        retained.state.open_charge.is_some(),
+        "cached terminal cannot close fresh charge"
+    );
+    assert!(retained.delta.charges.is_empty());
+
+    let mut drive_state = OpenSessionState::new();
+    drive_state.imported_drive_watermark_ms = Some(at);
+    let cached_drive = sample(
+        1,
+        at + 10_000,
+        json!({
+            "drive_state":{"timestamp":at,"shift_state":"D","speed":30,"latitude":51.0,"longitude":0.0},
+            "vehicle_state":{"timestamp":at + 10_000},
+            "charge_state":{"timestamp":at + 10_000,"charging_state":"Disconnected"}
+        }),
+    );
+    let stale = apply_sample(drive_state, 1, &cached_drive).unwrap();
+    assert!(stale.state.open_drive.is_none());
+    let mut fresh_drive = cached_drive;
+    fresh_drive.observation_id = 2;
+    fresh_drive.payload["vehicle_data"]["drive_state"]["timestamp"] = json!(at + 10_001);
+    let fresh = apply_sample(stale.state, 1, &fresh_drive).unwrap();
+    assert_eq!(
+        fresh.state.open_drive.as_ref().unwrap().start_date_ms,
+        at + 10_001
+    );
+}
+
+#[test]
+fn imported_stale_charge_public_store_replay_and_complete_reopen() {
+    use crate::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
+    let root = crate::private_tempdir().unwrap();
+    let at = 1_700_000_000_000;
+    let store = HubStore::initialize(root.path()).unwrap();
+    let source = store
+        .register_source(
+            &SourceDescriptor::new("teslamate_import", "freshness-test"),
+            at,
+        )
+        .unwrap();
+    let vehicle = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "10"), at)
+        .unwrap();
+    let mut session = TeslaMateOpenSession {
+        car_id: 10,
+        ..Default::default()
+    };
+    session.watermarks.charging_processes.max_timestamp_ms = Some(at);
+    session.watermarks.charges.max_timestamp_ms = Some(at);
+    store
+        .seed_imported_open_session(source.source_id, vehicle.vehicle_id, 10, &session, at)
+        .unwrap();
+    let mut input = ObservationInput {
+        source_id: source.source_id,
+        vehicle_id: vehicle.vehicle_id,
+        observed_at_ms: at + 10_000,
+        payload: json!({
+            "record_type":"owner_api_vehicle_data_v1", "source_vehicle_state":"online",
+            "vehicle_data":{
+                "drive_state":{"timestamp":at + 10_000,"shift_state":"P","latitude":0.0,"longitude":0.0},
+                "vehicle_state":{"timestamp":at + 10_000},
+                "charge_state":{"timestamp":at,"charging_state":"Charging","battery_level":80,"charger_power":7.0}
+            }
+        }),
+    };
+    store
+        .accept_owner_observation_and_lifecycle(&input, input.observed_at_ms, 10)
+        .unwrap();
+    drop(store);
+    let store = HubStore::open_existing(root.path()).unwrap();
+    let record = store
+        .load_lifecycle_state(vehicle.vehicle_id)
+        .unwrap()
+        .unwrap();
+    assert!(
+        OpenSessionState::decode(&record.open_session_json)
+            .unwrap()
+            .open_charge
+            .is_none()
+    );
+    input.observed_at_ms += 1_000;
+    input.payload["vehicle_data"]["charge_state"]["timestamp"] = json!(input.observed_at_ms);
+    store
+        .accept_owner_observation_and_lifecycle(&input, input.observed_at_ms, 10)
+        .unwrap();
+    let record = store
+        .load_lifecycle_state(vehicle.vehicle_id)
+        .unwrap()
+        .unwrap();
+    let state = OpenSessionState::decode(&record.open_session_json).unwrap();
+    let charge_id = state.open_charge.unwrap().id;
+    drop(store);
+    let store = HubStore::open_existing(root.path()).unwrap();
+    let samples = store
+        .open_charge_samples(vehicle.vehicle_id, charge_id)
+        .unwrap();
+    assert_eq!(samples.len(), 1);
+    assert_eq!(samples[0].timestamp_ms, input.observed_at_ms);
+    input.observed_at_ms += 1_000;
+    input.payload["vehicle_data"]["charge_state"]["timestamp"] = json!(at);
+    input.payload["vehicle_data"]["charge_state"]["charging_state"] = json!("Complete");
+    store
+        .accept_owner_observation_and_lifecycle(&input, input.observed_at_ms, 10)
+        .unwrap();
+    drop(store);
+    let store = HubStore::open_existing(root.path()).unwrap();
+    let record = store
+        .load_lifecycle_state(vehicle.vehicle_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        OpenSessionState::decode(&record.open_session_json)
+            .unwrap()
+            .open_charge
+            .unwrap()
+            .id,
+        charge_id
+    );
+    assert_eq!(
+        store
+            .open_charge_samples(vehicle.vehicle_id, charge_id)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
 fn fleet_sample(id: i64, at_ms: i64, vehicle_data: Value) -> LifecycleSample {
     LifecycleSample {
         observation_id: id,
@@ -745,6 +914,33 @@ fn gained_range_drive(start: i64) -> OpenSessionState {
     )
     .expect("drive")
     .state
+}
+
+#[test]
+fn cached_charging_range_cannot_infer_charge_or_replace_active_drive_baseline() {
+    let start = 1_800_000_095_000_i64;
+    let mut state = gained_range_drive(start);
+    let drive_id = state.open_drive.as_ref().unwrap().id;
+    let baseline = state.open_drive.as_ref().unwrap().last_ideal_range_km;
+    state.open_drive.as_mut().unwrap().saw_offline = true;
+    state.imported_charge_watermark_ms = Some(start + 1_000);
+    let mixed = sample(
+        3,
+        start + 301_000,
+        json!({
+            "drive_state":{"shift_state":"D","speed":20,"latitude":47.52,"longitude":19.02,"timestamp":start + 301_000},
+            "vehicle_state":{"odometer":1000.2,"timestamp":start + 301_000},
+            "charge_state":{"timestamp":start + 1_000,"charging_state":"Charging","ideal_battery_range":210.0,"charge_energy_added":12.0}
+        }),
+    );
+    let step = apply_sample(state, 1, &mixed).unwrap();
+    assert!(step.delta.charges.is_empty());
+    assert!(step.delta.drives.is_empty());
+    assert!(step.state.open_charge.is_none());
+    let open = step.state.open_drive.unwrap();
+    assert_eq!(open.id, drive_id);
+    assert_eq!(open.last_ideal_range_km, baseline);
+    assert_eq!(open.last_charge_energy_added, Some(0.0));
 }
 
 #[test]

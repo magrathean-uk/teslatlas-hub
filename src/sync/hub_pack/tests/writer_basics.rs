@@ -1,12 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[test]
+fn unbounded_full_snapshot_capacity_uses_the_protocol_ceiling_without_overflow() {
+    let temp = crate::private_tempdir().unwrap();
+    let mut limits = ProtocolLimits::default();
+    limits.max_chunks = 1;
+    limits.max_compressed_pack_bytes = 1024;
+    limits.max_uncompressed_pack_bytes = 4096;
+    ProjectionPackWriter::with_limits(temp.path(), limits)
+        .ensure_full_snapshot_capacity(0)
+        .expect("unbounded capture clamps to finite protocol capacity");
+}
+
+#[test]
 fn owner_api_model_codes_are_normalized_like_teslamate() {
     assert_eq!(normalize_tesla_model_code("model3"), "3");
     assert_eq!(normalize_tesla_model_code("models2"), "S");
     assert_eq!(normalize_tesla_model_code("modely"), "Y");
     assert_eq!(normalize_tesla_model_code("cybertruck"), "Cybertruck");
-    assert_eq!(normalize_tesla_model_code("cybertruckpremium"), "Cybertruck");
+    assert_eq!(
+        normalize_tesla_model_code("cybertruckpremium"),
+        "Cybertruck"
+    );
     assert_eq!(normalize_tesla_model_code("Model 3"), "3");
 }
 
@@ -315,6 +330,14 @@ fn startup_cleanup_removes_only_owned_staging_files() {
     let linked = staging.join(format!("{}.projection.zst.tmp", Uuid::new_v4()));
     let final_link = temporary.path().join("linked-pack");
     let unrelated = staging.join("notes.tmp");
+    let physical = ["physical-admission", "physical-scan"].map(|kind| {
+        let path = staging.join(format!("{}.{kind}.sqlite.tmp", Uuid::new_v4()));
+        fs::write(&path, b"decoded").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        path
+    });
+    let lookalike = staging.join("not-a-uuid.physical-scan.sqlite.tmp");
+    fs::write(&lookalike, b"keep").unwrap();
     fs::write(&private, b"private").unwrap();
     fs::set_permissions(&private, fs::Permissions::from_mode(0o600)).unwrap();
     fs::write(&linked, b"linked").unwrap();
@@ -328,12 +351,47 @@ fn startup_cleanup_removes_only_owned_staging_files() {
 
     let (removed, freed_bytes) = cleanup_stale_pack_staging(temporary.path()).expect("cleanup");
 
-    assert_eq!(removed, 2);
-    assert_eq!(freed_bytes, 7);
+    assert_eq!(removed, 4);
+    assert_eq!(freed_bytes, 21);
+    assert!(physical.iter().all(|path| !path.exists()));
+    assert_eq!(fs::read(lookalike).unwrap(), b"keep");
     assert!(!private.exists());
     assert!(!linked.exists());
     assert_eq!(fs::read(final_link).unwrap(), b"linked");
     assert_eq!(fs::read(unrelated).unwrap(), b"keep");
+}
+
+#[test]
+fn startup_cleanup_rejects_unsafe_physical_scratch_entries() {
+    use std::os::unix::fs::symlink;
+    for suffix in ["physical-admission", "physical-scan"] {
+        for unsafe_kind in ["symlink", "public-file", "directory"] {
+            let temporary = crate::private_tempdir().expect("pack root");
+            let staging = temporary.path().join(".staging");
+            ensure_private_staging_directory(&staging).expect("private staging");
+            let path = staging.join(format!("{}.{suffix}.sqlite.tmp", Uuid::new_v4()));
+            let target = temporary.path().join("target");
+            fs::write(&target, b"keep").unwrap();
+            match unsafe_kind {
+                "symlink" => symlink(&target, &path).unwrap(),
+                "public-file" => {
+                    fs::write(&path, b"keep").unwrap();
+                    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+                }
+                "directory" => fs::create_dir(&path).unwrap(),
+                _ => unreachable!(),
+            }
+            assert!(
+                matches!(
+                    cleanup_stale_pack_staging(temporary.path()),
+                    Err(ProjectionPackError::UnsafeStaging(_))
+                ),
+                "{suffix} {unsafe_kind}"
+            );
+            assert!(fs::symlink_metadata(path).is_ok());
+            assert_eq!(fs::read(target).unwrap(), b"keep");
+        }
+    }
 }
 
 #[test]

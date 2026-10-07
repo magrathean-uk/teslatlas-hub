@@ -590,9 +590,16 @@ fn publication_lock_path(data_dir: &Path) -> PathBuf {
 /// Create the private catalogue inode before SQLite sees the path so platform
 /// umasks cannot weaken the one-user 0600 contract.
 fn ensure_shared_sqlite_catalogue_file(path: &Path) -> Result<(), StoreError> {
+    ensure_shared_sqlite_catalogue_file_with_repair(path, true)
+}
+
+fn ensure_shared_sqlite_catalogue_file_with_repair(
+    path: &Path,
+    repair_permissions: bool,
+) -> Result<(), StoreError> {
     let expected_gid = shared_sqlite_group_id(path)?;
     match fs::symlink_metadata(path) {
-        Ok(metadata) => admit_or_repair_shared_sqlite_file(path, &metadata, expected_gid),
+        Ok(metadata) => admit_shared_sqlite_file(path, &metadata, expected_gid, repair_permissions),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let file = match OpenOptions::new()
                 .write(true)
@@ -604,7 +611,12 @@ fn ensure_shared_sqlite_catalogue_file(path: &Path) -> Result<(), StoreError> {
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     let metadata =
                         fs::symlink_metadata(path).map_err(StoreError::InspectSharedSqlite)?;
-                    return admit_or_repair_shared_sqlite_file(path, &metadata, expected_gid);
+                    return admit_shared_sqlite_file(
+                        path,
+                        &metadata,
+                        expected_gid,
+                        repair_permissions,
+                    );
                 }
                 Err(error) => return Err(StoreError::CreateSharedSqlite(error)),
             };
@@ -630,23 +642,33 @@ fn shared_sqlite_group_id(database_path: &Path) -> Result<u32, StoreError> {
 }
 
 fn admit_or_repair_shared_sqlite_sidecars(database_path: &Path) -> Result<(), StoreError> {
+    admit_shared_sqlite_sidecars(database_path, true)
+}
+
+fn admit_shared_sqlite_sidecars(
+    database_path: &Path,
+    repair_permissions: bool,
+) -> Result<(), StoreError> {
     let expected_gid = shared_sqlite_group_id(database_path)?;
     ["-wal", "-shm", "-journal"]
         .into_iter()
         .try_for_each(|suffix| {
             let path = PathBuf::from(format!("{}{}", database_path.display(), suffix));
             match fs::symlink_metadata(&path) {
-                Ok(metadata) => admit_or_repair_shared_sqlite_file(&path, &metadata, expected_gid),
+                Ok(metadata) => {
+                    admit_shared_sqlite_file(&path, &metadata, expected_gid, repair_permissions)
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
                 Err(error) => Err(StoreError::InspectSharedSqlite(error)),
             }
         })
 }
 
-fn admit_or_repair_shared_sqlite_file(
+fn admit_shared_sqlite_file(
     path: &Path,
     metadata: &fs::Metadata,
     expected_gid: u32,
+    repair_permissions: bool,
 ) -> Result<(), StoreError> {
     if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.gid() != expected_gid {
         return Err(StoreError::UnsafeSharedSqlite(path.to_path_buf()));
@@ -657,6 +679,11 @@ fn admit_or_repair_shared_sqlite_file(
     }
     if mode != 0o640 || metadata.uid() != rustix::process::geteuid().as_raw() {
         return Err(StoreError::UnsafeSharedSqlite(path.to_path_buf()));
+    }
+    // Identity admission must precede tightening a recoverable owner-only
+    // SQLite creation mode. Foreign catalogues and their sidecars are evidence.
+    if !repair_permissions {
+        return Ok(());
     }
     fs::set_permissions(path, fs::Permissions::from_mode(SHARED_SQLITE_FILE_MODE))
         .map_err(StoreError::ProtectSharedSqlite)?;
@@ -1210,6 +1237,7 @@ pub(crate) struct PublicationGate {
 pub(crate) struct HubBackupSnapshot<'a> {
     store: &'a HubStore,
     publication_gate: PublicationGate,
+    selection_time_ms: i64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

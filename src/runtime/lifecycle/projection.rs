@@ -277,9 +277,26 @@ pub(crate) fn apply_sample_with_offline_drive_timeout(
         .is_none_or(|watermark| parsed.vehicle_timestamp_ms > watermark);
     if !drive_fresh {
         parsed.drive_data_present = false;
+        parsed.shift_state = None;
     }
     if !charge_fresh {
         parsed.charge_data_present = false;
+        parsed.charging_state = None;
+        parsed.charge_energy_added = None;
+        parsed.ideal_range_km = None;
+    }
+    // Group timestamps determine lifecycle authority independently of the
+    // overall observation. Cached charging/driving must not select a live
+    // phase, even when another group in this response is fresh.
+    if (parsed.phase == VehiclePhase::Charging && !parsed.charge_data_present)
+        || (parsed.phase == VehiclePhase::Driving && !parsed.drive_data_present)
+    {
+        parsed.phase = if parsed.drive_data_present && is_drive_shift(parsed.shift_state.as_deref())
+        {
+            VehiclePhase::Driving
+        } else {
+            phase_from_vehicle_state(&sample.vehicle_state)
+        };
     }
     if !vehicle_fresh {
         parsed.vehicle_state_present = false;
@@ -436,7 +453,9 @@ pub(crate) fn apply_sample_with_offline_drive_timeout(
         delta.charges.push(closed.charge);
     }
     maybe_open_or_extend_drive(&mut state, car_id, &parsed, &mut delta)?;
-    if let Some(open) = state.open_drive.as_mut() {
+    if parsed.charge_data_present
+        && let Some(open) = state.open_drive.as_mut()
+    {
         if let Some(energy) = parsed.charge_energy_added {
             open.last_charge_energy_added = Some(energy);
         }

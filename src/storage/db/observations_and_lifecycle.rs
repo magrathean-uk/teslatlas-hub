@@ -1693,6 +1693,7 @@ impl HubStore {
             .or_else(|| session.charge.as_ref().map(|row| row.car_id))
             .or_else(|| session.state.as_ref().map(|row| row.car_id))
             .or_else(|| session.drive_positions.first().map(|row| row.car_id))
+            .or_else(|| session.standalone_positions.first().map(|row| row.car_id))
             .unwrap_or_default();
         session
             .validate()

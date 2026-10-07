@@ -604,6 +604,210 @@ fn backup_capacity_excludes_uncatalogued_pack_and_symlink_files() {
     );
 }
 
+#[test]
+fn backup_member_admission_rejects_before_creating_staging_payload() {
+    let (temporary, store) = create_fixture();
+    let key = CursorKey::from_bytes([9; 32]);
+    publish_lineage_fixture(&store, &key);
+    store
+        .catalogue_check()
+        .expect("valid catalogue exceeds injected archive cap");
+    let members = store
+        .begin_backup_snapshot()
+        .expect("snapshot")
+        .copy_admission()
+        .expect("admission")
+        .1;
+    assert_eq!(members, 3);
+    let mut before: Vec<_> = fs::read_dir(temporary.path())
+        .expect("parent")
+        .map(|entry| entry.expect("entry").file_name())
+        .collect();
+    before.sort();
+    let destination = temporary.path().join("too-many-members");
+    let error =
+        create_data_backup_with_member_limit(&store, &destination, 2).expect_err("member limit");
+    assert!(error.to_string().contains("too many members"));
+    assert!(!destination.exists());
+    let mut after: Vec<_> = fs::read_dir(temporary.path())
+        .expect("parent")
+        .map(|entry| entry.expect("entry").file_name())
+        .collect();
+    after.sort();
+    assert_eq!(
+        before, after,
+        "rejection precedes staged catalogue and pack copies"
+    );
+    create_data_backup_with_member_limit(&store, &destination, 3).expect("exact boundary backup");
+    assert_eq!(
+        inventory_payload(&destination.join(DATA_DIRECTORY))
+            .expect("inventory")
+            .len(),
+        members
+    );
+}
+
+#[test]
+fn backup_member_admission_deduplicates_current_and_retained_packs_with_noop() {
+    let (temporary, store) = create_fixture();
+    let key = CursorKey::from_bytes([9; 32]);
+    let current = publish_lineage_fixture(&store, &key);
+    let mut retained = current.clone();
+    let retained_bytes = b"recovery-retained-only-pack";
+    let retained_digest = Sha256Digest::of_bytes(retained_bytes);
+    retained.deltas[0].pack.pack_id = Uuid::new_v4();
+    retained.deltas[0].pack.sha256 = retained_digest;
+    retained.deltas[0].pack.relative_path = TransportPack::canonical_relative_path(retained_digest);
+    retained.deltas[0].pack.compressed_bytes = retained_bytes.len() as u64;
+    retained.deltas[0].pack_digest = retained_digest;
+    retained.deltas[0].chain_digest =
+        canonical_delta_chain_digest(retained.base.digest, retained_digest);
+    retained.head_digest = retained.deltas[0].chain_digest;
+    retained.validate().expect("valid retained fixture lineage");
+    fs::write(
+        store
+            .packs_dir()
+            .join("sha256")
+            .join(format!("{retained_digest}.sqlite.zst")),
+        retained_bytes,
+    )
+    .expect("retained-only pack");
+    let now_ms = current_epoch_ms().expect("retention clock");
+    let connection = store.open().expect("retention catalogue");
+    connection
+        .execute(
+            "INSERT INTO sync_retired_lineages(
+                vehicle_id, head_digest, manifest_json, retired_at_ms, expires_at_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                retained.vehicle_id.to_string(),
+                retained.head_digest.to_string(),
+                serde_json::to_vec(&retained).expect("retained manifest"),
+                now_ms,
+                now_ms + 24 * 60 * 60 * 1_000,
+            ],
+        )
+        .expect("retain prior lineage");
+    for pack in [&retained.base.packs[0], &retained.deltas[0].pack] {
+        connection
+            .execute(
+                "INSERT INTO sync_retired_lineage_packs(
+                    vehicle_id, head_digest, pack_digest, relative_path, compressed_bytes
+                 ) VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    retained.vehicle_id.to_string(),
+                    retained.head_digest.to_string(),
+                    pack.sha256.to_string(),
+                    pack.relative_path,
+                    pack.compressed_bytes as i64,
+                ],
+            )
+            .expect("retained pack binding");
+    }
+    drop(connection);
+    let (physical, noop) = publish_schema_22_fixture(&store);
+    store.catalogue_check().expect("valid mixed backup source");
+    let members = store
+        .begin_backup_snapshot()
+        .expect("mixed backup snapshot")
+        .copy_admission()
+        .expect("mixed member admission")
+        .1;
+    assert_eq!(
+        members, 6,
+        "one catalogue, four unique packs, and one current no-op"
+    );
+
+    let parent_metadata = fs::metadata(temporary.path()).expect("backup parent metadata");
+    let parent_modified = (parent_metadata.mtime(), parent_metadata.mtime_nsec());
+    let mut parent_entries: Vec<_> = fs::read_dir(temporary.path())
+        .expect("backup parent")
+        .map(|entry| entry.expect("entry").file_name())
+        .collect();
+    parent_entries.sort();
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    let destination = temporary.path().join("mixed-backup");
+    let error = create_data_backup_with_member_limit(&store, &destination, members - 1)
+        .expect_err("retained pack and no-op exceed injected cap");
+    assert!(error.to_string().contains("too many members"));
+    assert!(!destination.exists());
+    let after_metadata = fs::metadata(temporary.path()).expect("unchanged backup parent");
+    assert_eq!(
+        (after_metadata.mtime(), after_metadata.mtime_nsec()),
+        parent_modified,
+        "early rejection must not create and then remove a staging directory"
+    );
+    let mut after_entries: Vec<_> = fs::read_dir(temporary.path())
+        .expect("backup parent after rejection")
+        .map(|entry| entry.expect("entry").file_name())
+        .collect();
+    after_entries.sort();
+    assert_eq!(after_entries, parent_entries);
+
+    let report = create_data_backup_with_member_limit(&store, &destination, members)
+        .expect("deduplicated exact boundary backup");
+    assert_eq!(report.member_count, members);
+    let actual_paths: BTreeSet<_> = inventory_payload(&destination.join(DATA_DIRECTORY))
+        .expect("mixed copied inventory")
+        .into_iter()
+        .map(|member| member.path)
+        .collect();
+    let noop_path = format!(
+        "{SCHEMA_22_NOOP_DIRECTORY}/{}.{}.json",
+        physical.vehicle_id, physical.snapshot_id
+    );
+    let mut expected_paths = BTreeSet::from([CATALOGUE_MEMBER.to_owned(), noop_path.clone()]);
+    for digest in [
+        current.base.packs[0].sha256,
+        current.deltas[0].pack_digest,
+        retained_digest,
+        physical.chunks[0].sha256,
+    ] {
+        expected_paths.insert(format!("{PACK_DIRECTORY}/{digest}.sqlite.zst"));
+    }
+    assert_eq!(actual_paths, expected_paths);
+    assert_eq!(
+        fs::read(destination.join(noop_path)).expect("copied current no-op"),
+        serde_json::to_vec(&noop).expect("exact no-op bytes")
+    );
+    verify_data_backup(&destination).expect("mixed retained/current backup verifies");
+}
+
+#[test]
+fn backup_member_admission_counts_physical_noop_and_ignores_orphans() {
+    let (temporary, store) = create_fixture();
+    publish_schema_22_fixture(&store);
+    let members = store
+        .begin_backup_snapshot()
+        .expect("snapshot")
+        .copy_admission()
+        .expect("admission")
+        .1;
+    assert_eq!(members, 3, "catalogue, physical pack, and current no-op");
+    fs::write(
+        store.packs_dir().join("sha256").join("orphan.sqlite.zst"),
+        b"orphan",
+    )
+    .expect("orphan");
+    assert_eq!(
+        store
+            .begin_backup_snapshot()
+            .expect("snapshot")
+            .copy_admission()
+            .expect("admission")
+            .1,
+        members
+    );
+    let destination = temporary.path().join("physical-backup");
+    create_data_backup_with_member_limit(&store, &destination, members).expect("physical backup");
+    assert_eq!(
+        inventory_payload(&destination.join(DATA_DIRECTORY))
+            .expect("inventory")
+            .len(),
+        members
+    );
+}
+
 fn publish_schema_22_fixture(store: &HubStore) -> (SyncManifest, SignedNoOpState) {
     let data = store.database_path().parent().expect("fixture data root");
     let cursor_key =

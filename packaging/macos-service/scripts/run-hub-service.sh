@@ -179,11 +179,27 @@ fi
 
 stop_child() {
     child=$1
+    allowance=$2
     [ -n "$child" ] || return 0
-    if /bin/kill -0 "$child" >/dev/null 2>&1; then
-        /bin/kill -TERM "$child" >/dev/null 2>&1 || true
-        /bin/sleep 2
-        /bin/kill -KILL "$child" >/dev/null 2>&1 || true
+    # Use the shell's still-owned job, rather than signal a numeric PID after
+    # the shell may have reaped it. No new background job starts during finish.
+    job=$(jobs -l | /usr/bin/awk -v wanted="$child" '
+        $2 == wanted && ($3 == "Running" || $3 == "Stopped") {
+            gsub(/[^0-9]/, "", $1); print "%" $1
+        }')
+    if [ -n "$job" ]; then
+        kill -TERM "$job" >/dev/null 2>&1 || true
+        remaining=$allowance
+        while [ "$remaining" -gt 0 ]; do
+            running_job=$(jobs -l | /usr/bin/awk -v wanted="$child" '
+                $2 == wanted && ($3 == "Running" || $3 == "Stopped") {
+                    gsub(/[^0-9]/, "", $1); print "%" $1
+                }')
+            [ "$running_job" = "$job" ] || break
+            /bin/sleep 1
+            remaining=$((remaining - 1))
+        done
+        kill -KILL "$job" >/dev/null 2>&1 || true
     fi
     wait "$child" >/dev/null 2>&1 || true
 }
@@ -191,8 +207,10 @@ stop_child() {
 finish() {
     status=$?
     trap - EXIT HUP INT TERM
-    stop_child "$hub_pid"
-    stop_child "$receiver_pid"
+    # Rust permits serial server/collector waits of 120s each and a 5s proxy
+    # wait. Keep the packaged launchd ExitTimeOut above this complete budget.
+    stop_child "$hub_pid" 250
+    stop_child "$receiver_pid" 5
     exit "$status"
 }
 trap finish EXIT HUP INT TERM

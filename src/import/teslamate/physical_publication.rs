@@ -132,12 +132,7 @@ pub(crate) fn publish_sealed_physical_v3_stage_with_gate_at(
 #[derive(Debug)]
 enum IntendedPublication {
     First,
-    Unchanged(PendingPhysicalV3Admission),
     Rotate(PendingPhysicalV3Admission),
-    Resume {
-        current: PendingPhysicalV3Admission,
-        retained_receipt_id: String,
-    },
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -156,12 +151,52 @@ fn publish_sealed_physical_v3_stage_inner(
     let stage_digest = stage.sealed_content_digest()?;
     let snapshot_id = physical_v3_snapshot_id(stage_digest, &binding);
     let state = store.physical_v3_publication_state_for_vehicle_at(binding.vehicle_id, now_ms)?;
+    // Recover the already committed, fully verified successor before deciding
+    // what to do with a fresh source snapshot. The source may have advanced
+    // while the Hub was stopped; that must not strand the persisted head.
+    let state = if let PhysicalV3PublicationState::Blocked { current, retained } = state {
+        if binding.installation_id != current.installation_id
+            || binding.account_id != current.account_id
+            || binding.generation != current.manifest.generation
+            || binding.selected_car_id != current.selected_car_id
+        {
+            return Err(crate::db::StoreError::PhysicalV3AdmissionInvalid.into());
+        }
+        let recovered = store.activate_pending_physical_v3_rotation_at(
+            publication_gate,
+            current.vehicle_id,
+            &retained.admission.receipt_id,
+            now_ms,
+        )?;
+        if recovered.snapshot_id == snapshot_id {
+            return Ok(PhysicalV3Publication {
+                kind: PhysicalV3PublicationKind::ResumedRotation,
+                admission: recovered,
+            });
+        }
+        PhysicalV3PublicationState::Public(recovered)
+    } else {
+        state
+    };
     let (head_sequence, intended) = match state {
         PhysicalV3PublicationState::Empty => (1, IntendedPublication::First),
-        PhysicalV3PublicationState::Public(current) if current.snapshot_id == snapshot_id => (
-            current.head_sequence,
-            IntendedPublication::Unchanged(current),
-        ),
+        PhysicalV3PublicationState::Public(current) if current.snapshot_id == snapshot_id => {
+            if binding.installation_id != current.installation_id
+                || binding.account_id != current.account_id
+                || binding.generation != current.manifest.generation
+                || binding.selected_car_id != current.selected_car_id
+            {
+                return Err(crate::db::StoreError::PhysicalV3AdmissionInvalid.into());
+            }
+            // The sealed full-table digest and binding select the same head,
+            // and the state lookup has verified every persisted pack. Reuse
+            // that exact receipt without another full-capacity reservation,
+            // SQLite reconstruction or compression pass.
+            return Ok(PhysicalV3Publication {
+                kind: PhysicalV3PublicationKind::Unchanged,
+                admission: current,
+            });
+        }
         PhysicalV3PublicationState::Public(current) => {
             let next = current
                 .head_sequence
@@ -169,18 +204,6 @@ fn publish_sealed_physical_v3_stage_inner(
                 .filter(|sequence| *sequence <= MAX_IJSON_INTEGER)
                 .ok_or(TeslaMatePhysicalPublicationError::SequenceExhausted)?;
             (next, IntendedPublication::Rotate(current))
-        }
-        PhysicalV3PublicationState::Blocked { current, retained }
-            if current.snapshot_id == snapshot_id =>
-        {
-            let sequence = current.head_sequence;
-            (
-                sequence,
-                IntendedPublication::Resume {
-                    current,
-                    retained_receipt_id: retained.admission.receipt_id,
-                },
-            )
         }
         PhysicalV3PublicationState::Blocked { .. } => {
             return Err(TeslaMatePhysicalPublicationError::DifferentBlockedRotation);
@@ -219,13 +242,6 @@ fn publish_sealed_physical_v3_stage_inner(
                 admission,
             })
         }
-        IntendedPublication::Unchanged(current) => {
-            require_exact_candidate(&candidate, &current)?;
-            Ok(PhysicalV3Publication {
-                kind: PhysicalV3PublicationKind::Unchanged,
-                admission: current,
-            })
-        }
         IntendedPublication::Rotate(prior) => {
             let delta = match crate::db::physical_v3_admission_from_manifest(
                 &candidate.manifest,
@@ -258,16 +274,10 @@ fn publish_sealed_physical_v3_stage_inner(
             let mut event = dev_publication_choice(delta.is_some(), prior.head_sequence);
             event.target_sequence = Some(head_sequence);
             crate::runtime::development_event_log::record(event);
-            let rotated = store.rotate_pending_physical_v3_admission_with_delta_at(
+            let admission = store.rotate_and_activate_physical_v3_admission_with_delta_at(
                 publication_gate,
                 candidate,
                 delta,
-                now_ms,
-            )?;
-            let admission = store.activate_pending_physical_v3_rotation_at(
-                publication_gate,
-                rotated.vehicle_id,
-                &prior.receipt_id,
                 now_ms,
             )?;
             Ok(PhysicalV3Publication {
@@ -275,39 +285,7 @@ fn publish_sealed_physical_v3_stage_inner(
                 admission,
             })
         }
-        IntendedPublication::Resume {
-            current,
-            retained_receipt_id,
-        } => {
-            require_exact_candidate(&candidate, &current)?;
-            let admission = store.activate_pending_physical_v3_rotation_at(
-                publication_gate,
-                current.vehicle_id,
-                &retained_receipt_id,
-                now_ms,
-            )?;
-            Ok(PhysicalV3Publication {
-                kind: PhysicalV3PublicationKind::ResumedRotation,
-                admission,
-            })
-        }
     }
-}
-
-fn require_exact_candidate(
-    candidate: &crate::teslamate_physical_fragments::StagedPhysicalProjectionV3,
-    current: &PendingPhysicalV3Admission,
-) -> Result<(), TeslaMatePhysicalPublicationError> {
-    if candidate.manifest != current.manifest
-        || candidate.binding.installation_id != current.installation_id
-        || candidate.binding.account_id != current.account_id
-        || candidate.binding.vehicle_id != current.vehicle_id
-        || candidate.binding.generation != current.manifest.generation
-        || candidate.binding.selected_car_id != current.selected_car_id
-    {
-        return Err(TeslaMatePhysicalPublicationError::DeterministicCandidateMismatch);
-    }
-    Ok(())
 }
 
 fn physical_v3_snapshot_id(stage_digest: Sha256Digest, binding: &ProjectionBinding) -> Uuid {

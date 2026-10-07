@@ -136,6 +136,7 @@ PROXY_BINARY="$GENERATED/tesla-http-proxy"
 FLEET_TELEMETRY_BINARY="$GENERATED/fleet-telemetry"
 SERVICE_PACKAGE="$GENERATED/TeslatlasHubService.pkg"
 APP_COMPONENT_PACKAGE="$GENERATED/TeslatlasHubApp.pkg"
+APP_COMPONENT_SCRIPTS="$GENERATED/app-component-scripts"
 PRODUCT_DISTRIBUTION="$GENERATED/TeslatlasHub-distribution.xml"
 PRODUCT_EXPANSION="$GENERATED/expanded-product"
 PRODUCT="$DERIVED/Build/Products/Release/Teslatlas Hub.app"
@@ -497,12 +498,24 @@ done
 [ ! -e "$STALE_DIST_SERVICE_PACKAGE" ] && [ ! -L "$STALE_DIST_SERVICE_PACKAGE" ] \
     || die "stale public service-only installer was not removed"
 
+if [ -e "$APP_COMPONENT_SCRIPTS" ] || [ -L "$APP_COMPONENT_SCRIPTS" ]; then
+    [ -d "$APP_COMPONENT_SCRIPTS" ] && [ ! -L "$APP_COMPONENT_SCRIPTS" ] \
+        || die "unsafe app component scripts staging directory"
+    /usr/bin/find "$APP_COMPONENT_SCRIPTS" -depth -delete
+fi
+/bin/mkdir -m 0700 "$APP_COMPONENT_SCRIPTS"
+/usr/bin/install -m 0644 "$ROOT/packaging/macos-service/scripts/common.sh" \
+    "$APP_COMPONENT_SCRIPTS/common.sh"
+/usr/bin/install -m 0755 "$ROOT/packaging/macos-app/scripts/preinstall" \
+    "$APP_COMPONENT_SCRIPTS/preinstall"
+
 /usr/bin/pkgbuild --quiet \
     --component "$DIST_APP" \
     --identifier com.teslatlas.hub.app \
     --version "$bundle_version" \
     --install-location /Applications \
     --ownership recommended \
+    --scripts "$APP_COMPONENT_SCRIPTS" \
     "$APP_COMPONENT_PACKAGE" \
     || die "cannot build app component package"
 /usr/bin/productbuild --synthesize \
@@ -561,6 +574,14 @@ outer_service_component="$PRODUCT_EXPANSION/TeslatlasHubService.pkg"
 outer_app="$outer_app_component/Payload/Teslatlas Hub.app"
 [ -d "$outer_app" ] && [ ! -L "$outer_app" ] \
     || die "combined installer app component has no app payload"
+for app_install_script in preinstall common.sh; do
+    [ -f "$outer_app_component/Scripts/$app_install_script" ] \
+        && [ ! -L "$outer_app_component/Scripts/$app_install_script" ] \
+        || die "combined installer app component lacks its replacement script"
+    /usr/bin/cmp "$APP_COMPONENT_SCRIPTS/$app_install_script" \
+        "$outer_app_component/Scripts/$app_install_script" >/dev/null \
+        || die "combined installer app replacement script differs from staged input"
+done
 embedded_service_package="$outer_app/Contents/Resources/TeslatlasHubService.pkg"
 [ -f "$embedded_service_package" ] && [ ! -L "$embedded_service_package" ] \
     || die "combined installer app component lacks its embedded service package"

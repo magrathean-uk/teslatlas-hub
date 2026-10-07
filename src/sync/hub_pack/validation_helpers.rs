@@ -263,6 +263,8 @@ fn is_owned_staging_name(name: &std::ffi::OsStr) -> bool {
         ".projection-2-2.zst.tmp",
         ".projection-delta.sqlite.tmp",
         ".projection-delta.zst.tmp",
+        ".physical-admission.sqlite.tmp",
+        ".physical-scan.sqlite.tmp",
     ]
     .iter()
     .any(|suffix| {

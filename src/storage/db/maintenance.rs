@@ -426,10 +426,11 @@ impl HubStore {
     /// backup copies the live page set; immutable packs and schema-2.2 no-op
     /// files come from the same catalogue-selected sets used by the copier.
     /// Unreferenced files are deliberately excluded.
-    fn backup_copy_bytes_with_gate(
+    fn backup_copy_admission_with_gate(
         &self,
         _publication_gate: &PublicationGate,
-    ) -> Result<u64, StoreError> {
+        selection_time_ms: i64,
+    ) -> Result<(u64, usize), StoreError> {
         let connection = self.open()?;
         let page_count: i64 = connection
             .query_row("PRAGMA page_count", [], |row| row.get(0))
@@ -445,9 +446,12 @@ impl HubStore {
                     .and_then(|size| pages.checked_mul(size))
             })
             .ok_or(StoreError::BackupCapacityOverflow)?;
-        for (_, _, expected_bytes) in
-            referenced_pack_rows_at(&connection, retired_lineage_clock_ms()?)?
-        {
+        let rows = referenced_pack_rows_at(&connection, selection_time_ms)?;
+        let mut members = rows
+            .len()
+            .checked_add(1)
+            .ok_or(StoreError::BackupCapacityOverflow)?;
+        for (_, _, expected_bytes) in rows {
             total = total
                 .checked_add(
                     u64::try_from(expected_bytes).map_err(|_| StoreError::PackSizeTooLarge)?,
@@ -474,19 +478,25 @@ impl HubStore {
             let bytes = self
                 .schema_22_noop_for_snapshot(manifest.vehicle_id, manifest.snapshot_id)?
                 .ok_or(StoreError::Schema22NoOpNotFound)?;
+            members = members
+                .checked_add(1)
+                .ok_or(StoreError::BackupCapacityOverflow)?;
             total = total
                 .checked_add(
                     u64::try_from(bytes.len()).map_err(|_| StoreError::BackupCapacityOverflow)?,
                 )
                 .ok_or(StoreError::BackupCapacityOverflow)?;
         }
-        Ok(total)
+        Ok((total, members))
     }
 
     pub(crate) fn begin_backup_snapshot(&self) -> Result<HubBackupSnapshot<'_>, StoreError> {
+        let publication_gate = self.try_acquire_publication_gate()?;
+        let selection_time_ms = retired_lineage_clock_ms()?;
         Ok(HubBackupSnapshot {
             store: self,
-            publication_gate: self.try_acquire_publication_gate()?,
+            publication_gate,
+            selection_time_ms,
         })
     }
 
@@ -506,6 +516,7 @@ impl HubStore {
         &self,
         destination: &Path,
         publication_gate: &PublicationGate,
+        selection_time_ms: i64,
     ) -> Result<(), StoreError> {
         if destination.exists() {
             return Err(StoreError::BackupDestinationExists(
@@ -518,7 +529,8 @@ impl HubStore {
             fs::Permissions::from_mode(SHARED_DATA_DIRECTORY_MODE),
         )
         .map_err(StoreError::CreateBackupDirectory)?;
-        let result = self.backup_to_created_directory(destination, publication_gate);
+        let result =
+            self.backup_to_created_directory(destination, publication_gate, selection_time_ms);
         if result.is_err() {
             let _ = fs::remove_dir_all(destination);
         }
@@ -529,6 +541,7 @@ impl HubStore {
         &self,
         destination: &Path,
         publication_gate: &PublicationGate,
+        selection_time_ms: i64,
     ) -> Result<(), StoreError> {
         let catalogue = destination.join("hub.sqlite");
         self.backup_catalogue_to(&catalogue)?;
@@ -537,7 +550,7 @@ impl HubStore {
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(StoreError::Open)?;
-        let rows = referenced_pack_rows_at(&copied_catalogue, retired_lineage_clock_ms()?)?;
+        let rows = referenced_pack_rows_at(&copied_catalogue, selection_time_ms)?;
         let packs = destination.join("packs").join("sha256");
         fs::create_dir_all(&packs).map_err(StoreError::CreateBackupDirectory)?;
         fs::set_permissions(

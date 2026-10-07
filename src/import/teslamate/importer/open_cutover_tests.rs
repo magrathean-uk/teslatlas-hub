@@ -6,6 +6,58 @@ use crate::teslamate_projection::{
     TeslaMateSourceWatermark, TeslaMateSourceWatermarks, TeslaMateState,
 };
 
+#[tokio::test]
+async fn online_history_keeps_its_captured_snapshot_when_source_advances() {
+    let captured = open_session(&[1, 2], &[10, 11], &[30]);
+    let advanced = open_session(&[1, 2, 3], &[10, 11, 12], &[30, 31]);
+    let reread = std::cell::Cell::new(false);
+    let history = settle_captured_session(
+        captured.clone(),
+        CaptureCutoverPolicy::HistorySnapshot,
+        || async {
+            reread.set(true);
+            Ok(advanced.clone())
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(history.session, captured);
+    assert!(!history.cutover_unsettled);
+    assert!(
+        !reread.get(),
+        "history never requires the live source to stop advancing"
+    );
+    assert!(matches!(
+        settle_captured_session(captured, CaptureCutoverPolicy::RequireSettled, || async {
+            Ok(advanced)
+        })
+        .await,
+        Err(TeslaMateImportError::CutoverUnsettled)
+    ));
+}
+
+#[tokio::test]
+async fn online_history_does_not_query_a_source_that_disconnected_after_capture() {
+    let captured = open_session(&[1, 2], &[10, 11], &[30]);
+    let history = settle_captured_session(
+        captured.clone(),
+        CaptureCutoverPolicy::HistorySnapshot,
+        || async { Err(crate::teslamate_reader::TeslaMateReaderError::ConnectTimedOut) },
+    )
+    .await
+    .unwrap();
+    assert_eq!(history.session, captured);
+    assert!(matches!(
+        settle_captured_session(captured, CaptureCutoverPolicy::RequireSettled, || async {
+            Err(crate::teslamate_reader::TeslaMateReaderError::ConnectTimedOut)
+        })
+        .await,
+        Err(TeslaMateImportError::Reader(
+            crate::teslamate_reader::TeslaMateReaderError::ConnectTimedOut
+        ))
+    ));
+}
+
 fn drive() -> TeslaMateDrive {
     TeslaMateDrive {
         id: 7,
@@ -360,5 +412,29 @@ fn direct_cutover_keeps_the_tail_from_its_history_snapshot() {
         reconcile_direct_snapshot_cutover(&empty, &short_completed_session)
             .expect("short completed-session witness")
             .cutover_unsettled
+    );
+}
+
+#[test]
+fn large_exact_direct_cutover_and_changed_value_keep_snapshot_settlement() {
+    let mut captured = open_session(&[], &[], &[]);
+    captured.standalone_positions = (1..=10_000).map(|id| position(id, None)).collect();
+    let settled = reconcile_direct_snapshot_cutover(&captured, &captured).unwrap();
+    assert!(!settled.cutover_unsettled);
+    assert_eq!(settled.session, captured);
+    let mut changed = captured.clone();
+    changed.standalone_positions[9_999].latitude += 0.01;
+    let unsettled = reconcile_direct_snapshot_cutover(&captured, &changed).unwrap();
+    assert!(unsettled.cutover_unsettled);
+    assert_eq!(unsettled.session, captured);
+    assert!(matches!(
+        require_settled_direct_cutover(&unsettled),
+        Err(TeslaMateImportError::CutoverUnsettled)
+    ));
+    let merged = reconcile_open_session_cutover(&captured, &changed).unwrap();
+    assert_eq!(merged.session.standalone_positions.len(), 10_000);
+    assert_eq!(
+        merged.session.standalone_positions[9_999],
+        changed.standalone_positions[9_999]
     );
 }

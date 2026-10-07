@@ -36,6 +36,68 @@ struct TeslaMateSSHDiagnostic: LocalizedError, Equatable {
     }
 }
 
+final class TeslaMateImportDirectoryOwner {
+    static let lockFileName = ".owner-lock"
+    let directory: URL
+    private let lock = NSLock()
+    private var descriptor: Int32?
+
+    private init(directory: URL, descriptor: Int32) {
+        self.directory = directory
+        self.descriptor = descriptor
+    }
+
+    static func create(in root: URL) throws -> TeslaMateImportDirectoryOwner {
+        let manager = FileManager.default
+        let name = "th-\(UUID().uuidString)"
+        let staging = root.appendingPathComponent(".\(name)", isDirectory: true)
+        let directory = root.appendingPathComponent(name, isDirectory: true)
+        try manager.createDirectory(at: staging, withIntermediateDirectories: false,
+                                    attributes: [.posixPermissions: 0o700])
+        do {
+            guard let owner = acquire(in: staging) else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
+            // Cleanup cannot see this directory until its owner lock is held.
+            try manager.moveItem(at: staging, to: directory)
+            return TeslaMateImportDirectoryOwner(directory: directory,
+                                                  descriptor: owner.takeDescriptor())
+        } catch {
+            try? manager.removeItem(at: staging)
+            throw error
+        }
+    }
+
+    static func acquire(in directory: URL) -> TeslaMateImportDirectoryOwner? {
+        let path = directory.appendingPathComponent(lockFileName).path
+        let descriptor = Darwin.open(path, O_RDWR | O_CREAT | O_NOFOLLOW | O_CLOEXEC, mode_t(0o600))
+        guard descriptor >= 0 else { return nil }
+        var information = stat()
+        guard fstat(descriptor, &information) == 0,
+              information.st_mode & S_IFMT == S_IFREG,
+              information.st_uid == getuid(), information.st_nlink == 1,
+              flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            Darwin.close(descriptor)
+            return nil
+        }
+        return TeslaMateImportDirectoryOwner(directory: directory, descriptor: descriptor)
+    }
+
+    private func takeDescriptor() -> Int32 {
+        lock.lock(); defer { lock.unlock() }
+        let value = descriptor!
+        descriptor = nil
+        return value
+    }
+
+    func release() {
+        lock.lock(); defer { lock.unlock() }
+        if let descriptor { Darwin.close(descriptor); self.descriptor = nil }
+    }
+
+    deinit { release() }
+}
+
 final class TeslaMateServerImportSession {
     let source: String
     let carID: String
@@ -45,6 +107,7 @@ final class TeslaMateServerImportSession {
 
     private let tunnel: Process
     private let temporaryDirectory: URL
+    private let directoryOwner: TeslaMateImportDirectoryOwner
     private let lock = NSLock()
     private var closed = false
 
@@ -54,7 +117,8 @@ final class TeslaMateServerImportSession {
          encryptionKeyFile: URL,
          teslaMateVersion: String?,
          tunnel: Process,
-         temporaryDirectory: URL) {
+         temporaryDirectory: URL,
+         directoryOwner: TeslaMateImportDirectoryOwner) {
         self.source = source
         self.carID = carID
         self.passwordFile = passwordFile
@@ -62,6 +126,7 @@ final class TeslaMateServerImportSession {
         self.teslaMateVersion = teslaMateVersion
         self.tunnel = tunnel
         self.temporaryDirectory = temporaryDirectory
+        self.directoryOwner = directoryOwner
     }
 
     deinit { close() }
@@ -71,6 +136,7 @@ final class TeslaMateServerImportSession {
         guard !closed else { lock.unlock(); return }
         closed = true
         lock.unlock()
+        defer { directoryOwner.release() }
         if tunnel.isRunning {
             let process = tunnel
             let pid = process.processIdentifier
@@ -138,6 +204,12 @@ enum TeslaMateServerImporter {
                   information.st_mode & S_IFMT == S_IFDIR,
                   information.st_uid == getuid()
             else { continue }
+            guard let owner = TeslaMateImportDirectoryOwner.acquire(in: entry) else { continue }
+            defer { owner.release() }
+            var current = stat()
+            guard lstat(entry.path, &current) == 0,
+                  current.st_dev == information.st_dev, current.st_ino == information.st_ino,
+                  current.st_mode & S_IFMT == S_IFDIR else { continue }
             do {
                 try manager.removeItem(at: entry)
                 removed += 1
@@ -158,6 +230,7 @@ enum TeslaMateServerImporter {
         }
 
         let temporaryDirectory: URL
+        let directoryOwner: TeslaMateImportDirectoryOwner
         let arguments: [String]
         let environment: [String: String]
         let method: Method
@@ -355,11 +428,8 @@ printf 'label_version=%s\n' "$(encode "$tm_label_version")"
         authentication: TeslaMateSSHAuthentication
     ) throws -> SSHConnectionResources {
         let manager = FileManager.default
-        let directory = temporaryRoot
-            .appendingPathComponent("\(temporaryDirectoryPrefix)\(UUID().uuidString)", isDirectory: true)
-        try manager.createDirectory(at: directory,
-                                    withIntermediateDirectories: false,
-                                    attributes: [.posixPermissions: 0o700])
+        let directoryOwner = try TeslaMateImportDirectoryOwner.create(in: temporaryRoot)
+        let directory = directoryOwner.directory
         do {
             switch authentication {
             case let .key(identityFile):
@@ -375,6 +445,7 @@ printf 'label_version=%s\n' "$(encode "$tm_label_version")"
                     arguments += ["-o", "IdentitiesOnly=yes", "-i", identityFile.path]
                 }
                 return SSHConnectionResources(temporaryDirectory: directory,
+                                              directoryOwner: directoryOwner,
                                               arguments: arguments,
                                               environment: [:],
                                               method: .keyOrAgent)
@@ -393,6 +464,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
                 try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: askpass.path)
                 return SSHConnectionResources(
                     temporaryDirectory: directory,
+                    directoryOwner: directoryOwner,
                     arguments: [
                         "-o", "BatchMode=no",
                         "-o", "NumberOfPasswordPrompts=1",
@@ -542,7 +614,8 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             encryptionKeyFile: keyFile,
             teslaMateVersion: teslaMateVersion,
             tunnel: tunnel,
-            temporaryDirectory: directory
+            temporaryDirectory: directory,
+            directoryOwner: resources.directoryOwner
         )
     }
 

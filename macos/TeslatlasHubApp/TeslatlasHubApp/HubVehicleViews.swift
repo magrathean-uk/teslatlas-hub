@@ -378,6 +378,7 @@ final class HubVehiclesView: HubSurfaceView {
     private var vehicles: [HubControlVehicle] = []
     private var provider: HubAccountProvider?
     private var commandsEnabled = false
+    private var statusUnavailable = false
     private var selectedVehicleID: UUID?
 
     init(actions: HubVehicleCardActions) {
@@ -464,7 +465,8 @@ final class HubVehiclesView: HubSurfaceView {
         if selectedVehicleID == nil {
             selectedVehicleID = snapshot.controlVehicleID ?? vehicles.first?.id
         }
-        countLabel.stringValue = vehicles.isEmpty
+        statusUnavailable = snapshot.statusUnavailable
+        countLabel.stringValue = vehicles.isEmpty && statusUnavailable ? "Vehicle status unavailable" : vehicles.isEmpty
             ? HubL10n.text("hub.HubVehicleViews.376.1673", fallback: "No configured vehicles")
             : HubL10n.text("hub.HubVehicleViews.469.1683", fallback: "Your configured vehicles.")
         selector.removeAllItems()
@@ -496,8 +498,8 @@ final class HubVehiclesView: HubSurfaceView {
         let selected = vehicles.first { $0.id == selectedVehicleID }
         detailCard.apply(vehicle: selected, allVehicles: selected.map { [$0] } ?? [],
                          provider: provider, enabled: commandsEnabled,
-                         emptyTitle: HubL10n.text("hub.HubDashboardView.430.1384", fallback: "No vehicles yet"),
-                         emptyStatus: HubL10n.text("hub.HubVehicleViews.500.1685", fallback: "Connect a Tesla account and start Hub to see vehicles here."))
+                         emptyTitle: statusUnavailable ? "Vehicle status unavailable" : HubL10n.text("hub.HubDashboardView.430.1384", fallback: "No vehicles yet"),
+                         emptyStatus: statusUnavailable ? "Hub has not returned a status report. Existing stored data has not been removed." : HubL10n.text("hub.HubVehicleViews.500.1685", fallback: "Connect a Tesla account and start Hub to see vehicles here."))
     }
 
     @available(*, unavailable)

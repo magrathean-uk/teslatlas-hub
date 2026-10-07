@@ -147,6 +147,141 @@ async fn wait_for_supervised_restart_condition(label: &str, mut condition: impl 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn supervised_shutdown_drains_started_publication_before_lease_release() {
+    assert_supervised_shutdown_drains_publication(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn supervised_shutdown_drain_preserves_sensitive_access_failure() {
+    assert_supervised_shutdown_drains_publication(true).await;
+}
+
+async fn assert_supervised_shutdown_drains_publication(sensitive_failure: bool) {
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    let lease = store
+        .acquire_supervised_collector_lease(current_epoch_millis().expect("clock"))
+        .expect("collector lease");
+    let initial = store
+        .supervised_collector_lease_status()
+        .expect("lease query")
+        .expect("active lease");
+    let gate = store
+        .acquire_publication_gate()
+        .await
+        .expect("publisher gate");
+    let (started_tx, started_rx) = oneshot::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let publisher_store = store.clone();
+    let publisher = tokio::task::spawn_blocking(move || {
+        let _gate = gate;
+        started_tx.send(()).expect("publisher started");
+        release_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("release paused publisher");
+        publisher_store
+            .open()
+            .expect("publisher catalogue")
+            .execute(
+                "INSERT INTO hub_metadata(key, value) VALUES ('shutdown-publication-test', 'committed')",
+                [],
+            )
+            .expect("publication commit before gate release");
+    });
+    timeout(Duration::from_secs(2), started_rx)
+        .await
+        .expect("publisher starts")
+        .expect("publisher signal");
+    let (_collector_state, collector_state_rx) = watch::channel(SupervisedCollectorState::Active);
+    let (heartbeat_shutdown, heartbeat_stop) = oneshot::channel();
+    let mut heartbeat = tokio::spawn(run_supervised_collector_heartbeat(
+        store.clone(),
+        lease,
+        collector_state_rx,
+        heartbeat_stop,
+        Duration::from_millis(5),
+    ));
+    let finish_store = store.clone();
+    let mut shutdown = tokio::spawn(async move {
+        finish_supervised_collector(
+            &finish_store,
+            lease,
+            if sensitive_failure {
+                Err(CollectorError::SensitiveAccessUnavailable)
+            } else {
+                Ok(())
+            },
+            &mut heartbeat,
+            heartbeat_shutdown,
+            false,
+        )
+        .await
+    });
+
+    assert!(
+        timeout(Duration::from_millis(20), &mut shutdown)
+            .await
+            .is_err()
+    );
+    wait_for_supervised_restart_condition("heartbeat during publication drain", || {
+        store
+            .supervised_collector_lease_status()
+            .expect("lease query")
+            .is_some_and(|status| {
+                status.instance_id == initial.instance_id
+                    && status.heartbeat_at_ms > initial.heartbeat_at_ms
+            })
+    })
+    .await;
+    assert!(!publisher.is_finished());
+    assert_eq!(
+        store
+            .open()
+            .expect("catalogue")
+            .query_row(
+                "SELECT COUNT(*) FROM hub_metadata WHERE key = 'shutdown-publication-test'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("publication marker"),
+        0
+    );
+
+    release_tx.send(()).expect("release publisher");
+    timeout(Duration::from_secs(2), publisher)
+        .await
+        .expect("publisher completes")
+        .expect("publisher join");
+    let result = join_supervised_restart_task("shutdown after publication", &mut shutdown).await;
+    if sensitive_failure {
+        assert!(matches!(
+            result,
+            Err(CollectorError::SensitiveAccessUnavailable)
+        ));
+    } else {
+        result.expect("orderly shutdown");
+    }
+    assert!(
+        store
+            .supervised_collector_lease_status()
+            .expect("lease query")
+            .is_none()
+    );
+    assert_eq!(
+        store
+            .open()
+            .expect("catalogue")
+            .query_row(
+                "SELECT value FROM hub_metadata WHERE key = 'shutdown-publication-test'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("publication marker"),
+        "committed"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn imported_legacy_pair_refreshes_then_collects_one_car_and_survives_reopen() {
     use crate::{
         credentials::{LegacyAuthManager, OwnerTokens},

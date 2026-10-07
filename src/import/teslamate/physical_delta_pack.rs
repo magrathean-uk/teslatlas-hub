@@ -3,9 +3,9 @@
 //! Optional Protocol 1.4 changed-set materialization from verified full heads.
 
 use std::{
-    fs,
+    fs::{self, File, OpenOptions},
     io::{self, Read},
-    os::unix::fs::PermissionsExt,
+    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 
@@ -615,10 +615,7 @@ fn publish_pack(
     let created = match fs::hard_link(compressed.path(), &path) {
         Ok(()) => true,
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
-            let existing = fs::read(&path)?;
-            if existing.len() as u64 != bytes || Sha256Digest::of_bytes(&existing) != sha256 {
-                return Err(PhysicalDeltaPackError::MissingContext);
-            }
+            verified_immutable_pack(&path, bytes, sha256, MAX_COMPRESSED)?;
             false
         }
         Err(error) => return Err(error.into()),
@@ -637,4 +634,194 @@ fn publish_pack(
         path,
         created,
     })
+}
+
+/// Admit an existing content-addressed object before reading it. NONBLOCK
+/// prevents a substituted FIFO from blocking open; NOFOLLOW rejects symlinks.
+/// The descriptor and final pathname must still describe the admitted inode.
+pub(super) fn verified_immutable_pack(
+    path: &Path,
+    expected_bytes: u64,
+    expected_digest: Sha256Digest,
+    maximum_bytes: u64,
+) -> io::Result<File> {
+    if expected_bytes == 0 || expected_bytes > maximum_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "content-addressed pack exceeds its byte bound",
+        ));
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags((rustix::fs::OFlags::NOFOLLOW | rustix::fs::OFlags::NONBLOCK).bits() as i32)
+        .open(path)?;
+    verify_pack_descriptor(path, file, expected_bytes, expected_digest)
+}
+
+fn verify_pack_descriptor(
+    path: &Path,
+    mut file: File,
+    expected_bytes: u64,
+    expected_digest: Sha256Digest,
+) -> io::Result<File> {
+    let before = file.metadata()?;
+    if !before.is_file() || before.len() != expected_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "content-addressed pack is not an exact-size regular file",
+        ));
+    }
+    verify_pack_digest(&mut file, expected_bytes, expected_digest)?;
+    let after = file.metadata()?;
+    let named = fs::symlink_metadata(path)?;
+    if !named.is_file()
+        || after.len() != expected_bytes
+        || named.len() != expected_bytes
+        || before.dev() != after.dev()
+        || before.ino() != after.ino()
+        || after.dev() != named.dev()
+        || after.ino() != named.ino()
+        || before.mtime() != after.mtime()
+        || before.mtime_nsec() != after.mtime_nsec()
+        || before.ctime() != after.ctime()
+        || before.ctime_nsec() != after.ctime_nsec()
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "content-addressed pack changed during verification",
+        ));
+    }
+    Ok(file)
+}
+
+fn verify_pack_digest(
+    input: &mut impl Read,
+    expected_bytes: u64,
+    expected_digest: Sha256Digest,
+) -> io::Result<()> {
+    let mut hash = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+    let mut remaining = expected_bytes;
+    while remaining > 0 {
+        let bytes = usize::try_from(remaining.min(buffer.len() as u64)).expect("buffer-sized read");
+        input.read_exact(&mut buffer[..bytes])?;
+        hash.update(&buffer[..bytes]);
+        remaining -= bytes as u64;
+    }
+    let mut trailing = [0_u8; 1];
+    if input.read(&mut trailing)? != 0
+        || Sha256Digest::from_bytes(hash.finalize().into()) != expected_digest
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "content-addressed pack size or digest conflicts",
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn collision_admission_reuses_exact_bytes_and_rejects_sparse_oversize() {
+        let temporary = crate::private_tempdir().unwrap();
+        let source = temporary.path().join("source.sqlite");
+        fs::write(&source, b"synthetic physical delta").unwrap();
+        let packs = temporary.path().join("packs");
+        fs::create_dir_all(packs.join(".staging")).unwrap();
+        let first = publish_pack(&source, &packs, 0).unwrap();
+        let duplicate = publish_pack(&source, &packs, 0).unwrap();
+        assert!(!duplicate.created);
+        assert_eq!(duplicate.sha256, first.sha256);
+
+        OpenOptions::new()
+            .write(true)
+            .open(&first.path)
+            .unwrap()
+            .set_len(MAX_COMPRESSED + 1)
+            .unwrap();
+        let failure = publish_pack(&source, &packs, 0).unwrap_err();
+        assert!(failure.to_string().contains("exact-size regular file"));
+        assert_eq!(fs::metadata(&first.path).unwrap().len(), MAX_COMPRESSED + 1);
+    }
+
+    #[test]
+    fn collision_admission_rejects_symlinks_directories_and_replaced_inodes() {
+        let temporary = crate::private_tempdir().unwrap();
+        let path = temporary.path().join("pack");
+        let bytes = b"bounded object";
+        let digest = Sha256Digest::of_bytes(bytes);
+        fs::write(&path, bytes).unwrap();
+        assert!(verified_immutable_pack(&path, bytes.len() as u64, digest, MAX_COMPRESSED).is_ok());
+        assert!(
+            verified_immutable_pack(
+                &path,
+                bytes.len() as u64,
+                Sha256Digest::of_bytes(b"different bytes"),
+                MAX_COMPRESSED,
+            )
+            .is_err()
+        );
+
+        let link = temporary.path().join("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(
+            verified_immutable_pack(&link, bytes.len() as u64, digest, MAX_COMPRESSED).is_err()
+        );
+        assert!(
+            fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(
+            verified_immutable_pack(temporary.path(), bytes.len() as u64, digest, MAX_COMPRESSED)
+                .is_err()
+        );
+
+        let admitted = File::open(&path).unwrap();
+        fs::rename(&path, temporary.path().join("preserved-pack")).unwrap();
+        fs::write(&path, bytes).unwrap();
+        assert!(verify_pack_descriptor(&path, admitted, bytes.len() as u64, digest).is_err());
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        assert_eq!(
+            fs::read(temporary.path().join("preserved-pack")).unwrap(),
+            bytes
+        );
+    }
+
+    #[test]
+    fn collision_hash_reads_at_most_expected_bytes_plus_one() {
+        struct GrowingReader {
+            read_bytes: usize,
+            largest_read: usize,
+        }
+        impl Read for GrowingReader {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                self.largest_read = self.largest_read.max(buffer.len());
+                self.read_bytes += buffer.len();
+                buffer.fill(0);
+                Ok(buffer.len())
+            }
+        }
+        let expected_bytes = 2 * 64 * 1024 + 7;
+        let digest = Sha256Digest::of_bytes(&vec![0; expected_bytes]);
+        let mut growing = GrowingReader {
+            read_bytes: 0,
+            largest_read: 0,
+        };
+        assert!(verify_pack_digest(&mut growing, expected_bytes as u64, digest).is_err());
+        assert_eq!(growing.read_bytes, expected_bytes + 1);
+        assert_eq!(growing.largest_read, 64 * 1024);
+
+        let mut truncated = &b"short"[..];
+        assert_eq!(
+            verify_pack_digest(&mut truncated, 6, Sha256Digest::of_bytes(b"short!"))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::UnexpectedEof,
+        );
+    }
 }

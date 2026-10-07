@@ -1942,6 +1942,63 @@ fn physical_compare_reads_all_eleven_exact_typed_tables_and_ignores_pack_metadat
 }
 
 #[test]
+fn physical_compare_rejects_corrupt_pack_and_wrong_car_identity_with_scratch_cleanup() {
+    use crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison;
+
+    for corrupt in [false, true] {
+        let temporary = crate::private_tempdir().unwrap();
+        let packs = temporary.path().join("packs");
+        let writer =
+            ProjectionPackWriter::with_limits(&packs, ProtocolLimits::hub_sync_v1_1_3_schema_2_2());
+        let snapshot = snapshot_v2_2();
+        let key = CursorKey::from_bytes([0x71; 32]);
+        let old_request = request_v2_2(&snapshot);
+        let old_pack = writer
+            .write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&old_request)
+            .unwrap();
+        let old = old_request.signed_manifest(&old_pack, &key).unwrap();
+        let mut new_request = request_v2_2(&snapshot);
+        new_request.pack_id = Uuid::new_v4();
+        new_request.snapshot_id = Uuid::new_v4();
+        new_request.sequence = SequenceRange {
+            from_exclusive: 8,
+            to_inclusive: 8,
+        };
+        let new_pack = writer
+            .write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&new_request)
+            .unwrap();
+        let new = new_request.signed_manifest(&new_pack, &key).unwrap();
+        let mut admitted_binding = binding();
+        if corrupt {
+            std::fs::write(&new_pack.path, b"corrupt copied pack").unwrap();
+        } else {
+            // Public identifiers and cursor remain valid; SQLite identity must
+            // still reject a different selected source car.
+            admitted_binding.selected_car_id += 1;
+        }
+        let failed = PhysicalDeltaComparison::compare(
+            &old,
+            &new,
+            &admitted_binding,
+            &key,
+            &packs,
+            64 * 1024 * 1024,
+            0,
+        );
+        assert!(matches!(
+            failed,
+            Err(crate::import::teslamate::physical_delta_compare::PhysicalCompareError::Pack(_))
+        ));
+        assert_eq!(
+            packs.join(".staging").read_dir().unwrap().count(),
+            0,
+            "pack rejection removes both comparison and decoded scratch"
+        );
+        assert_eq!(packs.join("sha256").read_dir().unwrap().count(), 2);
+    }
+}
+
+#[test]
 fn physical_compare_tracks_moved_children_open_drive_and_shared_dependencies() {
     let temporary = crate::private_tempdir().unwrap();
     let original = snapshot_v2_2();

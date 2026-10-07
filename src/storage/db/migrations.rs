@@ -7,6 +7,7 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
             .execute_batch(
                 "
                 BEGIN IMMEDIATE;
+                PRAGMA application_id = 1413564501;
                 CREATE TABLE IF NOT EXISTS hub_metadata (
                     key TEXT PRIMARY KEY NOT NULL,
                     value TEXT NOT NULL

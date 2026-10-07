@@ -493,7 +493,9 @@ fn unchanged_successful_discovery_refreshes_current_only() {
     let vehicle_id = store
         .open()
         .expect("database")
-        .query_row("SELECT vehicle_id FROM vehicles", [], |row| row.get::<_, String>(0))
+        .query_row("SELECT vehicle_id FROM vehicles", [], |row| {
+            row.get::<_, String>(0)
+        })
         .expect("vehicle id")
         .parse::<Uuid>()
         .expect("uuid");
@@ -535,9 +537,15 @@ fn unchanged_successful_discovery_refreshes_current_only() {
     assert_eq!(still_current[0].observed_at_ms, after[0].observed_at_ms);
     assert_eq!(still_current[0].payload, after[0].payload);
     let connection = store.open().expect("database");
-    for table in ["raw_observations", "vehicle_lifecycle_state", "export_outbox"] {
+    for table in [
+        "raw_observations",
+        "vehicle_lifecycle_state",
+        "export_outbox",
+    ] {
         let count: i64 = connection
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
             .expect("history count");
         assert_eq!(count, 0, "{table} must remain unchanged");
     }
@@ -1522,6 +1530,135 @@ fn special_retry_precedence_is_exact_and_per_vehicle() {
         scheduler.vehicles[&first_id].next_poll,
         now + Duration::from_secs(23)
     );
+}
+
+#[test]
+fn discovery_rate_limit_preserves_each_provider_deadline() {
+    let now = Instant::now();
+    let retry_after_seconds = 120;
+    for error in [
+        CollectorError::FleetApi(FleetApiError::RateLimited {
+            retry_after_seconds,
+        }),
+        CollectorError::OwnerApi(OwnerApiError::RateLimited {
+            retry_after_seconds,
+        }),
+        CollectorError::OwnerApiAuth(OwnerApiAuthError::Owner(OwnerApiError::RateLimited {
+            retry_after_seconds,
+        })),
+    ] {
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        assert_eq!(
+            scheduler.discovery_failed_for_error(&error, now),
+            Duration::from_secs(retry_after_seconds)
+        );
+        assert!(!scheduler.discovery_due(now + Duration::from_secs(119)));
+        let deadline = now + Duration::from_secs(retry_after_seconds);
+        assert!(scheduler.discovery_due(deadline));
+        assert_eq!(
+            scheduler.discovery_failed_for_error(
+                &CollectorError::FleetApi(FleetApiError::HttpStatus(503)),
+                deadline,
+            ),
+            test_cadence().sleeping
+        );
+    }
+}
+
+#[test]
+fn discovery_without_rate_limit_keeps_bounded_backoff() {
+    for error in [
+        CollectorError::FleetApi(FleetApiError::HttpStatus(503)),
+        CollectorError::FleetApi(FleetApiError::HttpStatus(401)),
+        CollectorError::OwnerApi(OwnerApiError::HttpStatus(503)),
+        CollectorError::OwnerApiAuth(OwnerApiAuthError::Auth(LegacyAuthManagerError::Auth(
+            crate::legacy_auth::LegacyAuthError::Transport,
+        ))),
+    ] {
+        let mut now = Instant::now();
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        for seconds in [30, 60, 120, 240, 480, 900, 900] {
+            let delay = Duration::from_secs(seconds);
+            assert_eq!(scheduler.discovery_failed_for_error(&error, now), delay);
+            assert!(!scheduler.discovery_due(now + delay - Duration::from_nanos(1)));
+            now += delay;
+            assert!(scheduler.discovery_due(now));
+        }
+    }
+}
+
+#[test]
+fn discovery_rate_limit_uses_checked_deadline_for_extreme_delay() {
+    let now = Instant::now();
+    let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+    assert_eq!(
+        scheduler.discovery_failed_for_error(
+            &CollectorError::FleetApi(FleetApiError::RateLimited {
+                retry_after_seconds: u64::MAX,
+            }),
+            now,
+        ),
+        Duration::from_secs(u64::MAX)
+    );
+    let expected = now.checked_add(RETRY_OVERFLOW_FALLBACK).unwrap_or(now);
+    assert_eq!(scheduler.next_discovery, expected);
+}
+
+#[test]
+fn offline_state_retry_preserves_checked_cooldown_and_valid_delays() {
+    let now = Instant::now();
+    for error in [
+        CollectorError::OwnerApi(OwnerApiError::RateLimited {
+            retry_after_seconds: u64::MAX,
+        }),
+        CollectorError::OwnerApiAuth(OwnerApiAuthError::Owner(OwnerApiError::RateLimited {
+            retry_after_seconds: u64::MAX,
+        })),
+    ] {
+        let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "offline");
+        let id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![vehicle], now);
+        scheduler.offline_state_failed_for_error(id, &error, now);
+        assert!(scheduler.due_offline_state_vehicles(now).is_empty());
+        assert!(
+            scheduler
+                .due_offline_state_vehicles(now + Duration::from_secs(120))
+                .is_empty()
+        );
+        let due = scheduler.vehicles[&id].offline_state_fetch_due.unwrap();
+        assert!(due > now);
+        assert!(due.duration_since(now) <= RETRY_OVERFLOW_FALLBACK);
+        assert_eq!(scheduler.vehicles[&id].next_poll, due);
+    }
+    for (error, delay) in [
+        (
+            CollectorError::OwnerApi(OwnerApiError::RateLimited {
+                retry_after_seconds: 120,
+            }),
+            Duration::from_secs(120),
+        ),
+        (
+            CollectorError::OwnerApi(OwnerApiError::RequestTimeout),
+            GENERIC_OTHER_RETRY,
+        ),
+        (
+            CollectorError::OwnerApiAuth(OwnerApiAuthError::NotSignedIn),
+            LEGACY_REFRESH_RETRY,
+        ),
+    ] {
+        let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "offline");
+        let id = vehicle.id;
+        let mut scheduler = VehicleScheduler::new(test_cadence(), now);
+        scheduler.accept_discovery(vec![vehicle], now);
+        scheduler.offline_state_failed_for_error(id, &error, now);
+        assert!(
+            scheduler
+                .due_offline_state_vehicles(now + delay - Duration::from_nanos(1))
+                .is_empty()
+        );
+        assert_eq!(scheduler.due_offline_state_vehicles(now + delay), vec![id]);
+    }
 }
 
 #[test]

@@ -930,6 +930,244 @@ fn readiness_rechecks_listener_when_same_pid_stays_running() {
 }
 
 #[test]
+fn readiness_requires_application_pid_configuration_and_ready_status() {
+    let digest = crate::protocol::Sha256Digest::from_bytes([38; 32]);
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("x-teslatlas-native-process-id", "42".parse().unwrap());
+    headers.insert(
+        crate::server::NATIVE_CONFIG_DIGEST_HEADER,
+        digest.to_string().parse().unwrap(),
+    );
+    assert!(application_readiness_matches(
+        reqwest::StatusCode::OK,
+        &headers,
+        br#"{"status":"ready"}"#,
+        42,
+        digest
+    ));
+    for (status, pid, expected_digest, body) in [
+        (
+            reqwest::StatusCode::OK,
+            43,
+            digest,
+            br#"{"status":"ready"}"#.as_slice(),
+        ),
+        (
+            reqwest::StatusCode::OK,
+            42,
+            crate::protocol::Sha256Digest::from_bytes([39; 32]),
+            br#"{"status":"ready"}"#.as_slice(),
+        ),
+        (
+            reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            42,
+            digest,
+            br#"{"status":"ready"}"#.as_slice(),
+        ),
+        (
+            reqwest::StatusCode::OK,
+            42,
+            digest,
+            br#"{"status":"not_ready"}"#.as_slice(),
+        ),
+        (
+            reqwest::StatusCode::OK,
+            42,
+            digest,
+            br#"{"status":"ok"}"#.as_slice(),
+        ),
+        (
+            reqwest::StatusCode::OK,
+            42,
+            digest,
+            br#"{"status":"ready","status":"ready"}"#.as_slice(),
+        ),
+    ] {
+        assert!(!application_readiness_matches(
+            status,
+            &headers,
+            body,
+            pid,
+            expected_digest
+        ));
+    }
+    headers.remove(crate::server::NATIVE_CONFIG_DIGEST_HEADER);
+    assert!(!application_readiness_matches(
+        reqwest::StatusCode::OK,
+        &headers,
+        br#"{"status":"ready"}"#,
+        42,
+        digest
+    ));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg(target_os = "macos")]
+async fn readiness_transport_rejects_unrelated_listener_and_checks_configured_tls_identity() {
+    crate::crypto::install_default_provider();
+    let temporary = crate::private_tempdir().unwrap();
+    let identity = rcgen::generate_simple_self_signed(vec!["readiness.hub.test".into()]).unwrap();
+    let certificate = temporary.path().join("server.pem");
+    fs::write(&certificate, identity.cert.pem()).unwrap();
+    let tls = axum_server::tls_rustls::RustlsConfig::from_pem(
+        identity.cert.pem().into_bytes(),
+        identity.signing_key.serialize_pem().into_bytes(),
+    )
+    .await
+    .unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let previous_config_path = temporary.path().join("previous.toml");
+    let config_text = format!(
+        "data_dir = '{}'\nbind = '{}'\n[collector]\ninterval_seconds = 0\n[tls]\ncertificate_path = '{}'\nprivate_key_path = '{}'\npublic_url = 'https://readiness.hub.test:{}/'\n",
+        temporary.path().join("hub").display(),
+        address,
+        certificate.display(),
+        temporary.path().join("unused-key.pem").display(),
+        address.port()
+    );
+    fs::write(&previous_config_path, &config_text).unwrap();
+    fs::set_permissions(&previous_config_path, fs::Permissions::from_mode(0o600)).unwrap();
+    let (previous_config, digest) = HubConfig::load_with_digest(&previous_config_path).unwrap();
+    let response_digest = digest.to_string();
+    let app = axum::Router::new().route(
+        "/readyz",
+        axum::routing::get(move || {
+            let digest = response_digest.clone();
+            async move {
+                (
+                    [
+                        ("x-teslatlas-native-process-id", "42".to_owned()),
+                        (crate::server::NATIVE_CONFIG_DIGEST_HEADER, digest),
+                    ],
+                    axum::Json(serde_json::json!({"status":"ready"})),
+                )
+            }
+        }),
+    );
+    let server = tokio::spawn(async move {
+        axum_server::from_tcp_rustls(listener, tls)
+            .unwrap()
+            .serve(app.into_make_service())
+            .await
+            .unwrap()
+    });
+    let mut config = source_run_config(temporary.path(), &temporary.path().join("hub"));
+    config.bind = address;
+    config.tls = Some(crate::config::TlsListenerConfig {
+        certificate_path: certificate.clone(),
+        private_key_path: temporary.path().join("unused-key.pem"),
+        public_url: format!("https://readiness.hub.test:{}/", address.port()),
+    });
+    assert!(configured_application_is_ready(&config, digest, 42).unwrap());
+    assert!(!configured_application_is_ready(&config, digest, 43).unwrap());
+    assert!(
+        !configured_application_is_ready(
+            &config,
+            crate::protocol::Sha256Digest::from_bytes([39; 32]),
+            42
+        )
+        .unwrap()
+    );
+    config.tls.as_mut().unwrap().public_url = format!("https://wrong.hub.test:{}/", address.port());
+    assert!(!configured_application_is_ready(&config, digest, 42).unwrap());
+
+    // Same bind address, different exact config snapshot: replacement B must
+    // fail against healthy old A, then rollback must explicitly verify A.
+    let replacement_config_path = temporary.path().join("replacement.toml");
+    fs::write(
+        &replacement_config_path,
+        format!("{config_text}# replacement B\n"),
+    )
+    .unwrap();
+    fs::set_permissions(&replacement_config_path, fs::Permissions::from_mode(0o600)).unwrap();
+    let (replacement_config, replacement_digest) =
+        HubConfig::load_with_digest(&replacement_config_path).unwrap();
+    assert_ne!(replacement_digest, digest);
+    let paths = InstallPaths {
+        binary: temporary.path().join("binary"),
+        plist: temporary.path().join("service.plist"),
+        previous_binary: Some(temporary.path().join("old-binary")),
+        previous_plist: Some(temporary.path().join("old-service.plist")),
+    };
+    fs::write(&paths.binary, b"new binary").unwrap();
+    fs::write(paths.previous_binary.as_ref().unwrap(), b"old binary").unwrap();
+    fs::write(
+        &paths.plist,
+        render_plist(
+            &paths.binary,
+            &replacement_config_path,
+            &replacement_config.data_dir,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        paths.previous_plist.as_ref().unwrap(),
+        render_plist(
+            &paths.binary,
+            &previous_config_path,
+            &previous_config.data_dir,
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let previous = configured_identity_from_plist(paths.previous_plist.as_ref().unwrap()).unwrap();
+    assert_eq!(previous.1, digest);
+    let identities = ConfiguredServiceReadiness {
+        replacement: (&replacement_config, replacement_digest),
+        previous: Ok(Some(previous)),
+        service: "synthetic",
+        ready_pid: None,
+    };
+    struct IdentityProbe<'a> {
+        identities: ConfiguredServiceReadiness<'a>,
+        observations: Vec<bool>,
+    }
+    impl ServiceReadiness for IdentityProbe<'_> {
+        fn observe(&mut self, restored: bool) -> io::Result<bool> {
+            self.observations.push(restored);
+            let (config, digest) = self.identities.identity(restored)?;
+            configured_application_is_ready(config, digest, 42)
+        }
+    }
+    let mut readiness = IdentityProbe {
+        identities,
+        observations: vec![],
+    };
+    let mut outcomes = [false, false, false, true, true, true, false, true, true].into_iter();
+    let error = launch_with_runner(
+        &paths,
+        true,
+        "synthetic",
+        "synthetic",
+        &mut |_| Ok(outcomes.next().unwrap()),
+        &mut readiness,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("previous Hub service restored"));
+    assert_eq!(
+        readiness.observations,
+        std::iter::repeat_n(false, SERVICE_READY_ATTEMPTS)
+            .chain(std::iter::repeat_n(true, SERVICE_READY_STABLE_OBSERVATIONS))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(fs::read(&paths.binary).unwrap(), b"old binary");
+    assert!(!paths.previous_binary.as_ref().unwrap().exists());
+    assert!(!paths.previous_plist.as_ref().unwrap().exists());
+    server.abort();
+    let _ = server.await;
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    config.bind = listener.local_addr().unwrap();
+    config.tls = None;
+    // A reachable listener that does not serve the Hub endpoint was enough
+    // for the previous implementation; it must not commit readiness now.
+    assert!(!configured_application_is_ready(&config, digest, 42).unwrap());
+}
+
+#[test]
 fn service_stop_fails_after_bounded_unload_poll() {
     let mut responses =
         std::iter::once(true).chain(std::iter::repeat_n(true, SERVICE_UNLOAD_ATTEMPTS));

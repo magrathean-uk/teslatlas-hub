@@ -54,7 +54,8 @@ fn teslamate_gained_range_charge_seed(
     state: &OpenSessionState,
     sample: &ParsedSample,
 ) -> Option<GainedRangeChargeCandidate> {
-    if sample.stream_frame
+    if !sample.charge_data_present
+        || sample.stream_frame
         || state.open_charge.is_some()
         || is_charging_state(sample.charging_state.as_deref())
     {

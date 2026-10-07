@@ -156,7 +156,9 @@ fn maybe_close_charge(
         .expect("open charge was checked before close");
     // Terminal sample still carries the final energy/SoC even though it is no
     // longer "Charging"; fold those fields in before sealing the session.
-    observe_charge_aggregate(&mut open, sample);
+    if sample.charge_data_present {
+        observe_charge_aggregate(&mut open, sample);
+    }
     if terminal && sample.charge_data_present {
         let sample_id = state.next_charge_sample_id;
         state.next_charge_sample_id = state
@@ -197,12 +199,12 @@ fn maybe_open_or_extend_drive(
     sample: &ParsedSample,
     delta: &mut LifecycleDelta,
 ) -> Result<(), LifecycleError> {
-    let driving = is_drive_shift(sample.shift_state.as_deref());
+    let driving = sample.drive_data_present && is_drive_shift(sample.shift_state.as_deref());
     if !driving {
         return Ok(());
     }
     // Charging takes precedence when Tesla reports both inconsistently.
-    if is_charging_state(sample.charging_state.as_deref()) {
+    if sample.charge_data_present && is_charging_state(sample.charging_state.as_deref()) {
         return Ok(());
     }
 
@@ -328,7 +330,8 @@ fn maybe_open_or_extend_charge(
     sample: &ParsedSample,
     delta: &mut LifecycleDelta,
 ) -> Result<(), LifecycleError> {
-    let charging = is_charging_state(sample.charging_state.as_deref());
+    let charging =
+        sample.charge_data_present && is_charging_state(sample.charging_state.as_deref());
     if !charging {
         return Ok(());
     }

@@ -670,11 +670,17 @@ fn replace_teslamate_import_projection_state_from_attached_in_transaction(
         .map_err(StoreError::LineageCatalog)?;
     transaction
         .execute(
-            "DELETE FROM teslamate_import_projection_state_rows WHERE vehicle_id = ?1",
+            "DELETE FROM teslamate_import_projection_state_rows
+              WHERE vehicle_id = ?1
+                AND NOT EXISTS (
+                    SELECT 1 FROM teslamate_projection_state_spool.current_rows AS current
+                     WHERE current.entity_ordinal = teslamate_import_projection_state_rows.entity_ordinal
+                       AND current.entity_id = teslamate_import_projection_state_rows.entity_id
+                )",
             params![vehicle_key.as_str()],
         )
         .map_err(StoreError::LineageCatalog)?;
-    let inserted = transaction
+    transaction
         .execute(
             "INSERT INTO teslamate_import_projection_state_rows(
                 vehicle_id, entity, entity_ordinal, entity_id, car_id, projection_sha256
@@ -691,11 +697,26 @@ fn replace_teslamate_import_projection_state_from_attached_in_transaction(
                     END,
                     entity_ordinal, entity_id, car_id, projection_sha256
                FROM teslamate_projection_state_spool.current_rows
-              ORDER BY entity_ordinal ASC, entity_id ASC",
+              WHERE true
+              ORDER BY entity_ordinal ASC, entity_id ASC
+             ON CONFLICT(vehicle_id, entity_ordinal, entity_id) DO UPDATE SET
+                entity = excluded.entity,
+                car_id = excluded.car_id,
+                projection_sha256 = excluded.projection_sha256
+             WHERE teslamate_import_projection_state_rows.entity IS NOT excluded.entity
+                OR teslamate_import_projection_state_rows.car_id IS NOT excluded.car_id
+                OR teslamate_import_projection_state_rows.projection_sha256 IS NOT excluded.projection_sha256",
             params![vehicle_key.as_str()],
         )
         .map_err(StoreError::LineageCatalog)?;
-    if u64::try_from(inserted).map_err(|_| StoreError::LineageCatalogConflict)?
+    let installed: i64 = transaction
+        .query_row(
+            "SELECT COUNT(*) FROM teslamate_import_projection_state_rows WHERE vehicle_id = ?1",
+            params![vehicle_key.as_str()],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::LineageCatalog)?;
+    if u64::try_from(installed).map_err(|_| StoreError::LineageCatalogConflict)?
         != transfer.stats().row_count
     {
         return Err(StoreError::LineageCatalogConflict);

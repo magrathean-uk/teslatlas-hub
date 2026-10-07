@@ -145,3 +145,27 @@ with the packaged binary and per-user configuration paths documented in
 [CLI reference](../guides/cli.md#platform-invocation). Restart the service only
 after the command has completed and the intended data and configuration have
 been checked.
+
+## Interrupted PhysicalV3 publication
+
+Ordinary PhysicalV3 replacement now commits its public head, retained predecessor
+and optional changed-set in one catalogue transaction. A failure before commit
+keeps the previous public head; a completed commit exposes the complete successor.
+Its immutable packs are verified before admission and remain covered by normal
+backup verification.
+
+A store interrupted by the older two-transaction publication path can contain a
+`blocked_rotation` head. Retrying the import verifies the exact persisted candidate
+and predecessor packs before activating that candidate. If source history has
+advanced, the verified candidate is activated first and becomes the predecessor
+of the new publication. Existing signed identities and retained reader receipts
+are preserved.
+
+Automatic recovery requires that retained predecessor to remain within the
+existing 24-hour retention window. An expired predecessor, corrupt artifact or
+binding mismatch remains a failed publication; changing the clock, extending
+receipt expiry or editing catalogue rows is not a supported repair. Preserve the
+affected store and receipts. A verified backup restored into a new directory can
+provide a known-good recovery point through the procedure above; recovery of an
+expired blocked state without such a backup requires a separately reviewed repair
+design. The new atomic production path prevents this gap for future replacements.

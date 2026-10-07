@@ -334,7 +334,14 @@ fn schema_58_upgrade_preserves_old_lineage_and_enforces_new_immutable_car_identi
     let connection = rusqlite::Connection::open(database).unwrap();
     connection
         .execute_batch(
-            "CREATE TABLE vehicles (
+            "CREATE TABLE sources (
+                source_id TEXT PRIMARY KEY NOT NULL,
+                source_kind TEXT NOT NULL,
+                generation INTEGER NOT NULL CHECK(generation >= 1),
+                created_at_ms INTEGER NOT NULL
+             ) STRICT;
+             INSERT INTO sources VALUES ('old-source', 'edge', 1, 1);
+             CREATE TABLE vehicles (
                 vehicle_id TEXT PRIMARY KEY NOT NULL,
                 source_id TEXT NOT NULL,
                 source_vehicle_key TEXT NOT NULL,
@@ -362,6 +369,17 @@ fn schema_58_upgrade_preserves_old_lineage_and_enforces_new_immutable_car_identi
                 'old-edge', 'old-lineage', 'old-source', 'old-vehicle',
                 '5YJ3E1EA7KF000001', 1, 1, 1, 1
              );
+             CREATE TABLE current_observations (
+                vehicle_id TEXT NOT NULL,
+                record_type TEXT NOT NULL,
+                observation_id INTEGER NOT NULL,
+                source_id TEXT NOT NULL,
+                observed_at_ms INTEGER NOT NULL,
+                received_at_ms INTEGER NOT NULL,
+                payload_sha256 BLOB NOT NULL,
+                payload_json TEXT NOT NULL,
+                PRIMARY KEY(vehicle_id, record_type)
+             ) STRICT, WITHOUT ROWID;
              PRAGMA user_version = 58;",
         )
         .unwrap();

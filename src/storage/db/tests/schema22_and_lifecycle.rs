@@ -9,6 +9,124 @@ fn mark_export_dirty_for_test(store: &HubStore, vehicle_id: Uuid) {
     transaction.commit().expect("commit outbox mutation");
 }
 
+#[test]
+fn standalone_import_session_survives_reopen_and_generation_promotion() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    let position = serde_json::from_value(serde_json::json!({
+        "id": 1, "car_id": 10, "drive_id": null,
+        "date_ms": 1_700_000_000_001_i64, "latitude": 0.0, "longitude": 0.0
+    }))
+    .expect("standalone position");
+    let session = TeslaMateOpenSession {
+        car_id: 10,
+        standalone_positions: vec![position],
+        ..Default::default()
+    };
+    store
+        .seed_imported_open_session(source.source_id, vehicle.vehicle_id, 10, &session, 1_000)
+        .expect("seed standalone-only session");
+    assert_eq!(
+        store
+            .load_imported_open_session(source.source_id, vehicle.vehicle_id)
+            .unwrap(),
+        Some(session.clone())
+    );
+    drop(store);
+    let reopened = HubStore::initialize(temporary.path()).expect("restart");
+    assert_eq!(
+        reopened
+            .load_imported_open_session(source.source_id, vehicle.vehicle_id)
+            .unwrap(),
+        Some(session.clone())
+    );
+    let run = reopened
+        .begin_import_generation(source.source_id, vehicle.vehicle_id, 10, 2_000)
+        .expect("generation");
+    let mut promoted = session;
+    promoted.standalone_positions[0].id = 2;
+    promoted.standalone_positions[0].date_ms += 1;
+    promoted.watermarks.positions.max_id = Some(2);
+    reopened
+        .stage_import_generation_session(run, &promoted)
+        .expect("stage");
+    reopened
+        .promote_import_generation(run, source.source_id, vehicle.vehicle_id, 10, 2_000)
+        .expect("promote");
+    assert_eq!(
+        reopened
+            .load_imported_open_session(source.source_id, vehicle.vehicle_id)
+            .unwrap(),
+        Some(promoted.clone())
+    );
+    drop(reopened);
+    let reopened = HubStore::initialize(temporary.path()).expect("restart promoted session");
+    assert_eq!(
+        reopened
+            .load_imported_open_session(source.source_id, vehicle.vehicle_id)
+            .unwrap(),
+        Some(promoted.clone())
+    );
+
+    // A second standalone row from another car must still fail full session
+    // validation; inference is not permission to mix source ownership.
+    let mut corrupt = promoted.standalone_positions[0].clone();
+    corrupt.id = 3;
+    corrupt.car_id = 11;
+    reopened
+        .open()
+        .unwrap()
+        .execute(
+            "INSERT INTO lifecycle_open_rows(
+            source_id, vehicle_id, source_table, source_row_id, car_id,
+            domain, parent_source_row_id, row_json
+         ) SELECT source_id, vehicle_id, source_table, ?1, ?5, domain, NULL, ?2
+           FROM lifecycle_open_rows WHERE source_id = ?3 AND vehicle_id = ?4
+             AND domain = 'standalone_position' LIMIT 1",
+            params![
+                corrupt.id,
+                serde_json::to_string(&corrupt).unwrap(),
+                source.source_id.to_string(),
+                vehicle.vehicle_id.to_string(),
+                corrupt.car_id
+            ],
+        )
+        .expect("inject mixed-car corruption");
+    assert!(matches!(
+        reopened.load_imported_open_session(source.source_id, vehicle.vehicle_id),
+        Err(StoreError::InvalidLifecycleSession)
+    ));
+}
+
+#[test]
+fn physical_staging_leftovers_are_removed_on_repair_and_restart() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let staging = store.packs_dir().join(".staging");
+    fs::create_dir_all(&staging).expect("staging");
+    fs::set_permissions(&staging, fs::Permissions::from_mode(0o700)).unwrap();
+    let unrelated = staging.join("notes.physical-scan.sqlite.tmp");
+    fs::write(&unrelated, b"keep").unwrap();
+    let create_leftovers = || {
+        ["physical-admission", "physical-scan"].map(|kind| {
+            let path = staging.join(format!("{}.{kind}.sqlite.tmp", Uuid::new_v4()));
+            fs::write(&path, b"decoded").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+            path
+        })
+    };
+    let repair_paths = create_leftovers();
+    store.repair().expect("repair");
+    assert!(repair_paths.iter().all(|path| !path.exists()));
+    assert_eq!(fs::read(&unrelated).unwrap(), b"keep");
+    let restart_paths = create_leftovers();
+    drop(store);
+    let _reopened = HubStore::initialize(temporary.path()).expect("restart");
+    assert!(restart_paths.iter().all(|path| !path.exists()));
+    assert_eq!(fs::read(&unrelated).unwrap(), b"keep");
+}
+
 fn test_registered_vehicle(store: &HubStore) -> (SourceRecord, VehicleRecord) {
     let source = store
         .register_source(

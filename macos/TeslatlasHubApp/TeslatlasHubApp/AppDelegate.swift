@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        HubStatusProcessLifecycle.shared.shutdown()
         DevelopmentEventLog.drainAll()
     }
 
@@ -203,6 +204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// NSApplication's standard termination can be suppressed by an attached
     /// sheet. End idle sheets explicitly; don't interrupt an owned operation.
     static func finishSheetsBeforeQuit(in windows: [NSWindow]) -> Bool {
+        guard !HubController.diagnosticsPreventQuit else { return false }
         guard !windows.contains(where: {
             ($0.delegate as? OnboardingWindowController)?.operationPreventsQuit == true
                 || ($0.windowController as? MainWindowController)?.operationPreventsQuit == true
@@ -274,7 +276,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        !HubController.diagnosticsPreventQuit
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        Self.finishSheetsBeforeQuit(in: sender.windows) ? .terminateNow : .terminateCancel
     }
 
     @objc func showLogs(_ sender: Any?) {
