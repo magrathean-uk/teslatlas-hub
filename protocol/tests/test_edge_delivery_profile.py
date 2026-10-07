@@ -28,12 +28,23 @@ def compact(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
-def jcs_fixture(value):
-    # These fixtures use integers, strings, objects and arrays only. For that
-    # deliberately narrow domain, sorted compact UTF-8 JSON is RFC 8785 JCS.
-    return json.dumps(
-        value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode()
+def edge_fixture_canonical(value, *, key_encoding="utf-8"):
+    # Independent bounded fixture serializer. It does not claim broad JCS
+    # number support or accept floating-point payloads. UTF-16 is used only
+    # as the negative key-order discriminator in the public corpus test.
+    if isinstance(value, dict):
+        return b"{" + b",".join(
+            edge_fixture_canonical(key) + b":"
+            + edge_fixture_canonical(value[key], key_encoding=key_encoding)
+            for key in sorted(value, key=lambda item: item.encode(key_encoding))
+        ) + b"}"
+    if isinstance(value, list):
+        return b"[" + b",".join(
+            edge_fixture_canonical(item, key_encoding=key_encoding) for item in value
+        ) + b"]"
+    if value is None or type(value) in (str, bool, int):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    raise TypeError("fixture canonicalizer supports only the bounded integer/string corpus")
 
 
 def digest(domain, body):
@@ -84,10 +95,10 @@ class EdgeDeliveryProfileTests(unittest.TestCase):
             stable = copy.deepcopy(envelope)
             del stable["received_at_ms"]
             stable["version"] = 2
-            return digest(b"teslatlas-edge-record-v2\0", jcs_fixture(stable))
+            return digest(b"teslatlas-edge-record-v2\0", edge_fixture_canonical(stable))
 
         def legacy_id(envelope):
-            return digest(b"teslatlas-edge-record-v1\0", jcs_fixture(envelope))
+            return digest(b"teslatlas-edge-record-v1\0", edge_fixture_canonical(envelope))
 
         self.assertEqual(stable_id(base), BASE_ID)
         self.assertEqual(stable_id(replay), BASE_ID)
@@ -95,6 +106,65 @@ class EdgeDeliveryProfileTests(unittest.TestCase):
         self.assertEqual(legacy_id(base), BASE_ALIAS)
         self.assertEqual(legacy_id(replay), REPLAY_ALIAS)
         self.assertNotEqual(legacy_id(base), legacy_id(replay))
+
+    def test_nested_unicode_vector_selects_retained_utf8_order_and_preserves_arrays(self):
+        vector = self.vectors["unicode_key_order"]
+        envelope = vector["envelope"]
+        self.assertEqual(list(Draft202012Validator(self.envelope_schema).iter_errors(envelope)), [])
+        self.assertEqual(vector["divergent_keys"], ["\ue000", "\U00010000"])
+        self.assertEqual(vector["utf8_key_order"], ["\ue000", "\U00010000"])
+        self.assertEqual(vector["rfc8785_utf16_key_order"], ["\U00010000", "\ue000"])
+        stable = copy.deepcopy(envelope)
+        del stable["received_at_ms"]
+        stable["version"] = 2
+        for kind, value, domain in (
+            ("stable", stable, b"teslatlas-edge-record-v2\0"),
+            ("legacy", envelope, b"teslatlas-edge-record-v1\0"),
+        ):
+            with self.subTest(kind=kind):
+                expected = bytes.fromhex(vector[f"{kind}_canonical_utf8_hex"])
+                actual = edge_fixture_canonical(value)
+                self.assertEqual(actual, expected)
+                # A separate code-point-sorted compact serializer agrees for
+                # this valid Unicode, exactly represented integer corpus.
+                self.assertEqual(
+                    json.dumps(value, ensure_ascii=False, sort_keys=True,
+                               separators=(",", ":")).encode("utf-8"), expected,
+                )
+                self.assertEqual(digest(domain, actual), vector[f"{kind}_record_id"])
+                utf16 = edge_fixture_canonical(value, key_encoding="utf-16-be")
+                self.assertNotEqual(utf16, expected)
+                self.assertNotEqual(digest(domain, utf16), vector[f"{kind}_record_id"])
+                # Recursive sorting must ignore insertion order at every
+                # object depth, including objects nested within arrays.
+                def reversed_objects(item):
+                    if isinstance(item, dict):
+                        return {key: reversed_objects(item[key]) for key in reversed(item)}
+                    if isinstance(item, list):
+                        return [reversed_objects(element) for element in item]
+                    return item
+                self.assertEqual(edge_fixture_canonical(reversed_objects(value)), expected)
+        changed_arrays = copy.deepcopy(stable)
+        changed_arrays["payload"]["\ue000"][1].reverse()
+        self.assertNotEqual(
+            digest(b"teslatlas-edge-record-v2\0", edge_fixture_canonical(changed_arrays)),
+            vector["stable_record_id"],
+        )
+
+    def test_machine_authority_names_recursive_utf8_erratum_without_numeric_admission_change(self):
+        identity = self.profile["identity"]
+        self.assertEqual(identity["canonicalization"], "edge-json-utf8-key-order-v1")
+        rules = identity["canonicalization_rules"]
+        self.assertIn("recursively for every object", rules["object_key_order"])
+        self.assertIn("including objects inside arrays", rules["object_key_order"])
+        self.assertEqual(rules["unicode_normalization"], "none; sort raw names before JSON string escaping")
+        self.assertEqual(rules["array_order"], "preserve input array order; never sort arrays")
+        self.assertIn("broad numeric interpretation", rules["other_serialization"])
+        self.assertIn("remains unresolved", rules["other_serialization"])
+        self.assertIn("EdgeCanonical(stable_identity)", identity["stable_record_id"])
+        self.assertIn("EdgeCanonical(receiver_envelope)", identity["legacy_record_id"])
+        self.assertEqual(self.envelope_schema["properties"]["payload"], {"type": "object"})
+        self.assertEqual(self.envelope_schema["properties"]["timestamp_ms"]["maximum"], 2**63 - 1)
 
     def test_reenqueue_after_completed_ack_is_a_new_sequence_duplicate_disposition(self):
         replay = self.vectors.get("re_enqueued_after_completed_ack")
@@ -266,8 +336,8 @@ class EdgeDeliveryProfileTests(unittest.TestCase):
         stable = copy.deepcopy(base)
         del stable["received_at_ms"]
         stable["version"] = 2
-        self.assertEqual(digest(decoded["legacy_record_id"], jcs_fixture(base)), BASE_ALIAS)
-        self.assertEqual(digest(decoded["stable_record_id"], jcs_fixture(stable)), BASE_ID)
+        self.assertEqual(digest(decoded["legacy_record_id"], edge_fixture_canonical(base)), BASE_ALIAS)
+        self.assertEqual(digest(decoded["stable_record_id"], edge_fixture_canonical(stable)), BASE_ID)
 
         gap = self.vectors["gap"]
         seq = gap["notice"]["spool_seq"].to_bytes(
@@ -362,7 +432,7 @@ class EdgeDeliveryProfileTests(unittest.TestCase):
             self.assertEqual(case.get("legacy_record_id"), legacy)
             self.assertEqual(case["payload_sha256"], payload_hash)
             self.assertEqual(
-                hashlib.sha256(jcs_fixture(case["envelope"]["payload"])).hexdigest(),
+                hashlib.sha256(edge_fixture_canonical(case["envelope"]["payload"])).hexdigest(),
                 payload_hash,
             )
             self.assertEqual(

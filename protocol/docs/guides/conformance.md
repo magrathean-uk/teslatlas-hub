@@ -80,9 +80,9 @@ and live process identity. The runner rejects arbitrary endpoints, missing
 prerequisites, mixed rich/current profile runs, and a different adapter.
 
 Native mode uses the existing bounded `urllib` transport. It loads the owner's
-CA file, checks the invitation's configured certificate DER digest before the
-first request, and lets the normal TLS context perform CA and hostname
-validation. The fixture launcher owns the process and cleanup; native mode does
+CA file, checks the invitation's configured certificate DER digest, performs
+normal CA and hostname validation, and checks the connected socket's leaf DER
+digest before sending HTTP bytes. The fixture launcher owns the process and cleanup; native mode does
 not provide matrix broker receipts or host-session admission.
 
 Matrix mode uses the stricter raw `http.client` transport. It validates CA and
@@ -92,15 +92,18 @@ validation. The installed controller supplies the host-session proof and owns
 service lifecycle. These are distinct evidence paths; passing one does not
 substitute for the other.
 
-The installed Protocol branch accepts the reviewed v2 wrapper around the
+The installed Protocol branch validates the v2 wrapper around the
 existing matrix config. Hub supplies a closed `SessionInput` file with the
 18-member profile staging, certificate DER binding, actor input manifest,
 output reservations, bounds, and the unchanged Unix broker descriptor. The
-adapter preserves the v1 normalized header and 21 case records, writes
-hash-bound raw case files and `actor_evidence`, then writes
-`adapter-completion.json` and `ready-000001.json`. It keeps the broker attached
-until the Hub runner writes an identity-matched `accepted/close_completed`
-acknowledgement; only then may it close and exit zero. Missing or stale files,
+adapter records the 21 observed cases, their controller sequence anchors, and
+the credential device state at each case's completion. V2 evidence publication
+fails closed: the mandatory raw cleanup fields claim process exit and fixture
+teardown while the actor must still be running and attached until the Hub
+runner's `accepted/close_completed` acknowledgement. The existing schema cannot
+represent this pending lifecycle state. The adapter refuses to create raw case
+files, normalized evidence, `adapter-completion.json`, or `ready-000001.json`;
+restoring publication requires a shared lifecycle-contract decision. Missing or stale files,
 changed hashes, a wrong session/nonce, a rejected acknowledgement, or an
 unavailable contract fails closed. The inert case manifest and pure semantic
 predicate are [`tools/matrix-contract.json`](../../tools/matrix-contract.json) and
@@ -155,10 +158,20 @@ Rules:
 Python files run with the runner's interpreter. Other adapter paths must be
 executable. The adapter language is otherwise unrestricted. A process retains
 state between steps in one case, then exits; state never leaks into another
-case or profile. Each response and process shutdown has a bounded timeout,
-overridable with `--timeout-seconds`.
+case or profile. Sending each request and reading its response share a bounded
+timeout, overridable with `--timeout-seconds`; shutdown uses that timeout separately.
+The local runner limits each request or response frame to 8 MiB of UTF-8 bytes
+and retains at most two pending stdout lines. Exceeding either limit produces a
+conformance failure. It retains 64 KiB of stderr and truncates further diagnostics.
+These harness budgets do not
+change the public response schemas. Embedded users of `AdapterSession` can select
+a different positive finite byte budget through `max_frame_bytes`.
 
-Adapter JSON is strict: `NaN` and infinities are rejected. Every response
+Adapter JSON rejects `NaN` and `Infinity` tokens. A decimal or exponent spelling
+that overflows Python's finite float representation fails as an unsupported
+representation; integer spellings retain Python's integer precision. The frozen
+rich binding retains its existing last-member behavior for duplicate object keys.
+Every response
 envelope is schema-validated before expectations run. The runner reads stdout
 with a deadline while draining bounded stderr concurrently, so a stalled or
 noisy adapter produces a structured failure instead of hanging the gate.

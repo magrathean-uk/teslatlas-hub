@@ -12,6 +12,15 @@ the Apache 2.0 licence, third-party notices, top-level `docs/*.md`, the README,
 `pyproject.toml`, and the exact `uv.lock`. Development-history receipts and
 private runtime material are not included.
 
+Manifest schema 1 retains its closed `contracts` keys. `hub_sync` selects the
+bundle's `hub-sync-v1@1.3.0` conformance entry; both sync 1.3 and included 1.4
+remain candidate profiles. Inclusion of 1.4 does not select it or prove consumer
+adoption. Rich 1.2 is current with retained 1.0 and 1.1; current-Hub 1.1 and Edge
+2.0 keep their separately named identities. Verification requires the included
+1.4 member map, complete mapped content, independent checker and builder, and
+the checker's shared sync/dependency inputs. A richer versioned machine inventory
+of selected, retained and candidate roles is deferred.
+
 ## Build and verify
 
 Python 3.11 or later is required. The examples keep the archive in a temporary
@@ -37,6 +46,11 @@ byte-canonical tar stream with no raw, concatenated-member, or decompressed
 post-termination bytes. It also closes the versioned root, manifest and contract
 keys and values, file-entry order, paths, membership, regular-file type, exact
 ordinary/executable modes, lock identity, and every file digest.
+
+The local verifier bounds compressed input to 16 MiB, decoded tar bytes to
+32 MiB, each regular member to 4 MiB and membership to 1024 files. It enforces
+the input and expansion limits while reading, and member limits before reading
+their contents. These utility limits do not change a bundled wire contract.
 
 ## Offline extraction
 

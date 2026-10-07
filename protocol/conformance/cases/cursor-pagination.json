@@ -9,7 +9,7 @@
       "expect": {
         "assertions": [
           {
-            "op": "exists",
+            "op": "is_not_empty",
             "path": "/body/next_cursor"
           },
           {
@@ -52,6 +52,11 @@
             "op": "not_same_as",
             "path": "/body/items/0/drive_id",
             "ref": "initial.body.items.0.drive_id"
+          },
+          {
+            "op": "same_as",
+            "path": "/body/snapshot_revision",
+            "ref": "initial.body.snapshot_revision"
           }
         ],
         "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/drive_page",

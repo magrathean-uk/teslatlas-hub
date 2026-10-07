@@ -100,10 +100,10 @@ On `409`, fetch the current record and reconcile. Never overwrite blindly.
 
 ## 6. Test the client adapter
 
-Implement the JSONL adapter in `docs/conformance.md`, then run:
+Implement the JSONL adapter in [the conformance guide](conformance.md), then run:
 
 ```sh
-./conformance/run --adapter /absolute/path/to/your-adapter
+./conformance/run --profile 1.2.0 --adapter /absolute/path/to/your-adapter
 ```
 
 JSON Schemas, examples, fixtures, and all compatibility profiles remain

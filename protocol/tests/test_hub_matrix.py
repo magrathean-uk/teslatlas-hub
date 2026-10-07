@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import copy
 import io
 import json
+import os
+import re
 from pathlib import Path
 import ssl
 import subprocess
@@ -15,6 +18,7 @@ import threading
 import time
 import unittest
 from unittest import mock
+import urllib.request
 import urllib.parse
 import shutil
 
@@ -81,6 +85,7 @@ class SyntheticHub:
         self.root = root
         self.available = True
         self.requests = []
+        self.authorization_present = []
         self.used_pairings = set()
         self.revoked_devices = set()
         self.current_token = None
@@ -98,7 +103,7 @@ class SyntheticHub:
         config.write_text(
             "[req]\nprompt=no\ndistinguished_name=dn\nx509_extensions=v3\n"
             "[dn]\nCN=127.0.0.1\n[v3]\nbasicConstraints=critical,CA:TRUE\n"
-            "keyUsage=critical,digitalSignature,keyCertSign\nsubjectAltName=IP:127.0.0.1\n",
+            "keyUsage=critical,digitalSignature,keyCertSign\nsubjectKeyIdentifier=hash\nsubjectAltName=IP:127.0.0.1\n",
             encoding="utf-8",
         )
         generated = subprocess.run(
@@ -118,9 +123,10 @@ class SyntheticHub:
         replacement_csr = root / "replacement.csr"
         replacement_config = root / "replacement.cnf"
         replacement_config.write_text(
-            "[req]\nprompt=no\ndistinguished_name=dn\n[dn]\nCN=127.0.0.1\n"
+            "[req]\nprompt=no\ndistinguished_name=dn\n[dn]\nCN=Synthetic replacement leaf\n"
             "[v3]\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\n"
-            "extendedKeyUsage=serverAuth\nsubjectAltName=IP:127.0.0.1\n",
+            "extendedKeyUsage=serverAuth\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid:always\n"
+            "subjectAltName=IP:127.0.0.1\n",
             encoding="utf-8",
         )
         for command in (
@@ -162,6 +168,7 @@ class SyntheticHub:
                     length = int(self.headers.get("content-length", "0"))
                     body = self.rfile.read(length)
                 owner.requests.append((self.command, parsed.path, parsed.query))
+                owner.authorization_present.append('Authorization' in self.headers)
                 return parsed, body, "synthetic-" + str(owner.next_request)
 
             def _send(self, status, request_id, value=None, *, headers=None):
@@ -241,6 +248,8 @@ class SyntheticHub:
                 scenario = SYNTHETIC_SCENARIO
                 vehicle_id = parsed.path.split("/")[3]
                 query = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+                if query.get('from_ms')==['0'] and query.get('to_ms')==['9223372036854775807']:
+                    query.pop('from_ms');query.pop('to_ms')
                 cursor = query.get("cursor", [None])[0]
                 if cursor is not None and (
                     vehicle_id != scenario["vehicle_ids"][0]
@@ -351,6 +360,7 @@ class SyntheticControl:
         self.generation = 1
         self.sequence = 0
         self.operations = []
+        self.observations = {}
         now = int(time.time() * 1000)
         self.normal = hub.invitation(NORMAL_PAIRING, "4" * 64, now + 900_000)
         self.expired = hub.invitation(EXPIRED_PAIRING, "6" * 64, now - 1_000)
@@ -384,6 +394,7 @@ class SyntheticControl:
             "service": {"mode": "installed-deb-systemd", "generation": descriptor["service_generation"], "hub": {"pid": 4242, "start_identity": descriptor["hub_started_at"], "executable_sha256": "a" * 64}},
             "config": {"seed_sha256": "b" * 64, "scenario_sha256": descriptor["scenario_sha256"]},
         }
+        self.observations[self.sequence] = copy.deepcopy(proof)
         return {"descriptor": descriptor, "proof": proof, "invitation": invitation or self.normal, "expired_invitation": self.expired, "events": list(self.operations)}
 
     def request(self, op, *, device_id=None):
@@ -459,7 +470,9 @@ class HubMatrixTests(unittest.TestCase):
 
     def test_full_raw_matrix_has_all_twenty_one_typed_cases_and_redacted_transcripts(self):
         control = SyntheticControl(self.hub)
-        evidence = hub_matrix.run_matrix(self.config(), control=control)
+        matrix = hub_matrix.MatrixCases(self.config(), control)
+        with mock.patch.object(hub_matrix, "MatrixCases", return_value=matrix):
+            evidence = hub_matrix.run_matrix(self.config(), control=control)
         self.assertEqual(evidence["execution_kind"], "actual_hub_acceptance")
         self.assertEqual(len(evidence["cases"]), 21)
         self.assertEqual({case["status"] for case in evidence["cases"]}, {"passed"})
@@ -486,6 +499,54 @@ class HubMatrixTests(unittest.TestCase):
         self.assertNotIn(TOKEN_1, rendered)
         self.assertNotIn(NORMAL_PAIRING, rendered)
         self.assertGreaterEqual(sum(1 for item in control.operations if item["operation"] == "verify"), 21)
+        self.assertEqual(matrix.device_id, SECOND_DEVICE)
+        for case_id in ("candidate_artifact_identity", "installed_service_runtime", "discovery_identity_profile", "unauthenticated_discovery", "bad_invitation", "expired_invitation"):
+            self.assertIsNone(matrix.case_device_ids[case_id])
+        for case_id in ("real_auth", "exact_current_values", "credential_rotation_api", "revocation"):
+            self.assertEqual(matrix.case_device_ids[case_id], FIRST_DEVICE)
+        for case_id in ("credential_lifecycle_reauth", "endpoint_restart", "outage_recovery"):
+            self.assertEqual(matrix.case_device_ids[case_id], SECOND_DEVICE)
+        self.assertEqual(set(matrix.anchors), set(hub_matrix.CASE_IDS))
+
+    def _rotation_with_changed_response(self, response_index, **changes):
+        original_send = self.hub.server.RequestHandlerClass._send
+        rotation_calls = []
+
+        def send(handler, status, request_id, value=None, *, headers=None):
+            if handler.path == "/v1/device/rotate" and status == 200:
+                rotation_calls.append(status)
+                if len(rotation_calls) == response_index:
+                    value = dict(value, **changes)
+            return original_send(handler, status, request_id, value, headers=headers)
+
+        control = SyntheticControl(self.hub)
+        matrix = hub_matrix.MatrixCases(self.config(), control)
+        with (
+            mock.patch.object(self.hub.server.RequestHandlerClass, "_send", send),
+            mock.patch.object(hub_matrix, "MatrixCases", return_value=matrix),
+        ):
+            evidence = hub_matrix.run_matrix(self.config(), control=control)
+        rotation = next(case for case in evidence["cases"] if case["id"] == "credential_rotation_api")
+        self.assertEqual(rotation["status"], "failed")
+        self.assertEqual(rotation["actual"], {"unexpected_error": "matrix_acceptance"})
+        self.assertEqual(len(rotation_calls), response_index)
+        expected_exchanges = [("POST", "/v1/device/rotate")]
+        if response_index == 2:
+            expected_exchanges += [("GET", "/v1/vehicles"), ("GET", "/v1/vehicles"), ("POST", "/v1/device/rotate")]
+        self.assertEqual([(item["method"], item["route"]) for item in rotation["request_transcript"]], expected_exchanges)
+        self.assertEqual(matrix.case_device_ids["credential_rotation_api"], FIRST_DEVICE)
+
+    def test_first_rotation_unchanged_bearer_fails_before_successful_retry(self):
+        self._rotation_with_changed_response(1, access_token=TOKEN_1)
+
+    def test_first_rotation_changed_device_fails_before_successful_retry(self):
+        self._rotation_with_changed_response(1, device_id=SECOND_DEVICE)
+
+    def test_rotation_retry_unchanged_bearer_fails_independently_of_first_success(self):
+        self._rotation_with_changed_response(2, access_token=TOKEN_1)
+
+    def test_rotation_retry_changed_device_fails_independently_of_first_success(self):
+        self._rotation_with_changed_response(2, device_id=SECOND_DEVICE)
 
     def test_entrypoint_uses_the_dispatched_mode_for_exit_semantics(self):
         native_pass = {"status": "passed", "cases": [{"status": 200}]}
@@ -571,6 +632,12 @@ class HubMatrixTests(unittest.TestCase):
             str(PROFILE),
         )
         self.hub.use_replacement_certificate()
+        context = ssl.create_default_context(cafile=str(self.hub.cert))
+        unpinned = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context)
+        )
+        with unpinned.open(self.hub.endpoint + "/.well-known/teslatlas-hub", timeout=5) as response:
+            self.assertEqual(response.status, 200)
         before = len(self.hub.requests)
         with self.assertRaises(hub_matrix.MatrixAcceptanceError):
             client.exchange(
@@ -583,6 +650,57 @@ class HubMatrixTests(unittest.TestCase):
             )
         self.assertEqual(len(self.hub.requests), before)
         self.assertEqual(client.request_count, 0)
+
+    def test_native_run_network_rejects_trusted_replacement_before_any_http_request(self):
+        scenario = dict(SYNTHETIC_SCENARIO, later_current=SYNTHETIC_SCENARIO["current"])
+        scenario_path = self.root / "native-scenario.json"
+        scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
+        invitation_path = self.root / "native-invitation.json"
+        invitation_path.write_text(json.dumps(self.hub.invitation(NORMAL_PAIRING, "4" * 64, int(time.time() * 1000) + 900_000)))
+        invitation_path.chmod(0o600)
+        config = {
+            "endpoint": self.hub.endpoint, "hub_id": HUB_ID, "profile_id": hub_matrix.hub_http.PROFILE_ID,
+            "profile_path": str(PROFILE), "profile_sha256": profile_sha256(),
+            "invitation_path": str(invitation_path), "certificate_path": str(self.hub.cert),
+            "scenario_path": str(scenario_path), "scenario_sha256": hashlib.sha256(scenario_path.read_bytes()).hexdigest(),
+            "binary_sha256": "a" * 64, "seed_binary_sha256": "b" * 64,
+            "provenance": "synthetic-real-process", "update_request_path": str(self.root / "never-created"),
+            "update_receipt_path": str(self.root / "never-read"),
+        }
+        self.hub.use_replacement_certificate()
+        # Admit the synthetic TLS setup first with ordinary chain/hostname checks.
+        context = ssl.create_default_context(cafile=str(self.hub.cert))
+        unpinned = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}), urllib.request.HTTPSHandler(context=context)
+        )
+        with unpinned.open(self.hub.endpoint + "/.well-known/teslatlas-hub", timeout=5) as response:
+            self.assertEqual(response.status, 200)
+        before = len(self.hub.requests)
+        # Only native process provenance is stubbed; run_network's transport executes.
+        with mock.patch.object(hub_matrix.hub_http, "verify_native_fixture", return_value={}) as native:
+            with self.assertRaisesRegex(hub_matrix.hub_http.AcceptanceError, "connected TLS leaf identity mismatch"):
+                hub_matrix.hub_http.run_network(config)
+        self.assertEqual(native.call_count, 1)
+        self.assertEqual(len(self.hub.requests), before)
+        self.assertEqual(self.hub.claim_count, 0)
+        self.assertFalse((self.root / "never-created").exists())
+
+    def test_native_pinned_transport_accepts_exact_leaf_before_sending_claim(self):
+        context = ssl.create_default_context(cafile=str(self.hub.cert))
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({}),
+            hub_matrix.hub_http._PinnedHTTPSHandler(tls_pin=self.hub.der_sha256, context=context),
+            hub_matrix.hub_http.DenyRedirects(),
+        )
+        request = urllib.request.Request(
+            self.hub.endpoint + "/v1/pairings/" + NORMAL_PAIRING + "/claim",
+            data=json.dumps({"secret": "4" * 64, "device_name": "Exact pinned leaf"}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with opener.open(request, timeout=5) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(json.load(response)["device_id"], FIRST_DEVICE)
+        self.assertEqual(self.hub.claim_count, 1)
 
     def test_tls_ca_hostname_and_configured_pin_controls_fail_closed(self):
         with self.assertRaises(hub_matrix.MatrixAcceptanceError):
@@ -626,6 +744,132 @@ class HubMatrixTests(unittest.TestCase):
         with self.assertRaises(hub_matrix.MatrixAcceptanceError):
             client.exchange("ready", "/readyz")
         self.assertLess(time.monotonic() - started, 0.5)
+
+    def test_native_urllib_total_deadline_rejects_trickle_and_preserves_valid_response(self):
+        context=ssl.create_default_context(cafile=str(self.hub.cert))
+        opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),hub_matrix.hub_http._PinnedHTTPSHandler(tls_pin=self.hub.der_sha256,context=context),hub_matrix.hub_http.DenyRedirects())
+        with opener.open(self.hub.endpoint+'/readyz',timeout=1) as response:
+            self.assertEqual(hub_matrix.hub_http.strict_json(response.read())['status'],'ready')
+        self.hub.trickle_path='/readyz';self.hub.trickle_delay=0.03
+        started=time.monotonic()
+        with self.assertRaises((TimeoutError,OSError)):
+            with opener.open(self.hub.endpoint+'/readyz',timeout=0.08) as response:
+                response.read(hub_matrix.hub_http.MAX_BYTES+1)
+        self.assertLess(time.monotonic()-started,0.5)
+
+    def test_matrix_accepts_equivalent_slash_origin_and_rejects_changed_port(self):
+        self.hub.endpoint+='/'
+        control=SyntheticControl(self.hub)
+        matrix=hub_matrix.MatrixCases(self.config(),control)
+        matrix.verify();matrix.verify()
+        self.assertEqual(matrix.http.endpoint,self.hub.endpoint.rstrip('/'))
+        self.assertEqual({case['status'] for case in matrix.run()},{'passed'})
+        self.assertTrue(all('//' not in path for _method,path,_query in self.hub.requests))
+        original=control.request
+        def changed(*args,**kwargs):
+            result=original(*args,**kwargs)
+            result['descriptor']['endpoint']='https://127.0.0.1:1'
+            return result
+        control.request=changed
+        with self.assertRaises(hub_matrix.MatrixAcceptanceError):matrix.verify()
+
+    def test_native_deadline_closes_header_and_claim_streams_without_retry(self):
+        native=hub_matrix.hub_http
+        context=ssl.create_default_context(cafile=str(self.hub.cert))
+        opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),native._PinnedHTTPSHandler(tls_pin=self.hub.der_sha256,context=context),native.DenyRedirects())
+        readers=[]
+        original_init=native._DeadlineSocketReader.__init__
+        def record(reader,*args):
+            original_init(reader,*args);readers.append(reader)
+        original_send=self.hub.server.RequestHandlerClass._send
+        def trickle_headers(handler,status,request_id,value=None,*,headers=None):
+            for byte in b'HTTP/1.1 200 OK\r\nContent-Length: 18\r\n\r\n':
+                try:handler.wfile.write(bytes((byte,)));handler.wfile.flush()
+                except OSError:return
+                time.sleep(0.03)
+        with mock.patch.object(native._DeadlineSocketReader,'__init__',record):
+            with mock.patch.object(self.hub.server.RequestHandlerClass,'_send',trickle_headers):
+                with self.assertRaises((urllib.error.URLError,TimeoutError,OSError)):
+                    opener.open(self.hub.endpoint+'/readyz',timeout=0.08)
+            self.hub.trickle_path='/v1/pairings/'+NORMAL_PAIRING+'/claim';self.hub.trickle_delay=0.03
+            request=urllib.request.Request(self.hub.endpoint+self.hub.trickle_path,data=json.dumps({'secret':'4'*64,'device_name':'Synthetic deadline client'}).encode(),headers={'Content-Type':'application/json'})
+            before=len(self.hub.requests)
+            with self.assertRaises((urllib.error.URLError,TimeoutError,OSError)):
+                with opener.open(request,timeout=0.08) as response:response.read(native.MAX_BYTES+1)
+            self.assertEqual(len(self.hub.requests)-before,1)
+        self.assertEqual(len(readers),2)
+        self.assertTrue(all(reader.closed and reader.connection.fileno()==-1 for reader in readers))
+
+    def test_matrix_rejects_vehicle_identity_mutations_before_normalization(self):
+        targets=[('exact_current_values','/current',1),('exact_current_values','/current',2),('drives_three_page_order','/drives',1),('drives_terminal_cursor','/drives',4),('drives_etag_304','/drives',5)]
+        original=self.hub.server.RequestHandlerClass._send
+        control=SyntheticControl(self.hub)
+        for case_id,suffix,occurrence in targets:
+            with self.subTest(case_id=case_id,occurrence=occurrence):
+                self.hub.claim_count=0
+                seen=[]
+                def send(handler,status,request_id,value=None,*,headers=None):
+                    if urllib.parse.urlsplit(handler.path).path.endswith(suffix) and status==200:
+                        seen.append(handler.path)
+                        if len(seen)==occurrence:
+                            value=copy.deepcopy(value)
+                            if suffix=='/current':value['vehicle_id']='99999999-9999-4999-8999-999999999999'
+                            else:value['items'][0]['vehicle_id']='99999999-9999-4999-8999-999999999999'
+                    return original(handler,status,request_id,value,headers=headers)
+                with mock.patch.object(self.hub.server.RequestHandlerClass,'_send',send):
+                    evidence=hub_matrix.run_matrix(self.config(),control=control)
+                cases={item['id']:item for item in evidence['cases']}
+                self.assertEqual(cases[case_id]['status'],'failed')
+                self.assertGreaterEqual(len(seen),occurrence)
+                self.hub.used_pairings.clear();self.hub.revoked_devices.clear();self.hub.grace_tokens.clear()
+
+    def test_actual_curl_smoke_bodyless_304_and_pagination(self):
+        self.hub.current_token=TOKEN_1;self.hub.current_device=FIRST_DEVICE
+        private=self.root/'curl-private';private.mkdir(mode=0o700)
+        ca=private/'ca.pem';shutil.copyfile(self.hub.cert,ca);ca.chmod(0o600)
+        header=private/'authorization.header';header.write_text('Authorization: Bearer '+TOKEN_1+'\n');header.chmod(0o600)
+        config=private/'probe.json'
+        config.write_text(json.dumps({'endpoint':self.hub.endpoint,'expected_hub_id':HUB_ID,'ca_path':str(ca),'authorization_header_path':str(header),'vehicle_id':SYNTHETIC_SCENARIO['vehicle_ids'][0],'from_ms':0,'to_ms':9223372036854775807,'limit':2,'max_pages':3,'timeout_seconds':10}));config.chmod(0o600)
+        result=subprocess.run([sys.executable,str(ROOT/'tools/check-current-hub'),'--config',str(config)],capture_output=True,text=True,timeout=15)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr+repr(self.hub.requests))
+        receipt=json.loads(result.stdout)
+        self.assertEqual(receipt['status'],'passed')
+        self.assertEqual(receipt['operations'].count('drives-next-page'),2)
+        self.assertIn('drives-if-none-match',receipt['operations'])
+        self.assertNotIn(TOKEN_1,result.stdout+result.stderr)
+        self.assertEqual(self.hub.authorization_present,[False,True,True,True,True,True,True])
+        original=self.hub.server.RequestHandlerClass._send
+        for invalid_status,invalid_headers in ((200,{}),(503,{'ETag':'"page"','Cache-Control':'no-store'})):
+            def send(handler,status,request_id,value=None,*,headers=None):
+                if status==304:return original(handler,invalid_status,request_id,headers=invalid_headers)
+                return original(handler,status,request_id,value,headers=headers)
+            with mock.patch.object(self.hub.server.RequestHandlerClass,'_send',send):
+                rejected=subprocess.run([sys.executable,str(ROOT/'tools/check-current-hub'),'--config',str(config)],capture_output=True,text=True,timeout=15)
+            self.assertNotEqual(rejected.returncode,0)
+            self.assertNotIn(TOKEN_1,rejected.stdout+rejected.stderr)
+
+    def test_copied_pairing_guide_rejects_invalid_claim_without_persisting(self):
+        text=(ROOT/'docs/reference/current-hub.md').read_text()
+        block=re.search(r"python3 - <<'PY'\n(import hashlib.*?)\nPY",text,re.S).group(1)
+        invitation=self.root/'guide-invitation.json'
+        invitation.write_text(json.dumps(self.hub.invitation(NORMAL_PAIRING,'4'*64,int(time.time()*1000)+900000)))
+        output=self.root/'guide-claim.json'
+        environment={**os.environ,'TESLATLAS_INVITATION':str(invitation),'TESLATLAS_PROFILE':str(PROFILE),'TESLATLAS_HUB_CA':str(self.hub.cert),'TESLATLAS_DEVICE_NAME':'Synthetic guide client','TESLATLAS_CLAIM_RESPONSE':str(output)}
+        valid=subprocess.run([sys.executable,'-c',block],cwd=ROOT,env=environment,capture_output=True,text=True,timeout=5)
+        self.assertEqual(valid.returncode,0,valid.stderr)
+        self.assertEqual(output.stat().st_mode&0o777,0o600)
+        output.unlink()
+        original=self.hub.server.RequestHandlerClass._send
+        for malformed in ({},[],42,{'access_token':'bad'}):
+            self.hub.used_pairings.clear()
+            before=len(self.hub.requests)
+            def send(handler,status,request_id,value=None,*,headers=None):
+                return original(handler,status,request_id,malformed if handler.path.endswith('/claim') and status==200 else value,headers=headers)
+            with mock.patch.object(self.hub.server.RequestHandlerClass,'_send',send):
+                result=subprocess.run([sys.executable,'-c',block],cwd=ROOT,env=environment,capture_output=True,text=True,timeout=5)
+            self.assertNotEqual(result.returncode,0)
+            self.assertFalse(output.exists())
+            self.assertEqual(len(self.hub.requests)-before,1)
 
     def test_http_total_deadline_expires_between_tcp_and_tls(self):
         clock = FakeClock()

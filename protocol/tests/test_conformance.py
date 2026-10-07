@@ -8,6 +8,8 @@ import sys
 import tempfile
 import time
 import unittest
+from threading import Event, TIMEOUT_MAX
+from unittest.mock import patch
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -18,11 +20,12 @@ from conformance.runner import (
     AdapterSession,
     ConformanceError,
     resolve_templates,
+    strict_loads,
     validate_contract_artifacts,
     validate_response,
 )
 
-from tests.support import ROOT, load_json, load_schema_registry
+from tests.support import ROOT, load_json, load_schema_registry, strict_loads as support_loads
 
 
 EXPECTED_CASES = {
@@ -452,6 +455,161 @@ class ConformanceContractTests(unittest.TestCase):
                 )
                 self.assertIn("strong ETag", "\n".join(errors))
 
+    def test_cursor_traversal_rejects_changed_snapshot_through_real_adapter(self) -> None:
+        reference = (ROOT / "conformance/adapters/reference_adapter.py").read_text()
+        # Retain the real adapter's loading, correlation and responses, changing
+        # only the snapshot on the followed cursor page.
+        mutation = (
+            '    if envelope["case_id"] == "cursor-pagination" and envelope["step_id"] == "next":\n'
+            '        response["body"]["snapshot_revision"] = "snapshot_demo_different"\n'
+        )
+        reference = reference.replace(
+            'ROOT = Path(__file__).resolve().parents[2]', f'ROOT = Path({str(ROOT)!r})'
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            adapter = Path(directory) / "changed_snapshot.py"
+            adapter.write_text(reference.replace("    print(\n", mutation + "    print(\n"))
+            for profile in ("1.0.0", "1.1.0", "1.2.0"):
+                with self.subTest(profile=profile):
+                    command = [str(ROOT / "conformance/run"), "--profile", profile,
+                               "--adapter", str(adapter), "--json"]
+                    result = subprocess.run(command, cwd=ROOT, capture_output=True,
+                                            text=True, timeout=60)
+                    self.assertEqual(1, result.returncode, result.stdout + result.stderr)
+                    self.assertIn("expected same value as initial.body.snapshot_revision", result.stdout)
+
+    def test_cursor_traversal_accepts_reference_adapter_in_all_rich_profiles(self) -> None:
+        result = subprocess.run(
+            [str(ROOT / "conformance/run"), "--profile", "1.0.0", "--profile", "1.1.0",
+             "--profile", "1.2.0", "--adapter", str(ROOT / "conformance/adapters/reference_adapter.py"),
+             "--json"], cwd=ROOT, capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual("adapter-contract", json.loads(result.stdout)["provenance"])
+
+    @unittest.skipUnless(os.name == "posix", "owned process-group deadline requires POSIX")
+    def test_actual_hub_branch_enforces_total_process_deadline(self) -> None:
+        from conformance import runner
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            adapter = root / "conformance/adapters/actual-hub"
+            adapter.parent.mkdir(parents=True)
+            # A real child that waits for a signal, requiring no network/config
+            # and no timed race to demonstrate the outer-process deadline.
+            adapter.write_text(f"#!{sys.executable}\nimport signal\nsignal.pause()\n")
+            adapter.chmod(0o700)
+            argv = ["runner", "--profile", "hub-http-v1@1.1.0", "--adapter", str(adapter),
+                    "--timeout-seconds", "0.1"]
+            started = time.monotonic()
+            with patch.object(runner, "ROOT", root), patch.object(sys, "argv", argv):
+                with self.assertRaisesRegex(ConformanceError, "total process deadline"):
+                    runner.run()
+            self.assertLess(time.monotonic() - started, 2.0)
+            adapter.write_text(f"#!{sys.executable}\nraise SystemExit(0)\n")
+            with patch.object(runner, "ROOT", root), patch.object(sys, "argv", argv):
+                self.assertEqual(0, runner.run())
+
+    @unittest.skipUnless(os.name == "posix", "owned process-group cleanup requires POSIX")
+    def test_actual_hub_cleans_ready_descendant_after_leader_exits(self) -> None:
+        from conformance.runner import run_actual_hub
+        import signal
+        child_source = (
+            "import signal,sys; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+            "sys.stdout.write('ready'); sys.stdout.flush(); signal.pause()"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            pid_file = Path(directory) / "owned-child.pid"
+            for exit_status in (0, 3):
+                with self.subTest(exit_status=exit_status):
+                    leader_source = (
+                        "import subprocess,sys; from pathlib import Path; "
+                        f"child=subprocess.Popen([sys.executable,'-c',{child_source!r}],stdout=subprocess.PIPE); "
+                        "assert child.stdout.read(5)==b'ready'; "
+                        f"Path({str(pid_file)!r}).write_text(str(child.pid)); "
+                        f"raise SystemExit({exit_status})"
+                    )
+                    try:
+                        self.assertEqual(exit_status, run_actual_hub([sys.executable, "-c", leader_source], 2))
+                        child_pid = int(pid_file.read_text())
+                        deadline = time.monotonic() + 2
+                        while True:
+                            try:
+                                os.kill(child_pid, 0)
+                            except ProcessLookupError:
+                                break
+                            if time.monotonic() >= deadline:
+                                self.fail("owned descendant remained after leader settlement")
+                            Event().wait(0.01)
+                    finally:
+                        if pid_file.exists():
+                            try:
+                                os.kill(int(pid_file.read_text()), signal.SIGKILL)
+                            except ProcessLookupError:
+                                pass
+                            pid_file.unlink()
+
+    def test_metadata_etags_preserve_transport_safe_exported_values(self) -> None:
+        request = {"method": "GET", "path": "/v1/metadata/metadata_demo_note_0001"}
+        expectation = {"status": 200, "headers_present": ["ETag"]}
+        for tag in ('"with space"', '"with\\backslash"', '"ordinary"'):
+            with self.subTest(tag=tag):
+                self.assertEqual([], validate_response(
+                    {"status": 200, "headers": {"ETag": tag}}, request,
+                    expectation, "1.2.0", {}, self.schemas, self.registry,
+                ))
+        for tag in ('W/"weak"', '"in\tjection"', '"in\r\njection"', '"nul\x00"', '"del\x7f"', '"inner"quote"'):
+            with self.subTest(tag=tag):
+                self.assertIn("strong ETag", "\n".join(validate_response(
+                    {"status": 200, "headers": {"ETag": tag}}, request,
+                    expectation, "1.2.0", {}, self.schemas, self.registry,
+                )))
+
+    def test_rich_json_rejects_float_overflow_without_rounding_integers(self) -> None:
+        integer = 10 ** 100 + 123
+        for parser in (strict_loads, support_loads):
+            with self.subTest(parser=parser.__module__):
+                self.assertEqual(integer, parser(str(integer)))
+                self.assertEqual(-integer, parser(str(-integer)))
+                self.assertEqual(12.5, parser("1.25e1"))
+                self.assertEqual({"value": 2}, parser('{"value":1,"value":2}'))
+                for value in ("1e309", "-1e309"):
+                    with self.assertRaisesRegex(ValueError, "unsupported non-finite numeric representation"):
+                        parser(value)
+                for value in ("NaN", "Infinity", "-Infinity"):
+                    with self.assertRaisesRegex(ValueError, "non-finite JSON constant"):
+                        parser(value)
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / "conformance/adapters/reference_adapter.py")],
+            input='{"probe":1e309}\n', capture_output=True, text=True,
+            check=False, timeout=3,
+        )
+        self.assertNotEqual(0, completed.returncode)
+        self.assertIn("unsupported non-finite numeric representation", completed.stderr)
+
+    def test_metadata_page_applies_each_record_audit_semantics(self) -> None:
+        page = {
+            "resource_type": "metadata_page", "items": [load_json("examples/metadata-record.json")],
+            "next_cursor": None, "generated_at": "2026-08-31T12:31:00.000Z",
+            "snapshot_revision": "snapshot_demo_0042",
+        }
+        request = {"method": "GET", "path": "/v1/vehicles/vehicle_demo_alpha/metadata",
+                   "headers": {"Teslatlas-Protocol-Version": "1.2.0"}}
+        expectation = {"status": 200, "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/metadata_page"}
+        headers = {"Content-Type": "application/json", "ETag": '"page"',
+                   "Cache-Control": "private", "Vary": "Authorization",
+                   "Teslatlas-Protocol-Version": "1.2.0"}
+        def errors(body: dict[str, Any]) -> list[str]:
+            return validate_response({"status": 200, "headers": headers, "body": body},
+                                     request, expectation, "1.2.0", {}, self.schemas, self.registry)
+        self.assertEqual([], errors(page))
+        for field, value in (("revision", 99), ("updated_by", "user_other"),
+                             ("updated_at", "2026-08-31T12:40:00.000Z")):
+            invalid = deepcopy(page)
+            invalid["items"][0][field] = value
+            with self.subTest(field=field):
+                self.assertIn(f"metadata {field} must match", "\n".join(errors(invalid)))
+                self.assertIn("metadata/items/0", "\n".join(errors(invalid)))
+
     def test_event_types_are_gated_by_the_negotiated_profile(self) -> None:
         event_schema = "urn:teslatlas:protocol:schema:event:1.2.0"
         command = load_json("examples/command-job.json")
@@ -519,6 +677,125 @@ class ConformanceContractTests(unittest.TestCase):
             finish_error = session.finish()
         self.assertIsNotNone(finish_error)
         self.assertIn("extra stdout", finish_error or "")
+
+    def test_adapter_stdin_write_uses_the_request_deadline(self) -> None:
+        session = AdapterSession([sys.executable, "-c", "import time; time.sleep(5)"], 0.05)
+        started = time.monotonic()
+        try:
+            with self.assertRaisesRegex(ConformanceError, "stdin write timed out"):
+                session.request({"payload": "x" * 262144})
+            self.assertLess(time.monotonic() - started, 1.5)
+            self.assertIsNotNone(session.process.poll())
+        finally:
+            session.finish()
+
+    def test_adapter_stdout_flood_has_bounded_pending_storage(self) -> None:
+        command = "import sys,time; sys.stdin.buffer.readline(); sys.stdout.write('1\\n'*256); sys.stdout.flush(); time.sleep(5)"
+        session = AdapterSession([sys.executable, "-c", command], 0.5)
+        try:
+            try:
+                session.request({"probe": True})
+            except ConformanceError as error:
+                self.assertIn("extra stdout", str(error))
+            session.stdout_thread.join(timeout=0.2)
+            self.assertLessEqual(session.stdout_lines.qsize(), 2)
+        finally:
+            finish_error = session.finish()
+        self.assertIn("extra stdout", finish_error or "")
+
+    def test_adapter_delayed_partial_writer_cannot_use_recycled_stdin_fd(self) -> None:
+        session = AdapterSession([sys.executable, "-c", "import time; time.sleep(5)"], 0.03)
+        original_fd = session.process.stdin.fileno()
+        paused, released = Event(), Event()
+        real_write = os.write
+        first = True
+        opened: set[int] = set()
+
+        def partial_write(descriptor: int, payload: Any) -> int:
+            nonlocal first
+            if first:
+                first = False
+                count = real_write(descriptor, payload[:1])
+                paused.set()
+                if not released.wait(2):
+                    raise OSError("bounded regression release did not arrive")
+                return count
+            return real_write(descriptor, payload)
+
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / "owned-reused-fd"
+                with patch("conformance.runner.os.write", side_effect=partial_write):
+                    with self.assertRaisesRegex(ConformanceError, "stdin write timed out"):
+                        session.request({"probe": "delayed-partial-write"})
+                    self.assertTrue(paused.is_set())
+                    self.assertTrue(session.process.stdin.closed)
+                    self.assertTrue(session.write_thread.is_alive())
+                    descriptor = os.open(target, os.O_CREAT | os.O_TRUNC | os.O_WRONLY, 0o600)
+                    opened.add(descriptor)
+                    if descriptor != original_fd:
+                        os.dup2(descriptor, original_fd)
+                        opened.add(original_fd)
+                    released.set()
+                    session.write_thread.join(timeout=1)
+                    self.assertFalse(session.write_thread.is_alive())
+                self.assertEqual(b"", target.read_bytes(), "delayed write must retain its own pipe identity")
+        finally:
+            released.set()
+            if session.write_thread is not None:
+                session.write_thread.join(timeout=1)
+            session.finish()
+            for descriptor in opened:
+                os.close(descriptor)
+
+    def test_adapter_stdout_frame_budget_counts_utf8_bytes(self) -> None:
+        command = "import sys; sys.stdin.buffer.readline(); sys.stdout.buffer.write(('é'*32+'\\n').encode('utf-8')); sys.stdout.buffer.flush()"
+        session = AdapterSession([sys.executable, "-c", command], 0.5, max_frame_bytes=64)
+        try:
+            with self.assertRaisesRegex(ConformanceError, "stdout frame exceeds"):
+                session.request({"probe": True})
+        finally:
+            self.assertIn("stdout frame exceeds", session.finish() or "")
+
+    def test_adapter_writer_launch_failure_closes_owned_descriptor(self) -> None:
+        session = AdapterSession([sys.executable, "-c", "import time; time.sleep(5)"], 0.03)
+        duplicated: list[int] = []
+        real_dup = os.dup
+        def duplicate(descriptor: int) -> int:
+            result = real_dup(descriptor)
+            duplicated.append(result)
+            return result
+        try:
+            with patch("conformance.runner.os.dup", side_effect=duplicate), patch(
+                "conformance.runner.Thread.start", side_effect=RuntimeError("synthetic launch refusal"),
+            ):
+                with self.assertRaisesRegex(ConformanceError, "writer could not start"):
+                    session.request({"probe": True})
+            self.assertEqual(1, len(duplicated))
+            with self.assertRaises(OSError):
+                os.fstat(duplicated[0])
+        finally:
+            self.assertIn("did not exit", session.finish() or "")
+            self.assertIsNotNone(session.process.poll())
+
+    def test_adapter_multiple_steps_and_invalid_local_budgets(self) -> None:
+        command = "import sys\nfor line in sys.stdin.buffer:\n sys.stdout.buffer.write(line); sys.stdout.buffer.flush()\n"
+        session = AdapterSession([sys.executable, "-c", command], 1, max_frame_bytes=128)
+        try:
+            for value in range(3):
+                self.assertEqual({"step": value}, json.loads(session.request({"step": value})))
+            with self.assertRaisesRegex(ConformanceError, "stdin frame exceeds"):
+                session.request({"payload": "x" * 128})
+        finally:
+            self.assertIsNone(session.finish())
+        for timeout in (float("nan"), float("inf"), 0):
+            with self.assertRaisesRegex(ConformanceError, "finite and positive"):
+                AdapterSession([sys.executable, "-c", "pass"], timeout)
+        with self.assertRaisesRegex(ConformanceError, "platform wait limit"):
+            AdapterSession([sys.executable, "-c", "pass"], TIMEOUT_MAX * 2)
+        for budget in (True, 0, sys.maxsize):
+            with self.assertRaisesRegex(ConformanceError, "frame budget"):
+                AdapterSession([sys.executable, "-c", "pass"], 1, max_frame_bytes=budget)
 
     @unittest.skipUnless(os.name == "posix", "process-group cleanup is POSIX-specific")
     def test_adapter_timeout_kills_descendants(self) -> None:

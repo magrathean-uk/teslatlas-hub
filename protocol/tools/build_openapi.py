@@ -170,13 +170,18 @@ def paginated_get(
     if time_bounds:
         parameters.extend([parameter("From"), parameter("To")])
     parameters.extend(extra_parameters or [])
-    return conditional_get(
+    operation = conditional_get(
         operation_id,
         summary,
         response_name,
         tag,
         extra_parameters=parameters,
     )
+    operation["responses"].update({
+        "409": response("Problem"),
+        "410": response("Problem"),
+    })
+    return operation
 
 
 def build_document() -> dict[str, Any]:

@@ -93,6 +93,20 @@ CONNECTIVITY = envelope(
     {"status": "connected"},
 )
 
+# Literal key-order discriminator. No broad numeric-domain acceptance or Edge
+# implementation behavior is inferred from this bounded public corpus.
+UNICODE_ORDER = envelope(
+    "edge-unicode-key-order-0006",
+    "V",
+    1_800_000_000_600,
+    1_800_000_000_500,
+    {
+        "\U00010000": {"\U00010000": "supplementary", "\ue000": "bmp"},
+        "\ue000": [{"\U00010000": 1, "\ue000": 2}, ["\U00010000", "\ue000"]],
+        "escaped": 'quote"backslash\\\n',
+    },
+)
+
 
 ENVELOPE_SCHEMA = {
     "$schema": DRAFT,
@@ -427,8 +441,17 @@ PROFILE = {
         "batch_response_body_bytes_hard": 4_195_441,
     },
     "identity": {
-        "canonicalization": "RFC 8785 JSON Canonicalization Scheme",
-        "stable_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.stable_record_id.bytes_hex) || JCS(stable_identity)))",
+        "canonicalization": "edge-json-utf8-key-order-v1",
+        "canonicalization_rules": {
+            "authority": "In-place 2.0.0 key-order erratum preserving existing record identities; not ordinary RFC 8785 JCS.",
+            "object_key_order": "Unsigned lexicographic comparison of UTF-8 bytes of raw property names, recursively for every object, including objects inside arrays. Shorter byte strings precede a longer string with the same prefix.",
+            "unicode_normalization": "none; sort raw names before JSON string escaping",
+            "array_order": "preserve input array order; never sort arrays",
+            "encoded_bytes": "compact UTF-8 JSON without a BOM, trailing newline or insignificant whitespace",
+            "other_serialization": "The key-order erratum does not change preserved string/number serialization. The broad numeric interpretation of signed64 timestamps and unrestricted payloads remains unresolved; the bounded integer/string Unicode vectors do not establish that domain.",
+            "function_name": "EdgeCanonical(value) denotes this retained 2.0.0 canonicalization, not UTF-16-key-order JCS(value).",
+        },
+        "stable_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.stable_record_id.bytes_hex) || EdgeCanonical(stable_identity)))",
         "stable_identity_fields": [
             "version=2",
             "vin",
@@ -440,7 +463,7 @@ PROFILE = {
             "firmware_version when present",
         ],
         "excluded_stable_identity_fields": ["received_at_ms"],
-        "legacy_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.legacy_record_id.bytes_hex) || JCS(receiver_envelope)))",
+        "legacy_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.legacy_record_id.bytes_hex) || EdgeCanonical(receiver_envelope)))",
         "gap_evidence": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.gap_evidence.bytes_hex) || spool_seq_u64_be || stable_record_id_utf8 || reason_utf8))",
         "gap_notice": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.gap_notice.bytes_hex) || spool_seq_u64_be || reason_utf8 || evidence_sha256_utf8))",
         "batch": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.batch.bytes_hex) || each merged item: hex_decode(hash_parameters.batch_kind_bytes[item.kind].hex) || spool_seq_u64_be || item_id_utf8 || hex_decode(hash_parameters.batch_item_terminator_hex)))",
@@ -577,6 +600,18 @@ VECTORS = {
         "changed_arrival_legacy_record_id": REPLAY_ALIAS,
         "changed_payload_envelope": CHANGED,
         "changed_payload_stable_record_id": CHANGED_ID,
+    },
+    "unicode_key_order": {
+        "id": "nested-utf8-key-order",
+        "scope": "Literal public integer/string key-order corpus only; no broad numeric, runtime, durable-commit, ACK or crash proof.",
+        "envelope": UNICODE_ORDER,
+        "stable_record_id": "7f11178b30e76ea72962bc93b3119cbed7c81e26ef36f52c0081d9a98cb99454",
+        "legacy_record_id": "ef3b53448871d339c90569ca5d1629401f167564255d072191b8934efd3952c9",
+        "stable_canonical_utf8_hex": "7b227061796c6f6164223a7b2265736361706564223a2271756f74655c226261636b736c6173685c5c5c6e222c22ee8080223a5b7b22ee8080223a322c22f0908080223a317d2c5b22f0908080222c22ee8080225d5d2c22f0908080223a7b22ee8080223a22626d70222c22f0908080223a22737570706c656d656e74617279227d7d2c2274696d657374616d705f6d73223a313830303030303030303530302c2274785f74797065223a2256222c2274786964223a22656467652d756e69636f64652d6b65792d6f726465722d30303036222c2276657273696f6e223a322c2276696e223a2235594a3345314541374b46303030303031227d",
+        "legacy_canonical_utf8_hex": "7b227061796c6f6164223a7b2265736361706564223a2271756f74655c226261636b736c6173685c5c5c6e222c22ee8080223a5b7b22ee8080223a322c22f0908080223a317d2c5b22f0908080222c22ee8080225d5d2c22f0908080223a7b22ee8080223a22626d70222c22f0908080223a22737570706c656d656e74617279227d7d2c2272656365697665645f61745f6d73223a313830303030303030303630302c2274696d657374616d705f6d73223a313830303030303030303530302c2274785f74797065223a2256222c2274786964223a22656467652d756e69636f64652d6b65792d6f726465722d30303036222c2276657273696f6e223a312c2276696e223a2235594a3345314541374b46303030303031227d",
+        "divergent_keys": ["\ue000", "\U00010000"],
+        "utf8_key_order": ["\ue000", "\U00010000"],
+        "rfc8785_utf16_key_order": ["\U00010000", "\ue000"],
     },
     "re_enqueued_after_completed_ack": {
         "spool_seq": 13,

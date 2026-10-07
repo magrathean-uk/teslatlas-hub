@@ -251,6 +251,7 @@ try:
 except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
     fail("claim response is not valid JSON")
 schema = json.loads((Path(os.environ["TESLATLAS_PROFILE"]) / "auth.schema.json").read_bytes())
+schema = {**schema, "$ref": "#/$defs/claim"}
 if list(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(value)):
     fail("claim response does not match auth.schema.json")
 result_path = Path(os.environ["TESLATLAS_CLAIM_RESPONSE"])
@@ -643,3 +644,18 @@ directory and [`docs/conformance.md`](../guides/conformance.md). The native acce
 adapter requires a private fixture descriptor and a same-host owned Hub; a
 reference adapter or a successful schema check is not installed-product
 acceptance.
+
+Installed-v2 evidence publication currently fails closed. Its actor cannot
+truthfully assert its own completed exit while still awaiting a close
+acknowledgement, and successful HTTP/schema tests do not satisfy that lifecycle
+gate. The approved architecture for a future explicitly versioned revision
+separates immutable actor-owned pre-exit observations from exact runner-owned
+post-exit, process-group and fixture-settlement witnesses. Final admission must
+atomically require both bound records. This architecture does not supply a new
+schema or handshake implementation; common Hub integration and disposable
+installed evidence remain required before the refusal can be removed.
+
+Restart evidence also remains a layered enforcement question. An asserted
+restart and extant controller anchors alone do not establish a new process
+generation. The common Hub controller/runner must identify the enforcing
+case-specific observations before combined installed admission can be claimed.

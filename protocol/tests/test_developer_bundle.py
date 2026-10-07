@@ -9,6 +9,8 @@ import tarfile
 import tempfile
 import unittest
 import zlib
+from unittest.mock import patch
+import tracemalloc
 
 from support import ROOT
 from tools.developer_bundle import (
@@ -20,10 +22,88 @@ from tools.developer_bundle import (
     read_archive,
     verify_archive,
     verify_directory,
+    verify_payload,
 )
 
 
 class DeveloperBundleTests(unittest.TestCase):
+    def test_bundle_requires_promised_sync_candidate_and_checker_closure(self) -> None:
+        from tools.developer_bundle import build_payload, sha256
+        _, original = build_payload(ROOT)
+        for omitted in ("profiles/hub-sync-v1/1.4.0/SHA256SUMS",
+                        "profiles/hub-sync-v1/1.4.0/profile.json",
+                        "profiles/hub-sync-v1/1.4.0/physical-field-catalog.json",
+                        "profiles/hub-sync-v1/1.4.0/physical-value-semantics.json",
+                        "profiles/hub-sync-v1/1.4.0/physical-delta-pack-v1-contract.json",
+                        "profiles/hub-sync-v1/1.4.0/physical-delta-pack-v1.sql",
+                        "profiles/hub-sync-v1/1.4.0/fixture-signing-keys.json",
+                        "profiles/hub-sync-v1/1.4.0/signing-keys.schema.json",
+                        "profiles/hub-sync-v1/1.4.0/changes-since-request.schema.json",
+                        "profiles/hub-sync-v1/1.4.0/physical-changed-set-receipt.schema.json",
+                        "profiles/hub-sync-v1/1.4.0/physical-rebase-hint.schema.json",
+                        "profiles/hub-sync-v1/1.3.0/sync-manifest.schema.json",
+                        "conformance/hub_sync_14.py", "conformance/hub_sync.py",
+                        "tools/build_hub_sync_14_profile.py", "uv.lock"):
+            with self.subTest(omitted=omitted):
+                files = dict(original)
+                del files[omitted]
+                candidate_prefix = "profiles/hub-sync-v1/1.4.0/"
+                candidate_map = candidate_prefix + "SHA256SUMS"
+                if omitted.startswith(candidate_prefix) and omitted != candidate_map:
+                    member_name = omitted[len(candidate_prefix):]
+                    files[candidate_map] = "".join(
+                        line + "\n" for line in files[candidate_map].decode().splitlines()
+                        if line.split("  ", 1)[1] != member_name
+                    ).encode()
+                # Rebind the outer membership/checksums, so admission must
+                # recognize promised inputs rather than incidental tampering.
+                manifest = json.loads(files["BUNDLE-MANIFEST.json"])
+                manifest["files"] = [entry for entry in manifest["files"] if entry["path"] != omitted]
+                for entry in manifest["files"]:
+                    entry.update(size=len(files[entry["path"]]), sha256=sha256(files[entry["path"]]))
+                files["BUNDLE-MANIFEST.json"] = canonical_json(manifest)
+                files["BUNDLE-SHA256SUMS"] = "".join(
+                    f"{sha256(data)}  {path}\n" for path,data in sorted(files.items())
+                    if path != "BUNDLE-SHA256SUMS"
+                ).encode()
+                with self.assertRaises(BundleError):
+                    verify_payload(files)
+        manifest = verify_payload(original)
+        self.assertEqual(1, manifest["schema_version"])
+        self.assertEqual("hub-sync-v1@1.3.0", manifest["contracts"]["hub_sync"])
+
+    def test_archive_limits_reject_before_extraction_or_large_expansion(self) -> None:
+        from tools import developer_bundle as bundle
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            archive = root / "bounded.tar.gz"
+            self.write_payload_archive(archive, "root", {"large": b"x" * (1024 * 1024)},
+                                       {"large": 0o644})
+            destination = root / "extract"
+            # Construct the witness before measuring the production reader.
+            with patch.object(bundle, "MAX_TAR_BYTES", 65536):
+                tracemalloc.start()
+                try:
+                    with self.assertRaisesRegex(BundleError, "decoded byte limit"):
+                        extract_archive(archive, destination)
+                    _, peak = tracemalloc.get_traced_memory()
+                finally:
+                    tracemalloc.stop()
+                self.assertLess(peak, 512 * 1024)
+            self.assertFalse(destination.exists())
+            with patch.object(bundle, "MAX_ARCHIVE_BYTES", 32):
+                with self.assertRaisesRegex(BundleError, "compressed byte limit"):
+                    extract_archive(archive, destination)
+            with patch.object(bundle, "MAX_MEMBER_BYTES", 64):
+                with self.assertRaisesRegex(BundleError, "member byte limit"):
+                    extract_archive(archive, destination)
+            self.write_payload_archive(archive, "root", {"a": b"a", "b": b"b"},
+                                       {"a": 0o644, "b": 0o644})
+            with patch.object(bundle, "MAX_MEMBERS", 1):
+                with self.assertRaisesRegex(BundleError, "member count limit"):
+                    extract_archive(archive, destination)
+            self.assertFalse(destination.exists())
+
     @staticmethod
     def write_canonical_archive(archive: Path, members: tuple[tuple[str, str], ...]) -> None:
         with archive.open("wb") as raw:

@@ -243,6 +243,28 @@ class HubControlTests(unittest.TestCase):
                     if broker.path.exists():
                         broker.path.unlink()
 
+    def test_malformed_discriminators_and_deep_frames_close_without_followup_wire(self):
+        for frame in (b'{"type":[]}',b'{"type":{}}',b'['*2000+b'0'+b']'*2000):
+            with self.subTest(frame=frame[:30]):
+                followup=[]
+                def serve(broker, connection, stream):
+                    broker.read_request(stream)
+                    connection.sendall(frame+b'\n')
+                    followup.append(stream.readline())
+                broker=SyntheticBroker(self.root,serve)
+                try:
+                    with ControlClient.connect(self.descriptor(broker.path)) as client:
+                        with self.assertRaises(ControlProtocolError):client.request('verify')
+                        self.assertTrue(client._closed)
+                        self.assertTrue(client._request_lock.acquire(blocking=False))
+                        client._request_lock.release()
+                        with self.assertRaises(ControlProtocolError):client.request('verify')
+                finally:
+                    broker.close()
+                    broker.path.unlink(missing_ok=True)
+                self.assertEqual(len(broker.requests),1)
+                self.assertEqual(followup,[b''])
+
     def test_closed_broker_error_is_fatal_and_never_exposes_platform_text(self):
         for code, prior_sequence in (("invalid-request", False), ("operation-failed", True)):
             with self.subTest(code=code, prior_sequence=prior_sequence):

@@ -373,6 +373,44 @@ def _request_shape(request: object) -> bool:
     return set(request) == {"method", "route", "failure"} and common and request.get("failure") == "transport_unavailable"
 
 
+def _operation_requests_match(case_id: str, requests: list) -> bool:
+    """Require the recorded exchanges that distinguish each existing case."""
+    discovery = ("GET", "/.well-known/teslatlas-hub", 200)
+    vehicles = ("GET", "/v1/vehicles", 200)
+    claim = ("POST", "/v1/pairings/{pairing_id}/claim", 200)
+    current = ("GET", "/v1/vehicles/{vehicle_id}/current", 200)
+    drives = ("GET", "/v1/vehicles/{vehicle_id}/drives", 200)
+    rotate = ("POST", "/v1/device/rotate", 200)
+    required = {
+        "candidate_artifact_identity": [],
+        "installed_service_runtime": [],
+        "discovery_identity_profile": [discovery],
+        "unauthenticated_discovery": [discovery, ("GET", "/healthz", 200), ("GET", "/readyz", 200)],
+        "bad_invitation": [("POST", "/v1/pairings/{pairing_id}/claim", 401)],
+        "expired_invitation": [],
+        "replayed_invitation": [("POST", "/v1/pairings/{pairing_id}/claim", 401)],
+        "real_auth": [claim, vehicles],
+        "credential_lifecycle_reauth": [claim, vehicles],
+        "revocation": [("GET", "/v1/vehicles", 401)],
+        "unknown_vehicle": [("GET", "/v1/vehicles/{vehicle_id}/current", 404)],
+        "exact_current_values": [current, current],
+        "endpoint_restart": [discovery, vehicles],
+        "outage_recovery": [("GET", "/v1/vehicles", "transport_unavailable"), vehicles],
+        "unsupported_operation_zero_requests": [],
+        "credential_rotation_api": [rotate, vehicles, vehicles, rotate, vehicles],
+        "drives_three_page_order": [drives, drives, drives],
+        "drives_terminal_cursor": [drives],
+        "drives_etag_304": [("GET", "/v1/vehicles/{vehicle_id}/drives", 304), drives],
+        "drives_wrong_vehicle_cursor": [("GET", "/v1/vehicles/{vehicle_id}/drives", 400)],
+        "drives_wrong_filter_cursor": [("GET", "/v1/vehicles/{vehicle_id}/drives", 400)],
+    }
+    observed = [
+        (request["method"], request["route"], request.get("status", request.get("failure")))
+        for request in requests
+    ]
+    return observed == required[case_id]
+
+
 def _controller_anchor(case_id: str, invocation: AdmittedInvocation, context: AdmissionContext) -> bool:
     before = invocation.session_sequence_before
     after = invocation.session_sequence_after
@@ -383,6 +421,71 @@ def _controller_anchor(case_id: str, invocation: AdmittedInvocation, context: Ad
     if case_id == "revocation":
         return before in context.controller_observations and after in context.controller_observations
     return before in context.controller_observations and after in context.controller_observations
+
+
+def _restart_controller_join(invocation: AdmittedInvocation, context: AdmissionContext) -> bool:
+    """Join restart to trusted running rows and their admitted stop references.
+
+    The common controller owns proof/generation admission and exports only running
+    observations. A start's transition therefore carries the admitted stop sequence;
+    the stop is not itself a running row. The ordinary producer may finish on verify.
+    """
+    before = invocation.session_sequence_before
+    after = invocation.session_sequence_after
+    if before >= after:
+        return False
+    observations = context.controller_observations
+    baseline = observations[before]
+    if not isinstance(baseline, Mapping):
+        return False
+    identity = (baseline.get("hub_id"), baseline.get("store_id"), baseline.get("store_schema_version"))
+    if (
+        any(not isinstance(value, str) or not value for value in identity[:2])
+        or type(identity[2]) is not int or identity[2] <= 0
+    ):
+        return False
+    window = []
+    for sequence, row in observations.items():
+        if type(sequence) is not int:
+            return False
+        if before <= sequence <= after:
+            if (
+                not isinstance(row, Mapping)
+                or type(row.get("schema_version")) is not int or row["schema_version"] != 1
+                or row.get("session_id") != context.session_id
+                or type(row.get("sequence")) is not int or row["sequence"] != sequence
+                or row.get("state") != "running"
+                or not isinstance(row.get("operation"), str) or not row["operation"]
+                or type(row.get("store_schema_version")) is not int
+                or (row.get("hub_id"), row.get("store_id"), row.get("store_schema_version")) != identity
+                or not isinstance(row.get("service_generation"), str) or not row["service_generation"]
+            ):
+                return False
+            window.append((sequence, row))
+    window.sort(key=lambda item: item[0])
+    previous_sequence, previous = window[0]
+    restarted = False
+    for sequence, row in window[1:]:
+        if row["operation"] == "start":
+            transition = row.get("transition")
+            if not isinstance(transition, Mapping):
+                return False
+            origin = transition.get("from_sequence")
+            stopped = transition.get("stopped_sequence")
+            if (
+                transition.get("kind") != "start"
+                or type(origin) is not int or type(stopped) is not int
+                or origin != previous_sequence
+                or not before <= origin < stopped < sequence <= after
+                or stopped in observations
+                or row["service_generation"] == previous["service_generation"]
+            ):
+                return False
+            restarted = True
+        elif row["service_generation"] != previous["service_generation"]:
+            return False
+        previous_sequence, previous = sequence, row
+    return restarted and previous["service_generation"] != baseline["service_generation"]
 
 
 def _raw_for(invocation: AdmittedInvocation, context: AdmissionContext):
@@ -424,6 +527,8 @@ def _admit(case: Mapping[str, object], context: AdmissionContext) -> AdmissionDe
         return _decision("failed", "operation_mismatch")
     if not _controller_anchor(case_id, invocation, context):
         return _decision("failed", "sequence_mismatch")
+    if case_id == "endpoint_restart" and not _restart_controller_join(invocation, context):
+        return _decision("failed", "controller_mismatch")
     raw = _raw_for(invocation, context)
     raw_required = {
         "schema_version", "session_id", "cell_id", "session_input_sha256", "actor_id", "operation",
@@ -478,7 +583,7 @@ def _admit(case: Mapping[str, object], context: AdmissionContext) -> AdmissionDe
         return _decision("failed", "request_mismatch")
     if not _typed_equal(case.get("request_transcript"), requests):
         return _decision("failed", "request_mismatch")
-    if CASE_KINDS[case_id] == "zero_request" and requests:
+    if not _operation_requests_match(case_id, requests):
         return _decision("failed", "request_mismatch")
     if case_id == "installed_service_runtime":
         return _decision("pending", "runner_owned_service_runtime")

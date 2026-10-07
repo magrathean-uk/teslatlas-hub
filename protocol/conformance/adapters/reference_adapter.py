@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,13 @@ def reject_constant(value: str) -> None:
 
 
 def strict_loads(value: str) -> Any:
-    return json.loads(value, parse_constant=reject_constant)
+    def finite_float(token: str) -> float:
+        number = float(token)
+        if not math.isfinite(number):
+            raise ValueError("unsupported non-finite numeric representation")
+        return number
+
+    return json.loads(value, parse_constant=reject_constant, parse_float=finite_float)
 
 
 def safe_body_path(value: str) -> Path:

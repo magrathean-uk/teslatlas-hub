@@ -54,7 +54,7 @@
     "session_sequence_after": {"type": "integer", "minimum": 1},
     "credential_device_id": {"oneOf": [{"type": "string", "format": "uuid"}, {"type": "null"}]},
     "facts": {
-      "oneOf": [
+      "anyOf": [
         {"$ref": "#/$defs/candidate_artifact_identity"},
         {"$ref": "#/$defs/installed_service_runtime"},
         {"$ref": "#/$defs/discovery_identity_profile"},

@@ -91,13 +91,22 @@
   },
   "identity": {
     "batch": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.batch.bytes_hex) || each merged item: hex_decode(hash_parameters.batch_kind_bytes[item.kind].hex) || spool_seq_u64_be || item_id_utf8 || hex_decode(hash_parameters.batch_item_terminator_hex)))",
-    "canonicalization": "RFC 8785 JSON Canonicalization Scheme",
+    "canonicalization": "edge-json-utf8-key-order-v1",
+    "canonicalization_rules": {
+      "array_order": "preserve input array order; never sort arrays",
+      "authority": "In-place 2.0.0 key-order erratum preserving existing record identities; not ordinary RFC 8785 JCS.",
+      "encoded_bytes": "compact UTF-8 JSON without a BOM, trailing newline or insignificant whitespace",
+      "function_name": "EdgeCanonical(value) denotes this retained 2.0.0 canonicalization, not UTF-16-key-order JCS(value).",
+      "object_key_order": "Unsigned lexicographic comparison of UTF-8 bytes of raw property names, recursively for every object, including objects inside arrays. Shorter byte strings precede a longer string with the same prefix.",
+      "other_serialization": "The key-order erratum does not change preserved string/number serialization. The broad numeric interpretation of signed64 timestamps and unrestricted payloads remains unresolved; the bounded integer/string Unicode vectors do not establish that domain.",
+      "unicode_normalization": "none; sort raw names before JSON string escaping"
+    },
     "excluded_stable_identity_fields": [
       "received_at_ms"
     ],
     "gap_evidence": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.gap_evidence.bytes_hex) || spool_seq_u64_be || stable_record_id_utf8 || reason_utf8))",
     "gap_notice": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.gap_notice.bytes_hex) || spool_seq_u64_be || reason_utf8 || evidence_sha256_utf8))",
-    "legacy_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.legacy_record_id.bytes_hex) || JCS(receiver_envelope)))",
+    "legacy_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.legacy_record_id.bytes_hex) || EdgeCanonical(receiver_envelope)))",
     "stable_identity_fields": [
       "version=2",
       "vin",
@@ -108,7 +117,7 @@
       "device_client_version when present",
       "firmware_version when present"
     ],
-    "stable_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.stable_record_id.bytes_hex) || JCS(stable_identity)))"
+    "stable_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.stable_record_id.bytes_hex) || EdgeCanonical(stable_identity)))"
   },
   "license_boundary": "Apache-2.0 source-neutral public contract",
   "limits": {

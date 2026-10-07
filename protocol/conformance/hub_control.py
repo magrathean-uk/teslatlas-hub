@@ -218,7 +218,7 @@ class ControlClient:
             value = _strict_json(raw)
             cls._remaining(deadline)
             return value
-        except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError, RecursionError):
             raise ControlProtocolError("broker frame is not strict UTF-8 JSON") from None
 
     def _fail_closed(self, error):
@@ -261,7 +261,7 @@ class ControlClient:
                     if isinstance(error, ControlProtocolError)
                     else ControlProtocolError("broker operation transport failed")
                 )
-            if not isinstance(reply, dict) or reply.get("type") not in {"reply", "error"}:
+            if not isinstance(reply, dict) or not isinstance(reply.get("type"), str) or reply["type"] not in {"reply", "error"}:
                 self._fail_closed(ControlProtocolError("broker reply type is invalid"))
             payload_key = "result" if reply["type"] == "reply" else "error"
             try:
@@ -309,7 +309,7 @@ class ControlClient:
                 return result
             except BrokerOperationError as error:
                 self._fail_closed(error)
-            except (ControlProtocolError, TypeError, TimeoutError) as error:
+            except (ControlProtocolError, TypeError, ValueError, RecursionError, TimeoutError) as error:
                 self._fail_closed(
                     error
                     if isinstance(error, ControlProtocolError)

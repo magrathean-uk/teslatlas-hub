@@ -254,6 +254,10 @@ def build(check):
         "field_catalog": "physical-field-catalog.json", "value_semantics": "physical-value-semantics.json",
         "pack_contract": "physical-delta-pack-v1-contract.json",
         "pack_sql": "physical-delta-pack-v1.sql", "signature": "Ed25519 over RFC 8785 canonical JSON without signature",
+        "fixture_signing_keys": "fixture-signing-keys.json",
+        "signing_keys_schema": "signing-keys.schema.json",
+        "max_request_body_bytes": 8192, "max_control_body_bytes": 2097152,
+        "joint_body_admission": "Individual schema member maxima are not independently combinable. Every request and the exact retry_request MUST fit 8192 raw UTF-8 JSON bytes; each signed control response and exact replacement manifest MUST fit 2097152 raw UTF-8 JSON bytes. A replacement MUST satisfy these limits jointly before it is published. Producers MUST choose bounded checkpoint IDs and chunk references so the complete signed rebase and mandatory exact retry both fit. Receivers MUST enforce raw limits before parsing, including whitespace and numeric lexemes. A schema-valid over-bound value is not an admitted wire document.",
     }
     contract = {
         "format": FORMAT, "media_type": "application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1",
@@ -287,6 +291,8 @@ def build(check):
         "aggregate_admission": "Before fetching, reject a receipt exceeding 64 contiguous packs, 256 MiB total compressed, 2 GiB total uncompressed, 2000000 unique typed rows/tombstones (context counted once) or 10000 impacted roots. Each pack remains at most 16 MiB compressed and 256 MiB uncompressed. Hub returns a signed 409 complete replacement when a valid changed set cannot fit; App never increases limits locally.",
         "apply": "Verify signature, vehicle-bound key, exact base and target signed-manifest hashes, source binding, contiguous pack hashes, complete rows, tombstones, closure and exact witness. Apply to a private retained-window candidate and atomically activate checkpoint and candidate. Replay of an already activated target is idempotent; interruption preserves the previous readable checkpoint.",
         "access_windows": "Free 30-day projection may discard older raw and projected rows. A later Full 365-day widening uses signed full-head rehydrate. If the required parent/child closure is missing or exceeds limits, return signed 409 complete replacement; never silently invent context.",
+        "conformance_layers": "The single-pack checker validates direct changed/tombstone projection scope, target-owner root witnesses, complete target-root children, explicit root deletions, value domains and exact SQL objects. Complete old/new relation-edge scope still requires a separately admitted retained base and target source; this pack-only checker does not prove that layer, multi-pack aggregation or atomic consumer activation.",
+        "control_body_admission": profile["joint_body_admission"],
         "map_identity": "Affected months include old and new UTC months touched by a changed drive, position or relation. Prepared months bind target manifest ID, receipt ID, sequence and Compute algorithm identity; stale base-head preparations are rejected.",
     }
     files = {"profile.json": profile, "physical-delta-pack-v1-contract.json": contract,
@@ -307,6 +313,13 @@ def build(check):
               "account_id": "22222222-2222-4222-8222-222222222222",
               "vehicle_id": "33333333-3333-4333-8333-333333333333",
               "generation": 1, "selected_car_id": 1}
+    key_document = json.loads((PREVIOUS.parent / "fixture-signing-keys.json").read_text())
+    key_document.update(profile_id=profile["profile_id"], vehicle_id=source["vehicle_id"])
+    files["fixture-signing-keys.json"] = key_document
+    key_schema = json.loads((PREVIOUS.parent / "signing-keys.schema.json").read_text())
+    key_schema["$id"] = "urn:teslatlas:hub-sync-v1:1.4.0:signing-keys"
+    key_schema["$defs"]["document"]["properties"]["profile_id"] = {"const": profile["profile_id"]}
+    files["signing-keys.schema.json"] = key_schema
     checkpoints = []
     for sequence in (42, 43):
         snapshot = signed({"manifest_id": f"manifest_demo_{sequence:06}",

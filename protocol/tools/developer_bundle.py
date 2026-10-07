@@ -63,6 +63,23 @@ REQUIRED_PATHS = (
     "compatibility/manifest.json",
     "profiles/hub-http-v1/1.1.0/SHA256SUMS",
     "profiles/hub-sync-v1/1.3.0/SHA256SUMS",
+    "profiles/hub-sync-v1/1.4.0/SHA256SUMS",
+    "profiles/hub-sync-v1/1.4.0/profile.json",
+    "profiles/hub-sync-v1/1.4.0/cases.json",
+    "profiles/hub-sync-v1/1.4.0/changes-since-request.schema.json",
+    "profiles/hub-sync-v1/1.4.0/physical-changed-set-receipt.schema.json",
+    "profiles/hub-sync-v1/1.4.0/physical-rebase-hint.schema.json",
+    "profiles/hub-sync-v1/1.4.0/physical-field-catalog.json",
+    "profiles/hub-sync-v1/1.4.0/physical-value-semantics.json",
+    "profiles/hub-sync-v1/1.4.0/physical-delta-pack-v1-contract.json",
+    "profiles/hub-sync-v1/1.4.0/physical-delta-pack-v1.sql",
+    "profiles/hub-sync-v1/1.4.0/fixture-signing-keys.json",
+    "profiles/hub-sync-v1/1.4.0/signing-keys.schema.json",
+    "profiles/hub-sync-v1/1.3.0/sync-manifest.schema.json",
+    "conformance/hub_sync.py",
+    "conformance/hub_sync_14.py",
+    "tools/build_hub_sync_14_profile.py",
+    "tools/build_hub_sync_profile.py",
     "profiles/edge-delivery-v2/2.0.0/SHA256SUMS",
     "conformance/run",
     "tools/check",
@@ -73,6 +90,12 @@ GENERATED_PATHS = ("BUNDLE-MANIFEST.json", "BUNDLE-SHA256SUMS")
 IGNORED_NAMES = {"__pycache__", ".DS_Store"}
 IGNORED_SUFFIXES = {".pyc", ".pyo"}
 GZIP_HEADER = b"\x1f\x8b\x08\x00\x00\x00\x00\x00\x02\xff"
+# Local utility budgets, independent of the contracts carried by the bundle.
+MAX_ARCHIVE_BYTES = 16 * 1024 * 1024
+MAX_TAR_BYTES = 32 * 1024 * 1024
+MAX_MEMBER_BYTES = 4 * 1024 * 1024
+MAX_MEMBERS = 1024
+ARCHIVE_READ_BYTES = 64 * 1024
 MANIFEST_KEYS = {
     "schema_version",
     "bundle_id",
@@ -324,6 +347,25 @@ def verify_payload(files: dict[str, bytes]) -> dict[str, object]:
     ).encode("utf-8")
     if files["BUNDLE-SHA256SUMS"] != expected_sums:
         raise BundleError("BUNDLE-SHA256SUMS mismatch")
+    # Inclusion promises complete candidate source, without selecting it as the
+    # manifest's current Hub-sync contract. Close its own exact member map too.
+    candidate_root = "profiles/hub-sync-v1/1.4.0/"
+    candidate_members: set[str] = set()
+    try:
+        for line in files[candidate_root + "SHA256SUMS"].decode("ascii").splitlines():
+            digest, name = line.split("  ", 1)
+            path = candidate_root + name
+            if (not name or PurePosixPath(name).is_absolute() or ".." in PurePosixPath(name).parts or
+                    name in candidate_members or
+                    path not in files or digest != sha256(files[path])):
+                raise BundleError("included sync 1.4 candidate closure mismatch")
+            candidate_members.add(name)
+    except (UnicodeDecodeError, ValueError) as error:
+        raise BundleError("included sync 1.4 candidate member map is malformed") from error
+    actual_candidate = {path[len(candidate_root):] for path in files
+                        if path.startswith(candidate_root) and path != candidate_root + "SHA256SUMS"}
+    if candidate_members != actual_candidate:
+        raise BundleError("included sync 1.4 candidate closure mismatch")
     return manifest
 
 
@@ -333,16 +375,35 @@ def read_archive(archive: Path) -> tuple[str, dict[str, bytes], dict[str, int]]:
     roots: set[str] = set()
     names: list[str] = []
     try:
-        archive_bytes = archive.read_bytes()
-        if archive_bytes[:10] != GZIP_HEADER:
-            raise BundleError("archive gzip header is not canonical")
         decompressor = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)
-        decoded = decompressor.decompress(archive_bytes) + decompressor.flush()
+        decoded_parts: list[bytes] = []
+        compressed_size = decoded_size = 0
+        with archive.open("rb") as raw:
+            if raw.read(len(GZIP_HEADER)) != GZIP_HEADER:
+                raise BundleError("archive gzip header is not canonical")
+            raw.seek(0)
+            while block := raw.read(min(ARCHIVE_READ_BYTES, MAX_ARCHIVE_BYTES - compressed_size + 1)):
+                compressed_size += len(block)
+                if compressed_size > MAX_ARCHIVE_BYTES:
+                    raise BundleError("archive compressed byte limit exceeded")
+                part = decompressor.decompress(block, MAX_TAR_BYTES - decoded_size + 1)
+                decoded_size += len(part)
+                if decoded_size > MAX_TAR_BYTES:
+                    raise BundleError("archive decoded byte limit exceeded")
+                decoded_parts.append(part)
+                if decompressor.unused_data:
+                    raise BundleError("archive must contain exactly one complete gzip member")
         if not decompressor.eof or decompressor.unused_data or decompressor.unconsumed_tail:
             raise BundleError("archive must contain exactly one complete gzip member")
+        decoded = b"".join(decoded_parts)
+        del decoded_parts
         members: list[tuple[str, bytes, int]] = []
         with tarfile.open(fileobj=io.BytesIO(decoded), mode="r:") as tar:
             for member in tar:
+                if len(names) >= MAX_MEMBERS:
+                    raise BundleError("archive member count limit exceeded")
+                if member.size > MAX_MEMBER_BYTES:
+                    raise BundleError("archive member byte limit exceeded")
                 names.append(member.name)
                 path = PurePosixPath(member.name)
                 if path.parts:

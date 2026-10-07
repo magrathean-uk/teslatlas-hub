@@ -82,10 +82,29 @@ PUT and DELETE require the exact current ETag in `If-Match`. Missing it returns
 changes the ETag, and appends an audit event.
 
 Live audit entries contain revision, action, exact UTC time, actor identity,
-and previous/new canonical hashes. Created entries have no previous hash;
+and previous/new hashes. Created entries have no previous hash;
 updated entries have both. A tombstone retains identity and target, stores the
 unchanged live history in `audit.history`, and records the terminal revision,
 time, and actor once in `audit.deletion`. The final history hash identifies the
 deleted value. GET continues to return the tombstone, list operations exclude
 it, and `metadata.changed` distributes it. Deletion never rewrites prior
 entries or the provider observation log.
+
+The selected rich profile defines digest spelling and chain linkage but does
+not establish a reproducible byte preimage. Existing digest examples are
+illustrative. Their values MUST NOT be recalculated against a guessed canonical
+domain, and current or historical emitter compatibility has not been established.
+The final history digest identifies the deleted value within that same history;
+deletion adds no hash field or sentinel.
+
+The unselected candidate `metadata-value-sha256-jcs-v1` defines lowercase
+SHA-256 of the RFC 8785 canonical JSON UTF-8 bytes of `value` alone. It includes
+no newline, identity, revision, audit or timestamp. Candidate values require
+finite binary64 JSON numbers and valid Unicode strings, including recursively
+inside objects and arrays. Object ordering follows RFC 8785 UTF-16 ordering;
+array order is retained. These prerequisites do not narrow today's unrestricted
+metadata `value` schema. Candidate byte/digest vectors are in
+[`metadata-value-sha256-jcs-v1.json`](../../examples/candidate/metadata-value-sha256-jcs-v1.json).
+They verify the candidate only. Adoption requires a versioned compatibility
+decision and evidence from the actual emitter and consumers; historical digest
+rewrites remain excluded.

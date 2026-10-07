@@ -1,0 +1,58 @@
+{
+  "candidate_id": "metadata-value-sha256-jcs-v1",
+  "selection": "unselected candidate; no current emitter or historical digest claim",
+  "preimage": "RFC8785 JCS UTF8(value), no newline or other fields",
+  "vectors": [
+    {
+      "id": "null",
+      "value": null,
+      "canonical_utf8_hex": "6e756c6c",
+      "sha256": "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b"
+    },
+    {
+      "id": "empty-object",
+      "value": {},
+      "canonical_utf8_hex": "7b7d",
+      "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    {
+      "id": "integral-number",
+      "value": 1.0,
+      "canonical_utf8_hex": "31",
+      "sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b"
+    },
+    {
+      "id": "negative-zero",
+      "value": -0.0,
+      "canonical_utf8_hex": "30",
+      "sha256": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9"
+    },
+    {
+      "id": "small-exponent",
+      "value": 1e-07,
+      "canonical_utf8_hex": "31652d37",
+      "sha256": "5b33e02f2c5103a05d32f6ba9cb058294452bfbf393967f68bb30c1bdcbbab22"
+    },
+    {
+      "id": "nested-value",
+      "value": {
+        "text": "example",
+        "flags": [
+          true,
+          null
+        ]
+      },
+      "canonical_utf8_hex": "7b22666c616773223a5b747275652c6e756c6c5d2c2274657874223a226578616d706c65227d",
+      "sha256": "85f78bcf775e72bac8b2b49631bf25c9b441ca209f3c6df3626fb23b52d3f6f3"
+    },
+    {
+      "id": "utf16-key-order",
+      "value": {
+        "": 1,
+        "𐀀": 2
+      },
+      "canonical_utf8_hex": "7b22f0908080223a322c22ee8080223a317d",
+      "sha256": "9d4cdc71dda603c42f9b21d88d0c2ffc31a76cd1bd461d7359406cf169845f1e"
+    }
+  ]
+}

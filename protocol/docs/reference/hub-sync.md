@@ -114,6 +114,19 @@ limit. A schema 2.2 manifest or rebase may contain at most 1,771 chunks, and a
 the retained `1.2.0` prepared artefact may contain at most 497 route spans in
 addition to 120 map months. These maxima keep their largest compact JSON forms
 inside 2 MiB.
+
+Candidate `1.4.0` applies these limits jointly. Its individual schema maxima
+MUST NOT be treated as independently combinable. Before publishing or admitting
+a PhysicalV3 checkpoint/rebase journey, the producer and receiver MUST ensure
+the original request and mandatory exact retry each fit 8192 encoded bytes, and
+the complete replacement manifest, rebase and other control responses each fit
+2,097,152 encoded bytes. Admission checks raw bodies before parsing, including
+whitespace and numeric spellings. It also checks the complete compact rebase
+and exact retry before accepting their parsed bindings. A schema-valid
+combination that exceeds any of these joint limits is inadmissible; it MUST NOT
+produce an oversized retry or an incomplete replacement. The candidate's
+4096-character identity and 1771-chunk schema maxima remain intact.
+
 Every integer-valued wire member is also bounded to the I-JSON exact-integer
 range. This profile uses non-negative integers, so `sequence`, request and
 rebase sequence fields, prepared-artefact timestamps and input sequence, pack

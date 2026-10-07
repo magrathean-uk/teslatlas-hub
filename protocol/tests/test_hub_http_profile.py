@@ -108,6 +108,39 @@ class HubHttpTests(unittest.TestCase):
             self.assertEqual(self.module.validate_raw(PROFILE,kind,401,{},b''),[])
             self.assertTrue(self.module.validate_raw(PROFILE,kind,401,{},b'{"access_token":"must-not-leak"}'))
 
+    def test_raw_decimal_integer_spellings_preserve_exact_signed64_values(self):
+        value=self.example('current');value['observed_at_ms']=123456789
+        base=json.dumps(value).encode()
+        original=b'123456789'
+        for integer in (-(2**63),2**53+1,2**63-1):
+            for lexeme in (str(integer),str(integer)+'.0',str(integer)+'e0'):
+                with self.subTest(lexeme=lexeme):
+                    raw=base.replace(original,lexeme.encode())
+                    self.assertEqual(self.module.validate_raw(PROFILE,'current',200,{'content-type':'application/json'},raw),[])
+                    self.assertEqual(self.module.strict_json(raw)['observed_at_ms'],integer)
+                    self.assertIs(type(self.module.strict_json(raw)['observed_at_ms']),int)
+        for lexeme in ('9223372036854775808.0','-9223372036854775809e0','9007199254740993.1','1e999999','1e999999999999999999999'):
+            with self.subTest(lexeme=lexeme):
+                self.assertTrue(self.module.validate_raw(PROFILE,'current',200,{'content-type':'application/json'},base.replace(original,lexeme.encode())))
+        value=self.example('current');value['odometer']=123456789
+        raw=json.dumps(value).encode().replace(b'123456789',b'1e100')
+        self.assertEqual(self.module.validate_raw(PROFILE,'current',200,{'content-type':'application/json'},raw),[])
+        self.assertEqual(self.module.strict_json(raw)['odometer'],10**100)
+
+    def test_fractional_lexemes_rounding_integral_remain_number_only(self):
+        for lexeme in ('9007199254740990.25','1.0000000000000000001','1e-400'):
+            with self.subTest(lexeme=lexeme):
+                value=self.example('current');value['odometer']=123456789
+                raw=json.dumps(value).encode().replace(b'123456789',lexeme.encode())
+                self.assertEqual(self.module.validate_raw(PROFILE,'current',200,{'content-type':'application/json'},raw),[])
+                parsed=self.module.strict_json(raw)
+                self.assertEqual(parsed['odometer'],float(lexeme))
+                self.assertIsInstance(parsed['odometer'],float)
+                self.assertEqual(json.loads(json.dumps(parsed))['odometer'],float(lexeme))
+                value=self.example('current');value['observed_at_ms']=123456789
+                raw=json.dumps(value).encode().replace(b'123456789',lexeme.encode())
+                self.assertTrue(self.module.validate_raw(PROFILE,'current',200,{'content-type':'application/json'},raw))
+
     def test_errors_and_unknown_status_fail_closed_without_payload_diagnostics(self):
         for code in ('invalid_limit','invalid_time_range','invalid_query','invalid_cursor'):
             self.assertEqual(self.validate('drives',{'error':{'code':code,'message':'synthetic error'}},400),[])

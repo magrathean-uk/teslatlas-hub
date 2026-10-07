@@ -97,6 +97,10 @@ Object member order has no semantic meaning. When a representation hash is
 needed, implementations use RFC 8785 JSON Canonicalization Scheme before
 hashing. Projection IDs and HTTP ETags remain opaque to clients.
 
+That projection rule does not define the selected metadata audit preimage.
+Current metadata digest examples establish chain shape only; see the separate
+[metadata hash qualification and candidate](commands-and-metadata.md).
+
 No projector silently interpolates a missing value. A derived field is named in
 `derived_fields`. Missing values remain JSON `null` when the schema permits it.
 

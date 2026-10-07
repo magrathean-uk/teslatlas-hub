@@ -496,150 +496,17 @@ def _redacted_route(path):
     return "/".join(parts)
 
 
-def _remaining(deadline, clock=time.monotonic):
-    value = deadline - clock()
-    if value <= 0:
-        raise TimeoutError("total exchange deadline expired")
-    return value
+_remaining = hub_http._remaining
+_DeadlineSocketReader = hub_http._DeadlineSocketReader
+_DeadlineResponseSocket = hub_http._DeadlineResponseSocket
+_DeadlineHTTPSConnection = hub_http._DeadlineHTTPSConnection
 
 
-class _DeadlineSocketReader(io.RawIOBase):
-    def __init__(self, connection, deadline, clock):
-        super().__init__()
-        self.connection = connection
-        self.deadline = deadline
-        self.clock = clock
-
-    def readable(self):
-        return True
-
-    def readinto(self, buffer):
-        self.connection.settimeout(_remaining(self.deadline, self.clock))
-        try:
-            return self.connection.recv_into(buffer)
-        except socket.timeout:
-            raise TimeoutError("total exchange deadline expired") from None
-
-
-class _DeadlineResponseSocket:
-    def __init__(self, connection, deadline, clock):
-        self.connection = connection
-        self.deadline = deadline
-        self.clock = clock
-
-    def makefile(self, mode):
-        if mode != "rb":
-            raise ValueError("HTTP response stream mode is invalid")
-        return io.BufferedReader(_DeadlineSocketReader(self.connection, self.deadline, self.clock))
-
-
-class _DeadlineHTTPSConnection(http.client.HTTPSConnection):
-    """Loopback HTTPS connection whose blocking boundaries share one deadline."""
-
-    def __init__(self, host, port, *, context, deadline, clock):
-        self.deadline = deadline
-        self.clock = clock
-        super().__init__(
-            host,
-            port,
-            timeout=_remaining(deadline, clock),
-            context=context,
-        )
-
-    def _addresses(self):
-        if self.host == "127.0.0.1":
-            return ((socket.AF_INET, ("127.0.0.1", self.port)),)
-        if self.host == "::1":
-            return ((socket.AF_INET6, ("::1", self.port, 0, 0)),)
-        return (
-            (socket.AF_INET6, ("::1", self.port, 0, 0)),
-            (socket.AF_INET, ("127.0.0.1", self.port)),
-        )
-
-    def _connect_tcp(self):
-        last_error = None
-        for family, address in self._addresses():
-            connection = socket.socket(family, socket.SOCK_STREAM)
-            try:
-                if self.source_address:
-                    connection.bind(self.source_address)
-                connection.settimeout(_remaining(self.deadline, self.clock))
-                connection.connect(address)
-                _remaining(self.deadline, self.clock)
-                try:
-                    connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                except OSError:
-                    pass
-                return connection
-            except (OSError, TimeoutError) as error:
-                last_error = error
-                connection.close()
-        if last_error is not None:
-            raise last_error
-        raise OSError("loopback endpoint has no address")
-
-    def _wrap_tls(self, connection):
-        connection.settimeout(_remaining(self.deadline, self.clock))
-        wrapped = self._context.wrap_socket(
-            connection,
-            server_hostname=self.host,
-            do_handshake_on_connect=False,
-        )
-        try:
-            wrapped.setblocking(False)
-            while True:
-                try:
-                    wrapped.do_handshake()
-                    break
-                except ssl.SSLWantReadError:
-                    if not select.select([wrapped], [], [], _remaining(self.deadline, self.clock))[0]:
-                        raise TimeoutError("total exchange deadline expired")
-                except ssl.SSLWantWriteError:
-                    if not select.select([], [wrapped], [], _remaining(self.deadline, self.clock))[1]:
-                        raise TimeoutError("total exchange deadline expired")
-            wrapped.settimeout(_remaining(self.deadline, self.clock))
-            return wrapped
-        except BaseException:
-            wrapped.close()
-            raise
-
-    def connect(self):
-        connection = self._connect_tcp()
-        try:
-            _remaining(self.deadline, self.clock)
-            self.sock = self._wrap_tls(connection)
-        except BaseException:
-            connection.close()
-            raise
-
-    def send(self, data):
-        if self.sock is None:
-            if self.auto_open:
-                self.connect()
-            else:
-                raise http.client.NotConnected()
-        if not data:
-            return
-        remaining = memoryview(data)
-        self.sock.setblocking(False)
-        try:
-            while remaining:
-                try:
-                    sent = self.sock.send(remaining)
-                    if sent == 0:
-                        raise OSError("TLS socket closed during request send")
-                    remaining = remaining[sent:]
-                except (BlockingIOError, ssl.SSLWantWriteError):
-                    if not select.select([], [self.sock], [], _remaining(self.deadline, self.clock))[1]:
-                        raise TimeoutError("total exchange deadline expired")
-                except ssl.SSLWantReadError:
-                    if not select.select([self.sock], [], [], _remaining(self.deadline, self.clock))[0]:
-                        raise TimeoutError("total exchange deadline expired")
-            self.sock.settimeout(_remaining(self.deadline, self.clock))
-        except BaseException:
-            remaining.release()
-            raise
-        remaining.release()
+def _canonical_origin(endpoint):
+    try:
+        return hub_http.canonical_origin(endpoint)
+    except (hub_http.AcceptanceError, TypeError, ValueError):
+        raise MatrixAcceptanceError("installed endpoint is not owned loopback HTTPS") from None
 
 
 class RawHttpClient:
@@ -664,7 +531,7 @@ class RawHttpClient:
             or parsed.path not in ("", "/")
         ):
             raise MatrixAcceptanceError("installed endpoint is not owned loopback HTTPS")
-        self.endpoint = endpoint.rstrip("/")
+        self.endpoint = _canonical_origin(endpoint)
         self.parsed = parsed
         self.profile_path = profile_path
         try:
@@ -774,11 +641,15 @@ class RawHttpClient:
             raise MatrixAcceptanceError("response request ID is missing or invalid")
         try:
             value = hub_http.strict_json(raw) if raw else None
+            if observed_status == 200:
+                hub_http.validate_resource_identity(kind, path, value)
             normalized_headers = {key.lower(): item for key, item in response_headers.items()}
             _remaining(deadline, self._clock)
             return value, normalized_headers
         except TimeoutError:
             raise MatrixAcceptanceError("bounded HTTP exchange failed") from None
+        except hub_http.AcceptanceError:
+            raise MatrixAcceptanceError("resource vehicle identity mismatch") from None
         except (ValueError, UnicodeError, TypeError):
             raise MatrixAcceptanceError("validated response could not be parsed") from None
 
@@ -818,6 +689,7 @@ class MatrixCases:
         self.first_cursor = None
         self.second_cursor = None
         self.anchors = {}
+        self.case_device_ids = {}
         self._admit_running(self.control.request("verify"))
 
     def _admit_running(self, result):
@@ -892,7 +764,7 @@ class MatrixCases:
                 tls["certificate_der_sha256"],
                 descriptor["profile_path"],
             )
-        elif descriptor["endpoint"] != self.http.endpoint or tls["certificate_der_sha256"] != self.http.der_sha256:
+        elif _canonical_origin(descriptor["endpoint"]) != self.http.endpoint or tls["certificate_der_sha256"] != self.http.der_sha256:
             raise MatrixAcceptanceError("installed endpoint identity changed during matrix run")
         self.descriptor = descriptor
         self.proof = proof
@@ -954,6 +826,7 @@ class MatrixCases:
         after_sequence = self.proof.get("sequence") if isinstance(self.proof, dict) else before_sequence
         if type(before_sequence) is int and type(after_sequence) is int:
             self.anchors[case_id] = (before_sequence, after_sequence)
+        self.case_device_ids[case_id] = self.device_id
         value = {
             "id": case_id,
             "status": status,
@@ -1117,6 +990,8 @@ class MatrixCases:
         self.capture("drives_terminal_cursor", {"next_cursor": None, "ids": [101]}, terminal_cursor)
 
         def etag_case():
+            if not self.pages:
+                raise MatrixAcceptanceError("drive page prerequisite failed")
             first_headers = self.pages[0][1]
             self.credential_exchange("drives", drive_route + "?limit=2", status=304, bearer=self.token, headers={"If-None-Match": first_headers["etag"]})
             second, _headers = self.credential_exchange("drives", drive_route + "?" + urllib.parse.urlencode({"limit": 2, "cursor": self.first_cursor}), bearer=self.token)
@@ -1159,10 +1034,14 @@ class MatrixCases:
         def rotate():
             old_token, old_device = self.token, self.device_id
             rotated, _headers = self.credential_exchange("rotate", "/v1/device/rotate", method="POST", bearer=old_token, body={})
+            if rotated["access_token"] == old_token or rotated["device_id"] != old_device:
+                raise MatrixAcceptanceError("first rotation did not replace the same device bearer")
             self.token, self.device_id = rotated["access_token"], rotated["device_id"]
             self._vehicles(self.token)
             self._vehicles(old_token)
             retried, _headers = self.credential_exchange("rotate", "/v1/device/rotate", method="POST", bearer=old_token, body={})
+            if retried["access_token"] == old_token or retried["device_id"] != old_device:
+                raise MatrixAcceptanceError("rotation retry did not return the same device replacement bearer")
             self.token, self.device_id = retried["access_token"], retried["device_id"]
             self._vehicles(self.token)
             return {
@@ -1346,143 +1225,31 @@ def _wait_for_close_ack(coordination, ready_binding, session, *, timeout_seconds
 
 
 def _complete_v2(config, session, matrix, cases):
-    """Publish immutable v2 evidence, then wait for the runner's close Ack."""
+    """Refuse publication until the raw cleanup contract has a truthful witness."""
     if not isinstance(cases, list) or [item.get("id") for item in cases if isinstance(item, dict)] != CASE_IDS or any(not isinstance(item, dict) or item.get("status") != "passed" for item in cases):
         raise MatrixAcceptanceError("matrix cases are incomplete or failed")
-    header_raw = _strict_private_file(session["header"]["local"]["path"], "matrix evidence header")
-    header = hub_http.strict_json(header_raw)
-    session["_session_input_sha256"] = config["session_input"]["sha256"]
-    actor_spec = session["actors"][0]
-    actor_manifest = actor_spec["input_manifest"]["local"]
-    coordination = Path(session["outputs"]["coordination_dir"])
-    raw_bindings = []
-    invocations = []
     anchors = getattr(matrix, "anchors", {})
-    for case in cases:
-        case_id = case["id"]
-        operation = {
-            "candidate_artifact_identity": "observe_identity",
-            "installed_service_runtime": "observe_identity",
-            "discovery_identity_profile": "discovery",
-            "unauthenticated_discovery": "unauthenticated_probes",
-            "bad_invitation": "bad_invitation",
-            "expired_invitation": "expired_invitation",
-            "replayed_invitation": "replayed_invitation",
-            "real_auth": "real_auth",
-            "credential_lifecycle_reauth": "reauthentication",
-            "revocation": "revoked_credential",
-            "unknown_vehicle": "unknown_vehicle",
-            "exact_current_values": "exact_current",
-            "endpoint_restart": "endpoint_restart",
-            "outage_recovery": "outage_recovery",
-            "unsupported_operation_zero_requests": "unsupported_operations",
-            "credential_rotation_api": "credential_rotation",
-            "drives_three_page_order": "drives_three_pages",
-            "drives_terminal_cursor": "drives_terminal_cursor",
-            "drives_etag_304": "drives_etag",
-            "drives_wrong_vehicle_cursor": "wrong_vehicle_cursor",
-            "drives_wrong_filter_cursor": "wrong_filter_cursor",
-        }[case_id]
-        evidence_id = "protocol_http-" + operation + "-" + case_id
-        request_transcript = copy.deepcopy(case["request_transcript"])
-        request_ids = [
-            item["request_id"]
-            for item in request_transcript
-            if isinstance(item, dict) and "request_id" in item
-        ]
-        raw_value = {
-            "schema_version": 1,
-            "session_id": session["session_id"],
-            "cell_id": session["cell_id"],
-            "session_input_sha256": session["_session_input_sha256"],
-            "actor_id": actor_spec["id"],
-            "operation": operation,
-            "actor_manifest_sha256": actor_manifest["sha256"],
-            "session_sequence_before": anchors.get(case_id, (1, 1))[0],
-            "session_sequence_after": anchors.get(case_id, (1, 1))[1],
-            "credential_device_id": matrix.device_id,
-            "facts": copy.deepcopy(case["actual"]),
-            "requests": request_transcript,
-            "request_ids": request_ids,
-            "cleanup": {
-                "status": "passed",
-                "transport_resources_closed": True,
-                "auxiliary_fixture_stopped": True,
-                "process_exited": True,
-            },
-        }
-        binding = _write_exclusive_json(coordination / "raw" / (evidence_id + ".json"), raw_value)
-        raw_bindings.append((case_id, evidence_id, operation, raw_value, binding))
-        invocations.append({
-            "id": "invoke-" + evidence_id,
-            "case_id": case_id,
-            "actor_id": actor_spec["id"],
-            "operation": operation,
-            "session_sequence_before": raw_value["session_sequence_before"],
-            "session_sequence_after": raw_value["session_sequence_after"],
-            "evidence_id": evidence_id,
-            "request_ids": request_ids,
-        })
-    normalized_cases = copy.deepcopy(cases)
-    for case in normalized_cases:
-        if case["id"] == "installed_service_runtime":
-            case["status"] = "pending"
-    normalized = dict(header)
-    normalized["cases"] = normalized_cases
-    normalized_binding = _write_exclusive_json(session["outputs"]["normalized"], normalized)
-    actor_evidence = {
-        "schema_version": 1,
-        "session_id": session["session_id"],
-        "cell_id": session["cell_id"],
-        "session_input_sha256": session["_session_input_sha256"],
-        "actors": [{
-            "id": actor_spec["id"],
-            "kind": actor_spec["kind"],
-            "runtime_ref": actor_spec["runtime_ref"],
-            "entrypoint_ref": actor_spec["entrypoint_ref"],
-            "artifact_roles": list(actor_spec["artifact_roles"]),
-            "source_roles": list(actor_spec["source_roles"]),
-            "installed_manifest": dict(actor_manifest),
-            "raw_evidence": [
-                {"id": evidence_id, "schema_id": "protocol-http-v1", "binding": binding}
-                for _case_id, evidence_id, _operation, _raw, binding in raw_bindings
-            ],
-        }],
-        "invocations": invocations,
-    }
-    actor_binding = _write_exclusive_json(session["outputs"]["actor_evidence"], actor_evidence)
-    completion = {
-        "schema_version": 1,
-        "session_id": session["session_id"],
-        "cell_id": session["cell_id"],
-        "session_input_sha256": session["_session_input_sha256"],
-        "normalized": normalized_binding,
-        "actor_evidence": actor_binding,
-    }
-    completion_binding = _write_exclusive_json(coordination / "adapter-completion.json", completion)
-    proof = matrix.proof
-    sequence = proof.get("sequence") if isinstance(proof, dict) else None
-    if type(sequence) is not int or sequence <= 0:
-        raise MatrixAcceptanceError("matrix completion lacks a final observation")
-    ready = {
-        "schema_version": 1,
-        "type": "ready",
-        "session_id": session["session_id"],
-        "cell_id": session["cell_id"],
-        "session_input_sha256": session["_session_input_sha256"],
-        "instance_nonce": session["instance_nonce"],
-        "sequence": 1,
-        "phase": "evidence_ready",
-        "observation": {"session_sequence": sequence, "proof_sha256": _proof_sha256(proof)},
-        "evidence": completion_binding,
-    }
-    ready_binding = _write_exclusive_json(coordination / "ready-000001.json", ready)
-    _wait_for_close_ack(
-        coordination,
-        ready_binding,
-        session,
-        timeout_seconds=max(1.0, session["bounds"]["cell_timeout_ms"] / 1000),
-    )
+    case_device_ids = getattr(matrix, "case_device_ids", {})
+    for case_id in CASE_IDS:
+        anchor = anchors.get(case_id)
+        if (
+            not isinstance(anchor, tuple)
+            or len(anchor) != 2
+            or any(type(sequence) is not int for sequence in anchor)
+            or anchor[0] <= 0
+            or anchor[1] < anchor[0]
+            or case_id not in case_device_ids
+        ):
+            raise MatrixAcceptanceError("matrix case lacks recorded observation context")
+        device_id = case_device_ids[case_id]
+        if device_id is not None:
+            _canonical_uuid(device_id, "case credential device")
+    # Raw evidence requires process_exited and fixture teardown to be true.
+    # This actor is still running and the unchanged close protocol requires
+    # publication before the runner's close Ack. No current field identifies
+    # a different cleanup subject or permits a pending lifecycle observation.
+    # Publishing those literals would claim facts that have not been observed.
+    raise MatrixAcceptanceError("matrix raw cleanup contract lacks an observed actor-exit witness")
 
 
 def run_matrix(value, *, control=None):

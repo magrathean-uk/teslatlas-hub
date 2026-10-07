@@ -38,6 +38,7 @@ class CurrentHubProbeTests(unittest.TestCase):
         self.bin.mkdir()
         self.force_cursor = False
         self.reduced_capabilities = False
+        self.missing_output = False
         self.write_fake_curl()
 
     def write_config(self, **updates):
@@ -89,7 +90,7 @@ elif '/drives' in url:
     kind = 'drives'
 else: body = b''; kind = 'unknown'; status = 404
 headers.write_text('HTTP/1.1 %s synthetic\\r\\nContent-Type: application/json\\r\\n' % status + ('ETag: \\\"probe-page\\\"\\r\\nCache-Control: no-store\\r\\n' if kind == 'drives' else '') + '\\r\\n', encoding='ascii')
-output.write_bytes(body)
+if status != 304 and os.environ.get('PROBE_MISSING_OUTPUT') != '1': output.write_bytes(body)
 sys.stdout.write(str(status))
 """,
             encoding="utf-8",
@@ -105,6 +106,7 @@ sys.stdout.write(str(status))
                 "PROBE_PROFILE": str(PROFILE),
                 "PROBE_FORCE_CURSOR": "1" if self.force_cursor else "0",
                 "PROBE_REDUCED_CAPABILITIES": "1" if self.reduced_capabilities else "0",
+                "PROBE_MISSING_OUTPUT": "1" if self.missing_output else "0",
             }
         )
         environment["PATH"] = str(ROOT / ".venv" / "bin") + os.pathsep + environment["PATH"]
@@ -143,6 +145,12 @@ sys.stdout.write(str(status))
         self.assertEqual(json.loads(result.stdout), {"status": "failed", "error": "probe configuration invalid"})
         self.assertFalse(self.log.exists())
         self.assertNotIn("private-token", result.stdout + result.stderr)
+
+    def test_missing_body_bearing_curl_output_is_rejected(self):
+        self.missing_output=True
+        result=self.run_probe()
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual(json.loads(result.stdout)['status'],'failed')
 
     def test_reduced_discovery_capabilities_skip_optional_drives(self):
         """A Hub without query.drives still supports the minimal current-Hub slice."""

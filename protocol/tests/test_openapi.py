@@ -78,6 +78,24 @@ class OpenAPIContractTests(unittest.TestCase):
         raw = self.operation(path, method)["responses"][status]
         return resolve_local(self.document, raw)
 
+    def test_paginated_responses_cover_cursor_case_statuses(self) -> None:
+        case = load_json("conformance/cases/cursor-pagination.json")
+        operation_path = "/v1/vehicles/{vehicle_id}/drives"
+        for step in case["steps"]:
+            with self.subTest(step=step["step_id"]):
+                self.assertEqual("GET", step["request"]["method"])
+                self.assertRegex(step["request"]["path"], r"^/v1/vehicles/[^/]+/drives$")
+                self.assertIn(str(step["expect"]["status"]), self.operation(operation_path, "get")["responses"])
+        for path, method in PAGINATED_OPERATIONS:
+            for status in ("409", "410"):
+                with self.subTest(path=path, status=status):
+                    problem = self.response(path, method, status)
+                    self.assertIn("application/problem+json", problem["content"])
+                    self.assertEqual(
+                        {"$ref": "#/components/schemas/Problem"},
+                        problem["content"]["application/problem+json"]["schema"],
+                    )
+
     def test_openapi_is_valid_3_1_with_explicit_2020_12_dialect(self) -> None:
         self.assertEqual("3.1.1", self.document["openapi"])
         self.assertEqual(

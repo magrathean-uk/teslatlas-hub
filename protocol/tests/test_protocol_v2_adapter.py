@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from pathlib import Path
@@ -11,6 +12,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 from conformance import hub_matrix
 
@@ -265,68 +267,101 @@ class ProtocolV2Tests(unittest.TestCase):
         thread.join(timeout=1)
         self.assertEqual(acknowledged["action"], "close_completed")
 
-    def test_v2_completion_writes_bound_records_before_ack(self):
+    def _synthetic_control(self):
+        from test_hub_matrix import SyntheticControl, SyntheticHub
+
+        server_root = self.root / "synthetic-server"
+        server_root.mkdir()
+        hub = SyntheticHub(server_root)
+        self.addCleanup(hub.close)
+
+        class Control(SyntheticControl):
+            def _running(self, invitation=None):
+                value = super()._running(invitation)
+                value["descriptor"]["binary_sha256"] = "1" * 64
+                value["descriptor"]["seed_binary_sha256"] = "2" * 64
+                value["proof"]["service"]["hub"]["executable_sha256"] = "1" * 64
+                value["proof"]["config"]["seed_sha256"] = "2" * 64
+                self.observations[self.sequence] = copy.deepcopy(value["proof"])
+                return value
+
+        return Control(hub)
+
+    def _assert_outputs_absent(self, session):
+        coordination = Path(session["outputs"]["coordination_dir"])
+        for path in (
+            Path(session["outputs"]["normalized"]),
+            Path(session["outputs"]["actor_evidence"]),
+            coordination / "raw", coordination / "adapter-completion.json",
+            coordination / "ready-000001.json",
+        ):
+            self.assertFalse(path.exists(), str(path))
+
+    def test_v2_completion_refuses_unobserved_cleanup_before_publication(self):
+        from test_hub_matrix import FIRST_DEVICE, SECOND_DEVICE
+
         config, session_path = self._config_and_session()
         session = json.loads(session_path.read_text())
+        control = self._synthetic_control()
+        matrix = hub_matrix.MatrixCases(config, control)
+        cases = matrix.run()
+        self.assertEqual({case["status"] for case in cases}, {"passed"})
+        for case in cases:
+            if "process_evidence" in case:
+                self.assertEqual(case["process_evidence"]["installed_observation"], control.observations[matrix.anchors[case["id"]][1]])
+        self.assertIsNone(matrix.case_device_ids["unauthenticated_discovery"])
+        self.assertEqual(matrix.case_device_ids["real_auth"], FIRST_DEVICE)
+        self.assertEqual(matrix.case_device_ids["revocation"], FIRST_DEVICE)
+        self.assertEqual(matrix.case_device_ids["credential_lifecycle_reauth"], SECOND_DEVICE)
+        with self.assertRaisesRegex(hub_matrix.MatrixAcceptanceError, "raw cleanup contract lacks an observed actor-exit witness"):
+            hub_matrix._complete_v2(config, session, matrix, cases)
+        self._assert_outputs_absent(session)
+
+    def test_owned_v2_refusal_closes_broker_without_waiting_for_ack(self):
+        config, session_path = self._config_and_session()
+        session = json.loads(session_path.read_text())
+        control = self._synthetic_control()
+        with (
+            mock.patch.object(hub_matrix.hub_control.ControlClient, "connect", return_value=control),
+            mock.patch.object(control, "close", wraps=control.close) as closed,
+            mock.patch.object(hub_matrix, "_wait_for_close_ack", side_effect=AssertionError("unpublished evidence cannot request close Ack")) as acknowledgement,
+            self.assertRaisesRegex(hub_matrix.MatrixAcceptanceError, "raw cleanup contract lacks an observed actor-exit witness"),
+        ):
+            hub_matrix.run_matrix(config)
+        closed.assert_called_once_with()
+        acknowledgement.assert_not_called()
+        self._assert_outputs_absent(session)
+
+    def test_injected_v2_refusal_preserves_caller_owned_broker(self):
+        config, session_path = self._config_and_session()
+        session = json.loads(session_path.read_text())
+        control = self._synthetic_control()
+        with (
+            mock.patch.object(control, "close", wraps=control.close) as closed,
+            self.assertRaisesRegex(hub_matrix.MatrixAcceptanceError, "raw cleanup contract lacks an observed actor-exit witness"),
+        ):
+            hub_matrix.run_matrix(config, control=control)
+        closed.assert_not_called()
+        self._assert_outputs_absent(session)
+
+    def test_v2_completion_rejects_unrecorded_context_before_publishing(self):
+        config, session_path = self._config_and_session()
+        session = json.loads(session_path.read_text())
+        cases = [{"id": case_id, "status": "passed"} for case_id in hub_matrix.CASE_IDS]
+
         class Matrix:
-            device_id = None
             proof = {"status": "verified", "sequence": 7}
-            anchors = {}
+            device_id = None
+            anchors = {case_id: (2, 3) for case_id in hub_matrix.CASE_IDS}
+            case_device_ids = {case_id: None for case_id in hub_matrix.CASE_IDS}
 
-        cases = [
-            {
-                "id": case_id,
-                "status": "passed",
-                "expected": {},
-                "actual": {},
-                "evidence_kind": "identity" if case_id in {"candidate_artifact_identity", "installed_service_runtime"} else "http",
-                "request_transcript": [],
-            }
-            for case_id in hub_matrix.CASE_IDS
-        ]
-        cases[5]["evidence_kind"] = "zero_request"
-        cases[14]["evidence_kind"] = "zero_request"
-        observed = {}
-
-        def runner_ack():
-            coordination = Path(session["outputs"]["coordination_dir"])
-            ready = coordination / "ready-000001.json"
-            deadline = time.time() + 1
-            while not ready.exists() and time.time() < deadline:
-                time.sleep(0.01)
-            close = hub_matrix._write_exclusive_json(coordination / "close-evidence.json", {"state": "closed"})
-            ready_value = json.loads(ready.read_text())
-            observed.update(
-                hub_matrix._write_exclusive_json(
-                    coordination / "ack-000001.json",
-                    {
-                        "schema_version": 1,
-                        "type": "ack",
-                        "session_id": session["session_id"],
-                        "cell_id": session["cell_id"],
-                        "session_input_sha256": config["session_input"]["sha256"],
-                        "instance_nonce": session["instance_nonce"],
-                        "sequence": 1,
-                        "ready_sha256": hub_matrix._existing_binding(ready, "ready")["sha256"],
-                        "phase": "evidence_ready",
-                        "status": "accepted",
-                        "action": "close_completed",
-                        "result": close,
-                    },
-                )
-            )
-
-        thread = threading.Thread(target=runner_ack)
-        thread.start()
-        session["_session_input_sha256"] = config["session_input"]["sha256"]
-        hub_matrix._complete_v2(config, session, Matrix(), cases)
-        thread.join(timeout=1)
-        self.assertTrue(observed)
-        self.assertTrue((self.private / "normalized.json").exists())
-        self.assertTrue((self.private / "actor-evidence.json").exists())
-        for path in (self.private / "coordination" / "raw").glob("*.json"):
-            raw = json.loads(path.read_text())
-            self.assertEqual(raw["request_ids"], [item["request_id"] for item in raw["requests"] if "request_id" in item])
+        for field, missing in (("anchors", {}), ("case_device_ids", {}), ("anchors", {case_id: (True, 3) for case_id in hub_matrix.CASE_IDS})):
+            matrix = Matrix()
+            setattr(matrix, field, missing)
+            with self.subTest(field=field, missing=missing), self.assertRaisesRegex(hub_matrix.MatrixAcceptanceError, "lacks recorded observation context"):
+                hub_matrix._complete_v2(config, session, matrix, cases)
+            self.assertFalse((self.private / "normalized.json").exists())
+            self.assertFalse((self.private / "coordination" / "raw").exists())
 
 
 def profile_sha256(path: Path) -> str:

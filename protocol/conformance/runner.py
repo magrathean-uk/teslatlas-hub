@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import signal
@@ -9,8 +10,9 @@ import subprocess
 import sys
 from functools import lru_cache
 from pathlib import Path
-from queue import Empty, Queue
-from threading import Lock, Thread
+from queue import Empty, Full, Queue
+from threading import Event, Lock, Thread, TIMEOUT_MAX
+from time import monotonic
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
@@ -27,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = re.compile(r"^\$\{([^}]+)\}$")
 DISCOVERY_SCHEMA = "urn:teslatlas:protocol:schema:discovery:1.2.0"
 METADATA_SCHEMA = "urn:teslatlas:protocol:schema:metadata:1.2.0"
+METADATA_PAGE_SCHEMA = "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/metadata_page"
 HUB_SYNC_PROFILE = hub_sync.PROFILE_ID
 
 
@@ -39,7 +42,13 @@ def reject_constant(value: str) -> None:
 
 
 def strict_loads(value: str) -> Any:
-    return json.loads(value, parse_constant=reject_constant)
+    def finite_float(token: str) -> float:
+        number = float(token)
+        if not math.isfinite(number):
+            raise ValueError("unsupported non-finite numeric representation")
+        return number
+
+    return json.loads(value, parse_constant=reject_constant, parse_float=finite_float)
 
 
 def load_json(path: Path) -> Any:
@@ -451,7 +460,7 @@ def validate_response(
         etag = normalized_headers.get("etag")
         if etag is None:
             errors.append("header missing: ETag")
-        elif re.fullmatch(r'"[^"\\\x00-\x20\x7f]+"', etag) is None:
+        elif re.fullmatch(r'"[^"\x00-\x1f\x7f]+"', etag) is None:
             errors.append("header ETag must be a strong ETag")
 
     if expected.get("body_absent") and "body" in response:
@@ -483,6 +492,15 @@ def validate_response(
                     f"body metadata: {item}"
                     for item in validate_metadata_semantics(response["body"])
                 )
+            if body_schema == METADATA_PAGE_SCHEMA and isinstance(response["body"], dict):
+                items = response["body"].get("items")
+                if isinstance(items, list):
+                    for index, record in enumerate(items):
+                        if isinstance(record, dict):
+                            errors.extend(
+                                f"body metadata/items/{index}: {item}"
+                                for item in validate_metadata_semantics(record)
+                            )
 
     event_schema = expected.get("event_schema")
     if event_schema is not None:
@@ -625,17 +643,34 @@ def adapter_command(adapter: str | None) -> list[str]:
 
 class AdapterSession:
     STDERR_LIMIT = 65536
+    FRAME_LIMIT = 8 * 1024 * 1024
 
-    def __init__(self, command: list[str], timeout_seconds: float) -> None:
+    def __init__(
+        self, command: list[str], timeout_seconds: float, *,
+        max_frame_bytes: int = FRAME_LIMIT,
+    ) -> None:
+        if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+            raise ConformanceError("timeout-seconds must be finite and positive")
+        if timeout_seconds > TIMEOUT_MAX:
+            raise ConformanceError("timeout-seconds exceeds the platform wait limit")
+        if not isinstance(max_frame_bytes, int) or isinstance(max_frame_bytes, bool) or not 0 < max_frame_bytes < sys.maxsize:
+            raise ConformanceError("adapter frame budget must be a positive byte count")
         self.timeout_seconds = timeout_seconds
+        self.max_frame_bytes = max_frame_bytes
+        # Local harness budgets, independent of the public response schemas.
+        self.stdout_lines: Queue[str | None] = Queue(maxsize=2)
+        self.stdout_error: str | None = None
+        self.stderr_chunks: list[bytes] = []
+        self.stderr_size = 0
+        self.stderr_truncated = False
+        self.stderr_lock = Lock()
+        self.write_thread: Thread | None = None
         self.process = subprocess.Popen(
             command,
             cwd=ROOT,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
             start_new_session=os.name == "posix",
         )
         if (
@@ -645,11 +680,6 @@ class AdapterSession:
         ):
             self._stop()
             raise ConformanceError("failed to open adapter pipes")
-        self.stdout_lines: Queue[str | None] = Queue()
-        self.stderr_chunks: list[str] = []
-        self.stderr_size = 0
-        self.stderr_truncated = False
-        self.stderr_lock = Lock()
         self.stdout_thread = Thread(target=self._drain_stdout, daemon=True)
         self.stderr_thread = Thread(target=self._drain_stderr, daemon=True)
         self.stdout_thread.start()
@@ -670,14 +700,33 @@ class AdapterSession:
     def _drain_stdout(self) -> None:
         assert self.process.stdout is not None
         try:
-            for line in self.process.stdout:
-                self.stdout_lines.put(line)
+            while line := self.process.stdout.readline(self.max_frame_bytes + 1):
+                if len(line) > self.max_frame_bytes:
+                    self.stdout_error = "adapter stdout frame exceeds local byte budget"
+                    break
+                try:
+                    decoded = line.decode("utf-8")
+                except UnicodeDecodeError:
+                    self.stdout_error = "adapter stdout is not valid UTF-8"
+                    break
+                try:
+                    self.stdout_lines.put_nowait(decoded)
+                except Full:
+                    self.stdout_error = "adapter emitted extra stdout beyond bounded pending-response queue"
+                    break
+        except OSError as error:
+            self.stdout_error = f"adapter stdout failed: {error}"
         finally:
-            self.stdout_lines.put(None)
+            if self.stdout_error is not None:
+                self._signal_process_tree(signal.SIGTERM)
+            try:
+                self.stdout_lines.put_nowait(None)
+            except Full:
+                pass
 
     def _drain_stderr(self) -> None:
         assert self.process.stderr is not None
-        for chunk in iter(lambda: self.process.stderr.read(8192), ""):
+        for chunk in iter(lambda: self.process.stderr.read(8192), b""):
             with self.stderr_lock:
                 remaining = self.STDERR_LIMIT - self.stderr_size
                 if remaining > 0:
@@ -689,31 +738,70 @@ class AdapterSession:
 
     def stderr_text(self) -> str:
         with self.stderr_lock:
-            value = "".join(self.stderr_chunks).strip()
+            value = b"".join(self.stderr_chunks).decode("utf-8", errors="replace").strip()
             if self.stderr_truncated:
                 value += " [stderr truncated]"
             return value
 
     def request(self, envelope: dict[str, Any]) -> str:
+        deadline = monotonic() + self.timeout_seconds
+        if self.stdout_error is not None:
+            raise ConformanceError(self.stdout_error)
         if self.process.poll() is not None:
             raise ConformanceError(
                 f"adapter exited {self.process.returncode}: {self.stderr_text()}"
             )
         assert self.process.stdin is not None
+        payload = (json.dumps(envelope, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+        if len(payload) > self.max_frame_bytes:
+            raise ConformanceError("adapter stdin frame exceeds local byte budget")
+        written = Event()
+        write_errors: list[OSError] = []
+        # The worker owns this duplicate until it finishes. Shutdown may close
+        # Popen's stdin while a delayed partial write is still pending; retaining
+        # an independently owned fd prevents that write from reaching a reused fd.
+        descriptor = os.dup(self.process.stdin.fileno())
+
+        def write_request() -> None:
+            try:
+                remaining = memoryview(payload)
+                while remaining:
+                    count = os.write(descriptor, remaining)
+                    if count <= 0:
+                        raise OSError("adapter stdin accepted no bytes")
+                    remaining = remaining[count:]
+            except OSError as error:
+                write_errors.append(error)
+            finally:
+                try:
+                    os.close(descriptor)
+                finally:
+                    written.set()
+
+        self.write_thread = Thread(target=write_request, daemon=True)
         try:
-            self.process.stdin.write(
-                json.dumps(envelope, separators=(",", ":"), allow_nan=False) + "\n"
+            self.write_thread.start()
+        except RuntimeError as error:
+            os.close(descriptor)
+            self.write_thread = None
+            raise ConformanceError("adapter stdin writer could not start") from error
+        if not written.wait(max(0, deadline - monotonic())):
+            self._stop()
+            raise ConformanceError(
+                f"adapter stdin write timed out after {self.timeout_seconds:g} seconds"
             )
-            self.process.stdin.flush()
-        except (BrokenPipeError, OSError) as error:
-            raise ConformanceError(f"adapter stdin failed: {error}") from error
+        self.write_thread.join()
+        if write_errors:
+            raise ConformanceError(f"adapter stdin failed: {write_errors[0]}") from write_errors[0]
         try:
-            line = self.stdout_lines.get(timeout=self.timeout_seconds)
+            line = self.stdout_lines.get(timeout=max(0, deadline - monotonic()))
         except Empty as error:
             self._stop()
             raise ConformanceError(
                 f"adapter response timed out after {self.timeout_seconds:g} seconds"
             ) from error
+        if self.stdout_error is not None:
+            raise ConformanceError(self.stdout_error)
         if line is None:
             raise ConformanceError(
                 f"adapter closed stdout: {self.stderr_text()}"
@@ -722,23 +810,34 @@ class AdapterSession:
 
     def _stop(self) -> None:
         process = self.process
-        if process.stdin is not None and not process.stdin.closed:
-            try:
-                process.stdin.close()
-            except OSError:
-                pass
+        # Kill before closing stdin: a blocked write must not hold shutdown open.
         self._signal_process_tree(signal.SIGTERM)
         try:
             process.wait(timeout=0.5)
         except subprocess.TimeoutExpired:
             self._signal_process_tree(signal.SIGKILL)
-            process.wait(timeout=1)
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
         if os.name == "posix":
             self._signal_process_tree(signal.SIGKILL)
+        if self.write_thread is not None:
+            self.write_thread.join(timeout=0.1)
+        if process.stdin is not None and not process.stdin.closed:
+            try:
+                process.stdin.close()
+            except OSError:
+                pass
 
     def _close_pipes(self) -> None:
-        for stream in (self.process.stdout, self.process.stderr):
-            if stream is not None and not stream.closed:
+        for stream, reader in (
+            (self.process.stdout, self.stdout_thread),
+            (self.process.stderr, self.stderr_thread),
+        ):
+            # Closing a buffered stream while its reader is blocked can wait
+            # indefinitely on the stream lock. Readers normally finish on kill.
+            if stream is not None and not stream.closed and not reader.is_alive():
                 try:
                     stream.close()
                 except OSError:
@@ -780,6 +879,8 @@ class AdapterSession:
             self.stderr_thread.join(timeout=1)
         extra_stdout = self._extra_stdout()
         self._close_pipes()
+        if self.stdout_error is not None:
+            return self.stdout_error
         if timed_out:
             return f"adapter did not exit after stdin EOF: {self.stderr_text()}"
         if return_code != 0:
@@ -802,6 +903,38 @@ def adapter_response_validator(
     )
 
 
+def run_actual_hub(command: list[str], timeout_seconds: float) -> int:
+    """Bound the complete owned acceptance process, including its descendants."""
+    process = subprocess.Popen(command, start_new_session=os.name == "posix")
+    try:
+        return process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired as error:
+        raise ConformanceError("actual-Hub acceptance exceeded its total process deadline") from error
+    finally:
+        # A reaped leader can still leave members of its owned process group.
+        if os.name == "posix" or process.poll() is None:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            elif process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                pass
+            finally:
+                if os.name == "posix":
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                elif process.poll() is None:
+                    process.kill()
+                process.wait()
+
+
 def run() -> int:
     parser = argparse.ArgumentParser(description="Run Teslatlas language-neutral conformance cases")
     parser.add_argument("--profile", action="append", help="protocol profile; repeatable")
@@ -811,12 +944,14 @@ def run() -> int:
         "--timeout-seconds",
         type=float,
         default=10.0,
-        help="maximum seconds for each adapter response and shutdown",
+        help="maximum seconds for each rich exchange/shutdown or the complete actual-Hub process",
     )
     parser.add_argument("--json", action="store_true", help="emit one machine-readable summary")
     args = parser.parse_args()
-    if args.timeout_seconds <= 0:
-        raise ConformanceError("timeout-seconds must be positive")
+    if not math.isfinite(args.timeout_seconds) or args.timeout_seconds <= 0:
+        raise ConformanceError("timeout-seconds must be finite and positive")
+    if args.timeout_seconds > TIMEOUT_MAX:
+        raise ConformanceError("timeout-seconds exceeds the platform wait limit")
 
     if args.profile and "hub-http-v1@1.1.0" in args.profile:
         if args.profile != ["hub-http-v1@1.1.0"]:
@@ -829,7 +964,7 @@ def run() -> int:
             command += ["--config", args.config]
         if args.json:
             command += ["--json"]
-        return subprocess.run(command, check=False).returncode
+        return run_actual_hub(command, args.timeout_seconds)
 
     if args.adapter is not None and not args.profile:
         raise ConformanceError(

@@ -1,12 +1,17 @@
 """Current-Hub raw HTTP contract validation. Independent of server and SDKs."""
 import argparse
+from decimal import Decimal, DecimalException
 import importlib.util
 import hashlib
+import http.client
+import io
 import json
 import math
 import os
 from pathlib import Path
 import re
+import select
+import socket
 import ssl
 import stat
 import sys
@@ -35,6 +40,15 @@ def verify_native_fixture(config):
     except ValueError as error:
         raise AcceptanceError(str(error)) from error
 
+class _RoundedFraction(float):
+    """Finite float whose raw mathematical value was not an integer.
+
+    JSON Schema's integer checker calls is_integer on floats. Retain this
+    distinction while preserving ordinary finite float use and serialization.
+    """
+    def is_integer(self):
+        return False
+
 def strict_json(raw):
     def unique(pairs):
         result={}
@@ -44,8 +58,18 @@ def strict_json(raw):
         return result
     def reject(_):raise ValueError('non-finite number')
     def finite(value):
+        # JSON Schema integer includes integral decimal/exponent spellings.
+        # Preserve their mathematical value before binary64 normalization.
+        try:
+            exact=Decimal(value)
+        except DecimalException:
+            raise ValueError('unsupported numeric exponent') from None
         parsed=float(value)
         if not math.isfinite(parsed):raise ValueError('overflowing number')
+        # Finite binary64 conversion bounds allocation for integral exponents.
+        # Field schemas enforce signed64 only where the field is an integer.
+        if exact == exact.to_integral_value():return int(exact)
+        if parsed.is_integer():return _RoundedFraction(parsed)
         return parsed
     return json.loads(raw,object_pairs_hook=unique,parse_constant=reject,parse_float=finite)
 
@@ -121,10 +145,204 @@ def validate_raw(root,kind,status,headers,raw):
             allowed={400:{'invalid_limit','invalid_query','invalid_time_range','invalid_cursor'},404:{'vehicle_not_found'},503:{'service_unavailable'}}
             if value['error']['code'] not in allowed[status]:return ['error code does not match status']
         return []
-    except (ValueError,UnicodeError,TypeError,KeyError):return ['invalid JSON response']
+    except (ValueError,UnicodeError,TypeError,KeyError,RecursionError):return ['invalid JSON response']
+
+def canonical_origin(endpoint):
+    if not isinstance(endpoint,str):raise AcceptanceError('owned loopback HTTPS endpoint required')
+    url=urllib.parse.urlsplit(endpoint)
+    if url.scheme!='https' or url.hostname not in ('127.0.0.1','localhost','::1') or url.username or url.password or url.query or url.fragment or url.path not in ('','/'):
+        raise AcceptanceError('owned loopback HTTPS endpoint required')
+    return endpoint.rstrip('/')
+
+def validate_resource_identity(kind,path,value):
+    """Bind validated successful resources to the requested route before projection."""
+    if kind not in ('current','drives') or value is None:return
+    route=urllib.parse.urlsplit(path).path.split('/')
+    if len(route)!=5 or route[1:3]!=['v1','vehicles'] or route[4]!=kind:
+        raise AcceptanceError('resource route is invalid')
+    items=[value] if kind=='current' else value['items']
+    if any(item['vehicle_id']!=route[3] for item in items):
+        raise AcceptanceError('resource vehicle identity mismatch')
 
 class DenyRedirects(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):return None
+
+def _remaining(deadline, clock=time.monotonic):
+    value = deadline - clock()
+    if value <= 0:
+        raise TimeoutError("total exchange deadline expired")
+    return value
+
+
+class _DeadlineSocketReader(io.RawIOBase):
+    def __init__(self, connection, deadline, clock):
+        super().__init__()
+        self.connection = connection
+        self.deadline = deadline
+        self.clock = clock
+        self._lease = connection.makefile("rb", buffering=0)
+
+    def close(self):
+        try:
+            self._lease.close()
+        finally:
+            super().close()
+
+    def readable(self):
+        return True
+
+    def readinto(self, buffer):
+        self.connection.settimeout(_remaining(self.deadline, self.clock))
+        try:
+            return self._lease.readinto(buffer)
+        except socket.timeout:
+            raise TimeoutError("total exchange deadline expired") from None
+
+
+class _DeadlineResponseSocket:
+    def __init__(self, connection, deadline, clock):
+        self.connection = connection
+        self.deadline = deadline
+        self.clock = clock
+
+    def makefile(self, mode):
+        if mode != "rb":
+            raise ValueError("HTTP response stream mode is invalid")
+        return io.BufferedReader(_DeadlineSocketReader(self.connection, self.deadline, self.clock))
+
+
+class _DeadlineHTTPSConnection(http.client.HTTPSConnection):
+    """Loopback HTTPS connection whose blocking boundaries share one deadline."""
+
+    def __init__(self, host, port, *, context, deadline, clock):
+        self.deadline = deadline
+        self.clock = clock
+        super().__init__(
+            host,
+            port,
+            timeout=_remaining(deadline, clock),
+            context=context,
+        )
+
+    def _addresses(self):
+        if self.host == "127.0.0.1":
+            return ((socket.AF_INET, ("127.0.0.1", self.port)),)
+        if self.host == "::1":
+            return ((socket.AF_INET6, ("::1", self.port, 0, 0)),)
+        return (
+            (socket.AF_INET6, ("::1", self.port, 0, 0)),
+            (socket.AF_INET, ("127.0.0.1", self.port)),
+        )
+
+    def _connect_tcp(self):
+        last_error = None
+        for family, address in self._addresses():
+            connection = socket.socket(family, socket.SOCK_STREAM)
+            try:
+                if self.source_address:
+                    connection.bind(self.source_address)
+                connection.settimeout(_remaining(self.deadline, self.clock))
+                connection.connect(address)
+                _remaining(self.deadline, self.clock)
+                try:
+                    connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                except OSError:
+                    pass
+                return connection
+            except (OSError, TimeoutError) as error:
+                last_error = error
+                connection.close()
+        if last_error is not None:
+            raise last_error
+        raise OSError("loopback endpoint has no address")
+
+    def _wrap_tls(self, connection):
+        connection.settimeout(_remaining(self.deadline, self.clock))
+        wrapped = self._context.wrap_socket(
+            connection,
+            server_hostname=self.host,
+            do_handshake_on_connect=False,
+        )
+        try:
+            wrapped.setblocking(False)
+            while True:
+                try:
+                    wrapped.do_handshake()
+                    break
+                except ssl.SSLWantReadError:
+                    if not select.select([wrapped], [], [], _remaining(self.deadline, self.clock))[0]:
+                        raise TimeoutError("total exchange deadline expired")
+                except ssl.SSLWantWriteError:
+                    if not select.select([], [wrapped], [], _remaining(self.deadline, self.clock))[1]:
+                        raise TimeoutError("total exchange deadline expired")
+            wrapped.settimeout(_remaining(self.deadline, self.clock))
+            return wrapped
+        except BaseException:
+            wrapped.close()
+            raise
+
+    def connect(self):
+        connection = self._connect_tcp()
+        try:
+            _remaining(self.deadline, self.clock)
+            self.sock = self._wrap_tls(connection)
+        except BaseException:
+            connection.close()
+            raise
+
+    def send(self, data):
+        if self.sock is None:
+            if self.auto_open:
+                self.connect()
+            else:
+                raise http.client.NotConnected()
+        if not data:
+            return
+        remaining = memoryview(data)
+        self.sock.setblocking(False)
+        try:
+            while remaining:
+                try:
+                    sent = self.sock.send(remaining)
+                    if sent == 0:
+                        raise OSError("TLS socket closed during request send")
+                    remaining = remaining[sent:]
+                except (BlockingIOError, ssl.SSLWantWriteError):
+                    if not select.select([], [self.sock], [], _remaining(self.deadline, self.clock))[1]:
+                        raise TimeoutError("total exchange deadline expired")
+                except ssl.SSLWantReadError:
+                    if not select.select([self.sock], [], [], _remaining(self.deadline, self.clock))[0]:
+                        raise TimeoutError("total exchange deadline expired")
+            self.sock.settimeout(_remaining(self.deadline, self.clock))
+        except BaseException:
+            remaining.release()
+            raise
+        remaining.release()
+
+
+class _PinnedHTTPSConnection(_DeadlineHTTPSConnection):
+    def __init__(self,host,*,tls_pin,deadline=None,timeout=5,context=None,**kwargs):
+        self.tls_pin=tls_pin
+        # urllib supplies host[:port]; let HTTPConnection parse that authority.
+        super().__init__(host,None,context=context,deadline=deadline if deadline is not None else time.monotonic()+timeout,clock=time.monotonic)
+        self.response_class=lambda sock,**options: http.client.HTTPResponse(_DeadlineResponseSocket(sock,self.deadline,self.clock),**options)
+
+    def connect(self):
+        super().connect()
+        leaf=self.sock.getpeercert(binary_form=True)
+        if not leaf or hashlib.sha256(leaf).hexdigest()!=self.tls_pin:
+            self.close()
+            raise AcceptanceError('connected TLS leaf identity mismatch')
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self,*,tls_pin,context):
+        self.tls_pin=tls_pin
+        super().__init__(context=context)
+
+    def https_open(self,request):
+        def connection(host,**kwargs):
+            return _PinnedHTTPSConnection(host,tls_pin=self.tls_pin,deadline=getattr(request,'total_deadline',None),**kwargs)
+        return self.do_open(connection,request,context=self._context)
 
 def run_network(config):
     """A one-use acceptance session consumes a supported CLI invitation privately."""
@@ -132,9 +350,7 @@ def run_network(config):
     if not isinstance(config,dict) or not needed<=config.keys():raise AcceptanceError('missing endpoint, profile or synthetic prerequisites')
     if config['profile_id']!=PROFILE_ID or config['provenance']!='synthetic-real-process':raise AcceptanceError('synthetic profile binding required')
     verified_native=verify_native_fixture(config)
-    url=urllib.parse.urlsplit(config['endpoint'])
-    if url.scheme!='https' or url.hostname not in ('127.0.0.1','localhost','::1') or url.username or url.password or url.query or url.fragment or url.path not in ('','/'):
-        raise AcceptanceError('owned loopback HTTPS endpoint required')
+    endpoint=canonical_origin(config['endpoint'])
     profile=load_profile(config['profile_path'],config['profile_sha256'])
     scenario_bytes=Path(config['scenario_path']).read_bytes()
     if hashlib.sha256(scenario_bytes).hexdigest()!=config['scenario_sha256']:raise AcceptanceError('scenario digest mismatch')
@@ -149,7 +365,7 @@ def run_network(config):
     der=ssl.PEM_cert_to_DER_cert(pem)
     if hashlib.sha256(der).hexdigest()!=invitation['tlsPin']:raise AcceptanceError('invitation TLS pin mismatch')
     context=ssl.create_default_context(cafile=config['certificate_path'])
-    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPSHandler(context=context),DenyRedirects())
+    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),_PinnedHTTPSHandler(tls_pin=invitation['tlsPin'],context=context),DenyRedirects())
     cases=[]
     captures=[]
     def exchange(case,kind,path,expected=200,bearer=None,body=None,headers=None):
@@ -160,7 +376,9 @@ def run_network(config):
             payload=json.dumps(body).encode();request_headers['Content-Type']='application/json'
             if kind=='claim' and len(payload)>profile['max_claim_request_bytes']:
                 raise AcceptanceError('claim request exceeds profile byte limit')
-        request=urllib.request.Request(config['endpoint']+path,data=payload,headers=request_headers)
+        deadline=time.monotonic()+5
+        request=urllib.request.Request(endpoint+path,data=payload,headers=request_headers)
+        request.total_deadline=deadline
         try:
             response=opener.open(request,timeout=5)
         except urllib.error.HTTPError as error:response=error
@@ -170,12 +388,15 @@ def run_network(config):
             if response.status!=expected:raise AcceptanceError(case+': unexpected HTTP status')
             problems=validate_raw(config['profile_path'],kind,response.status,response_headers,raw)
             if problems:raise AcceptanceError(case+': '+problems[0])
+            value=strict_json(raw) if raw else None
+            if expected==200:validate_resource_identity(kind,path,value)
+            _remaining(deadline)
         cases.append({'case_id':case,'kind':kind,'status':expected,'raw_bytes':len(raw),'raw_sha256':hashlib.sha256(raw).hexdigest()})
         # Only nonsecret synthetic resources are captured. Cursor and credential
         # responses receive byte hashes, never body logging or normalization.
         if kind in ('current','vehicles','health','ready','discovery') and expected==200:
             captures.append({'case_id':case,'kind':kind,'body_utf8':raw.decode(),'headers':{k:v for k,v in response_headers.items() if k.lower() in ('content-type','cache-control')}})
-        return (strict_json(raw) if raw else None),{k.lower():v for k,v in response_headers.items()}
+        return value,{k.lower():v for k,v in response_headers.items()}
     def require(condition,label):
         if not condition:raise AcceptanceError(label)
     discovery,_=exchange('discovery-success','discovery','/.well-known/teslatlas-hub')

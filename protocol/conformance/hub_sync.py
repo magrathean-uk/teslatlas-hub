@@ -75,12 +75,27 @@ def _schema(root, name, definition):
     return {**schema, "$ref": "#/$defs/" + definition}
 
 
+def canonical_integral_value(value):
+    """Normalize the published safe integral JSON number domain for JCS."""
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)):
+        if (isinstance(value, float) and (not math.isfinite(value) or not value.is_integer())) or abs(value) > 9007199254740991:
+            raise ContractError("signed number is outside the safe integral domain")
+        return int(value)
+    if isinstance(value, list):
+        return [canonical_integral_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: canonical_integral_value(item) for key, item in value.items()}
+    raise ContractError("unsupported signed JSON value")
+
+
 def canonical_fixture_payload(value):
     payload = dict(value)
     payload.pop("signature", None)
     # Fixtures are in the narrow RFC 8785 subset of ASCII strings, integers,
     # arrays, and objects; sorted compact UTF-8 JSON is JCS for that subset.
-    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    return json.dumps(canonical_integral_value(payload), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
 
 def load_signing_keys(root=PROFILE):

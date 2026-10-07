@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "document": {
+      "additionalProperties": false,
+      "properties": {
+        "key_set_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "$ref": "#/$defs/key"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "type": "array"
+        },
+        "profile_id": {
+          "const": "hub-sync-v1@1.4.0"
+        },
+        "rotation": {
+          "additionalProperties": false,
+          "properties": {
+            "key_id_derivation": {
+              "const": "ed25519-sha256-hex-public-key"
+            },
+            "key_selection": {
+              "const": "key_id"
+            },
+            "publish_before_use": {
+              "const": true
+            },
+            "retain_retired_keys": {
+              "const": true
+            }
+          },
+          "required": [
+            "key_selection",
+            "key_id_derivation",
+            "publish_before_use",
+            "retain_retired_keys"
+          ],
+          "type": "object"
+        },
+        "vehicle_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile_id",
+        "vehicle_id",
+        "key_set_id",
+        "keys",
+        "rotation"
+      ],
+      "type": "object"
+    },
+    "key": {
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "const": "ed25519"
+        },
+        "key_id": {
+          "pattern": "^ed25519-sha256-[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "public_key": {
+          "pattern": "^[A-Za-z0-9+/]{43}=$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "algorithm",
+        "key_id",
+        "public_key"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-sync-v1:1.4.0:signing-keys",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

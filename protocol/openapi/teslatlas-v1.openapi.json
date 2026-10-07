@@ -150,6 +150,12 @@
           },
           "429": {
             "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "410": {
+            "$ref": "#/components/responses/Problem"
           }
         }
       }
@@ -257,6 +263,12 @@
             "$ref": "#/components/responses/Problem"
           },
           "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "410": {
             "$ref": "#/components/responses/Problem"
           }
         }
@@ -366,6 +378,12 @@
           },
           "429": {
             "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "410": {
+            "$ref": "#/components/responses/Problem"
           }
         }
       }
@@ -425,6 +443,12 @@
             "$ref": "#/components/responses/Problem"
           },
           "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "410": {
             "$ref": "#/components/responses/Problem"
           }
         }
@@ -534,6 +558,12 @@
           },
           "429": {
             "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "410": {
+            "$ref": "#/components/responses/Problem"
           }
         }
       }
@@ -594,6 +624,12 @@
           },
           "429": {
             "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "410": {
+            "$ref": "#/components/responses/Problem"
           }
         }
       }
@@ -653,6 +689,12 @@
             "$ref": "#/components/responses/Problem"
           },
           "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "410": {
             "$ref": "#/components/responses/Problem"
           }
         }
@@ -776,6 +818,12 @@
             "$ref": "#/components/responses/Problem"
           },
           "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "410": {
             "$ref": "#/components/responses/Problem"
           }
         }
@@ -977,6 +1025,12 @@
             "$ref": "#/components/responses/Problem"
           },
           "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "410": {
             "$ref": "#/components/responses/Problem"
           }
         }

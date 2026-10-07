@@ -361,7 +361,7 @@ def build_cases() -> list[dict[str, Any]]:
                         "status": 200,
                         "body_schema": schema_definition(RESOURCE_SCHEMA, "drive_page"),
                         "assertions": [
-                            {"path": "/body/next_cursor", "op": "exists"},
+                            {"path": "/body/next_cursor", "op": "is_not_empty"},
                             {"path": "/body/items/0/drive_id", "op": "exists"},
                         ],
                     },
@@ -392,7 +392,12 @@ def build_cases() -> list[dict[str, Any]]:
                                 "path": "/body/items/0/drive_id",
                                 "op": "not_same_as",
                                 "ref": "initial.body.items.0.drive_id",
-                            }
+                            },
+                            {
+                                "path": "/body/snapshot_revision",
+                                "op": "same_as",
+                                "ref": "initial.body.snapshot_revision",
+                            },
                         ],
                     },
                     {
