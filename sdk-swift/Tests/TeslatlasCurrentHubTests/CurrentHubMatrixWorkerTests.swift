@@ -18,6 +18,55 @@ import Glibc
 private enum MatrixWorkerFailure: Error { case cancellationAccepted, oversizeAccepted }
 
 final class CurrentHubMatrixWorkerTests: XCTestCase {
+  func testReceiptAdmissionRejectsFrameworkFailuresAndMissingRun() throws {
+    XCTAssertThrowsError(try liveRequirePassingFrameworkResult(failureCount: 1))
+    XCTAssertThrowsError(try liveRequirePassingFrameworkResult(failureCount: nil))
+    XCTAssertNoThrow(try liveRequirePassingFrameworkResult(failureCount: 0))
+    XCTAssertThrowsError(try liveRequireUnsupportedZeroRequests(before: 7, after: 8))
+    XCTAssertThrowsError(try liveRequireUnsupportedZeroRequests(before: -1, after: -1))
+    XCTAssertNoThrow(try liveRequireUnsupportedZeroRequests(before: 7, after: 7))
+  }
+
+  func testMatrixJSONPublicationIsCompleteExclusiveAndAbortsCleanly() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("matrix-publish-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false,
+      attributes: [.posixPermissions: NSNumber(value: 0o700)])
+    defer { try? FileManager.default.removeItem(at: root) }
+    let target = root.appendingPathComponent("ready.json")
+    _ = try matrixWriteJSON(["sequence": 1], to: target, beforePublish: {
+      XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    })
+    let original = try Data(contentsOf: target)
+    XCTAssertEqual(try JSONSerialization.jsonObject(with: original) as? [String: Int], ["sequence": 1])
+    XCTAssertThrowsError(try matrixWriteJSON(["sequence": 2], to: target))
+    XCTAssertEqual(try Data(contentsOf: target), original)
+    let aborted = root.appendingPathComponent("aborted.json")
+    XCTAssertThrowsError(try matrixWriteJSON(["sequence": 3], to: aborted, beforePublish: { throw CancellationError() }))
+    XCTAssertFalse(FileManager.default.fileExists(atPath: aborted.path))
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["ready.json"])
+  }
+
+  func testFixtureCleanupPreservesTransportFailureAndCancellation() async throws {
+    let recorder = MatrixCleanupRecorder()
+    let expected = CurrentHubError.transportFailure(code: 17)
+    do {
+      let _: Int = try await matrixWithFixtureCleanup(close: { await recorder.closed() }) {
+        throw expected
+      }
+      XCTFail("transport failure was swallowed")
+    } catch let error as CurrentHubError { XCTAssertEqual(error, expected) }
+    do {
+      let _: Int = try await matrixWithFixtureCleanup(close: { await recorder.closed() }) {
+        throw CancellationError()
+      }
+      XCTFail("cancellation was swallowed")
+    } catch is CancellationError {}
+    let result = try await matrixWithFixtureCleanup(close: { await recorder.closed() }) { 7 }
+    XCTAssertEqual(result, 7)
+    let closedCount = await recorder.count
+    XCTAssertEqual(closedCount, 3)
+  }
+
   func testMatrixCancellationPathStopsFixtureAndReturnsTypedFailure() async throws {
     let started = ContinuousClock.now
     let entries = try await matrixCancellationEvidence()
@@ -325,7 +374,7 @@ final class CurrentHubMatrixWorkerTests: XCTestCase {
     _ = try await channel.phase("final_verify")
 
     let commonAnchor = bootstrap.observationSequence
-    let runtime = matrixRuntimeProjection(actorID: config.actorID)
+    let runtime = try matrixRuntimeProjection(actorID: config.actorID)
     let identities = try matrixInputIdentities(config)
     let serviceMode = try matrixServiceMode(config)
     let actorFacts: [String: [String: Any]] = [
@@ -634,12 +683,46 @@ func matrixInvitation(
   return try JSONDecoder().decode(CurrentHubInvitation.self, from: data)
 }
 
-private func matrixRuntimeProjection(actorID _: String) -> [String: Any] {
+private func matrixRuntimeProjection(actorID: String) throws -> [String: Any] {
   #if os(macOS)
+    guard actorID == "swift_macos" else {
+      throw CurrentHubError.invalidRequest("matrix actor does not match runtime")
+    }
     return ["os": "macOS", "transport": "URLSession", "trusted_tls": true]
   #else
-    return ["os": "Ubuntu 22.04.5", "transport": "libcurl", "trusted_tls": true]
+    guard actorID == "swift_linux" else {
+      throw CurrentHubError.invalidRequest("matrix actor does not match runtime")
+    }
+    let release = try String(contentsOfFile: "/etc/os-release", encoding: .utf8)
+    return ["os": try matrixLinuxRuntimeOSName(osRelease: release),
+            "transport": "libcurl", "trusted_tls": true]
   #endif
+}
+
+func matrixLinuxRuntimeOSName(osRelease: String) throws -> String {
+  guard osRelease.utf8.count <= 65_536 else {
+    throw CurrentHubError.invalidRequest("matrix OS identity is invalid")
+  }
+  var values: [String: String] = [:]
+  for line in osRelease.split(whereSeparator: \.isNewline) {
+    guard !line.hasPrefix("#"), let separator = line.firstIndex(of: "=") else { continue }
+    let key = String(line[..<separator])
+    guard ["NAME", "VERSION", "VERSION_ID"].contains(key) else { continue }
+    guard values[key] == nil else {
+      throw CurrentHubError.invalidRequest("matrix OS identity is invalid")
+    }
+    var value = String(line[line.index(after: separator)...])
+    if value.first == "\"", value.last == "\"", value.count >= 2 {
+      value.removeFirst(); value.removeLast()
+    }
+    values[key] = value
+  }
+  guard let name = values["NAME"], !name.isEmpty,
+    let version = (values["VERSION"] ?? values["VERSION_ID"])?
+      .split(separator: " ").first, !version.isEmpty,
+    !name.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f })
+  else { throw CurrentHubError.invalidRequest("matrix OS identity is invalid") }
+  return name + " " + String(version)
 }
 
 private func matrixTrustedTransport(
@@ -754,46 +837,120 @@ private func matrixCancellationEvidence() async throws -> [CurrentHubTranscriptE
       url: URL(string: "http://127.0.0.1:\(server.port)/cancel?fixture=matrix-cancellation-v1")!
     ))
   }
-  guard server.waitForRequest() else {
-    task.cancel(); await server.close()
-    throw CurrentHubError.invalidResponse(statusCode: 0, requestID: nil, reason: "matrix cancellation fixture did not receive request")
-  }
-  task.cancel()
-  do {
-    _ = try await task.value
+  return try await matrixWithFixtureCleanup(close: {
+    task.cancel()
     await server.close()
-    XCTFail("in-flight matrix request succeeded after cancellation")
-    throw MatrixWorkerFailure.cancellationAccepted
+    _ = await task.result
+  }) {
+    guard server.waitForRequest() else {
+      throw CurrentHubError.invalidResponse(statusCode: 0, requestID: nil, reason: "matrix cancellation fixture did not receive request")
+    }
+    task.cancel()
+    do {
+      _ = try await task.value
+      throw MatrixWorkerFailure.cancellationAccepted
+    } catch is CancellationError {}
+    return await transcript.snapshot()
   }
-  catch is CancellationError {}
-  let entries = await transcript.snapshot()
-  await server.close()
-  return entries
 }
 
-private func matrixBodyLimitEvidence() async throws -> [CurrentHubTranscriptEntry] {
+func matrixBodyLimitEvidence() async throws -> [CurrentHubTranscriptEntry] {
   let server = try MatrixOversizeServer()
   let transcript = CurrentHubTranscriptTransport(base: CurrentHubURLSessionTransport(maximumResponseBytes: 1_048_576))
-  do {
-    _ = try await transcript.send(URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/oversize?fixture=matrix-body-limit-v1")!))
-    await server.close()
-    XCTFail("oversize matrix response succeeded")
-    throw MatrixWorkerFailure.oversizeAccepted
+  return try await matrixWithFixtureCleanup(close: { await server.close() }) {
+    do {
+      _ = try await transcript.send(URLRequest(url: URL(string: "http://127.0.0.1:\(server.port)/oversize?fixture=matrix-body-limit-v1")!))
+      throw MatrixWorkerFailure.oversizeAccepted
+    } catch let error as CurrentHubError {
+      guard case .invalidResponse(_, _, let reason) = error,
+        reason == "response body exceeds 1048576 bytes" else { throw error }
+    }
+    return await transcript.snapshot()
   }
-  catch let error as CurrentHubError {
-    guard case .invalidResponse(_, _, let reason) = error,
-      reason == "response body exceeds 1048576 bytes" else {
-      await server.close(); throw error
+}
+
+private func matrixWithFixtureCleanup<T>(close: () async -> Void, operation: () async throws -> T) async throws -> T {
+  do {
+    let result = try await operation()
+    await close()
+    return result
+  } catch {
+    await close()
+    throw error
+  }
+}
+
+private actor MatrixCleanupRecorder {
+  private(set) var count = 0
+  func closed() { count += 1 }
+}
+
+/// Task owns final closes; cleanup may only shut down descriptors under the
+/// same lock. A descriptor is never closed while its task can still use it.
+private final class MatrixFixtureSockets: @unchecked Sendable {
+  private let lock = NSLock()
+  private var listener: Int32
+  private var connection: Int32?
+  private var stopping = false
+
+  init(listener: Int32) throws {
+    self.listener = listener
+    let flags = fcntl(listener, F_GETFL)
+    guard flags >= 0, fcntl(listener, F_SETFL, flags | O_NONBLOCK) == 0 else {
+      let code = Int(errno)
+      DarwinOrGlibcClose(listener)
+      throw CurrentHubError.transportFailure(code: code)
     }
   }
-  let entries = await transcript.snapshot()
-  await server.close()
-  return entries
+
+  func acceptConnection() -> Int32? {
+    var readiness = pollfd(fd: listener, events: Int16(POLLIN), revents: 0)
+    guard poll(&readiness, 1, 2_000) > 0, readiness.revents & Int16(POLLIN) != 0 else { return nil }
+    lock.lock()
+    defer { lock.unlock() }
+    guard !stopping else { return nil }
+    let accepted = accept(listener, nil, nil)
+    guard accepted >= 0 else { return nil }
+    connection = accepted
+    // accept inheritance differs across supported platforms. Timed blocking
+    // I/O must not accidentally treat EAGAIN as a completed fixture exchange.
+    let acceptedFlags = fcntl(accepted, F_GETFL)
+    guard acceptedFlags >= 0, fcntl(accepted, F_SETFL, acceptedFlags & ~O_NONBLOCK) == 0 else { return nil }
+    var timeout = timeval(tv_sec: 2, tv_usec: 0)
+    guard setsockopt(accepted, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size)) == 0,
+      setsockopt(accepted, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size)) == 0 else { return nil }
+    #if !os(Linux)
+      var enabled: Int32 = 1
+      _ = setsockopt(accepted, SOL_SOCKET, SO_NOSIGPIPE, &enabled, socklen_t(MemoryLayout<Int32>.size))
+    #endif
+    return accepted
+  }
+
+  func shutdownOwned() {
+    lock.lock()
+    defer { lock.unlock() }
+    stopping = true
+    if listener >= 0 { _ = shutdown(listener, Int32(SHUT_RDWR)) }
+    if let connection { _ = shutdown(connection, Int32(SHUT_RDWR)) }
+  }
+
+  func finish() {
+    lock.lock()
+    defer { lock.unlock() }
+    if let connection {
+      DarwinOrGlibcClose(connection)
+      self.connection = nil
+    }
+    if listener >= 0 {
+      DarwinOrGlibcClose(listener)
+      listener = -1
+    }
+  }
 }
 
 private final class MatrixCancellationServer: @unchecked Sendable {
   let port: UInt16
-  private let descriptor: Int32
+  private let sockets: MatrixFixtureSockets
   private let requestSeen = DispatchSemaphore(value: 0)
   private let task: Task<Void, Never>
 
@@ -831,12 +988,12 @@ private final class MatrixCancellationServer: @unchecked Sendable {
       DarwinOrGlibcClose(listener)
       throw CurrentHubError.transportFailure(code: Int(errno))
     }
-    descriptor = listener; port = UInt16(bigEndian: actual.sin_port)
+    let sockets = try MatrixFixtureSockets(listener: listener)
+    self.sockets = sockets; port = UInt16(bigEndian: actual.sin_port)
     let requestSeen = self.requestSeen
     task = Task.detached {
-      let connection = accept(listener, nil, nil)
-      guard connection >= 0 else { return }
-      defer { DarwinOrGlibcClose(connection) }
+      defer { sockets.finish() }
+      guard let connection = sockets.acceptConnection() else { return }
       var request = [UInt8](repeating: 0, count: 4096)
       _ = recv(connection, &request, request.count, 0)
       requestSeen.signal()
@@ -849,16 +1006,17 @@ private final class MatrixCancellationServer: @unchecked Sendable {
   }
 
   func close() async {
-    _ = shutdown(descriptor, Int32(SHUT_RDWR))
-    DarwinOrGlibcClose(descriptor)
+    sockets.shutdownOwned()
     task.cancel()
     await task.value
   }
+
+  deinit { sockets.shutdownOwned(); task.cancel() }
 }
 
 private final class MatrixOversizeServer: @unchecked Sendable {
   let port: UInt16
-  private let descriptor: Int32
+  private let sockets: MatrixFixtureSockets
   private let task: Task<Void, Never>
 
   init() throws {
@@ -898,11 +1056,11 @@ private final class MatrixOversizeServer: @unchecked Sendable {
       DarwinOrGlibcClose(listener)
       throw CurrentHubError.transportFailure(code: Int(errno))
     }
-    descriptor = listener; port = UInt16(bigEndian: actual.sin_port)
+    let sockets = try MatrixFixtureSockets(listener: listener)
+    self.sockets = sockets; port = UInt16(bigEndian: actual.sin_port)
     task = Task.detached {
-      let connection = accept(listener, nil, nil)
-      guard connection >= 0 else { return }
-      defer { DarwinOrGlibcClose(connection) }
+      defer { sockets.finish() }
+      guard let connection = sockets.acceptConnection() else { return }
       var request = [UInt8](repeating: 0, count: 4096)
       _ = recv(connection, &request, request.count, 0)
       let header = Array("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".utf8)
@@ -918,11 +1076,12 @@ private final class MatrixOversizeServer: @unchecked Sendable {
   }
 
   func close() async {
-    _ = shutdown(descriptor, Int32(SHUT_RDWR))
-    DarwinOrGlibcClose(descriptor)
+    sockets.shutdownOwned()
     task.cancel()
     await task.value
   }
+
+  deinit { sockets.shutdownOwned(); task.cancel() }
 
   private static func sendAll(_ bytes: [UInt8], to descriptor: Int32) -> Bool {
     bytes.withUnsafeBytes { buffer in
@@ -1181,12 +1340,19 @@ private func matrixBoundedRead(
   try matrixPrivateRead(url, maximumBytes: maximumBytes, expectedSHA256: expectedSHA256)
 }
 
-private func matrixWriteJSON(_ value: Any, to url: URL) throws -> [String: Any] {
+private func matrixWriteJSON(_ value: Any, to url: URL, beforePublish: (() throws -> Void)? = nil) throws -> [String: Any] {
   var data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes])
   data.append(0x0a)
-  let descriptor = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR)
+  let parent = open(url.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+  guard parent >= 0 else { throw CurrentHubError.invalidRequest("matrix output parent is unavailable") }
+  defer { close(parent) }
+  let staging = ".\(url.lastPathComponent).\(UUID().uuidString).pending"
+  let descriptor = staging.withCString { openat(parent, $0, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, S_IRUSR | S_IWUSR) }
   guard descriptor >= 0 else { throw CurrentHubError.invalidRequest("matrix exclusive output is unavailable") }
-  defer { close(descriptor) }
+  defer {
+    close(descriptor)
+    _ = staging.withCString { unlinkat(parent, $0, 0) }
+  }
   try data.withUnsafeBytes { bytes in
     var offset = 0
     while offset < bytes.count {
@@ -1196,6 +1362,12 @@ private func matrixWriteJSON(_ value: Any, to url: URL) throws -> [String: Any] 
     }
   }
   guard fsync(descriptor) == 0 else { throw CurrentHubError.invalidRequest("matrix output flush failed") }
+  try beforePublish?()
+  let published = staging.withCString { source in
+    url.lastPathComponent.withCString { target in linkat(parent, source, parent, target, 0) }
+  }
+  guard published == 0 else { throw CurrentHubError.invalidRequest("matrix exclusive output is unavailable") }
+  guard fsync(parent) == 0 else { throw CurrentHubError.invalidRequest("matrix output parent flush failed") }
   return ["path": url.path, "sha256": MatrixSHA256.hexDigest(data)]
 }
 

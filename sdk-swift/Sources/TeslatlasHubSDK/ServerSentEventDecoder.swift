@@ -9,6 +9,7 @@ struct ServerSentEvent: Equatable, Sendable {
 enum ServerSentEventDecoderOutput: Equatable, Sendable {
   case event(ServerSentEvent)
   case retry(milliseconds: UInt64)
+  case replayReset
 }
 
 struct ServerSentEventDecoderLimits: Equatable, Sendable {
@@ -16,7 +17,7 @@ struct ServerSentEventDecoderLimits: Equatable, Sendable {
   let maximumEventDataBytes: Int
 
   init(
-    maximumLineBytes: Int = 64 * 1_024,
+    maximumLineBytes: Int = 8 * 1_024 * 1_024 + 6,
     maximumEventDataBytes: Int = 8 * 1_024 * 1_024
   ) {
     precondition(maximumLineBytes > 0)
@@ -35,6 +36,7 @@ enum ServerSentEventDecodingError: Error, Equatable {
 struct ServerSentEventDecoder: Sendable {
   private let limits: ServerSentEventDecoderLimits
   private var bufferedBytes: [UInt8] = []
+  private var pendingCarriageReturn = false
   private var dataLines: [String] = []
   private var eventDataByteCount = 0
   private var eventName: String?
@@ -46,12 +48,27 @@ struct ServerSentEventDecoder: Sendable {
 
   mutating func append(_ data: Data) throws -> [ServerSentEventDecoderOutput] {
     do {
-      bufferedBytes.append(contentsOf: data)
-      let output = try drainCompleteLines()
-      guard bufferedBytes.count <= limits.maximumLineBytes else {
-        throw ServerSentEventDecodingError.lineTooLong(
-          limit: limits.maximumLineBytes
-        )
+      var output: [ServerSentEventDecoderOutput] = []
+      for byte in data {
+        if pendingCarriageReturn {
+          pendingCarriageReturn = false
+          output.append(contentsOf: try completeLine())
+          if byte == 0x0A { continue }
+        }
+
+        switch byte {
+        case 0x0A:
+          output.append(contentsOf: try completeLine())
+        case 0x0D:
+          pendingCarriageReturn = true
+        default:
+          guard bufferedBytes.count < limits.maximumLineBytes else {
+            throw ServerSentEventDecodingError.lineTooLong(
+              limit: limits.maximumLineBytes
+            )
+          }
+          bufferedBytes.append(byte)
+        }
       }
       return output
     } catch {
@@ -62,7 +79,11 @@ struct ServerSentEventDecoder: Sendable {
 
   mutating func finish() throws -> [ServerSentEventDecoderOutput] {
     do {
-      var output = try drainCompleteLines(endOfInput: true)
+      var output: [ServerSentEventDecoderOutput] = []
+      if pendingCarriageReturn {
+        pendingCarriageReturn = false
+        output.append(contentsOf: try completeLine())
+      }
 
       if !bufferedBytes.isEmpty {
         output.append(contentsOf: try processLineBytes(bufferedBytes))
@@ -76,46 +97,10 @@ struct ServerSentEventDecoder: Sendable {
     }
   }
 
-  private mutating func drainCompleteLines(
-    endOfInput: Bool = false
-  ) throws -> [ServerSentEventDecoderOutput] {
-    var output: [ServerSentEventDecoderOutput] = []
-
-    while let delimiter = nextDelimiter(endOfInput: endOfInput) {
-      let lineBytes = Array(bufferedBytes[..<delimiter.lineEnd])
-      bufferedBytes.removeFirst(delimiter.consumedByteCount)
-      output.append(contentsOf: try processLineBytes(lineBytes))
-    }
-
+  private mutating func completeLine() throws -> [ServerSentEventDecoderOutput] {
+    let output = try processLineBytes(bufferedBytes)
+    bufferedBytes.removeAll(keepingCapacity: true)
     return output
-  }
-
-  private func nextDelimiter(endOfInput: Bool) -> (
-    lineEnd: Int,
-    consumedByteCount: Int
-  )? {
-    var index = 0
-
-    while index < bufferedBytes.count {
-      switch bufferedBytes[index] {
-      case 0x0A:
-        return (index, index + 1)
-      case 0x0D:
-        let followingIndex = index + 1
-        if followingIndex < bufferedBytes.count {
-          let consumed =
-            bufferedBytes[followingIndex] == 0x0A
-            ? followingIndex + 1
-            : followingIndex
-          return (index, consumed)
-        }
-        return endOfInput ? (index, followingIndex) : nil
-      default:
-        index += 1
-      }
-    }
-
-    return nil
   }
 
   private mutating func processLineBytes(
@@ -196,6 +181,7 @@ struct ServerSentEventDecoder: Sendable {
         return []
       }
       lastEventID = value.isEmpty ? nil : String(value)
+      if value.isEmpty { return [.replayReset] }
     case "retry":
       let bytes = value.utf8
       guard !bytes.isEmpty,
@@ -214,6 +200,7 @@ struct ServerSentEventDecoder: Sendable {
 
   private mutating func reset() {
     bufferedBytes.removeAll(keepingCapacity: false)
+    pendingCarriageReturn = false
     dataLines.removeAll(keepingCapacity: false)
     eventDataByteCount = 0
     eventName = nil

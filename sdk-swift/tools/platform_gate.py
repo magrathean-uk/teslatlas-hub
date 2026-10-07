@@ -11,9 +11,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from typing import Any
 
 import source_handoff
+import owned_command
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -165,19 +167,81 @@ def _prepare_accepted_handoff(
         snapshot.mkdir()
         for directory in source_handoff.SOURCE_DIRECTORIES:
             (snapshot / directory).mkdir(parents=True, exist_ok=True)
-        for relative in source_handoff._selected_source_files(root):
-            completed = subprocess.run(
-                ["git", "show", f"{contract['source_handoff']['source_commit']}:{relative}"],
-                cwd=root,
-                check=False,
-                capture_output=True,
+        for relative in _accepted_members(root, contract):
+            completed = _checked_capture(
+                ["git", "show", f"{contract['source_handoff']['source_commit']}:{relative}"], root
             )
-            if completed.returncode != 0:
-                raise PlatformGateError(f"accepted source snapshot is missing {relative}")
             destination = snapshot / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes(completed.stdout)
-        return source_handoff.prepare(snapshot, handoff)
+        # This older accepted identity predates NOTICE packaging. Never refresh
+        # its member list or pin as a side effect of current source changes.
+        return source_handoff.prepare(snapshot, handoff, root_files=source_handoff.LEGACY_ROOT_FILES)
+
+
+def _accepted_tree(root: Path, contract: dict[str, Any]) -> list[str]:
+    completed = _checked_capture(
+        ["git", "ls-tree", "-r", "-z", contract["source_handoff"]["source_commit"]], root
+    )
+    result = []
+    for entry in completed.stdout.split(b"\0"):
+        if not entry:
+            continue
+        try:
+            metadata, raw_path = entry.split(b"\t", 1)
+            mode, kind, _ = metadata.split(b" ")
+            relative = raw_path.decode("utf-8")
+            source_handoff._validate_relative_path(relative)
+        except (ValueError, UnicodeError, source_handoff.HandoffError) as error:
+            raise PlatformGateError("accepted tree contains an invalid member") from error
+        if mode not in (b"100644", b"100755") or kind != b"blob":
+            raise PlatformGateError("accepted tree contains a non-regular member")
+        result.append(relative)
+    if len(result) != len(set(result)):
+        raise PlatformGateError("accepted tree contains duplicate members")
+    return sorted(result)
+
+
+def _accepted_members(root: Path, contract: dict[str, Any]) -> list[str]:
+    mandatory = set(source_handoff.LEGACY_ROOT_FILES + source_handoff.PUBLIC_DOCUMENTS)
+    members = _accepted_tree(root, contract)
+    if not mandatory.issubset(members):
+        raise PlatformGateError("accepted source snapshot is missing required members")
+    return [relative for relative in members if relative in mandatory or (
+        any(relative.startswith(directory + "/") for directory in source_handoff.SOURCE_DIRECTORIES)
+        and not set(Path(relative).parts) & source_handoff.IGNORED_NAMES
+    )]
+
+
+def _checked_capture(command, cwd=ROOT, *, timeout=owned_command.INSPECTION_SECONDS, text=False):
+    completed = owned_command.run(command, cwd=cwd, timeout=timeout, text=text)
+    if completed.returncode != 0:
+        raise PlatformGateError(f"command failed with exit {completed.returncode}: {command[0]}")
+    return completed
+
+
+def _prepare_ios_host(root: Path, scratch: Path, contract: dict[str, Any]) -> None:
+    """Stage historical host/test inputs and explicitly bind the accepted package."""
+    ios_root = scratch / "ios-root"
+    host_members = [path for path in _accepted_tree(root, contract) if path.startswith("iOSRuntimeHost/")]
+    if not host_members:
+        raise PlatformGateError("accepted iOS host is missing")
+    for relative in host_members:
+        data = _checked_capture(
+            ["git", "show", f"{contract['source_handoff']['source_commit']}:{relative}"], root
+        ).stdout
+        target = ios_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    shutil.copytree(scratch / "handoff" / source_handoff.CANONICAL_ROOT / "Tests", ios_root / "Tests")
+    package = (scratch / "handoff" / source_handoff.CANONICAL_ROOT).resolve()
+    project = ios_root / IOS_PROJECT / "project.pbxproj"
+    contents = project.read_text(encoding="utf-8")
+    marker = "relativePath = ..;"
+    if contents.count(marker) != 1:
+        raise PlatformGateError("accepted iOS host package binding is ambiguous")
+    contents = contents.replace(marker, "relativePath = " + json.dumps(str(package)) + ";")
+    project.write_text(contents, encoding="utf-8")
 
 
 def _verify_source_identity(root: Path, contract: dict[str, Any]) -> None:
@@ -197,7 +261,7 @@ def _verify_source_identity(root: Path, contract: dict[str, Any]) -> None:
         ):
             raise PlatformGateError("prepared source handoff differs from accepted inputs")
         dumped = _strict_json_loads(
-            subprocess.run(
+            _checked_capture(
                 [
                     "swift",
                     "package",
@@ -205,8 +269,6 @@ def _verify_source_identity(root: Path, contract: dict[str, Any]) -> None:
                     "--package-path",
                     str(handoff / source_handoff.CONSUMER_ROOT),
                 ],
-                check=True,
-                capture_output=True,
             ).stdout,
             "external consumer manifest",
         )
@@ -285,7 +347,7 @@ def command_for(gate: str, root: Path = ROOT, scratch: Path | None = None) -> li
         return [
             "xcodebuild",
             "-project",
-            str(root / ios["project"]),
+            str(Path(scratch_text) / "ios-root" / ios["project"]),
             "-scheme",
             ios["scheme"],
             "-destination",
@@ -320,7 +382,9 @@ def command_for(gate: str, root: Path = ROOT, scratch: Path | None = None) -> li
 
 
 def _run(command: list[str], cwd: Path = ROOT) -> None:
-    completed = subprocess.run(command, cwd=cwd, check=False)
+    completed = owned_command.run(command, cwd=cwd, timeout=owned_command.BUILD_SECONDS, text=True)
+    sys.stdout.write(completed.stdout)
+    sys.stderr.write(completed.stderr)
     if completed.returncode != 0:
         raise PlatformGateError(
             f"command failed with exit {completed.returncode}: {' '.join(command)}"
@@ -328,7 +392,7 @@ def _run(command: list[str], cwd: Path = ROOT) -> None:
 
 
 def _run_capture(command: list[str], cwd: Path = ROOT) -> str:
-    completed = subprocess.run(command, cwd=cwd, check=False, capture_output=True, text=True)
+    completed = owned_command.run(command, cwd=cwd, timeout=owned_command.BUILD_SECONDS, text=True)
     sys.stdout.write(completed.stdout)
     sys.stderr.write(completed.stderr)
     if completed.returncode != 0:
@@ -339,9 +403,10 @@ def _run_capture(command: list[str], cwd: Path = ROOT) -> str:
 
 
 def _require_linux_consumer_output(output: str) -> None:
+    """Check import/build smoke output; it supplies no SDK behaviour evidence."""
     lines = [line.strip() for line in output.splitlines() if line.strip()]
     if not lines or lines[-1] != LINUX_CONSUMER_OUTPUT:
-        raise PlatformGateError("Linux consumer did not execute all four public products")
+        raise PlatformGateError("Linux consumer is missing all four public product import/build markers")
 
 
 def _require_native_darwin(required_major: int) -> None:
@@ -360,10 +425,9 @@ def _require_apple_silicon() -> None:
 
 
 def _require_ios_simulator(runtime_version: str, simulator_name: str) -> None:
-    completed = subprocess.run(
+    completed = owned_command.run(
         ["xcrun", "simctl", "list", "devices", "available", "--json"],
-        check=False,
-        capture_output=True,
+        timeout=owned_command.INSPECTION_SECONDS,
     )
     if completed.returncode != 0:
         raise PlatformGateError("could not inventory available iOS simulators")
@@ -385,6 +449,16 @@ def _require_ios_simulator(runtime_version: str, simulator_name: str) -> None:
 
 def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
     contract = load_contract(root / "tools/platform-gates.json")
+    # Reject unavailable lanes before any execution-bearing verification.
+    if gate == "macos14":
+        _require_native_darwin(contract["macos14"]["required_major"])
+    elif gate == "ios17":
+        _require_apple_silicon()
+    elif gate == "linux-arm64":
+        if platform.system() != "Linux" or platform.machine().lower() not in contract["linux_arm64"]["native_arches"]:
+            raise PlatformGateError("Linux gate requires a native Linux ARM64 host")
+    else:
+        raise PlatformGateError(f"unknown gate: {gate}")
     verify_repository(root)
     if gate == "macos14":
         _require_native_darwin(contract["macos14"]["required_major"])
@@ -413,31 +487,34 @@ def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
             contract["ios17"]["simulator_name"],
         )
         with tempfile.TemporaryDirectory(prefix="teslatlas-ios17-gate-") as temporary:
-            _run(command_for(gate, root, Path(temporary)), root)
-        return {"gate": gate, "passed": True}
+            scratch = Path(temporary)
+            _prepare_accepted_handoff(root, scratch / "handoff", contract)
+            _prepare_ios_host(root, scratch, contract)
+            _run(command_for(gate, root, scratch), root)
+        return {"gate": gate, "passed": True, "source_package_identity_sha256": SOURCE_IDENTITY,
+                "host_source_commit": SOURCE_COMMIT, "host_package_binding": "accepted handoff"}
     if gate == "linux-arm64":
         native_arches = contract["linux_arm64"]["native_arches"]
         if platform.system() != "Linux" or platform.machine().lower() not in native_arches:
             raise PlatformGateError("Linux gate requires a native Linux ARM64 host")
         if not shutil.which("docker"):
             raise PlatformGateError("docker is required")
-        server = subprocess.run(
+        server = owned_command.run(
             ["docker", "info", "--format", "{{.OSType}}/{{.Architecture}}"],
-            check=False,
-            capture_output=True,
             text=True,
+            timeout=owned_command.INSPECTION_SECONDS,
         )
         if server.returncode != 0 or server.stdout.strip() not in {
             "linux/arm64",
             "linux/aarch64",
         }:
             raise PlatformGateError("Docker Engine must itself be native Linux ARM64")
-        image = "teslatlas-swift-platform-gate:local-arm64"
-        existing = subprocess.run(
+        ownership = uuid.uuid4().hex
+        image = "teslatlas-swift-platform-gate:local-arm64-" + ownership
+        container = "teslatlas-swift-gate-" + ownership
+        existing = owned_command.run(
             ["docker", "image", "inspect", image],
-            check=False,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            timeout=owned_command.INSPECTION_SECONDS,
         )
         if existing.returncode == 0:
             raise PlatformGateError(f"owned Linux gate image tag already exists: {image}")
@@ -446,8 +523,10 @@ def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
             with tempfile.TemporaryDirectory(prefix="teslatlas-linux-arm64-gate-") as temporary:
                 handoff = Path(temporary) / "handoff"
                 _prepare_accepted_handoff(root, handoff, contract)
-                _run(command_for(gate, root, handoff), root)
-                image_details = subprocess.run(
+                build_command = command_for(gate, root, handoff)
+                build_command[build_command.index("--tag") + 1] = image
+                _run(build_command, root)
+                image_details = owned_command.run(
                     [
                         "docker",
                         "image",
@@ -457,9 +536,8 @@ def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
                         image,
                     ],
                     cwd=root,
-                    check=False,
-                    capture_output=True,
                     text=True,
+                    timeout=owned_command.INSPECTION_SECONDS,
                 )
                 fields = image_details.stdout.strip().split("|")
                 if (
@@ -476,6 +554,8 @@ def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
                         "docker",
                         "run",
                         "--rm",
+                        "--name",
+                        container,
                         "--platform",
                         LINUX_PLATFORM,
                         image,
@@ -488,6 +568,8 @@ def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
                     "passed": True,
                     "docker_server_platform": server.stdout.strip(),
                     "image_id": fields[0],
+                    "owned_image_tag": image,
+                    "owned_container_name": container,
                     "image_platform": fields[1],
                     "image_user": fields[2],
                     "swift_image_index_digest": contract["linux_arm64"][
@@ -499,27 +581,43 @@ def run_gate(gate: str, root: Path = ROOT) -> dict[str, Any]:
                     "consumer_output": LINUX_CONSUMER_OUTPUT,
                 }
         finally:
-            subprocess.run(
-                ["docker", "image", "rm", "--force", image],
-                cwd=root,
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            remaining = subprocess.run(
-                ["docker", "image", "inspect", image],
-                cwd=root,
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            if remaining.returncode == 0:
-                raise PlatformGateError("owned Linux gate image cleanup failed")
+            original_error = sys.exception()
+            try:
+                _cleanup_linux(container, image, root)
+            except BaseException as cleanup_error:
+                if original_error is None:
+                    raise
+                original_error.add_note(f"owned Docker cleanup failed: {cleanup_error}")
         if result is None:
             raise PlatformGateError("Linux gate produced no result")
         result["cleanup"] = "owned image tag and temporary handoff removed"
         return result
     raise PlatformGateError(f"unknown gate: {gate}")
+
+
+def _cleanup_linux(container: str, image: str, root: Path) -> None:
+    errors = []
+    # Cleanup has its own finite budgets. Docker daemon work is addressed by
+    # the owned name; killing the docker CLI alone cannot settle it.
+    for kind, name in (("container", container), ("image", image)):
+        try:
+            owned_command.run(["docker", kind, "rm", "--force", name], cwd=root,
+                              timeout=owned_command.CLEANUP_SECONDS)
+            selection = "name=^/" + name + "$" if kind == "container" else "reference=" + name
+            query = ["docker", kind, "ls"] + (["--all"] if kind == "container" else [])
+            query += ["--filter", selection, "--format", "{{.ID}}"]
+            remaining = owned_command.run(query, cwd=root, text=True,
+                                          timeout=owned_command.CLEANUP_SECONDS)
+            # An inspect exit 1 also represents daemon failure. Only a
+            # successful exact-name listing can establish absence.
+            if remaining.returncode != 0:
+                errors.append(f"owned {kind} absence could not be established")
+            elif remaining.stdout.strip():
+                errors.append(f"owned {kind} remains")
+        except BaseException as error:
+            errors.append(f"owned {kind} cleanup: {error}")
+    if errors:
+        raise PlatformGateError("; ".join(errors))
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -542,7 +640,7 @@ def main() -> int:
             output = {"gate": arguments.gate, "command": command_for(arguments.gate)}
         else:
             output = run_gate(arguments.gate, ROOT)
-    except (OSError, PlatformGateError, source_handoff.HandoffError) as error:
+    except (OSError, owned_command.CommandError, PlatformGateError, source_handoff.HandoffError) as error:
         raise SystemExit(f"platform gate failed: {error}") from error
     print(json.dumps(output, indent=2, sort_keys=True))
     return 0

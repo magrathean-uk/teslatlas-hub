@@ -43,7 +43,8 @@ public protocol CurrentHubInvitationPinningTransport: CurrentHubHTTPTransport {
 public struct CurrentHubURLSessionTransport: CurrentHubInvitationPinningTransport {
   public static let defaultMaximumResponseBytes = 1_048_576
 
-  private let session: URLSession
+  private let sessionOwner: CurrentHubSessionOwner
+  private var session: URLSession { sessionOwner.session }
   private let maximumResponseBytes: Int
   private let usesInjectedURLSession: Bool
   private let configuredLeafCertificateSHA256: String?
@@ -53,11 +54,11 @@ public struct CurrentHubURLSessionTransport: CurrentHubInvitationPinningTranspor
 
   public init(maximumResponseBytes: Int = Self.defaultMaximumResponseBytes) {
     precondition(maximumResponseBytes > 0)
-    session = URLSession(
+    sessionOwner = CurrentHubSessionOwner(session: URLSession(
       configuration: Self.isolatedConfiguration(),
       delegate: CurrentHubRejectRedirectsDelegate(),
       delegateQueue: nil
-    )
+    ))
     self.maximumResponseBytes = maximumResponseBytes
     usesInjectedURLSession = false
     configuredLeafCertificateSHA256 = nil
@@ -90,14 +91,14 @@ public struct CurrentHubURLSessionTransport: CurrentHubInvitationPinningTranspor
         }
         return certificate
       }
-      session = URLSession(
+      sessionOwner = CurrentHubSessionOwner(session: URLSession(
         configuration: Self.isolatedConfiguration(),
         delegate: CurrentHubRejectRedirectsDelegate(
           anchors: anchors,
           expectedLeafSHA256: expectedLeafCertificateSHA256
         ),
         delegateQueue: nil
-      )
+      ))
       usesInjectedURLSession = false
       self.trustedCertificateAuthoritiesDER = trustedCertificateAuthoritiesDER
     #else
@@ -106,11 +107,11 @@ public struct CurrentHubURLSessionTransport: CurrentHubInvitationPinningTranspor
           "explicit certificate anchors require a Security-backed platform; configure the isolated process trust store on FoundationNetworking"
         )
       }
-      session = URLSession(
+      sessionOwner = CurrentHubSessionOwner(session: URLSession(
         configuration: Self.isolatedConfiguration(),
         delegate: CurrentHubRejectRedirectsDelegate(),
         delegateQueue: nil
-      )
+      ))
       usesInjectedURLSession = false
     #endif
     self.maximumResponseBytes = maximumResponseBytes
@@ -133,11 +134,11 @@ public struct CurrentHubURLSessionTransport: CurrentHubInvitationPinningTranspor
     maximumResponseBytes: Int = Self.defaultMaximumResponseBytes
   ) {
     precondition(maximumResponseBytes > 0)
-    session = URLSession(
+    sessionOwner = CurrentHubSessionOwner(session: URLSession(
       configuration: configuration,
       delegate: CurrentHubRejectRedirectsDelegate(),
       delegateQueue: nil
-    )
+    ))
     self.maximumResponseBytes = maximumResponseBytes
     usesInjectedURLSession = true
     configuredLeafCertificateSHA256 = nil
@@ -160,6 +161,11 @@ public struct CurrentHubURLSessionTransport: CurrentHubInvitationPinningTranspor
   }
 
   public func send(_ request: URLRequest) async throws -> CurrentHubHTTPResponse {
+    defer { withExtendedLifetime(sessionOwner) {} }
+    try CurrentHubPinningAdmission.requireHTTPS(
+      url: request.url,
+      expectedLeafCertificateSHA256: configuredLeafCertificateSHA256
+    )
     let data: Data
     let http: HTTPURLResponse
     do {
@@ -239,6 +245,10 @@ public struct CurrentHubURLSessionTransport: CurrentHubInvitationPinningTranspor
     validatingLeafCertificateSHA256 expectedLeafCertificateSHA256: String
   ) async throws -> CurrentHubHTTPResponse {
     try Self.validateLeafPin(expectedLeafCertificateSHA256)
+    try CurrentHubPinningAdmission.requireHTTPS(
+      url: request.url,
+      expectedLeafCertificateSHA256: expectedLeafCertificateSHA256
+    )
     #if canImport(Security)
       guard !usesInjectedURLSession else {
         throw CurrentHubError.invalidRequest(
@@ -286,6 +296,26 @@ public struct CurrentHubURLSessionTransport: CurrentHubInvitationPinningTranspor
       requestID: response.value(forHTTPHeaderField: "X-Request-ID"),
       reason: "response body exceeds \(maximumResponseBytes) bytes"
     )
+  }
+}
+
+// Configuration injection still creates an SDK-owned session; it is not a
+// borrowed-session flag. Copies share their owner; per-invitation temporary
+// transports own their sessions too.
+private final class CurrentHubSessionOwner: Sendable {
+  let session: URLSession
+
+  init(session: URLSession) { self.session = session }
+
+  deinit { session.finishTasksAndInvalidate() }
+}
+
+enum CurrentHubPinningAdmission {
+  static func requireHTTPS(url: URL?, expectedLeafCertificateSHA256: String?) throws {
+    guard expectedLeafCertificateSHA256 != nil else { return }
+    guard url?.scheme?.lowercased() == "https" else {
+      throw CurrentHubError.invalidRequest("leaf certificate pinning requires HTTPS before transmission")
+    }
   }
 }
 

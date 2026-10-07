@@ -286,11 +286,27 @@ actor CurrentHubTranscriptTransport: CurrentHubInvitationPinningTransport {
   }
 
   private static func requestScope(_ url: URL) -> String {
-    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-      return url.path
+    guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+      return redactedRoute(url)
+    }
+    var pieces = components.path.split(separator: "/", omittingEmptySubsequences: false)
+      .map(String.init)
+    if pieces.count >= 4, pieces[1] == "v1",
+      ["vehicles", "pairings"].contains(pieces[2]) {
+      pieces[3] = matrixPrivateScopeWitness(pieces[3])
+    }
+    components.path = pieces.joined(separator: "/")
+    components.queryItems = components.queryItems?.map { item in
+      guard !["limit", "from_ms", "to_ms", "fixture"].contains(item.name),
+        let value = item.value else { return item }
+      return URLQueryItem(name: item.name, value: matrixPrivateScopeWitness(value))
     }
     return components.percentEncodedQuery.map { components.path + "?" + $0 } ?? components.path
   }
+}
+
+func matrixPrivateScopeWitness(_ value: String) -> String {
+  "sha256-" + CurrentHubSHA256.hexDigest(of: Data(value.utf8))
 }
 
 struct CurrentHubMatrixFileBinding: Codable, Sendable {

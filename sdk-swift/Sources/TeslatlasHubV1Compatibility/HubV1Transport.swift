@@ -22,7 +22,8 @@ protocol HubV1HTTPTransport: Sendable {
 struct HubV1URLSessionTransport: HubV1HTTPTransport {
   static let defaultMaximumResponseBytes = 16 * 1_024 * 1_024
 
-  private let session: URLSession
+  private let sessionOwner: HubV1SessionOwner
+  private var session: URLSession { sessionOwner.session }
   private let maximumResponseBytes: Int
 
   init(maximumResponseBytes: Int = Self.defaultMaximumResponseBytes) {
@@ -37,11 +38,11 @@ struct HubV1URLSessionTransport: HubV1HTTPTransport {
     maximumResponseBytes: Int = Self.defaultMaximumResponseBytes
   ) {
     precondition(maximumResponseBytes > 0)
-    session = URLSession(
+    sessionOwner = HubV1SessionOwner(session: URLSession(
       configuration: configuration,
       delegate: HubV1RejectRedirectsDelegate(),
       delegateQueue: nil
-    )
+    ))
     self.maximumResponseBytes = maximumResponseBytes
   }
 
@@ -59,6 +60,7 @@ struct HubV1URLSessionTransport: HubV1HTTPTransport {
   }
 
   func send(_ request: URLRequest) async throws -> HubV1HTTPResponse {
+    defer { withExtendedLifetime(sessionOwner) {} }
     let data: Data
     let http: HTTPURLResponse
     do {
@@ -92,12 +94,8 @@ struct HubV1URLSessionTransport: HubV1HTTPTransport {
         data = received
         http = response
       #endif
-    } catch let error as HubV1Error {
-      throw error
-    } catch let error as URLError {
-      throw HubV1Error.transportFailure(code: error.errorCode)
     } catch {
-      throw HubV1Error.transportFailure(code: -1)
+      throw Self.classifiedTransportError(error)
     }
 
     guard let finalURL = http.url else {
@@ -120,6 +118,18 @@ struct HubV1URLSessionTransport: HubV1HTTPTransport {
     )
   }
 
+  static func classifiedTransportError(_ error: any Error) -> any Error {
+    if let error = error as? HubV1Error { return error }
+    if error is CancellationError { return CancellationError() }
+    if let error = error as? URLError {
+      if error.code == .cancelled && Task.isCancelled {
+        return CancellationError()
+      }
+      return HubV1Error.transportFailure(code: error.errorCode)
+    }
+    return HubV1Error.transportFailure(code: -1)
+  }
+
   private func responseTooLarge(_ response: HTTPURLResponse) -> HubV1Error {
     .invalidResponse(
       statusCode: response.statusCode,
@@ -127,6 +137,14 @@ struct HubV1URLSessionTransport: HubV1HTTPTransport {
       reason: "response body exceeds \(maximumResponseBytes) bytes"
     )
   }
+}
+
+private final class HubV1SessionOwner: Sendable {
+  let session: URLSession
+
+  init(session: URLSession) { self.session = session }
+
+  deinit { session.finishTasksAndInvalidate() }
 }
 
 struct HubV1BoundedBodyAccumulator {

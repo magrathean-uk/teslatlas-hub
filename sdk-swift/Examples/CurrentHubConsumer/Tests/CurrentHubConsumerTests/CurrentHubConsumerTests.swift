@@ -234,10 +234,36 @@ final class CurrentHubConsumerTests: XCTestCase {
 
   func testConfigurationRequiresPairedRestartMarkers() throws {
     let data = Data("""
-      {"endpoint":"https://hub.example","expectedHubID":"11111111-1111-4111-8111-111111111111","invitationPath":"/private/invitation.json","deviceName":"test","restartReadyPath":"/private/ready"}
+      {"endpoint":"https://hub.example","expectedHubID":"11111111-1111-4111-8111-111111111111","invitationPath":"/private/invitation.json","deviceName":"test","expectedVehicleCount":3,"expectedObservedCount":1,"expectedAbsentCount":2,"semanticSnapshotPath":"/private/semantic.json","cleanupDeviceIDPath":"/private/device-id"}
       """.utf8)
+    XCTAssertNoThrow(try ConsumerConfig.decode(from: data))
+    let positive = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    for marker in ["restartReadyPath", "restartContinuePath"] {
+      var onlyOneMarker = positive
+      onlyOneMarker[marker] = marker == "restartReadyPath" ? "/private/ready" : "/private/continue"
+      let invalid = try JSONSerialization.data(withJSONObject: onlyOneMarker)
+      XCTAssertThrowsError(try ConsumerConfig.decode(from: invalid)) { error in
+        XCTAssertEqual(error as? ConsumerError, .invalidConfiguration)
+      }
+      onlyOneMarker["restartReadyPath"] = "/private/ready"
+      onlyOneMarker["restartContinuePath"] = "/private/continue"
+      let restored = try ConsumerConfig.decode(
+        from: JSONSerialization.data(withJSONObject: onlyOneMarker)
+      )
+      XCTAssertEqual(restored.restartReadyPath, "/private/ready")
+      XCTAssertEqual(restored.restartContinuePath, "/private/continue")
+    }
+  }
 
-    XCTAssertThrowsError(try ConsumerConfig.decode(from: data))
+  func testPrivateFileReaderRejectsFIFOWithoutAWriter() throws {
+    let path = FileManager.default.temporaryDirectory
+      .appendingPathComponent("current-hub-consumer-fifo-\(UUID().uuidString)")
+    XCTAssertEqual(mkfifo(path.path, 0o600), 0)
+    defer { try? FileManager.default.removeItem(at: path) }
+
+    XCTAssertThrowsError(try OwnerOnlyFileReader.read(path: path.path, maximumBytes: 64)) {
+      XCTAssertEqual($0 as? ConsumerPrivateInputError, .notRegular)
+    }
   }
 
   func testPrivateFileReaderRejectsGroupReadableAndOversizedFiles() throws {
@@ -254,6 +280,10 @@ final class CurrentHubConsumerTests: XCTestCase {
     }
 
     XCTAssertEqual(chmod(fileURL.path, 0o600), 0)
+    XCTAssertEqual(
+      try OwnerOnlyFileReader.read(path: fileURL.path, maximumBytes: 64),
+      Data("private".utf8)
+    )
     XCTAssertThrowsError(
       try OwnerOnlyFileReader.read(path: fileURL.path, maximumBytes: 4)
     ) { error in

@@ -99,12 +99,21 @@ public struct TeslatlasCommandClient: Sendable {
       )
     }
     do {
+      try RichRepresentationValidator.validate(response.body, representation: "command.command_job")
       let job = try JSONDecoder().decode(CommandJob.self, from: response.body)
+      guard job.vehicleID == requestBody.vehicleID,
+        job.command == requestBody.command,
+        job.commandClass == requestBody.commandClass
+      else {
+        throw TeslatlasCommandError.invalidResponse("202 job does not match the submitted intent")
+      }
       return CommandAcceptance(
         job: job,
         entityTag: EntityTag(rawETag),
         location: location
       )
+    } catch let error as TeslatlasCommandError {
+      throw error
     } catch {
       throw TeslatlasCommandError.invalidResponse(
         "202 body does not match the command job schema"

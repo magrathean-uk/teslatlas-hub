@@ -10,9 +10,12 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 import stat
+import sys
 import subprocess
 import tempfile
 from typing import Any, Iterable
+
+import owned_command
 
 
 SCHEMA_VERSION = 1
@@ -26,7 +29,8 @@ PUBLIC_PRODUCTS = (
     "TeslatlasHubV1Compatibility",
     "TeslatlasCurrentHub",
 )
-ROOT_FILES = ("Package.swift", "VERSION", "LICENSE", "README.md")
+LEGACY_ROOT_FILES = ("Package.swift", "VERSION", "LICENSE", "README.md")
+ROOT_FILES = LEGACY_ROOT_FILES + ("NOTICE",)
 SOURCE_DIRECTORIES = (
     "Sources",
     "Tests",
@@ -167,9 +171,9 @@ def _walk_selected_directory(source_root: Path, directory: Path) -> list[str]:
     return selected
 
 
-def _selected_source_files(source_root: Path) -> list[str]:
+def _selected_source_files(source_root: Path, *, root_files=ROOT_FILES) -> list[str]:
     source_root = source_root.resolve(strict=True)
-    selected: set[str] = set(ROOT_FILES + PUBLIC_DOCUMENTS)
+    selected: set[str] = set(tuple(root_files) + PUBLIC_DOCUMENTS)
     for directory_name in SOURCE_DIRECTORIES:
         directory = source_root / directory_name
         if directory.is_symlink():
@@ -264,7 +268,7 @@ def _normalize_tree_metadata(root: Path) -> None:
         os.utime(current_path, ns=(FIXED_TIMESTAMP_NS, FIXED_TIMESTAMP_NS))
 
 
-def prepare(source_root: Path, output: Path) -> dict[str, Any]:
+def prepare(source_root: Path, output: Path, *, root_files=ROOT_FILES) -> dict[str, Any]:
     source_root = source_root.resolve(strict=True)
     output = output.resolve()
     if output.exists():
@@ -278,7 +282,7 @@ def prepare(source_root: Path, output: Path) -> dict[str, Any]:
         source_files = _copy_files(
             source_root,
             package_root,
-            _selected_source_files(source_root),
+            _selected_source_files(source_root, root_files=root_files),
         )
         consumer_files = _write_consumer(temporary)
         identity_payload = _identity_payload(source_files)
@@ -308,7 +312,7 @@ def prepare(source_root: Path, output: Path) -> dict[str, Any]:
         raise
 
     try:
-        verify(output)
+        verify(output, allow_legacy=root_files == LEGACY_ROOT_FILES)
     except BaseException:
         shutil.rmtree(output, ignore_errors=True)
         raise
@@ -456,7 +460,7 @@ def _verify_file_records(root: Path, records: Any, label: str) -> None:
             raise HandoffError(f"{label} file bytes differ: {record['path']}")
 
 
-def verify(handoff_root: Path) -> dict[str, Any]:
+def verify(handoff_root: Path, *, allow_legacy=False) -> dict[str, Any]:
     handoff_root = handoff_root.absolute()
     try:
         root_information = handoff_root.lstat()
@@ -512,6 +516,8 @@ def verify(handoff_root: Path) -> dict[str, Any]:
     if package_root.name != CANONICAL_ROOT:
         raise HandoffError("source package root name changed")
     _verify_file_records(package_root, source["files"], "source package")
+    if not allow_legacy and "NOTICE" not in {record["path"] for record in source["files"]}:
+        raise HandoffError("current source handoff is missing NOTICE")
     identity = _identity_payload(source["files"])
     if source["identity_sha256"] != _sha256(_canonical_json(identity)):
         raise HandoffError("source package identity digest differs")
@@ -564,12 +570,10 @@ def verify(handoff_root: Path) -> dict[str, Any]:
 
 
 def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
+    completed = owned_command.run(
         command,
-        check=False,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        timeout=owned_command.BUILD_SECONDS if "build" in command else owned_command.INSPECTION_SECONDS,
     )
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
@@ -639,9 +643,15 @@ def smoke(handoff_root: Path) -> dict[str, Any]:
                 ]
             )
     finally:
-        _remove_swiftpm_generated_paths(handoff_root)
-        _normalize_tree_metadata(handoff_root)
-        verify(handoff_root)
+        original_error = sys.exception()
+        try:
+            _remove_swiftpm_generated_paths(handoff_root)
+            _normalize_tree_metadata(handoff_root)
+            verify(handoff_root)
+        except BaseException as cleanup_error:
+            if original_error is None:
+                raise
+            original_error.add_note(f"handoff cleanup failed: {cleanup_error}")
     return {
         "source_package_identity_sha256": manifest["source_package"]["identity_sha256"],
         "canonical_root": CANONICAL_ROOT,
@@ -705,7 +715,7 @@ def main() -> int:
             output = smoke(arguments.handoff)
         else:
             output = exercise(arguments.source_root)
-    except (HandoffError, OSError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
+    except (HandoffError, owned_command.CommandError, OSError, subprocess.CalledProcessError, json.JSONDecodeError) as error:
         raise SystemExit(f"source handoff failed: {error}") from error
     print(json.dumps(output, indent=2, sort_keys=True))
     return 0

@@ -14,7 +14,19 @@ public actor CurrentHubClient {
   private let expectedHubID: UUID
   private let credentialStore: any CurrentHubCredentialStore
   private let transport: any CurrentHubHTTPTransport
+  private let nowMilliseconds: @Sendable () -> Int64
   private var discovery: CurrentHubDiscovery
+  private var identityFailure: CurrentHubError?
+  private var identityGeneration: UInt64 = 0
+  private var credentialGeneration: UInt64 = 0
+  private var pendingIssuedCredential: CurrentHubCredential?
+  private var credentialMutationInProgress = false
+
+  private struct RequestContext {
+    let discovery: CurrentHubDiscovery
+    let identityGeneration: UInt64
+    let credentialGeneration: UInt64
+  }
 
   private init(
     binding: CurrentHubBinding,
@@ -22,7 +34,8 @@ public actor CurrentHubClient {
     expectedHubID: UUID,
     credentialStore: any CurrentHubCredentialStore,
     transport: any CurrentHubHTTPTransport,
-    discovery: CurrentHubDiscovery
+    discovery: CurrentHubDiscovery,
+    nowMilliseconds: @escaping @Sendable () -> Int64
   ) {
     self.binding = binding
     self.endpoint = endpoint
@@ -30,6 +43,7 @@ public actor CurrentHubClient {
     self.credentialStore = credentialStore
     self.transport = transport
     self.discovery = discovery
+    self.nowMilliseconds = nowMilliseconds
   }
 
   public static func connect(
@@ -68,14 +82,18 @@ public actor CurrentHubClient {
     endpoint: URL,
     expectedHubID: UUID,
     credentialStore: any CurrentHubCredentialStore,
-    transport: any CurrentHubHTTPTransport
+    transport: any CurrentHubHTTPTransport,
+    nowMilliseconds: @escaping @Sendable () -> Int64 = {
+      Int64(Date().timeIntervalSince1970 * 1_000)
+    }
   ) async throws -> CurrentHubClient {
     try await connect(
       binding: CurrentHubBinding.load(),
       endpoint: endpoint,
       expectedHubID: expectedHubID,
       credentialStore: credentialStore,
-      transport: transport
+      transport: transport,
+      nowMilliseconds: nowMilliseconds
     )
   }
 
@@ -84,7 +102,10 @@ public actor CurrentHubClient {
     endpoint endpointURL: URL,
     expectedHubID: UUID,
     credentialStore: any CurrentHubCredentialStore,
-    transport: any CurrentHubHTTPTransport
+    transport: any CurrentHubHTTPTransport,
+    nowMilliseconds: @escaping @Sendable () -> Int64 = {
+      Int64(Date().timeIntervalSince1970 * 1_000)
+    }
   ) async throws -> CurrentHubClient {
     guard expectedHubID != UUID.currentHubZero else {
       throw CurrentHubError.invalidRequest("expected Hub identity must not be nil UUID")
@@ -102,7 +123,8 @@ public actor CurrentHubClient {
       expectedHubID: expectedHubID,
       credentialStore: credentialStore,
       transport: transport,
-      discovery: discovery
+      discovery: discovery,
+      nowMilliseconds: nowMilliseconds
     )
   }
 
@@ -110,14 +132,55 @@ public actor CurrentHubClient {
 
   @discardableResult
   public func refreshDiscovery() async throws -> CurrentHubDiscovery {
-    let value = try await Self.fetchDiscovery(
-      binding: binding,
-      endpoint: endpoint,
-      expectedHubID: expectedHubID,
-      transport: transport
-    )
+    let generation = identityGeneration
+    let value: CurrentHubDiscovery
+    do {
+      value = try await Self.fetchDiscovery(
+        binding: binding,
+        endpoint: endpoint,
+        expectedHubID: expectedHubID,
+        transport: transport
+      )
+    } catch let error as CurrentHubError {
+      if case .hubIdentityMismatch = error {
+        identityFailure = error
+        identityGeneration &+= 1
+      }
+      throw error
+    }
+    guard generation == identityGeneration else {
+      throw identityFailure ?? CurrentHubError.invalidRequest(
+        "discovery identity context changed; retry revalidation"
+      )
+    }
     discovery = value
+    identityFailure = nil
     return value
+  }
+
+  /// An issued credential retained until its store save succeeds. This value and its
+  /// explicit secret archive can be used to recover a failed save without issuing again.
+  public func pendingCredentialForPersistence() -> CurrentHubCredential? {
+    pendingIssuedCredential
+  }
+
+  /// Retries only local persistence; it never repeats the remote claim or rotation.
+  @discardableResult
+  public func retryCredentialPersistence() async throws -> CurrentHubCredential {
+    guard !credentialMutationInProgress else {
+      throw CurrentHubError.invalidRequest("credential issuance or persistence is already in progress")
+    }
+    guard let credential = pendingIssuedCredential else {
+      throw CurrentHubError.invalidRequest("there is no issued credential awaiting persistence")
+    }
+    guard credential.expiresAtMilliseconds > nowMilliseconds() else {
+      throw CurrentHubError.credentialExpired
+    }
+    credentialMutationInProgress = true
+    defer { credentialMutationInProgress = false }
+    try await credentialStore.saveCredential(credential)
+    pendingIssuedCredential = nil
+    return credential
   }
 
   public func health() async throws -> CurrentHubHealth {
@@ -153,6 +216,8 @@ public actor CurrentHubClient {
     invitation: CurrentHubInvitation,
     deviceName: String
   ) async throws -> CurrentHubCredential {
+    let context = requestContext()
+    try requireTrustedIdentity(context)
     try validate(invitation: invitation)
     guard !deviceName.isEmpty, deviceName.utf8.count <= 65_536,
       deviceName.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) })
@@ -175,10 +240,13 @@ public actor CurrentHubClient {
         "current-Hub claim transport must own invitation leaf pin validation"
       )
     }
+    try beginCredentialMutation()
+    defer { credentialMutationInProgress = false }
     let response = try await send(
       request,
       using: pinningTransport,
-      validatingLeafCertificateSHA256: invitation.tlsPin
+      validatingLeafCertificateSHA256: invitation.tlsPin,
+      context: context
     )
     let envelope = try decodeSuccess(
       CurrentHubClaimEnvelope.self,
@@ -187,15 +255,19 @@ public actor CurrentHubClient {
     )
     let credential = try envelope.credential()
     try requireFreshlyIssued(credential, response: response, operation: "pairing claim")
-    try await credentialStore.saveCredential(credential)
+    try await persistIssuedCredential(credential)
     return credential
   }
 
   public func rotateCredential() async throws -> CurrentHubCredential {
+    try requireTrustedIdentity(requestContext())
+    try beginCredentialMutation()
+    defer { credentialMutationInProgress = false }
+    let context = requestContext()
     var request = request(path: "/v1/device/rotate")
     request.httpMethod = "POST"
-    try await authorize(&request)
-    let response = try await send(request)
+    try await authorize(&request, context: context, allowingCredentialMutation: true)
+    let response = try await send(request, context: context, allowingCredentialMutation: true)
     let envelope = try decodeSuccess(
       CurrentHubClaimEnvelope.self,
       response: response,
@@ -203,14 +275,15 @@ public actor CurrentHubClient {
     )
     let credential = try envelope.credential()
     try requireFreshlyIssued(credential, response: response, operation: "credential rotation")
-    try await credentialStore.saveCredential(credential)
+    try await persistIssuedCredential(credential)
     return credential
   }
 
   public func vehicles() async throws -> [CurrentHubVehicle] {
+    let context = requestContext()
     var request = request(path: "/v1/vehicles")
-    try await authorize(&request)
-    let response = try await send(request)
+    try await authorize(&request, context: context)
+    let response = try await send(request, context: context)
     if response.statusCode == 200 {
       try requireObjectKeys(
         response,
@@ -231,16 +304,18 @@ public actor CurrentHubClient {
   }
 
   public func current(vehicleID: UUID) async throws -> CurrentHubCurrentState {
+    let context = requestContext()
     try validateVehicleID(vehicleID)
     var request = request(
       path: "/v1/vehicles/\(vehicleID.uuidString.lowercased())/current"
     )
-    try await authorize(&request)
-    let response = try await send(request)
+    try await authorize(&request, context: context)
+    let response = try await send(request, context: context)
     if response.statusCode == 200 {
       try requireObjectKeys(
         response,
         required: CurrentHubCurrentState.requiredWireKeys,
+        nullableObjectKeys: ["car": CurrentHubProjectionCar.requiredWireKeys],
         context: "current state"
       )
     }
@@ -260,8 +335,9 @@ public actor CurrentHubClient {
     query: CurrentHubDriveQuery = CurrentHubDriveQuery(),
     ifNoneMatch: CurrentHubEntityTag? = nil
   ) async throws -> CurrentHubDrivePageResult {
+    let context = requestContext()
     try validateVehicleID(vehicleID)
-    guard discovery.capabilities.contains("query.drives") else {
+    guard context.discovery.capabilities.contains("query.drives") else {
       throw CurrentHubError.capabilityUnavailable("query.drives")
     }
     let resolved = try resolve(query)
@@ -269,16 +345,19 @@ public actor CurrentHubClient {
       path: "/v1/vehicles/\(vehicleID.uuidString.lowercased())/drives",
       queryItems: resolved.items
     )
-    try await authorize(&request)
+    try await authorize(&request, context: context)
     if let ifNoneMatch {
       request.setValue(ifNoneMatch.rawValue, forHTTPHeaderField: "If-None-Match")
     }
-    let response = try await send(request)
+    let response = try await send(request, context: context)
     if response.statusCode == 304 {
       guard response.body.isEmpty else {
         throw invalid(response, reason: "304 drive response must have an empty body")
       }
       let eTag = try driveHeaders(response)
+      guard let ifNoneMatch, eTag == ifNoneMatch else {
+        throw invalid(response, reason: "304 drive response must match the sent strong ETag")
+      }
       return .notModified(eTag: eTag)
     }
     try requireSuccess(response, operation: "drives")
@@ -389,17 +468,83 @@ public actor CurrentHubClient {
     return request
   }
 
-  private func authorize(_ request: inout URLRequest) async throws {
+  private func requestContext() -> RequestContext {
+    RequestContext(
+      discovery: discovery,
+      identityGeneration: identityGeneration,
+      credentialGeneration: credentialGeneration
+    )
+  }
+
+  private func requireTrustedIdentity(_ context: RequestContext) throws {
+    if let identityFailure { throw identityFailure }
+    guard context.identityGeneration == identityGeneration else {
+      throw CurrentHubError.invalidRequest("request identity context changed; retry after discovery revalidation")
+    }
+  }
+
+  private func requireCredentialDispatch(
+    _ context: RequestContext,
+    allowingCredentialMutation: Bool
+  ) throws {
+    try requireTrustedIdentity(context)
+    guard context.credentialGeneration == credentialGeneration else {
+      throw CurrentHubError.invalidRequest("request credential context changed; retry with the stored credential")
+    }
+    guard pendingIssuedCredential == nil else {
+      throw CurrentHubError.invalidRequest("issued credential requires retryCredentialPersistence before authenticated requests")
+    }
+    guard allowingCredentialMutation || !credentialMutationInProgress else {
+      throw CurrentHubError.invalidRequest("credential issuance or persistence is already in progress")
+    }
+  }
+
+  private func beginCredentialMutation() throws {
+    guard !credentialMutationInProgress else {
+      throw CurrentHubError.invalidRequest("credential issuance or persistence is already in progress")
+    }
+    if let credential = pendingIssuedCredential,
+      credential.expiresAtMilliseconds <= nowMilliseconds()
+    {
+      pendingIssuedCredential = nil
+    }
+    guard pendingIssuedCredential == nil else {
+      throw CurrentHubError.invalidRequest("issued credential requires retryCredentialPersistence before another claim or rotation")
+    }
+    credentialMutationInProgress = true
+    credentialGeneration &+= 1
+  }
+
+  private func persistIssuedCredential(_ credential: CurrentHubCredential) async throws {
+    pendingIssuedCredential = credential
+    try await credentialStore.saveCredential(credential)
+    pendingIssuedCredential = nil
+  }
+
+  private func authorize(
+    _ request: inout URLRequest,
+    context: RequestContext,
+    allowingCredentialMutation: Bool = false
+  ) async throws {
+    try requireCredentialDispatch(context, allowingCredentialMutation: allowingCredentialMutation)
     guard let credential = try await credentialStore.loadCredential() else {
       throw CurrentHubError.unauthorized(requestID: nil)
     }
-    guard credential.expiresAtMilliseconds > Self.currentTimeMilliseconds else {
+    try requireCredentialDispatch(context, allowingCredentialMutation: allowingCredentialMutation)
+    guard credential.expiresAtMilliseconds > nowMilliseconds() else {
       throw CurrentHubError.credentialExpired
     }
     credential.apply(to: &request)
   }
 
-  private func send(_ request: URLRequest) async throws -> CurrentHubHTTPResponse {
+  private func send(
+    _ request: URLRequest,
+    context: RequestContext? = nil,
+    allowingCredentialMutation: Bool = false
+  ) async throws -> CurrentHubHTTPResponse {
+    if let context {
+      try requireCredentialDispatch(context, allowingCredentialMutation: allowingCredentialMutation)
+    }
     do {
       let response = try await transport.send(request)
       try endpoint.requireSameOrigin(response.finalURL)
@@ -413,8 +558,10 @@ public actor CurrentHubClient {
   private func send(
     _ request: URLRequest,
     using transport: any CurrentHubInvitationPinningTransport,
-    validatingLeafCertificateSHA256 expectedLeafCertificateSHA256: String
+    validatingLeafCertificateSHA256 expectedLeafCertificateSHA256: String,
+    context: RequestContext
   ) async throws -> CurrentHubHTTPResponse {
+    try requireTrustedIdentity(context)
     do {
       let response = try await transport.send(
         request,
@@ -433,7 +580,7 @@ public actor CurrentHubClient {
     response: CurrentHubHTTPResponse,
     operation: String
   ) throws {
-    guard credential.expiresAtMilliseconds > Self.currentTimeMilliseconds else {
+    guard credential.expiresAtMilliseconds > nowMilliseconds() else {
       throw invalid(response, reason: "\(operation) returned an expired credential")
     }
   }
@@ -536,7 +683,7 @@ public actor CurrentHubClient {
     else {
       throw CurrentHubError.invalidRequest("pairing invitation identity, endpoint, secret, or TLS pin is invalid")
     }
-    guard invitation.expiresAtMilliseconds > Self.currentTimeMilliseconds else {
+    guard invitation.expiresAtMilliseconds > nowMilliseconds() else {
       throw CurrentHubError.invitationExpired
     }
     let pairingEndpoint = URLComponents(url: invitation.pairingURI, resolvingAgainstBaseURL: false)
@@ -565,6 +712,7 @@ public actor CurrentHubClient {
     required: Set<String>,
     arrayKey: String? = nil,
     rootRequired: Set<String> = [],
+    nullableObjectKeys: [String: Set<String>] = [:],
     context: String
   ) throws {
     guard let root = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any],
@@ -584,6 +732,16 @@ public actor CurrentHubClient {
     guard objects.allSatisfy({ required.isSubset(of: Set($0.keys)) }) else {
       throw invalid(response, reason: "\(context) response is missing required fields")
     }
+    for object in objects {
+      for (key, nestedRequired) in nullableObjectKeys {
+        if object[key] is NSNull { continue }
+        guard let nested = object[key] as? [String: Any],
+          nestedRequired.isSubset(of: Set(nested.keys))
+        else {
+          throw invalid(response, reason: "\(context) \(key) is missing required fields")
+        }
+      }
+    }
   }
 
   private static let readinessReasons: Set<String> = [
@@ -591,9 +749,6 @@ public actor CurrentHubClient {
     "collector_absent", "collector_stale", "collector_auth_terminal",
   ]
 
-  private static var currentTimeMilliseconds: Int64 {
-    Int64(Date().timeIntervalSince1970 * 1_000)
-  }
 }
 
 struct CurrentHubEndpoint: Sendable {

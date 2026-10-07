@@ -29,7 +29,12 @@ invitation JSON file, a device name, expected vehicle counts, and two new
 owner-only output paths. The configuration file and invitation are bounded to
 64 KiB. They must be regular files owned by the current user, without group or
 other permissions, and are opened without following symlinks. The output
-paths are created exclusively with mode `0600`.
+paths are reserved exclusively with mode `0600` before connecting or claiming,
+and their descriptors remain open until their writes finish. An existing path or
+unavailable parent fails before any one-use claim. On failure, the sample removes
+only its own empty reservations; after a successful claim it retains the device-ID
+receipt for cleanup even if a later journey check fails. Admission cannot guarantee
+that a later write succeeds if storage becomes unavailable.
 
 ## Configuration
 
@@ -70,6 +75,13 @@ once and verifies that the old credential no longer works. When both restart
 paths are configured, an external supervisor can restart the Hub while the
 consumer waits, after which the consumer verifies the same identity and a
 redacted semantic snapshot.
+
+The accumulated drive journey requires descending `(start_date_ms, id)` order
+across page boundaries and distinct drive IDs for that vehicle. A page overlap,
+a newer boundary tuple, or a repeated ID fails with `invalid_drive_page`. These
+are this consumer's acceptance checks; the current Hub profile has no public
+snapshot revision, so changing history can cause a journey to fail. Cursors stay
+opaque and keep the same vehicle and query window throughout paging.
 
 The credential is held in an in-memory actor store for the process lifetime.
 The sample does not persist credentials or revoke a device on the server. A

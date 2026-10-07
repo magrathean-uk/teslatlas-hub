@@ -22,6 +22,8 @@ public struct TeslatlasEventEnvelope: Codable, Equatable, Sendable {
 public enum TeslatlasEventStreamOutput: Equatable, Sendable {
   case event(TeslatlasEventEnvelope)
   case retry(milliseconds: UInt64)
+  /// Clear the caller's persisted Last-Event-ID, including for id-only blocks.
+  case replayReset
 }
 
 public enum TeslatlasEventDecodingError: Error, Equatable, Sendable {
@@ -73,8 +75,10 @@ public struct TeslatlasEventStreamDecoder: Sendable {
 
   private var framingDecoder: ServerSentEventDecoder
 
+  /// The default line budget includes a full default event and the `data: ` prefix.
+  /// Explicit line and aggregate event budgets remain independent finite limits.
   public init(
-    maximumLineBytes: Int = 64 * 1_024,
+    maximumLineBytes: Int = 8 * 1_024 * 1_024 + 6,
     maximumEventDataBytes: Int = 8 * 1_024 * 1_024
   ) {
     framingDecoder = ServerSentEventDecoder(
@@ -109,6 +113,8 @@ public struct TeslatlasEventStreamDecoder: Sendable {
     var result: [TeslatlasEventStreamOutput] = []
     for output in outputs {
       switch output {
+      case .replayReset:
+        result.append(.replayReset)
       case .retry(let milliseconds):
         result.append(.retry(milliseconds: min(milliseconds, 30_000)))
       case .event(let event):
@@ -123,9 +129,11 @@ public struct TeslatlasEventStreamDecoder: Sendable {
         }
         let envelope: TeslatlasEventEnvelope
         do {
+          let data = Data(event.data.utf8)
+          try RichRepresentationValidator.validate(data, representation: "event.envelope")
           envelope = try JSONDecoder().decode(
             TeslatlasEventEnvelope.self,
-            from: Data(event.data.utf8)
+            from: data
           )
         } catch {
           throw TeslatlasEventDecodingError.malformedEnvelope
@@ -153,6 +161,26 @@ public struct TeslatlasEventStreamDecoder: Sendable {
     _ envelope: TeslatlasEventEnvelope
   ) throws {
     guard case .object(let object) = envelope.data else {
+      throw TeslatlasEventDecodingError.malformedEnvelope
+    }
+    let representation: String
+    switch envelope.eventType {
+    case "observation.admitted": representation = "observation"
+    case "vehicle.current.changed": representation = "resources.current_state"
+    case "drive.started", "drive.updated", "drive.ended": representation = "resources.drive"
+    case "charge.started", "charge.updated", "charge.ended": representation = "resources.charge"
+    case "state.changed": representation = "resources.state_interval"
+    case "software_update.changed": representation = "resources.software_update"
+    case "data_quality.changed": representation = "data-quality"
+    case "command.changed": representation = "command.command_job"
+    case "metadata.changed":
+      representation = object["revision"] == nil
+        ? "metadata.metadata_tombstone" : "metadata.metadata_record"
+    default: throw TeslatlasEventDecodingError.malformedEnvelope
+    }
+    do {
+      try RichRepresentationValidator.validate(envelope.data, representation: representation)
+    } catch {
       throw TeslatlasEventDecodingError.malformedEnvelope
     }
 

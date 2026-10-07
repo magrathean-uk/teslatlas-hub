@@ -326,8 +326,10 @@ int current_hub_curl_operation_perform(current_hub_curl_operation *operation) {
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, operation->headers);
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 0L);
   curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 0L);
-  curl_easy_setopt(curl, CURLOPT_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
-  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS));
+  long allowed_protocols = operation->expected_leaf_sha256[0] != '\0'
+    ? (long)CURLPROTO_HTTPS : (long)(CURLPROTO_HTTP | CURLPROTO_HTTPS);
+  curl_easy_setopt(curl, CURLOPT_PROTOCOLS, allowed_protocols);
+  curl_easy_setopt(curl, CURLOPT_REDIR_PROTOCOLS, allowed_protocols);
   curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);

@@ -11,6 +11,8 @@ public actor HubV1Client {
   private let credential: HubV1BearerCredential
   private let transport: any HubV1HTTPTransport
   private var discovery: HubV1Discovery
+  private var mismatchedHubID: UUID?
+  private var identityGeneration: UInt64 = 0
 
   private init(
     binding: HubV1WireBinding,
@@ -77,13 +79,30 @@ public actor HubV1Client {
 
   @discardableResult
   public func refreshDiscovery() async throws -> HubV1Discovery {
-    let refreshed = try await Self.fetchDiscovery(
-      binding: binding,
-      endpoint: endpoint,
-      expectedHubID: expectedHubID,
-      transport: transport
-    )
+    let generation = identityGeneration
+    let refreshed: HubV1Discovery
+    do {
+      refreshed = try await Self.fetchDiscovery(
+        binding: binding,
+        endpoint: endpoint,
+        expectedHubID: expectedHubID,
+        transport: transport
+      )
+    } catch let error as HubV1Error {
+      if case .hubIdentityMismatch(_, let actual) = error {
+        mismatchedHubID = actual
+        identityGeneration &+= 1
+      }
+      throw error
+    }
+    guard generation == identityGeneration else {
+      if let mismatchedHubID {
+        throw HubV1Error.hubIdentityMismatch(expected: expectedHubID, actual: mismatchedHubID)
+      }
+      throw HubV1Error.invalidRequest("discovery identity context changed; retry revalidation")
+    }
     discovery = refreshed
+    mismatchedHubID = nil
     return refreshed
   }
 
@@ -92,7 +111,9 @@ public actor HubV1Client {
     let request = try authenticatedRequest(route: route)
     let response = try await send(request)
     try requireJSONSuccess(response, operation: .vehicles)
-    try HubV1JSONShape.validateVehicleList(response.body, binding: binding)
+    try Self.validateResponseShape(response, binding: binding) {
+      try HubV1JSONShape.validateVehicleList(response.body, binding: binding)
+    }
 
     do {
       return try JSONDecoder().decode(
@@ -116,7 +137,9 @@ public actor HubV1Client {
     let request = try authenticatedRequest(route: route, vehicleID: vehicleID)
     let response = try await send(request)
     try requireJSONSuccess(response, operation: .currentState)
-    try HubV1JSONShape.validateCurrentState(response.body, binding: binding)
+    try Self.validateResponseShape(response, binding: binding) {
+      try HubV1JSONShape.validateCurrentState(response.body, binding: binding)
+    }
 
     let state: HubV1CurrentState
     do {
@@ -157,6 +180,13 @@ public actor HubV1Client {
     let response = try await send(request)
 
     if response.statusCode == binding.responses.notModifiedStatus {
+      guard let ifNoneMatch else {
+        throw HubV1Error.invalidResponse(
+          statusCode: response.statusCode,
+          requestID: response.header(binding.responses.requestIDHeader),
+          reason: "304 drive response requires a sent conditional validator"
+        )
+      }
       guard response.body.isEmpty else {
         throw HubV1Error.invalidResponse(
           statusCode: binding.responses.notModifiedStatus,
@@ -164,12 +194,22 @@ public actor HubV1Client {
           reason: "304 drive response must not contain a body"
         )
       }
-      return .notModified(eTag: try requireStrongETag(response))
+      let eTag = try requireStrongETag(response)
+      guard eTag == ifNoneMatch else {
+        throw HubV1Error.invalidResponse(
+          statusCode: response.statusCode,
+          requestID: response.header(binding.responses.requestIDHeader),
+          reason: "304 drive response ETag does not match the sent validator"
+        )
+      }
+      return .notModified(eTag: eTag)
     }
 
     try requireJSONSuccess(response, operation: .drives)
     let eTag = try requireStrongETag(response)
-    try HubV1JSONShape.validateDrivePage(response.body, binding: binding)
+    try Self.validateResponseShape(response, binding: binding) {
+      try HubV1JSONShape.validateDrivePage(response.body, binding: binding)
+    }
 
     let envelope: HubV1DrivePageEnvelope
     do {
@@ -193,7 +233,15 @@ public actor HubV1Client {
 
     let nextCursor: HubV1DriveCursor?
     if let rawCursor = envelope.nextCursor {
-      nextCursor = try HubV1DriveCursor(rawValue: rawCursor)
+      do {
+        nextCursor = try HubV1DriveCursor(rawValue: rawCursor)
+      } catch {
+        throw HubV1Error.invalidResponse(
+          statusCode: response.statusCode,
+          requestID: response.header(binding.responses.requestIDHeader),
+          reason: "drive page next cursor is invalid"
+        )
+      }
     } else {
       nextCursor = nil
     }
@@ -232,7 +280,9 @@ public actor HubV1Client {
       )
     }
     try requireJSONContentType(response, binding: binding)
-    try HubV1JSONShape.validateDiscovery(response.body, binding: binding)
+    try validateResponseShape(response, binding: binding) {
+      try HubV1JSONShape.validateDiscovery(response.body, binding: binding)
+    }
 
     let document: HubV1Discovery
     do {
@@ -315,6 +365,12 @@ public actor HubV1Client {
     queryItems: [URLQueryItem] = [],
     ifNoneMatch: HubV1EntityTag? = nil
   ) throws -> URLRequest {
+    if let mismatchedHubID {
+      throw HubV1Error.hubIdentityMismatch(
+        expected: expectedHubID,
+        actual: mismatchedHubID
+      )
+    }
     guard discovery.capabilities.contains(route.requiredCapability) else {
       throw HubV1Error.capabilityUnavailable(route.requiredCapability)
     }
@@ -485,7 +541,9 @@ public actor HubV1Client {
       )
     {
       do {
-        try HubV1JSONShape.validateAPIError(response.body, binding: binding)
+        try Self.validateResponseShape(response, binding: binding) {
+          try HubV1JSONShape.validateAPIError(response.body, binding: binding)
+        }
         let envelope = try JSONDecoder().decode(
           HubV1APIErrorEnvelope.self,
           from: response.body
@@ -573,6 +631,23 @@ public actor HubV1Client {
         statusCode: response.statusCode,
         requestID: response.header(binding.responses.requestIDHeader),
         reason: "response Content-Type is not application/json"
+      )
+    }
+  }
+
+  private static func validateResponseShape(
+    _ response: HubV1HTTPResponse,
+    binding: HubV1WireBinding,
+    validation: () throws -> Void
+  ) throws {
+    do {
+      try validation()
+    } catch let error as HubV1Error {
+      guard case .invalidResponse(_, _, let reason) = error else { throw error }
+      throw HubV1Error.invalidResponse(
+        statusCode: response.statusCode,
+        requestID: response.header(binding.responses.requestIDHeader),
+        reason: reason
       )
     }
   }

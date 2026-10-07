@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import uuid
 import re
 import select
 import socket
@@ -223,10 +224,11 @@ def write_exclusive_json(path, value):
     target = Path(path)
     raw = canonical_json_bytes(value) + b"\n"
     parent, leaf = _open_private_parent(target, "exclusive output")
+    staged = "." + leaf + "." + uuid.uuid4().hex + ".pending"
     try:
         try:
             descriptor = os.open(
-                leaf,
+                staged,
                 os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                 0o600,
                 dir_fd=parent,
@@ -243,8 +245,18 @@ def write_exclusive_json(path, value):
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
+        # A hard-link publishes the completed inode atomically and refuses to
+        # replace an existing final name. Rename would replace another writer.
+        try:
+            os.link(staged, leaf, src_dir_fd=parent, dst_dir_fd=parent, follow_symlinks=False)
+        except OSError as error:
+            raise MatrixWireError("exclusive output is unavailable") from error
         os.fsync(parent)
     finally:
+        try:
+            os.unlink(staged, dir_fd=parent)
+        except FileNotFoundError:
+            pass
         os.close(parent)
     return {"path": str(target.resolve()), "sha256": hashlib.sha256(raw).hexdigest()}
 

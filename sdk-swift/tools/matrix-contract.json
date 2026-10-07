@@ -478,6 +478,6 @@
   ],
   "validator": {
     "path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-sdk-swift/tools/matrix_contract.py",
-    "sha256": "1019fbfc64c91038dbc68025bf31fb9483abb0cba13588440ab0861892b083df"
+    "sha256": "fc102b7853e83c9269b6477abaf59ca1df5f438e1fd151bac5c3bd4144f3aef5"
   }
 }

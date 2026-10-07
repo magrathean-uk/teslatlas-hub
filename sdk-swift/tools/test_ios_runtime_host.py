@@ -1,4 +1,8 @@
-"""Contract checks for the SDK-owned iOS XCTest application host."""
+"""Source-only wiring smoke checks for the SDK-owned iOS XCTest host.
+
+Import markers, project declarations and target listings do not demonstrate
+execution or behaviour of a public SDK product.
+"""
 
 from __future__ import annotations
 
@@ -22,6 +26,20 @@ PRODUCTS = (
 
 
 class IOSRuntimeHostTests(unittest.TestCase):
+    def test_included_support_hash_dependency_is_in_sdk_source(self):
+        """The small host must not depend on an excluded SwiftPM test file."""
+        support = "CurrentHubTestSupport.swift"
+        for declaration in (SPEC, PROJECT / "project.pbxproj"):
+            contents = declaration.read_text(encoding="utf-8")
+            self.assertIn(support, contents)
+            self.assertNotIn("CurrentHubMatrixWorkerTests.swift", contents)
+        contents = (ROOT / "Tests/TeslatlasCurrentHubTests" / support).read_text()
+        self.assertNotIn("MatrixSHA256", contents)
+        self.assertIn("CurrentHubSHA256.hexDigest(of:", contents)
+        sdk = (ROOT / "Sources/TeslatlasCurrentHub/CurrentHubSHA256.swift").read_text()
+        self.assertIn("enum CurrentHubSHA256", sdk)
+        self.assertIn("static func hexDigest(of data: Data)", sdk)
+
     def test_host_spec_declares_app_test_target_and_local_package(self):
         self.assertTrue(SPEC.is_file(), f"missing iOS host spec: {SPEC}")
         contents = SPEC.read_text(encoding="utf-8")
@@ -45,7 +63,7 @@ class IOSRuntimeHostTests(unittest.TestCase):
         self.assertIn("CurrentHubRuntimeTests.xctest", contents)
         self.assertIn("TestAction", contents)
 
-    def test_host_probe_imports_every_public_product(self):
+    def test_host_probe_contains_public_product_import_markers(self):
         contents = (HOST / "Sources/PlatformSurfaceProbe.swift").read_text(
             encoding="utf-8"
         )

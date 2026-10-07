@@ -9,6 +9,7 @@ import threading
 import unittest
 from pathlib import Path
 from types import MappingProxyType
+from urllib.parse import unquote
 
 import jsonschema
 
@@ -54,12 +55,32 @@ def _raw(actor_id, operation, facts, requests=(), before=7, after=7,
     })
 
 
+def _test_scope_witness(value):
+    return "sha256-" + hashlib.sha256(value.encode()).hexdigest()
+
+
+def _test_private_scope(scope):
+    path, separator, query = scope.partition("?")
+    pieces = path.split("/")
+    if len(pieces) >= 4 and pieces[1] == "v1" and pieces[2] in {"vehicles", "pairings"}:
+        pieces[3] = _test_scope_witness(unquote(pieces[3]))
+    if separator:
+        parts = []
+        for item in query.split("&"):
+            name, equals, value = item.partition("=")
+            if equals and name not in {"limit", "from_ms", "to_ms", "fixture"}:
+                value = _test_scope_witness(unquote(value))
+            parts.append(name + equals + value)
+        query = "&".join(parts)
+    return "/".join(pieces) + separator + query
+
+
 def _request(method="GET", route="/.well-known/teslatlas-hub", status=200,
              request_id="r1", scope=None, request_if_none_match=None,
              response_etag=None, response_cache_control=None):
     return {
         "method": method, "route": route, "status": status,
-        "request_id": request_id, "scope": scope or route,
+        "request_id": request_id, "scope": _test_private_scope(scope or route),
         "request_if_none_match": request_if_none_match,
         "response_etag": response_etag,
         "response_cache_control": response_cache_control,
@@ -152,39 +173,39 @@ def _fixture_cursor_provenance(case_id):
     if case_id == "drives_three_page_order":
         requests = _requests_for(case_id)
         return {
-            "page2_sha256": hashlib.sha256(
+            "page2_sha256": matrix_contract._cursor_sha256(
                 matrix_contract._scope_cursor(
                     requests[1]["scope"], matrix_contract.PRIMARY_VEHICLE
-                ).encode()
-            ).hexdigest(),
-            "page3_sha256": hashlib.sha256(
+                )
+            ),
+            "page3_sha256": matrix_contract._cursor_sha256(
                 matrix_contract._scope_cursor(
                     requests[2]["scope"], matrix_contract.PRIMARY_VEHICLE
-                ).encode()
-            ).hexdigest(),
+                )
+            ),
         }
     if case_id == "drives_etag_304":
         requests = _requests_for(case_id)
         return {
-            "page2_sha256": hashlib.sha256(
+            "page2_sha256": matrix_contract._cursor_sha256(
                 matrix_contract._scope_cursor(
                     requests[2]["scope"], matrix_contract.PRIMARY_VEHICLE
-                ).encode()
-            ).hexdigest(),
-            "page3_sha256": hashlib.sha256(
+                )
+            ),
+            "page3_sha256": matrix_contract._cursor_sha256(
                 matrix_contract._scope_cursor(
                     requests[4]["scope"], matrix_contract.PRIMARY_VEHICLE
-                ).encode()
-            ).hexdigest(),
+                )
+            ),
         }
     if case_id == "drives_terminal_cursor":
         requests = _requests_for(case_id)
         return {
-            "terminal_sha256": hashlib.sha256(
+            "terminal_sha256": matrix_contract._cursor_sha256(
                 matrix_contract._scope_cursor(
                     requests[0]["scope"], matrix_contract.PRIMARY_VEHICLE
-                ).encode()
-            ).hexdigest()
+                )
+            )
         }
     if case_id in {"drives_wrong_vehicle_cursor", "drives_wrong_filter_cursor"}:
         requests = _requests_for(case_id)
@@ -194,9 +215,9 @@ def _fixture_cursor_provenance(case_id):
             else matrix_contract.PRIMARY_VEHICLE
         )
         return {
-            "cursor_sha256": hashlib.sha256(
-                matrix_contract._scope_cursor(requests[0]["scope"], vehicle).encode()
-            ).hexdigest()
+            "cursor_sha256": matrix_contract._cursor_sha256(
+                matrix_contract._scope_cursor(requests[0]["scope"], vehicle)
+            )
         }
     return None
 
@@ -988,6 +1009,25 @@ def _build_composition_fixture():
 
 
 class ContractTests(unittest.TestCase):
+    def test_private_scope_preserves_context_without_cleartext_cursor_or_identity(self):
+        requests = _requests_for("drives_three_page_order")
+        serialized = json.dumps(requests)
+        self.assertNotIn(matrix_contract.PRIMARY_VEHICLE, serialized)
+        self.assertNotIn("cursor=page2", serialized)
+        self.assertTrue(matrix_contract._request_requirement("drives_three_page_order", requests))
+        requests[1]["scope"] = (
+            "/v1/vehicles/" + matrix_contract.PRIMARY_VEHICLE + "/drives?limit=2&cursor=page2"
+        )
+        self.assertFalse(matrix_contract._request_requirement("drives_three_page_order", requests))
+
+    def test_runtime_facts_use_independently_observed_os_metadata(self):
+        runtime = {"platform": {"os": "Debian GNU/Linux", "version": "13"},
+                   "transport": {"kind": "libcurl"}}
+        self.assertEqual(
+            matrix_contract._runtime_fact("swift_linux", {"actor_runtime_facts": {"swift_linux": runtime}}),
+            {"os": "Debian GNU/Linux 13", "transport": "libcurl", "trusted_tls": True},
+        )
+
     def test_all_25_cases_require_both_real_transport_actors(self):
         self.assertEqual(25, len(matrix_contract.REQUIRED_CASES))
         self.assertEqual(("swift_macos", "swift_linux"), matrix_contract.ACTOR_IDS)
@@ -1093,13 +1133,19 @@ class ContractTests(unittest.TestCase):
         for name, (case_id, scopes) in substitutions.items():
             with self.subTest(name=name):
                 requests = [dict(item) for item in _requests_for(case_id)]
+                self.assertTrue(matrix_contract._request_requirement(case_id, requests))
                 for request, scope in zip(requests, scopes):
-                    request["scope"] = scope
+                    private_scope = _test_private_scope(scope)
+                    self.assertNotEqual(request["scope"], private_scope)
+                    request["scope"] = private_scope
                 self.assertFalse(matrix_contract._request_requirement(case_id, requests))
 
         pairing_id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         requests = [dict(item) for item in _requests_for("real_auth", pairing_id)]
-        requests[0]["scope"] = "/v1/pairings/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/claim"
+        self.assertTrue(matrix_contract._request_requirement("real_auth", requests, pairing_id))
+        replacement = _test_private_scope("/v1/pairings/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/claim")
+        self.assertNotEqual(requests[0]["scope"], replacement)
+        requests[0]["scope"] = replacement
         self.assertFalse(
             matrix_contract._request_requirement("real_auth", requests, pairing_id)
         )
@@ -1124,7 +1170,7 @@ class ContractTests(unittest.TestCase):
         raw = three_page.raw[evidence_id]
         requests = [dict(item) for item in raw["requests"]]
         requests[1]["scope"] = requests[1]["scope"].replace(
-            "cursor=page2", "cursor=forged"
+            "cursor=" + _test_scope_witness("page2"), "cursor=" + _test_scope_witness("forged")
         )
         forged_raw[evidence_id] = MappingProxyType(dict(raw, requests=requests))
         forged_context = dataclasses.replace(
@@ -1145,7 +1191,7 @@ class ContractTests(unittest.TestCase):
         raw = wrong_vehicle.raw[evidence_id]
         requests = [dict(item) for item in raw["requests"]]
         requests[0]["scope"] = requests[0]["scope"].replace(
-            "cursor=page2", "cursor=forged"
+            "cursor=" + _test_scope_witness("page2"), "cursor=" + _test_scope_witness("forged")
         )
         forged_provenance = {"cursor_sha256": hashlib.sha256(b"forged").hexdigest()}
         forged_facts = dict(raw["facts"], cursor_provenance=forged_provenance)

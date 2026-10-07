@@ -8,6 +8,19 @@ import XCTest
 #endif
 
 final class CurrentHubMatrixWorkerSupportTests: XCTestCase {
+  func testLinuxRuntimeProjectionUsesObservedDistribution() throws {
+    XCTAssertEqual(
+      try matrixLinuxRuntimeOSName(osRelease: "NAME=\"Ubuntu\"\nVERSION=\"22.04.5 LTS (Jammy Jellyfish)\"\n"),
+      "Ubuntu 22.04.5"
+    )
+    XCTAssertEqual(
+      try matrixLinuxRuntimeOSName(osRelease: "NAME=\"Debian GNU/Linux\"\nVERSION=\"13 (trixie)\"\n"),
+      "Debian GNU/Linux 13"
+    )
+    XCTAssertThrowsError(try matrixLinuxRuntimeOSName(osRelease: "VERSION_ID=13\n"))
+    XCTAssertThrowsError(try matrixLinuxRuntimeOSName(osRelease: "NAME=Ubuntu\nNAME=Debian\nVERSION_ID=13\n"))
+  }
+
   func testWorkerCellDeadlineIsSingleMonotonicBudget() throws {
     let deadline = try MatrixWorkerCellDeadline(
       startNanoseconds: 1_000_000_000,
@@ -61,7 +74,7 @@ final class CurrentHubMatrixWorkerSupportTests: XCTestCase {
       CurrentHubTranscriptEntry(
         method: "GET", route: "/v1/vehicles/{vehicle_id}/current",
         status: 404, requestID: "request-7",
-        scope: "/v1/vehicles/33333333-3333-4333-8333-333333333333/current?cursor=sensitive"
+        scope: "/v1/vehicles/\(matrixPrivateScopeWitness("33333333-3333-4333-8333-333333333333"))/current?cursor=\(matrixPrivateScopeWitness("sensitive"))"
       )
     ])
   }
@@ -94,12 +107,16 @@ final class CurrentHubMatrixWorkerSupportTests: XCTestCase {
       CurrentHubTranscriptEntry(
         method: "GET", route: "/v1/vehicles/{vehicle_id}/drives",
         status: 304, requestID: "request-304",
-        scope: "/v1/vehicles/11111111-1111-4111-8111-111111111111/drives?limit=2&cursor=opaque",
+        scope: "/v1/vehicles/\(matrixPrivateScopeWitness("11111111-1111-4111-8111-111111111111"))/drives?limit=2&cursor=\(matrixPrivateScopeWitness("opaque"))",
         requestIfNoneMatch: eTag,
         responseETag: eTag,
         responseCacheControl: "no-store"
       )
     ])
+    let serialized = String(decoding: try JSONEncoder().encode(transcript), as: UTF8.self)
+    XCTAssertFalse(serialized.contains("opaque"))
+    XCTAssertFalse(serialized.contains("11111111-1111-4111-8111-111111111111"))
+    XCTAssertFalse(serialized.contains("must-not-be-recorded"))
   }
 
   func testWorkerConfigRejectsAdditionalCommandAuthority() throws {

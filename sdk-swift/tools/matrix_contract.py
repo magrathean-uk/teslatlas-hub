@@ -64,7 +64,7 @@ def _decode_opaque_cursor(raw_cursor):
 
 
 def _scope_cursor(scope, vehicle_id):
-    prefix = f"/v1/vehicles/{vehicle_id}/drives?"
+    prefix = f"/v1/vehicles/{_private_scope_witness(vehicle_id)}/drives?"
     if not isinstance(scope, str) or not scope.startswith(prefix):
         return None
     values = [
@@ -74,11 +74,19 @@ def _scope_cursor(scope, vehicle_id):
     ]
     if len(values) != 1:
         return None
-    return _decode_opaque_cursor(values[0])
+    return values[0] if _valid_scope_witness(values[0]) else None
+
+
+def _private_scope_witness(value):
+    return "sha256-" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _valid_scope_witness(value):
+    return isinstance(value, str) and value.startswith("sha256-") and HEX64.fullmatch(value[7:]) is not None
 
 
 def _cursor_sha256(cursor):
-    return hashlib.sha256(cursor.encode("utf-8")).hexdigest()
+    return cursor[7:] if _valid_scope_witness(cursor) else hashlib.sha256(cursor.encode("utf-8")).hexdigest()
 
 
 def _valid_entity_tag(value):
@@ -251,7 +259,9 @@ def _runtime_fact(actor_id, context_values):
         return None
     transport = runtime.get("transport", {})
     platform = runtime.get("platform", {})
-    os_name = "macOS" if actor_id == "swift_macos" else "Ubuntu 22.04.5"
+    if not isinstance(platform.get("os"), str) or not isinstance(platform.get("version"), str):
+        return None
+    os_name = "macOS" if actor_id == "swift_macos" else platform["os"] + " " + platform["version"]
     return {"os": os_name, "transport": transport.get("kind"), "trusted_tls": True}
 
 
@@ -569,9 +579,9 @@ def _valid_actor(actor_id, actor):
 def _request_requirement(case_id, requests, pairing_id=None):
     """Require the exact request witness for a matrix case.
 
-    ``route`` is the redacted operation path, while ``scope`` retains the
-    vehicle, pairing, and query identity needed to prove what the client
-    actually requested.  Claim cases receive the expected pairing ID from
+    ``route`` is the redacted operation path, while ``scope`` binds vehicle,
+    pairing and opaque cursor values through digests without persisting their
+    clear text. Claim cases receive the expected pairing ID from
     admission's independent controller view and cannot be admitted without it.
     """
     if not isinstance(requests, (list, tuple)):
@@ -588,17 +598,17 @@ def _request_requirement(case_id, requests, pairing_id=None):
     claim_route = "/v1/pairings/{pairing_id}/claim"
     discovery_scope = "/.well-known/teslatlas-hub"
     vehicles_scope = "/v1/vehicles"
-    primary_current_scope = f"/v1/vehicles/{PRIMARY_VEHICLE}/current"
-    secondary_current_scope = f"/v1/vehicles/{SECONDARY_VEHICLE}/current"
+    primary_current_scope = f"/v1/vehicles/{_private_scope_witness(PRIMARY_VEHICLE)}/current"
+    secondary_current_scope = f"/v1/vehicles/{_private_scope_witness(SECONDARY_VEHICLE)}/current"
 
     def drive_scope(vehicle_id, query_kind, from_ms=None):
         return ("drive", vehicle_id, query_kind, from_ms)
 
     def valid_cursor(raw_cursor):
-        return _decode_opaque_cursor(raw_cursor) is not None
+        return _valid_scope_witness(raw_cursor)
 
     def matches_drive_scope(scope, vehicle_id, query_kind, from_ms=None):
-        prefix = f"/v1/vehicles/{vehicle_id}/drives?"
+        prefix = f"/v1/vehicles/{_private_scope_witness(vehicle_id)}/drives?"
         if not scope.startswith(prefix):
             return False
         query = scope[len(prefix):]
@@ -642,7 +652,7 @@ def _request_requirement(case_id, requests, pairing_id=None):
         ),
         "revocation": (("GET", vehicles_route, 401, vehicles_scope),),
         "unknown_vehicle": (
-            ("GET", current_route, 404, f"/v1/vehicles/{UNKNOWN_VEHICLE}/current"),
+            ("GET", current_route, 404, f"/v1/vehicles/{_private_scope_witness(UNKNOWN_VEHICLE)}/current"),
         ),
         "exact_current_values": (
             ("GET", current_route, 200, primary_current_scope),
@@ -718,7 +728,7 @@ def _request_requirement(case_id, requests, pairing_id=None):
         if not isinstance(scope, str) or len(scope) > 2048:
             return False
         if expected_scope is None:
-            expected_scope = f"/v1/pairings/{pairing_id}/claim"
+            expected_scope = f"/v1/pairings/{_private_scope_witness(pairing_id)}/claim"
         if isinstance(expected_scope, tuple) and expected_scope[0] == "drive":
             _, vehicle_id, query_kind, from_ms = expected_scope
             if not matches_drive_scope(scope, vehicle_id, query_kind, from_ms):

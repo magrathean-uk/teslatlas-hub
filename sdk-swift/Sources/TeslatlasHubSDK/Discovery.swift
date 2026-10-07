@@ -282,6 +282,24 @@ public enum HubDiscoveryDecoder {
       )
     }
 
+    guard (100...500).contains(document.limits.maximumPageSize),
+      (1...100).contains(document.limits.defaultPageSize),
+      document.limits.defaultPageSize <= document.limits.maximumPageSize
+    else {
+      throw TeslatlasDiscoveryError.invalidDocument("invalid page size limits")
+    }
+    let limits = document.limits
+    guard (1024...262144).contains(limits.maximumRequestBodyBytes),
+      (1...366).contains(limits.maximumHistoryRangeDays),
+      (1...31).contains(limits.maximumDenseRangeDays),
+      (1...32).contains(limits.maximumConcurrentRequests),
+      (1...4).contains(limits.maximumSSEConnections),
+      (86400...604800).contains(limits.eventReplayRetentionSeconds),
+      (86400...604800).contains(limits.idempotencyRetentionSeconds)
+    else {
+      throw TeslatlasDiscoveryError.invalidDocument("invalid rich profile limits")
+    }
+
     let capabilityIDs = document.capabilities.map(\.id)
     guard Set(capabilityIDs).count == capabilityIDs.count else {
       throw TeslatlasDiscoveryError.invalidDocument(

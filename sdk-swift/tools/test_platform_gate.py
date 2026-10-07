@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -17,6 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PlatformGateTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("TESLATLAS_PLATFORM_GATE_HISTORICAL_VERIFY") == "1",
+                         "historical Git/native verification is an explicit acceptance lane")
     def test_repository_contract_and_accepted_source_identity(self):
         result = platform_gate.verify_repository(ROOT)
         self.assertTrue(result["verified"])
@@ -112,7 +115,7 @@ class PlatformGateTests(unittest.TestCase):
         with self.assertRaisesRegex(platform_gate.PlatformGateError, "requires macOS 14"):
             platform_gate._require_native_darwin(14)
 
-    @mock.patch("platform_gate.subprocess.run")
+    @mock.patch("platform_gate.owned_command.run")
     def test_ios_inventory_requires_exact_ios17_device(self, run):
         run.return_value.returncode = 0
         run.return_value.stdout = json.dumps(

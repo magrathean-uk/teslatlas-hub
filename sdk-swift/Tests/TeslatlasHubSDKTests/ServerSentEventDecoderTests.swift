@@ -43,6 +43,7 @@ final class ServerSentEventDecoderTests: XCTestCase {
       [
         .event(ServerSentEvent(id: "first", name: nil, data: "one")),
         .event(ServerSentEvent(id: "first", name: nil, data: "two")),
+        .replayReset,
         .event(ServerSentEvent(id: nil, name: nil, data: "three")),
       ]
     )

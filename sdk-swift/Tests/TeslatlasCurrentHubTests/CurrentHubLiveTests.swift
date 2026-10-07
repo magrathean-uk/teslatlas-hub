@@ -83,7 +83,8 @@ final class CurrentHubLiveTests: XCTestCase {
     )
     XCTAssertEqual(invitation.endpoint, config.endpoint)
 
-    let transport = try makeTrustedTransport(config: config, invitation: invitation)
+    let trustedTransport = try makeTrustedTransport(config: config, invitation: invitation)
+    let transport = CurrentHubTranscriptTransport(base: trustedTransport)
     let store = LiveCredentialStore()
     let client = try await CurrentHubClient.connect(
       endpoint: config.endpoint,
@@ -196,13 +197,16 @@ final class CurrentHubLiveTests: XCTestCase {
       guard case .unauthorized = error else { throw error }
     }
 
+    let unsupportedRequestCountBefore = (await transport.snapshot()).count
     do {
       _ = try await client.require(.commands)
     } catch let error as CurrentHubError {
       XCTAssertEqual(error, .capabilityUnavailable("commands"))
     }
+    let unsupportedRequestCountAfter = (await transport.snapshot()).count
+    try liveRequireUnsupportedZeroRequests(before: unsupportedRequestCountBefore, after: unsupportedRequestCountAfter)
 
-    try await assertCancelledRequest(transport: transport, endpoint: config.endpoint)
+    try await assertCancelledRequest(transport: trustedTransport, endpoint: config.endpoint)
     var checks = [
       "trusted_tls", "identity_negative", "trust_negative",
       "invitation_leaf_pin_negative", "claim", "rotation",
@@ -217,6 +221,9 @@ final class CurrentHubLiveTests: XCTestCase {
       checks.append("chunked_oversize_skipped")
     #endif
 
+    // XCTest assertions record failures without throwing. A journey receipt
+    // must also fail closed when any of those assertions has failed.
+    try liveRequirePassingFrameworkResult(failureCount: testRun?.failureCount)
     let receipt: [String: Any] = [
       "status": "passed",
       "profile_id": "hub-http-v1@1.0.0",
@@ -229,6 +236,9 @@ final class CurrentHubLiveTests: XCTestCase {
       "drive_ids": driveIDs,
       "page_count": 3,
       "conditional_304_count": 3,
+      "unsupported_request_count_before": unsupportedRequestCountBefore,
+      "unsupported_request_count_after": unsupportedRequestCountAfter,
+      "framework_failure_count": testRun?.failureCount ?? -1,
       "checks": checks,
     ]
     let data = try JSONSerialization.data(withJSONObject: receipt, options: [.prettyPrinted, .sortedKeys])
@@ -266,7 +276,9 @@ final class CurrentHubLiveTests: XCTestCase {
           URLRequest(url: config.endpoint.appendingPathComponent("healthz"))
         )
         XCTFail("wrong leaf pin was accepted")
-      } catch {}
+      } catch let error as CurrentHubError {
+        guard case .transportFailure = error else { throw error }
+      }
     #else
       let wrong = try CurrentHubURLSessionTransport(
         expectedLeafCertificateSHA256: String(repeating: "f", count: 64)
@@ -342,40 +354,24 @@ final class CurrentHubLiveTests: XCTestCase {
 
   #if os(macOS) || os(Linux)
   private func assertOversizedChunkedResponseRejected() async throws {
-    guard let script = Bundle.module.url(
-      forResource: "oversize_chunked_server",
-      withExtension: "py",
-      subdirectory: "Fixtures"
-    ) else { return XCTFail("oversize server resource is missing") }
-    let process = Process()
-    let output = Pipe()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-    process.arguments = [script.path]
-    process.standardOutput = output
-    process.standardError = Pipe()
-    try process.run()
-    defer {
-      if process.isRunning { process.terminate() }
-      process.waitUntilExit()
-    }
-    let portData = output.fileHandleForReading.availableData
-    guard let portText = String(data: portData, encoding: .utf8)?.split(separator: "\n").first,
-      let port = Int(portText)
-    else { return XCTFail("oversize server did not publish a port") }
-    let transport = CurrentHubURLSessionTransport(maximumResponseBytes: 1_048_576)
-    do {
-      _ = try await transport.send(
-        URLRequest(url: URL(string: "http://127.0.0.1:\(port)/oversize")!)
-      )
-      XCTFail("oversized chunked response was accepted")
-    } catch let error as CurrentHubError {
-      guard case .invalidResponse(_, _, let reason) = error,
-        reason == "response body exceeds 1048576 bytes"
-      else { throw error }
-    }
+    // Reuse the owned, deadline-bounded in-process fixture. The previous
+    // bundled Python fixture had finite output, but its Process waits did not.
+    let entries = try await matrixBodyLimitEvidence()
+    XCTAssertEqual(entries.count, 1)
+    XCTAssertEqual(entries.first?.status, 0)
   }
   #endif
 }
+
+func liveRequirePassingFrameworkResult(failureCount: Int?) throws {
+  guard failureCount == 0 else { throw LiveReceiptFailure.frameworkFailed }
+}
+
+func liveRequireUnsupportedZeroRequests(before: Int, after: Int) throws {
+  guard before >= 0, before == after else { throw LiveReceiptFailure.unsupportedRequest }
+}
+
+private enum LiveReceiptFailure: Error { case frameworkFailed, unsupportedRequest }
 
 private actor LiveCredentialStore: CurrentHubCredentialStore {
   private var credential: CurrentHubCredential?

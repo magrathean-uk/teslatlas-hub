@@ -153,6 +153,21 @@ struct ConsumerConfig: Decodable, Sendable {
 
 enum OwnerOnlyExclusiveFileWriter {
   static func write(_ data: Data, path: String) throws {
+    let output = try ReservedOwnerOnlyFile(path: path)
+    defer { output.close() }
+    try output.write(data)
+  }
+}
+
+/// Lives inside ConsumerOutputFiles, which serializes access to its descriptors.
+private final class ReservedOwnerOnlyFile {
+  private let path: String
+  private let device: dev_t
+  private let inode: ino_t
+  private var descriptor: Int32
+  private var removeIfEmpty = true
+
+  init(path: String) throws {
     guard !path.isEmpty, path.utf8.count <= 4_096 else {
       throw ConsumerError.privateOutputFailure
     }
@@ -164,24 +179,6 @@ enum OwnerOnlyExclusiveFileWriter {
       #endif
     }
     guard descriptor >= 0 else { throw ConsumerError.privateOutputFailure }
-    var succeeded = false
-    defer {
-      #if canImport(Darwin)
-      _ = Darwin.close(descriptor)
-      #else
-      _ = Glibc.close(descriptor)
-      #endif
-      if !succeeded {
-        path.withCString { pointer in
-          #if canImport(Darwin)
-          _ = Darwin.unlink(pointer)
-          #else
-          _ = Glibc.unlink(pointer)
-          #endif
-        }
-      }
-    }
-
     var metadata = stat()
     #if canImport(Darwin)
     let statResult = Darwin.fstat(descriptor, &metadata)
@@ -192,7 +189,25 @@ enum OwnerOnlyExclusiveFileWriter {
       (metadata.st_mode & S_IFMT) == S_IFREG,
       metadata.st_uid == currentUserID(),
       (metadata.st_mode & 0o077) == 0
-    else { throw ConsumerError.privateOutputFailure }
+    else {
+      #if canImport(Darwin)
+      _ = Darwin.close(descriptor)
+      #else
+      _ = Glibc.close(descriptor)
+      #endif
+      throw ConsumerError.privateOutputFailure
+    }
+    self.path = path
+    self.descriptor = descriptor
+    device = metadata.st_dev
+    inode = metadata.st_ino
+  }
+
+  deinit { close() }
+
+  func write(_ data: Data, retainOnFailure: Bool = false) throws {
+    guard descriptor >= 0 else { throw ConsumerError.privateOutputFailure }
+    if retainOnFailure { removeIfEmpty = false }
 
     var written = 0
     while written < data.count {
@@ -205,10 +220,66 @@ enum OwnerOnlyExclusiveFileWriter {
         return Glibc.write(descriptor, address, data.count - written)
         #endif
       }
+      if count < 0, errno == EINTR { continue }
       guard count > 0 else { throw ConsumerError.privateOutputFailure }
       written += count
     }
-    succeeded = true
+    removeIfEmpty = false
+  }
+
+  func close() {
+    guard descriptor >= 0 else { return }
+    // Check that the path still names this run's empty regular file before removal.
+    // This check does not promise atomicity against external path replacement.
+    if removeIfEmpty {
+      var metadata = stat()
+      if lstat(path, &metadata) == 0,
+        metadata.st_dev == device, metadata.st_ino == inode,
+        (metadata.st_mode & S_IFMT) == S_IFREG,
+        metadata.st_uid == currentUserID(), metadata.st_size == 0
+      {
+        path.withCString { pointer in
+          #if canImport(Darwin)
+          _ = Darwin.unlink(pointer)
+          #else
+          _ = Glibc.unlink(pointer)
+          #endif
+        }
+      }
+    }
+    #if canImport(Darwin)
+    _ = Darwin.close(descriptor)
+    #else
+    _ = Glibc.close(descriptor)
+    #endif
+    descriptor = -1
+  }
+}
+
+actor ConsumerOutputFiles {
+  private let cleanup: ReservedOwnerOnlyFile
+  private let semantic: ReservedOwnerOnlyFile
+
+  init(config: ConsumerConfig) throws {
+    let cleanup = try ReservedOwnerOnlyFile(path: config.cleanupDeviceIDPath)
+    // If the second reservation fails, the local cleanup reservation removes only
+    // its own empty file. Both descriptors are held before any remote claim.
+    let semantic = try ReservedOwnerOnlyFile(path: config.semanticSnapshotPath)
+    self.cleanup = cleanup
+    self.semantic = semantic
+  }
+
+  func recordClaimedDevice(_ deviceID: UUID) throws {
+    try cleanup.write(Data(deviceID.uuidString.lowercased().utf8), retainOnFailure: true)
+  }
+
+  func writeSnapshot(_ data: Data) throws {
+    try semantic.write(data)
+  }
+
+  func close() {
+    cleanup.close()
+    semantic.close()
   }
 }
 
@@ -229,9 +300,9 @@ enum OwnerOnlyFileReader {
 
     let descriptor = path.withCString { pathPointer in
       #if canImport(Darwin)
-      Darwin.open(pathPointer, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+      Darwin.open(pathPointer, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
       #else
-      Glibc.open(pathPointer, O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+      Glibc.open(pathPointer, O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
       #endif
     }
     guard descriptor >= 0 else {
@@ -646,6 +717,7 @@ enum ConsumerDrivePager {
     var pageItemCounts: [Int] = []
     var conditionalNotModifiedCount = 0
     var items: [CurrentHubDrive] = []
+    var seenDriveIDs = Set<Int64>()
 
     while true {
       try Task.checkCancellation()
@@ -659,6 +731,19 @@ enum ConsumerDrivePager {
       pageCount += 1
       guard result.itemCount >= 0, result.itemCount <= limit else {
         throw ConsumerError.invalidDrivePage
+      }
+      var previous = items.last
+      for drive in result.items {
+        guard seenDriveIDs.insert(drive.id).inserted else {
+          throw ConsumerError.invalidDrivePage
+        }
+        if let previous {
+          guard previous.startDateMilliseconds > drive.startDateMilliseconds
+            || (previous.startDateMilliseconds == drive.startDateMilliseconds
+              && previous.id > drive.id)
+          else { throw ConsumerError.invalidDrivePage }
+        }
+        previous = drive
       }
       driveCount += result.itemCount
       items.append(contentsOf: result.items)

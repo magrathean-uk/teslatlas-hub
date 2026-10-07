@@ -1,5 +1,13 @@
 # Development
 
+Tooling lifecycle regressions run without Git, native programs, child processes or sockets:
+
+```sh
+python3 -m unittest discover -s tools -p test_tooling_lifecycle.py
+```
+
+The historical platform identity test remains an explicit acceptance lane. Set `TESLATLAS_PLATFORM_GATE_HISTORICAL_VERIFY=1` only for an authorized historical Git/native verification run; its skipped result supplies no historical or platform acceptance. Platform execution uses bounded owned commands and independently bounded cleanup. Historical iOS host/test inputs bind the accepted handoff; they do not establish current-source support. CurrentHub live receipts refuse publication after framework assertion failure, and the live oversize check uses the same owned in-process fixture as matrix body-limit evidence. Pure lifecycle tests do not prove OS task/socket or Docker daemon settlement.
+
 The package declares Swift tools 6.0, iOS 17 and macOS 14. These are manifest requirements, not proof that a particular revision has passed every platform floor. Linux `TeslatlasCurrentHub` uses the C shim and requires OpenSSL-backed libcurl plus libssl/libcrypto headers and libraries.
 
 Run commands from the repository root. In a coordinated Teslatlas workspace, follow its current task order and build-lock rules. Use an external SwiftPM scratch directory; for example:

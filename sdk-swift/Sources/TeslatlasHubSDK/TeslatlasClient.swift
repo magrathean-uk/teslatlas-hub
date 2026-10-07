@@ -14,6 +14,9 @@ public actor TeslatlasClient {
   private let transport: any TeslatlasHTTPTransport
   private let maximumResponseBytes =
     URLSessionTeslatlasTransport.defaultMaximumResponseBytes
+  private var authenticationIdentityMismatches: [(
+    origin: URL, error: TeslatlasDiscoveryError, generation: UUID
+  )] = []
 
   private init(
     discovery: HubDiscoveryDocument,
@@ -62,12 +65,28 @@ public actor TeslatlasClient {
 
   public func refreshDiscovery(from url: URL) async throws {
     try endpointTrustPolicy.validate(url)
+    let recoveryGeneration = authenticationIdentityMismatches.first {
+      Self.sameOrigin(url, $0.origin)
+    }?.generation
     let refreshed = try await Self.fetchDiscovery(from: url, transport: transport)
     guard refreshed.hubID == discovery.hubID else {
-      throw TeslatlasDiscoveryError.hubIdentityChanged(
+      let error = TeslatlasDiscoveryError.hubIdentityChanged(
         expected: discovery.hubID,
         actual: refreshed.hubID
       )
+      if Self.sameOrigin(url, discovery.endpoints.api)
+        || Self.sameOrigin(url, discovery.endpoints.events)
+      {
+        let failure = (origin: url, error: error, generation: UUID())
+        if let index = authenticationIdentityMismatches.firstIndex(where: {
+          Self.sameOrigin(url, $0.origin)
+        }) {
+          authenticationIdentityMismatches[index] = failure
+        } else {
+          authenticationIdentityMismatches.append(failure)
+        }
+      }
+      throw error
     }
     try endpointTrustPolicy.validate(refreshed)
     let selected = try refreshed.protocolInfo.negotiate(
@@ -75,6 +94,13 @@ public actor TeslatlasClient {
     )
     discovery = refreshed
     selectedProtocolVersion = selected
+    if let recoveryGeneration,
+      let index = authenticationIdentityMismatches.firstIndex(where: {
+        Self.sameOrigin(url, $0.origin) && $0.generation == recoveryGeneration
+      })
+    {
+      authenticationIdentityMismatches.remove(at: index)
+    }
   }
 
   public func vehicles(
@@ -118,7 +144,8 @@ public actor TeslatlasClient {
         reason: "could not build vehicles URL"
       )
     }
-    return try await get(url, ifNoneMatch: ifNoneMatch, as: VehiclePage.self)
+    return try await get(url, ifNoneMatch: ifNoneMatch, as: VehiclePage.self,
+      representation: "resources.vehicle_page")
   }
 
   public func currentState(
@@ -135,7 +162,8 @@ public actor TeslatlasClient {
     return try await get(
       url,
       ifNoneMatch: ifNoneMatch,
-      as: VehicleCurrentState.self
+      as: VehicleCurrentState.self,
+      representation: "resources.current_state", identity: ("vehicle_id", vehicleID)
     )
   }
 
@@ -153,7 +181,8 @@ public actor TeslatlasClient {
       request: request,
       maximumDays: discovery.limits.maximumHistoryRangeDays
     )
-    return try await get(url, ifNoneMatch: ifNoneMatch, as: DrivePage.self)
+    return try await get(url, ifNoneMatch: ifNoneMatch, as: DrivePage.self,
+      representation: "resources.drive_page", identity: ("vehicle_id", vehicleID))
   }
 
   public func drive(
@@ -164,7 +193,8 @@ public actor TeslatlasClient {
     let url = discovery.endpoints.api
       .appendingPathComponent("drives")
       .appendingPathComponent(id)
-    return try await get(url, ifNoneMatch: ifNoneMatch, as: Drive.self)
+    return try await get(url, ifNoneMatch: ifNoneMatch, as: Drive.self,
+      representation: "resources.drive", identity: ("drive_id", id))
   }
 
   public func positions(
@@ -181,7 +211,8 @@ public actor TeslatlasClient {
       request: request,
       maximumDays: discovery.limits.maximumDenseRangeDays
     )
-    return try await get(url, ifNoneMatch: ifNoneMatch, as: PositionPage.self)
+    return try await get(url, ifNoneMatch: ifNoneMatch, as: PositionPage.self,
+      representation: "resources.position_page", identity: ("drive_id", driveID))
   }
 
   public func charges(
@@ -198,7 +229,8 @@ public actor TeslatlasClient {
       request: request,
       maximumDays: discovery.limits.maximumHistoryRangeDays
     )
-    return try await get(url, ifNoneMatch: ifNoneMatch, as: ChargePage.self)
+    return try await get(url, ifNoneMatch: ifNoneMatch, as: ChargePage.self,
+      representation: "resources.charge_page", identity: ("vehicle_id", vehicleID))
   }
 
   public func charge(
@@ -209,7 +241,8 @@ public actor TeslatlasClient {
     let url = discovery.endpoints.api
       .appendingPathComponent("charges")
       .appendingPathComponent(id)
-    return try await get(url, ifNoneMatch: ifNoneMatch, as: Charge.self)
+    return try await get(url, ifNoneMatch: ifNoneMatch, as: Charge.self,
+      representation: "resources.charge", identity: ("charge_id", id))
   }
 
   public func chargeSamples(
@@ -229,7 +262,8 @@ public actor TeslatlasClient {
     return try await get(
       url,
       ifNoneMatch: ifNoneMatch,
-      as: ChargeSamplePage.self
+      as: ChargeSamplePage.self,
+      representation: "resources.charge_sample_page", identity: ("charge_id", chargeID)
     )
   }
 
@@ -247,7 +281,8 @@ public actor TeslatlasClient {
       request: request,
       maximumDays: discovery.limits.maximumHistoryRangeDays
     )
-    return try await get(url, ifNoneMatch: ifNoneMatch, as: StatePage.self)
+    return try await get(url, ifNoneMatch: ifNoneMatch, as: StatePage.self,
+      representation: "resources.state_page", identity: ("vehicle_id", vehicleID))
   }
 
   public func softwareUpdates(
@@ -267,7 +302,8 @@ public actor TeslatlasClient {
     return try await get(
       url,
       ifNoneMatch: ifNoneMatch,
-      as: SoftwareUpdatePage.self
+      as: SoftwareUpdatePage.self,
+      representation: "resources.update_page", identity: ("vehicle_id", vehicleID)
     )
   }
 
@@ -293,7 +329,8 @@ public actor TeslatlasClient {
     }
     queryItems.append(contentsOf: historyItems)
     let url = try url(baseURL, queryItems: queryItems)
-    return try await get(url, ifNoneMatch: ifNoneMatch, as: DataQualityPage.self)
+    return try await get(url, ifNoneMatch: ifNoneMatch, as: DataQualityPage.self,
+      representation: "resources.data_quality_page")
   }
 
   public func eventRequest(
@@ -301,6 +338,7 @@ public actor TeslatlasClient {
     vehicleID: String? = nil,
     eventTypes: [String] = []
   ) throws -> URLRequest {
+    try requireAuthenticatedIdentity(for: discovery.endpoints.events)
     try requireCapability("events.sse")
     guard eventTypes.count <= 32 else {
       throw TeslatlasSDKError.limitExceeded(
@@ -347,6 +385,23 @@ public actor TeslatlasClient {
     }
   }
 
+  private func requireAuthenticatedIdentity(for url: URL) throws {
+    if let mismatch = authenticationIdentityMismatches.first(where: {
+      Self.sameOrigin(url, $0.origin)
+    }) {
+      throw mismatch.error
+    }
+  }
+
+  private static func sameOrigin(_ lhs: URL, _ rhs: URL) -> Bool {
+    func normalizedPort(_ url: URL) -> Int? {
+      url.port ?? (url.scheme?.lowercased() == "https" ? 443 : 80)
+    }
+    return lhs.scheme?.lowercased() == rhs.scheme?.lowercased()
+      && lhs.host?.lowercased() == rhs.host?.lowercased()
+      && normalizedPort(lhs) == normalizedPort(rhs)
+  }
+
   private func historyURL(
     _ baseURL: URL,
     request: HistoryRequest,
@@ -363,7 +418,7 @@ public actor TeslatlasClient {
     maximumDays: Int
   ) throws -> [URLQueryItem] {
     if let limit = request.limit {
-      guard (1...discovery.limits.maximumPageSize).contains(limit) else {
+      guard limit >= 1, limit <= discovery.limits.maximumPageSize else {
         throw TeslatlasSDKError.limitExceeded(
           name: "limit",
           maximum: discovery.limits.maximumPageSize,
@@ -437,13 +492,17 @@ public actor TeslatlasClient {
   private func get<Value: Decodable & Sendable>(
     _ url: URL,
     ifNoneMatch: EntityTag?,
-    as type: Value.Type
+    as type: Value.Type,
+    representation: String,
+    identity: (field: String, value: String)? = nil
   ) async throws -> TeslatlasConditionalResponse<Value> {
+    try requireAuthenticatedIdentity(for: url)
+    let issuedProtocolVersion = selectedProtocolVersion
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     request.setValue(
-      selectedProtocolVersion.description,
+      issuedProtocolVersion.description,
       forHTTPHeaderField: "Teslatlas-Protocol-Version"
     )
     if let ifNoneMatch {
@@ -454,8 +513,11 @@ public actor TeslatlasClient {
     let response = try await transport.send(request)
     return try Self.decodeConditional(
       response,
-      selectedProtocolVersion: selectedProtocolVersion,
+      selectedProtocolVersion: issuedProtocolVersion,
+      sentValidator: ifNoneMatch,
       maximumResponseBytes: maximumResponseBytes,
+      representation: representation,
+      identity: identity,
       as: type
     )
   }
@@ -479,7 +541,10 @@ public actor TeslatlasClient {
   private static func decodeConditional<Value: Decodable & Sendable>(
     _ response: TeslatlasHTTPResponse,
     selectedProtocolVersion: TeslatlasProtocolVersion,
+    sentValidator: EntityTag?,
     maximumResponseBytes: Int,
+    representation: String,
+    identity: (field: String, value: String)?,
     as type: Value.Type
   ) throws -> TeslatlasConditionalResponse<Value> {
     guard response.body.count <= maximumResponseBytes else {
@@ -496,6 +561,20 @@ public actor TeslatlasClient {
       try validateSelectedVersion(response, expected: selectedProtocolVersion)
       let eTag = try requiredEntityTag(response)
       do {
+        let object = try JSONDecoder().decode(TeslatlasJSONValue.self, from: response.body)
+        try RichRepresentationValidator.validate(object, representation: representation)
+        if let identity {
+          guard case .object(let root) = object else {
+            throw RichRepresentationValidator.InvalidRepresentation.invalid
+          }
+          let records: [TeslatlasJSONValue]
+          if case .array(let items) = root["items"] { records = items }
+          else { records = [object] }
+          guard records.allSatisfy({ record in
+            guard case .object(let fields) = record else { return false }
+            return fields[identity.field] == .string(identity.value)
+          }) else { throw RichRepresentationValidator.InvalidRepresentation.invalid }
+        }
         let value = try JSONDecoder().decode(type, from: response.body)
         return .modified(value, eTag)
       } catch {
@@ -515,10 +594,26 @@ public actor TeslatlasClient {
       }
       try validateCacheHeaders(response)
       try validateSelectedVersion(response, expected: selectedProtocolVersion)
-      return .notModified(try requiredEntityTag(response))
+      let eTag = try requiredEntityTag(response)
+      guard let sentValidator, sentValidator.isValid,
+        weaklyMatches(sentValidator, eTag)
+      else {
+        throw TeslatlasSDKError.invalidResponse(
+          statusCode: 304,
+          requestID: response.header("X-Request-ID"),
+          reason: "304 response requires a matching If-None-Match validator"
+        )
+      }
+      return .notModified(eTag)
     default:
       throw try decodeFailure(response)
     }
+  }
+
+  private static func weaklyMatches(_ lhs: EntityTag, _ rhs: EntityTag) -> Bool {
+    let lhsValue = lhs.rawValue.dropFirst(lhs.rawValue.hasPrefix("W/") ? 2 : 0)
+    let rhsValue = rhs.rawValue.dropFirst(rhs.rawValue.hasPrefix("W/") ? 2 : 0)
+    return lhsValue.utf8.elementsEqual(rhsValue.utf8)
   }
 
   private static func validateJSONResponseHeaders(

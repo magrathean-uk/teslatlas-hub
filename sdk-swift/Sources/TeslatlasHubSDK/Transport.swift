@@ -27,20 +27,24 @@ public protocol TeslatlasHTTPTransport: Sendable {
 public struct URLSessionTeslatlasTransport: TeslatlasHTTPTransport {
   public static let defaultMaximumResponseBytes = 16 * 1_024 * 1_024
 
-  private let session: URLSession
+  // Value copies share the lifetime owner. Caller-injected sessions are borrowed.
+  private let sessionOwner: TeslatlasSessionOwner
+  private var session: URLSession { sessionOwner.session }
   private let maximumResponseBytes: Int
 
   public init(
     maximumResponseBytes: Int = Self.defaultMaximumResponseBytes
   ) {
-    self.init(
+    precondition(maximumResponseBytes > 0)
+    sessionOwner = TeslatlasSessionOwner(
       session: URLSession(
         configuration: Self.isolatedConfiguration(),
         delegate: TeslatlasRejectRedirectsDelegate(),
         delegateQueue: nil
       ),
-      maximumResponseBytes: maximumResponseBytes
+      owned: true
     )
+    self.maximumResponseBytes = maximumResponseBytes
   }
 
   public init(
@@ -48,7 +52,7 @@ public struct URLSessionTeslatlasTransport: TeslatlasHTTPTransport {
     maximumResponseBytes: Int = Self.defaultMaximumResponseBytes
   ) {
     precondition(maximumResponseBytes > 0)
-    self.session = session
+    sessionOwner = TeslatlasSessionOwner(session: session, owned: false)
     self.maximumResponseBytes = maximumResponseBytes
   }
 
@@ -64,6 +68,7 @@ public struct URLSessionTeslatlasTransport: TeslatlasHTTPTransport {
   }
 
   public func send(_ request: URLRequest) async throws -> TeslatlasHTTPResponse {
+    defer { withExtendedLifetime(sessionOwner) {} }
     #if canImport(FoundationNetworking)
       let (data, httpResponse) = try await TeslatlasBoundedDataLoader(
         configuration: session.configuration,
@@ -120,6 +125,20 @@ public struct URLSessionTeslatlasTransport: TeslatlasHTTPTransport {
       requestID: requestID,
       reason: "response body exceeds \(maximumResponseBytes) bytes"
     )
+  }
+}
+
+private final class TeslatlasSessionOwner: Sendable {
+  let session: URLSession
+  private let owned: Bool
+
+  init(session: URLSession, owned: Bool) {
+    self.session = session
+    self.owned = owned
+  }
+
+  deinit {
+    if owned { session.finishTasksAndInvalidate() }
   }
 }
 
@@ -347,7 +366,7 @@ public protocol TeslatlasAuthorization: Sendable {
 }
 
 public struct BearerCredential: TeslatlasAuthorization, Sendable,
-  CustomStringConvertible, CustomDebugStringConvertible
+  CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable
 {
   private let token: String
 
@@ -368,6 +387,7 @@ public struct BearerCredential: TeslatlasAuthorization, Sendable,
 
   public var description: String { "BearerCredential(<redacted>)" }
   public var debugDescription: String { description }
+  public var customMirror: Mirror { Mirror(self, children: [:]) }
 
   public func apply(to request: inout URLRequest) {
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

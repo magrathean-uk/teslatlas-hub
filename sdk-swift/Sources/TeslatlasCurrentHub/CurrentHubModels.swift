@@ -59,6 +59,60 @@ public struct CurrentHubCredential: Sendable, CustomStringConvertible,
     Mirror(self, children: ["token": "<redacted>"])
   }
 
+  /// Exports the bearer in a versioned archive for caller-owned secure storage.
+  /// The returned bytes contain a secret and must not be logged or placed in ordinary preferences.
+  public func exportSecretArchive() throws -> Data {
+    try JSONEncoder().encode(
+      SecretArchive(
+        version: 1,
+        deviceID: deviceID.uuidString.lowercased(),
+        accessToken: accessToken,
+        expiresAtMilliseconds: expiresAtMilliseconds
+      )
+    )
+  }
+
+  /// Restores a securely stored archive after checking its version, wire shape and freshness.
+  public static func restoreSecretArchive(_ archive: Data) throws -> CurrentHubCredential {
+    let value: SecretArchive
+    do {
+      value = try JSONDecoder().decode(SecretArchive.self, from: archive)
+    } catch {
+      throw CurrentHubError.invalidRequest("paired-device secret archive is invalid")
+    }
+    guard value.version == 1 else {
+      throw CurrentHubError.invalidRequest("paired-device secret archive version is unsupported")
+    }
+    guard let deviceID = UUID(uuidString: value.deviceID),
+      value.deviceID == deviceID.uuidString.lowercased()
+    else {
+      throw CurrentHubError.invalidRequest("paired-device secret archive device identity is invalid")
+    }
+    let credential = try CurrentHubCredential(
+      deviceID: deviceID,
+      accessToken: value.accessToken,
+      expiresAtMilliseconds: value.expiresAtMilliseconds
+    )
+    guard credential.expiresAtMilliseconds > Int64(Date().timeIntervalSince1970 * 1_000) else {
+      throw CurrentHubError.credentialExpired
+    }
+    return credential
+  }
+
+  private struct SecretArchive: Codable {
+    let version: Int
+    let deviceID: String
+    let accessToken: String
+    let expiresAtMilliseconds: Int64
+
+    enum CodingKeys: String, CodingKey {
+      case version
+      case deviceID = "device_id"
+      case accessToken = "access_token"
+      case expiresAtMilliseconds = "expires_at_ms"
+    }
+  }
+
   func apply(to request: inout URLRequest) {
     request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
   }
@@ -70,7 +124,7 @@ public protocol CurrentHubCredentialStore: Sendable {
 }
 
 public struct CurrentHubInvitation: Decodable, Sendable,
-  CustomStringConvertible, CustomDebugStringConvertible
+  CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable
 {
   public let endpoint: URL
   public let pairingID: UUID
@@ -90,6 +144,9 @@ public struct CurrentHubInvitation: Decodable, Sendable,
 
   public var description: String { "CurrentHubInvitation(<redacted>)" }
   public var debugDescription: String { description }
+  public var customMirror: Mirror {
+    Mirror(self, children: ["invitation": "<redacted>"])
+  }
 }
 
 struct CurrentHubClaimEnvelope: Decodable, Sendable {
@@ -101,6 +158,23 @@ struct CurrentHubClaimEnvelope: Decodable, Sendable {
     case deviceID = "device_id"
     case accessToken = "access_token"
     case expiresAtMilliseconds = "expires_at_ms"
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let rawDeviceID = try container.decode(String.self, forKey: .deviceID)
+    guard let deviceID = UUID(uuidString: rawDeviceID),
+      rawDeviceID == deviceID.uuidString.lowercased()
+    else {
+      throw DecodingError.dataCorruptedError(
+        forKey: .deviceID,
+        in: container,
+        debugDescription: "paired-device identity must be a canonical lowercase UUID"
+      )
+    }
+    self.deviceID = deviceID
+    accessToken = try container.decode(String.self, forKey: .accessToken)
+    expiresAtMilliseconds = try container.decode(Int64.self, forKey: .expiresAtMilliseconds)
   }
 
   func credential() throws -> CurrentHubCredential {
@@ -199,7 +273,7 @@ public struct CurrentHubProjectionCar: Decodable, Equatable, Sendable {
   public let efficiencyWhPerKilometre: Double?
   public let settings: CurrentHubProjectionCarSettings
 
-  enum CodingKeys: String, CodingKey {
+  enum CodingKeys: String, CodingKey, CaseIterable {
     case id, name, model, vin
     case sourceEID = "source_eid"
     case sourceVID = "source_vid"
@@ -212,6 +286,8 @@ public struct CurrentHubProjectionCar: Decodable, Equatable, Sendable {
     case efficiencyWhPerKilometre = "efficiency_wh_per_km"
     case settings
   }
+
+  static let requiredWireKeys = Set(CodingKeys.allCases.map(\.rawValue))
 }
 
 public struct CurrentHubCurrentState: Decodable, Equatable, Sendable {

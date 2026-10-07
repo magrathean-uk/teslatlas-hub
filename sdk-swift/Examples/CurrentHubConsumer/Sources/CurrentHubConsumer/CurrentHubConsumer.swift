@@ -43,184 +43,106 @@ struct CurrentHubConsumer {
     )
     let invitation = try JSONDecoder().decode(CurrentHubInvitation.self, from: invitationData)
     let transport = try makeTransport(caPath: config.caPath)
-    let session = try await CurrentHubConsumerSession.connect(
-      endpoint: config.endpoint,
-      expectedHubID: config.expectedHubID,
-      transport: transport
-    )
+    let report = try await run(config: config, invitation: invitation, transport: transport)
+    printReport(report)
+  }
 
-    let report = try await ConsumerLifecycle.execute(session: session) {
-      let discovery = await session.discoveryDocument()
-      guard discovery.hubID == config.expectedHubID,
-        discovery.protocolName == "teslatlas-sync",
-        discovery.protocolMajor == 1,
-        discovery.apiVersions == ["1.0"],
-        discovery.version == "2026.36.2",
-        Set(discovery.capabilities) == [
-          "query.vehicles", "query.current", "query.drives", "sync.packs",
-        ]
-      else { throw ConsumerError.unexpectedDiscovery }
-      let originalCredential = try await session.claim(
-        invitation: invitation,
-        deviceName: config.deviceName
+  /// The CLI and fixture tests use this same output-admission and journey ordering.
+  static func run(
+    config: ConsumerConfig,
+    invitation: CurrentHubInvitation,
+    transport: any CurrentHubInvitationPinningTransport
+  ) async throws -> ConsumerJourneyReport {
+    let outputs = try ConsumerOutputFiles(config: config)
+    do {
+      let session = try await CurrentHubConsumerSession.connect(
+        endpoint: config.endpoint,
+        expectedHubID: config.expectedHubID,
+        transport: transport
       )
-      try OwnerOnlyExclusiveFileWriter.write(
-        Data(originalCredential.deviceID.uuidString.lowercased().utf8),
-        path: config.cleanupDeviceIDPath
-      )
-      do {
-        _ = try await session.claim(invitation: invitation, deviceName: "replay-check")
-        throw ConsumerError.invitationReplayAccepted
-      } catch CurrentHubError.unauthorized {
-        // The invitation is one-use and its deliberate replay was rejected.
-      }
-      let health = try await session.health()
-      let readiness = try await session.readiness()
-      guard health.status == "ok", health.version == "2026.36.2",
-        readiness.status == "ready", readiness.reason == nil
-      else { throw ConsumerError.unexpectedFixture }
-      let vehicles = try await session.vehicles()
-      guard vehicles.count == config.expectedVehicleCount else {
-        throw ConsumerError.unexpectedFixture
-      }
-      let vehicleID = config.vehicleID ?? vehicles[0].vehicleID
-      guard let selectedVehicle = vehicles.first(where: { $0.vehicleID == vehicleID }) else {
-        throw ConsumerError.noVehicles
-      }
-      let orderedVehicles = [selectedVehicle] + vehicles.filter { $0.vehicleID != vehicleID }
-      var observedCurrentCount = 0
-      var absentCurrentCount = 0
-      var currentStates: [CurrentHubCurrentState] = []
-      for vehicle in orderedVehicles {
-        let current = try await session.current(vehicleID: vehicle.vehicleID)
-        currentStates.append(current)
-        if current.observedAtMilliseconds == nil {
-          absentCurrentCount += 1
-        } else {
-          observedCurrentCount += 1
+
+      let report = try await ConsumerLifecycle.execute(session: session) {
+        let discovery = await session.discoveryDocument()
+        guard discovery.hubID == config.expectedHubID,
+          discovery.protocolName == "teslatlas-sync",
+          discovery.protocolMajor == 1,
+          discovery.apiVersions == ["1.0"],
+          discovery.version == "2026.36.2",
+          Set(discovery.capabilities) == [
+            "query.vehicles", "query.current", "query.drives", "sync.packs",
+          ]
+        else { throw ConsumerError.unexpectedDiscovery }
+        let originalCredential = try await session.claim(
+          invitation: invitation,
+          deviceName: config.deviceName
+        )
+        try await outputs.recordClaimedDevice(originalCredential.deviceID)
+        do {
+          _ = try await session.claim(invitation: invitation, deviceName: "replay-check")
+          throw ConsumerError.invitationReplayAccepted
+        } catch CurrentHubError.unauthorized {
+          // The invitation is one-use and its deliberate replay was rejected.
         }
-      }
-      guard observedCurrentCount == config.expectedObservedCount,
-        absentCurrentCount == config.expectedAbsentCount
-      else {
-        throw ConsumerError.unexpectedFixture
-      }
-      let driveFromMilliseconds = config.driveFromMilliseconds ?? semanticFromMilliseconds
-      let driveToMilliseconds = config.driveToMilliseconds ?? semanticToMilliseconds
-      let expectedDriveCounts = config.expectedDriveCounts ?? [5, 0, 0]
-      var histories: [ConsumerDrivePageSummary] = []
-      for vehicle in orderedVehicles {
-        let history = try await ConsumerDrivePager.fetch(
-          vehicleID: vehicle.vehicleID,
-          fromMilliseconds: driveFromMilliseconds,
-          toMilliseconds: driveToMilliseconds,
-          limit: 2,
-          maximumPages: 128
-        ) { query in
-          try await session.drivePage(query: query, vehicleID: vehicle.vehicleID)
-        }
-        histories.append(history)
-      }
-      guard histories.map(\.driveCount) == expectedDriveCounts,
-        histories.allSatisfy({ $0.conditionalNotModifiedCount == $0.pageCount })
-      else {
-        throw ConsumerError.unexpectedFixture
-      }
-      let boundaryInputs = try ConsumerHistoryBoundaryPlanner.liveJourneyExpectations(
-        fromMilliseconds: driveFromMilliseconds,
-        toMilliseconds: driveToMilliseconds,
-        primaryItems: histories[0].items,
-        expectedDriveCounts: expectedDriveCounts,
-        deriveLatestDriveBoundaryChecks: config.deriveLatestDriveBoundaryChecks
-      )
-      var boundaryChecks: [ConsumerHistoryBoundaryCheck] = []
-      for input in boundaryInputs {
-        let result = try await ConsumerDrivePager.fetch(
-          vehicleID: vehicleID,
-          fromMilliseconds: input.fromMilliseconds,
-          toMilliseconds: input.toMilliseconds,
-          limit: 2,
-          maximumPages: 128
-        ) { query in
-          try await session.drivePage(query: query, vehicleID: vehicleID)
-        }
-        guard result.driveCount == input.expectedCount else {
+        let health = try await session.health()
+        let readiness = try await session.readiness()
+        guard health.status == "ok", health.version == "2026.36.2",
+          readiness.status == "ready", readiness.reason == nil
+        else { throw ConsumerError.unexpectedFixture }
+        let vehicles = try await session.vehicles()
+        guard vehicles.count == config.expectedVehicleCount else {
           throw ConsumerError.unexpectedFixture
         }
-        boundaryChecks.append(
-          ConsumerHistoryBoundaryCheck(
-            window: input.window,
-            fromMilliseconds: input.fromMilliseconds,
-            toMilliseconds: input.toMilliseconds,
-            count: result.driveCount
-          )
-        )
-      }
-      let oldClient = try await session.client(using: originalCredential)
-      _ = try await session.rotateCredential()
-      do {
-        _ = try await oldClient.vehicles()
-        throw ConsumerError.oldCredentialAccepted
-      } catch CurrentHubError.unauthorized {
-        // Rotation invalidated the old bearer.
-      }
-      guard try await session.vehicles().count == config.expectedVehicleCount else {
-        throw ConsumerError.unexpectedFixture
-      }
-      let preRestartSnapshotData = try ConsumerSemanticSnapshot.encode(
-        vehicles: zip(currentStates, histories).map {
-          ConsumerSemanticVehicle(current: $0.0, drives: $0.1.items)
-        },
-        fromMilliseconds: driveFromMilliseconds,
-        toMilliseconds: driveToMilliseconds,
-        boundaryChecks: boundaryChecks
-      )
-      var snapshotData = preRestartSnapshotData
-      var restartVerified = false
-      if let readyPath = config.restartReadyPath,
-        let continuePath = config.restartContinuePath
-      {
-        try await ConsumerRestartGate.wait(
-          readyPath: readyPath,
-          continuePath: continuePath
-        )
-        let restartedDiscovery = try await session.refreshDiscovery()
-        let restartedHealth = try await session.health()
-        let restartedReadiness = try await session.readiness()
-        let restartedVehicles = try await session.vehicles()
-        guard restartedDiscovery.hubID == config.expectedHubID,
-          restartedDiscovery.version == "2026.36.2",
-          restartedHealth.status == "ok",
-          restartedReadiness.status == "ready",
-          restartedVehicles.count == config.expectedVehicleCount,
-          Set(restartedVehicles.map(\.vehicleID)) == Set(orderedVehicles.map(\.vehicleID))
-        else { throw ConsumerError.unexpectedFixture }
-
-        var restartedCurrentStates: [CurrentHubCurrentState] = []
-        var restartedHistories: [ConsumerDrivePageSummary] = []
-        for vehicle in orderedVehicles {
-          restartedCurrentStates.append(
-            try await session.current(vehicleID: vehicle.vehicleID)
-          )
-          restartedHistories.append(
-            try await ConsumerDrivePager.fetch(
-              vehicleID: vehicle.vehicleID,
-              fromMilliseconds: driveFromMilliseconds,
-              toMilliseconds: driveToMilliseconds,
-              limit: 2,
-              maximumPages: 128
-            ) { query in
-              try await session.drivePage(query: query, vehicleID: vehicle.vehicleID)
-            }
-          )
+        let vehicleID = config.vehicleID ?? vehicles[0].vehicleID
+        guard let selectedVehicle = vehicles.first(where: { $0.vehicleID == vehicleID }) else {
+          throw ConsumerError.noVehicles
         }
-        guard restartedHistories.map(\.driveCount) == expectedDriveCounts,
-          restartedHistories.allSatisfy({
-            $0.conditionalNotModifiedCount == $0.pageCount
-          })
-        else { throw ConsumerError.restartSemanticMismatch }
-
-        var restartedBoundaryChecks: [ConsumerHistoryBoundaryCheck] = []
+        let orderedVehicles = [selectedVehicle] + vehicles.filter { $0.vehicleID != vehicleID }
+        var observedCurrentCount = 0
+        var absentCurrentCount = 0
+        var currentStates: [CurrentHubCurrentState] = []
+        for vehicle in orderedVehicles {
+          let current = try await session.current(vehicleID: vehicle.vehicleID)
+          currentStates.append(current)
+          if current.observedAtMilliseconds == nil {
+            absentCurrentCount += 1
+          } else {
+            observedCurrentCount += 1
+          }
+        }
+        guard observedCurrentCount == config.expectedObservedCount,
+          absentCurrentCount == config.expectedAbsentCount
+        else {
+          throw ConsumerError.unexpectedFixture
+        }
+        let driveFromMilliseconds = config.driveFromMilliseconds ?? semanticFromMilliseconds
+        let driveToMilliseconds = config.driveToMilliseconds ?? semanticToMilliseconds
+        let expectedDriveCounts = config.expectedDriveCounts ?? [5, 0, 0]
+        var histories: [ConsumerDrivePageSummary] = []
+        for vehicle in orderedVehicles {
+          let history = try await ConsumerDrivePager.fetch(
+            vehicleID: vehicle.vehicleID,
+            fromMilliseconds: driveFromMilliseconds,
+            toMilliseconds: driveToMilliseconds,
+            limit: 2,
+            maximumPages: 128
+          ) { query in
+            try await session.drivePage(query: query, vehicleID: vehicle.vehicleID)
+          }
+          histories.append(history)
+        }
+        guard histories.map(\.driveCount) == expectedDriveCounts,
+          histories.allSatisfy({ $0.conditionalNotModifiedCount == $0.pageCount })
+        else {
+          throw ConsumerError.unexpectedFixture
+        }
+        let boundaryInputs = try ConsumerHistoryBoundaryPlanner.liveJourneyExpectations(
+          fromMilliseconds: driveFromMilliseconds,
+          toMilliseconds: driveToMilliseconds,
+          primaryItems: histories[0].items,
+          expectedDriveCounts: expectedDriveCounts,
+          deriveLatestDriveBoundaryChecks: config.deriveLatestDriveBoundaryChecks
+        )
+        var boundaryChecks: [ConsumerHistoryBoundaryCheck] = []
         for input in boundaryInputs {
           let result = try await ConsumerDrivePager.fetch(
             vehicleID: vehicleID,
@@ -232,9 +154,9 @@ struct CurrentHubConsumer {
             try await session.drivePage(query: query, vehicleID: vehicleID)
           }
           guard result.driveCount == input.expectedCount else {
-            throw ConsumerError.restartSemanticMismatch
+            throw ConsumerError.unexpectedFixture
           }
-          restartedBoundaryChecks.append(
+          boundaryChecks.append(
             ConsumerHistoryBoundaryCheck(
               window: input.window,
               fromMilliseconds: input.fromMilliseconds,
@@ -243,34 +165,129 @@ struct CurrentHubConsumer {
             )
           )
         }
-        let postRestartSnapshotData = try ConsumerSemanticSnapshot.encode(
-          vehicles: zip(restartedCurrentStates, restartedHistories).map {
+        let oldClient = try await session.client(using: originalCredential)
+        _ = try await session.rotateCredential()
+        do {
+          _ = try await oldClient.vehicles()
+          throw ConsumerError.oldCredentialAccepted
+        } catch CurrentHubError.unauthorized {
+          // Rotation invalidated the old bearer.
+        }
+        guard try await session.vehicles().count == config.expectedVehicleCount else {
+          throw ConsumerError.unexpectedFixture
+        }
+        let preRestartSnapshotData = try ConsumerSemanticSnapshot.encode(
+          vehicles: zip(currentStates, histories).map {
             ConsumerSemanticVehicle(current: $0.0, drives: $0.1.items)
           },
           fromMilliseconds: driveFromMilliseconds,
           toMilliseconds: driveToMilliseconds,
-          boundaryChecks: restartedBoundaryChecks
+          boundaryChecks: boundaryChecks
         )
-        try ConsumerSemanticSnapshot.requireUnchanged(
-          before: preRestartSnapshotData,
-          after: postRestartSnapshotData
-        )
-        snapshotData = postRestartSnapshotData
-        restartVerified = true
-      }
-      try OwnerOnlyExclusiveFileWriter.write(snapshotData, path: config.semanticSnapshotPath)
-      return ConsumerJourneyReport(
-        vehicleCount: vehicles.count,
-        currentObservedCount: observedCurrentCount,
-        currentAbsentCount: absentCurrentCount,
-        drivePageCount: histories[0].pageCount,
-        driveCount: histories[0].driveCount,
-        conditionalNotModifiedCount: histories[0].conditionalNotModifiedCount,
-        restartVerified: restartVerified,
-        semanticSnapshotSHA256: semanticSHA256(snapshotData)
-      )
-    }
+        var snapshotData = preRestartSnapshotData
+        var restartVerified = false
+        if let readyPath = config.restartReadyPath,
+          let continuePath = config.restartContinuePath
+        {
+          try await ConsumerRestartGate.wait(
+            readyPath: readyPath,
+            continuePath: continuePath
+          )
+          let restartedDiscovery = try await session.refreshDiscovery()
+          let restartedHealth = try await session.health()
+          let restartedReadiness = try await session.readiness()
+          let restartedVehicles = try await session.vehicles()
+          guard restartedDiscovery.hubID == config.expectedHubID,
+            restartedDiscovery.version == "2026.36.2",
+            restartedHealth.status == "ok",
+            restartedReadiness.status == "ready",
+            restartedVehicles.count == config.expectedVehicleCount,
+            Set(restartedVehicles.map(\.vehicleID)) == Set(orderedVehicles.map(\.vehicleID))
+          else { throw ConsumerError.unexpectedFixture }
 
+          var restartedCurrentStates: [CurrentHubCurrentState] = []
+          var restartedHistories: [ConsumerDrivePageSummary] = []
+          for vehicle in orderedVehicles {
+            restartedCurrentStates.append(
+              try await session.current(vehicleID: vehicle.vehicleID)
+            )
+            restartedHistories.append(
+              try await ConsumerDrivePager.fetch(
+                vehicleID: vehicle.vehicleID,
+                fromMilliseconds: driveFromMilliseconds,
+                toMilliseconds: driveToMilliseconds,
+                limit: 2,
+                maximumPages: 128
+              ) { query in
+                try await session.drivePage(query: query, vehicleID: vehicle.vehicleID)
+              }
+            )
+          }
+          guard restartedHistories.map(\.driveCount) == expectedDriveCounts,
+            restartedHistories.allSatisfy({
+              $0.conditionalNotModifiedCount == $0.pageCount
+            })
+          else { throw ConsumerError.restartSemanticMismatch }
+
+          var restartedBoundaryChecks: [ConsumerHistoryBoundaryCheck] = []
+          for input in boundaryInputs {
+            let result = try await ConsumerDrivePager.fetch(
+              vehicleID: vehicleID,
+              fromMilliseconds: input.fromMilliseconds,
+              toMilliseconds: input.toMilliseconds,
+              limit: 2,
+              maximumPages: 128
+            ) { query in
+              try await session.drivePage(query: query, vehicleID: vehicleID)
+            }
+            guard result.driveCount == input.expectedCount else {
+              throw ConsumerError.restartSemanticMismatch
+            }
+            restartedBoundaryChecks.append(
+              ConsumerHistoryBoundaryCheck(
+                window: input.window,
+                fromMilliseconds: input.fromMilliseconds,
+                toMilliseconds: input.toMilliseconds,
+                count: result.driveCount
+              )
+            )
+          }
+          let postRestartSnapshotData = try ConsumerSemanticSnapshot.encode(
+            vehicles: zip(restartedCurrentStates, restartedHistories).map {
+              ConsumerSemanticVehicle(current: $0.0, drives: $0.1.items)
+            },
+            fromMilliseconds: driveFromMilliseconds,
+            toMilliseconds: driveToMilliseconds,
+            boundaryChecks: restartedBoundaryChecks
+          )
+          try ConsumerSemanticSnapshot.requireUnchanged(
+            before: preRestartSnapshotData,
+            after: postRestartSnapshotData
+          )
+          snapshotData = postRestartSnapshotData
+          restartVerified = true
+        }
+        try await outputs.writeSnapshot(snapshotData)
+        return ConsumerJourneyReport(
+          vehicleCount: vehicles.count,
+          currentObservedCount: observedCurrentCount,
+          currentAbsentCount: absentCurrentCount,
+          drivePageCount: histories[0].pageCount,
+          driveCount: histories[0].driveCount,
+          conditionalNotModifiedCount: histories[0].conditionalNotModifiedCount,
+          restartVerified: restartVerified,
+          semanticSnapshotSHA256: semanticSHA256(snapshotData)
+        )
+      }
+      await outputs.close()
+      return report
+    } catch {
+      await outputs.close()
+      throw error
+    }
+  }
+
+  private static func printReport(_ report: ConsumerJourneyReport) {
     print("discovery=status=ok")
     print("claim=status=ok")
     print("health=status=ok")
@@ -306,7 +323,7 @@ struct CurrentHubConsumer {
   }
 }
 
-private struct ConsumerJourneyReport: Sendable {
+struct ConsumerJourneyReport: Sendable {
   let vehicleCount: Int
   let currentObservedCount: Int
   let currentAbsentCount: Int
