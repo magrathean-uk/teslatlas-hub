@@ -9,11 +9,11 @@ pub use cleaner::{
     prepare_positions_for_tile_rendering_v1,
 };
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, btree_map::Entry};
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use raster::{LongRangeLodTier, ZoomSegmentMap, visit_drive_lod_tiers};
+use raster::{LongRangeLodTier, RdpBudget, TileSegment, visit_drive_lod_tiers};
 
 const POSITION_PAGE_FORMAT_VERSION: u32 = 1;
 const TILE_PAYLOAD_FORMAT_VERSION: u32 = 1;
@@ -34,8 +34,11 @@ pub const MAX_CANONICAL_SEGMENTS_PER_TILE: usize = 200_000;
 pub const MAX_CANONICAL_RAW_WEIGHT_ENTRIES: usize = MAX_TILE_PAYLOAD_BYTES / SEGMENT_BYTES;
 /// Geometry identity required by the current Hub prepared-artefact profile.
 pub const TILE_GEOMETRY_VERSION: &str = "raster-v9-rounded-tile-px";
-/// Semantic version of this crate's compute algorithm and byte contract.
-pub const ALGORITHM_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Semantic identity of the cleaner/generator, independent of package version.
+///
+/// Persisted results must match this identity before reuse or current delivery.
+/// Geometry and wire-format versions are separate representation contracts.
+pub const ALGORITHM_VERSION: &str = "0.1.1";
 
 const MAX_RAW_UNIQUE_SEGMENTS_PER_TILE: usize = MAX_TILE_PAYLOAD_BYTES / SEGMENT_BYTES;
 const LONG_RANGE_LOD_TIERS: [LongRangeLodTier; 4] = [
@@ -45,7 +48,10 @@ const LONG_RANGE_LOD_TIERS: [LongRangeLodTier; 4] = [
     LongRangeLodTier::new(11, 13, 2.0, 20.0, 3.0),
 ];
 
-/// One cleaned drive in latitude/longitude order.
+/// One complete cleaned drive in latitude/longitude order.
+///
+/// `drive_id` is metadata: separate objects are counted and simplified separately,
+/// even when their IDs match. It does not reconnect point fragments across pages.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Drive {
     pub drive_id: i32,
@@ -149,8 +155,10 @@ impl TierAccumulator {
     }
 }
 
+#[derive(Default)]
 struct WeightBudget {
     used: usize,
+    tile_count: usize,
 }
 
 impl WeightBudget {
@@ -254,24 +262,71 @@ pub fn generate_tile_payload_v1(
     cancelled: &AtomicBool,
     progress: Option<&ProgressCallback<'_>>,
 ) -> Result<TileOutput, Error> {
-    generate_internal(Some(drives.len()), cancelled, progress, |consume| {
+    generate_internal(Some(drives.len()), cancelled, progress, None, |consume| {
         consume(drives)
     })
 }
 
+/// Generate with a finite RDP interior-point distance-evaluation budget.
+///
+/// The budget is shared across all tiers and drives. Zero allows no RDP
+/// evaluations. Exhaustion returns `InvalidData` before the next evaluation,
+/// without partial output. This does not bound guard, raster or packing work.
+pub fn generate_tile_payload_v1_with_rdp_limit(
+    drives: &[Drive],
+    cancelled: &AtomicBool,
+    progress: Option<&ProgressCallback<'_>>,
+    rdp_evaluation_limit: u64,
+) -> Result<TileOutput, Error> {
+    generate_internal(
+        Some(drives.len()),
+        cancelled,
+        progress,
+        Some(rdp_evaluation_limit),
+        |consume| consume(drives),
+    )
+}
+
 /// Generate from storage-owned bounded pages, consuming every page synchronously once.
+///
+/// Pages group complete `Drive` objects. Reordering or regrouping the same objects
+/// preserves output bytes; splitting a drive's points into separate objects does
+/// not. Each object must fit one page (at most 128 drives and an 8 MiB encoded
+/// equivalent); an oversized object is rejected, not continued by matching IDs.
 pub fn generate_tile_payload_v1_from_pages(
     cancelled: &AtomicBool,
     progress: Option<&ProgressCallback<'_>>,
     visit_pages: impl FnMut(&mut DrivePageConsumer<'_>) -> Result<(), Error>,
 ) -> Result<TileOutput, Error> {
-    generate_internal(None, cancelled, progress, visit_pages)
+    generate_internal(None, cancelled, progress, None, visit_pages)
+}
+
+/// Generate from bounded pages with one RDP evaluation budget for the entire call.
+///
+/// The limit also spans page boundaries. See `generate_tile_payload_v1_with_rdp_limit`
+/// for exhaustion semantics and the work excluded from this budget.
+/// Pages must group complete `Drive` objects, as for
+/// `generate_tile_payload_v1_from_pages`; IDs do not reconnect fragments.
+pub fn generate_tile_payload_v1_from_pages_with_rdp_limit(
+    cancelled: &AtomicBool,
+    progress: Option<&ProgressCallback<'_>>,
+    rdp_evaluation_limit: u64,
+    visit_pages: impl FnMut(&mut DrivePageConsumer<'_>) -> Result<(), Error>,
+) -> Result<TileOutput, Error> {
+    generate_internal(
+        None,
+        cancelled,
+        progress,
+        Some(rdp_evaluation_limit),
+        visit_pages,
+    )
 }
 
 fn generate_internal(
     expected_drive_count: Option<usize>,
     cancelled: &AtomicBool,
     progress: Option<&ProgressCallback<'_>>,
+    rdp_evaluation_limit: Option<u64>,
     mut visit_pages: impl FnMut(&mut DrivePageConsumer<'_>) -> Result<(), Error>,
 ) -> Result<TileOutput, Error> {
     check_cancelled(cancelled)?;
@@ -281,68 +336,94 @@ fn generate_internal(
         ..Diagnostics::default()
     };
     let mut accumulators = LONG_RANGE_LOD_TIERS.map(TierAccumulator::new);
-    let mut budget = WeightBudget { used: 0 };
+    let mut budget = WeightBudget::default();
+    let mut rdp_budget = RdpBudget::new(rdp_evaluation_limit);
     let reported_drive_count = expected_drive_count.unwrap_or(0);
-    {
+    let mut first_consumer_error: Option<Error> = None;
+    let visitor_result = {
         let mut consume = |drives: &[Drive]| {
-            check_cancelled(cancelled)?;
-            validate_typed_position_page(drives)?;
-            for drive in drives {
-                check_cancelled(cancelled)?;
-                diagnostics.input_point_count = diagnostics
-                    .input_point_count
-                    .checked_add(i64::try_from(drive.points.len()).map_err(|_| {
-                        Error::InvalidData("canonical input point count exceeds i64".into())
-                    })?)
-                    .ok_or_else(|| {
-                        Error::InvalidData("canonical input point count overflow".into())
-                    })?;
-                let completed = accumulators[0].drive_count;
-                let templates: [Progress; LONG_RANGE_LOD_TIERS.len()] =
-                    std::array::from_fn(|tier_index| {
-                        let tier = LONG_RANGE_LOD_TIERS[tier_index];
-                        Progress {
-                            stage: ProgressStage::GeneratingTier,
-                            tier_index,
-                            tier_count: LONG_RANGE_LOD_TIERS.len(),
-                            zoom_min: tier.zoom_min,
-                            zoom_max: tier.zoom_max,
-                            drives_completed: completed,
-                            drive_count: reported_drive_count,
-                            work_units: 0,
-                        }
-                    });
-                visit_drive_lod_tiers(
-                    drive.drive_id,
-                    &drive.points,
-                    &LONG_RANGE_LOD_TIERS,
-                    cancelled,
-                    |tier_index| {
-                        checkpoint(cancelled, &work_units, progress, templates[tier_index])
-                    },
-                    |tier_index, raw_segments| {
-                        merge_raw_segments(
-                            &mut accumulators[tier_index].weights,
-                            raw_segments,
-                            &mut budget,
-                            cancelled,
-                            &|| checkpoint(cancelled, &work_units, progress, templates[tier_index]),
-                        )?;
-                        accumulators[tier_index].drive_count = accumulators[tier_index]
-                            .drive_count
-                            .checked_add(1)
-                            .ok_or_else(|| {
-                                Error::InvalidData("canonical drive count overflow".into())
-                            })?;
-                        Ok(())
-                    },
-                )?;
+            if let Some(error) = &first_consumer_error {
+                return Err(error.clone());
             }
-            Ok(())
+            let result: Result<(), Error> = (|| {
+                check_cancelled(cancelled)?;
+                validate_typed_position_page(drives)?;
+                for drive in drives {
+                    check_cancelled(cancelled)?;
+                    diagnostics.input_point_count = diagnostics
+                        .input_point_count
+                        .checked_add(i64::try_from(drive.points.len()).map_err(|_| {
+                            Error::InvalidData("canonical input point count exceeds i64".into())
+                        })?)
+                        .ok_or_else(|| {
+                            Error::InvalidData("canonical input point count overflow".into())
+                        })?;
+                    let completed = accumulators[0].drive_count;
+                    let templates: [Progress; LONG_RANGE_LOD_TIERS.len()] =
+                        std::array::from_fn(|tier_index| {
+                            let tier = LONG_RANGE_LOD_TIERS[tier_index];
+                            Progress {
+                                stage: ProgressStage::GeneratingTier,
+                                tier_index,
+                                tier_count: LONG_RANGE_LOD_TIERS.len(),
+                                zoom_min: tier.zoom_min,
+                                zoom_max: tier.zoom_max,
+                                drives_completed: completed,
+                                drive_count: reported_drive_count,
+                                work_units: 0,
+                            }
+                        });
+                    let mut emitted_segments = 0usize;
+                    visit_drive_lod_tiers(
+                        &drive.points,
+                        &LONG_RANGE_LOD_TIERS,
+                        cancelled,
+                        &mut rdp_budget,
+                        |tier_index| {
+                            checkpoint(cancelled, &work_units, progress, templates[tier_index])
+                        },
+                        |tier_index, segment| {
+                            if let Some(segment) = segment {
+                                if emitted_segments.is_multiple_of(1_024) {
+                                    checkpoint(
+                                        cancelled,
+                                        &work_units,
+                                        progress,
+                                        templates[tier_index],
+                                    )?;
+                                }
+                                emitted_segments = emitted_segments.wrapping_add(1);
+                                merge_raw_segment(
+                                    &mut accumulators[tier_index].weights,
+                                    segment,
+                                    &mut budget,
+                                )?;
+                            } else {
+                                accumulators[tier_index].drive_count = accumulators[tier_index]
+                                    .drive_count
+                                    .checked_add(1)
+                                    .ok_or_else(|| {
+                                        Error::InvalidData("canonical drive count overflow".into())
+                                    })?;
+                            }
+                            Ok(())
+                        },
+                    )?;
+                }
+                Ok(())
+            })();
+            if let Err(error) = &result {
+                first_consumer_error = Some(error.clone());
+            }
+            result
         };
-        visit_pages(&mut consume)?;
-        check_cancelled(cancelled)?;
+        visit_pages(&mut consume)
+    };
+    if let Some(error) = first_consumer_error {
+        return Err(error);
     }
+    visitor_result?;
+    check_cancelled(cancelled)?;
     let observed = accumulators[0].drive_count;
     if accumulators.iter().any(|tier| tier.drive_count != observed) {
         return Err(Error::InvalidData(
@@ -429,51 +510,61 @@ fn validate_typed_position_page(drives: &[Drive]) -> Result<(), Error> {
     Ok(())
 }
 
-fn merge_raw_segments(
+fn merge_raw_segment(
     target: &mut TierWeights,
-    segments: ZoomSegmentMap,
+    segment: TileSegment,
     budget: &mut WeightBudget,
-    cancelled: &AtomicBool,
-    pulse: &(dyn Fn() -> Result<(), Error> + Send + Sync),
 ) -> Result<(), Error> {
-    for (zoom_index, (zoom, tile_map)) in segments.into_iter().enumerate() {
-        if zoom_index.is_multiple_of(4) {
-            check_cancelled(cancelled)?;
-            pulse()?;
-        }
-        for ((tile_x, tile_y), segments) in tile_map {
-            let weights = target
-                .entry(TileKey {
-                    zoom,
-                    tile_x,
-                    tile_y,
-                })
-                .or_default();
-            for (index, &((x1, y1), (x2, y2))) in segments.iter().enumerate() {
-                if index.is_multiple_of(1_024) {
-                    check_cancelled(cancelled)?;
-                    pulse()?;
-                }
-                let key = SegmentKey {
-                    x1: x1 as i16,
-                    y1: y1 as i16,
-                    x2: x2 as i16,
-                    y2: y2 as i16,
-                };
-                if !weights.contains_key(&key) {
-                    if weights.len() >= MAX_RAW_UNIQUE_SEGMENTS_PER_TILE {
-                        return Err(Error::InvalidData(
-                            "canonical CPU tile exceeded the bounded raw unique-segment limit"
-                                .into(),
-                        ));
-                    }
-                    budget.reserve()?;
-                }
-                let weight = weights.entry(key).or_default();
-                *weight = weight.checked_add(1).ok_or_else(|| {
-                    Error::InvalidData("canonical CPU segment weight overflow".into())
-                })?;
+    let coordinate = |value| {
+        i16::try_from(value).map_err(|_| {
+            Error::InvalidData("canonical CPU segment coordinate exceeds signed i16".into())
+        })
+    };
+    let key = SegmentKey {
+        x1: coordinate(segment.start.0)?,
+        y1: coordinate(segment.start.1)?,
+        x2: coordinate(segment.end.0)?,
+        y2: coordinate(segment.end.1)?,
+    };
+    let weights = match target.entry(TileKey {
+        zoom: segment.zoom,
+        tile_x: segment.tile_x,
+        tile_y: segment.tile_y,
+    }) {
+        Entry::Vacant(entry) => {
+            // Tiers have disjoint zoom ranges. Every admitted tile keeps at least
+            // one selected segment, so this shared count cannot fall at packing.
+            // Reject before retaining tile 4,097 or processing more input pages.
+            if budget.tile_count >= MAX_TILE_PAYLOAD_TILES {
+                return Err(Error::InvalidData(format!(
+                    "canonical CPU output contains {} tiles over the {} cap",
+                    budget.tile_count + 1,
+                    MAX_TILE_PAYLOAD_TILES
+                )));
             }
+            budget.reserve()?;
+            budget.tile_count += 1;
+            entry.insert(BTreeMap::from([(key, 1)]));
+            return Ok(());
+        }
+        Entry::Occupied(entry) => entry.into_mut(),
+    };
+    let unique_count = weights.len();
+    match weights.entry(key) {
+        Entry::Vacant(entry) => {
+            if unique_count >= MAX_RAW_UNIQUE_SEGMENTS_PER_TILE {
+                return Err(Error::InvalidData(
+                    "canonical CPU tile exceeded the bounded raw unique-segment limit".into(),
+                ));
+            }
+            budget.reserve()?;
+            entry.insert(1);
+        }
+        Entry::Occupied(mut entry) => {
+            let weight = entry.get_mut();
+            *weight = weight.checked_add(1).ok_or_else(|| {
+                Error::InvalidData("canonical CPU segment weight overflow".into())
+            })?;
         }
     }
     Ok(())
@@ -657,5 +748,123 @@ impl<'a> Reader<'a> {
         let result = &self.bytes[self.offset..end];
         self.offset = end;
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn segment() -> TileSegment {
+        TileSegment {
+            zoom: 13,
+            tile_x: 100,
+            tile_y: 200,
+            start: (i32::from(i16::MIN), i32::from(i16::MAX)),
+            end: (513, -1),
+        }
+    }
+
+    #[test]
+    fn streamed_duplicates_preserve_weights_direction_and_unique_budget() {
+        let mut weights = TierWeights::new();
+        let mut budget = WeightBudget::default();
+        for _ in 0..8_192 {
+            merge_raw_segment(&mut weights, segment(), &mut budget).unwrap();
+        }
+        assert_eq!(budget.used, 1);
+        assert_eq!(weights.len(), 1);
+        let tile = weights.values().next().unwrap();
+        assert_eq!(tile.len(), 1);
+        assert_eq!(tile.values().next(), Some(&8_192));
+
+        let mut reversed = segment();
+        std::mem::swap(&mut reversed.start, &mut reversed.end);
+        merge_raw_segment(&mut weights, reversed, &mut budget).unwrap();
+        assert_eq!(budget.used, 2);
+        assert_eq!(weights.values().next().unwrap().len(), 2);
+
+        let mut other_tile = segment();
+        other_tile.tile_x += 1;
+        merge_raw_segment(&mut weights, other_tile, &mut budget).unwrap();
+        assert_eq!(budget.used, 3);
+        assert_eq!(weights.len(), 2);
+    }
+
+    #[test]
+    fn full_unique_budget_allows_duplicates_but_rejects_new_entries() {
+        let mut weights = TierWeights::new();
+        let mut budget = WeightBudget {
+            used: MAX_CANONICAL_RAW_WEIGHT_ENTRIES - 1,
+            ..WeightBudget::default()
+        };
+        merge_raw_segment(&mut weights, segment(), &mut budget).unwrap();
+        assert_eq!(budget.used, MAX_CANONICAL_RAW_WEIGHT_ENTRIES);
+        merge_raw_segment(&mut weights, segment(), &mut budget).unwrap();
+
+        let mut distinct = segment();
+        distinct.end.0 += 1;
+        assert!(matches!(
+            merge_raw_segment(&mut weights, distinct, &mut budget),
+            Err(Error::InvalidData(message)) if message.contains("global raw-weight")
+        ));
+        assert_eq!(budget.used, MAX_CANONICAL_RAW_WEIGHT_ENTRIES);
+        let tile = weights.values().next().unwrap();
+        assert_eq!(tile.len(), 1);
+        assert_eq!(tile.values().next(), Some(&2));
+    }
+
+    #[test]
+    fn out_of_range_coordinates_are_rejected_before_accumulation() {
+        for index in 0..4 {
+            for outside in [i32::from(i16::MIN) - 1, i32::from(i16::MAX) + 1] {
+                let mut raw = segment();
+                match index {
+                    0 => raw.start.0 = outside,
+                    1 => raw.start.1 = outside,
+                    2 => raw.end.0 = outside,
+                    _ => raw.end.1 = outside,
+                }
+                let mut weights = TierWeights::new();
+                let mut budget = WeightBudget::default();
+                assert!(matches!(
+                    merge_raw_segment(&mut weights, raw, &mut budget),
+                    Err(Error::InvalidData(message)) if message.contains("signed i16")
+                ));
+                assert!(weights.is_empty());
+                assert_eq!(budget.used, 0);
+            }
+        }
+    }
+
+    fn ordered_key(index: usize) -> SegmentKey {
+        SegmentKey {
+            x1: i16::MIN + i16::try_from(index / 65_536).unwrap(),
+            y1: i16::try_from(i32::try_from(index % 65_536).unwrap() - 32_768).unwrap(),
+            x2: 1,
+            y2: 2,
+        }
+    }
+
+    #[test]
+    fn overfull_tile_selects_heaviest_then_signed_lexicographic_ties() {
+        let mut weights = SegmentWeights::new();
+        for index in 0..=MAX_CANONICAL_SEGMENTS_PER_TILE {
+            weights.insert(ordered_key(index), 1);
+        }
+        let promoted = ordered_key(MAX_CANONICAL_SEGMENTS_PER_TILE);
+        weights.insert(promoted, 2);
+        let mut sorted_keys = weights.keys().copied().collect::<Vec<_>>();
+        sorted_keys.retain(|key| *key != promoted);
+        let omitted = sorted_keys.pop().unwrap();
+        sorted_keys.push(promoted);
+        sorted_keys.sort_unstable();
+
+        let selected = budgeted_segments(weights, &AtomicBool::new(false)).unwrap();
+        assert_eq!(selected.len(), MAX_CANONICAL_SEGMENTS_PER_TILE);
+        assert_eq!(selected, sorted_keys);
+        assert!(selected.contains(&promoted));
+        assert!(!selected.contains(&omitted));
+        assert!(selected.windows(2).all(|pair| pair[0] < pair[1]));
     }
 }

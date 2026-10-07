@@ -34,7 +34,20 @@ fn position_page(drives: &[Drive]) -> Vec<u8> {
 
 fn payload(output: TileOutput) -> Vec<u8> {
     match output {
-        TileOutput::ReadyData { payload, .. } => payload,
+        TileOutput::ReadyData {
+            drive_count,
+            tile_count,
+            payload,
+            diagnostics,
+        } => {
+            assert_eq!(diagnostics.visitor_invocations, 1);
+            assert_eq!(diagnostics.drive_count, drive_count);
+            assert!(diagnostics.input_point_count >= 0);
+            assert_eq!(diagnostics.produced_tile_count, tile_count as i64);
+            assert!(tile_count > 0);
+            assert_eq!(decoded_keys(&payload).len(), tile_count);
+            payload
+        }
         TileOutput::ReadyEmpty { .. } => panic!("expected tile data"),
     }
 }
@@ -54,6 +67,7 @@ fn assert_golden(bytes: &[u8], expected_len: usize, expected_fingerprint: u64) {
 
 fn decoded_keys(bytes: &[u8]) -> Vec<(u32, u32, u32)> {
     let read = |offset: &mut usize| {
+        assert!(bytes.len().saturating_sub(*offset) >= 4);
         let value = u32::from_le_bytes(bytes[*offset..*offset + 4].try_into().unwrap());
         *offset += 4;
         value
@@ -65,10 +79,24 @@ fn decoded_keys(bytes: &[u8]) -> Vec<(u32, u32, u32)> {
     for _ in 0..count {
         let key = (read(&mut offset), read(&mut offset), read(&mut offset));
         let len = read(&mut offset) as usize;
+        assert!((2..=13).contains(&key.0));
+        assert!(key.1 < (1 << key.0) && key.2 < (1 << key.0));
+        assert!(len > 0 && len.is_multiple_of(8));
+        assert!(len <= bytes.len().saturating_sub(offset));
+        let segments = bytes[offset..offset + len]
+            .chunks_exact(8)
+            .map(|segment| {
+                std::array::from_fn::<_, 4, _>(|index| {
+                    i16::from_le_bytes(segment[index * 2..index * 2 + 2].try_into().unwrap())
+                })
+            })
+            .collect::<Vec<_>>();
+        assert!(segments.windows(2).all(|pair| pair[0] < pair[1]));
         offset += len;
         keys.push(key);
     }
     assert_eq!(offset, bytes.len());
+    assert!(keys.windows(2).all(|pair| pair[0] < pair[1]));
     keys
 }
 
@@ -119,13 +147,29 @@ fn position_page_v1_and_page_splits_preserve_order_independent_bytes() {
         None,
     )
     .unwrap();
-    let paged = payload(
+    let mut visitor_calls = 0;
+    let paged_output =
         generate_tile_payload_v1_from_pages(&AtomicBool::new(false), None, |consume| {
+            visitor_calls += 1;
             consume(&first_page)?;
             consume(&second_page)
         })
-        .unwrap(),
-    );
+        .unwrap();
+    assert_eq!(visitor_calls, 1);
+    assert!(matches!(
+        &paged_output,
+        TileOutput::ReadyData {
+            drive_count: 2,
+            diagnostics: teslatlas_compute::Diagnostics {
+                visitor_invocations: 1,
+                drive_count: 2,
+                input_point_count: 4,
+                ..
+            },
+            ..
+        }
+    ));
+    let paged = payload(paged_output);
     assert_eq!(direct, reversed);
     assert_eq!(direct, paged);
     assert_golden(&direct, 440, 7_014_253_990_521_307_000);

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::Error;
@@ -39,19 +38,50 @@ impl LongRangeLodTier {
     }
 }
 
-pub(crate) type ZoomSegmentMap = HashMap<u32, HashMap<(u32, u32), Vec<((i32, i32), (i32, i32))>>>;
+#[derive(Clone, Copy)]
+pub(crate) struct TileSegment {
+    pub zoom: u32,
+    pub tile_x: u32,
+    pub tile_y: u32,
+    pub start: (i32, i32),
+    pub end: (i32, i32),
+}
+
+type SegmentVisitor<'a> = dyn FnMut(TileSegment) -> Result<(), Error> + 'a;
+
+pub(crate) struct RdpBudget {
+    remaining: Option<u64>,
+}
+
+impl RdpBudget {
+    pub fn new(limit: Option<u64>) -> Self {
+        Self { remaining: limit }
+    }
+
+    fn reserve_evaluation(&mut self) -> Result<(), Error> {
+        if let Some(remaining) = &mut self.remaining {
+            if *remaining == 0 {
+                return Err(Error::InvalidData(
+                    "canonical RDP examined-work limit exceeded".into(),
+                ));
+            }
+            *remaining -= 1;
+        }
+        Ok(())
+    }
+}
 
 pub(crate) fn visit_drive_lod_tiers<P, F>(
-    drive_id: i32,
     points: &[(f32, f32)],
     tiers: &[LongRangeLodTier],
     cancelled: &AtomicBool,
+    rdp_budget: &mut RdpBudget,
     pulse: P,
     mut visit: F,
 ) -> Result<(), Error>
 where
     P: Fn(usize) -> Result<(), Error> + Send + Sync,
-    F: FnMut(usize, ZoomSegmentMap) -> Result<(), Error>,
+    F: FnMut(usize, Option<TileSegment>) -> Result<(), Error>,
 {
     for (tier_index, tier) in tiers.iter().copied().enumerate() {
         if tier.zoom_min < MIN_ZOOM || tier.zoom_max > MAX_ZOOM || tier.zoom_min > tier.zoom_max {
@@ -61,18 +91,38 @@ where
         }
         let tier_pulse = || pulse(tier_index);
         controlled_checkpoint(cancelled, Some(&tier_pulse))?;
-        let simplified = simplify_controlled(points, tier, cancelled, Some(&tier_pulse))?;
-        let mut segments = ZoomSegmentMap::new();
-        add_drive_multi_zoom(
-            &mut segments,
-            drive_id,
-            &simplified,
-            tier.zoom_min,
-            tier.zoom_max,
-            cancelled,
-            Some(&tier_pulse),
-        )?;
-        visit(tier_index, segments)?;
+        // Invalid input is a continuity boundary before simplification can erase it.
+        let mut run_start = 0;
+        for index in 0..=points.len() {
+            if index.is_multiple_of(1_024) {
+                controlled_checkpoint(cancelled, Some(&tier_pulse))?;
+            }
+            if index == points.len()
+                || !valid_coordinate(f64::from(points[index].0), f64::from(points[index].1))
+            {
+                if run_start < index {
+                    let simplified = simplify_controlled(
+                        &points[run_start..index],
+                        tier,
+                        cancelled,
+                        rdp_budget,
+                        Some(&tier_pulse),
+                    )?;
+                    let mut emit = |segment| visit(tier_index, Some(segment));
+                    add_drive_multi_zoom(
+                        &mut emit,
+                        &simplified,
+                        tier.zoom_min,
+                        tier.zoom_max,
+                        cancelled,
+                        Some(&tier_pulse),
+                    )?;
+                }
+                run_start = index + 1;
+            }
+        }
+        // Complete the original drive once, regardless of its valid-run count.
+        visit(tier_index, None)?;
     }
     Ok(())
 }
@@ -92,13 +142,14 @@ fn simplify_controlled(
     points: &[(f32, f32)],
     tier: LongRangeLodTier,
     cancelled: &AtomicBool,
+    rdp_budget: &mut RdpBudget,
     pulse: Option<&(dyn Fn() -> Result<(), Error> + Send + Sync)>,
 ) -> Result<Vec<(f32, f32)>, Error> {
     controlled_checkpoint(cancelled, pulse)?;
     if points.len() <= 2 {
         return Ok(points.to_vec());
     }
-    let kept = rdp_keep_mask(points, tier.epsilon_meters, cancelled, pulse)?
+    let kept = rdp_keep_mask(points, tier.epsilon_meters, cancelled, rdp_budget, pulse)?
         .into_iter()
         .enumerate()
         .filter_map(|(index, keep)| keep.then_some(index))
@@ -130,6 +181,7 @@ fn rdp_keep_mask(
     points: &[(f32, f32)],
     epsilon_meters: f64,
     cancelled: &AtomicBool,
+    rdp_budget: &mut RdpBudget,
     pulse: Option<&(dyn Fn() -> Result<(), Error> + Send + Sync)>,
 ) -> Result<Vec<bool>, Error> {
     if points.len() <= 2 {
@@ -152,6 +204,7 @@ fn rdp_keep_mask(
             if examined.is_multiple_of(1_024) {
                 controlled_checkpoint(cancelled, pulse)?;
             }
+            rdp_budget.reserve_evaluation()?;
             let distance = perpendicular_distance(*point, points[start], points[end]);
             if distance > max_distance {
                 max_distance = distance;
@@ -293,8 +346,7 @@ struct ProjectedPoint {
 
 #[allow(clippy::too_many_arguments)]
 fn add_drive_multi_zoom(
-    output: &mut ZoomSegmentMap,
-    _drive_id: i32,
+    output: &mut SegmentVisitor<'_>,
     points: &[(f32, f32)],
     zoom_min: u32,
     zoom_max: u32,
@@ -326,7 +378,7 @@ fn add_drive_multi_zoom(
 }
 
 fn add_projected_drive(
-    output: &mut ZoomSegmentMap,
+    output: &mut SegmentVisitor<'_>,
     points: &[Option<ProjectedPoint>],
     zoom: u32,
     cancelled: &AtomicBool,
@@ -345,7 +397,7 @@ fn add_projected_drive(
         if let Some(start) = previous
             && renderable_segment(start, point)
         {
-            add_projected_segment(output, zoom, start, point, scale);
+            add_projected_segment(output, zoom, start, point, scale)?;
         }
         previous = Some(point);
     }
@@ -353,15 +405,15 @@ fn add_projected_drive(
 }
 
 fn add_projected_segment(
-    output: &mut ZoomSegmentMap,
+    output: &mut SegmentVisitor<'_>,
     zoom: u32,
     start: ProjectedPoint,
     end: ProjectedPoint,
     scale: f64,
-) {
+) -> Result<(), Error> {
     let delta_x = end.nx - start.nx;
     if delta_x.abs() <= 0.5 {
-        add_world_segment(
+        return add_world_segment(
             output,
             zoom,
             start.nx * scale,
@@ -369,7 +421,6 @@ fn add_projected_segment(
             end.nx * scale,
             end.ny * scale,
         );
-        return;
     }
     let (unwrapped_end_x, boundary_x, first_edge_x, second_edge_x) = if delta_x < 0.0 {
         (end.nx + 1.0, 1.0, scale - 0.0001, 0.0)
@@ -378,39 +429,52 @@ fn add_projected_segment(
     };
     let denominator = unwrapped_end_x - start.nx;
     if denominator.abs() <= f64::EPSILON {
-        return;
+        // Exact -180/+180 aliases share a meridian. Retain vertical motion
+        // on the starting alias's edge, as the same-alias path already does.
+        return add_world_segment(
+            output,
+            zoom,
+            start.nx * scale,
+            start.ny * scale,
+            start.nx * scale,
+            end.ny * scale,
+        );
     }
     let crossing_t = ((boundary_x - start.nx) / denominator).clamp(0.0, 1.0);
     let edge_y = (start.ny + ((end.ny - start.ny) * crossing_t)) * scale;
     let (start_x, start_y) = (start.nx * scale, start.ny * scale);
     let (end_x, end_y) = (end.nx * scale, end.ny * scale);
     if (start_x - first_edge_x).abs() > f64::EPSILON || (start_y - edge_y).abs() > f64::EPSILON {
-        add_world_segment(output, zoom, start_x, start_y, first_edge_x, edge_y);
+        add_world_segment(output, zoom, start_x, start_y, first_edge_x, edge_y)?;
     }
     if (second_edge_x - end_x).abs() > f64::EPSILON || (edge_y - end_y).abs() > f64::EPSILON {
-        add_world_segment(output, zoom, second_edge_x, edge_y, end_x, end_y);
+        add_world_segment(output, zoom, second_edge_x, edge_y, end_x, end_y)?;
     }
+    Ok(())
 }
 
 fn add_world_segment(
-    output: &mut ZoomSegmentMap,
+    output: &mut SegmentVisitor<'_>,
     zoom: u32,
     start_x: f64,
     start_y: f64,
     end_x: f64,
     end_y: f64,
-) {
-    let tiles = output.entry(zoom).or_default();
+) -> Result<(), Error> {
     visit_crossed_tiles(start_x, start_y, end_x, end_y, zoom, |tile_x, tile_y| {
         let start = world_to_tile_pixel(start_x, start_y, tile_x, tile_y);
         let end = world_to_tile_pixel(end_x, end_y, tile_x, tile_y);
         if start != end {
-            tiles
-                .entry((tile_x, tile_y))
-                .or_default()
-                .push((start, end));
+            output(TileSegment {
+                zoom,
+                tile_x,
+                tile_y,
+                start,
+                end,
+            })?;
         }
-    });
+        Ok(())
+    })
 }
 
 #[inline]
@@ -437,8 +501,8 @@ fn visit_crossed_tiles(
     end_world_x: f64,
     end_world_y: f64,
     zoom: u32,
-    mut visit: impl FnMut(u32, u32),
-) {
+    mut visit: impl FnMut(u32, u32) -> Result<(), Error>,
+) -> Result<(), Error> {
     let size = f64::from(TILE_SIZE);
     let max_tile = ((1_u32 << zoom) - 1) as i32;
     let max_world = f64::from(1_u32 << zoom) * size - 0.0001;
@@ -515,7 +579,7 @@ fn visit_crossed_tiles(
         && tile_y <= max_tile
         && iterations < 4096
     {
-        visit(tile_x as u32, tile_y as u32);
+        visit(tile_x as u32, tile_y as u32)?;
         if tile_x == end_tile_x && tile_y == end_tile_y {
             break;
         }
@@ -533,6 +597,7 @@ fn visit_crossed_tiles(
         }
         iterations += 1;
     }
+    Ok(())
 }
 
 #[inline]

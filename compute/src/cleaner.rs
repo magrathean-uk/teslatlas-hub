@@ -36,6 +36,9 @@ impl std::error::Error for CleanMapError {}
 /// remove bridgeable outliers and parked drift, then cast the retained f64
 /// coordinates to f32 exactly once. There is no smoothing or interpolation.
 ///
+/// Invalid raw rows are deleted, not retained as route-gap markers. Surviving
+/// points can connect under the generator's segment rules.
+///
 /// Cleaning is drive-scoped and cannot be applied independently to fragments.
 /// A drive over the bound is explicitly unavailable for Hub preparation so the
 /// App's existing full-route local path can handle it without parity claims.
@@ -107,8 +110,8 @@ fn is_bridgeable_outlier(
     }
     match (before, after) {
         (Some(before), Some(after)) => {
-            let before_seconds = (current.date_ms - previous.date_ms) as f64 / 1000.0;
-            let after_seconds = (next.date_ms - current.date_ms) as f64 / 1000.0;
+            let before_seconds = elapsed_seconds(previous.date_ms, current.date_ms);
+            let after_seconds = elapsed_seconds(current.date_ms, next.date_ms);
             if before_seconds <= 0.0 || after_seconds <= 0.0 {
                 return false;
             }
@@ -120,7 +123,7 @@ fn is_bridgeable_outlier(
 }
 
 fn segment_speed_kmh(start: &RawMapPosition, end: &RawMapPosition) -> Option<f64> {
-    let seconds = (end.date_ms - start.date_ms) as f64 / 1000.0;
+    let seconds = elapsed_seconds(start.date_ms, end.date_ms);
     if seconds <= 0.0 {
         return None;
     }
@@ -129,6 +132,12 @@ fn segment_speed_kmh(start: &RawMapPosition, end: &RawMapPosition) -> Option<f64
             / seconds
             * 3.6,
     )
+}
+
+fn elapsed_seconds(start_ms: i64, end_ms: i64) -> f64 {
+    // Widen before subtraction, then convert the interval to preserve short
+    // intervals at extreme epochs without overflowing the full i64 span.
+    (i128::from(end_ms) - i128::from(start_ms)) as f64 / 1000.0
 }
 
 fn remove_stationary_drift(positions: &[RawMapPosition]) -> Vec<RawMapPosition> {
@@ -166,7 +175,7 @@ fn haversine_distance_m(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let delta_lon = (lon2 - lon1).to_radians();
     let a = (delta_lat / 2.0).sin().powi(2)
         + lat1_rad.cos() * lat2_rad.cos() * (delta_lon / 2.0).sin().powi(2);
-    let c = 2.0 * a.sqrt().asin();
+    let c = 2.0 * a.clamp(0.0, 1.0).sqrt().asin();
     6_371.0 * c * 1000.0
 }
 
@@ -219,6 +228,47 @@ mod tests {
                 (47.5020_f32, 19.0020_f32),
                 (47.5030_f32, 19.0030_f32),
             ]
+        );
+    }
+
+    #[test]
+    fn bridgeable_spike_across_full_epoch_range_is_removed() {
+        let points = [
+            point(i64::MIN, 47.5, 19.0, Some(50)),
+            point(i64::MIN + 1_000, 48.5, 20.0, Some(50)),
+            point(i64::MAX, 47.5, 19.0, Some(50)),
+        ];
+        assert_eq!(
+            prepare_positions_for_tile_rendering_v1(&points).unwrap(),
+            vec![(47.5_f32, 19.0_f32)]
+        );
+    }
+
+    #[test]
+    fn one_second_interval_near_minimum_epoch_keeps_its_speed() {
+        let start = point(i64::MIN, 47.5, 19.0, None);
+        let end = point(i64::MIN + 1_000, 47.5001, 19.0, None);
+        let speed = segment_speed_kmh(&start, &end).unwrap();
+        assert!((40.0..40.1).contains(&speed), "speed was {speed}");
+        assert_eq!(
+            Some(speed),
+            segment_speed_kmh(
+                &point(0, start.latitude, start.longitude, None),
+                &point(1_000, end.latitude, end.longitude, None),
+            )
+        );
+    }
+
+    #[test]
+    fn near_antipodal_final_position_is_retained() {
+        let points = [
+            point(0, 40.6, 0.0, None),
+            point(1_000, 40.6, 0.0, None),
+            point(259_200_000, -40.600000000001, 180.0, None),
+        ];
+        assert_eq!(
+            prepare_positions_for_tile_rendering_v1(&points).unwrap(),
+            vec![(40.6_f32, 0.0), (-40.6_f32, 180.0)]
         );
     }
 
