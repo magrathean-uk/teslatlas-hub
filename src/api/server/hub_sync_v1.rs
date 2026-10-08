@@ -1026,7 +1026,7 @@ mod tests {
 
     fn fixture(name: &str) -> serde_json::Value {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples")
+            .join("protocol/profiles/hub-sync-v1/1.3.0/examples")
             .join(name);
         serde_json::from_slice(&std::fs::read(path).expect("read Protocol fixture"))
             .expect("parse Protocol fixture")

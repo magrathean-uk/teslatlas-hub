@@ -88,6 +88,7 @@ context_root=$(mktemp -d)
 trap 'find "$context_root" -depth -delete' EXIT HUP INT TERM
 mkdir -p "$context_root/fixtures/teslamate-corpus/v1" "$context_root/packaging/docker"
 cp Cargo.toml Cargo.lock build.rs source_identity.rs "$context_root/"
+cp -R compute "$context_root/"
 cp LICENSE NOTICE "$context_root/"
 cp -R src examples tests "$context_root/"
 cp fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql \
@@ -130,6 +131,7 @@ grep -F 'Git repository selection environment is not allowed: GIT_EXEC_PATH' \
 test ! -e "$context_root/fabricated-remote.tar"
 
 grep -F 'COPY Cargo.toml Cargo.lock build.rs source_identity.rs ./' Dockerfile >/dev/null
+grep -F 'COPY compute ./compute' Dockerfile >/dev/null
 grep -F 'COPY LICENSE NOTICE ./' Dockerfile >/dev/null
 grep -F 'COPY fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql ./fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql' Dockerfile >/dev/null
 grep -F 'COPY packaging/com.teslatlas.hub.plist.in ./packaging/com.teslatlas.hub.plist.in' Dockerfile >/dev/null

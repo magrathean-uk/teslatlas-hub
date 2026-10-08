@@ -19,6 +19,7 @@ from candidate_source_manifest import CandidateManifestError, load_candidate_pat
 
 DOC_CATEGORIES = {
     "architecture",
+    "development",
     "assets",
     "brand",
     "governance",
@@ -57,9 +58,15 @@ FORBIDDEN_TOOL_ROOTS = {
     ".idea",
     ".vscode",
 }
-FORBIDDEN_TOOL_FILES = {"AGENTS.md", "CLAUDE.md", "GROK.md"}
+FORBIDDEN_TOOL_FILES = {"GROK.md"}
+ALLOWED_ROOT_MARKDOWN = {"AGENTS.md", "CLAUDE.md", "NEXT-RELEASE-URLS.md"}
 MAX_RUST_SOURCE_LINES = 3_000
-LEGACY_DOCUMENT_PREFIXES = ("docs/development/archive/", "docs/superpowers/")
+LEGACY_DOCUMENT_PREFIXES = (
+    "docs/development/archive/",
+    "docs/superpowers/",
+    "protocol/docs/development/archive/",
+    "sdk-typescript/docs/development/archive/",
+)
 LEGACY_PLAN_POINTER = "docs/development/PLAN.md"
 LEGACY_RUST_LINE_LIMITS = {"src/api/server/tests.rs": 3_200}
 DOC_NAME_RE = re.compile(r"^[a-z0-9]+(?:[.-][a-z0-9]+)*\.md$")
@@ -199,7 +206,9 @@ def verify(repo: Path, source_paths: set[str] | None = None) -> None:
     paths = source_paths if source_paths is not None else tracked_paths(repo)
     errors: list[str] = []
     root_markdown = sorted(
-        path for path in paths if "/" not in path and path.endswith(".md")
+        path
+        for path in paths
+        if "/" not in path and path.endswith(".md") and path not in ALLOWED_ROOT_MARKDOWN
     )
     if root_markdown:
         errors.append("tracked root Markdown is forbidden: " + ", ".join(root_markdown))

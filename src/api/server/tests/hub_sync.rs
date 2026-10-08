@@ -53,7 +53,7 @@ fn assert_hub_sync_signature_rejects(value: &serde_json::Value, cursor_key: &Cur
 
 fn hub_sync_protocol_fixture(name: &str) -> serde_json::Value {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples")
+        .join("protocol/profiles/hub-sync-v1/1.3.0/examples")
         .join(name);
     serde_json::from_slice(&fs::read(path).expect("read hub-sync Protocol fixture"))
         .expect("parse hub-sync Protocol fixture")
@@ -424,7 +424,7 @@ async fn hub_sync_bootstrap_manifest_is_signed_and_resumes_with_one_changed_pack
     assert_hub_sync_signature(&bootstrap, &cursor_key);
     let fixture: serde_json::Value = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/schema-2-1-single-pack-manifest.json"
+        "/protocol/profiles/hub-sync-v1/1.3.0/examples/schema-2-1-single-pack-manifest.json"
     )))
     .expect("schema 2.1 Protocol fixture");
     let mut expected = fixture["manifest"].clone();
@@ -2290,7 +2290,7 @@ async fn changes_since_rebases_retained_checkpoint_and_rejects_unknown_receipt()
     let unknown = response_json(unknown).await;
     let expected: serde_json::Value = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/changes-since-error-unknown-base-receipt.json"
+        "/protocol/profiles/hub-sync-v1/1.3.0/examples/changes-since-error-unknown-base-receipt.json"
     )))
     .expect("unknown-receipt fixture");
     assert_eq!(unknown, expected["response"]["body"]);

@@ -40,7 +40,7 @@ fn projected_record(sequence: u64) -> VerifiedEdgeItem {
         }.into(),
         payload_sha256: "8c1e0a6ea96f28999ea2c9c5113f13698a2e081dc829031696665326aeb5f147".into(),
         edge_received_at_ms: 1_800_000_000_100,
-        envelope_json: include_bytes!("../../../../../teslatlas-protocol/profiles/edge-delivery-v2/2.0.0/examples/projected-envelope.json").to_vec(),
+        envelope_json: include_bytes!("../../../../protocol/profiles/edge-delivery-v2/2.0.0/examples/projected-envelope.json").to_vec(),
         non_projection_reason: None,
     })
 }
@@ -111,7 +111,7 @@ fn edge_receipt_application_observation_lifecycle_accumulator_and_pending_publis
         legacy_record_id: "e9e9bee52f0bda000acdd63a1d79c245e72bdfeca9c3b9c4932c6f5ec0e8e618".into(),
         payload_sha256: "2b8aa76b27b1b29810087e1692c1efcfe3b04e340be83700464570f0924e8fd7".into(),
         edge_received_at_ms: 1_800_000_000_300,
-        envelope_json: include_bytes!("../../../../../teslatlas-protocol/profiles/edge-delivery-v2/2.0.0/examples/alert-envelope.json").to_vec(),
+        envelope_json: include_bytes!("../../../../protocol/profiles/edge-delivery-v2/2.0.0/examples/alert-envelope.json").to_vec(),
         non_projection_reason: Some("alert_event_retained".into()),
     });
     assert_eq!(

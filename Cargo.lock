@@ -2367,7 +2367,6 @@ dependencies = [
 [[package]]
 name = "teslatlas-compute"
 version = "0.1.0"
-source = "git+https://github.com/magrathean-uk/teslatlas-compute?rev=baa973bd3e4975c77fee09e631bbe288970a7eb8#baa973bd3e4975c77fee09e631bbe288970a7eb8"
 
 [[package]]
 name = "teslatlas-hub"

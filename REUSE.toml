@@ -1,0 +1,29 @@
+# REUSE.toml: licence map for this repository (REUSE specification 3.3).
+# The Hub (everything not listed below) is AGPL-3.0-only with the additional
+# terms in docs/legal/additional-terms.md. The packages below are separate
+# Apache-2.0 works with their own LICENSE and NOTICE files.
+version = 1
+
+[[annotations]]
+path = ["**"]
+precedence = "closest"
+SPDX-FileCopyrightText = "2026 MAGRATHEAN UK LTD"
+SPDX-License-Identifier = "AGPL-3.0-only"
+
+[[annotations]]
+path = ["compute/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 MAGRATHEAN UK LTD"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["protocol/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 MAGRATHEAN UK LTD"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["sdk-typescript/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 MAGRATHEAN UK LTD"
+SPDX-License-Identifier = "Apache-2.0"

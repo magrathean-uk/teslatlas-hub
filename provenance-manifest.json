@@ -649,6 +649,61 @@
         "licensing": "The archive aggregates project source, third-party licence texts, and other classified material; each contained file retains its own applicable treatment.",
         "release_treatment": "Retain as an immutable evidence artifact and do not treat the aggregate archive as a single-licence source file."
       }
+    },
+    {
+      "id": "macos-app-localisations",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Localised string tables of the macOS control app, authored and maintained in this repository. This treatment does not prove chain of title.",
+      "globs": [
+        "macos/TeslatlasHubApp/TeslatlasHubApp/Resources/*.lproj/*"
+      ]
+    },
+    {
+      "id": "hub-original-additions-2026-10",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Hub source, guidance and documentation added after the previous manifest revision (October 2026). This treatment does not prove chain of title.",
+      "paths": [
+        "AGENTS.md",
+        "CLAUDE.md",
+        "NEXT-RELEASE-URLS.md",
+        "REUSE.toml",
+        "docs/development/v7/compute-over-cap-months.md",
+        "docs/development/v7/device-vehicle-scope.md",
+        "docs/development/v7/edge-carry-over.md",
+        "docs/development/v7/hub-http-v1-profile.md",
+        "docs/development/v7/live-sync-wire.md",
+        "docs/guides/collection-paths.md",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/DevelopmentEventLog.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/HubL10n.swift",
+        "packaging/macos-app/scripts/preinstall",
+        "src/api/server/tests/drive_byte_budget.rs",
+        "src/collection/teslamate_current.rs",
+        "src/collection/teslamate_current/tests.rs"
+      ]
+    },
+    {
+      "id": "compute-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas Compute package imported with its full history on 2026-10-08 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
+      "globs": [
+        "compute/**"
+      ]
+    },
+    {
+      "id": "protocol-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas Protocol package imported with its full history on 2026-10-08 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
+      "globs": [
+        "protocol/**"
+      ]
+    },
+    {
+      "id": "sdk-typescript-imported",
+      "class": "MAGRATHEAN-ORIGINAL",
+      "rationale": "Teslatlas TypeScript client package imported with its full history on 2026-10-08 (Apache-2.0, own LICENSE and NOTICE). This treatment does not prove chain of title.",
+      "globs": [
+        "sdk-typescript/**"
+      ]
     }
   ]
 }

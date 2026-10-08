@@ -17,6 +17,7 @@ RUN --mount=type=tmpfs,target=/tmp/teslatlas-buildkit-required \
 
 # Keep dependency resolution bound to Cargo.lock and outside the runtime layer.
 COPY Cargo.toml Cargo.lock build.rs source_identity.rs ./
+COPY compute ./compute
 COPY LICENSE NOTICE ./
 COPY src ./src
 COPY examples ./examples

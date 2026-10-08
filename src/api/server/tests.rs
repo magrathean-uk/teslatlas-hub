@@ -1678,7 +1678,7 @@ async fn signing_keys_matches_protocol_fixture_and_vehicle_binding() {
 
     let fixture: serde_json::Value = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/signing-keys-vehicle-bound.json"
+        "/protocol/profiles/hub-sync-v1/1.3.0/examples/signing-keys-vehicle-bound.json"
     )))
     .expect("Protocol signing keys fixture");
     let mut expected = fixture["response"]["body"].clone();
@@ -1730,12 +1730,12 @@ async fn signing_keys_enforces_protocol_raw_response_boundary() {
 
     let at_limit: serde_json::Value = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/signing-keys-response-2097152-bytes.json"
+        "/protocol/profiles/hub-sync-v1/1.3.0/examples/signing-keys-response-2097152-bytes.json"
     )))
     .expect("at-limit Protocol fixture");
     let over_limit: serde_json::Value = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/signing-keys-response-2097153-bytes.json"
+        "/protocol/profiles/hub-sync-v1/1.3.0/examples/signing-keys-response-2097153-bytes.json"
     )))
     .expect("over-limit Protocol fixture");
 
@@ -1877,7 +1877,7 @@ async fn changes_since_authenticates_and_binds_vehicle_before_reading_body() {
 
     let expected: serde_json::Value = serde_json::from_str(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples/changes-since-error-vehicle-not-found.json"
+        "/protocol/profiles/hub-sync-v1/1.3.0/examples/changes-since-error-vehicle-not-found.json"
     )))
     .expect("vehicle-not-found fixture");
     for vehicle_id in ["not-a-uuid".to_owned(), Uuid::new_v4().to_string()] {
@@ -1911,7 +1911,7 @@ async fn changes_since_authenticates_and_binds_vehicle_before_reading_body() {
 async fn changes_since_request_errors_match_protocol_fixtures() {
     fn protocol_fixture(name: &str) -> serde_json::Value {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../teslatlas-protocol/profiles/hub-sync-v1/1.3.0/examples")
+            .join("protocol/profiles/hub-sync-v1/1.3.0/examples")
             .join(name);
         serde_json::from_slice(&fs::read(path).expect("read Protocol fixture"))
             .expect("parse Protocol fixture")
