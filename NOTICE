@@ -21,6 +21,14 @@ Teslatlas Hub is independent. It is not affiliated with, endorsed by or
 supported by Tesla, Inc., the TeslaMate project, or the makers of any other
 software it works with.
 
+Packages in this repository
+---------------------------
+The directories compute/, protocol/ and sdk-typescript/ contain Teslatlas
+Compute, Teslatlas Protocol and the Teslatlas TypeScript client. They are
+separate packages under the Apache License, Version 2.0, with their own LICENSE
+and NOTICE files. The GNU Affero General Public License and the additional
+terms do not apply to them.
+
 Third-party components
 ----------------------
 Third-party components are under their own licences. See

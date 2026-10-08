@@ -17,10 +17,10 @@ and the inputs needed by the documented build helpers.
 ## Teslatlas Compute
 
 Current `main` links the Teslatlas Compute library (`teslatlas-compute`),
-licensed under Apache-2.0 and published at
-<https://github.com/magrathean-uk/teslatlas-compute>. `Cargo.toml` names it as
-a Git dependency at one full commit, and `Cargo.lock` records that commit in the
-package source. A Hub commit therefore identifies the exact library source, in
+licensed under Apache-2.0 and kept in this repository's `compute/` directory as
+a Cargo workspace member (imported with its history from
+<https://github.com/magrathean-uk/teslatlas-compute> on 2026-10-08). `Cargo.toml`
+names it as a path dependency, so a Hub commit contains the library source. A Hub commit therefore identifies the exact library source, in
 the same way as every other locked dependency.
 
 The Corresponding Source of a Hub build that links the library includes the

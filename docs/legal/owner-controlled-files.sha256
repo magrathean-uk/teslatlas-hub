@@ -1,10 +1,10 @@
-# Owner-controlled legal files (owner, 2026-09-27).
+# Owner-controlled legal files (owner, 2026-09-27; lock regenerated 2026-10-08 for the one-repository edits).
 # scripts/verify-repository-layout.py fails if any file below differs from its digest.
 # Change these files, and this lock, only on the owner's explicit instruction.
-e13926c5d12785fb377b6909e234eac2ebb38a3c97adeed9c9286b433defb1b8  NOTICE
+0feda0df6c653d0addaa5326fb43925267a59a8b303ad775174b807b78a3f599  NOTICE
 0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0  LICENSE
-9bb1cc4269c793d9f620e787df5fc1635cda7f3dca89f3a10f8cb09d360f4f50  .github/CONTRIBUTING.md
-cd4a679a2163143b420de5541cf1e51e5723cfd3b65947fab7e8c28fe1be4892  docs/legal/additional-terms.md
+99e6fb34c0a8cf1359ab099f803e57e3a331a0bb5869c3b8cf1bbe51dcbfd443  .github/CONTRIBUTING.md
+479160958f88bd00e0098ff71a56d456562cbeb9321eb88d5f701d13ee2e4efe  docs/legal/additional-terms.md
 d856b4fdacbf6948a0b3d80182f38072a38e8972bc472cb7376e0caddab4f899  docs/legal/overview.md
 6a343e272b33ca9a4d50b67eacf42f22923b8ba40ba2ed570b952245f12636f5  docs/legal/trademarks.md
 3867f84ee41bfb040fd0d1cb7891ab326510935b04823ececc7295e9e4472e88  docs/governance/governance.md

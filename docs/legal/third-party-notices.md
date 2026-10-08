@@ -43,9 +43,11 @@ release notice bundle.
 
 ## Teslatlas Compute
 
-Upstream: https://github.com/magrathean-uk/teslatlas-compute
+Source: the `compute/` directory of this repository (workspace member
+`teslatlas-compute`), imported with its history from
+https://github.com/magrathean-uk/teslatlas-compute on 2026-10-08
 
-Locked revision: the commit recorded for `teslatlas-compute` in `Cargo.lock`
+Locked revision: the Hub commit itself; `Cargo.lock` records the path dependency
 
 Licence: Apache License 2.0
 

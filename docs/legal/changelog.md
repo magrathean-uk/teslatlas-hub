@@ -4,6 +4,16 @@ This file records material changes to licensing, attribution, provenance, privac
 Historical entries describe what the documents asserted at that time; they are
 not evidence that a private instrument exists or remains sufficient.
 
+## 2026-10-08 — One repository: Compute, Protocol and TypeScript client imported
+
+- Teslatlas Compute, Teslatlas Protocol and the Teslatlas TypeScript client
+  were imported with their full histories into `compute/`, `protocol/` and
+  `sdk-typescript/` (owner instruction, 2026-10-08). Each keeps its Apache-2.0
+  `LICENSE` and `NOTICE`; `REUSE.toml` maps the directories to licences. The
+  additional terms, `NOTICE` and the contribution licence now state that the
+  AGPL and the additional terms cover the Hub material only. The owner-controlled
+  file lock was regenerated for these three edits.
+
 ## 2026-09-28 — Teslatlas Compute source and dependency update
 
 - Hub takes Teslatlas Compute (Apache-2.0) from its public repository at one

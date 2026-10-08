@@ -52,8 +52,9 @@ keep build output and caches outside source trees.
 
 ## File headers
 
-Every source file begins with `SPDX-License-Identifier: AGPL-3.0-only`. The
-exception is the Tesla Auth adaptation, which keeps `MIT`. In third-party or
+Every Hub source file begins with `SPDX-License-Identifier: AGPL-3.0-only`;
+files under `compute/`, `protocol/` and `sdk-typescript/` use `Apache-2.0`
+(see `REUSE.toml`). The exception is the Tesla Auth adaptation, which keeps `MIT`. In third-party or
 adapted files, keep the original notices and add a dated note of your
 changes. See [Provenance](../docs/legal/provenance.md).
 
@@ -65,9 +66,10 @@ By opening a pull request, you agree to these terms for the material in it
 1. **Sign-off.** Sign off every commit under the
    [Developer Certificate of Origin 1.1](../docs/governance/developer-certificate-of-origin-1.1.md)
    (`git commit -s`), using your real name.
-2. **Licence.** You license your contribution under AGPL-3.0-only, the Hub's
-   licence. You also give MAGRATHEAN UK LTD (**Magrathean**) the right to
-   license it on other terms.
+2. **Licence.** You license your contribution under the licence of the
+   directory it changes: AGPL-3.0-only for the Hub, Apache-2.0 for `compute/`,
+   `protocol/` and `sdk-typescript/`. You also give MAGRATHEAN UK LTD
+   (**Magrathean**) the right to license it on other terms.
 3. **Assignment.** Before a substantial contribution is merged, Magrathean
    will ask you to sign an assignment agreement for
    [individuals](../docs/governance/individual-contributor-assignment-agreement.md)

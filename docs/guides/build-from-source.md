@@ -27,21 +27,12 @@ there instead of these standalone commands. The workspace pins Rust 1.98.1.
 ## Teslatlas Compute
 
 Hub uses the Teslatlas Compute library (`teslatlas-compute`, Apache-2.0) from
-<https://github.com/magrathean-uk/teslatlas-compute>. `Cargo.toml` pins the
-corresponding published Compute source to one full commit; `Cargo.lock` records
-the same commit. That source includes the bounded paged-generation API and
-algorithm identity 0.1.1, while its package version remains 0.1.0. Cargo fetches
-the library with the other locked dependencies, so no sibling checkout is
-required. `cargo fetch --locked` also fetches it for offline builds.
-
-For an ordinary local library check, an explicit Cargo path override may select
-the sibling checkout without changing the manifest or lockfile:
-
-```sh
-cargo check --locked --config 'paths=["../teslatlas-compute"]'
-```
-
-Do not use that override for a source-bound or distributed build. The existing
+the `compute/` directory of this repository, a Cargo workspace member and path
+dependency. The source includes the bounded paged-generation API and algorithm
+identity 0.1.1, while its package version remains 0.1.0. No sibling checkout or
+network fetch is needed for it. The `protocol/` and `sdk-typescript/` directories
+hold the contracts package and the TypeScript client; they are not built by
+`cargo`. The existing
 source-evidence gates remain enabled. A source commit and dependency binding
 do not establish package, installed, live or platform acceptance.
 

@@ -1,9 +1,13 @@
 # Additional terms under section 7 of the GNU Affero General Public License
 
 These terms supplement the GNU Affero General Public License, version 3 (the
-**Licence**), as section 7 of the Licence permits. They apply to material in
-Teslatlas Hub whose copyright belongs to MAGRATHEAN UK LTD (**we**, **us**).
-They do not apply to third-party material.
+**Licence**), as section 7 of the Licence permits. They apply to the Teslatlas
+Hub material in this repository whose copyright belongs to MAGRATHEAN UK LTD
+(**we**, **us**): everything outside the `compute/`, `protocol/` and
+`sdk-typescript/` directories. Those directories hold separate packages under
+the Apache License, Version 2.0, with their own `LICENSE` and `NOTICE` files;
+neither the Licence nor these terms apply to them. They do not apply to
+third-party material.
 
 ## 1. Attribution — section 7(b)
 
