@@ -3,7 +3,7 @@
 mod support;
 
 use std::fs::{self, OpenOptions};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -36,6 +36,22 @@ fn config_for_directory(directory: PathBuf) -> SpoolConfig {
 
 fn key() -> SpoolKey {
     SpoolKey::from_bytes([0x42; 32])
+}
+
+fn corrupt_final_byte(path: &std::path::Path) {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .unwrap();
+    file.seek(SeekFrom::End(-1)).unwrap();
+    let mut original = [0];
+    file.read_exact(&mut original).unwrap();
+    let changed = [original[0] ^ 1];
+    assert_ne!(changed, original);
+    file.seek(SeekFrom::End(-1)).unwrap();
+    file.write_all(&changed).unwrap();
+    file.sync_all().unwrap();
 }
 
 fn expected_v2_batch_id(batch: &HubBatchV2) -> String {
@@ -301,11 +317,7 @@ fn corrupt_ciphertext_is_quarantined_while_valid_records_continue() {
         .collect::<Vec<_>>();
     paths.sort();
     let corrupt_path = paths.pop().unwrap();
-    let length = fs::metadata(&corrupt_path).unwrap().len();
-    let mut file = OpenOptions::new().write(true).open(&corrupt_path).unwrap();
-    file.seek(SeekFrom::Start(length - 1)).unwrap();
-    file.write_all(&[0xff]).unwrap();
-    file.sync_all().unwrap();
+    corrupt_final_byte(&corrupt_path);
 
     let recovered = Spool::open(config(&temp), key(), T0 + 2_000).unwrap();
     let snapshot = recovered.snapshot(T0 + 2_000);
@@ -404,11 +416,7 @@ fn runtime_corruption_becomes_gap_before_later_sequence_delivery() {
         .collect::<Vec<_>>();
     paths.sort();
     let corrupt_path = &paths[0];
-    let length = fs::metadata(corrupt_path).unwrap().len();
-    let mut file = OpenOptions::new().write(true).open(corrupt_path).unwrap();
-    file.seek(SeekFrom::Start(length - 1)).unwrap();
-    file.write_all(&[0xff]).unwrap();
-    file.sync_all().unwrap();
+    corrupt_final_byte(corrupt_path);
 
     let batch = spool.next_batch_v2(T0 + 2).unwrap();
     assert_eq!(batch.gaps.len(), 1);
@@ -437,12 +445,7 @@ fn durable_gap_wins_over_reappearing_source_and_sequence_stays_unique() {
     let saved_path = temp.path().join("saved-pending.tles");
     fs::copy(&pending_path, &saved_path).unwrap();
 
-    let length = fs::metadata(&pending_path).unwrap().len();
-    let mut file = OpenOptions::new().write(true).open(&pending_path).unwrap();
-    file.seek(SeekFrom::Start(length - 1)).unwrap();
-    file.write_all(&[0xff]).unwrap();
-    file.sync_all().unwrap();
-    drop(file);
+    corrupt_final_byte(&pending_path);
     let first = spool.next_batch_v2(T0 + 1).unwrap();
     assert_eq!(first.gaps.len(), 1);
     assert_eq!(first.gaps[0].spool_seq, 1);
@@ -1007,26 +1010,199 @@ fn legal_receiver_input_is_rejected_before_storage_when_batch_item_cannot_fit() 
 }
 
 #[test]
-fn orphan_temporary_file_is_counted_once_after_quarantine() {
+fn mutated_public_envelopes_are_rejected_before_identity_or_storage() {
+    let temp = TempDir::new().unwrap();
+    let spool = Spool::open(config(&temp), key(), T0).unwrap();
+    let valid = receiver_envelope("tx-validated-boundary", T0);
+    let sequence_path = temp.path().join("spool/sequence.tlem");
+    let original_sequence = fs::read(&sequence_path).unwrap();
+    for mutation in 0..7 {
+        let mut invalid = valid.clone();
+        match mutation {
+            0 => invalid.version = 2,
+            1 => invalid.vin = "invalid".into(),
+            2 => invalid.txid.clear(),
+            3 => invalid.tx_type = "unsupported".into(),
+            4 => invalid.timestamp_ms = 0,
+            5 => invalid.payload = json!([]),
+            _ => invalid.firmware_version = Some("invalid label".into()),
+        }
+        assert_eq!(spool.enqueue(invalid, T0), Err(SpoolError::CorruptRecord));
+        assert_eq!(spool.snapshot(T0).pending_records, 0);
+        assert_eq!(fs::read(&sequence_path).unwrap(), original_sequence);
+        assert_eq!(
+            fs::read_dir(temp.path().join("spool/tmp")).unwrap().count(),
+            0
+        );
+    }
+    spool.enqueue(valid.clone(), T0).unwrap();
+    let batch = spool.next_batch_v2(T0).unwrap();
+    assert_eq!(batch.records[0].spool_seq, 1);
+    assert_eq!(batch.records[0].envelope, valid);
+}
+
+#[test]
+fn mixed_record_and_gap_count_reports_admission_capacity() {
+    let temp = TempDir::new().unwrap();
+    let mut limits = config(&temp);
+    limits.max_records = 2;
+    limits.batch_max_records = 2;
+    limits.retention_ms = 1_000;
+    let spool = Spool::open(limits, key(), T0).unwrap();
+    spool.enqueue(receiver_envelope("tx-gap", T0), T0).unwrap();
+    spool
+        .enqueue(receiver_envelope("tx-live", T0 + 1_000), T0 + 1_000)
+        .unwrap();
+    let batch = spool.next_batch_v2(T0 + 1_001).unwrap();
+    assert_eq!((batch.records.len(), batch.gaps.len()), (1, 1));
+    let snapshot = spool.snapshot(T0 + 1_001);
+    assert_eq!(
+        (snapshot.pending_records, snapshot.pending_gap_notices),
+        (1, 1)
+    );
+    assert!(snapshot.capacity_exhausted);
+    assert!(snapshot.degraded);
+    assert_eq!(
+        spool.enqueue(
+            receiver_envelope("tx-over-capacity", T0 + 1_001),
+            T0 + 1_001
+        ),
+        Err(SpoolError::CapacityExceeded)
+    );
+}
+
+#[test]
+fn failed_rename_retains_one_staging_witness_and_blocks_repeated_writes() {
+    let temp = TempDir::new().unwrap();
+    let spool = Spool::open(config(&temp), key(), T0).unwrap();
+    let record = receiver_envelope("tx-rename-failure", T0);
+    let blocked_destination = temp.path().join(format!(
+        "spool/pending/v2-{:020}-{}.tles",
+        1,
+        record.record_id()
+    ));
+    fs::create_dir(&blocked_destination).unwrap();
+    assert_eq!(spool.enqueue(record.clone(), T0), Err(SpoolError::Io));
+    let staging_paths = fs::read_dir(temp.path().join("spool/tmp"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    assert_eq!(staging_paths.len(), 1);
+    let custody = fs::read(&staging_paths[0]).unwrap();
+    assert!(!custody.is_empty());
+    fs::remove_dir(blocked_destination).unwrap();
+    for attempt in 0..4 {
+        assert_eq!(
+            spool.enqueue(receiver_envelope(&format!("tx-retry-{attempt}"), T0), T0),
+            Err(SpoolError::Io)
+        );
+        assert_eq!(
+            fs::read_dir(temp.path().join("spool/tmp")).unwrap().count(),
+            1
+        );
+        assert_eq!(fs::read(&staging_paths[0]).unwrap(), custody);
+        assert_eq!(spool.snapshot(T0).pending_records, 0);
+        assert!(spool.snapshot(T0).degraded);
+    }
+}
+
+#[test]
+fn ciphertext_fault_injector_changes_an_original_ff_byte() {
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("fault-witness");
+    fs::write(&path, [0xff]).unwrap();
+    corrupt_final_byte(&path);
+    assert_eq!(fs::read(path).unwrap(), [0xfe]);
+}
+
+#[test]
+fn orphan_temporary_file_remains_a_barrier_across_reopens() {
     let temp = TempDir::new().unwrap();
     let spool_config = config(&temp);
     drop(Spool::open(spool_config.clone(), key(), T0).unwrap());
     fs::write(temp.path().join("spool/tmp/orphan.tmp"), b"partial").unwrap();
 
-    let recovered = Spool::open(spool_config, key(), T0 + 1).unwrap();
-    let snapshot = recovered.snapshot(T0 + 1);
-    assert_eq!(snapshot.corrupt_records, 1);
-    assert!(snapshot.degraded);
-    assert_eq!(
-        recovered.next_batch_v2(T0 + 1).unwrap_err(),
-        SpoolError::CorruptRecord
-    );
+    for attempt in 1..=3 {
+        assert_eq!(
+            Spool::open(spool_config.clone(), key(), T0 + attempt).err(),
+            Some(SpoolError::CorruptRecord)
+        );
+        assert_eq!(fs::read(temp.path().join("spool/tmp/orphan.tmp")).unwrap(), b"partial");
+    }
     assert_eq!(
         fs::read_dir(temp.path().join("spool/quarantine"))
             .unwrap()
             .count(),
-        1
+        0
     );
+}
+
+#[test]
+fn corrupt_gap_remains_a_barrier_across_reopens_before_later_delivery() {
+    let temp = TempDir::new().unwrap();
+    let mut limits = config(&temp);
+    limits.retention_ms = 1_000;
+    let spool = Spool::open(limits.clone(), key(), T0).unwrap();
+    spool.enqueue(receiver_envelope("tx-expired-first", T0), T0).unwrap();
+    spool.enqueue(receiver_envelope("tx-live-later", T0 + 1_000), T0 + 1_000).unwrap();
+    let original = spool.next_batch_v2(T0 + 1_001).unwrap();
+    assert_eq!(original.gaps[0].spool_seq, 1);
+    assert_eq!(original.records[0].spool_seq, 2);
+    drop(spool);
+    let gap_path = fs::read_dir(temp.path().join("spool/gaps")).unwrap().next().unwrap().unwrap().path();
+    corrupt_final_byte(&gap_path);
+    let corrupted = fs::read(&gap_path).unwrap();
+    let sequence_path = temp.path().join("spool/sequence.tlem");
+    let sequence = fs::read(&sequence_path).unwrap();
+    for attempt in 1..=3 {
+        assert_eq!(
+            Spool::open(limits.clone(), key(), T0 + 1_001 + attempt).err(),
+            Some(SpoolError::CorruptRecord)
+        );
+        assert_eq!(fs::read(&gap_path).unwrap(), corrupted);
+        assert_eq!(fs::read(&sequence_path).unwrap(), sequence);
+        assert_eq!(fs::read_dir(temp.path().join("spool/pending")).unwrap().count(), 1);
+        assert_eq!(fs::read_dir(temp.path().join("spool/quarantine")).unwrap().count(), 0);
+    }
+}
+
+#[test]
+fn valid_gap_backlog_over_reduced_capacity_is_preserved_until_capacity_restored() {
+    for reduced_count in [true, false] {
+        let temp = TempDir::new().unwrap();
+        let mut limits = config(&temp);
+        limits.retention_ms = 1_000;
+        let spool = Spool::open(limits.clone(), key(), T0).unwrap();
+        spool.enqueue(receiver_envelope("tx-gap-first", T0), T0).unwrap();
+        spool.enqueue(receiver_envelope("tx-gap-second", T0), T0).unwrap();
+        spool.enqueue(receiver_envelope("tx-live-third", T0 + 1_000), T0 + 1_000).unwrap();
+        let original = spool.next_batch_v2(T0 + 1_001).unwrap();
+        assert_eq!((original.gaps.len(), original.records.len()), (2, 1));
+        drop(spool);
+        let saved_gaps = fs::read_dir(temp.path().join("spool/gaps")).unwrap()
+            .map(|entry| { let path = entry.unwrap().path(); let bytes = fs::read(&path).unwrap(); (path, bytes) })
+            .collect::<Vec<_>>();
+        let sequence_path = temp.path().join("spool/sequence.tlem");
+        let sequence = fs::read(&sequence_path).unwrap();
+        let mut reduced = limits.clone();
+        if reduced_count {
+            reduced.max_records = 1;
+            reduced.batch_max_records = 1;
+        } else {
+            reduced.max_bytes = saved_gaps.iter().map(|(_, bytes)| bytes.len() as u64).min().unwrap() - 1;
+        }
+        for attempt in 1..=2 {
+            assert_eq!(
+                Spool::open(reduced.clone(), key(), T0 + 1_001 + attempt).err(),
+                Some(SpoolError::CapacityExceeded)
+            );
+            for (path, bytes) in &saved_gaps { assert_eq!(&fs::read(path).unwrap(), bytes); }
+            assert_eq!(fs::read(&sequence_path).unwrap(), sequence);
+            assert_eq!(fs::read_dir(temp.path().join("spool/quarantine")).unwrap().count(), 0);
+        }
+        let restored = Spool::open(limits, key(), T0 + 1_004).unwrap();
+        assert_eq!(restored.next_batch_v2(T0 + 1_004).unwrap(), original);
+    }
 }
 
 #[test]
@@ -1035,11 +1211,11 @@ fn v2_spool_format_marker_is_persisted_and_validated() {
     let spool_config = config(&temp);
     drop(Spool::open(spool_config.clone(), key(), T0).unwrap());
     let marker = temp.path().join("spool/FORMAT");
-    assert_eq!(fs::read(&marker).unwrap(), b"3\n");
+    assert_eq!(fs::read(&marker).unwrap(), b"4\n");
 
     fs::write(&marker, b"2\n").unwrap();
     drop(Spool::open(spool_config.clone(), key(), T0 + 1).unwrap());
-    assert_eq!(fs::read(&marker).unwrap(), b"3\n");
+    assert_eq!(fs::read(&marker).unwrap(), b"4\n");
 
     fs::write(marker, b"1\n").unwrap();
     assert!(Spool::open(spool_config, key(), T0 + 1).is_err());
@@ -1254,4 +1430,309 @@ fn v2_matches_protocol_owned_literal_record_gap_batch_and_ack_vectors() {
     assert_eq!(remaining.records.len(), 1);
     assert_eq!(remaining.records[0].spool_seq, 12);
     assert!(remaining.gaps.is_empty());
+}
+
+fn acknowledge_all_v2(spool: &Spool, batch: &HubBatchV2) -> HubAckV2 {
+    let acknowledgement = HubAckV2 {
+        version: 2,
+        batch_id: batch.batch_id.clone(),
+        accepted_record_ids: batch
+            .records
+            .iter()
+            .map(|entry| entry.record_id.clone())
+            .collect(),
+        accepted_gap_notice_ids: batch
+            .gaps
+            .iter()
+            .map(|entry| entry.notice_id.clone())
+            .collect(),
+    };
+    let bytes = serde_json::to_vec(&acknowledgement).unwrap();
+    let parsed = HubAckV2::parse(&bytes).unwrap();
+    spool.acknowledge_v2(&parsed).unwrap();
+    acknowledgement
+}
+
+#[test]
+fn large_configured_batches_are_complete_acknowledgeable_prefixes() {
+    let temp = TempDir::new().unwrap();
+    let mut limits = config(&temp);
+    limits.max_records = 1024;
+    limits.batch_max_records = 1024;
+    limits.batch_max_bytes = 1_048_576;
+    let spool = Spool::open(limits.clone(), key(), T0).unwrap();
+    for index in 0..257 {
+        spool
+            .enqueue(receiver_envelope(&format!("tx-category-{index}"), T0), T0)
+            .unwrap();
+    }
+    let legacy = spool.next_batch(T0).unwrap();
+    assert_eq!(legacy.records.len(), 256);
+    let first = spool.next_batch_v2(T0).unwrap();
+    assert_eq!(first.records.len(), 256);
+    assert_eq!(first.records.last().unwrap().spool_seq, 256);
+    acknowledge_all_v2(&spool, &first);
+    let remainder = spool.next_batch_v2(T0).unwrap();
+    assert_eq!(remainder.records.len(), 1);
+    assert_eq!(remainder.records[0].spool_seq, 257);
+    acknowledge_all_v2(&spool, &remainder);
+    drop(spool);
+    assert!(
+        Spool::open(limits, key(), T0)
+            .unwrap()
+            .next_batch_v2(T0)
+            .unwrap()
+            .records
+            .is_empty()
+    );
+}
+
+#[test]
+fn mixed_large_batch_stops_before_full_gap_category_without_skipping_prefix() {
+    let temp = TempDir::new().unwrap();
+    let mut limits = config(&temp);
+    limits.max_records = 1024;
+    limits.batch_max_records = 1024;
+    limits.batch_max_bytes = 1_048_576;
+    limits.retention_ms = 1000;
+    let spool = Spool::open(limits.clone(), key(), T0).unwrap();
+    for index in 0..257 {
+        spool
+            .enqueue(
+                receiver_envelope(&format!("tx-expired-category-{index}"), T0),
+                T0,
+            )
+            .unwrap();
+    }
+    spool.expire_due(T0 + 1001).unwrap();
+    spool
+        .enqueue(
+            receiver_envelope("tx-live-after-gaps", T0 + 1001),
+            T0 + 1001,
+        )
+        .unwrap();
+    let first = spool.next_batch_v2(T0 + 1001).unwrap();
+    assert_eq!(first.gaps.len(), 256);
+    assert!(first.records.is_empty());
+    assert_eq!(first.gaps.last().unwrap().spool_seq, 256);
+    acknowledge_all_v2(&spool, &first);
+    let last = spool.next_batch_v2(T0 + 1001).unwrap();
+    assert_eq!(last.gaps[0].spool_seq, 257);
+    assert_eq!(last.records[0].spool_seq, 258);
+    acknowledge_all_v2(&spool, &last);
+}
+
+#[test]
+fn full_gap_capacity_preserves_earlier_expired_backing_and_ack_crash_recovery() {
+    for restore_pending_file in [true, false] {
+        let temp = TempDir::new().unwrap();
+        let mut long = config(&temp);
+        long.max_records = 4;
+        long.batch_max_records = 1;
+        let spool = Spool::open(long.clone(), key(), T0).unwrap();
+        spool
+            .enqueue(receiver_envelope("tx-earlier-long-retention", T0), T0)
+            .unwrap();
+        drop(spool);
+        let mut short = long.clone();
+        short.retention_ms = 1000;
+        let spool = Spool::open(short.clone(), key(), T0 + 10).unwrap();
+        spool
+            .enqueue(
+                receiver_envelope("tx-later-short-retention", T0 + 10),
+                T0 + 10,
+            )
+            .unwrap();
+        spool.expire_due(T0 + 1011).unwrap();
+        assert_eq!(spool.snapshot(T0 + 1011).pending_gap_notices, 1);
+        drop(spool);
+        // An existing backlog can exceed a newly reduced configured capacity.
+        short.max_records = 1;
+        let spool = Spool::open(short.clone(), key(), T0 + 60_001).unwrap();
+        let first = spool.next_batch_v2(T0 + 60_001).unwrap();
+        assert!(first.records.is_empty());
+        assert_eq!(first.gaps[0].spool_seq, 1);
+        assert_eq!(spool.snapshot(T0 + 60_001).expired_records, 2);
+        assert_eq!(
+            spool.next_batch(T0 + 60_001).unwrap_err(),
+            SpoolError::ProtocolUpgradeRequired
+        );
+        for _ in 0..3 {
+            spool.next_batch_v2(T0 + 60_002).unwrap();
+        }
+        assert_eq!(spool.snapshot(T0 + 60_002).expired_records, 2);
+        let pending = fs::read_dir(temp.path().join("spool/pending"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let pending_bytes = fs::read(&pending).unwrap();
+        let sequence = temp.path().join("spool/sequence.tlem");
+        let sequence_bytes = fs::read(&sequence).unwrap();
+        let ack = acknowledge_all_v2(&spool, &first);
+        drop(spool);
+        // Preserve the committed encrypted ACK; restore pre-removal backing/state
+        // to model crash after receipt sync, including already-missing backing.
+        if restore_pending_file {
+            fs::write(&pending, &pending_bytes).unwrap();
+        }
+        fs::write(&sequence, &sequence_bytes).unwrap();
+        let recovered = Spool::open(short.clone(), key(), T0 + 60_003).unwrap();
+        assert!(!pending.exists());
+        assert_eq!(recovered.snapshot(T0 + 60_003).expired_records, 2);
+        assert_eq!(
+            recovered
+                .acknowledge_v2(&ack)
+                .unwrap()
+                .acknowledged_gap_notice_ids,
+            ack.accepted_gap_notice_ids
+        );
+        let second = recovered.next_batch_v2(T0 + 60_003).unwrap();
+        assert_eq!(second.gaps[0].spool_seq, 2);
+        acknowledge_all_v2(&recovered, &second);
+        drop(recovered);
+        let final_spool = Spool::open(short, key(), T0 + 60_004).unwrap();
+        let empty = final_spool.next_batch_v2(T0 + 60_004).unwrap();
+        assert!(empty.records.is_empty() && empty.gaps.is_empty());
+        assert_eq!(final_spool.snapshot(T0 + 60_004).expired_records, 2);
+    }
+}
+
+#[test]
+fn unchanged_pulls_do_not_rewrite_encrypted_sequence_state() {
+    let temp = TempDir::new().unwrap();
+    let spool = Spool::open(config(&temp), key(), T0).unwrap();
+    let path = temp.path().join("spool/sequence.tlem");
+    let before = fs::read(&path).unwrap();
+    spool.next_batch_v2(T0 + 1).unwrap();
+    spool.next_batch_v2(T0 + 2).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn missing_deferred_expiry_backing_without_durable_ack_fails_closed() {
+    let temp = TempDir::new().unwrap();
+    let mut long = config(&temp);
+    long.max_records = 4;
+    long.batch_max_records = 1;
+    let spool = Spool::open(long.clone(), key(), T0).unwrap();
+    spool
+        .enqueue(receiver_envelope("tx-unacknowledged-earlier", T0), T0)
+        .unwrap();
+    drop(spool);
+    let mut short = long;
+    short.retention_ms = 1000;
+    let spool = Spool::open(short.clone(), key(), T0 + 10).unwrap();
+    spool
+        .enqueue(receiver_envelope("tx-later-gap", T0 + 10), T0 + 10)
+        .unwrap();
+    spool.expire_due(T0 + 1011).unwrap();
+    drop(spool);
+    short.max_records = 1;
+    let spool = Spool::open(short.clone(), key(), T0 + 60_001).unwrap();
+    let batch = spool.next_batch_v2(T0 + 60_001).unwrap();
+    assert_eq!(batch.gaps[0].spool_seq, 1);
+    assert_eq!(spool.snapshot(T0 + 60_001).expired_records, 2);
+    drop(spool);
+    let pending = fs::read_dir(temp.path().join("spool/pending"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    fs::remove_file(pending).unwrap();
+    let sequence = temp.path().join("spool/sequence.tlem");
+    let recorded_state = fs::read(&sequence).unwrap();
+    assert!(matches!(
+        Spool::open(short, key(), T0 + 60_002),
+        Err(SpoolError::CorruptRecord)
+    ));
+    assert_eq!(fs::read(sequence).unwrap(), recorded_state);
+    assert_eq!(
+        fs::read_dir(temp.path().join("spool/gaps"))
+            .unwrap()
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn durable_record_ack_recovers_expiry_counted_after_receipt_commit() {
+    for restore_pending_file in [true, false] {
+        let temp = TempDir::new().unwrap();
+        let mut long = config(&temp);
+        long.max_records = 4;
+        long.batch_max_records = 1;
+        let spool = Spool::open(long.clone(), key(), T0).unwrap();
+        spool
+            .enqueue(receiver_envelope("tx-record-ack-before-expiry", T0), T0)
+            .unwrap();
+        drop(spool);
+        let mut short = long;
+        short.retention_ms = 1000;
+        let spool = Spool::open(short.clone(), key(), T0 + 10).unwrap();
+        spool
+            .enqueue(receiver_envelope("tx-later-durable-gap", T0 + 10), T0 + 10)
+            .unwrap();
+        spool.expire_due(T0 + 1011).unwrap();
+        let before_expiry = spool.next_batch_v2(T0 + 1011).unwrap();
+        assert_eq!(before_expiry.records[0].spool_seq, 1);
+        assert!(before_expiry.gaps.is_empty());
+        let pending = fs::read_dir(temp.path().join("spool/pending"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let pending_bytes = fs::read(&pending).unwrap();
+        let sequence = temp.path().join("spool/sequence.tlem");
+        let before_ack_state = fs::read(&sequence).unwrap();
+        let ack = acknowledge_all_v2(&spool, &before_expiry);
+        drop(spool);
+        let receipt = fs::read_dir(temp.path().join("spool/receipts"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let committed_receipt = fs::read(&receipt).unwrap();
+        // Reconstruct the interleaving: receipt sync, then expiry's atomic
+        // counter/identity commit, then crash before record-ACK cleanup.
+        fs::remove_file(&receipt).unwrap();
+        fs::write(&pending, &pending_bytes).unwrap();
+        fs::write(&sequence, &before_ack_state).unwrap();
+        short.max_records = 1;
+        let deferred = Spool::open(short.clone(), key(), T0 + 60_001).unwrap();
+        assert_eq!(deferred.snapshot(T0 + 60_001).expired_records, 2);
+        assert_eq!(
+            deferred.next_batch_v2(T0 + 60_001).unwrap().gaps[0].spool_seq,
+            1
+        );
+        drop(deferred);
+        fs::write(&receipt, &committed_receipt).unwrap();
+        if !restore_pending_file {
+            fs::remove_file(&pending).unwrap();
+        }
+        let recovered = Spool::open(short.clone(), key(), T0 + 60_002).unwrap();
+        assert!(!pending.exists());
+        assert_eq!(recovered.snapshot(T0 + 60_002).expired_records, 2);
+        assert_eq!(
+            recovered
+                .acknowledge_v2(&ack)
+                .unwrap()
+                .acknowledged_record_ids,
+            ack.accepted_record_ids
+        );
+        let later = recovered.next_batch_v2(T0 + 60_002).unwrap();
+        assert!(later.records.is_empty());
+        assert_eq!(later.gaps.len(), 1);
+        assert_eq!(later.gaps[0].spool_seq, 2);
+        acknowledge_all_v2(&recovered, &later);
+        drop(recovered);
+        let final_spool = Spool::open(short, key(), T0 + 60_003).unwrap();
+        let empty = final_spool.next_batch_v2(T0 + 60_003).unwrap();
+        assert!(empty.records.is_empty() && empty.gaps.is_empty());
+        assert_eq!(final_spool.snapshot(T0 + 60_003).expired_records, 2);
+    }
 }

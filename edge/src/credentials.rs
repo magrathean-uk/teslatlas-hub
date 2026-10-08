@@ -8,6 +8,7 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use fs4::FileExt;
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -39,6 +40,7 @@ impl CredentialStore {
             path: Arc::new(path),
             mutation_lock: Arc::new(Mutex::new(())),
         };
+        let _file_guard = store.lock_mutations()?;
         if store.path.exists() {
             store.load()?;
         } else {
@@ -59,6 +61,7 @@ impl CredentialStore {
         validate_label(label)?;
         validate_ttl(ttl_ms)?;
         let _guard = self.mutation_lock.lock().map_err(|_| CredentialError::Io)?;
+        let _file_guard = self.lock_mutations()?;
         let mut file = self.load()?;
         let issued = issue(label, None, now_ms, ttl_ms);
         file.credentials.push(issued.stored.clone());
@@ -80,6 +83,7 @@ impl CredentialStore {
         let credential_id =
             Uuid::parse_str(credential_id).map_err(|_| CredentialError::UnknownCredential)?;
         let _guard = self.mutation_lock.lock().map_err(|_| CredentialError::Io)?;
+        let _file_guard = self.lock_mutations()?;
         let mut file = self.load()?;
         let old = file
             .credentials
@@ -100,6 +104,7 @@ impl CredentialStore {
         let credential_id =
             Uuid::parse_str(credential_id).map_err(|_| CredentialError::UnknownCredential)?;
         let _guard = self.mutation_lock.lock().map_err(|_| CredentialError::Io)?;
+        let _file_guard = self.lock_mutations()?;
         let mut file = self.load()?;
         let credential = file
             .credentials
@@ -153,6 +158,51 @@ impl CredentialStore {
                 revoked_at_ms: credential.revoked_at_ms,
             })
             .collect())
+    }
+
+    fn lock_mutations(&self) -> Result<File, CredentialError> {
+        let name = self.path.file_name().ok_or(CredentialError::InvalidPath)?;
+        let lock_path = self
+            .path
+            .with_file_name(format!(".{}.lock", name.to_string_lossy()));
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create_new(true);
+        #[cfg(unix)]
+        options.mode(0o600);
+        let file = match options.open(&lock_path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let metadata = fs::symlink_metadata(&lock_path).map_err(|_| CredentialError::Io)?;
+                if !metadata.file_type().is_file() {
+                    return Err(CredentialError::InvalidPath);
+                }
+                OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&lock_path)
+                    .map_err(|_| CredentialError::Io)?
+            }
+            Err(_) => return Err(CredentialError::Io),
+        };
+        let metadata = file.metadata().map_err(|_| CredentialError::Io)?;
+        let path_metadata = fs::symlink_metadata(&lock_path).map_err(|_| CredentialError::Io)?;
+        if !metadata.is_file() || !path_metadata.file_type().is_file() {
+            return Err(CredentialError::InvalidPath);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if metadata.dev() != path_metadata.dev()
+                || metadata.ino() != path_metadata.ino()
+                || metadata.nlink() != 1
+                || metadata.permissions().mode() & 0o077 != 0
+            {
+                return Err(CredentialError::InvalidPath);
+            }
+        }
+        // All processes use the stable sidecar inode, never the replaced JSON inode.
+        FileExt::lock(&file).map_err(|_| CredentialError::Io)?;
+        Ok(file)
     }
 
     fn load(&self) -> Result<CredentialFile, CredentialError> {

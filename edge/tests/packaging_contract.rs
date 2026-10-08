@@ -67,7 +67,7 @@ mod unix {
             .output()
             .unwrap();
         assert!(output.status.success());
-        assert_eq!(output.stdout, b"3\n");
+        assert_eq!(output.stdout, b"4\n");
         assert!(output.stderr.is_empty());
 
         fs::write(spool.join("FORMAT"), b"3\n").unwrap();
@@ -86,6 +86,39 @@ mod unix {
             .output()
             .unwrap();
         assert!(!output.status.success());
+    }
+
+    #[test]
+    fn format4_guard_allows_format3_upgrade_and_refuses_format3_downgrade() {
+        let temp = TempDir::new().unwrap();
+        let spool = temp.path().join("spool");
+        fs::create_dir(&spool).unwrap();
+        fs::write(spool.join("FORMAT"), b"3\n").unwrap();
+        let output = Command::new(guard())
+            .arg(env!("CARGO_BIN_EXE_teslatlas-edge"))
+            .arg(&spool)
+            .arg("--")
+            .arg("storage-format")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"4\n");
+        fs::write(spool.join("FORMAT"), b"4\n").unwrap();
+        let old = temp.path().join("format3-edge");
+        fs::write(
+            &old,
+            b"#!/bin/sh\nif [ \"$1\" = storage-format ]; then printf '3\\n'; exit 0; fi\nexit 0\n",
+        )
+        .unwrap();
+        fs::set_permissions(&old, fs::Permissions::from_mode(0o755)).unwrap();
+        let output = Command::new(guard())
+            .arg(&old)
+            .arg(&spool)
+            .arg("--")
+            .arg("serve")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(78));
     }
 
     #[test]

@@ -60,29 +60,55 @@ launchctl bootout "gui/$UID/uk.co.magrathean.teslatlas-edge"
 8. Confirm intended listeners and prove one test record in a separate staging
    installation; never inject invented telemetry into a live user's Hub.
 
-This release uses spool format `3`. It preserves the existing pending envelopes
-and sequence history, and persists each new acknowledgement receipt with the
-accepted `(spool_seq, stable_record_id, legacy_record_id)` occurrence. A replay
-therefore cannot delete a later admission of the same stable event. The plain
-`spool/FORMAT` marker is replaced atomically from `2` to `3` only after recovery
-succeeds. Backup before first start. Wire v1 remains available, but storage
-rollback is not compatible: do not run an older binary against a spool once
-that marker exists. The supplied systemd unit and macOS LaunchAgent execute
-`run-with-spool-format-guard.sh`; it allows the explicit `2` to `3` migration
-and otherwise compares the marker to the candidate binary's `storage-format`
-output before launching Edge.
+This release uses spool format `4`. Format 3 introduced occurrence-bound
+acknowledgement receipts; format 4 preserves those receipts, pending envelopes,
+canonical IDs and sequence history. Its encrypted sequence state also records
+which pending occurrences have already contributed to the retention-expiry
+counter, binding each sequence to its existing canonical record ID. The counter
+and those bounded occurrence identities commit together before expired backing
+is removed, so restart and capacity retries cannot count the same occurrence twice.
+An interruption before that atomic commit leaves the occurrence uncounted; recovery
+records it on the next expiry attempt.
 
-Format-2 acknowledgement receipts contain only stable or legacy IDs and do
-not prove which admission occurrence was acknowledged. If any receipt exists,
-the v3 binary fails with `ReceiptRecoveryRequired` before recovery or marker
-replacement, preserving the receipt and pending bytes for a reviewed Hub
-lineage reconciliation. Do not delete receipts, reset the Hub frontier, or
-retry with an older binary to bypass this error. A format-2 spool with no
-receipts may migrate through the normal guarded start; keep the original
-backup until the v3 marker and readiness have been verified. When the old
-marker has no receipts, the migration conservatively marks the v1 receipt
-history as unknown/pruned; v1 acknowledgements then return the same explicit
-upgrade response until the Hub uses v2.
+When the separate gap-file budget is full, an expired encrypted pending record
+remains durable backing for the identical retention gap. The v2 batch derives the
+gap from its authenticated identity and stored deadline, in normal sequence order;
+it never delivers the expired payload. Until a physical gap can replace it, only
+the durable encrypted gap ACK receipt permits removing that backing. Recovery
+completes that removal from the same receipt, including when the backing was already
+removed before interruption. An exact occurrence-bound record ACK also completes removal when expiry was counted
+after that receipt committed. If neither a durable physical gap nor the exact gap
+or record ACK receipt explains missing backing, recovery fails closed with `CorruptRecord`.
+New admission reserves the combined pending-record and gap record count.
+
+The plain `spool/FORMAT` marker is replaced atomically from `3` to `4` after
+recovery succeeds. Backup before first start. Wire v1 remains available, but
+storage rollback is incompatible: do not run an older binary against a format-4
+spool. The supplied systemd unit and macOS LaunchAgent use
+`run-with-spool-format-guard.sh`, which permits the reviewed `3` to `4` upgrade
+and otherwise compares the marker with the candidate binary's `storage-format`
+output. An interrupted upgrade can be retried with the new binary; an old binary
+cannot read the extended sequence state. Restore the complete pre-upgrade backup
+if an older binary is required.
+
+Format-2 acknowledgement receipts contain only stable or legacy IDs and do not
+prove which admission occurrence was acknowledged. If any receipt exists, the
+new binary fails with `ReceiptRecoveryRequired` before recovery or marker
+replacement, preserving the receipt and pending bytes for reviewed Hub lineage
+reconciliation. Do not delete receipts, reset the Hub frontier, or retry with an
+older binary to bypass this error. A format-2 spool without receipts may migrate
+through the guarded start directly to format 4. Retain the original backup until
+the new marker and readiness have been verified. That migration conservatively
+marks v1 receipt history unknown/pruned, so v1 acknowledgements require v2.
+
+Credential mutations use a stable private `.hub-credentials.json.lock` sidecar
+next to `hub-credentials.json` (the sidecar name follows the configured filename).
+Independent processes serialize initialization, enrolment, rotation and revocation
+through this lock; ordinary verification still reloads the atomically replaced
+credential state. Do not delete or replace the sidecar while any credential
+command is running. Credential mutations must also be quiescent during backup.
+The sidecar contains no credential data and may be recreated after an offline
+restore; existing parent directory permissions are preserved.
 
 V1 receipt idempotency is intentionally bounded by the 1,024 retained receipt
 files. If pruning removes a v1 receipt, Edge persists that history boundary and

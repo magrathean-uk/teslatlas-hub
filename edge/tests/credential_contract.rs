@@ -99,3 +99,102 @@ fn duplicate_json_keys_in_credential_state_fail_closed() {
         Err(CredentialError::InvalidStore)
     ));
 }
+
+#[test]
+fn credential_process_worker() {
+    let Ok(root) = std::env::var("TESLATLAS_TEST_CREDENTIAL_ROOT") else {
+        return;
+    };
+    let root = std::path::PathBuf::from(root);
+    let operation = std::env::var("TESLATLAS_TEST_CREDENTIAL_OPERATION").unwrap();
+    fs::write(root.join(format!("{operation}.ready")), b"ready").unwrap();
+    let store = CredentialStore::open(root.join("credentials.json")).unwrap();
+    if operation == "revoke" {
+        store
+            .revoke(
+                &std::env::var("TESLATLAS_TEST_CREDENTIAL_ID").unwrap(),
+                T0 + 1,
+            )
+            .unwrap();
+    } else {
+        store.enrol("other-hub", T0 + 1, 60_000).unwrap();
+    }
+    fs::write(root.join(format!("{operation}.done")), b"done").unwrap();
+}
+
+#[test]
+fn independent_processes_wait_for_stable_lock_and_preserve_revocation() {
+    use fs4::FileExt;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+
+    let temp = TempDir::new().unwrap();
+    let store = CredentialStore::open(temp.path().join("credentials.json")).unwrap();
+    let issued = store.enrol("revoked-hub", T0, 60_000).unwrap();
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(temp.path().join(".credentials.json.lock"))
+        .unwrap();
+    FileExt::lock(&lock).unwrap();
+    let mut children = ["revoke", "enrol"].map(|operation| {
+        Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "credential_process_worker", "--nocapture"])
+            .env("TESLATLAS_TEST_CREDENTIAL_ROOT", temp.path())
+            .env("TESLATLAS_TEST_CREDENTIAL_OPERATION", operation)
+            .env("TESLATLAS_TEST_CREDENTIAL_ID", issued.credential_id())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !(temp.path().join("revoke.ready").exists() && temp.path().join("enrol.ready").exists()) {
+        assert!(
+            Instant::now() < deadline,
+            "credential workers failed to start"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    std::thread::sleep(Duration::from_millis(100));
+    for child in &mut children {
+        assert!(
+            child.try_wait().unwrap().is_none(),
+            "mutation bypassed cross-process lock"
+        );
+    }
+    FileExt::unlock(&lock).unwrap();
+    for child in &mut children {
+        assert!(child.wait().unwrap().success());
+    }
+    assert_eq!(store.list().unwrap().len(), 2);
+    assert!(!store.verify(issued.token(), T0 + 2).unwrap());
+    let reopened = CredentialStore::open(temp.path().join("credentials.json")).unwrap();
+    assert_eq!(reopened.list().unwrap().len(), 2);
+    assert!(!reopened.verify(issued.token(), T0 + 2).unwrap());
+}
+
+#[cfg(unix)]
+#[test]
+fn credential_lock_rejects_symlinks_and_shared_permissions() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    let temp = TempDir::new().unwrap();
+    let path = temp.path().join("credentials.json");
+    let target = temp.path().join("unrelated");
+    fs::write(&target, b"preserved").unwrap();
+    let lock = temp.path().join(".credentials.json.lock");
+    symlink(&target, &lock).unwrap();
+    assert!(matches!(
+        CredentialStore::open(&path),
+        Err(CredentialError::InvalidPath)
+    ));
+    assert_eq!(fs::read(&target).unwrap(), b"preserved");
+    fs::remove_file(&lock).unwrap();
+    fs::write(&lock, b"").unwrap();
+    fs::set_permissions(&lock, fs::Permissions::from_mode(0o666)).unwrap();
+    assert!(matches!(
+        CredentialStore::open(&path),
+        Err(CredentialError::InvalidPath)
+    ));
+    assert!(!path.exists());
+}

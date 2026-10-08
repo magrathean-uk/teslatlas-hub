@@ -40,10 +40,12 @@ if [ -e "$format_marker" ]; then
     [ "$marker_bytes" = "$((${#marker_format} + 1))" ] || fail
     candidate_format=$("$edge_binary" storage-format 2>/dev/null) || fail
     if [ "$candidate_format" != "$marker_format" ]; then
-        # Format 2 has no admission identity in its durable receipts. Format
-        # 3 may open it only to run the guarded migration, which refuses any
-        # existing receipts before changing the marker.
-        [ "$marker_format" = "2" ] && [ "$candidate_format" = "3" ] || fail
+        # Format 2 requires the guarded ambiguous-receipt check. Format 3
+        # retains admission identities; format 4 adds counted expiry backing.
+        case "$marker_format:$candidate_format" in
+            2:3|2:4|3:4) ;;
+            *) fail ;;
+        esac
     fi
 fi
 

@@ -30,17 +30,18 @@ const SEQUENCE_STATE_FILE: &str = "sequence.tlem";
 const MAX_ACK_RECEIPTS: usize = 1_024;
 const MAX_ENCRYPTED_RECORD_BYTES: u64 = 384 * 1_024;
 const MAX_ENCRYPTED_RECEIPT_BYTES: u64 = 160 * 1_024;
-const MAX_ENCRYPTED_SEQUENCE_STATE_BYTES: u64 = 16 * 1_024;
+const MAX_ENCRYPTED_SEQUENCE_STATE_BYTES: u64 = 100 * 1_000_000 + 1_024;
 const MAX_ENCRYPTED_GAP_BYTES: u64 = 16 * 1_024;
 const MAX_FORMAT_MARKER_BYTES: u64 = 8;
 
-pub const SPOOL_FORMAT_VERSION: u16 = 3;
+pub const SPOOL_FORMAT_VERSION: u16 = 4;
 const PREVIOUS_SPOOL_FORMAT_VERSION: u16 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SpoolFormat {
     Fresh,
     Previous,
+    AdmissionIdentity,
     Current,
 }
 
@@ -127,6 +128,7 @@ struct Inner {
     _lock: File,
     state: Mutex<State>,
     acknowledgement_lock: Mutex<()>,
+    storage_write_failed: Mutex<bool>,
 }
 
 struct State {
@@ -141,6 +143,7 @@ struct State {
     pending_gap_bytes: u64,
     corrupt_records: u64,
     expired_records: u64,
+    counted_pending_expirations: BTreeMap<u64, RecordId>,
     unresolved_integrity: bool,
 }
 
@@ -158,6 +161,7 @@ impl Default for State {
             pending_gap_bytes: 0,
             corrupt_records: 0,
             expired_records: 0,
+            counted_pending_expirations: BTreeMap::new(),
             unresolved_integrity: false,
         }
     }
@@ -228,6 +232,8 @@ struct SequenceState {
     #[serde(default)]
     expired_records_total: u64,
     #[serde(default)]
+    counted_pending_expirations: BTreeMap<u64, RecordId>,
+    #[serde(default)]
     v1_ack_history_pruned: bool,
 }
 
@@ -285,6 +291,7 @@ impl Spool {
             _lock: spool_lock,
             state: Mutex::new(State::default()),
             acknowledgement_lock: Mutex::new(()),
+            storage_write_failed: Mutex::new(false),
         });
         let spool = Self { inner };
         if spool_format == SpoolFormat::Previous {
@@ -294,7 +301,10 @@ impl Spool {
             // ACK to match a later legacy-ID admission.
             spool.state()?.v1_ack_history_pruned = true;
         }
-        if spool_format == SpoolFormat::Current {
+        if matches!(
+            spool_format,
+            SpoolFormat::Current | SpoolFormat::AdmissionIdentity
+        ) {
             spool
                 .recover_sequence_state()?
                 .ok_or(SpoolError::SequenceStateMissing)?;
@@ -311,6 +321,15 @@ impl Spool {
         envelope: ReceiverEnvelope,
         admitted_at_ms: i64,
     ) -> Result<EnqueueOutcome, SpoolError> {
+        envelope.validate().map_err(|_| SpoolError::CorruptRecord)?;
+        if *self
+            .inner
+            .storage_write_failed
+            .lock()
+            .map_err(|_| SpoolError::Io)?
+        {
+            return Err(SpoolError::Io);
+        }
         let record_id = envelope.record_id();
         let stable_record_id = envelope.stable_record_id();
         let mut state = self.state()?;
@@ -353,7 +372,7 @@ impl Spool {
         let predicted_bytes = u64::try_from(plaintext.len())
             .map_err(|_| SpoolError::CapacityExceeded)?
             .saturating_add(64);
-        if state.entries.len() >= self.inner.config.max_records
+        if state.entries.len().saturating_add(state.gaps.len()) >= self.inner.config.max_records
             || state.pending_bytes.saturating_add(predicted_bytes) > self.inner.config.max_bytes
         {
             return Err(SpoolError::CapacityExceeded);
@@ -365,6 +384,9 @@ impl Spool {
             .map_err(map_crypto_error)?;
         let encrypted_bytes =
             u64::try_from(encrypted.len()).map_err(|_| SpoolError::CapacityExceeded)?;
+        if encrypted_bytes > MAX_ENCRYPTED_RECORD_BYTES {
+            return Err(SpoolError::BatchItemTooLarge);
+        }
         if state.pending_bytes.saturating_add(encrypted_bytes) > self.inner.config.max_bytes {
             return Err(SpoolError::CapacityExceeded);
         }
@@ -372,7 +394,7 @@ impl Spool {
         let file_name = format!("v2-{:020}-{}{}", spool_seq, record_id, PENDING_SUFFIX);
         let destination = self.pending_dir().join(file_name);
         let temporary = self.temporary_dir().join(format!("{}.tmp", Uuid::new_v4()));
-        write_atomic(&temporary, &destination, &encrypted)?;
+        self.write_atomic(&temporary, &destination, &encrypted)?;
 
         state.pending_bytes = state.pending_bytes.saturating_add(encrypted_bytes);
         state.next_spool_sequence = next_spool_sequence;
@@ -395,6 +417,7 @@ impl Spool {
             next_spool_sequence,
             state.expired_records,
             state.v1_ack_history_pruned,
+            &state.counted_pending_expirations,
         )?;
         Ok(EnqueueOutcome::Stored(record_id))
     }
@@ -405,7 +428,7 @@ impl Spool {
         if state.unresolved_integrity {
             return Err(SpoolError::CorruptRecord);
         }
-        if !state.gaps.is_empty() {
+        if !state.gaps.is_empty() || !state.counted_pending_expirations.is_empty() {
             return Err(SpoolError::ProtocolUpgradeRequired);
         }
         drop(state);
@@ -425,7 +448,7 @@ impl Spool {
         let mut records = Vec::new();
         let mut body_bytes = 0_usize;
         for entry in ordered {
-            if records.len() >= self.inner.config.batch_max_records {
+            if records.len() >= self.inner.config.batch_max_records.min(256) {
                 break;
             }
             let stored = match self.read_entry(&entry) {
@@ -455,7 +478,8 @@ impl Spool {
             body_bytes = body_bytes.saturating_add(encoded_bytes);
             records.push(record);
         }
-        if !self.state()?.gaps.is_empty() {
+        let state = self.state()?;
+        if !state.gaps.is_empty() || !state.counted_pending_expirations.is_empty() {
             return Err(SpoolError::ProtocolUpgradeRequired);
         }
         let batch_id = batch_id(&records);
@@ -476,6 +500,7 @@ impl Spool {
         if state.unresolved_integrity {
             return Err(SpoolError::CorruptRecord);
         }
+        let counted_expirations = state.counted_pending_expirations.clone();
         let mut ordered = state.entries.values().cloned().collect::<Vec<_>>();
         ordered.sort_by_key(|entry| entry.spool_seq);
         drop(state);
@@ -509,25 +534,40 @@ impl Spool {
             }
             let candidate = match candidate {
                 BatchCandidateV2::Record(entry) => {
-                    let stored = match self.read_entry(&entry) {
-                        Ok(stored) => stored,
-                        Err(SpoolError::CorruptRecord) => {
-                            self.quarantine_runtime_entry(&entry)?;
-                            quarantined = true;
-                            continue;
-                        }
-                        Err(error) => return Err(error),
-                    };
-                    BatchItemV2::Record(HubBatchRecordV2 {
-                        record_id: entry.stable_record_id,
-                        legacy_record_id: entry.record_id,
-                        spool_seq: entry.spool_seq,
-                        received_at_ms: stored.admitted_at_ms,
-                        envelope: stored.envelope,
-                    })
+                    if counted_expirations.contains_key(&entry.spool_seq) {
+                        // Validate encrypted backing before deriving any gap from it.
+                        self.read_entry(&entry)?;
+                        BatchItemV2::Gap(gap_notice(
+                            &entry,
+                            entry.expires_at_ms,
+                            GapReasonV2::RetentionExpired,
+                        ))
+                    } else {
+                        let stored = match self.read_entry(&entry) {
+                            Ok(stored) => stored,
+                            Err(SpoolError::CorruptRecord) => {
+                                self.quarantine_runtime_entry(&entry)?;
+                                quarantined = true;
+                                continue;
+                            }
+                            Err(error) => return Err(error),
+                        };
+                        BatchItemV2::Record(HubBatchRecordV2 {
+                            record_id: entry.stable_record_id,
+                            legacy_record_id: entry.record_id,
+                            spool_seq: entry.spool_seq,
+                            received_at_ms: stored.admitted_at_ms,
+                            envelope: stored.envelope,
+                        })
+                    }
                 }
                 BatchCandidateV2::Gap(gap) => BatchItemV2::Gap(gap),
             };
+            if matches!(&candidate, BatchItemV2::Record(_) if records.len() >= 256)
+                || matches!(&candidate, BatchItemV2::Gap(_) if gaps.len() >= 256)
+            {
+                break;
+            }
             let encoded_bytes = match &candidate {
                 BatchItemV2::Record(record) => serde_json::to_vec(record),
                 BatchItemV2::Gap(gap) => serde_json::to_vec(gap),
@@ -641,7 +681,7 @@ impl Spool {
             receipt.batch_id, RECEIPT_SUFFIX
         ));
         let temporary = self.temporary_dir().join(format!("{}.tmp", Uuid::new_v4()));
-        write_atomic(&temporary, &destination, &encrypted)?;
+        self.write_atomic(&temporary, &destination, &encrypted)?;
         self.state()?.receipts.insert(
             receipt.batch_id.clone(),
             ReceiptEntry {
@@ -753,7 +793,7 @@ impl Spool {
             receipt.batch_id, RECEIPT_SUFFIX
         ));
         let temporary = self.temporary_dir().join(format!("{}.tmp", Uuid::new_v4()));
-        write_atomic(&temporary, &destination, &encrypted)?;
+        self.write_atomic(&temporary, &destination, &encrypted)?;
         self.state()?.receipts.insert(
             receipt.batch_id.clone(),
             ReceiptEntry {
@@ -836,6 +876,9 @@ impl Spool {
         }
         for notice_id in &receipt.accepted_gap_notice_ids {
             let Some(entry) = state.gaps.get(notice_id).cloned() else {
+                if remove_expired_gap_backing(&mut state, notice_id)? {
+                    removed_pending = true;
+                }
                 continue;
             };
             match fs::remove_file(&entry.path) {
@@ -852,6 +895,12 @@ impl Spool {
             sync_directory(&self.pending_dir())?;
         }
         sync_directory(&self.gaps_dir())?;
+        self.persist_sequence_state(
+            state.next_spool_sequence,
+            state.expired_records,
+            state.v1_ack_history_pruned,
+            &state.counted_pending_expirations,
+        )?;
         Ok(())
     }
 
@@ -877,6 +926,7 @@ impl Spool {
                         state.next_spool_sequence,
                         state.expired_records,
                         true,
+                        &state.counted_pending_expirations,
                     )?;
                 }
             }
@@ -892,49 +942,79 @@ impl Spool {
 
     pub fn expire_due(&self, now_ms: i64) -> Result<u64, SpoolError> {
         let mut state = self.state()?;
-        let expired = state
+        let mut expired = state
             .entries
             .values()
-            .filter(|entry| entry.expires_at_ms < now_ms)
+            .filter(|entry| {
+                entry.expires_at_ms < now_ms
+                    || state
+                        .counted_pending_expirations
+                        .contains_key(&entry.spool_seq)
+            })
             .cloned()
             .collect::<Vec<_>>();
+        expired.sort_by_key(|entry| entry.spool_seq);
+        let mut counted = state.counted_pending_expirations.clone();
         let mut expired_count = 0_u64;
         for entry in &expired {
-            let gap_exists = state
+            if !state
                 .gaps
                 .values()
-                .any(|gap| gap.notice.spool_seq == entry.spool_seq);
-            if !gap_exists {
-                let expired_records = state
-                    .expired_records
-                    .checked_add(1)
-                    .ok_or(SpoolError::InvalidConfig)?;
-                self.persist_sequence_state(
-                    state.next_spool_sequence,
-                    expired_records,
-                    state.v1_ack_history_pruned,
-                )?;
-                state.expired_records = expired_records;
+                .any(|gap| gap.notice.spool_seq == entry.spool_seq)
+                && !counted.contains_key(&entry.spool_seq)
+            {
+                counted.insert(entry.spool_seq, entry.stable_record_id.clone());
+                expired_count += 1;
             }
-            let (_, created) = self.persist_gap_locked(
+        }
+        if expired_count > 0 {
+            let total = state
+                .expired_records
+                .checked_add(expired_count)
+                .ok_or(SpoolError::InvalidConfig)?;
+            // One atomic counter/identity commit covers all deferred expirations.
+            self.persist_sequence_state(
+                state.next_spool_sequence,
+                total,
+                state.v1_ack_history_pruned,
+                &counted,
+            )?;
+            state.expired_records = total;
+            state.counted_pending_expirations = counted;
+        }
+        let mut removed_backing = false;
+        for entry in &expired {
+            match self.persist_gap_locked(
                 &mut state,
                 entry,
                 entry.expires_at_ms,
                 GapReasonV2::RetentionExpired,
+            ) {
+                Ok(_) => {}
+                // The encrypted pending file itself durably backs the identical gap.
+                // Keep it until its gap ACK is durable; later gaps must never pass it.
+                Err(SpoolError::CapacityExceeded) => continue,
+                Err(error) => return Err(error),
+            }
+            remove_admitted_record(
+                &mut state,
+                &ReceiptAdmission {
+                    spool_seq: entry.spool_seq,
+                    stable_record_id: entry.stable_record_id.clone(),
+                    legacy_record_id: entry.record_id.clone(),
+                },
             )?;
-            if gap_exists && created {
-                return Err(SpoolError::CorruptRecord);
-            }
-            match fs::remove_file(&entry.path) {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(map_io_error(error)),
-            }
-            state.entries.remove(&entry.record_id);
-            state.stable_index.remove(&entry.stable_record_id);
-            state.pending_bytes = state.pending_bytes.saturating_sub(entry.encrypted_bytes);
-            expired_count = expired_count.saturating_add(1);
             sync_directory(&self.pending_dir())?;
+            state.counted_pending_expirations.remove(&entry.spool_seq);
+            removed_backing = true;
+        }
+        if removed_backing {
+            self.persist_sequence_state(
+                state.next_spool_sequence,
+                state.expired_records,
+                state.v1_ack_history_pruned,
+                &state.counted_pending_expirations,
+            )?;
         }
         Ok(expired_count)
     }
@@ -946,22 +1026,8 @@ impl Spool {
         occurred_at_ms: i64,
         reason: GapReasonV2,
     ) -> Result<(RecordId, bool), SpoolError> {
-        let reason_label = match reason {
-            GapReasonV2::RetentionExpired => b"retention_expired".as_slice(),
-            GapReasonV2::IntegrityQuarantine => b"integrity_quarantine".as_slice(),
-        };
-        let mut evidence_digest = Sha256::new();
-        evidence_digest.update(b"teslatlas-edge-gap-evidence-v2\0");
-        evidence_digest.update(entry.spool_seq.to_be_bytes());
-        evidence_digest.update(entry.stable_record_id.as_str().as_bytes());
-        evidence_digest.update(reason_label);
-        let evidence_sha256 = hex::encode(evidence_digest.finalize());
-        let mut notice_digest = Sha256::new();
-        notice_digest.update(b"teslatlas-edge-gap-notice-v2\0");
-        notice_digest.update(entry.spool_seq.to_be_bytes());
-        notice_digest.update(reason_label);
-        notice_digest.update(evidence_sha256.as_bytes());
-        let notice_id = RecordId::from_sha256(notice_digest.finalize());
+        let notice = gap_notice(entry, occurred_at_ms, reason);
+        let notice_id = notice.notice_id.clone();
         if state.gaps.contains_key(&notice_id) {
             return Ok((notice_id, false));
         }
@@ -980,13 +1046,6 @@ impl Spool {
         if state.gaps.len() >= self.inner.config.max_records {
             return Err(SpoolError::CapacityExceeded);
         }
-        let notice = GapNoticeV2 {
-            notice_id: notice_id.clone(),
-            spool_seq: entry.spool_seq,
-            occurred_at_ms,
-            reason,
-            evidence_sha256,
-        };
         let plaintext = serde_json::to_vec(&notice).map_err(|_| SpoolError::Serialization)?;
         let encrypted = self
             .inner
@@ -1005,7 +1064,7 @@ impl Spool {
             entry.spool_seq, notice_id, GAP_SUFFIX
         ));
         let temporary = self.temporary_dir().join(format!("{}.tmp", Uuid::new_v4()));
-        write_atomic(&temporary, &destination, &encrypted)?;
+        self.write_atomic(&temporary, &destination, &encrypted)?;
         state.pending_gap_bytes = state.pending_gap_bytes.saturating_add(encrypted_bytes);
         state.gaps.insert(
             notice_id.clone(),
@@ -1031,22 +1090,32 @@ impl Spool {
             .min()
             .map(|oldest| u64::try_from(now_ms.saturating_sub(oldest).max(0) / 1_000).unwrap_or(0))
             .unwrap_or(0);
-        let capacity_exhausted = state.entries.len() >= self.inner.config.max_records
+        let capacity_exhausted = state.entries.len().saturating_add(state.gaps.len())
+            >= self.inner.config.max_records
             || state.pending_bytes >= self.inner.config.max_bytes
-            || state.gaps.len() >= self.inner.config.max_records
             || state.pending_gap_bytes >= self.inner.config.max_bytes;
         SpoolSnapshot {
             pending_records: state.entries.len(),
             pending_bytes: state.pending_bytes,
             corrupt_records: state.corrupt_records,
             expired_records: state.expired_records,
-            pending_gap_notices: state.gaps.len(),
+            pending_gap_notices: state
+                .gaps
+                .len()
+                .saturating_add(state.counted_pending_expirations.len()),
             pending_gap_bytes: state.pending_gap_bytes,
             oldest_age_seconds,
             capacity_exhausted,
             degraded: state.corrupt_records > 0
                 || !state.gaps.is_empty()
+                || !state.counted_pending_expirations.is_empty()
                 || state.unresolved_integrity
+                || self
+                    .inner
+                    .storage_write_failed
+                    .lock()
+                    .map(|failed| *failed)
+                    .unwrap_or(true)
                 || capacity_exhausted,
         }
     }
@@ -1067,11 +1136,16 @@ impl Spool {
             result.map_err(map_io_error)?;
             state.corrupt_records = state.corrupt_records.saturating_add(1);
         }
-        for result in fs::read_dir(self.temporary_dir()).map_err(map_io_error)? {
-            let path = result.map_err(map_io_error)?.path();
-            self.quarantine_file_bounded(&path)?;
-            state.corrupt_records = state.corrupt_records.saturating_add(1);
-            state.unresolved_integrity = true;
+        if fs::read_dir(self.temporary_dir())
+            .map_err(map_io_error)?
+            .next()
+            .transpose()
+            .map_err(map_io_error)?
+            .is_some()
+        {
+            // An orphan may be the only witness of an uncertain durable write.
+            // Retaining it makes the refusal survive every attempted reopen.
+            return Err(SpoolError::CorruptRecord);
         }
         self.recover_gaps(&mut state)?;
         let mut recovered_records = Vec::new();
@@ -1155,7 +1229,7 @@ impl Spool {
                     .encrypt(&plaintext)
                     .map_err(map_crypto_error)?;
                 let temporary = self.temporary_dir().join(format!("{}.tmp", Uuid::new_v4()));
-                write_atomic_replace(&temporary, &path, &encrypted)?;
+                self.write_atomic(&temporary, &path, &encrypted)?;
                 encrypted_bytes =
                     u64::try_from(encrypted.len()).map_err(|_| SpoolError::CapacityExceeded)?;
             }
@@ -1236,6 +1310,10 @@ impl Spool {
                 .as_ref()
                 .map(|sequence| sequence.v1_ack_history_pruned)
                 .unwrap_or(false);
+        state.counted_pending_expirations = recovered_sequence
+            .as_ref()
+            .map(|sequence| sequence.counted_pending_expirations.clone())
+            .unwrap_or_default();
         let records_next = state
             .entries
             .values()
@@ -1253,12 +1331,53 @@ impl Spool {
             .checked_add(1)
             .ok_or(SpoolError::InvalidConfig)?;
         state.next_spool_sequence = recovered_next.max(records_next).max(gaps_next);
+        for entry in state.entries.values() {
+            if state
+                .counted_pending_expirations
+                .get(&entry.spool_seq)
+                .is_some_and(|identity| *identity != entry.stable_record_id)
+            {
+                return Err(SpoolError::CorruptRecord);
+            }
+        }
         self.recover_receipts(&mut state)?;
         let next_spool_sequence = state.next_spool_sequence;
         let expired_records = state.expired_records;
+        let pending_sequences = state
+            .entries
+            .values()
+            .map(|entry| (entry.spool_seq, entry.stable_record_id.clone()))
+            .collect::<BTreeMap<_, _>>();
+        for (sequence, identity) in &state.counted_pending_expirations {
+            if pending_sequences.contains_key(sequence) {
+                continue;
+            }
+            // The encrypted identity proves the expected notice without needing
+            // its removed backing. A physical gap or durable ACK must explain it.
+            let notice_id =
+                gap_notice_for_identity(*sequence, identity, 0, GapReasonV2::RetentionExpired)
+                    .notice_id;
+            if !state.gaps.contains_key(&notice_id)
+                && !state
+                    .receipts
+                    .values()
+                    .any(|entry| entry.receipt.accepted_gap_notice_ids.contains(&notice_id))
+            {
+                return Err(SpoolError::CorruptRecord);
+            }
+        }
+        state
+            .counted_pending_expirations
+            .retain(|sequence, _| pending_sequences.contains_key(sequence));
         let v1_ack_history_pruned = state.v1_ack_history_pruned;
+        let counted = state.counted_pending_expirations.clone();
         drop(state);
-        self.persist_sequence_state(next_spool_sequence, expired_records, v1_ack_history_pruned)?;
+        self.persist_sequence_state(
+            next_spool_sequence,
+            expired_records,
+            v1_ack_history_pruned,
+            &counted,
+        )?;
         self.expire_due(now_ms)?;
         self.prune_receipts()?;
         Ok(())
@@ -1272,29 +1391,20 @@ impl Spool {
                 && path.extension().and_then(|extension| extension.to_str()) == Some("tleg")
                 && entry.metadata().map_err(map_io_error)?.len() <= MAX_ENCRYPTED_GAP_BYTES;
             if !valid_file {
-                self.quarantine_file_bounded(&path)?;
-                state.corrupt_records = state.corrupt_records.saturating_add(1);
-                state.unresolved_integrity = true;
-                continue;
+                return Err(SpoolError::CorruptRecord);
             }
             let encrypted = fs::read(&path).map_err(map_io_error)?;
             let plaintext = match self.inner.key.decrypt(&encrypted) {
                 Ok(plaintext) => plaintext,
                 Err(CryptoError::KeyMismatch) => return Err(SpoolError::KeyMismatch),
                 Err(CryptoError::InvalidCiphertext) => {
-                    self.quarantine_file_bounded(&path)?;
-                    state.corrupt_records = state.corrupt_records.saturating_add(1);
-                    state.unresolved_integrity = true;
-                    continue;
+                    return Err(SpoolError::CorruptRecord);
                 }
             };
             let notice: GapNoticeV2 = match serde_json::from_slice(&plaintext) {
                 Ok(notice) => notice,
                 Err(_) => {
-                    self.quarantine_file_bounded(&path)?;
-                    state.corrupt_records = state.corrupt_records.saturating_add(1);
-                    state.unresolved_integrity = true;
-                    continue;
+                    return Err(SpoolError::CorruptRecord);
                 }
             };
             let file_name = path
@@ -1314,14 +1424,18 @@ impl Spool {
                     .gaps
                     .values()
                     .any(|gap| gap.notice.spool_seq == notice.spool_seq)
-                || state.gaps.len() >= self.inner.config.max_records
+            {
+                // Preserve the gap itself as a durable integrity barrier. Moving
+                // it to generic quarantine loses that barrier on the next reopen.
+                return Err(SpoolError::CorruptRecord);
+            }
+            if state.gaps.len() >= self.inner.config.max_records
                 || state.pending_gap_bytes.saturating_add(encrypted_bytes)
                     > self.inner.config.max_bytes
             {
-                self.quarantine_file_bounded(&path)?;
-                state.corrupt_records = state.corrupt_records.saturating_add(1);
-                state.unresolved_integrity = true;
-                continue;
+                // Valid backlog is not corruption. Reopening with restored
+                // capacity must recover the identical notices and sequences.
+                return Err(SpoolError::CapacityExceeded);
             }
             state.pending_gap_bytes = state.pending_gap_bytes.saturating_add(encrypted_bytes);
             state.gaps.insert(
@@ -1354,7 +1468,9 @@ impl Spool {
             };
             self.persist_gap_locked(state, &entry, now_ms, GapReasonV2::IntegrityQuarantine)?;
         } else {
-            state.unresolved_integrity = true;
+            // Its sequence cannot be represented by a trustworthy gap. Keep the
+            // backing in pending so later reopens cannot forget this refusal.
+            return Err(SpoolError::CorruptRecord);
         }
         self.quarantine_file_bounded(path)?;
         state.corrupt_records = state.corrupt_records.saturating_add(1);
@@ -1492,6 +1608,9 @@ impl Spool {
             }
             for notice_id in receipt.accepted_gap_notice_ids {
                 let Some(entry) = state.gaps.get(&notice_id).cloned() else {
+                    if remove_expired_gap_backing(state, &notice_id)? {
+                        removed_pending = true;
+                    }
                     continue;
                 };
                 match fs::remove_file(&entry.path) {
@@ -1593,7 +1712,14 @@ impl Spool {
             .map_err(map_crypto_error)?;
         let sequence: SequenceState =
             serde_json::from_slice(&plaintext).map_err(|_| SpoolError::CorruptRecord)?;
-        if sequence.version != 1 || sequence.next_spool_sequence == 0 {
+        if sequence.version != 1
+            || sequence.next_spool_sequence == 0
+            || sequence.counted_pending_expirations.len() > 1_000_000
+            || sequence
+                .counted_pending_expirations
+                .keys()
+                .any(|value| *value == 0 || *value >= sequence.next_spool_sequence)
+        {
             return Err(SpoolError::CorruptRecord);
         }
         Ok(Some(sequence))
@@ -1604,11 +1730,13 @@ impl Spool {
         next_spool_sequence: u64,
         expired_records_total: u64,
         v1_ack_history_pruned: bool,
+        counted_pending_expirations: &BTreeMap<u64, RecordId>,
     ) -> Result<(), SpoolError> {
         let plaintext = serde_json::to_vec(&SequenceState {
             version: 1,
             next_spool_sequence,
             expired_records_total,
+            counted_pending_expirations: counted_pending_expirations.clone(),
             v1_ack_history_pruned,
         })
         .map_err(|_| SpoolError::Serialization)?;
@@ -1619,7 +1747,30 @@ impl Spool {
             .map_err(map_crypto_error)?;
         let destination = self.inner.config.directory.join(SEQUENCE_STATE_FILE);
         let temporary = self.temporary_dir().join(format!("{}.tmp", Uuid::new_v4()));
-        write_atomic_replace(&temporary, &destination, &encrypted)
+        self.write_atomic(&temporary, &destination, &encrypted)
+    }
+
+    fn write_atomic(
+        &self,
+        temporary: &Path,
+        destination: &Path,
+        bytes: &[u8],
+    ) -> Result<(), SpoolError> {
+        let mut failed = self
+            .inner
+            .storage_write_failed
+            .lock()
+            .map_err(|_| SpoolError::Io)?;
+        if *failed {
+            return Err(SpoolError::Io);
+        }
+        let result = write_atomic(temporary, destination, bytes);
+        if result.is_err() {
+            // A failed rename or destination sync has uncertain custody. Keep
+            // its witness and prevent another staging attempt until recovery.
+            *failed = true;
+        }
+        result
     }
 
     fn state(&self) -> Result<MutexGuard<'_, State>, SpoolError> {
@@ -1673,6 +1824,46 @@ impl Spool {
             return Err(SpoolError::CapacityExceeded);
         }
         Ok(())
+    }
+}
+
+fn gap_notice(entry: &Entry, occurred_at_ms: i64, reason: GapReasonV2) -> GapNoticeV2 {
+    gap_notice_for_identity(
+        entry.spool_seq,
+        &entry.stable_record_id,
+        occurred_at_ms,
+        reason,
+    )
+}
+
+fn gap_notice_for_identity(
+    spool_seq: u64,
+    stable_record_id: &RecordId,
+    occurred_at_ms: i64,
+    reason: GapReasonV2,
+) -> GapNoticeV2 {
+    let reason_label = match reason {
+        GapReasonV2::RetentionExpired => b"retention_expired".as_slice(),
+        GapReasonV2::IntegrityQuarantine => b"integrity_quarantine".as_slice(),
+    };
+    let mut evidence_digest = Sha256::new();
+    evidence_digest.update(b"teslatlas-edge-gap-evidence-v2\0");
+    evidence_digest.update(spool_seq.to_be_bytes());
+    evidence_digest.update(stable_record_id.as_str().as_bytes());
+    evidence_digest.update(reason_label);
+    let evidence_sha256 = hex::encode(evidence_digest.finalize());
+    let mut notice_digest = Sha256::new();
+    notice_digest.update(b"teslatlas-edge-gap-notice-v2\0");
+    notice_digest.update(spool_seq.to_be_bytes());
+    notice_digest.update(reason_label);
+    notice_digest.update(evidence_sha256.as_bytes());
+    let notice_id = RecordId::from_sha256(notice_digest.finalize());
+    GapNoticeV2 {
+        notice_id,
+        spool_seq,
+        occurred_at_ms,
+        reason,
+        evidence_sha256,
     }
 }
 
@@ -1824,19 +2015,58 @@ fn same_record_ids(left: &[RecordId], right: &[RecordId]) -> bool {
         && left.iter().collect::<HashSet<_>>() == right.iter().collect::<HashSet<_>>()
 }
 
+fn remove_expired_gap_backing(state: &mut State, notice_id: &RecordId) -> Result<bool, SpoolError> {
+    let entry = state
+        .entries
+        .values()
+        .find(|entry| {
+            state
+                .counted_pending_expirations
+                .contains_key(&entry.spool_seq)
+                && gap_notice(entry, entry.expires_at_ms, GapReasonV2::RetentionExpired).notice_id
+                    == *notice_id
+        })
+        .cloned();
+    let Some(entry) = entry else {
+        return Ok(false);
+    };
+    let removed = remove_admitted_record(
+        state,
+        &ReceiptAdmission {
+            spool_seq: entry.spool_seq,
+            stable_record_id: entry.stable_record_id,
+            legacy_record_id: entry.record_id,
+        },
+    )?;
+    state.counted_pending_expirations.remove(&entry.spool_seq);
+    Ok(removed)
+}
+
 fn remove_admitted_record(
     state: &mut State,
     admission: &ReceiptAdmission,
 ) -> Result<bool, SpoolError> {
-    let Some(entry) = state.entries.get(&admission.legacy_record_id).cloned() else {
+    let counted_identity_matches = state.counted_pending_expirations.get(&admission.spool_seq)
+        == Some(&admission.stable_record_id);
+    let entry = state
+        .entries
+        .get(&admission.legacy_record_id)
+        .filter(|entry| {
+            entry.spool_seq == admission.spool_seq
+                && entry.stable_record_id == admission.stable_record_id
+                && entry.record_id == admission.legacy_record_id
+        })
+        .cloned();
+    let Some(entry) = entry else {
+        // A durable exact-occurrence record ACK also explains removed backing,
+        // even when expiry was counted after receipt sync but before the crash.
+        if counted_identity_matches {
+            state
+                .counted_pending_expirations
+                .remove(&admission.spool_seq);
+        }
         return Ok(false);
     };
-    if entry.spool_seq != admission.spool_seq
-        || entry.stable_record_id != admission.stable_record_id
-        || entry.record_id != admission.legacy_record_id
-    {
-        return Ok(false);
-    }
     match fs::remove_file(&entry.path) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -1845,6 +2075,11 @@ fn remove_admitted_record(
     state.entries.remove(&entry.record_id);
     state.stable_index.remove(&entry.stable_record_id);
     state.pending_bytes = state.pending_bytes.saturating_sub(entry.encrypted_bytes);
+    if counted_identity_matches {
+        state
+            .counted_pending_expirations
+            .remove(&admission.spool_seq);
+    }
     Ok(true)
 }
 
@@ -1877,6 +2112,9 @@ fn read_spool_format_marker(root: &Path) -> Result<SpoolFormat, SpoolError> {
             if contents == format!("{SPOOL_FORMAT_VERSION}\n").as_bytes() {
                 return Ok(SpoolFormat::Current);
             }
+            if contents == b"3\n" {
+                return Ok(SpoolFormat::AdmissionIdentity);
+            }
             if contents == format!("{PREVIOUS_SPOOL_FORMAT_VERSION}\n").as_bytes() {
                 return Ok(SpoolFormat::Previous);
             }
@@ -1905,7 +2143,7 @@ fn write_current_spool_format_marker(
     let temporary = temporary_dir.join(format!("{}.tmp", Uuid::new_v4()));
     match previous_format {
         SpoolFormat::Fresh => write_atomic(&temporary, &marker, current_format_marker.as_bytes()),
-        SpoolFormat::Previous => {
+        SpoolFormat::Previous | SpoolFormat::AdmissionIdentity => {
             write_atomic_replace(&temporary, &marker, current_format_marker.as_bytes())
         }
         SpoolFormat::Current => Ok(()),
@@ -1918,8 +2156,15 @@ fn write_atomic(temporary: &Path, destination: &Path, bytes: &[u8]) -> Result<()
     #[cfg(unix)]
     options.mode(0o600);
     let mut file = options.open(temporary).map_err(map_io_error)?;
-    file.write_all(bytes).map_err(map_io_error)?;
-    file.sync_all().map_err(map_io_error)?;
+    if let Err(error) = file.write_all(bytes).and_then(|_| file.sync_all()) {
+        drop(file);
+        // This path was created by this invocation and was never renamed. It
+        // cannot be a committed destination; no uncertain destination is erased.
+        if fs::remove_file(temporary).is_ok() {
+            sync_directory(temporary.parent().ok_or(SpoolError::Io)?)?;
+        }
+        return Err(map_io_error(error));
+    }
     drop(file);
     fs::rename(temporary, destination).map_err(map_io_error)?;
     sync_directory(destination.parent().ok_or(SpoolError::Io)?)
@@ -1930,16 +2175,7 @@ fn write_atomic_replace(
     destination: &Path,
     bytes: &[u8],
 ) -> Result<(), SpoolError> {
-    let mut options = OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    options.mode(0o600);
-    let mut file = options.open(temporary).map_err(map_io_error)?;
-    file.write_all(bytes).map_err(map_io_error)?;
-    file.sync_all().map_err(map_io_error)?;
-    drop(file);
-    fs::rename(temporary, destination).map_err(map_io_error)?;
-    sync_directory(destination.parent().ok_or(SpoolError::Io)?)
+    write_atomic(temporary, destination, bytes)
 }
 
 fn quarantine_file(path: &Path, quarantine: &Path) -> Result<(), SpoolError> {
@@ -2018,6 +2254,67 @@ mod tests {
     use super::*;
     use serde_json::json;
     use tempfile::TempDir;
+
+    #[test]
+    fn populated_format3_migrates_receipts_identity_and_counter_idempotently() {
+        let temp = TempDir::new().unwrap();
+        let config = SpoolConfig {
+            directory: temp.path().join("spool"),
+            max_bytes: 1_048_576,
+            max_records: 4,
+            retention_ms: 60_000,
+            batch_max_bytes: 262_144,
+            batch_max_records: 4,
+        };
+        let t0 = 1_800_000_000_000;
+        let envelope =
+            |id: &str| {
+                ReceiverEnvelope::parse(&serde_json::to_vec(&json!({
+            "version": 1, "vin": "5YJ3E1EA7KF000001", "txid": id, "tx_type": "vehicle_data",
+            "received_at_ms": t0, "timestamp_ms": t0, "payload": {}
+        })).unwrap()).unwrap()
+            };
+        let spool = Spool::open(config.clone(), SpoolKey::from_bytes([0x54; 32]), t0).unwrap();
+        spool.enqueue(envelope("acknowledged"), t0).unwrap();
+        let first = spool.next_batch_v2(t0).unwrap();
+        let ack = HubAckV2 {
+            version: 2,
+            batch_id: first.batch_id,
+            accepted_record_ids: vec![first.records[0].record_id.clone()],
+            accepted_gap_notice_ids: vec![],
+        };
+        let result = spool.acknowledge_v2(&ack).unwrap();
+        let pending_envelope = envelope("retained");
+        spool.enqueue(pending_envelope.clone(), t0).unwrap();
+        let pending_before = spool.next_batch_v2(t0).unwrap();
+        let state_path = config.directory.join(SEQUENCE_STATE_FILE);
+        let encrypted = fs::read(&state_path).unwrap();
+        let plaintext = spool.inner.key.decrypt(&encrypted).unwrap();
+        let mut old_state: serde_json::Value = serde_json::from_slice(&plaintext).unwrap();
+        old_state
+            .as_object_mut()
+            .unwrap()
+            .remove("counted_pending_expirations");
+        let encrypted_old_state = spool
+            .inner
+            .key
+            .encrypt(&serde_json::to_vec(&old_state).unwrap())
+            .unwrap();
+        drop(spool);
+        fs::write(&state_path, encrypted_old_state).unwrap();
+        fs::write(config.directory.join(FORMAT_MARKER_FILE), b"3\n").unwrap();
+        let migrated = Spool::open(config.clone(), SpoolKey::from_bytes([0x54; 32]), t0).unwrap();
+        assert_eq!(migrated.next_batch_v2(t0).unwrap(), pending_before);
+        assert_eq!(migrated.acknowledge_v2(&ack).unwrap(), result);
+        assert_eq!(
+            fs::read(config.directory.join(FORMAT_MARKER_FILE)).unwrap(),
+            b"4\n"
+        );
+        drop(migrated);
+        let reopened = Spool::open(config, SpoolKey::from_bytes([0x54; 32]), t0).unwrap();
+        assert_eq!(reopened.next_batch_v2(t0).unwrap(), pending_before);
+        assert_eq!(reopened.acknowledge_v2(&ack).unwrap(), result);
+    }
 
     #[test]
     fn storage_full_errors_are_classified_without_retrying() {
@@ -2099,7 +2396,7 @@ mod tests {
         let restarted =
             Spool::open(config, SpoolKey::from_bytes([0x54; 32]), 1_800_000_000_001).unwrap();
         assert!(restarted.state().unwrap().v1_ack_history_pruned);
-        assert_eq!(fs::read(temp.path().join("spool/FORMAT")).unwrap(), b"3\n");
+        assert_eq!(fs::read(temp.path().join("spool/FORMAT")).unwrap(), b"4\n");
         let batch = restarted.next_batch(1_800_000_000_001).unwrap();
         assert_eq!(
             restarted

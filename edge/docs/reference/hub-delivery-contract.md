@@ -208,8 +208,14 @@ The default encrypted spool budget is 512 MiB, 100,000 pending records, and
 seven-day retention. Configuration hard limits are 8 GiB, 1,000,000 records,
 30-day retention, 1,024 batch items, and 4 MiB of item bodies. The receiver
 body is capped at 256 KiB and each acknowledgement body at 128 KiB; each ACK
-category independently caps at 256 IDs. Pending records, durable gaps, and
-quarantine consume separate record/byte budgets, and Edge retains at most
+category independently caps at 256 IDs. Batch selection stops at the merged
+sequence prefix before either category exceeds 256, even if the configured batch
+upper bound is larger. This lets a consumer acknowledge every returned item in
+one valid ACK. Pending records, durable gap files, and quarantine consume separate
+byte budgets; new admission also reserves the combined pending/gap record count.
+When the gap-file budget is full, an expired encrypted pending record backs its
+unchanged retention-gap identity until a durable gap ACK permits removing it.
+Quarantine has its own record budget, and Edge retains at most
 1,024 encrypted acknowledgement receipts. These are bounded resource budgets,
 not a guarantee about total filesystem usage: temporary files and filesystem
 metadata require headroom. Retention is processed during recovery and batch

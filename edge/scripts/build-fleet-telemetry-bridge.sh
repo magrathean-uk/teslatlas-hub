@@ -253,7 +253,7 @@ PY
         "$repository_root"|"$repository_root"/*) die "upstream cache would enter the Edge checkout" ;;
     esac
 else
-    ephemeral_cache=$(/usr/bin/mktemp -d "/tmp/teslatlas-edge-upstream-cache.XXXXXX") \
+    ephemeral_cache=$(/usr/bin/mktemp -d "${TMPDIR:-/tmp}/teslatlas-edge-upstream-cache.XXXXXX") \
         || die "cannot create an ephemeral upstream cache"
     cache_directory="$ephemeral_cache"
 fi

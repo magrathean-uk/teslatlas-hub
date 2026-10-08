@@ -3,14 +3,14 @@
 mod support;
 
 use std::fs::OpenOptions;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
 use axum::body::Body;
 use http::{Request, StatusCode};
 use tempfile::TempDir;
-use teslatlas_edge::admission::Clock;
+use teslatlas_edge::admission::{AdmissionService, Clock, ReceiverBearer};
 use teslatlas_edge::credentials::CredentialStore;
 use teslatlas_edge::delivery::DeliveryService;
 use teslatlas_edge::spool::{Spool, SpoolConfig, SpoolError, SpoolKey};
@@ -107,10 +107,18 @@ fn capacity_rejection_and_corrupt_ciphertext_are_visible_and_fail_closed() {
         .unwrap()
         .unwrap()
         .path();
-    let length = std::fs::metadata(&path).unwrap().len();
-    let mut file = OpenOptions::new().write(true).open(path).unwrap();
-    file.seek(SeekFrom::Start(length - 1)).unwrap();
-    file.write_all(&[0xff]).unwrap();
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .unwrap();
+    file.seek(SeekFrom::End(-1)).unwrap();
+    let mut original = [0];
+    file.read_exact(&mut original).unwrap();
+    let changed = [original[0] ^ 1];
+    assert_ne!(changed, original);
+    file.seek(SeekFrom::End(-1)).unwrap();
+    file.write_all(&changed).unwrap();
     file.sync_all().unwrap();
 
     let recovered = Spool::open(bounded, key(), T0 + 2).unwrap();
@@ -126,6 +134,51 @@ impl Clock for ManualClock {
     fn now_ms(&self) -> i64 {
         self.0.load(Ordering::SeqCst)
     }
+}
+
+#[tokio::test]
+async fn normalized_numeric_expansion_is_rejected_before_http_acceptance() {
+    let temp = TempDir::new().unwrap();
+    let mut limits = config(&temp);
+    limits.max_bytes = 2_097_152;
+    limits.batch_max_bytes = 1_048_576;
+    let spool = Spool::open(limits, key(), T0).unwrap();
+    let service = AdmissionService::new(
+        spool.clone(),
+        ReceiverBearer::new("synthetic-bearer-0123456789").unwrap(),
+        Arc::new(ManualClock(AtomicI64::new(T0))),
+    );
+    let floats = vec!["1e9"; 50_000].join(",");
+    let body = format!(
+        r#"{{"version":1,"vin":"5YJ3E1EA7KF000001","txid":"float-expansion","tx_type":"V","received_at_ms":{T0},"timestamp_ms":{T0},"payload":{{"values":[{floats}]}}}}"#
+    );
+    assert!(body.len() < 262_144);
+    let parsed = teslatlas_edge::protocol::ReceiverEnvelope::parse(body.as_bytes()).unwrap();
+    assert!(serde_json::to_vec(&parsed).unwrap().len() > 384 * 1_024);
+    let sequence_path = temp.path().join("spool/sequence.tlem");
+    let sequence = std::fs::read(&sequence_path).unwrap();
+    let response = service
+        .router()
+        .oneshot(
+            Request::post("/v1/internal/fleet-telemetry")
+                .header("authorization", "Bearer synthetic-bearer-0123456789")
+                .header("content-type", "application/json")
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(spool.snapshot(T0).pending_records, 0);
+    assert_eq!(std::fs::read(sequence_path).unwrap(), sequence);
+    let batch = spool.next_batch_v2(T0).unwrap();
+    assert!(batch.records.is_empty() && batch.gaps.is_empty());
+    assert_eq!(
+        std::fs::read_dir(temp.path().join("spool/tmp"))
+            .unwrap()
+            .count(),
+        0
+    );
 }
 
 fn get(token: &str) -> Request<Body> {
