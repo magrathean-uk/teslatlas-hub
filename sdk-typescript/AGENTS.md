@@ -1,34 +1,38 @@
-# Teslatlas TypeScript SDK
+# Teslatlas TypeScript client
 
-This repository owns the public browser and Node.js transport bindings for
-Teslatlas. When working in the multi-repository workspace, follow its `AGENTS.md` and active programme plan first. Keep work within the SDK:
-do not add viewer UI, Hub implementation, server-held credentials, CI, release
-automation, tags, or publication without an explicit owner instruction.
+Node.js client for the Hub read API. Follow `../AGENTS.md` and
+`../docs/development/MASTER_PLAN.md`; the plan wins on process, model, scope and commit
+policy. Only the Hub client (`src/hub`) is retained; the rich client, SSE, vehicle
+commands, the vendored Protocol copy, the lock and sync scripts and the two
+bearer-serving browser helpers are deleted under plan group G2-2. Types are then
+generated from the in-repo contract. No browser client in v7. The package is not
+published in v7. The retained code moves into the `magrathean-uk/teslatlas-hub`
+workspace as the `sdk-typescript/` package, keeping its Apache-2.0 licence, after an
+Authorisations row.
 
 ## Boundaries
 
-- Derive public types and protocol behavior from the locked protocol artifacts.
-- Use `camelCase` TypeScript names and lowercase-hyphenated documentation names.
-- Keep credential and replay-checkpoint persistence caller-owned and browser-safe.
-- Preserve typed errors, ETags, cursor binding, SSE replay handling, and the
-  one-shot behavior of non-idempotent commands.
-- Keep the current-Hub pairing boundary intact: Node claim transport verifies
-  normal TLS trust, hostname, and the invitation leaf pin on one connection;
-  browser pairing fails closed unless the embedding supplies a pin-capable
-  claim transport.
-- Do not turn fixture, unit, or package checks into a claim about a live Hub or
-  ordinary browser acceptance.
-- Legal files (`LICENSE`, `NOTICE`, `docs/legal/`, contributor terms, copyright and attribution strings) are owner-controlled: change them only on the owner's explicit instruction.
-
-Preserve existing changes and private data. In the current workspace, keep the existing `main` checkout; do not create branches, worktrees, or stashes. Pushes and vehicle commands need an explicit owner instruction. Read the [contribution guide](.github/CONTRIBUTING.md) for command prerequisites and [development record](docs/development/PLAN.md) for the distinction between current authority and historical evidence.
+- Derive public types from the canonical contract; use `camelCase` TypeScript names and
+  lowercase-hyphenated documentation names.
+- Keep credential and checkpoint persistence caller-owned. Preserve typed errors,
+  ETags and cursor binding.
+- Keep the pairing boundary intact: the Node claim transport verifies normal TLS trust,
+  hostname and the invitation leaf pin on one connection.
+- Do not turn fixture, unit or package checks into a claim about a live Hub.
+- Legal files (`LICENSE`, `NOTICE`, `docs/legal/`, contributor terms, copyright and
+  attribution strings) are owner-controlled: change them only on the owner's explicit
+  instruction.
+- No vehicle commands. Short local commit per reviewed batch; push only on an owner
+  request. No CI, release automation, tags or publication.
 
 ## Working locally
 
-Use the commands defined in `package.json` and run the smallest relevant check:
-`npm run build` followed by `npm run typecheck`, `npm run test:unit`, `npm run test:conformance`,
-`npm run protocol:check`, or `npm run verify` for the full local suite.
-`npm run build` writes `dist/` in this checkout, so do not claim that cache
-routing alone keeps every generated output outside the repository.
+Use the commands in `package.json` and run the smallest relevant check: `npm run build`
+then `npm run typecheck`, `npm run test:unit`, `npm run test:conformance`, or
+`npm run verify` for the full local suite. `npm run build` writes `dist/` in this
+checkout. Run everything through `../scripts/dev/run.sh teslatlas-sdk-typescript ...`.
 
-For optional cache and output management, see
-[Clean Development](https://github.com/magrathean-uk/clean-development).
+<!-- clean-development-policy:v2 (canonical text: ~/dev/source/dev-bootstrap/snippets/clean-development-policy.md) -->
+## Clean development (mandatory)
+
+Follow the Clean Development rules in the workspace `../AGENTS.md`: routed caches, builds and scratch outside the tree, `clean-development run --session session-only` for anything that writes output, and `dev-env-check`, `dev-projects-check` and `dev-audit` before finishing.
