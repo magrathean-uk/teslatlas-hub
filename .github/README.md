@@ -14,40 +14,36 @@
 </p>
 
 Teslatlas Hub collects vehicle telemetry, stores history locally, and synchronises
-it with the separately distributed Teslatlas client. The repository contains the
-Rust Hub service, a native macOS control app, packaging helpers, and interoperability
-fixtures. Hub runs as a standalone service with direct collection and local storage.
+it with the separately distributed Teslatlas client and with independent clients
+through its read API. The repository contains the Rust Hub service, a native macOS
+control app and interoperability fixtures. Hub runs as a standalone service with
+direct collection and local storage.
 
 ## Distribution and candidate targets
 
 Hub is distributed as source. GitHub binary releases and downloadable installer
 assets are not provided. Follow the [source build guide](../docs/guides/build-from-source.md)
-before using the [Mac](../docs/guides/install-macos.md),
-[Debian](../docs/guides/install-debian.md), or
-[source-built Docker](../docs/guides/install-docker.md) instructions.
-
-The current candidate targets Apple-silicon macOS 13 or later and Debian 13 on
-amd64 or ARM64. Docker is a local source-build path whose architecture and
-runtime acceptance depend on the host. Local builds do not automatically have
-trusted signing or notarisation. The Mac installer helper currently depends on
-the maintained workspace; a standalone clone is not a complete Mac packaging
-environment.
+before the [Mac](../docs/guides/install-macos.md) instructions. The Mac lane is the
+supported one: the GUI app with its per-user LaunchAgent on Apple-silicon macOS 13 or
+later (runtime verification in progress). The [Debian](../docs/guides/install-debian.md)
+and [Docker](../docs/guides/install-docker.md) guides are specifications until the Mac
+Hub is complete. Local builds do not automatically have trusted signing or notarisation.
 
 ## What Hub provides
 
 - Local SQLite-backed vehicle history and resident credential handling.
-- Multiple-vehicle status and supported vehicle controls.
+- Multiple-vehicle status for one household. No vehicle commands.
 - Guided history import over SSH without modifying the source database.
-- Diagnostics, health endpoints, logs, backup, and recovery commands.
-- Pairing for the separate Teslatlas client.
-- Optional Fleet Telemetry and source-built companion components.
+- Diagnostics, health endpoints, logs, backup and recovery commands; optional encrypted backups.
+- Pairing for the Teslatlas client and for independent clients of the read API.
+- Optional Fleet Telemetry receiver on the Hub host.
 
 The Mac app controls the background service. Closing the app window does not stop
-Hub; use its stop control or the documented service commands when pausing collection.
+Hub; use its stop control when pausing collection.
 
 ## First setup
 
-1. Choose a host and build the source package.
+1. Choose a host and build from source.
 2. Follow [Getting started](../docs/guides/getting-started.md) and the host guide.
 3. Configure collection or import supported vehicle history.
 4. Complete diagnostics and confirm fresh activity for the intended vehicles.
@@ -60,11 +56,10 @@ Hub; use its stop control or the documented service commands when pausing collec
 |---|---|
 | Choose a setup path | [Getting started](../docs/guides/getting-started.md) |
 | Use the Mac app | [Mac setup](../docs/guides/install-macos.md) |
-| Run Debian | [Debian installation](../docs/guides/install-debian.md) |
-| Run Docker | [Docker installation](../docs/guides/install-docker.md) |
+| Run Debian (specification) | [Debian installation](../docs/guides/install-debian.md) |
+| Run Docker (specification) | [Docker installation](../docs/guides/install-docker.md) |
 | Configure Fleet | [Fleet setup](../docs/guides/fleet-setup.md) |
 | Use the CLI | [CLI reference](../docs/guides/cli.md) |
-| Install companions | [Companion source setup](../docs/guides/companion-setup.md) |
 | Diagnose or recover | [Troubleshooting](../docs/guides/troubleshooting.md) · [Backup and recovery](../docs/operations/backup-and-recovery.md) |
 | Understand the system | [Architecture](../docs/architecture/overview.md) · [Security model](../docs/architecture/security-model.md) |
 | Contribute | [Contributing](CONTRIBUTING.md) |
