@@ -21,7 +21,9 @@ Tessie, Teslemetry and MyTeslaMate are such registered applications. When you si
 
 So "no domain needed" means "the provider owns the domain". Hub's provider mode connects outward from your computer to that provider; nothing on your network has to accept connections. Tesla allows a car to stream to at most five third-party applications at once (Teslemetry documents three), so a car already used with other services may need one removed.
 
-Teslatlas itself does not operate such a relay. That is a deliberate privacy choice: Magrathean never sees your car's data.
+Teslatlas itself is not a Tesla partner application and does not operate such a relay. That is a deliberate privacy choice: Magrathean never sees your car's data. You bring your own provider account, exactly as TeslaMate users do.
+
+The Mac app shows this guide, with screenshots, as the Collection step of its setup, and again from the Collection screen later.
 
 ## Path 1: Legacy (Tesla Owner API)
 
