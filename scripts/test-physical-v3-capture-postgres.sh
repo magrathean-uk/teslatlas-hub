@@ -4,7 +4,7 @@ set -euo pipefail
 
 postgres_bin=/opt/homebrew/opt/postgresql@18/bin
 schema_dump=${TESLATLAS_TEST_TESLAMATE_SCHEMA_DUMP:?set TESLATLAS_TEST_TESLAMATE_SCHEMA_DUMP to the private TeslaMate custom dump}
-lab_tmp_root=${TESLATLAS_TEST_PRIVATE_TMP_ROOT:-${HOME}/dev/lab/teslatlas-v7/tmp}
+lab_tmp_root=${TESLATLAS_TEST_PRIVATE_TMP_ROOT:-${TESLATLAS_LAB:?set TESLATLAS_LAB or TESLATLAS_TEST_PRIVATE_TMP_ROOT}/tmp}
 hub_root=${0:A:h:h}
 workspace_root=${hub_root:h}
 
@@ -69,7 +69,15 @@ SQL
 
 export TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_URL="postgresql://fixture_reader@127.0.0.1:${fixture_port}/teslamate_fixture"
 export TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_ADMIN_URL="postgresql://fixture_owner@127.0.0.1:${fixture_port}/teslamate_fixture"
+# The test is #[ignore]d, so a cargo exit of zero is not enough: a filter that
+# matches nothing would also exit zero. Require exactly one test run and passed.
+test_log=${fixture_root}/cargo-test.log
 "${workspace_root}/scripts/dev/with-heavy-build-lock.sh" \
   "${workspace_root}/scripts/dev/run.sh" hub cargo test --locked --lib \
-    physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failures_when_configured \
-    -- --nocapture
+    import::teslamate::reader::tests::physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failures_when_configured \
+    -- --ignored --exact --nocapture 2>&1 | tee "${test_log}"
+if ! grep -qxF 'running 1 test' "${test_log}" ||
+  ! grep -Eq '^test result: ok\. 1 passed; 0 failed; 0 ignored;' "${test_log}"; then
+  print -u2 'physical V3 capture test did not run exactly once and pass'
+  exit 1
+fi

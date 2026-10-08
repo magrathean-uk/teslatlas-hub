@@ -1265,14 +1265,14 @@ fn failed_physical_capture_discards_its_private_open_stage() {
 }
 
 #[tokio::test]
+#[ignore = "needs PostgreSQL: set TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_URL and TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_ADMIN_URL (run with --ignored)"]
 async fn physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failures_when_configured()
 {
-    let (Ok(source_url), Ok(admin_url)) = (
-        std::env::var("TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_URL"),
-        std::env::var("TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_ADMIN_URL"),
-    ) else {
-        return;
+    let required = |name: &str| {
+        std::env::var(name).unwrap_or_else(|_| panic!("set {name} to run this ignored test"))
     };
+    let source_url = required("TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_URL");
+    let admin_url = required("TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_ADMIN_URL");
     let source = ReadOnlySource::parse(&source_url).expect("credential-free fixture source");
     let password = TeslaMatePostgresPassword::from_bytes(b"fixture-password")
         .expect("synthetic fixture password");

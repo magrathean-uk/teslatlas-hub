@@ -66,13 +66,18 @@ final class HubUtilityWindowTests: XCTestCase {
         for health: HubHealth in [.running, .stopped, .degraded] {
             var snapshot = HubSnapshot.previewRunning
             snapshot.health = health
+            snapshot.accountState = .connected
+            snapshot.databaseState = .healthy
             snapshot.database = "Healthy · 24 MB"
             XCTAssertFalse(snapshot.shouldOfferTeslaMateImport)
         }
+        // The decision reads the typed states, not the display strings.
         var unknown = HubSnapshot.firstRun
         unknown.health = .degraded
         unknown.account = "Unknown"
+        unknown.accountState = .unknown
         unknown.database = "Unknown"
+        unknown.databaseState = .unknown
         XCTAssertFalse(unknown.shouldOfferTeslaMateImport)
         XCTAssertTrue(HubSnapshot.firstRun.shouldOfferTeslaMateImport)
     }

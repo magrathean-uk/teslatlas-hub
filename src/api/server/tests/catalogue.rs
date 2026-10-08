@@ -506,7 +506,8 @@ async fn explicit_delta_v2_returns_validated_lineage_and_authorized_packs() {
     let store = HubStore::initialize(temp.path()).expect("store");
     let cursor_key = CursorKey::from_bytes([41; 32]);
     let (vehicle_id, digest, _) = seed_v2_lineage(&store, &cursor_key);
-    let app = router(store);
+    // The pack route needs the active cursor key to evaluate prepared objects.
+    let app = trusted_local_router(store, false, Some(cursor_key), None);
 
     let response = app
         .clone()
@@ -806,7 +807,9 @@ async fn restart_serves_unexpired_prior_lineage_pack_but_never_an_arbitrary_orph
     drop(connection);
     drop(store);
 
-    let app = router(HubStore::initialize(temp.path()).expect("restart store"));
+    let restarted = HubStore::initialize(temp.path()).expect("restart store");
+    // The pack route needs the active cursor key to evaluate prepared objects.
+    let app = trusted_local_router(restarted, false, Some(cursor_key), None);
     let retired = app
         .clone()
         .oneshot(

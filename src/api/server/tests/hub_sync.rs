@@ -817,29 +817,13 @@ async fn prepared_receipt_route_requires_pairing_and_current_vehicle_head() {
         .stage_pending_physical_v3_admission(&gate, candidate)
         .expect("public physical head");
     drop(gate);
-    let artifact_id = format!("map-month-v1.{}", "a".repeat(64));
-    let receipt = br#"{"signed":"fixture"}"#;
-    store
-        .open()
-        .expect("catalogue")
-        .execute(
-            "INSERT INTO prepared_map_months
-         (artifact_id, vehicle_id, month, input_manifest_id, input_receipt_id,
-          input_sequence, source_digest, pack_sha256, compressed_bytes, receipt_json)
-         VALUES (?1, ?2, '2025-01', ?3, ?4, ?5, ?6, ?7, 100, ?8)",
-            rusqlite::params![
-                artifact_id,
-                binding.vehicle_id.to_string(),
-                admission.snapshot_id.to_string(),
-                admission.receipt_id,
-                i64::try_from(admission.head_sequence).unwrap(),
-                "b".repeat(64),
-                "c".repeat(64),
-                receipt.as_slice(),
-            ],
-        )
-        .expect("prepared catalogue fixture");
     let now_ms = current_epoch_ms().expect("pairing clock");
+    // The route serves only a receipt that passes the current semantic and
+    // signature checks, so the fixture must be genuinely signed by `key`.
+    let (artifact_id, receipt) =
+        crate::import::teslamate::prepared_map::insert_signed_month_fixture(
+            &store, &key, &admission, now_ms,
+        );
     let invitation = store
         .create_pairing("prepared route", now_ms - 1, i64::MAX)
         .expect("pairing invitation");
@@ -885,7 +869,7 @@ async fn prepared_receipt_route_requires_pairing_and_current_vehicle_head() {
             .unwrap()
             .to_bytes()
             .as_ref(),
-        receipt
+        receipt.as_slice()
     );
     let other_vehicle = app
         .clone()

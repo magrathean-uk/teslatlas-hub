@@ -1230,10 +1230,10 @@ fn selected_car_output_admission_rejects_overflow() {
 }
 
 #[tokio::test]
+#[ignore = "needs PostgreSQL: set TESLATLAS_HUB_TEST_POSTGRES_URL and TESLATLAS_HUB_TEST_POSTGRES_PASSWORD_FILE or TESLATLAS_HUB_TEST_POSTGRES_CREDENTIALS_DIRECTORY (run with --ignored)"]
 async fn native_complete_corpus_direct_import_projects_every_kind_when_configured() {
-    let Some((source, password)) = configured_native_postgres_source(false) else {
-        return;
-    };
+    let (source, password) = configured_native_postgres_source(false)
+        .expect("set TESLATLAS_HUB_TEST_POSTGRES_URL to run this ignored test");
     let packs = tempfile::tempdir().expect("pack directory");
     let result = write_direct_full_snapshot(
         &source,
@@ -1271,10 +1271,13 @@ async fn native_complete_corpus_direct_import_projects_every_kind_when_configure
 }
 
 #[tokio::test]
+#[ignore = "needs PostgreSQL: set TESLATLAS_HUB_RUN_10M=1, TESLATLAS_HUB_TEST_POSTGRES_URL or TESLATLAS_LOCAL_TESLAMATE_URL, and TESLATLAS_HUB_TEST_POSTGRES_PASSWORD_FILE, TESLATLAS_LOCAL_TESLAMATE_POSTGRES_PASSWORD_FILE or TESLATLAS_HUB_TEST_POSTGRES_CREDENTIALS_DIRECTORY (run with --ignored)"]
 async fn native_ten_million_corpus_direct_import_meets_target_when_enabled() {
-    if std::env::var("TESLATLAS_HUB_RUN_10M").as_deref() != Ok("1") {
-        return;
-    }
+    assert_eq!(
+        std::env::var("TESLATLAS_HUB_RUN_10M").as_deref(),
+        Ok("1"),
+        "set TESLATLAS_HUB_RUN_10M=1 to run this ignored test"
+    );
     let (source, password) = configured_native_postgres_source(true)
         .expect("10m test source URL or local TeslaMate fixture URL");
     let packs = tempfile::tempdir().expect("pack directory");

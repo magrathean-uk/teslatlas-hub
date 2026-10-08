@@ -1055,6 +1055,7 @@ async fn run_macos_supervisor_sigterm_child_cycle(
     let receipt_path = fixture_path.with_extension(format!("sigterm-receipt-{run}"));
     let mut child = ProcessCommand::new(test_binary)
         .args([
+            "--ignored",
             "--exact",
             MACOS_SUPERVISOR_SIGTERM_CHILD_TEST,
             "--nocapture",
@@ -1133,6 +1134,7 @@ async fn run_macos_supervisor_sigterm_child_cycle(
 
 #[cfg(target_os = "macos")]
 #[tokio::test]
+#[ignore = "re-exec child of macos_supervisor_sigterm_releases_listener_and_reruns_same_fixture; not a standalone test"]
 async fn macos_supervisor_sigterm_child() {
     if std::env::var_os(MACOS_SUPERVISOR_SIGTERM_CHILD_ENV).is_none() {
         return;

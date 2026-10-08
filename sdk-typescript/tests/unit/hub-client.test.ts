@@ -275,7 +275,50 @@ describe("current Hub client", () => {
     );
     expect(queue.requests[1]?.headers.get("Authorization")).toBe(`Bearer ${"b".repeat(64)}`);
     expect(queue.requests[2]?.headers.get("If-None-Match")).toBe('"drive-page"');
+    // A followed redirect would carry the bearer to another location.
+    expect(queue.requests[1]?.redirect).toBe("error");
+    expect(queue.requests[2]?.redirect).toBe("error");
   });
+
+  it.each([
+    ["changed fromMs", hubId, { fromMs: 1_788_565_000_001, toMs: 1_788_566_000_000 }],
+    ["changed toMs", hubId, { fromMs: 1_788_565_000_000, toMs: 1_788_566_000_001 }],
+    ["different vehicle id", otherHubId, { fromMs: 1_788_565_000_000, toMs: 1_788_566_000_000 }],
+  ])(
+    "rejects a drives cursor reused with a %s binding before any request",
+    async (_label, vehicleId, changed) => {
+      const payload = JSON.parse(await example("drives"));
+      payload.next_cursor = "cursor-page-2";
+      const queue = queuedFetch([
+        await discoveryResponse(),
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: { ...jsonHeaders, ETag: '"drive-page"', "Cache-Control": "no-store" },
+        }),
+      ]);
+      const client = createHubClient({
+        endpoint,
+        expectedHubId: hubId,
+        credentials: new MemoryCredentials(),
+        fetch: queue.fetch,
+      });
+      const page = await client.drives(hubId, {
+        fromMs: 1_788_565_000_000,
+        toMs: 1_788_566_000_000,
+      });
+      if (page.kind !== "page" || page.value.nextCursor === null) {
+        throw new Error("expected a drives page with a next cursor");
+      }
+      const cursor = page.value.nextCursor;
+      expect(queue.requests).toHaveLength(2);
+
+      await expect(client.drives(vehicleId, { ...changed, cursor })).rejects.toMatchObject({
+        code: "protocol_validation",
+        validator: "HubDrives.cursorBinding",
+      });
+      expect(queue.requests).toHaveLength(2);
+    },
+  );
 
   it.each([
     [200, 'W/"weak"'],

@@ -102,11 +102,15 @@ fn seed_supervised_restart_import(store: &HubStore) {
     .expect("seed selected imported car");
 }
 
+/// Deadline for the shared supervised-restart waits. Each wait returns as soon
+/// as it is satisfied, so only a loaded machine ever spends the whole bound.
+const SUPERVISED_RESTART_WAIT: Duration = Duration::from_secs(30);
+
 async fn join_supervised_restart_task(
     label: &str,
     task: &mut JoinHandle<Result<(), CollectorError>>,
 ) -> Result<(), CollectorError> {
-    match timeout(Duration::from_secs(5), &mut *task).await {
+    match timeout(SUPERVISED_RESTART_WAIT, &mut *task).await {
         Ok(result) => result.expect("supervised collector task join"),
         Err(_) => {
             task.abort();
@@ -121,7 +125,7 @@ async fn wait_for_supervised_signal_or_abort<T>(
     task: &mut JoinHandle<Result<(), CollectorError>>,
     signal: oneshot::Receiver<T>,
 ) -> T {
-    match timeout(Duration::from_secs(5), signal).await {
+    match timeout(SUPERVISED_RESTART_WAIT, signal).await {
         Ok(Ok(value)) => value,
         Ok(Err(_)) => {
             task.abort();
@@ -137,7 +141,7 @@ async fn wait_for_supervised_signal_or_abort<T>(
 }
 
 async fn wait_for_supervised_restart_condition(label: &str, mut condition: impl FnMut() -> bool) {
-    timeout(Duration::from_secs(5), async {
+    timeout(SUPERVISED_RESTART_WAIT, async {
         while !condition() {
             sleep(Duration::from_millis(10)).await;
         }

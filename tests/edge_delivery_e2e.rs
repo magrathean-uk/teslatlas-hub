@@ -831,6 +831,7 @@ async fn expect_instrumented_hub_returned_error(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs the retired Edge binary: build teslatlas-edge and set TESLATLAS_EDGE_BIN=<absolute path>; run with --ignored"]
 async fn actual_uninterrupted_and_restarted_sparse_delivery_have_complete_parity() {
     teslatlas_hub::crypto::install_default_provider();
     let temporary = tempfile::tempdir().unwrap();
@@ -865,7 +866,11 @@ async fn actual_uninterrupted_and_restarted_sparse_delivery_have_complete_parity
         1,
     );
     let edge = edge_binary();
-    assert!(edge.is_file());
+    assert!(
+        edge.is_file(),
+        "no Edge binary at {}: build teslatlas-edge and set TESLATLAS_EDGE_BIN=<absolute path>",
+        edge.display()
+    );
     run(&edge, &base_edge.join("config.toml"), &["init"]);
     let issued: Value = serde_json::from_slice(
         &run(
@@ -997,6 +1002,7 @@ async fn actual_uninterrupted_and_restarted_sparse_delivery_have_complete_parity
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs the retired Edge binary: build teslatlas-edge and set TESLATLAS_EDGE_BIN=<absolute path>; run with --ignored"]
 async fn actual_edge_mtls_delivery_replay_and_reenqueue_are_durable() {
     teslatlas_hub::crypto::install_default_provider();
     let temporary = tempfile::tempdir().unwrap();

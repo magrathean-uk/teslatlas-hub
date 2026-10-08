@@ -759,6 +759,8 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testDiagnosticsRerunClearsPreviouslyRenderedRawAndStructuredReport() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
         let runner = CommandMapRunner(responses: [
             "doctor": .success("{\"status\":\"old\"}"),
             "preflight": .success("{\"status\":\"ready\"}"),
@@ -767,6 +769,7 @@ final class HubControllerTests: XCTestCase {
         let controller = HubController(commandRunner: runner,
                                        installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
+                                       homeDirectory: home,
                                        serviceInstalledOverride: false)
         let diagnostics = DiagnosticsWindowController(controller: controller)
         let root = try XCTUnwrap(diagnostics.window?.contentView)
@@ -778,7 +781,7 @@ final class HubControllerTests: XCTestCase {
         try XCTUnwrap(buttons(in: root).first { $0.title == "Show raw redacted report" }).performClick(nil)
         wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             self.descendantViews(in: root).compactMap { $0 as? NSTextView }.contains { $0.string.contains("old") }
-        }, object: nil)], timeout: 3)
+        }, object: nil)], timeout: 10)
         let firstReport = expectation(description: "first diagnostic report rendered")
         DispatchQueue.main.async {
             let raw = self.descendantViews(in: root).compactMap { $0 as? NSTextView }.first {

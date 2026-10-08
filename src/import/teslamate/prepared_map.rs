@@ -1256,6 +1256,58 @@ pub(crate) fn current_pack(
     }))
 }
 
+/// Catalogue one genuinely signed month for `admission`, as publication would,
+/// and return its artifact ID and receipt. Only receipt routes can use it: the
+/// pack object the receipt names is not written.
+#[cfg(test)]
+pub(crate) fn insert_signed_month_fixture(
+    store: &HubStore,
+    key: &CursorKey,
+    admission: &PendingPhysicalV3Admission,
+    now_ms: i64,
+) -> (String, Vec<u8>) {
+    let month = previous_complete_month(now_ms)
+        .expect("fixture month")
+        .expect("fixture clock has a previous complete month");
+    let id = artifact_id(admission, &month.name, month.from_ms, month.to_ms);
+    let pack_digest = "c".repeat(64);
+    let receipt = signed_receipt(
+        key,
+        admission,
+        &id,
+        &month,
+        0,
+        0,
+        &pack_digest,
+        100,
+        100,
+        now_ms,
+    )
+    .expect("signed fixture receipt");
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "INSERT INTO prepared_map_months
+             (artifact_id, vehicle_id, month, input_manifest_id, input_receipt_id,
+              input_sequence, source_digest, pack_sha256, compressed_bytes, receipt_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 100, ?9)",
+            params![
+                id,
+                admission.vehicle_id.to_string(),
+                month.name,
+                admission.snapshot_id.to_string(),
+                admission.receipt_id,
+                i64::try_from(admission.head_sequence).unwrap(),
+                "b".repeat(64),
+                pack_digest,
+                receipt,
+            ],
+        )
+        .expect("prepared catalogue fixture");
+    (id, receipt)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

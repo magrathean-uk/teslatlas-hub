@@ -27,6 +27,29 @@ describe("fetch transport", () => {
     },
   );
 
+  it.each(["/\\evil.example/x", "/\\\\evil.example/x", "/\\/evil.example/x"])(
+    "rejects backslash target %s that resolves cross-origin before authorization or fetch",
+    async (path) => {
+      let authorizationCalls = 0;
+      let fetchCalls = 0;
+      const transport = new FetchTransport({
+        baseUrl: "https://hub.example",
+        authorization: () => {
+          authorizationCalls += 1;
+          return "Bearer secret-value";
+        },
+        fetch: async () => {
+          fetchCalls += 1;
+          return new Response(null, { status: 204 });
+        },
+      });
+
+      await expect(transport.request(path)).rejects.toThrow(InvalidRequestPathError);
+      expect(authorizationCalls).toBe(0);
+      expect(fetchCalls).toBe(0);
+    },
+  );
+
   it("resolves a root-relative path on the configured origin", async () => {
     const inputs: string[] = [];
     const transport = new FetchTransport({

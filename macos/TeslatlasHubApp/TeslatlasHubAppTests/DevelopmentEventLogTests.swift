@@ -111,7 +111,16 @@ final class DevelopmentEventLogTests: XCTestCase {
     }
 
     func testExistingOwnerDirectoryPolicyReadOnly() throws {
-        let path = try XCTUnwrap(ProcessInfo.processInfo.environment["TESLATLAS_HUB_LOG_POLICY_DIRECTORY"])
+        // Like the Rust twin: use the configured owner directory, else a fresh private one.
+        let path: String
+        if let configured = ProcessInfo.processInfo.environment["TESLATLAS_HUB_LOG_POLICY_DIRECTORY"] {
+            path = configured
+        } else {
+            let directory = try canonicalTemporaryDirectory().appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+            addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+            path = directory.path
+        }
         let descriptor = try DevelopmentEventLog.validateDirectoryReadOnly(URL(fileURLWithPath: path))
         XCTAssertGreaterThanOrEqual(descriptor, 0)
         close(descriptor)
