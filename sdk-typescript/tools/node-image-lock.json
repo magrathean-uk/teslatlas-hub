@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "registry": "registry-1.docker.io",
+  "repository": "library/node",
+  "official_image": true,
+  "tag_observed": "26.10.0-bookworm-slim",
+  "index_media_type": "application/vnd.oci.image.index.v1+json",
+  "index_digest": "sha256:662933cf47f013bc8e4beb31a6116448427a82057ba7c42c97e4c5ba766504c2",
+  "linux_arm64_v8_child_digest": "sha256:131c9695bc02b79f4dbb1ca360f5822d5f67f248a621498c22de5883f94122d0",
+  "observed_at": "2026-09-28T06:45:30Z",
+  "evidence_boundary": "Registry manifest readback only; no image pull, build, execution, or platform acceptance."
+}

@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk-package-admission",
+  "role": "candidate",
+  "state": "independently-reviewed",
+  "product_version": "2026.36.2",
+  "source": {
+    "repository": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+    "commit": "56a07dd7c1a55e5f783ab71640a01f4b56d908c4",
+    "manifest_sha256": "546b517f6ce86556252e7fbcde19bee320d7e30017e3bd4d8ad075220b939d2b",
+    "file_count": 285
+  },
+  "package": {
+    "name": "@teslatlas/sdk",
+    "version": "2026.36.2",
+    "archive_sha256": "070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7",
+    "member_count": 88
+  },
+  "toolchain": {
+    "node": "26.7.0",
+    "npm": "11.19.0"
+  },
+  "review": {
+    "verdict": "ACCEPT",
+    "reviewer_model": "GPT-5.6 Sol",
+    "reasoning": "high",
+    "reviewed_at": "2026-09-19T20:10:11Z"
+  }
+}

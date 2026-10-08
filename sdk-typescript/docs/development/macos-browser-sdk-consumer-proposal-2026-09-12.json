@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.generic_browser_consumer_proposal",
+  "proposal_id": "macos13-arm64-generic-browser-2026-09-12-v1",
+  "created_at": "2026-09-12",
+  "owner": "Teslatlas TypeScript SDK",
+  "reviewer": "Hub",
+  "scope": {
+    "target": "macos13-arm64",
+    "included": [
+      "One bounded packed public browser SDK consumer using the exact archive below",
+      "Normal browser TLS trust, exact CORS origin, credential use, current/history reads and cleanup"
+    ],
+    "excluded": [
+      "Viewer development, packaging, integration and product-UI acceptance",
+      "Installed app/package replacement, LaunchAgent or production service changes",
+      "Edge, Home Assistant, vehicle actions, collection and named-source parity",
+      "x86, x86_64, amd64, Intel Mac, Azure and full cross-architecture work"
+    ]
+  },
+  "source_binding": {
+    "sdk": {
+      "repository": "teslatlas-sdk-typescript",
+      "source_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+      "package_name": "@teslatlas/sdk",
+      "package_version": "2026.36.2",
+      "archive_path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/teslatlas-sdk-2026.36.2.tgz",
+      "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "archive_member_count": 81,
+      "browser_entry": "dist/browser.js",
+      "browser_entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e",
+      "node_runtime": "v26.7.0",
+      "npm_runtime": "11.19.0"
+    },
+    "protocol": {
+      "profile": "hub-http-v1@1.0.0",
+      "profile_manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+    },
+    "hub_candidate": {
+      "source_head": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+      "hub_binary_sha256": "895873efe102fa4b2db0d839ea1d413f48b61d44d49d323b43907f7c26eead55",
+      "fixture_sha256": "f9c0e3685f6476559d6789b7690f6c3c9ca314fd293bf47d570de7a04b219e47",
+      "native_evidence_sha256": "09fdd31510470577c1e22da0969c6762f933aa06b087b6959a7d520b29159bd0",
+      "scenario_id": "b1-five-drives",
+      "scenario_sha256": "c74f1c908ab4f27a961415698f74c98f2e6908e02e526c125e97327df721dbb3"
+    }
+  },
+  "proposed_hub_fixture": {
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2",
+    "output_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/run",
+    "port": 18521,
+    "listener": "127.0.0.1:18521 only",
+    "ready_descriptor": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/run/ready.json",
+    "certificate": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/run/server.pem",
+    "credential": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/browser-input/credential.json",
+    "scenario_drive_limit": 2,
+    "scenario_expected_drive_count": 5,
+    "required_certificate_names": [
+      "localhost",
+      "127.0.0.1"
+    ],
+    "required_cors_origin": "http://localhost:4174",
+    "freshness": {
+      "new_root_and_output": true,
+      "new_endpoint_ca_descriptor_and_credential": true,
+      "single_bounded_consumer": true,
+      "old_inputs_reusable": false,
+      "hub_handoff_state": "ready_for_generic_typescript_browser_consumer"
+    }
+  },
+  "sdk_consumer": {
+    "consumer_root": "/Users/bolyki/dev/teslatlas-lab/consumers/teslatlas-sdk-browser-macos-arm64-20260912",
+    "package_root": "/Users/bolyki/dev/teslatlas-lab/consumers/teslatlas-sdk-browser-macos-arm64-20260912/node_modules/@teslatlas/sdk",
+    "local_server": {
+      "origin": "http://localhost:4174",
+      "bind": "127.0.0.1:4174",
+      "implementation": "scripts/test-hub-browser.mjs",
+      "ownership": "TypeScript SDK",
+      "lifecycle": "The runner creates the server before the browser connects and closes it in finally after the bounded route. No separate product server is started."
+    },
+    "command": {
+      "runtime": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+      "package_manager": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/npm",
+      "test_script": "npm run test:hub:browser",
+      "source_script": "scripts/test-hub-browser.mjs",
+      "path_prefix": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin",
+      "package_install": "PATH=\"/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin:$PATH\" npm install --ignore-scripts --no-audit --no-fund /Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/teslatlas-sdk-2026.36.2.tgz",
+      "serve_and_test": "PATH=\"/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin:$PATH\" npm run test:hub:browser"
+    },
+    "environment": {
+      "TESLATLAS_HUB_HTTP_CONFIG": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/run/ready.json",
+      "TESLATLAS_HUB_CREDENTIAL_FILE": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/hub-macos-arm64-browser-sdk-20260912-r2/browser-input/credential.json",
+      "TESLATLAS_HUB_SDK_PACKAGE_ROOT": "/Users/bolyki/dev/teslatlas-lab/consumers/teslatlas-sdk-browser-macos-arm64-20260912/node_modules/@teslatlas/sdk",
+      "TESLATLAS_HUB_SDK_TARBALL": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/teslatlas-sdk-2026.36.2.tgz",
+      "TESLATLAS_HUB_SDK_TARBALL_SHA256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "TESLATLAS_HUB_BROWSER_ORIGIN": "http://localhost:4174",
+      "TESLATLAS_HUB_BROWSER_LISTEN_PORT": "4174",
+      "TESLATLAS_BROWSER_CDP_URL": "Hub supplies one fresh trusted Chrome CDP endpoint at handoff",
+      "TESLATLAS_BROWSER_UNTRUSTED_CDP_URL": "Hub supplies one fresh untrusted Chrome CDP endpoint at handoff",
+      "TESLATLAS_BROWSER_LAUNCH_WITNESS": "/Users/bolyki/dev/teslatlas-lab/consumers/teslatlas-sdk-browser-macos-arm64-20260912/browser-launch-witness.json",
+      "TESLATLAS_HUB_RECEIPT": "/Users/bolyki/dev/teslatlas-lab/consumers/teslatlas-sdk-browser-macos-arm64-20260912/browser-receipt.json"
+    },
+    "browser_controls": {
+      "trusted": "Fresh owner-scoped Chrome profile with the supplied CA installed through normal macOS trust; no TLS bypass flag.",
+      "untrusted": "Fresh owner-scoped Chrome control without the supplied CA; the same Hub health URL must fail with ERR_CERT_AUTHORITY_INVALID.",
+      "witness": "Hub/SDK returns a mode-0600 JSON witness whose trusted and untrusted argument arrays exactly match live CDP command lines and whose exported CA digest matches the fixture CA."
+    }
+  },
+  "assertions": [
+    "The exact archive SHA-256, package metadata, 81-member manifest and dist/browser.js hash match before any Hub request.",
+    "Trusted browser normal TLS reaches the Hub; untrusted browser control fails closed with ERR_CERT_AUTHORITY_INVALID.",
+    "The browser origin is exactly http://localhost:4174 and at least one Hub CORS preflight is observed.",
+    "Public discovery and readiness pass with the expected Hub identity and profile binding.",
+    "The fresh owner-prepared credential is accepted; vehicles is nonempty; current state decodes; drive history returns all five rows over 2/2/1 pages.",
+    "A conditional drives request returns 304 and the first-page cursor continues successfully after that 304.",
+    "Credential rotation and the following default Fetch vehicles request pass.",
+    "The SDK local server, trusted/untrusted browser controls and receipt close cleanly; no product listener remains."
+  ],
+  "receipt": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/consumers/teslatlas-sdk-browser-macos-arm64-20260912/browser-receipt.json",
+    "mode": "0600",
+    "allowed_content": [
+      "runtime and browser version",
+      "localhost origin and CORS preflight count",
+      "Hub ID, certificate digest and normal/untrusted trust result",
+      "vehicle/drive counts, page shape, 304 and cursor booleans",
+      "packed SDK witness"
+    ],
+    "forbidden_content": [
+      "credential bytes",
+      "invitation bytes, pairing URI or PIN",
+      "private key material",
+      "unredacted browser profile paths beyond declared owner-only metadata"
+    ]
+  },
+  "cleanup": {
+    "hub_owner": "Hub",
+    "hub_scope": "Terminate only the fixture launcher after the SDK result or expiry, verify direct Hub-child exit, mode-0600 stopped receipt and closure of 18494.",
+    "sdk_owner": "TypeScript SDK",
+    "sdk_scope": "Stop the local 4174 server and both browser controls, retain only the mode-0600 redacted receipt and remove no unrelated process, trust entry or installed service.",
+    "credential_policy": "Hub and SDK retain private credential/invitation material only under owner-only paths; no secret is copied into the repository or chat.",
+    "old_input_policy": "The closed 18492/18493 runtime tuples, old R2/R4 runtime roots and all prior credentials remain non-reusable; the current 18521 runtime is admissible only because its endpoint, CA, descriptor and credential are fresh."
+  },
+  "handoff_acceptance": {
+    "hub_must_publish": [
+      "fresh ready descriptor and its SHA-256",
+      "fresh CA path, SHA-256 and mode",
+      "fresh owner-only credential path and mode",
+      "fresh Hub identity, endpoint, process ownership and expiry",
+      "exact CORS origin confirmation",
+      "trusted/untrusted CDP endpoints and matching mode-0600 launch witness",
+      "cleanup owner and stop verification"
+    ],
+    "sdk_must_not_start_before": "All Hub-supplied fields above are present and metadata-validated; the SDK proposal itself does not authorize a fixture or browser start.",
+    "source_bound": true,
+    "viewer_dependency": false,
+    "deferred_targets_block": false
+  },
+  "limits": [
+    "This proposal is source/package and runner-contract evidence only until Hub publishes the fresh handoff and the SDK produces a redacted receipt.",
+    "It is not installed app/package, production, collection, named-source parity, Viewer, Edge, Home Assistant, vehicle or cross-architecture acceptance.",
+    "The generic browser helper consumes a caller-owned credential; the proposal does not claim browser-side invitation pairing unless the future runner receipt explicitly records it."
+  ]
+}

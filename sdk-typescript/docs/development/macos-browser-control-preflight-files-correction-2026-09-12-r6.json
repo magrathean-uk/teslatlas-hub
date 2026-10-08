@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.macos_browser_control_preflight_files_correction",
+  "date": "2026-09-12",
+  "state": "corrected_source_preflight_verified_no_runtime",
+  "authority": "Additive source/preparation correction after the consumed r6 attempt. No r7 root, Hub contact, Chrome launch, keychain action or runtime retry is authorized.",
+  "prior_evidence": {
+    "r6_failure_receipt": {
+      "path": "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r6.json",
+      "sha256": "4d76afb0ccf30ad044a5bc3040df74001508a933cdc1307c87705a3651a70f76",
+      "failure_boundary": "Chrome attached on 9237; packed runner did not start because the stderr redirection path was not traversable under an incorrect 0600 evidence-directory mode."
+    },
+    "r6_preparation_receipt": {
+      "path": "docs/development/macos-browser-sequential-control-preparation-2026-09-12-r6.json",
+      "sha256": "62b61961c389586495069e68e29910bcf4dd7721f39dcf4b78430f15315cd070",
+      "old_manifest_sha256": "786b86e992edadbb8754d93bda03fe91e17cbc73b1d0208d099e7715c1c1e19a"
+    }
+  },
+  "corrected_preparation": {
+    "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6",
+    "manifest_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/preparation.json",
+    "manifest_sha256": "3e631d68c4925d1803434db70c39a4dadc9b62492ced0219e529d7c724656cb6",
+    "prepare_script": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/prepare-browser-control-files.mjs",
+      "sha256": "ff9cd66e5b7614ba69ccc16dc021fb5a8c120a58b457be35733414021be70727",
+      "mode": "0700"
+    },
+    "regression": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/test-browser-control-preflight.mjs",
+      "sha256": "d5dd866127347f038c8557929177584954032f97af2ff4cce0a2b506c433f4e0",
+      "mode": "0700"
+    },
+    "existing_control_hashes_unchanged": {
+      "supervisor": "4038d26f8631fc79b01ebb0b402613f79378128697ffb16daeac668f44340e88",
+      "trust_hooks": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+      "untrusted_control": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+      "ipc_regression": "c6db7081b0f7221b99c24d344681f1ac9b8526643bf85bb8e10f87b7be5e2334"
+    }
+  },
+  "permission_contract": {
+    "directory_mode": "0700 owner-only searchable",
+    "sensitive_file_mode": "0600 owner-only",
+    "directories_checked": 81,
+    "sensitive_files_checked": [
+      "preparation.json",
+      "supervisor-state.json",
+      "evidence/browser-control-events.jsonl",
+      "evidence/runner.stdout",
+      "evidence/runner.stderr"
+    ],
+    "runner_output_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "preflight_regression": {
+    "command": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node /Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6/test-browser-control-preflight.mjs",
+    "red_phase": "passed: the test failed with ERR_MODULE_NOT_FOUND before the helper existed",
+    "green_result": {
+      "status": "passed",
+      "browserStarted": false,
+      "hubContacted": false,
+      "keychainTouched": false,
+      "controlSocketAbsent": true,
+      "closedPorts": [4176, 9236, 9237],
+      "directoryCount": 81,
+      "runnerOutputFiles": ["runner.stdout", "runner.stderr"],
+      "sensitiveFileMode": "0600",
+      "directoryMode": "0700"
+    },
+    "ordering": "The preflight checks the absent supervisor socket and closed TypeScript ports before creating the two runner output files; it must run before supervisor or Chrome spawn.",
+    "hub_or_keychain_action": false,
+    "r7_created": false
+  },
+  "review_boundary": "This is source/preparation permission and preflight evidence only. The r6 runtime attempt remains consumed and no browser SDK, Hub API, TLS trust, keychain or acceptance result is added. A future runtime would require separate authorization and must use the corrected preflight first."
+}

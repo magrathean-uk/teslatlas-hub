@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.browser_control_lifecycle_diagnostic_receipt",
+  "recorded_at": "2026-09-12",
+  "status": "passed_lifecycle_diagnostic",
+  "redacted": true,
+  "target": {
+    "architecture": "arm64",
+    "host_os": "macOS 27.0",
+    "node": "26.7.0",
+    "browser": "Google Chrome/152.0.7977.83",
+    "browser_url": "about:blank",
+    "hub_contacted": false,
+    "keychain_touched": false,
+    "sdk_api_acceptance": false
+  },
+  "runtime": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-control-diagnostic-20260912-r1",
+    "cdp_url": "http://127.0.0.1:9233",
+    "cdp_port": 9233,
+    "profile": "<diagnostic-profile>",
+    "launcher_script_sha256": "e9bbb3cf1d0ce7eb467bef7260471915b985f08c2fdacd1748a0183438b6c726",
+    "runtime_receipt_sha256": "6342af5dc44b99e7580b38517f91e56f740d4a75f861ee86fc01d1f5f052017d",
+    "stderr_sha256": "71247b001b80e222431b4fbadae08229a13d05869f6f160ee9c76c6f15eb82f4",
+    "stderr_redacted": true
+  },
+  "launch": {
+    "executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "arguments": [
+      "--user-data-dir=<diagnostic-profile>",
+      "--remote-debugging-address=127.0.0.1",
+      "--remote-debugging-port=9233",
+      "--headless=new",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "about:blank"
+    ],
+    "detached": false,
+    "shell": false,
+    "stderr_pipe": true
+  },
+  "lifecycle": {
+    "child_pid": 6171,
+    "attach_snapshot": {
+      "child_alive": true,
+      "listener_pids": [6171],
+      "process_command": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=<diagnostic-root>/profile --remote-debugging-address=127.0.0.1 --remote-debugging-port=9233 --headless=new --no-first-run --no-default-browser-check about:blank"
+    },
+    "cdp_attach": "passed",
+    "cdp_command": {
+      "method": "Browser.getVersion",
+      "protocol_version": "1.3",
+      "product": "Chrome/152.0.7977.83"
+    },
+    "child_exit": {
+      "code": 0,
+      "signal": null
+    },
+    "child_close": {
+      "code": 0,
+      "signal": null
+    },
+    "port_closed_after_teardown": true
+  },
+  "stderr_summary": [
+    "Chrome emitted a DevTools listening line, redacted in the retained log.",
+    "Chrome emitted repeated CVDisplayLinkCreateWithCGDisplay failed: -6670 environment warnings.",
+    "No lifecycle error, exit failure or signal was observed."
+  ],
+  "diagnosis": {
+    "supported_limit": "A supervised non-detached owner-controlled launcher can keep this Chrome control alive through CDP attachment and a Browser.getVersion command, then close it cleanly.",
+    "not_proven": "This does not prove why the prior detached 9232 Chrome control became unavailable before the runner attach.",
+    "api_acceptance": false
+  },
+  "reviewed_supervision_plan": {
+    "launcher": "Keep the exact untrusted Chrome child supervised in the same owner-controlled session through runner attach; use detached=false and shell=false.",
+    "observability": "Pipe and redact stderr; retain child error/exit/close/signal events plus PID/lsof/command-line state at the attach boundary.",
+    "teardown": "Close the exact owned browser/session, wait for child exit, verify the exact CDP port is closed, then remove or quarantine only the disposable profile.",
+    "gate": "Review this diagnostic with Hub before requesting any fresh full SDK handoff; do not infer SDK or Hub acceptance from this receipt."
+  }
+}

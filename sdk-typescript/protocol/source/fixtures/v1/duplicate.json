@@ -1,0 +1,130 @@
+{
+  "description": "A byte-identical observation ID is admitted once and reported as an idempotent duplicate.",
+  "expected": {
+    "accepted_observation_ids": [
+      "obs_duplicate_battery_0001"
+    ],
+    "duplicate_observation_ids": [
+      "obs_duplicate_battery_0001"
+    ],
+    "ordered_observation_ids": [
+      "obs_duplicate_battery_0001"
+    ],
+    "projection": {
+      "computed_at": "2026-08-30T13:00:00.250Z",
+      "input_observation_ids": [
+        "obs_duplicate_battery_0001"
+      ],
+      "payload": {
+        "battery_level_percent": 77,
+        "charging_state": "unknown",
+        "climate_on": null,
+        "inside_temperature_c": null,
+        "location": null,
+        "locked": null,
+        "observed_at": "2026-08-30T13:00:00.000Z",
+        "odometer_km": null,
+        "outside_temperature_c": null,
+        "quality": {
+          "assessed_at": "2026-08-30T13:00:00.250Z",
+          "derived_fields": [],
+          "gap_count": 0,
+          "issues": [],
+          "largest_gap_seconds": 0,
+          "projection_version": "3.1.0",
+          "quality": "complete",
+          "sources": [
+            "fleet_telemetry"
+          ],
+          "subject_id": "vehicle_demo_alpha",
+          "subject_type": "vehicle"
+        },
+        "range_km": null,
+        "resource_type": "current_state",
+        "revision": 1,
+        "state": "online",
+        "vehicle_id": "vehicle_demo_alpha"
+      },
+      "projection_id": "projection_duplicate_current_0001",
+      "projection_type": "current_state",
+      "projection_version": "3.1.0",
+      "quality": {
+        "assessed_at": "2026-08-30T13:00:00.250Z",
+        "derived_fields": [],
+        "gap_count": 0,
+        "issues": [],
+        "largest_gap_seconds": 0,
+        "projection_version": "3.1.0",
+        "quality": "complete",
+        "sources": [
+          "fleet_telemetry"
+        ],
+        "subject_id": "projection_duplicate_current_0001",
+        "subject_type": "projection"
+      },
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    "quality": {
+      "assessed_at": "2026-08-30T13:00:00.250Z",
+      "derived_fields": [],
+      "gap_count": 0,
+      "issues": [],
+      "largest_gap_seconds": 0,
+      "projection_version": "3.1.0",
+      "quality": "complete",
+      "sources": [
+        "fleet_telemetry"
+      ],
+      "subject_id": "projection_duplicate_current_0001",
+      "subject_type": "projection"
+    }
+  },
+  "fixture_version": "1.0.0",
+  "input_observations": [
+    {
+      "collector_version": "5.4.0",
+      "field": "battery.level_percent",
+      "observation_id": "obs_duplicate_battery_0001",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T13:00:00.000Z",
+      "quality_flags": [],
+      "raw_payload_hash": "24faa2fce98d67504ba8475a3a2aedc9640401cea352cfe726f6ee01a1839793",
+      "received_timestamp": "2026-08-30T13:00:00.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": "demo-duplicate-0001",
+      "typed_value": {
+        "kind": "number",
+        "unit": "percent",
+        "value": 77
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    {
+      "collector_version": "5.4.0",
+      "field": "battery.level_percent",
+      "observation_id": "obs_duplicate_battery_0001",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T13:00:00.000Z",
+      "quality_flags": [],
+      "raw_payload_hash": "24faa2fce98d67504ba8475a3a2aedc9640401cea352cfe726f6ee01a1839793",
+      "received_timestamp": "2026-08-30T13:00:00.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": "demo-duplicate-0001",
+      "typed_value": {
+        "kind": "number",
+        "unit": "percent",
+        "value": 77
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    }
+  ],
+  "redaction": {
+    "contains_precise_location": false,
+    "contains_real_identifiers": false,
+    "contains_secrets": false,
+    "maximum_coordinate_decimals": 2
+  },
+  "scenario_id": "duplicate"
+}

@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.macos_browser_control_preflight_template_correction",
+  "date": "2026-09-12",
+  "state": "corrected_source_only_no_runtime",
+  "authority": "Hub rejected the earlier r6-bound preflight implementation. The corrected implementation is moved to stable repository source/test files; r6 remains consumed, historical and non-reusable. No r7 root, Hub contact, Chrome launch, keychain action or runtime retry occurred.",
+  "superseded_rejected_material": {
+    "receipt": {
+      "path": "docs/development/macos-browser-control-preflight-files-correction-2026-09-12-r6.json",
+      "sha256": "71830a133f111bb5b38f1711f32bd89b9dd31922007b9c7e64b9837010bdf544",
+      "status": "rejected_by_Hub_before_execution; retained as historical evidence"
+    },
+    "r6_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r6",
+    "r6_preparation_manifest_sha256": "3e631d68c4925d1803434db70c39a4dadc9b62492ced0219e529d7c724656cb6",
+    "rejected_prepare_sha256": "ff9cd66e5b7614ba69ccc16dc021fb5a8c120a58b457be35733414021be70727",
+    "rejected_test_sha256": "d5dd866127347f038c8557929177584954032f97af2ff4cce0a2b506c433f4e0"
+  },
+  "stable_source": {
+    "prepare_script": {
+      "path": "scripts/browser-control-preflight-template.mjs",
+      "sha256": "8625950ed211ce15e97cd85619207bafbd02ce0a8003b62c1d94bb736bca8214",
+      "mode": "0700"
+    },
+    "regression": {
+      "path": "scripts/test-browser-control-preflight-template.mjs",
+      "sha256": "afc4e34feae7419204e1a15e20b59edcada363ce4443557c0a153d56a3f29ae9",
+      "mode": "0700"
+    },
+    "binding": "The helper accepts an explicit fresh controlRoot and port list; it is not bound to r6 or any consumed runtime root."
+  },
+  "corrected_contract": {
+    "runtime_artifacts_rejected_before_any_mutation": [
+      "control.sock",
+      "supervisor-state.json",
+      "evidence/browser-control-events.jsonl",
+      "untrusted-profile",
+      "trusted-profile",
+      "evidence/imported-hub-ca.pem",
+      "evidence/browser-trust-witness.json",
+      "evidence/browser-acceptance-receipt.json",
+      "evidence/runner.stdout",
+      "evidence/runner.stderr"
+    ],
+    "runner_output_creation": "Both exact runner output files are created with exclusive wx and mode 0600; a second invocation rejects the existing artifacts without truncating sentinel bytes.",
+    "directory_permissions": "All directories beneath the explicit fresh controlRoot are set and verified at 0700 only after the complete stale-artifact and closed-port preflight passes.",
+    "sensitive_file_permissions": "Existing preparation.json and newly created runner output files are owner-only 0600; stale sensitive runtime files are rejected rather than normalized."
+  },
+  "regression": {
+    "command": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node scripts/test-browser-control-preflight-template.mjs",
+    "result": {
+      "status": "passed",
+      "browserStarted": false,
+      "hubContacted": false,
+      "keychainTouched": false,
+      "firstInvocationCreated": ["runner.stdout", "runner.stderr"],
+      "secondInvocation": "rejected_without_truncation",
+      "staleArtifactsRejectedBeforeMutation": [
+        "supervisor-state.json",
+        "evidence/browser-control-events.jsonl",
+        "untrusted-profile",
+        "trusted-profile",
+        "evidence/imported-hub-ca.pem",
+        "evidence/browser-trust-witness.json",
+        "evidence/browser-acceptance-receipt.json",
+        "evidence/runner.stdout",
+        "evidence/runner.stderr"
+      ]
+    },
+    "temporary_roots_removed": true,
+    "typescript_ports_4176_9236_9237_closed": true,
+    "typescript_supervisor_and_chrome_absent": true
+  },
+  "verification": {
+    "pinned_node_syntax": "passed",
+    "targeted_biome": "passed",
+    "git_diff_check": "passed",
+    "r6_or_r7_runtime_action": false,
+    "hub_or_keychain_action": false
+  },
+  "review_boundary": "This receipt establishes only a corrected reusable source/template preflight. It does not reopen, repair or authorize r6, and it does not prove browser, SDK, Hub, TLS, package acceptance, service, release, production or user acceptance."
+}

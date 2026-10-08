@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.macos_browser_control_preflight_template_correction",
+  "date": "2026-09-12",
+  "state": "corrected_source_only_no_runtime",
+  "authority": "Superseding source-only correction after Hub found root-symlink path traversal in v1. No r7, runtime, Hub or keychain action occurred.",
+  "supersedes": {
+    "receipt": "docs/development/macos-browser-control-preflight-template-correction-2026-09-12.json",
+    "sha256": "6d0a04818f9e5d50df8edbdb8564dbedc29c26cad3bedca0ac86b944cc6c0ac2",
+    "status": "rejected_by_Hub_before_execution; retained as historical evidence"
+  },
+  "stable_source": {
+    "prepare_script": {
+      "path": "scripts/browser-control-preflight-template.mjs",
+      "sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+      "mode": "0700",
+      "root_check": "lstat before any artifact check or mutation; root symlinks are rejected"
+    },
+    "regression": {
+      "path": "scripts/test-browser-control-preflight-template.mjs",
+      "sha256": "1789949b89b1afe474e305914c9680371aca9706d0f19b6fae15f9fee1785488",
+      "mode": "0700"
+    }
+  },
+  "corrected_contract": {
+    "root_safety": "controlRoot must be a real directory according to lstat; lexical resolve cannot authorize a symlink target. Nested symlinks remain rejected before mutation.",
+    "runtime_artifacts_rejected_before_any_mutation": [
+      "control.sock",
+      "supervisor-state.json",
+      "evidence/browser-control-events.jsonl",
+      "untrusted-profile",
+      "trusted-profile",
+      "evidence/imported-hub-ca.pem",
+      "evidence/browser-trust-witness.json",
+      "evidence/browser-acceptance-receipt.json",
+      "evidence/runner.stdout",
+      "evidence/runner.stderr"
+    ],
+    "runner_output_creation": "Both exact runner output files are created with exclusive wx and mode 0600; a second invocation rejects existing artifacts without truncating sentinel bytes.",
+    "directory_permissions": "All directories beneath the explicit fresh controlRoot are set and verified at 0700 only after root, stale-artifact and closed-port checks pass.",
+    "sensitive_file_permissions": "Existing preparation.json and newly created runner output files are owner-only 0600; stale sensitive runtime files are rejected rather than normalized."
+  },
+  "regression": {
+    "command": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node scripts/test-browser-control-preflight-template.mjs",
+    "result": {
+      "status": "passed",
+      "browserStarted": false,
+      "hubContacted": false,
+      "keychainTouched": false,
+      "firstInvocationCreated": ["runner.stdout", "runner.stderr"],
+      "secondInvocation": "rejected_without_truncation",
+      "staleArtifactsRejectedBeforeMutation": [
+        "control.sock",
+        "supervisor-state.json",
+        "evidence/browser-control-events.jsonl",
+        "untrusted-profile",
+        "trusted-profile",
+        "evidence/imported-hub-ca.pem",
+        "evidence/browser-trust-witness.json",
+        "evidence/browser-acceptance-receipt.json",
+        "evidence/runner.stdout",
+        "evidence/runner.stderr"
+      ],
+      "rootSymlinkRejectedBeforeMutation": true,
+      "symlinkTargetModeAndContentPreserved": true
+    },
+    "temporary_roots_removed": true,
+    "typescript_ports_4176_9236_9237_closed": true,
+    "typescript_supervisor_and_chrome_absent": true,
+    "r7_created": false
+  },
+  "verification": {
+    "pinned_node_syntax": "passed",
+    "targeted_biome": "passed",
+    "git_diff_check": "passed",
+    "hub_or_keychain_action": false
+  },
+  "review_boundary": "This receipt establishes only corrected reusable source/template preflight evidence. It does not reopen, repair or authorize consumed r6, and it does not prove browser, SDK, Hub, TLS, package acceptance, service, release, production or user acceptance."
+}

@@ -1,0 +1,23 @@
+{
+  "resource_type": "position_page",
+  "items": [
+    {
+      "resource_type": "position",
+      "position_id": "position_demo_0001",
+      "drive_id": "drive_demo_0001",
+      "vehicle_id": "vehicle_demo_alpha",
+      "observed_at": "2026-08-30T12:01:00.000Z",
+      "location": {
+        "latitude": 51.5,
+        "longitude": -0.1,
+        "altitude_m": null
+      },
+      "speed_km_h": 42,
+      "heading_degrees": 90,
+      "quality_flags": []
+    }
+  ],
+  "next_cursor": null,
+  "snapshot_revision": "snapshot_demo_0042",
+  "generated_at": "2026-08-30T12:31:00.000Z"
+}

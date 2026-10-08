@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.macos_browser_supervisor_lifecycle_diagnosis",
+  "date": "2026-09-12",
+  "state": "diagnostic_passed_no_source_correction",
+  "authority": "This is a browser-free source/lifecycle diagnosis only. The consumed r7 handoff, credential, supervisor attempt and Hub fixture remain closed; this diagnostic does not authorize a retry or a new browser runtime.",
+  "inputs": {
+    "supervisor_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7/supervisor.mjs",
+    "supervisor_sha256": "b3eb52e9538f7ccd98c5a05b1722529f4518a8e4e0c9ce64678249976ec43a7d",
+    "control_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r7/untrusted-control.mjs",
+    "control_sha256": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+    "diagnostic_script": "scripts/test-browser-supervisor-lifecycle.mjs",
+    "diagnostic_script_sha256": "746c944f654f82dcbe42d23b82f638dbdc5276b2e3d0a6c356206a99332d7505",
+    "run_output_sha256": "5da287496171cc00b0e6430a849116af07701271a6547ad1714d4546b8c3cfc4"
+  },
+  "retained_r7_observation": {
+    "failure_receipt": "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r7.json",
+    "failure_receipt_sha256": "7d6a14cd14bd765c0d56cc31b16a9c4037810e12650244cb46ea9d26dd77e6d9",
+    "runtime_receipt_sha256": "9e3a8881250e696ab0245160510517f7680c6f46bf0d693376c71b5dc6915bcb",
+    "supervisor_initial_state": "serving/idle with control.sock and supervisor-state.json present",
+    "supervisor_stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "supervisor_stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "client_result": "ECONNREFUSED on the r7 control.sock",
+    "server_exit_close_signal": "not captured; the process was absent while the state remained serving",
+    "cleanup_passed": true
+  },
+  "regression": {
+    "mechanism": "One awaited Node parent spawned the exact r7 supervisor source from a transformed fresh copy and the exact untrusted control client with detached=false, captured stdout/stderr/error/exit/close/signal, sent only a synthetic shutdown request, awaited both children, and removed its generated temporary root.",
+    "transformed_supervisor_sha256": "710df97498fb329094af36a666d9d46a8ee458c68582621c1f8e6bcd986c6b1c",
+    "fresh_temporary_root": true,
+    "fresh_temporary_socket": true,
+    "orchestrator_pid": 62703,
+    "server": {
+      "pid": 62704,
+      "parent_pid": 62703,
+      "detached": false,
+      "exit": { "code": 0, "signal": null },
+      "close": { "code": 0, "signal": null },
+      "signal_observed": null,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "control_client": {
+      "pid": 62709,
+      "parent_pid": 62703,
+      "detached": false,
+      "exit": { "code": 0, "signal": null },
+      "close": { "code": 0, "signal": null },
+      "signal_observed": null,
+      "response": { "observed": true, "closed": true, "portClosed": true },
+      "stdout_sha256": "7af3fb7f418713b21155586581eebcce2242615d4c265ecbd29714a0d5ae190e",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stopped_state": {
+      "status": "stopped",
+      "phase": "idle",
+      "phase_started": { "untrusted": false, "trusted": false },
+      "phase_cleaned": { "untrusted": false, "trusted": false }
+    },
+    "socket_removed": true,
+    "temporary_root_removed": true,
+    "browser_spawned": false,
+    "hub_contacted": false,
+    "keychain_touched": false
+  },
+  "diagnosis": {
+    "finding": "The exact supervisor lifecycle completed normally when the supervisor and control client were owned and awaited by one parent. The retained r7 evidence lacks the supervisor exit/close/signal boundary and shows empty logs plus a stale serving state, so the exact external termination mechanism cannot be named. The demonstrated correction is orchestration ownership and lifecycle observability; no supervisor implementation defect was reproduced.",
+    "confidence": "bounded",
+    "production_supervisor_correction": false
+  },
+  "next": "Use the parent-owned, awaited lifecycle pattern and retain server/client exit, close, signal, error and response evidence before any future browser lane. Do not retry or repair r7, reuse its inputs, start Hub, start Chrome, touch keychain or begin another acceptance attempt from this diagnosis.",
+  "proof_boundary": "This proves a fresh browser-free parent-owned supervisor/control lifecycle and diagnoses the evidence gap around r7. It is not browser, SDK API, TLS, CA-import, CORS, Hub, package-journey, service, release, production, vehicle or user acceptance evidence."
+}

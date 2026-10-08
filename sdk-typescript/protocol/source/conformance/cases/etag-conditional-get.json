@@ -1,0 +1,137 @@
+{
+  "capability": "query.vehicles",
+  "case_id": "etag-conditional-get",
+  "description": "ETags validate representations and a matching If-None-Match returns an empty 304.",
+  "introduced_in": "1.0.0",
+  "kind": "case",
+  "steps": [
+    {
+      "expect": {
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/current_state",
+        "headers_present": [
+          "ETag"
+        ],
+        "status": 200
+      },
+      "reference_response": {
+        "body_file": "examples/current-state.json",
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"bY8nJ4qW2sF7kL5p\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/current",
+        "query": {}
+      },
+      "step_id": "initial"
+    },
+    {
+      "expect": {
+        "body_absent": true,
+        "headers_equal": {
+          "ETag": "${initial.headers.ETag}"
+        },
+        "status": 304
+      },
+      "reference_response": {
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "ETag": "\"bY8nJ4qW2sF7kL5p\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 304
+      },
+      "request": {
+        "headers": {
+          "If-None-Match": "${initial.headers.ETag}",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/current",
+        "query": {}
+      },
+      "step_id": "not-modified"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "not_same_as",
+            "path": "/headers/ETag",
+            "ref": "initial.headers.ETag"
+          },
+          {
+            "op": "equals",
+            "path": "/body/revision",
+            "value": 43
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/current_state",
+        "headers_present": [
+          "ETag"
+        ],
+        "status": 200
+      },
+      "reference_response": {
+        "body": {
+          "battery_level_percent": 77,
+          "charging_state": "disconnected",
+          "climate_on": false,
+          "inside_temperature_c": 21.5,
+          "location": null,
+          "locked": true,
+          "observed_at": "2026-08-30T12:01:00.000Z",
+          "odometer_km": 12000.5,
+          "outside_temperature_c": 17,
+          "quality": {
+            "assessed_at": "2026-08-30T12:01:01.250Z",
+            "derived_fields": [],
+            "gap_count": 0,
+            "issues": [],
+            "largest_gap_seconds": 0,
+            "projection_version": "3.1.0",
+            "quality": "complete",
+            "sources": [
+              "fleet_telemetry"
+            ],
+            "subject_id": "vehicle_demo_alpha",
+            "subject_type": "vehicle"
+          },
+          "range_km": 338.4,
+          "resource_type": "current_state",
+          "revision": 43,
+          "state": "online",
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"rM3vT9cX6gP2hK8w\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Conformance-Revision": "43",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/current",
+        "query": {}
+      },
+      "step_id": "changed"
+    }
+  ]
+}

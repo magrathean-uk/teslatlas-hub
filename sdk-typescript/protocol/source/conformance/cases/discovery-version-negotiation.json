@@ -1,0 +1,152 @@
+{
+  "capability": "query.vehicles",
+  "case_id": "discovery-version-negotiation",
+  "description": "Discovery is public, version selection is explicit, and incompatible majors fail closed.",
+  "introduced_in": "1.0.0",
+  "kind": "case",
+  "steps": [
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/protocol/current_version",
+            "value": "1.2.0"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:discovery:1.2.0",
+        "headers_present": [
+          "Content-Type",
+          "ETag"
+        ],
+        "status": 200
+      },
+      "reference_response": {
+        "body_file": "examples/discovery.json",
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"y6Kk9pX2mV4qT7sN\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {},
+        "method": "GET",
+        "path": "/.well-known/teslatlas-hub",
+        "query": {}
+      },
+      "step_id": "discover"
+    },
+    {
+      "expect": {
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/vehicle_page",
+        "headers_equal": {
+          "Teslatlas-Protocol-Version": "${discover.body.protocol.minimum_client_version}"
+        },
+        "status": 200
+      },
+      "reference_response": {
+        "body_file": "examples/vehicles-page.json",
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"sH4wQ8nC2kT6mP9x\"",
+          "Teslatlas-Protocol-Version": "1.0.0",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {},
+        "method": "GET",
+        "path": "/v1/vehicles",
+        "query": {}
+      },
+      "step_id": "omitted-version-selects-minimum"
+    },
+    {
+      "expect": {
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/vehicle_page",
+        "headers_equal": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "status": 200
+      },
+      "reference_response": {
+        "body_file": "examples/vehicles-page.json",
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"aP3xD8mQ5vR2nK7t\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles",
+        "query": {}
+      },
+      "step_id": "select-profile"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 426
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "unsupported_protocol_version"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 426
+      },
+      "reference_response": {
+        "body": {
+          "code": "unsupported_protocol_version",
+          "instance": "/requests/request_unsupported_protocol_version",
+          "request_id": "request_unsupported_protocol_version",
+          "retryable": false,
+          "status": 426,
+          "title": "Unsupported protocol version",
+          "type": "urn:teslatlas:problem:unsupported-protocol-version"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_unsupported_protocol_version"
+        },
+        "status": 426
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "2.0.0"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles",
+        "query": {}
+      },
+      "step_id": "unsupported-major"
+    }
+  ]
+}

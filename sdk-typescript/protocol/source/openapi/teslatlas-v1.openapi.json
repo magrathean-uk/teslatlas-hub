@@ -1,0 +1,5831 @@
+{
+  "openapi": "3.1.1",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Teslatlas Hub public protocol",
+    "version": "1.2.0",
+    "description": "Implementation-neutral query, event, command, and metadata boundary.",
+    "license": {
+      "name": "Apache License 2.0",
+      "identifier": "Apache-2.0"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://hub.example.invalid",
+      "description": "Redacted example Hub"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Discovery",
+      "description": "Public Hub identity and capabilities."
+    },
+    {
+      "name": "Vehicles",
+      "description": "Vehicles and current state."
+    },
+    {
+      "name": "Drives",
+      "description": "Drive projections and positions."
+    },
+    {
+      "name": "Charges",
+      "description": "Charge projections and samples."
+    },
+    {
+      "name": "States",
+      "description": "Vehicle state intervals."
+    },
+    {
+      "name": "Updates",
+      "description": "Software update projections."
+    },
+    {
+      "name": "Events",
+      "description": "Server-sent events."
+    },
+    {
+      "name": "Data Quality",
+      "description": "Visible completeness and data issues."
+    },
+    {
+      "name": "Commands",
+      "description": "Scoped asynchronous command jobs."
+    },
+    {
+      "name": "Metadata",
+      "description": "Versioned audited user metadata."
+    }
+  ],
+  "paths": {
+    "/.well-known/teslatlas-hub": {
+      "get": {
+        "tags": [
+          "Discovery"
+        ],
+        "summary": "Discover this Hub",
+        "operationId": "discoverHub",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Discovery"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/vehicles": {
+      "get": {
+        "tags": [
+          "Vehicles"
+        ],
+        "summary": "List visible vehicles",
+        "operationId": "listVehicles",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/VehiclesPage"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/current": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/VehicleId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Vehicles"
+        ],
+        "summary": "Get current projected vehicle state",
+        "operationId": "getVehicleCurrentState",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CurrentState"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/drives": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/VehicleId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Drives"
+        ],
+        "summary": "List vehicle drives",
+        "operationId": "listVehicleDrives",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DrivesPage"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/drives/{drive_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/DriveId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Drives"
+        ],
+        "summary": "Get a drive",
+        "operationId": "getDrive",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Drive"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/drives/{drive_id}/positions": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/DriveId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Drives"
+        ],
+        "summary": "List drive positions",
+        "operationId": "listDrivePositions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/PositionsPage"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/charges": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/VehicleId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Charges"
+        ],
+        "summary": "List vehicle charging sessions",
+        "operationId": "listVehicleCharges",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChargesPage"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/charges/{charge_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChargeId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Charges"
+        ],
+        "summary": "Get a charging session",
+        "operationId": "getCharge",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Charge"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/charges/{charge_id}/samples": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/ChargeId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Charges"
+        ],
+        "summary": "List charging samples",
+        "operationId": "listChargeSamples",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/ChargeSamplesPage"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/states": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/VehicleId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "States"
+        ],
+        "summary": "List vehicle state intervals",
+        "operationId": "listVehicleStates",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/StatesPage"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/updates": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/VehicleId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Updates"
+        ],
+        "summary": "List software updates",
+        "operationId": "listVehicleUpdates",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/UpdatesPage"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/events": {
+      "get": {
+        "tags": [
+          "Events"
+        ],
+        "summary": "Open the server-sent event stream",
+        "operationId": "streamEvents",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/LastEventId"
+          },
+          {
+            "$ref": "#/components/parameters/EventVehicle"
+          },
+          {
+            "$ref": "#/components/parameters/EventTypes"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "UTF-8 SSE stream. Each data value is a v1 event envelope; cross-field equality is enforced by conformance semantics.",
+            "headers": {
+              "Teslatlas-Protocol-Version": {
+                "$ref": "#/components/headers/ProtocolVersion"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              }
+            },
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "x-teslatlas-event-contract": "../events/teslatlas-v1.sse.json"
+              }
+            }
+          },
+          "204": {
+            "description": "Stop reconnecting to this stream."
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "410": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/data-quality": {
+      "get": {
+        "tags": [
+          "Data Quality"
+        ],
+        "summary": "List visible data-quality assessments",
+        "operationId": "listDataQuality",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/From"
+          },
+          {
+            "$ref": "#/components/parameters/To"
+          },
+          {
+            "$ref": "#/components/parameters/EventVehicle"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DataQualityPage"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/commands": {
+      "post": {
+        "tags": [
+          "Commands"
+        ],
+        "summary": "Create an asynchronous command job",
+        "operationId": "createCommand",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Command/$defs/command_request"
+              },
+              "examples": {
+                "redacted": {
+                  "externalValue": "../examples/command-request.json"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Command accepted for asynchronous authorisation and execution.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/ETag"
+              },
+              "Teslatlas-Protocol-Version": {
+                "$ref": "#/components/headers/ProtocolVersion"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Vary": {
+                "$ref": "#/components/headers/Vary"
+              },
+              "Deprecation": {
+                "$ref": "#/components/headers/Deprecation"
+              },
+              "Sunset": {
+                "$ref": "#/components/headers/Sunset"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Command/$defs/command_job"
+                },
+                "examples": {
+                  "redacted": {
+                    "externalValue": "../examples/command-job.json"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/commands/{command_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/CommandId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Commands"
+        ],
+        "summary": "Get an asynchronous command job",
+        "operationId": "getCommand",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/CommandJob"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/metadata": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/VehicleId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "List mutable metadata",
+        "operationId": "listVehicleMetadata",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          },
+          {
+            "$ref": "#/components/parameters/MetadataKind"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MetadataPage"
+          },
+          "304": {
+            "$ref": "#/components/responses/NotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Create a mutable metadata record",
+        "operationId": "createMetadata",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Metadata/$defs/metadata_create"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Mutable metadata record.",
+            "headers": {
+              "ETag": {
+                "$ref": "#/components/headers/StrongETag"
+              },
+              "Teslatlas-Protocol-Version": {
+                "$ref": "#/components/headers/ProtocolVersion"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/CacheControl"
+              },
+              "Vary": {
+                "$ref": "#/components/headers/Vary"
+              },
+              "Deprecation": {
+                "$ref": "#/components/headers/Deprecation"
+              },
+              "Sunset": {
+                "$ref": "#/components/headers/Sunset"
+              },
+              "Link": {
+                "$ref": "#/components/headers/Link"
+              },
+              "Location": {
+                "$ref": "#/components/headers/Location"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+                },
+                "examples": {
+                  "redacted": {
+                    "externalValue": "../examples/metadata-record.json"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/v1/metadata/{metadata_id}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/MetadataId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Get a metadata record or deletion tombstone",
+        "operationId": "getMetadata",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfNoneMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MetadataEntity"
+          },
+          "304": {
+            "$ref": "#/components/responses/StrongNotModified"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Replace a mutable metadata value",
+        "operationId": "replaceMetadata",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Metadata/$defs/metadata_replace"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MetadataRecord"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Metadata"
+        ],
+        "summary": "Delete a mutable metadata record",
+        "operationId": "deleteMetadata",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ProtocolVersion"
+          },
+          {
+            "$ref": "#/components/parameters/IfMatch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/MetadataTombstone"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "426": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque paired-device token",
+        "description": "Credential acquisition and rotation are deployment concerns; never place a token in discovery or fixtures."
+      }
+    },
+    "headers": {
+      "ETag": {
+        "description": "Opaque validator for the selected representation.",
+        "schema": {
+          "type": "string",
+          "pattern": "^(?:W/)?\\\"[^\\\"]+\\\"$"
+        }
+      },
+      "StrongETag": {
+        "description": "Opaque strong validator for a mutable metadata revision.",
+        "schema": {
+          "type": "string",
+          "pattern": "^\"[^\"]+\"$"
+        }
+      },
+      "ProtocolVersion": {
+        "description": "Protocol version selected for this response.",
+        "schema": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        }
+      },
+      "CacheControl": {
+        "description": "Representation cache policy.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Vary": {
+        "description": "Request fields that select the representation.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Deprecation": {
+        "description": "RFC 9745 deprecation instant when applicable.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Sunset": {
+        "description": "RFC 8594 sunset date when applicable.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Link": {
+        "description": "Related documentation, including rel=deprecation.",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "Location": {
+        "description": "URI of the created asynchronous job or metadata record.",
+        "schema": {
+          "type": "string",
+          "format": "uri-reference"
+        }
+      },
+      "RequestId": {
+        "description": "Opaque request correlation identifier.",
+        "schema": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "RetryAfter": {
+        "description": "Seconds before a bounded retry.",
+        "schema": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 86400
+        }
+      }
+    },
+    "parameters": {
+      "ProtocolVersion": {
+        "name": "Teslatlas-Protocol-Version",
+        "in": "header",
+        "required": false,
+        "description": "Highest protocol version understood by the client. Omission requests the minimum supported version in discovery.",
+        "schema": {
+          "type": "string",
+          "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+        }
+      },
+      "IfNoneMatch": {
+        "name": "If-None-Match",
+        "in": "header",
+        "required": false,
+        "description": "Opaque cached ETag; GET uses weak comparison.",
+        "schema": {
+          "type": "string",
+          "maxLength": 512
+        }
+      },
+      "IfMatch": {
+        "name": "If-Match",
+        "in": "header",
+        "required": true,
+        "description": "Strong ETag of the metadata revision being replaced or deleted.",
+        "schema": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^\"[^\"]+\"$"
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "description": "UUID retained for at least the advertised idempotency window.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "description": "Opaque continuation token. Never decode or edit it.",
+        "schema": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 2048,
+          "pattern": "^[A-Za-z0-9._~-]+$"
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Maximum result count.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 100
+        }
+      },
+      "From": {
+        "name": "from",
+        "in": "query",
+        "required": false,
+        "description": "Inclusive UTC lower bound.",
+        "schema": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+        }
+      },
+      "To": {
+        "name": "to",
+        "in": "query",
+        "required": false,
+        "description": "Exclusive UTC upper bound.",
+        "schema": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+        }
+      },
+      "VehicleId": {
+        "name": "vehicle_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "DriveId": {
+        "name": "drive_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "ChargeId": {
+        "name": "charge_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "CommandId": {
+        "name": "command_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "MetadataId": {
+        "name": "metadata_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "LastEventId": {
+        "name": "Last-Event-ID",
+        "in": "header",
+        "required": false,
+        "description": "Opaque SSE event ID after which replay resumes.",
+        "schema": {
+          "type": "string",
+          "maxLength": 2048
+        }
+      },
+      "EventVehicle": {
+        "name": "vehicle_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 128
+        }
+      },
+      "EventTypes": {
+        "name": "event_type",
+        "in": "query",
+        "required": false,
+        "style": "form",
+        "explode": false,
+        "schema": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "MetadataKind": {
+        "name": "kind",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "responses": {
+      "Problem": {
+        "description": "RFC 9457 problem detail with a stable Teslatlas code.",
+        "headers": {
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            },
+            "examples": {
+              "invalid-cursor": {
+                "externalValue": "../examples/error.json"
+              }
+            }
+          }
+        }
+      },
+      "NotModified": {
+        "description": "The selected representation matches If-None-Match.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        }
+      },
+      "StrongNotModified": {
+        "description": "The selected mutable metadata representation matches If-None-Match.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/StrongETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        }
+      },
+      "Discovery": {
+        "description": "Hub discovery metadata.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Discovery"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/discovery.json"
+              }
+            }
+          }
+        }
+      },
+      "VehiclesPage": {
+        "description": "Vehicles page.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/vehicle_page"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/vehicles-page.json"
+              }
+            }
+          }
+        }
+      },
+      "CurrentState": {
+        "description": "Current projected vehicle state.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/current_state"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/current-state.json"
+              }
+            }
+          }
+        }
+      },
+      "DrivesPage": {
+        "description": "Drives page.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/drive_page"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/drives-page.json"
+              }
+            }
+          }
+        }
+      },
+      "Drive": {
+        "description": "Drive projection.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/drive"
+            }
+          }
+        }
+      },
+      "PositionsPage": {
+        "description": "Drive positions page.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/position_page"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/positions-page.json"
+              }
+            }
+          }
+        }
+      },
+      "ChargesPage": {
+        "description": "Charging sessions page.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/charge_page"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/charges-page.json"
+              }
+            }
+          }
+        }
+      },
+      "Charge": {
+        "description": "Charging-session projection.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/charge"
+            }
+          }
+        }
+      },
+      "ChargeSamplesPage": {
+        "description": "Charging samples page.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/charge_sample_page"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/charge-samples-page.json"
+              }
+            }
+          }
+        }
+      },
+      "StatesPage": {
+        "description": "Vehicle state intervals page.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/state_page"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/states-page.json"
+              }
+            }
+          }
+        }
+      },
+      "UpdatesPage": {
+        "description": "Software updates page.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/update_page"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/updates-page.json"
+              }
+            }
+          }
+        }
+      },
+      "DataQualityPage": {
+        "description": "Data-quality assessments page.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/data_quality_page"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/data-quality-page.json"
+              }
+            }
+          }
+        }
+      },
+      "CommandJob": {
+        "description": "Asynchronous command job.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Command/$defs/command_job"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/command-job.json"
+              }
+            }
+          }
+        }
+      },
+      "MetadataPage": {
+        "description": "Mutable metadata page.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/ETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Resources/$defs/metadata_page"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/metadata-page.json"
+              }
+            }
+          }
+        }
+      },
+      "MetadataRecord": {
+        "description": "Mutable metadata record.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/StrongETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/metadata-record.json"
+              }
+            }
+          }
+        }
+      },
+      "MetadataTombstone": {
+        "description": "Persistent metadata deletion tombstone.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/StrongETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Metadata/$defs/metadata_tombstone"
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/metadata-tombstone.json"
+              }
+            }
+          }
+        }
+      },
+      "MetadataEntity": {
+        "description": "Live metadata record or persistent deletion tombstone.",
+        "headers": {
+          "ETag": {
+            "$ref": "#/components/headers/StrongETag"
+          },
+          "Teslatlas-Protocol-Version": {
+            "$ref": "#/components/headers/ProtocolVersion"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/CacheControl"
+          },
+          "Vary": {
+            "$ref": "#/components/headers/Vary"
+          },
+          "Deprecation": {
+            "$ref": "#/components/headers/Deprecation"
+          },
+          "Sunset": {
+            "$ref": "#/components/headers/Sunset"
+          },
+          "Link": {
+            "$ref": "#/components/headers/Link"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+                },
+                {
+                  "$ref": "#/components/schemas/Metadata/$defs/metadata_tombstone"
+                }
+              ]
+            },
+            "examples": {
+              "redacted": {
+                "externalValue": "../examples/metadata-record.json"
+              }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Common": {
+        "title": "Teslatlas protocol common types",
+        "$defs": {
+          "semver": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+          },
+          "utc_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+          },
+          "opaque_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9_~-]+$"
+          },
+          "actor_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128,
+            "pattern": "^(device|service|user)_[a-z0-9_~-]+$"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "cursor": {
+            "type": "string",
+            "minLength": 16,
+            "maxLength": 2048,
+            "pattern": "^[A-Za-z0-9._~-]+$"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source": {
+            "enum": [
+              "owner_api",
+              "legacy_stream",
+              "fleet_api",
+              "fleet_telemetry",
+              "teslamate_mirror",
+              "teslamate_import",
+              "manual_import",
+              "ble_gap_fill"
+            ]
+          },
+          "quality": {
+            "enum": [
+              "complete",
+              "partial",
+              "degraded"
+            ]
+          },
+          "quality_flag": {
+            "enum": [
+              "duplicate",
+              "delayed",
+              "reordered",
+              "gap_before",
+              "gap_after",
+              "clock_skew",
+              "provider_conflict",
+              "inferred",
+              "stale",
+              "invalid_for_context"
+            ]
+          },
+          "location": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "latitude",
+              "longitude"
+            ],
+            "properties": {
+              "latitude": {
+                "type": "number",
+                "minimum": -90,
+                "maximum": 90
+              },
+              "longitude": {
+                "type": "number",
+                "minimum": -180,
+                "maximum": 180
+              },
+              "altitude_m": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "Discovery": {
+        "title": "Teslatlas Hub discovery document",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "hub_id",
+          "protocol",
+          "capabilities",
+          "endpoints",
+          "limits"
+        ],
+        "properties": {
+          "hub_id": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          },
+          "protocol": {
+            "$ref": "#/components/schemas/Discovery/$defs/protocol"
+          },
+          "capabilities": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/Discovery/$defs/capability"
+            }
+          },
+          "endpoints": {
+            "$ref": "#/components/schemas/Discovery/$defs/endpoints"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/Discovery/$defs/limits"
+          }
+        },
+        "$defs": {
+          "semver": {
+            "type": "string",
+            "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+          },
+          "utc_timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+          },
+          "protocol": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "current_version",
+              "supported_versions",
+              "minimum_client_version",
+              "version_header",
+              "selection"
+            ],
+            "properties": {
+              "current_version": {
+                "$ref": "#/components/schemas/Discovery/$defs/semver"
+              },
+              "supported_versions": {
+                "type": "array",
+                "minItems": 3,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/Discovery/$defs/semver"
+                }
+              },
+              "minimum_client_version": {
+                "$ref": "#/components/schemas/Discovery/$defs/semver"
+              },
+              "version_header": {
+                "const": "Teslatlas-Protocol-Version"
+              },
+              "selection": {
+                "const": "highest-compatible-not-newer-than-client"
+              }
+            }
+          },
+          "capability": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "version",
+              "introduced_in",
+              "status",
+              "href"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$",
+                "maxLength": 96
+              },
+              "version": {
+                "$ref": "#/components/schemas/Discovery/$defs/semver"
+              },
+              "introduced_in": {
+                "$ref": "#/components/schemas/Discovery/$defs/semver"
+              },
+              "status": {
+                "enum": [
+                  "stable",
+                  "deprecated",
+                  "experimental"
+                ]
+              },
+              "href": {
+                "type": "string",
+                "pattern": "^/[^?#]*$",
+                "maxLength": 512
+              },
+              "deprecation": {
+                "$ref": "#/components/schemas/Discovery/$defs/deprecation"
+              },
+              "commands": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/Discovery/$defs/command_descriptor"
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "deprecated"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "deprecation"
+                  ]
+                },
+                "else": {
+                  "not": {
+                    "required": [
+                      "deprecation"
+                    ]
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "id": {
+                      "const": "commands.async"
+                    }
+                  },
+                  "required": [
+                    "id"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "commands"
+                  ]
+                },
+                "else": {
+                  "not": {
+                    "required": [
+                      "commands"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "command_descriptor": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "command_class",
+              "required_scope",
+              "retry_policy",
+              "confirmation_required",
+              "parameters_schema",
+              "expected_state_schema"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{1,63}$"
+              },
+              "command_class": {
+                "enum": [
+                  "climate",
+                  "charging",
+                  "access",
+                  "nuisance",
+                  "vehicle_state"
+                ]
+              },
+              "required_scope": {
+                "type": "string",
+                "pattern": "^vehicle\\.commands\\.(climate|charging|access|nuisance|vehicle_state)$"
+              },
+              "retry_policy": {
+                "enum": [
+                  "none",
+                  "state_verified"
+                ]
+              },
+              "confirmation_required": {
+                "type": "boolean"
+              },
+              "parameters_schema": {
+                "type": "object",
+                "required": [
+                  "$schema",
+                  "type"
+                ],
+                "properties": {
+                  "$schema": {
+                    "const": "https://json-schema.org/draft/2020-12/schema"
+                  },
+                  "type": {
+                    "const": "object"
+                  }
+                }
+              },
+              "expected_state_schema": {
+                "type": "object",
+                "required": [
+                  "$schema",
+                  "type"
+                ],
+                "properties": {
+                  "$schema": {
+                    "const": "https://json-schema.org/draft/2020-12/schema"
+                  },
+                  "type": {
+                    "const": "object"
+                  }
+                }
+              }
+            }
+          },
+          "deprecation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "deprecated_at",
+              "sunset_at",
+              "successor",
+              "documentation"
+            ],
+            "properties": {
+              "deprecated_at": {
+                "$ref": "#/components/schemas/Discovery/$defs/utc_timestamp"
+              },
+              "sunset_at": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Discovery/$defs/utc_timestamp"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "successor": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+              },
+              "documentation": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          },
+          "endpoints": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "well_known",
+              "api",
+              "events",
+              "openapi"
+            ],
+            "properties": {
+              "well_known": {
+                "type": "string",
+                "format": "uri"
+              },
+              "api": {
+                "type": "string",
+                "format": "uri"
+              },
+              "events": {
+                "type": "string",
+                "format": "uri"
+              },
+              "openapi": {
+                "type": "string",
+                "format": "uri"
+              }
+            }
+          },
+          "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "max_request_body_bytes",
+              "default_page_size",
+              "max_page_size",
+              "max_history_range_days",
+              "max_dense_range_days",
+              "max_concurrent_requests",
+              "max_sse_connections",
+              "event_replay_retention_seconds",
+              "idempotency_retention_seconds"
+            ],
+            "properties": {
+              "max_request_body_bytes": {
+                "type": "integer",
+                "minimum": 1024,
+                "maximum": 262144
+              },
+              "default_page_size": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "max_page_size": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 500
+              },
+              "max_history_range_days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 366
+              },
+              "max_dense_range_days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 31
+              },
+              "max_concurrent_requests": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 32
+              },
+              "max_sse_connections": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4
+              },
+              "event_replay_retention_seconds": {
+                "type": "integer",
+                "minimum": 86400,
+                "maximum": 604800
+              },
+              "idempotency_retention_seconds": {
+                "type": "integer",
+                "minimum": 86400,
+                "maximum": 604800
+              }
+            }
+          }
+        }
+      },
+      "Observation": {
+        "title": "Teslatlas canonical observation",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "observation_id",
+          "vehicle_id",
+          "source",
+          "provider_timestamp",
+          "received_timestamp",
+          "source_sequence",
+          "field",
+          "typed_value",
+          "validity",
+          "quality_flags",
+          "raw_payload_hash",
+          "collector_version",
+          "projection_version"
+        ],
+        "properties": {
+          "observation_id": {
+            "$ref": "#/components/schemas/Common/$defs/opaque_id"
+          },
+          "vehicle_id": {
+            "$ref": "#/components/schemas/Common/$defs/opaque_id"
+          },
+          "source": {
+            "$ref": "#/components/schemas/Common/$defs/source"
+          },
+          "provider_timestamp": {
+            "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+          },
+          "received_timestamp": {
+            "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+          },
+          "source_sequence": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "field": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$",
+            "maxLength": 256
+          },
+          "typed_value": {
+            "$ref": "#/components/schemas/Observation/$defs/typed_value"
+          },
+          "validity": {
+            "enum": [
+              "valid",
+              "suspect",
+              "invalid"
+            ]
+          },
+          "quality_flags": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/Common/$defs/quality_flag"
+            }
+          },
+          "raw_payload_hash": {
+            "$ref": "#/components/schemas/Common/$defs/sha256"
+          },
+          "collector_version": {
+            "$ref": "#/components/schemas/Common/$defs/semver"
+          },
+          "projection_version": {
+            "$ref": "#/components/schemas/Common/$defs/semver"
+          }
+        },
+        "$defs": {
+          "typed_value": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Observation/$defs/null_value"
+              },
+              {
+                "$ref": "#/components/schemas/Observation/$defs/boolean_value"
+              },
+              {
+                "$ref": "#/components/schemas/Observation/$defs/integer_value"
+              },
+              {
+                "$ref": "#/components/schemas/Observation/$defs/number_value"
+              },
+              {
+                "$ref": "#/components/schemas/Observation/$defs/string_value"
+              },
+              {
+                "$ref": "#/components/schemas/Observation/$defs/object_value"
+              },
+              {
+                "$ref": "#/components/schemas/Observation/$defs/array_value"
+              }
+            ]
+          },
+          "unit": {
+            "enum": [
+              "percent",
+              "km",
+              "km_h",
+              "celsius",
+              "kwh",
+              "kw",
+              "volts",
+              "amps",
+              "degrees",
+              "seconds",
+              "boolean",
+              "text",
+              "none"
+            ]
+          },
+          "null_value": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value"
+            ],
+            "properties": {
+              "kind": {
+                "const": "null"
+              },
+              "value": {
+                "type": "null"
+              }
+            }
+          },
+          "boolean_value": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value",
+              "unit"
+            ],
+            "properties": {
+              "kind": {
+                "const": "boolean"
+              },
+              "value": {
+                "type": "boolean"
+              },
+              "unit": {
+                "const": "boolean"
+              }
+            }
+          },
+          "integer_value": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value",
+              "unit"
+            ],
+            "properties": {
+              "kind": {
+                "const": "integer"
+              },
+              "value": {
+                "type": "integer"
+              },
+              "unit": {
+                "$ref": "#/components/schemas/Observation/$defs/unit"
+              }
+            }
+          },
+          "number_value": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value",
+              "unit"
+            ],
+            "properties": {
+              "kind": {
+                "const": "number"
+              },
+              "value": {
+                "type": "number"
+              },
+              "unit": {
+                "$ref": "#/components/schemas/Observation/$defs/unit"
+              }
+            }
+          },
+          "string_value": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value",
+              "unit"
+            ],
+            "properties": {
+              "kind": {
+                "const": "string"
+              },
+              "value": {
+                "type": "string",
+                "maxLength": 4096
+              },
+              "unit": {
+                "$ref": "#/components/schemas/Observation/$defs/unit"
+              }
+            }
+          },
+          "object_value": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value"
+            ],
+            "properties": {
+              "kind": {
+                "const": "object"
+              },
+              "value": {
+                "type": "object"
+              }
+            }
+          },
+          "array_value": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value"
+            ],
+            "properties": {
+              "kind": {
+                "const": "array"
+              },
+              "value": {
+                "type": "array"
+              }
+            }
+          }
+        }
+      },
+      "DataQuality": {
+        "title": "Teslatlas data-quality assessment",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subject_type",
+          "subject_id",
+          "quality",
+          "sources",
+          "gap_count",
+          "largest_gap_seconds",
+          "derived_fields",
+          "projection_version",
+          "assessed_at",
+          "issues"
+        ],
+        "properties": {
+          "subject_type": {
+            "enum": [
+              "vehicle",
+              "projection",
+              "drive",
+              "charge",
+              "state",
+              "update"
+            ]
+          },
+          "subject_id": {
+            "$ref": "#/components/schemas/Common/$defs/opaque_id"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/Common/$defs/quality"
+          },
+          "sources": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/Common/$defs/source"
+            }
+          },
+          "gap_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "largest_gap_seconds": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "derived_fields": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$"
+            }
+          },
+          "projection_version": {
+            "$ref": "#/components/schemas/Common/$defs/semver"
+          },
+          "assessed_at": {
+            "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DataQuality/$defs/issue"
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "quality": {
+                  "const": "complete"
+                }
+              },
+              "required": [
+                "quality"
+              ]
+            },
+            "then": {
+              "properties": {
+                "gap_count": {
+                  "const": 0
+                },
+                "largest_gap_seconds": {
+                  "const": 0
+                },
+                "issues": {
+                  "maxItems": 0
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "gap_count": {
+                  "const": 0
+                }
+              },
+              "required": [
+                "gap_count"
+              ]
+            },
+            "then": {
+              "properties": {
+                "largest_gap_seconds": {
+                  "const": 0
+                }
+              }
+            }
+          }
+        ],
+        "$defs": {
+          "issue": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "severity",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "enum": [
+                  "missing_interval",
+                  "late_observation",
+                  "reordered_observation",
+                  "conflicting_duplicate",
+                  "clock_skew",
+                  "source_unavailable",
+                  "invalid_for_context"
+                ]
+              },
+              "severity": {
+                "enum": [
+                  "info",
+                  "warning",
+                  "error"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "from": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "to": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "affected_fields": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Resources": {
+        "title": "Teslatlas query resources",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Resources/$defs/vehicle"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/current_state"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/drive"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/position"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/charge"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/charge_sample"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/state_interval"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/software_update"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/vehicle_page"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/drive_page"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/position_page"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/charge_page"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/charge_sample_page"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/state_page"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/update_page"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/data_quality_page"
+          },
+          {
+            "$ref": "#/components/schemas/Resources/$defs/metadata_page"
+          }
+        ],
+        "$defs": {
+          "vehicle_state": {
+            "enum": [
+              "online",
+              "asleep",
+              "offline",
+              "driving",
+              "charging",
+              "updating",
+              "unknown"
+            ]
+          },
+          "vehicle": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resource_type",
+              "vehicle_id",
+              "display_name",
+              "state",
+              "last_observed_at",
+              "revision"
+            ],
+            "properties": {
+              "resource_type": {
+                "const": "vehicle"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "display_name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "state": {
+                "$ref": "#/components/schemas/Resources/$defs/vehicle_state"
+              },
+              "last_observed_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "revision": {
+                "$ref": "#/components/schemas/Common/$defs/revision"
+              }
+            }
+          },
+          "current_state": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resource_type",
+              "vehicle_id",
+              "observed_at",
+              "revision",
+              "state",
+              "battery_level_percent",
+              "range_km",
+              "odometer_km",
+              "locked",
+              "climate_on",
+              "charging_state",
+              "location",
+              "quality"
+            ],
+            "properties": {
+              "resource_type": {
+                "const": "current_state"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "observed_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "revision": {
+                "$ref": "#/components/schemas/Common/$defs/revision"
+              },
+              "state": {
+                "$ref": "#/components/schemas/Resources/$defs/vehicle_state"
+              },
+              "battery_level_percent": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 100
+              },
+              "range_km": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "odometer_km": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "inside_temperature_c": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "outside_temperature_c": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "locked": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "climate_on": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "charging_state": {
+                "enum": [
+                  "charging",
+                  "stopped",
+                  "complete",
+                  "disconnected",
+                  "unknown",
+                  null
+                ]
+              },
+              "location": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Common/$defs/location"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "quality": {
+                "$ref": "#/components/schemas/DataQuality"
+              }
+            }
+          },
+          "drive": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resource_type",
+              "drive_id",
+              "vehicle_id",
+              "start_at",
+              "end_at",
+              "start_odometer_km",
+              "end_odometer_km",
+              "distance_km",
+              "duration_seconds",
+              "energy_used_kwh",
+              "quality"
+            ],
+            "properties": {
+              "resource_type": {
+                "const": "drive"
+              },
+              "drive_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "start_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "end_at": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "start_odometer_km": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "end_odometer_km": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "distance_km": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "duration_seconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "energy_used_kwh": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "efficiency_wh_per_km": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "quality": {
+                "$ref": "#/components/schemas/DataQuality"
+              }
+            }
+          },
+          "position": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resource_type",
+              "position_id",
+              "drive_id",
+              "vehicle_id",
+              "observed_at",
+              "location",
+              "speed_km_h",
+              "heading_degrees",
+              "quality_flags"
+            ],
+            "properties": {
+              "resource_type": {
+                "const": "position"
+              },
+              "position_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "drive_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "observed_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "location": {
+                "$ref": "#/components/schemas/Common/$defs/location"
+              },
+              "speed_km_h": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "heading_degrees": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "exclusiveMaximum": 360
+              },
+              "quality_flags": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/Common/$defs/quality_flag"
+                }
+              }
+            }
+          },
+          "charge": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resource_type",
+              "charge_id",
+              "vehicle_id",
+              "start_at",
+              "end_at",
+              "charging_type",
+              "energy_added_kwh",
+              "start_battery_percent",
+              "end_battery_percent",
+              "location",
+              "quality"
+            ],
+            "properties": {
+              "resource_type": {
+                "const": "charge"
+              },
+              "charge_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "start_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "end_at": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "charging_type": {
+                "enum": [
+                  "ac",
+                  "dc",
+                  "unknown"
+                ]
+              },
+              "energy_added_kwh": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "start_battery_percent": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 100
+              },
+              "end_battery_percent": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 100
+              },
+              "location": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Common/$defs/location"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "quality": {
+                "$ref": "#/components/schemas/DataQuality"
+              }
+            }
+          },
+          "charge_sample": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resource_type",
+              "charge_sample_id",
+              "charge_id",
+              "vehicle_id",
+              "observed_at",
+              "battery_level_percent",
+              "power_kw",
+              "energy_added_kwh",
+              "voltage_v",
+              "current_a",
+              "phases",
+              "quality_flags"
+            ],
+            "properties": {
+              "resource_type": {
+                "const": "charge_sample"
+              },
+              "charge_sample_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "charge_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "observed_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "battery_level_percent": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 100
+              },
+              "power_kw": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "energy_added_kwh": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "voltage_v": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "current_a": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "phases": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 3
+              },
+              "quality_flags": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/Common/$defs/quality_flag"
+                }
+              }
+            }
+          },
+          "state_interval": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resource_type",
+              "state_id",
+              "vehicle_id",
+              "state",
+              "start_at",
+              "end_at",
+              "quality"
+            ],
+            "properties": {
+              "resource_type": {
+                "const": "state_interval"
+              },
+              "state_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "state": {
+                "$ref": "#/components/schemas/Resources/$defs/vehicle_state"
+              },
+              "start_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "end_at": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "quality": {
+                "$ref": "#/components/schemas/DataQuality"
+              }
+            }
+          },
+          "software_update": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resource_type",
+              "update_id",
+              "vehicle_id",
+              "status",
+              "version",
+              "first_seen_at",
+              "last_seen_at",
+              "installed_at",
+              "quality"
+            ],
+            "properties": {
+              "resource_type": {
+                "const": "software_update"
+              },
+              "update_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "status": {
+                "enum": [
+                  "available",
+                  "downloading",
+                  "installing",
+                  "succeeded",
+                  "failed"
+                ]
+              },
+              "version": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "first_seen_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "last_seen_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "installed_at": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "quality": {
+                "$ref": "#/components/schemas/DataQuality"
+              }
+            }
+          },
+          "page_base": {
+            "type": "object",
+            "required": [
+              "resource_type",
+              "items",
+              "next_cursor",
+              "snapshot_revision",
+              "generated_at"
+            ],
+            "properties": {
+              "resource_type": {
+                "type": "string"
+              },
+              "items": {
+                "type": "array"
+              },
+              "next_cursor": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Common/$defs/cursor"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "snapshot_revision": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "generated_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              }
+            }
+          },
+          "vehicle_page": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resources/$defs/page_base"
+              },
+              {
+                "properties": {
+                  "resource_type": {
+                    "const": "vehicle_page"
+                  },
+                  "items": {
+                    "items": {
+                      "$ref": "#/components/schemas/Resources/$defs/vehicle"
+                    }
+                  }
+                }
+              }
+            ],
+            "unevaluatedProperties": false
+          },
+          "drive_page": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resources/$defs/page_base"
+              },
+              {
+                "properties": {
+                  "resource_type": {
+                    "const": "drive_page"
+                  },
+                  "items": {
+                    "items": {
+                      "$ref": "#/components/schemas/Resources/$defs/drive"
+                    }
+                  }
+                }
+              }
+            ],
+            "unevaluatedProperties": false
+          },
+          "position_page": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resources/$defs/page_base"
+              },
+              {
+                "properties": {
+                  "resource_type": {
+                    "const": "position_page"
+                  },
+                  "items": {
+                    "items": {
+                      "$ref": "#/components/schemas/Resources/$defs/position"
+                    }
+                  }
+                }
+              }
+            ],
+            "unevaluatedProperties": false
+          },
+          "charge_page": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resources/$defs/page_base"
+              },
+              {
+                "properties": {
+                  "resource_type": {
+                    "const": "charge_page"
+                  },
+                  "items": {
+                    "items": {
+                      "$ref": "#/components/schemas/Resources/$defs/charge"
+                    }
+                  }
+                }
+              }
+            ],
+            "unevaluatedProperties": false
+          },
+          "charge_sample_page": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resources/$defs/page_base"
+              },
+              {
+                "properties": {
+                  "resource_type": {
+                    "const": "charge_sample_page"
+                  },
+                  "items": {
+                    "items": {
+                      "$ref": "#/components/schemas/Resources/$defs/charge_sample"
+                    }
+                  }
+                }
+              }
+            ],
+            "unevaluatedProperties": false
+          },
+          "state_page": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resources/$defs/page_base"
+              },
+              {
+                "properties": {
+                  "resource_type": {
+                    "const": "state_page"
+                  },
+                  "items": {
+                    "items": {
+                      "$ref": "#/components/schemas/Resources/$defs/state_interval"
+                    }
+                  }
+                }
+              }
+            ],
+            "unevaluatedProperties": false
+          },
+          "update_page": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resources/$defs/page_base"
+              },
+              {
+                "properties": {
+                  "resource_type": {
+                    "const": "update_page"
+                  },
+                  "items": {
+                    "items": {
+                      "$ref": "#/components/schemas/Resources/$defs/software_update"
+                    }
+                  }
+                }
+              }
+            ],
+            "unevaluatedProperties": false
+          },
+          "data_quality_page": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resources/$defs/page_base"
+              },
+              {
+                "properties": {
+                  "resource_type": {
+                    "const": "data_quality_page"
+                  },
+                  "items": {
+                    "items": {
+                      "$ref": "#/components/schemas/DataQuality"
+                    }
+                  }
+                }
+              }
+            ],
+            "unevaluatedProperties": false
+          },
+          "metadata_page": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resources/$defs/page_base"
+              },
+              {
+                "properties": {
+                  "resource_type": {
+                    "const": "metadata_page"
+                  },
+                  "items": {
+                    "items": {
+                      "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+                    }
+                  }
+                }
+              }
+            ],
+            "unevaluatedProperties": false
+          }
+        }
+      },
+      "Projection": {
+        "title": "Teslatlas deterministic projection",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "projection_id",
+          "projection_type",
+          "vehicle_id",
+          "input_observation_ids",
+          "computed_at",
+          "projection_version",
+          "quality",
+          "payload"
+        ],
+        "properties": {
+          "projection_id": {
+            "$ref": "#/components/schemas/Common/$defs/opaque_id"
+          },
+          "projection_type": {
+            "enum": [
+              "current_state",
+              "drive",
+              "charge",
+              "state_interval",
+              "software_update"
+            ]
+          },
+          "vehicle_id": {
+            "$ref": "#/components/schemas/Common/$defs/opaque_id"
+          },
+          "input_observation_ids": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/components/schemas/Common/$defs/opaque_id"
+            }
+          },
+          "computed_at": {
+            "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+          },
+          "projection_version": {
+            "$ref": "#/components/schemas/Common/$defs/semver"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/DataQuality"
+          },
+          "payload": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Resources/$defs/current_state"
+              },
+              {
+                "$ref": "#/components/schemas/Resources/$defs/drive"
+              },
+              {
+                "$ref": "#/components/schemas/Resources/$defs/charge"
+              },
+              {
+                "$ref": "#/components/schemas/Resources/$defs/state_interval"
+              },
+              {
+                "$ref": "#/components/schemas/Resources/$defs/software_update"
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "projection_type": {
+                  "const": "current_state"
+                }
+              },
+              "required": [
+                "projection_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/Resources/$defs/current_state"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "projection_type": {
+                  "const": "drive"
+                }
+              },
+              "required": [
+                "projection_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/Resources/$defs/drive"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "projection_type": {
+                  "const": "charge"
+                }
+              },
+              "required": [
+                "projection_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/Resources/$defs/charge"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "projection_type": {
+                  "const": "state_interval"
+                }
+              },
+              "required": [
+                "projection_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/Resources/$defs/state_interval"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "projection_type": {
+                  "const": "software_update"
+                }
+              },
+              "required": [
+                "projection_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/components/schemas/Resources/$defs/software_update"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Problem": {
+        "title": "Teslatlas problem detail",
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "type",
+          "title",
+          "status",
+          "code",
+          "request_id",
+          "instance",
+          "retryable"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "instance": {
+            "type": "string",
+            "format": "uri-reference"
+          },
+          "code": {
+            "enum": [
+              "invalid_request",
+              "invalid_time_range",
+              "unsupported_protocol_version",
+              "invalid_cursor",
+              "cursor_expired",
+              "cursor_query_mismatch",
+              "cursor_scope_changed",
+              "unauthorized",
+              "forbidden",
+              "not_found",
+              "precondition_required",
+              "metadata_revision_conflict",
+              "idempotency_conflict",
+              "command_not_supported",
+              "command_not_permitted",
+              "command_expired",
+              "event_replay_expired",
+              "event_id_invalid",
+              "rate_limited",
+              "request_too_large",
+              "range_too_large",
+              "concurrency_limit",
+              "internal_error",
+              "unavailable"
+            ]
+          },
+          "request_id": {
+            "$ref": "#/components/schemas/Common/$defs/opaque_id"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "field_errors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Problem/$defs/field_error"
+            }
+          },
+          "retry_after_seconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 86400
+          }
+        },
+        "$defs": {
+          "field_error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "field",
+              "code"
+            ],
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "code": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]+$"
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 512
+              }
+            }
+          }
+        }
+      },
+      "Command": {
+        "title": "Teslatlas asynchronous command contract",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Command/$defs/command_request"
+          },
+          {
+            "$ref": "#/components/schemas/Command/$defs/command_job"
+          },
+          {
+            "$ref": "#/components/schemas/Command/$defs/command_audit_event"
+          }
+        ],
+        "$defs": {
+          "command_name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,63}$"
+          },
+          "command_class": {
+            "enum": [
+              "climate",
+              "charging",
+              "access",
+              "nuisance",
+              "vehicle_state"
+            ]
+          },
+          "command_state": {
+            "enum": [
+              "accepted",
+              "authorising",
+              "sent",
+              "provider_acknowledged",
+              "verifying",
+              "succeeded",
+              "failed",
+              "indeterminate",
+              "expired",
+              "cancelled"
+            ]
+          },
+          "command_request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "vehicle_id",
+              "command",
+              "command_class",
+              "parameters",
+              "expected_state",
+              "expires_at"
+            ],
+            "properties": {
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "command": {
+                "$ref": "#/components/schemas/Command/$defs/command_name"
+              },
+              "command_class": {
+                "$ref": "#/components/schemas/Command/$defs/command_class"
+              },
+              "parameters": {
+                "type": "object",
+                "maxProperties": 32
+              },
+              "expected_state": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 32
+              },
+              "expires_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "confirmation": {
+                "type": "object",
+                "description": "Required when the discovered command descriptor sets confirmation_required to true.",
+                "additionalProperties": false,
+                "required": [
+                  "confirmed_at",
+                  "confirmed_by"
+                ],
+                "properties": {
+                  "confirmed_at": {
+                    "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+                  },
+                  "confirmed_by": {
+                    "$ref": "#/components/schemas/Common/$defs/actor_id"
+                  }
+                }
+              }
+            }
+          },
+          "command_job": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "command_id",
+              "vehicle_id",
+              "command",
+              "command_class",
+              "state",
+              "created_at",
+              "updated_at",
+              "expires_at",
+              "attempt_count",
+              "retry_policy",
+              "audit",
+              "links"
+            ],
+            "properties": {
+              "command_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "command": {
+                "$ref": "#/components/schemas/Command/$defs/command_name"
+              },
+              "command_class": {
+                "$ref": "#/components/schemas/Command/$defs/command_class"
+              },
+              "state": {
+                "$ref": "#/components/schemas/Command/$defs/command_state"
+              },
+              "created_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "updated_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "expires_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "attempt_count": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 16
+              },
+              "retry_policy": {
+                "enum": [
+                  "none",
+                  "state_verified"
+                ]
+              },
+              "result": {
+                "type": "object"
+              },
+              "error": {
+                "$ref": "#/components/schemas/Problem"
+              },
+              "audit": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/components/schemas/Command/$defs/command_audit_event"
+                }
+              },
+              "links": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "self"
+                ],
+                "properties": {
+                  "self": {
+                    "type": "string",
+                    "format": "uri-reference"
+                  }
+                }
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "succeeded"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "result"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "state": {
+                      "const": "failed"
+                    }
+                  },
+                  "required": [
+                    "state"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            ]
+          },
+          "command_audit_event": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "state",
+              "at",
+              "actor_id"
+            ],
+            "properties": {
+              "state": {
+                "$ref": "#/components/schemas/Command/$defs/command_state"
+              },
+              "at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "actor_id": {
+                "$ref": "#/components/schemas/Common/$defs/actor_id"
+              },
+              "note": {
+                "type": "string",
+                "maxLength": 512
+              }
+            }
+          }
+        }
+      },
+      "Metadata": {
+        "title": "Teslatlas mutable metadata contract",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+          },
+          {
+            "$ref": "#/components/schemas/Metadata/$defs/metadata_tombstone"
+          },
+          {
+            "$ref": "#/components/schemas/Metadata/$defs/metadata_create"
+          },
+          {
+            "$ref": "#/components/schemas/Metadata/$defs/metadata_replace"
+          },
+          {
+            "$ref": "#/components/schemas/Metadata/$defs/metadata_audit_event"
+          },
+          {
+            "$ref": "#/components/schemas/Metadata/$defs/metadata_deletion_event"
+          }
+        ],
+        "$defs": {
+          "metadata_kind": {
+            "enum": [
+              "geofence",
+              "location_name",
+              "tag",
+              "note",
+              "trip_group",
+              "charge_cost_correction",
+              "electricity_tariff",
+              "favourite_location",
+              "session_override"
+            ]
+          },
+          "metadata_target": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "resource_type",
+              "resource_id"
+            ],
+            "properties": {
+              "resource_type": {
+                "enum": [
+                  "vehicle",
+                  "drive",
+                  "charge",
+                  "location",
+                  "installation"
+                ]
+              },
+              "resource_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              }
+            }
+          },
+          "metadata_record": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "metadata_id",
+              "vehicle_id",
+              "kind",
+              "target",
+              "value",
+              "revision",
+              "created_at",
+              "created_by",
+              "updated_at",
+              "updated_by",
+              "audit"
+            ],
+            "properties": {
+              "metadata_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/Metadata/$defs/metadata_kind"
+              },
+              "target": {
+                "$ref": "#/components/schemas/Metadata/$defs/metadata_target"
+              },
+              "value": {
+                "type": "object",
+                "maxProperties": 64
+              },
+              "revision": {
+                "$ref": "#/components/schemas/Common/$defs/revision"
+              },
+              "created_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "created_by": {
+                "$ref": "#/components/schemas/Common/$defs/actor_id"
+              },
+              "updated_at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "updated_by": {
+                "$ref": "#/components/schemas/Common/$defs/actor_id"
+              },
+              "audit": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/components/schemas/Metadata/$defs/metadata_audit_event"
+                }
+              }
+            }
+          },
+          "metadata_tombstone": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "metadata_id",
+              "vehicle_id",
+              "kind",
+              "target",
+              "audit"
+            ],
+            "properties": {
+              "metadata_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/Metadata/$defs/metadata_kind"
+              },
+              "target": {
+                "$ref": "#/components/schemas/Metadata/$defs/metadata_target"
+              },
+              "audit": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "history",
+                  "deletion"
+                ],
+                "properties": {
+                  "history": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/components/schemas/Metadata/$defs/metadata_audit_event"
+                    }
+                  },
+                  "deletion": {
+                    "$ref": "#/components/schemas/Metadata/$defs/metadata_deletion_event"
+                  }
+                }
+              }
+            }
+          },
+          "metadata_create": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "vehicle_id",
+              "kind",
+              "target",
+              "value"
+            ],
+            "properties": {
+              "vehicle_id": {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              "kind": {
+                "$ref": "#/components/schemas/Metadata/$defs/metadata_kind"
+              },
+              "target": {
+                "$ref": "#/components/schemas/Metadata/$defs/metadata_target"
+              },
+              "value": {
+                "type": "object",
+                "maxProperties": 64
+              }
+            }
+          },
+          "metadata_replace": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "value"
+            ],
+            "properties": {
+              "value": {
+                "type": "object",
+                "maxProperties": 64
+              }
+            }
+          },
+          "metadata_audit_event": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "revision",
+              "action",
+              "at",
+              "actor_id",
+              "previous_hash",
+              "new_hash"
+            ],
+            "properties": {
+              "revision": {
+                "$ref": "#/components/schemas/Common/$defs/revision"
+              },
+              "action": {
+                "enum": [
+                  "created",
+                  "updated"
+                ]
+              },
+              "at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "actor_id": {
+                "$ref": "#/components/schemas/Common/$defs/actor_id"
+              },
+              "previous_hash": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Common/$defs/sha256"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "new_hash": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Common/$defs/sha256"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "action": {
+                      "const": "created"
+                    }
+                  },
+                  "required": [
+                    "action"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "previous_hash": {
+                      "type": "null"
+                    },
+                    "new_hash": {
+                      "$ref": "#/components/schemas/Common/$defs/sha256"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "action": {
+                      "const": "updated"
+                    }
+                  },
+                  "required": [
+                    "action"
+                  ]
+                },
+                "then": {
+                  "properties": {
+                    "previous_hash": {
+                      "$ref": "#/components/schemas/Common/$defs/sha256"
+                    },
+                    "new_hash": {
+                      "$ref": "#/components/schemas/Common/$defs/sha256"
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "metadata_deletion_event": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "revision",
+              "action",
+              "at",
+              "actor_id"
+            ],
+            "properties": {
+              "revision": {
+                "$ref": "#/components/schemas/Common/$defs/revision"
+              },
+              "action": {
+                "const": "deleted"
+              },
+              "at": {
+                "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+              },
+              "actor_id": {
+                "$ref": "#/components/schemas/Common/$defs/actor_id"
+              }
+            }
+          }
+        }
+      },
+      "Event": {
+        "title": "Teslatlas v1 SSE data envelope",
+        "$comment": "JSON Schema validates structure and event-to-payload type. Cross-field identity equality is a required semantic rule enforced by the conformance runner.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "event_id",
+          "event_type",
+          "occurred_at",
+          "vehicle_id",
+          "resource_id",
+          "revision",
+          "data"
+        ],
+        "properties": {
+          "event_id": {
+            "$ref": "#/components/schemas/Common/$defs/opaque_id"
+          },
+          "event_type": {
+            "enum": [
+              "observation.admitted",
+              "vehicle.current.changed",
+              "drive.started",
+              "drive.updated",
+              "drive.ended",
+              "charge.started",
+              "charge.updated",
+              "charge.ended",
+              "state.changed",
+              "software_update.changed",
+              "data_quality.changed",
+              "command.changed",
+              "metadata.changed"
+            ]
+          },
+          "occurred_at": {
+            "$ref": "#/components/schemas/Common/$defs/utc_timestamp"
+          },
+          "vehicle_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_id": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Common/$defs/opaque_id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "revision": {
+            "$ref": "#/components/schemas/Common/$defs/revision"
+          },
+          "data": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Observation"
+              },
+              {
+                "$ref": "#/components/schemas/Resources"
+              },
+              {
+                "$ref": "#/components/schemas/DataQuality"
+              },
+              {
+                "$ref": "#/components/schemas/Command/$defs/command_job"
+              },
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+                  },
+                  {
+                    "$ref": "#/components/schemas/Metadata/$defs/metadata_tombstone"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "observation.admitted"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Observation"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "vehicle.current.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Resources/$defs/current_state"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "enum": [
+                    "drive.started",
+                    "drive.updated",
+                    "drive.ended"
+                  ]
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Resources/$defs/drive"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "enum": [
+                    "charge.started",
+                    "charge.updated",
+                    "charge.ended"
+                  ]
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Resources/$defs/charge"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "state.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Resources/$defs/state_interval"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "software_update.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Resources/$defs/software_update"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "data_quality.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/DataQuality"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "command.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "$ref": "#/components/schemas/Command/$defs/command_job"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "event_type": {
+                  "const": "metadata.changed"
+                }
+              },
+              "required": [
+                "event_type"
+              ]
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Metadata/$defs/metadata_record"
+                    },
+                    {
+                      "$ref": "#/components/schemas/Metadata/$defs/metadata_tombstone"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "Fixture": {
+        "title": "Teslatlas deterministic compatibility fixture",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fixture_version",
+          "scenario_id",
+          "description",
+          "input_observations",
+          "expected",
+          "redaction"
+        ],
+        "properties": {
+          "fixture_version": {
+            "const": "1.0.0"
+          },
+          "scenario_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]+$",
+            "maxLength": 96
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "input_observations": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/Observation"
+            }
+          },
+          "expected": {
+            "$ref": "#/components/schemas/Fixture/$defs/expected"
+          },
+          "redaction": {
+            "$ref": "#/components/schemas/Fixture/$defs/redaction"
+          }
+        },
+        "$defs": {
+          "expected": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "accepted_observation_ids",
+              "duplicate_observation_ids",
+              "ordered_observation_ids",
+              "projection",
+              "quality"
+            ],
+            "properties": {
+              "accepted_observation_ids": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/Common/$defs/opaque_id"
+                }
+              },
+              "duplicate_observation_ids": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/Common/$defs/opaque_id"
+                }
+              },
+              "ordered_observation_ids": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/Common/$defs/opaque_id"
+                }
+              },
+              "projection": {
+                "$ref": "#/components/schemas/Projection"
+              },
+              "quality": {
+                "$ref": "#/components/schemas/DataQuality"
+              }
+            }
+          },
+          "redaction": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "contains_real_identifiers",
+              "contains_secrets",
+              "contains_precise_location",
+              "maximum_coordinate_decimals"
+            ],
+            "properties": {
+              "contains_real_identifiers": {
+                "const": false
+              },
+              "contains_secrets": {
+                "const": false
+              },
+              "contains_precise_location": {
+                "const": false
+              },
+              "maximum_coordinate_decimals": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 2
+              }
+            }
+          }
+        }
+      },
+      "SSEContract": {
+        "title": "Teslatlas SSE contract description",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "protocol_version",
+          "endpoint",
+          "media_type",
+          "encoding",
+          "framing",
+          "replay",
+          "reconnect",
+          "events",
+          "examples"
+        ],
+        "properties": {
+          "protocol_version": {
+            "$ref": "#/components/schemas/Common/$defs/semver"
+          },
+          "endpoint": {
+            "const": "/v1/events"
+          },
+          "media_type": {
+            "const": "text/event-stream"
+          },
+          "encoding": {
+            "const": "utf-8"
+          },
+          "framing": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "fields",
+              "dispatch_boundary",
+              "data_lines",
+              "heartbeat_comment_seconds"
+            ],
+            "properties": {
+              "fields": {
+                "const": [
+                  "id",
+                  "event",
+                  "data",
+                  "retry"
+                ]
+              },
+              "dispatch_boundary": {
+                "const": "blank-line"
+              },
+              "data_lines": {
+                "const": "concatenate-with-newline"
+              },
+              "heartbeat_comment_seconds": {
+                "type": "integer",
+                "minimum": 5,
+                "maximum": 15
+              }
+            }
+          },
+          "replay": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "request_header",
+              "resume",
+              "minimum_retention_seconds",
+              "id_treatment",
+              "bound_to",
+              "reset",
+              "invalid_status",
+              "invalid_error_code",
+              "expired_status",
+              "expired_error_code"
+            ],
+            "properties": {
+              "request_header": {
+                "const": "Last-Event-ID"
+              },
+              "resume": {
+                "const": "strictly-after"
+              },
+              "minimum_retention_seconds": {
+                "type": "integer",
+                "minimum": 86400
+              },
+              "id_treatment": {
+                "const": "opaque"
+              },
+              "bound_to": {
+                "const": [
+                  "hub_id",
+                  "principal",
+                  "normalized_filters"
+                ]
+              },
+              "reset": {
+                "const": "empty-id-field"
+              },
+              "invalid_status": {
+                "const": 400
+              },
+              "invalid_error_code": {
+                "const": "event_id_invalid"
+              },
+              "expired_status": {
+                "const": 410
+              },
+              "expired_error_code": {
+                "const": "event_replay_expired"
+              }
+            }
+          },
+          "reconnect": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "default_retry_milliseconds",
+              "maximum_retry_milliseconds",
+              "terminal_status"
+            ],
+            "properties": {
+              "default_retry_milliseconds": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 30000
+              },
+              "maximum_retry_milliseconds": {
+                "type": "integer",
+                "minimum": 1000,
+                "maximum": 30000
+              },
+              "terminal_status": {
+                "const": 204
+              }
+            }
+          },
+          "events": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "introduced_in",
+                "data_schema"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$"
+                },
+                "introduced_in": {
+                  "$ref": "#/components/schemas/Common/$defs/semver"
+                },
+                "data_schema": {
+                  "const": "urn:teslatlas:protocol:schema:event:1.2.0"
+                }
+              }
+            }
+          },
+          "examples": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "wire"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]+$"
+                },
+                "wire": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "Conformance": {
+        "title": "Teslatlas language-neutral conformance artifacts",
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/Conformance/$defs/manifest"
+          },
+          {
+            "$ref": "#/components/schemas/Conformance/$defs/profile"
+          },
+          {
+            "$ref": "#/components/schemas/Conformance/$defs/case"
+          }
+        ],
+        "$defs": {
+          "case_id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]+$",
+            "maxLength": 96
+          },
+          "manifest": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "runner_protocol",
+              "current_version",
+              "supported_profiles",
+              "profiles"
+            ],
+            "properties": {
+              "kind": {
+                "const": "manifest"
+              },
+              "runner_protocol": {
+                "const": "teslatlas-conformance/1"
+              },
+              "current_version": {
+                "$ref": "#/components/schemas/Common/$defs/semver"
+              },
+              "supported_profiles": {
+                "type": "array",
+                "minItems": 3,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/Common/$defs/semver"
+                }
+              },
+              "profiles": {
+                "type": "array",
+                "minItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "version",
+                    "path"
+                  ],
+                  "properties": {
+                    "version": {
+                      "$ref": "#/components/schemas/Common/$defs/semver"
+                    },
+                    "path": {
+                      "type": "string",
+                      "pattern": "^compatibility/[0-9]+\\.[0-9]+\\.[0-9]+/profile\\.json$"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "profile": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "protocol_version",
+              "extends",
+              "capabilities",
+              "cases"
+            ],
+            "properties": {
+              "kind": {
+                "const": "profile"
+              },
+              "protocol_version": {
+                "$ref": "#/components/schemas/Common/$defs/semver"
+              },
+              "extends": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/Common/$defs/semver"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "capabilities": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+                }
+              },
+              "cases": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/components/schemas/Conformance/$defs/case_id"
+                }
+              }
+            }
+          },
+          "case": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "case_id",
+              "introduced_in",
+              "capability",
+              "description",
+              "steps"
+            ],
+            "properties": {
+              "kind": {
+                "const": "case"
+              },
+              "case_id": {
+                "$ref": "#/components/schemas/Conformance/$defs/case_id"
+              },
+              "introduced_in": {
+                "$ref": "#/components/schemas/Common/$defs/semver"
+              },
+              "capability": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "steps": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/components/schemas/Conformance/$defs/step"
+                }
+              }
+            }
+          },
+          "adapter_request_envelope": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "protocol",
+              "profile",
+              "case_id",
+              "step_id",
+              "capability",
+              "request"
+            ],
+            "properties": {
+              "protocol": {
+                "const": "teslatlas-conformance/1"
+              },
+              "profile": {
+                "$ref": "#/components/schemas/Common/$defs/semver"
+              },
+              "case_id": {
+                "$ref": "#/components/schemas/Conformance/$defs/case_id"
+              },
+              "step_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]+$"
+              },
+              "capability": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+              },
+              "request": {
+                "$ref": "#/components/schemas/Conformance/$defs/request"
+              }
+            }
+          },
+          "adapter_response_envelope": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "case_id",
+              "step_id",
+              "response"
+            ],
+            "properties": {
+              "case_id": {
+                "$ref": "#/components/schemas/Conformance/$defs/case_id"
+              },
+              "step_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]+$"
+              },
+              "response": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Conformance/$defs/response"
+                  },
+                  {
+                    "not": {
+                      "required": [
+                        "body_file"
+                      ]
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "step": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "step_id",
+              "request",
+              "expect",
+              "reference_response"
+            ],
+            "properties": {
+              "step_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]+$"
+              },
+              "request": {
+                "$ref": "#/components/schemas/Conformance/$defs/request"
+              },
+              "expect": {
+                "$ref": "#/components/schemas/Conformance/$defs/expectation"
+              },
+              "reference_response": {
+                "$ref": "#/components/schemas/Conformance/$defs/response"
+              }
+            }
+          },
+          "request": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "method",
+              "path",
+              "headers",
+              "query"
+            ],
+            "properties": {
+              "method": {
+                "enum": [
+                  "GET",
+                  "POST",
+                  "PUT",
+                  "DELETE"
+                ]
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "headers": {
+                "$ref": "#/components/schemas/Conformance/$defs/string_map"
+              },
+              "query": {
+                "type": "object",
+                "additionalProperties": {
+                  "oneOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  ]
+                }
+              },
+              "body": {},
+              "body_bytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "expectation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status"
+            ],
+            "properties": {
+              "status": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              "headers_present": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "headers_equal": {
+                "$ref": "#/components/schemas/Conformance/$defs/string_map"
+              },
+              "body_absent": {
+                "type": "boolean"
+              },
+              "body_schema": {
+                "type": "string",
+                "format": "uri"
+              },
+              "event_schema": {
+                "type": "string",
+                "format": "uri"
+              },
+              "assertions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Conformance/$defs/assertion"
+                }
+              }
+            }
+          },
+          "assertion": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "op"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^/"
+              },
+              "op": {
+                "enum": [
+                  "equals",
+                  "exists",
+                  "not_equals",
+                  "same_as",
+                  "not_same_as",
+                  "matches",
+                  "is_empty",
+                  "is_not_empty",
+                  "unique"
+                ]
+              },
+              "value": {},
+              "ref": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "response": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "headers"
+            ],
+            "properties": {
+              "status": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 599
+              },
+              "headers": {
+                "$ref": "#/components/schemas/Conformance/$defs/string_map"
+              },
+              "body": {},
+              "body_file": {
+                "type": "string",
+                "pattern": "^(examples|fixtures)/(?:[A-Za-z0-9][A-Za-z0-9._-]*/)*[A-Za-z0-9][A-Za-z0-9._-]*$"
+              },
+              "events": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Conformance/$defs/normalized_event"
+                }
+              },
+              "last_event_id_after": {
+                "type": "string"
+              }
+            },
+            "not": {
+              "required": [
+                "body",
+                "body_file"
+              ]
+            }
+          },
+          "normalized_event": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "event",
+              "data"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "event": {
+                "type": "string"
+              },
+              "data": {
+                "$ref": "#/components/schemas/Event"
+              }
+            }
+          },
+          "string_map": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "x-teslatlas-limits": {
+    "max_request_body_bytes": 262144,
+    "default_page_size": 100,
+    "max_page_size": 500,
+    "max_history_range_days": 366,
+    "max_dense_range_days": 31,
+    "max_concurrent_requests": 8,
+    "max_sse_connections": 2,
+    "event_replay_retention_seconds": 86400,
+    "idempotency_retention_seconds": 86400
+  },
+  "x-teslatlas-cursors": {
+    "opaque": true,
+    "url_safe": true,
+    "bound_to": [
+      "endpoint",
+      "normalized_query",
+      "principal",
+      "authorization_revision",
+      "snapshot"
+    ],
+    "errors": [
+      "invalid_cursor",
+      "cursor_expired",
+      "cursor_query_mismatch",
+      "cursor_scope_changed"
+    ]
+  },
+  "x-teslatlas-etags": {
+    "validator_of": "representation",
+    "if_none_match_comparison": "weak",
+    "if_match_comparison": "strong",
+    "not_modified_status": 304,
+    "metadata_validators_are_strong": true
+  },
+  "x-teslatlas-versioning": {
+    "current": "1.2.0",
+    "supported": [
+      "1.0.0",
+      "1.1.0",
+      "1.2.0"
+    ],
+    "selection": "highest-compatible-not-newer-than-client",
+    "unsupported_status": 426
+  },
+  "x-teslatlas-deprecation": {
+    "minimum_later_minor_versions": 2,
+    "minimum_days": 180,
+    "headers": [
+      "Deprecation",
+      "Sunset",
+      "Link"
+    ]
+  }
+}

@@ -1,0 +1,522 @@
+{
+  "capability": "metadata.mutable",
+  "case_id": "metadata-if-match",
+  "description": "Mutable metadata uses strong If-Match, increments revisions, and exposes stale or missing preconditions.",
+  "introduced_in": "1.2.0",
+  "kind": "case",
+  "steps": [
+    {
+      "expect": {
+        "body_schema": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_record",
+        "headers_present": [
+          "ETag"
+        ],
+        "status": 200
+      },
+      "reference_response": {
+        "body_file": "examples/metadata-record.json",
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"mC7pL2xW9dR5tN8q\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/metadata/metadata_demo_note_0001",
+        "query": {}
+      },
+      "step_id": "read"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/revision",
+            "value": 2
+          },
+          {
+            "op": "equals",
+            "path": "/body/audit/1/action",
+            "value": "updated"
+          },
+          {
+            "op": "equals",
+            "path": "/body/audit/1/revision",
+            "value": 2
+          },
+          {
+            "op": "same_as",
+            "path": "/body/audit/1/previous_hash",
+            "ref": "read.body.audit.0.new_hash"
+          },
+          {
+            "op": "not_same_as",
+            "path": "/headers/ETag",
+            "ref": "read.headers.ETag"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_record",
+        "headers_present": [
+          "ETag"
+        ],
+        "status": 200
+      },
+      "reference_response": {
+        "body": {
+          "audit": [
+            {
+              "action": "created",
+              "actor_id": "user_demo_owner",
+              "at": "2026-08-30T12:40:00.000Z",
+              "new_hash": "ab2f5c6bd01e7f3a4b2d997f0d7f8b865ede7f0b72d3e4c5a6b7c8d9e0f12345",
+              "previous_hash": null,
+              "revision": 1
+            },
+            {
+              "action": "updated",
+              "actor_id": "user_demo_owner",
+              "at": "2026-08-30T12:45:00.000Z",
+              "new_hash": "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+              "previous_hash": "ab2f5c6bd01e7f3a4b2d997f0d7f8b865ede7f0b72d3e4c5a6b7c8d9e0f12345",
+              "revision": 2
+            }
+          ],
+          "created_at": "2026-08-30T12:40:00.000Z",
+          "created_by": "user_demo_owner",
+          "kind": "note",
+          "metadata_id": "metadata_demo_note_0001",
+          "revision": 2,
+          "target": {
+            "resource_id": "drive_demo_0001",
+            "resource_type": "drive"
+          },
+          "updated_at": "2026-08-30T12:45:00.000Z",
+          "updated_by": "user_demo_owner",
+          "value": {
+            "text": "Updated redacted demonstration trip."
+          },
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"vT4kB8qM2yH6sP9n\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "body": {
+          "value": {
+            "text": "Updated redacted demonstration trip."
+          }
+        },
+        "headers": {
+          "If-Match": "${read.headers.ETag}",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "PUT",
+        "path": "/v1/metadata/metadata_demo_note_0001",
+        "query": {}
+      },
+      "step_id": "update"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 409
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "metadata_revision_conflict"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 409
+      },
+      "reference_response": {
+        "body": {
+          "code": "metadata_revision_conflict",
+          "instance": "/requests/request_metadata_revision_conflict",
+          "request_id": "request_metadata_revision_conflict",
+          "retryable": false,
+          "status": 409,
+          "title": "Metadata revision conflict",
+          "type": "urn:teslatlas:problem:metadata-revision-conflict"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_metadata_revision_conflict"
+        },
+        "status": 409
+      },
+      "request": {
+        "body": {
+          "value": {
+            "text": "Stale value."
+          }
+        },
+        "headers": {
+          "If-Match": "${read.headers.ETag}",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "PUT",
+        "path": "/v1/metadata/metadata_demo_note_0001",
+        "query": {}
+      },
+      "step_id": "stale"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 428
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "precondition_required"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 428
+      },
+      "reference_response": {
+        "body": {
+          "code": "precondition_required",
+          "instance": "/requests/request_precondition_required",
+          "request_id": "request_precondition_required",
+          "retryable": false,
+          "status": 428,
+          "title": "Precondition required",
+          "type": "urn:teslatlas:problem:precondition-required"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_precondition_required"
+        },
+        "status": 428
+      },
+      "request": {
+        "body": {
+          "value": {
+            "text": "Missing precondition."
+          }
+        },
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "PUT",
+        "path": "/v1/metadata/metadata_demo_note_0001",
+        "query": {}
+      },
+      "step_id": "missing-precondition"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/audit/deletion/revision",
+            "value": 3
+          },
+          {
+            "op": "equals",
+            "path": "/body/audit/deletion/action",
+            "value": "deleted"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_tombstone",
+        "headers_present": [
+          "ETag"
+        ],
+        "status": 200
+      },
+      "reference_response": {
+        "body": {
+          "audit": {
+            "deletion": {
+              "action": "deleted",
+              "actor_id": "user_demo_owner",
+              "at": "2026-08-30T12:50:00.000Z",
+              "revision": 3
+            },
+            "history": [
+              {
+                "action": "created",
+                "actor_id": "user_demo_owner",
+                "at": "2026-08-30T12:40:00.000Z",
+                "new_hash": "ab2f5c6bd01e7f3a4b2d997f0d7f8b865ede7f0b72d3e4c5a6b7c8d9e0f12345",
+                "previous_hash": null,
+                "revision": 1
+              },
+              {
+                "action": "updated",
+                "actor_id": "user_demo_owner",
+                "at": "2026-08-30T12:45:00.000Z",
+                "new_hash": "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+                "previous_hash": "ab2f5c6bd01e7f3a4b2d997f0d7f8b865ede7f0b72d3e4c5a6b7c8d9e0f12345",
+                "revision": 2
+              }
+            ]
+          },
+          "kind": "note",
+          "metadata_id": "metadata_demo_note_0001",
+          "target": {
+            "resource_id": "drive_demo_0001",
+            "resource_type": "drive"
+          },
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"hR9mX3cF7pL2wQ6d\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "If-Match": "${update.headers.ETag}",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "DELETE",
+        "path": "/v1/metadata/metadata_demo_note_0001",
+        "query": {}
+      },
+      "step_id": "delete"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/audit/deletion/action",
+            "value": "deleted"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_tombstone",
+        "headers_equal": {
+          "ETag": "${delete.headers.ETag}"
+        },
+        "status": 200
+      },
+      "reference_response": {
+        "body": {
+          "audit": {
+            "deletion": {
+              "action": "deleted",
+              "actor_id": "user_demo_owner",
+              "at": "2026-08-30T12:50:00.000Z",
+              "revision": 3
+            },
+            "history": [
+              {
+                "action": "created",
+                "actor_id": "user_demo_owner",
+                "at": "2026-08-30T12:40:00.000Z",
+                "new_hash": "ab2f5c6bd01e7f3a4b2d997f0d7f8b865ede7f0b72d3e4c5a6b7c8d9e0f12345",
+                "previous_hash": null,
+                "revision": 1
+              },
+              {
+                "action": "updated",
+                "actor_id": "user_demo_owner",
+                "at": "2026-08-30T12:45:00.000Z",
+                "new_hash": "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+                "previous_hash": "ab2f5c6bd01e7f3a4b2d997f0d7f8b865ede7f0b72d3e4c5a6b7c8d9e0f12345",
+                "revision": 2
+              }
+            ]
+          },
+          "kind": "note",
+          "metadata_id": "metadata_demo_note_0001",
+          "target": {
+            "resource_id": "drive_demo_0001",
+            "resource_type": "drive"
+          },
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"hR9mX3cF7pL2wQ6d\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/metadata/metadata_demo_note_0001",
+        "query": {}
+      },
+      "step_id": "get-tombstone"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "is_empty",
+            "path": "/body/items"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/metadata_page",
+        "status": 200
+      },
+      "reference_response": {
+        "body": {
+          "generated_at": "2026-08-30T12:50:01.000Z",
+          "items": [],
+          "next_cursor": null,
+          "resource_type": "metadata_page",
+          "snapshot_revision": "snapshot_demo_metadata_deleted"
+        },
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"qB5nD9sK3xM7vT2p\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/metadata",
+        "query": {
+          "kind": "note"
+        }
+      },
+      "step_id": "list-excludes-tombstone"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/events/0/data/data/audit/deletion/action",
+            "value": "deleted"
+          }
+        ],
+        "event_schema": "urn:teslatlas:protocol:schema:event:1.2.0",
+        "headers_equal": {
+          "Content-Type": "text/event-stream"
+        },
+        "status": 200
+      },
+      "reference_response": {
+        "events": [
+          {
+            "data": {
+              "data": {
+                "audit": {
+                  "deletion": {
+                    "action": "deleted",
+                    "actor_id": "user_demo_owner",
+                    "at": "2026-08-30T12:50:00.000Z",
+                    "revision": 3
+                  },
+                  "history": [
+                    {
+                      "action": "created",
+                      "actor_id": "user_demo_owner",
+                      "at": "2026-08-30T12:40:00.000Z",
+                      "new_hash": "ab2f5c6bd01e7f3a4b2d997f0d7f8b865ede7f0b72d3e4c5a6b7c8d9e0f12345",
+                      "previous_hash": null,
+                      "revision": 1
+                    },
+                    {
+                      "action": "updated",
+                      "actor_id": "user_demo_owner",
+                      "at": "2026-08-30T12:45:00.000Z",
+                      "new_hash": "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+                      "previous_hash": "ab2f5c6bd01e7f3a4b2d997f0d7f8b865ede7f0b72d3e4c5a6b7c8d9e0f12345",
+                      "revision": 2
+                    }
+                  ]
+                },
+                "kind": "note",
+                "metadata_id": "metadata_demo_note_0001",
+                "target": {
+                  "resource_id": "drive_demo_0001",
+                  "resource_type": "drive"
+                },
+                "vehicle_id": "vehicle_demo_alpha"
+              },
+              "event_id": "event_demo_metadata_deleted_0001",
+              "event_type": "metadata.changed",
+              "occurred_at": "2026-08-30T12:50:00.000Z",
+              "resource_id": "metadata_demo_note_0001",
+              "revision": 3,
+              "vehicle_id": "vehicle_demo_alpha"
+            },
+            "event": "metadata.changed",
+            "id": "event_demo_metadata_deleted_0001"
+          }
+        ],
+        "headers": {
+          "Cache-Control": "no-cache",
+          "Content-Type": "text/event-stream",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Conformance-Scenario": "metadata-deleted",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/events",
+        "query": {
+          "event_type": [
+            "metadata.changed"
+          ]
+        }
+      },
+      "step_id": "event-tombstone"
+    }
+  ]
+}

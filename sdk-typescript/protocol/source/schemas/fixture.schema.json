@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:fixture:1.2.0",
+  "title": "Teslatlas deterministic compatibility fixture",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "fixture_version",
+    "scenario_id",
+    "description",
+    "input_observations",
+    "expected",
+    "redaction"
+  ],
+  "properties": {
+    "fixture_version": {
+      "const": "1.0.0"
+    },
+    "scenario_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]+$",
+      "maxLength": 96
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "input_observations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "urn:teslatlas:protocol:schema:observation:1.2.0"
+      }
+    },
+    "expected": {
+      "$ref": "#/$defs/expected"
+    },
+    "redaction": {
+      "$ref": "#/$defs/redaction"
+    }
+  },
+  "$defs": {
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accepted_observation_ids",
+        "duplicate_observation_ids",
+        "ordered_observation_ids",
+        "projection",
+        "quality"
+      ],
+      "properties": {
+        "accepted_observation_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+          }
+        },
+        "duplicate_observation_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+          }
+        },
+        "ordered_observation_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+          }
+        },
+        "projection": {
+          "$ref": "urn:teslatlas:protocol:schema:projection:1.2.0"
+        },
+        "quality": {
+          "$ref": "urn:teslatlas:protocol:schema:data-quality:1.2.0"
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contains_real_identifiers",
+        "contains_secrets",
+        "contains_precise_location",
+        "maximum_coordinate_decimals"
+      ],
+      "properties": {
+        "contains_real_identifiers": { "const": false },
+        "contains_secrets": { "const": false },
+        "contains_precise_location": { "const": false },
+        "maximum_coordinate_decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "resource_type": "vehicle_page",
+  "items": [
+    {
+      "resource_type": "vehicle",
+      "vehicle_id": "vehicle_demo_alpha",
+      "display_name": "Demo Vehicle",
+      "state": "online",
+      "last_observed_at": "2026-08-30T12:00:00.000Z",
+      "revision": 42
+    }
+  ],
+  "next_cursor": null,
+  "snapshot_revision": "snapshot_demo_0042",
+  "generated_at": "2026-08-30T12:00:01.250Z"
+}

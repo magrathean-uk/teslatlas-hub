@@ -1,0 +1,132 @@
+# SDK API reference
+
+## Entry points
+
+Use `@teslatlas/sdk/browser` or `@teslatlas/sdk/node` for `createClient`.
+The root `@teslatlas/sdk` entry point intentionally has no factory; it exports
+public types, safe errors, opaque constructors, and caller-owned interfaces.
+
+```ts
+import { createClient } from "@teslatlas/sdk/node";
+import { asEntityTag } from "@teslatlas/sdk";
+
+const client = await createClient({
+  baseUrl: "https://hub.example.invalid",
+  authorization: () => undefined,
+});
+
+const vehicles = await client.listVehicles({ ifNoneMatch: asEntityTag('W/"saved"') });
+```
+
+`CreateClientOptions` accepts a bootstrap URL, an authorization provider, an
+optional injected Fetch implementation, an optional requested profile, and an
+abort signal. Discovery is public and unauthenticated; authenticated operations
+ask the provider immediately before dispatch.
+
+## Current Hub client
+
+The browser and Node entry points also export `createHubClient`, a dedicated
+adapter for the frozen `hub-http-v1@1.0.0` profile. It requires one fixed HTTPS
+endpoint, the expected Hub UUID, and a caller-owned `HubCredentialStore`.
+Its methods are `discover`, `health`, `readiness`, `claimPairing`,
+`rotateDevice`, `vehicles`, `current`, and `drives`.
+
+`discover` is always unauthenticated and verifies the returned Hub identity
+before an authenticated method can dispatch. `drives` returns either a `page`
+or `notModified`; cursors are bound to the vehicle and millisecond filter set.
+`claimPairing` serializes its compact JSON request as UTF-8 and rejects bodies
+over 4,096 bytes with `ProtocolValidationError` (`HubClaimRequest.size`) before
+dispatching the claim request. Claim extractor failures with status `400`,
+`415`, or `422` must be nonempty `text/plain`; the SDK exposes them as a
+body-free `HubHttpError` with code `hub_http_error` and never retains the
+extractor text. Other error responses use the profile's validated JSON shape.
+`logout()` aborts pending work, invalidates cached identity, waits for SDK-owned
+credential writes already dispatched, and then clears caller credentials. A
+failed clear rejects; it is not retried. `dispose()` aborts pending work and
+permanently closes that client while preserving caller credentials. If a caller
+save was already dispatched, disposal cannot cancel that caller I/O, so callers
+that need deletion must await `logout()` before disposal.
+Neither operation claims to revoke credentials at the Hub.
+
+The Node entry point verifies normal CA/hostname trust and the invitation's
+lowercase DER leaf SHA-256 on the same new TLS connection before it sends the
+claim body. `nodeTls.ca` configures CA bytes for that claim connection; callers
+using a private CA must also configure their caller-owned Fetch transport (or
+Node process trust) for discovery and later reads. A caller-supplied
+`claimTransport` replaces the built-in Node claim transport and must enforce
+the same CA, hostname, connected-leaf pin, and pre-request ordering contract.
+An absent or malformed invitation pin is rejected before network I/O as
+`ProtocolValidationError` with validator `HubInvitation`. Ordinary CA or
+hostname failures are exposed as the bounded `TransportError`; a valid TLS peer
+whose leaf does not match the invitation is `HubTlsPinMismatchError`. None of
+these errors retains the invitation secret or a native TLS cause.
+
+Browser Fetch does not expose the connected certificate. The browser entry
+point therefore throws `HubTlsPinUnavailableError` before discovery or claim
+network I/O unless the caller supplies a pin-capable `claimTransport`, such as
+a trusted native bridge. Normal Web PKI remains enabled for browser reads and
+rotation; the SDK never disables certificate validation or pretends a discovery
+value proves the connected certificate.
+
+## Results and errors
+
+JSON reads return `ReadResult<T>`: either `modified` with a validated `value`,
+or `not-modified` for `304`. Both carry safe `ResponseMetadata`, including the
+HTTP status and validated ETag when supplied. Writes return `WriteResult<T>`.
+
+Safe failures include `ProtocolValidationError`, `ProtocolHttpError`,
+`IncompatibleProtocolError`, `MissingCapabilityError`, `ReplayGapError`,
+`CommandUncertainError`, and `TransportError`. They retain only stable typed
+fields; they do not retain response bodies, authorization values, or arbitrary
+causes.
+
+## Opaque inputs
+
+`asOpaqueCursor`, `asEntityTag`, `asStrongEntityTag`, and
+`asIdempotencyKey` construct the protocol-sensitive opaque inputs accepted by
+the relevant methods. Cursors and ordinary ETags remain opaque; strong ETags
+are required for metadata replacement/deletion; command creation requires a
+caller-supplied UUID idempotency key.
+
+## Client methods
+
+The public client has 20 named methods:
+
+- discovery and vehicles: `discoverHub`, `listVehicles`,
+  `getVehicleCurrentState`;
+- drives, positions, charges, samples, states, and updates:
+  `listVehicleDrives`, `getDrive`, `listDrivePositions`,
+  `listVehicleCharges`, `getCharge`, `listChargeSamples`,
+  `listVehicleStates`, `listVehicleUpdates`;
+- events and data quality: `streamEvents`, `listDataQuality`;
+- commands: `createCommand`, `getCommand`;
+- metadata: `listVehicleMetadata`, `createMetadata`, `getMetadata`,
+  `replaceMetadata`, `deleteMetadata`.
+
+The full per-method compatibility, pagination, event replay, and uncertainty
+semantics are in [compatibility.md](compatibility.md).
+
+## Caller-owned state
+
+The SDK does not implement credential storage. `AuthorizationProvider` supplies
+one complete authorization value per request. `SseCheckpointStore` is also
+caller-owned; scope it to the authorization principal and stable stream filters
+that own the checkpoint.
+
+## Response resource bounds
+
+The rich-protocol discovery, success and problem JSON readers enforce a 16 MiB
+received-byte limit before parsing, including chunked bodies with no reliable
+Content-Length. Cancellation interrupts a stalled read and cancels its upstream
+reader. The current-Hub binding retains its separate 1 MiB response limit.
+
+SSE accepts at most 8 MiB plus 6 bytes per UTF-8 line and 8 MiB of data fields
+per event (including their appended line separators). These are local admission
+bounds; framing bytes can make total event wire input larger.
+Oversize lines/events cancel the reader and terminate the subscription without
+consulting the reconnect policy. IO failures retain the normal caller-owned
+reconnect policy and checkpoints. Parsing applies backpressure within large chunks.
+
+Current-Hub drive pages are admitted only within the requested limit and half-open
+start-time range, in descending start time and ID order, with matching vehicle
+identity. A malformed page is rejected before its cursor is retained.

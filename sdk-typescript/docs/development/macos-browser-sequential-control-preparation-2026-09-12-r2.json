@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.macos_browser_sequential_control_preparation",
+  "status": "prepared_not_run",
+  "date": "2026-09-12",
+  "owner": "Teslatlas TypeScript SDK",
+  "source_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+  "preparation_manifest": {
+    "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/preparation.json",
+    "sha256": "8e0995e4e37a000a568aa39f2c6fb2b0e686326153e023777f96a1f4bc7aca64",
+    "mode": "0600"
+  },
+  "control_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2",
+  "fresh_tuple": {
+    "app_origin": "http://localhost:4175",
+    "hub_endpoint_url_source": "https://localhost:18527/",
+    "hub_endpoint_runner_binding": "https://localhost:18527",
+    "trusted_cdp_url": "http://127.0.0.1:9234",
+    "untrusted_cdp_url": "http://127.0.0.1:9235",
+    "hub_runtime_port": 18527,
+    "trusted_port": 9234,
+    "untrusted_port": 9235
+  },
+  "scripts": {
+    "supervisor.mjs": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/supervisor.mjs",
+      "sha256": "f8ac5f5b50d9defc2402cbf21dd9b451f0b9a4ff5367cae1e1d3af407ecf0f1b",
+      "mode": "0700"
+    },
+    "untrusted-control.mjs": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/untrusted-control.mjs",
+      "sha256": "58f47fa7cc99fca0fd49025c268573814fdc88a38e5002bb2713efcb9b4f712c",
+      "mode": "0700"
+    },
+    "trust-hooks.mjs": {
+      "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/trust-hooks.mjs",
+      "sha256": "f8763bf6d278605a12121aad003f8c4c4e29e81d57b922b59980907ad23f1eb4",
+      "mode": "0700"
+    }
+  },
+  "future_runner_contract": {
+    "trust_mode": "sequential-macos-login-keychain",
+    "trusted_cdp_env": "http://127.0.0.1:9234",
+    "untrusted_cdp_env": "http://127.0.0.1:9235",
+    "certificate_export_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/evidence/imported-hub-ca.pem",
+    "witness_path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/evidence/browser-trust-witness.json",
+    "hook_argv": [
+      "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+      "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/trust-hooks.mjs"
+    ],
+    "runner_order": [
+      "untrusted negative control",
+      "untrusted cleanup",
+      "fresh CA import",
+      "trusted positive control",
+      "trusted cleanup",
+      "exact keychain removal",
+      "exact keychain absence verification"
+    ]
+  },
+  "supervision": {
+    "chrome_executable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "spawn_detached": false,
+    "spawn_shell": false,
+    "stderr": "piped and redacted before persistence",
+    "attach_capture": ["child PID", "lsof", "command", "CDP version"],
+    "teardown_capture": ["error", "exit", "close", "signal", "redacted stderr", "stderr SHA-256"],
+    "child_ownership": "persistent supervisor remains the direct parent across each CDP attach"
+  },
+  "runtime_paths_required_absent_before_run": [
+    "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/control.sock",
+    "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/supervisor-state.json",
+    "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/evidence/browser-control-events.jsonl",
+    "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/untrusted-profile",
+    "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/trusted-profile",
+    "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/evidence/imported-hub-ca.pem",
+    "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/evidence/browser-trust-witness.json",
+    "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r2/evidence/browser-acceptance-receipt.json"
+  ],
+  "preflight": {
+    "4175": "closed",
+    "9234": "closed",
+    "9235": "closed",
+    "chrome_started": false,
+    "hub_contacted": false,
+    "keychain_touched": false,
+    "certificate_material_created": false,
+    "browser_credential_minted": false,
+    "prior_tuple_reused": false,
+    "retry_performed": false
+  },
+  "acceptance_boundary": "This is static preparation only. It is not evidence of Chrome launch, CDP attach, certificate trust, Hub reachability, SDK browser-route success, keychain cleanup, or live acceptance."
+}

@@ -1,0 +1,22 @@
+{
+  "command_id": "command_demo_0001",
+  "vehicle_id": "vehicle_demo_alpha",
+  "command": "set_charge_limit",
+  "command_class": "charging",
+  "state": "completed",
+  "created_at": "2026-08-30T12:00:00.100Z",
+  "updated_at": "2026-08-30T12:00:00.100Z",
+  "expires_at": "2026-08-30T12:05:00.000Z",
+  "attempt_count": 0,
+  "retry_policy": "state_verified",
+  "audit": [
+    {
+      "state": "accepted",
+      "at": "2026-08-30T12:00:00.100Z",
+      "actor_id": "service_hub"
+    }
+  ],
+  "links": {
+    "self": "/v1/commands/command_demo_0001"
+  }
+}

@@ -1,0 +1,122 @@
+{
+  "name": "@teslatlas/sdk",
+  "version": "2026.36.2",
+  "description": "Private protocol-derived Teslatlas client for browser and Node.js development",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "packageManager": "npm@12.1.0",
+  "teslatlasSupport": {
+    "policy": "evidence-only",
+    "reproducibilityToolchain": {
+      "node": "26.10.0",
+      "npm": "12.1.0"
+    },
+    "acceptedRuntimeEvidence": [
+      {
+        "os": "macOS 27",
+        "architecture": "arm64",
+        "node": "26.7.0",
+        "npm": "11.19.0",
+        "browser": "Chrome 153.0.8010.52"
+      }
+    ],
+    "declaredFloors": {
+      "node": null,
+      "npm": null,
+      "browser": null
+    }
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "26.10.0",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "12.1.0",
+      "onFail": "error"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "import": "./dist/browser.js",
+      "default": "./dist/browser.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js",
+      "default": "./dist/node.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "docs/api.md",
+    "docs/architecture.md",
+    "docs/compatibility.md",
+    "docs/docker.md",
+    "docs/package-lifecycle.md",
+    "docs/product-versioning.md",
+    "docs/protocol-dependency-gate.md",
+    "LICENSE",
+    "README.md",
+    "tools/node-image-lock.json",
+    "tools/f3-f6-catalog.schema.json",
+    "tools/package-admission.schema.json",
+    "tools/platform-support.json"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "example:browser": "npm run build && node examples/browser/serve.mjs",
+    "example:node": "npm run build && node examples/node.mjs",
+    "example:hub:node": "node examples/hub/node.mjs",
+    "example:hub:browser": "node examples/hub/serve.mjs",
+    "gate:docker-package": "node scripts/run-docker-package-gate.mjs",
+    "gate:final-hub-consumers": "node scripts/run-final-hub-consumers.mjs",
+    "gate:package-lifecycle": "node scripts/package-lifecycle-gate.mjs",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "pack:check": "npm run build && node scripts/check-pack.mjs",
+    "protocol:check": "node scripts/check-protocol.mjs",
+    "protocol:generate": "node scripts/generate-protocol.mjs",
+    "protocol:sync": "node scripts/sync-protocol.mjs",
+    "pretest:unit": "npm run build",
+    "test": "npm run test:unit && npm run test:conformance && npm run test:protocol && npm run test:scripts",
+    "test:browser": "vitest run --project browser-conformance",
+    "test:hub:node": "node scripts/test-hub-node.mjs",
+    "test:hub:browser": "node scripts/test-hub-browser.mjs",
+    "test:conformance": "vitest run --project node-conformance --project browser-conformance",
+    "test:protocol": "vitest run --project protocol-cases",
+    "test:package": "node scripts/test-clean-package.mjs",
+    "test:scripts": "node --test scripts/test-npm-pack-report.mjs",
+    "test:unit": "vitest run --project unit",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run protocol:check && npm run build && npm run test && npm run example:node && npm run pack:check && npm run test:package"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@types/node": "26.6.3",
+    "@vitest/browser-playwright": "5.0.2",
+    "openapi-typescript": "7.13.0",
+    "playwright": "1.63.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.1",
+    "vitest": "5.0.2"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}

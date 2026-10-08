@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "kind": "d1_typescript_component_manifest_handoff",
+  "status": "source_package_ready_runtime_pending",
+  "verified_at": "2026-09-09",
+  "owner": "teslatlas-sdk-typescript",
+  "source": {
+    "repository": "teslatlas-sdk-typescript",
+    "remote": "https://github.com/magrathean-uk/teslatlas-sdk-typescript.git",
+    "head": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+    "working_tree": "dirty; unrelated paths are preserved; this handoff is excluded from the frozen snapshot",
+    "product_version": "2026.36.2",
+    "profile_id": "hub-http-v1@1.0.0",
+    "profile_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "source_file_count": 254,
+    "source_manifest_sha256": "1f4e2ad068de14285f7fbe9f462fde6ee384ff992cce17ff13cbfea8d53a53f8",
+    "source_manifest_algorithm": "bootstrap-companions.py manifest schema_version=1; compact sorted-key SHA-256 of path, file SHA-256, byte size and executable-bit records; source exclusions follow the Hub companion manifest rules",
+    "frozen_snapshot": {
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/frozen-source",
+      "manifest_path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/local-sources.json",
+      "manifest_sha256": "4264d380a1d4f8e9ae8bb5d1b76c99bcbf4da89eb89906f79f40c10929d80067",
+      "manifest_format": "bootstrap-companions.py manifest schema_version=1",
+      "component": "sdk-typescript",
+      "file_count": 254,
+      "source_sha256": "1f4e2ad068de14285f7fbe9f462fde6ee384ff992cce17ff13cbfea8d53a53f8",
+      "excluded_from_snapshot": "docs/development/d1-component-manifest-handoff-2026-09-09.json",
+      "owner_only": true,
+      "read_only_after_freeze": true,
+      "verified_independently": "Two source_manifest_for content rechecks matched the ordered 254-file record and source SHA-256 after rebinding only the manifest path to the frozen snapshot."
+    }
+  },
+  "payload": {
+    "kind": "npm_library_developer_resource",
+    "service": false,
+    "service_manager_payload": false,
+    "package_filename": "teslatlas-sdk-2026.36.2.tgz",
+    "package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "package_member_count": 81,
+    "package_archive_retention": {
+      "path": "/Users/bolyki/.codex/artifacts/teslatlas-sdk-typescript-d1-20260909/teslatlas-sdk-2026.36.2.tgz",
+      "sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "owner_only": true,
+      "byte_match_verified": true
+    },
+    "entry_sha256": {
+      "dist/node.js": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9",
+      "dist/browser.js": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e"
+    },
+    "runtime_floor": {
+      "node": "26.7.0",
+      "npm": "11.19.0",
+      "typescript": "5.9.3",
+      "browser_consumers": "caller-owned browser with normal Fetch, CORS and TLS validation"
+    },
+    "public_exports": [
+      "@teslatlas/sdk",
+      "@teslatlas/sdk/node",
+      "@teslatlas/sdk/browser"
+    ],
+    "artifact_verification": "The retained local npm archive reproduced the recorded 81-member package SHA-256 and entry hashes. This handoff did not rebuild the SDK, start a consumer, or rerun the full package suite."
+  },
+  "selectors": [
+    {
+      "id": "debian13-arm64-node-developer-resource",
+      "status": "source_package_supported_primary_receipt_available",
+      "mode": "developer_resource",
+      "runtime": {
+        "os": "Debian 13 trixie",
+        "architecture": "aarch64",
+        "node": "26.7.0",
+        "npm": "11.19.0"
+      },
+      "artifact": {
+        "kind": "npm_library_archive",
+        "package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "entry_sha256": "83bb4403af395dd1d0b88c3ce9e4b1faf0c01177029323a69e955cd09c2de1c9"
+      },
+      "service_ownership": "The SDK is imported by a caller-owned Node process; it owns no service, listener, data directory or service-manager registration.",
+      "target": "A fresh caller-owned consumer root; do not install the SDK as Hub, Viewer, Home Assistant or Edge service.",
+      "evidence": "Primary packed Debian ARM64 Node consumer and exact package identity are recorded in the SDK STATUS; this selector is not installed-service acceptance.",
+      "acceptance_receipt": "Verify archive/member/entry identity, install into an isolated consumer root, import the public Node entry, record caller process ownership and remove only that consumer root."
+    },
+    {
+      "id": "debian13-arm64-browser-developer-resource",
+      "status": "source_package_supported_primary_receipt_available",
+      "mode": "developer_resource",
+      "runtime": {
+        "os": "Debian 13 trixie",
+        "architecture": "aarch64",
+        "node": "26.7.0",
+        "playwright": "1.62.1",
+        "chromium": "152.0.7977.82"
+      },
+      "artifact": {
+        "kind": "npm_library_archive",
+        "package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+        "entry_sha256": "7969c32c20f4598c78b78e668cc72642ca78c130e93f97681658e3a8f2738e8e"
+      },
+      "service_ownership": "The SDK supplies browser modules only; the browser, origin, TLS trust, CORS policy and hosting process remain caller-owned.",
+      "target": "A fresh caller-owned browser consumer; no SDK listener or browser profile is retained by the aggregate component.",
+      "evidence": "Primary Viewer/browser and installed Viewer data-state receipts bind the package identity, but do not promote this selector to a complete installed matrix cell.",
+      "acceptance_receipt": "Verify archive/member/entry identity, load the browser entry from an isolated consumer, record normal TLS/CORS and caller process ownership, then remove only the consumer artifacts."
+    },
+    {
+      "id": "macos13-arm64-developer-node-browser",
+      "status": "source_package_supported_runtime_pending",
+      "mode": "developer_resource",
+      "runtime": {
+        "os": "macOS 13.7.4",
+        "architecture": "arm64",
+        "node": "26.7.0",
+        "npm": "11.19.0",
+        "browser": "caller-selected"
+      },
+      "artifact": {
+        "kind": "npm_library_archive",
+        "package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c"
+      },
+      "service_ownership": "Developer-resource use only; no LaunchAgent, daemon, listener, pairing store or Hub administration service is supplied.",
+      "target": "Fresh caller-owned Node/browser consumer root after the selected host supplies the pinned runtime.",
+      "acceptance_receipt": "Source/package identity, public imports, caller-owned process lifecycle and cleanup; any later installed matrix proof is separately runner-owned."
+    },
+    {
+      "id": "debian13-amd64-developer-node-browser",
+      "status": "source_package_supported_runtime_pending",
+      "mode": "developer_resource",
+      "runtime": {
+        "os": "Debian 13 trixie",
+        "architecture": "x86_64",
+        "node": "26.7.0",
+        "npm": "11.19.0",
+        "browser": "caller-selected"
+      },
+      "artifact": {
+        "kind": "npm_library_archive",
+        "package_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c"
+      },
+      "service_ownership": "Developer-resource use only; no systemd unit, daemon, listener, pairing store or Hub administration service is supplied.",
+      "target": "Fresh authorized consumer host required; no retained or quarantined guest is substituted.",
+      "acceptance_receipt": "Source/package identity, public imports, caller-owned process lifecycle and cleanup; installed Node/browser matrix evidence remains pending."
+    },
+    {
+      "id": "any-installed-hub-service",
+      "status": "blocked_not_a_service",
+      "mode": "service",
+      "runtime": {
+        "os": "all",
+        "architecture": "all"
+      },
+      "artifact": {
+        "kind": "none",
+        "package_sha256": null
+      },
+      "service_ownership": "Blocked: the TypeScript SDK is a library/developer resource and does not own a service payload, service manager registration, listener, Hub storage, collector, pairing administration or aggregate activation.",
+      "blocked_reason": "Do not select the SDK as a Hub/Viewer/Home Assistant/Edge service or infer installed acceptance from the package archive.",
+      "acceptance_receipt": "Not applicable; service acceptance belongs to the owning product and the Hub aggregate runner."
+    }
+  ],
+  "ownership": {
+    "code": "The SDK owns its public client, generated types, validators, package metadata, examples, tests and developer documentation.",
+    "credentials": "Credentials, invitations, bearer tokens, trust material and browser session state remain caller-owned and are never persisted by the SDK package.",
+    "data": "The SDK owns no Hub database, TeslaMate source, vehicle data store, collector spool, pairing registry or durable telemetry state.",
+    "service": "The SDK owns no daemon, LaunchAgent, systemd unit, Docker service, listener or service-manager registration. Hub owns aggregate selection and activation.",
+    "process": "The importing Node process, browser page, origin and any test server are caller-owned; SDK process exit is not a service lifecycle receipt.",
+    "removal": "Remove only the SDK archive/package from the selected consumer root; preserve Hub, Viewer, Home Assistant, Edge, credentials, databases and unrelated listeners."
+  },
+  "lifecycle": {
+    "select": "Bind the developer-resource selector to the exact source manifest, profile identity, package SHA-256, member count and entry hashes before staging.",
+    "install": "Copy the retained archive into a fresh caller-owned consumer root, verify its digest and package surface, and install without changing a service or sibling component.",
+    "start": "There is no SDK start action: the caller imports the root, Node or browser entry and owns the process or page.",
+    "restart": "Restart only the caller-owned consumer process or page; no SDK supervisor, listener or service state exists to restart.",
+    "upgrade": "Retain the prior consumer package until the new archive and public imports are verified; rollback changes only the caller-owned consumer root.",
+    "uninstall": "Remove only the SDK package and consumer-owned generated output; do not purge service data, credentials, Hub state or browser profiles.",
+    "runtime": "Hub endpoint, TLS/CORS, browser hosting, credential lifecycle and any live-read receipt are external caller/Hub responsibilities."
+  },
+  "receipt_schema": {
+    "required_fields": [
+      "selector_id",
+      "status",
+      "source_head",
+      "source_manifest_sha256",
+      "profile_identity_if_used",
+      "package_archive_sha256_and_member_count",
+      "node_browser_entry_hashes",
+      "runtime_os_architecture_and_versions",
+      "consumer_root_ownership_and_permissions",
+      "public_import_and_api_result",
+      "caller_process_or_page_lifecycle",
+      "service_and_listener_non_ownership_check",
+      "cleanup_and_unrelated_state_check",
+      "redaction_and_secret_presence_check",
+      "limits_and_unverified_acceptance_boundaries"
+    ],
+    "secret_policy": "Never record invitation URIs, bearer/access tokens, device identifiers, private keys, certificate or CA bytes, browser profile databases, raw Hub response bodies, opaque cursors, or credential-bearing headers. Record only redacted statuses, digests, bounded counts, process results and listener ownership facts.",
+    "acceptance_rule": "This source handoff, frozen snapshot and archive check establish only a selectable developer resource. They do not promote any selector to installed service, live Hub, browser, Docker, passive-parity or cross-platform acceptance."
+  },
+  "redaction_limits": [
+    "The external manifest, frozen snapshot and package archive are owner-only local artifacts and are not repository publication artifacts.",
+    "The handoff records public artifact identities and ownership boundaries only; it contains no credential, invitation, trust secret, browser state, vehicle identity or raw response data.",
+    "No Hub, Viewer, Home Assistant or Edge service was edited, started, restarted, stopped or inspected as part of this handoff.",
+    "No Docker image, native package, service registration, installed target or live runtime receipt is claimed."
+  ],
+  "hub_action_requested": "Verify the external owner-only SDK manifest and frozen snapshot twice, verify the retained 81-member package archive and exact profile/package identities, then bind the SDK only as an optional developer resource in the aggregate D1 manifest. Keep service selectors blocked and do not mutate a host, service, credential store or sibling component from this handoff."
+}

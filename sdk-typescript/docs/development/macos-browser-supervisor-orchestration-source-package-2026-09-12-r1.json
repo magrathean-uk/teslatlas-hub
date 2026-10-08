@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.macos_browser_supervisor_orchestration_source_package",
+  "date": "2026-09-12",
+  "state": "source_repaired_receipt_freshness_browser_free_fixtures_passed",
+  "last_revalidated": "2026-09-18",
+  "repair_boundary": "Hub review identified three fail-closed freshness/sequencing requirements across two review rounds. This receipt records source-only repairs and browser-free regression coverage; it authorizes no browser, Hub, credential, keychain, SDK API or fresh live fixture runtime and does not reopen r7.",
+  "authority": "This package prepares a future one-parent sequential browser run only. It authorizes no Chrome, Hub, credential, keychain, SDK API or fresh live fixture runtime and does not reopen r7.",
+  "implementation": {
+    "orchestrator": {
+      "path": "scripts/browser-control-orchestrator.mjs",
+      "sha256": "7232768d3a96f49fdf2b831b03ca95929c83ca4d6c35ccc24c7d512cf07034ff"
+    },
+    "browser_free_regression": {
+      "path": "scripts/test-browser-control-orchestrator.mjs",
+      "sha256": "3c2dadf277706e6250440b3cf00ab33d4d80334d4e3c8d0244b21b22b4ed6ac9"
+    }
+  },
+  "bound_reviewed_hooks": {
+    "preflight_template": {
+      "path": "scripts/browser-control-preflight-template.mjs",
+      "sha256": "12f9bf6015f17e4300d91e121117db67999104bb3bfbe540b55e69fe1dee3f78",
+      "correction_receipt": "docs/development/macos-browser-control-preflight-template-correction-v2-2026-09-12.json",
+      "correction_receipt_sha256": "d14f0f9a404a9cd83996779f45f0e9eecbcced8dc74c70c6f9e10cf98b475bf1"
+    },
+    "sequential_trust_sequence": {
+      "path": "scripts/browser-trust-sequence.mjs",
+      "sha256": "920fc1bf7c33fdaa06ff438035aedc9c4ad2b7c00f03b174ff54a5d64ca102e9",
+      "mode": "sequential-macos-login-keychain"
+    },
+    "browser_runner": {
+      "path": "scripts/browser-hub-runner.mjs",
+      "sha256": "befe79ba0b97b07a38d9ea9f8492985ff31c527a11405a10b7a3b44ceab02004",
+      "trust_mode_binding": "orchestrator injects TESLATLAS_BROWSER_TRUST_MODE=sequential-macos-login-keychain"
+    }
+  },
+  "orchestration_contract": {
+    "invocation": "node scripts/browser-control-orchestrator.mjs <fresh-config.json>",
+    "parent_ownership": "The orchestrator process directly spawns and awaits supervisor, each control request, the SDK runner and cleanup commands with detached=false and shell=false.",
+    "readiness": "The parent waits for the supervisor state file to report serving before controls or the runner start.",
+    "cleanup": "Every configured cleanup command runs in order after success or failure even if an earlier command closes the supervisor; every attempt and failure is recorded, then the parent verifies supervisor close and escalates only after the bounded close wait.",
+    "lifecycle_capture": "Every direct child captures error, stdout, stderr, exit, close and signal events. Owner-only stdout/stderr files are persisted under evidence/orchestration, and the SDK runner output is also written to the reviewed runner.stdout/runner.stderr preflight files.",
+    "freshness": "The optional receipt path and orchestration capture directory are checked absent before preflight can mutate the control root; preflight then runs in the same parent before the supervisor starts.",
+    "failure_policy": "A failed control or SDK runner stops forward phases, still runs every configured cleanup command in order, returns status failed for any cleanup failure and performs no retry."
+  },
+  "browser_free_verification": {
+    "invocation": "node scripts/test-browser-control-orchestrator.mjs",
+    "runtime": {
+      "node": "v26.7.0",
+      "path": "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+      "npm": "11.19.0"
+    },
+    "status": "passed",
+    "cases": [
+      "stale-receipt-before-preflight-mutation",
+      "stale-capture-before-preflight-mutation",
+      "success",
+      "supervisor-failure",
+      "runner-failure",
+      "control-failure",
+      "cleanup-sequence-after-supervisor-close"
+    ],
+    "assertions": [
+      "direct children share the orchestrator parent PID",
+      "detached=false and shell=false are retained",
+      "server and client exit/close/signal lifecycle is captured",
+      "runner stdout/stderr are persisted to preflight output files",
+      "failure phases skip forward work and still execute cleanup",
+      "stale orchestration capture is rejected before preflight runner-output mutation",
+      "stale optional receipt is rejected before preflight, capture or child mutation",
+      "every cleanup command runs in order after an earlier cleanup closes the supervisor",
+      "every cleanup attempt and failure is recorded before supervisor closure verification",
+      "shutdown cleanup is awaited before forced supervisor termination",
+      "temporary fixture roots are removed"
+    ],
+    "browser_started": false,
+    "hub_contacted": false,
+    "keychain_touched": false,
+    "credential_used": false,
+    "fresh_live_fixture": false
+  },
+  "future_config_boundary": {
+    "control_root": "fresh owner-created canonical directory",
+    "supervisor": "exact reviewed fresh-root supervisor.mjs serve command",
+    "controls": "exact fresh-root control commands, supplied as shell-free argv arrays",
+    "runner": "existing SDK browser runner with fresh private environment paths",
+    "cleanup": "exact fresh-root cleanup/shutdown commands, supplied as shell-free argv arrays",
+    "r7_reuse": false,
+    "new_runtime_authorized": false
+  },
+  "proof_boundary": "This proves only source-level orchestration and fake process lifecycle behavior. It is not browser, SDK API, TLS, CA import, CORS, Hub API, package journey, service, release, production, vehicle or user acceptance evidence."
+}

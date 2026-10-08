@@ -1,0 +1,27 @@
+{
+  "capabilities": [
+    "query.vehicles",
+    "query.history",
+    "events.sse",
+    "data-quality",
+    "commands.async",
+    "metadata.mutable"
+  ],
+  "cases": [
+    "discovery-version-negotiation",
+    "cursor-pagination",
+    "etag-conditional-get",
+    "problem-details",
+    "sse-last-event-id",
+    "sse-principal-visibility",
+    "sse-empty-id-reset",
+    "sse-terminal-204",
+    "documented-limits",
+    "command-idempotency",
+    "metadata-if-match",
+    "deprecation-sunset"
+  ],
+  "extends": "1.1.0",
+  "kind": "profile",
+  "protocol_version": "1.2.0"
+}

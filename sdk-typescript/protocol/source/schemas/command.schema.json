@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:command:1.2.0",
+  "title": "Teslatlas asynchronous command contract",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/command_request"
+    },
+    {
+      "$ref": "#/$defs/command_job"
+    },
+    {
+      "$ref": "#/$defs/command_audit_event"
+    }
+  ],
+  "$defs": {
+    "command_name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,63}$"
+    },
+    "command_class": {
+      "enum": [
+        "climate",
+        "charging",
+        "access",
+        "nuisance",
+        "vehicle_state"
+      ]
+    },
+    "command_state": {
+      "enum": [
+        "accepted",
+        "authorising",
+        "sent",
+        "provider_acknowledged",
+        "verifying",
+        "succeeded",
+        "failed",
+        "indeterminate",
+        "expired",
+        "cancelled"
+      ]
+    },
+    "command_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vehicle_id",
+        "command",
+        "command_class",
+        "parameters",
+        "expected_state",
+        "expires_at"
+      ],
+      "properties": {
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "command": {
+          "$ref": "#/$defs/command_name"
+        },
+        "command_class": {
+          "$ref": "#/$defs/command_class"
+        },
+        "parameters": {
+          "type": "object",
+          "maxProperties": 32
+        },
+        "expected_state": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 32
+        },
+        "expires_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "confirmation": {
+          "type": "object",
+          "description": "Required when the discovered command descriptor sets confirmation_required to true.",
+          "additionalProperties": false,
+          "required": [
+            "confirmed_at",
+            "confirmed_by"
+          ],
+          "properties": {
+            "confirmed_at": {
+              "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+            },
+            "confirmed_by": {
+              "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/actor_id"
+            }
+          }
+        }
+      }
+    },
+    "command_job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command_id",
+        "vehicle_id",
+        "command",
+        "command_class",
+        "state",
+        "created_at",
+        "updated_at",
+        "expires_at",
+        "attempt_count",
+        "retry_policy",
+        "audit",
+        "links"
+      ],
+      "properties": {
+        "command_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "command": {
+          "$ref": "#/$defs/command_name"
+        },
+        "command_class": {
+          "$ref": "#/$defs/command_class"
+        },
+        "state": {
+          "$ref": "#/$defs/command_state"
+        },
+        "created_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "updated_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "expires_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "attempt_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        },
+        "retry_policy": {
+          "enum": [
+            "none",
+            "state_verified"
+          ]
+        },
+        "result": {
+          "type": "object"
+        },
+        "error": {
+          "$ref": "urn:teslatlas:protocol:schema:error:1.2.0"
+        },
+        "audit": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/command_audit_event"
+          }
+        },
+        "links": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "self"
+          ],
+          "properties": {
+            "self": {
+              "type": "string",
+              "format": "uri-reference"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "succeeded"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "result"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "required": [
+              "error"
+            ]
+          }
+        }
+      ]
+    },
+    "command_audit_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "at",
+        "actor_id"
+      ],
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/command_state"
+        },
+        "at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "actor_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/actor_id"
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    }
+  }
+}

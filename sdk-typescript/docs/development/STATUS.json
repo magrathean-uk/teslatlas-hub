@@ -1,0 +1,28 @@
+{
+  "schema_version": 4,
+  "product": "TypeScript SDK",
+  "updated_at": "2026-09-22T10:00:00Z",
+  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
+  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
+  "planning_state": "COMPLETE",
+  "current_goal": null,
+  "current_worker": null,
+  "source": {
+    "accepted_implementation_lineage": "3644ad8c0a7bf10c01e524c050026ead898d47e5",
+    "main_before_cleanup_metadata": "71340531eeacfca475ca5216cd76a9b5986050a5",
+    "branch": "main",
+    "remote_ref": "refs/heads/main",
+    "publication": "SOURCE_PUBLISHED"
+  },
+  "local_state": {
+    "build_outputs": "REMOVED",
+    "candidate_artifacts": "REMOVED",
+    "external_receipts": "REMOVED",
+    "runtime": "NONE"
+  },
+  "evidence_summary": "Historical: the exact packed candidate consumed non-empty history across restart and matched Swift semantic output.",
+  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
+  "remaining": [
+    "No packed candidate or dependency tree remains; registry publication remains deferred."
+  ]
+}

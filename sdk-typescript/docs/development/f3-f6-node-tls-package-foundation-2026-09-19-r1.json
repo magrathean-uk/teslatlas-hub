@@ -1,0 +1,185 @@
+{
+  "schema_version": 1,
+  "receipt_id": "f3-f6-node-tls-package-foundation-2026-09-19-r1",
+  "generated_at": "2026-09-19T12:17:05Z",
+  "product": "Teslatlas TypeScript SDK",
+  "result": "SOURCE_AND_PACKAGE_FOUNDATION_PASS_RUNTIME_PENDING",
+  "scope": [
+    "TS-02 invitation tlsPin correction",
+    "TS-01 public current-Hub boundary preservation",
+    "TS-03 deterministic unpublished package and clean native consumer lifecycle"
+  ],
+  "source": {
+    "branch": "main",
+    "head": "8c225547d29c123cc6136779187395643b8c6f0a",
+    "working_tree": "dirty and uncommitted for coordinator review",
+    "preexisting_changes_preserved": [
+      "docs/development/PLAN.md",
+      "docs/development/STATUS.json",
+      ".DS_Store",
+      ".serena/"
+    ],
+    "commit_or_push_performed": false
+  },
+  "independent_review": {
+    "reviewer": {
+      "model": "GPT-5.6 Sol",
+      "reasoning": "high"
+    },
+    "source_baseline": "main at 8c225547d29c123cc6136779187395643b8c6f0a",
+    "reviewed_candidate": "the uncommitted working-tree candidate described by this receipt",
+    "initial_findings": [
+      {
+        "finding": "A process-level NODE_TLS_REJECT_UNAUTHORIZED=0 setting could suppress implicit certificate authorization.",
+        "closure": "The native claim transport now sets rejectUnauthorized=true explicitly, and a focused mismatch test proves no claim bytes are sent under the hostile setting."
+      },
+      {
+        "finding": "The browser example accepted an unbound raw credential that could be retained and reused across Hub endpoints.",
+        "closure": "The example now requires an endpoint- and Hub-bound credential envelope, validates both bindings before use, clears the control after valid ingestion, and includes a cross-Hub zero-request regression source."
+      },
+      {
+        "finding": "Native response conversion could throw outside the request promise for null-body or invalid HTTP statuses.",
+        "closure": "Response conversion is guarded, 204/205/304 use a null body, out-of-range statuses reject through the typed path, and the focused suite covers all cases."
+      }
+    ],
+    "all_findings_closed": true,
+    "delta_check_scope": "Read-only recheck of the three closures, direct 205 coverage, and this receipt; unchanged suites were not rerun.",
+    "delta_verdict": "ACCEPT",
+    "chrome_rerun": false,
+    "chrome_note": "The updated cross-Hub browser regression remains added and typechecked but was not run because the shared Chrome lane was held."
+  },
+  "canonical_contract": {
+    "protocol_head_read_only": "1e46a240826bb8e88e409bac6f2902e08c7785c5",
+    "profile": "hub-http-v1@1.0.0",
+    "profile_manifest_sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+    "vendored_profile_directory_matches_canonical": true,
+    "trust_rule": "normal CA and hostname verification plus SHA-256 of the connected DER leaf before claim request bytes"
+  },
+  "compatibility_decision": {
+    "node": "The Node entry point uses a fresh non-pooled HTTPS connection, explicitly requires certificate authorization even if the process disables TLS verification, retains CA and hostname verification, checks the invitation DER leaf SHA-256 in checkServerIdentity, and only then sends the claim body. nodeTls.ca and an explicit caller-owned claimTransport are supported; no global TLS setting is changed.",
+    "browser": "Ordinary browser Fetch cannot inspect the connected certificate. claimPairing now fails with hub_tls_pin_unavailable before discovery or claim I/O unless an embedding supplies a pin-capable claimTransport. Browser reads and rotation retain normal Web PKI; the example requires an endpoint- and Hub-bound caller-owned credential envelope and clears the control after ingestion.",
+    "api": "Existing factories, HubClient methods, credential stores, and Fetch injection remain. The security correction changes previously permissive browser claim behavior to fail closed and adds optional claimTransport and nodeTls inputs plus typed pin errors."
+  },
+  "security_evidence": {
+    "synthetic_local_tls_success": true,
+    "synthetic_leaf_pin_mismatch_rejected": true,
+    "process_tls_disable_override_rejected": true,
+    "http_claim_requests_observed_on_mismatch": 0,
+    "claim_secret_present_in_mismatch_error": false,
+    "browser_missing_pin_transport_network_requests": 0,
+    "browser_cross_hub_credential_regression": "ADDED_NOT_RUN_SHARED_CHROME_LANE",
+    "real_credentials_or_private_handoffs_used": false,
+    "test_certificate_and_key": "repository-local synthetic fixture only"
+  },
+  "toolchain": {
+    "node": "v26.7.0",
+    "npm": "11.19.0",
+    "host": "Apple silicon macOS"
+  },
+  "validation": [
+    {
+      "command": "npm run lint",
+      "result": "PASS",
+      "detail": "140 files"
+    },
+    {
+      "command": "npm run typecheck",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run protocol:check",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run build",
+      "result": "PASS"
+    },
+    {
+      "command": "vitest run tests/unit/node-hub-pinning.test.ts",
+      "result": "PASS",
+      "detail": "1 file, 6 tests; includes successful pin validation, hostile process TLS override rejection before claim bytes, and safe 204/205/304 plus out-of-range status rejection"
+    },
+    {
+      "command": "vitest unit excluding hub-consumer-example.test.ts",
+      "result": "PASS",
+      "detail": "34 files, 283 tests on the final source snapshot; no Chrome launched"
+    },
+    {
+      "command": "vitest unit tests/unit/hub-consumer-example.test.ts",
+      "result": "NOT_RUN_SHARED_HEAVY_LANE",
+      "detail": "The updated cross-Hub credential-envelope case is typechecked but needs a later Chrome lane. An earlier pre-final full-unit invocation launched the prior local headless browser case and closed its browser/server cleanly."
+    },
+    {
+      "command": "vitest node-conformance",
+      "result": "PASS",
+      "detail": "1 file, 12 tests"
+    },
+    {
+      "command": "vitest protocol-cases",
+      "result": "PASS",
+      "detail": "1 file, 52 tests"
+    },
+    {
+      "command": "npm run example:node",
+      "result": "PASS"
+    },
+    {
+      "command": "npm run pack:check",
+      "result": "PASS",
+      "detail": "83 package members"
+    },
+    {
+      "command": "npm run test:package",
+      "result": "PASS",
+      "detail": "clean and stale source builds produced byte-identical archives; packed declaration checks and clean npm install/import/reinstall/removal passed"
+    }
+  ],
+  "package": {
+    "name": "@teslatlas/sdk",
+    "version": "2026.36.2",
+    "private_unpublished": true,
+    "archive_sha256": "42348d3688c5a723bd154e3c1e8172bc07b20d1bf28944818ccfdbf3d97891f7",
+    "member_count": 83,
+    "clean_install_import": "PASS",
+    "same_candidate_reinstall": "PASS",
+    "removal_and_failed_post_removal_import": "PASS",
+    "predecessor_version_update": "NOT_RUN_NO_PREDECESSOR_ARTIFACT_SELECTED"
+  },
+  "format_boundary": {
+    "task_owned_files": "PASS",
+    "git_diff_check": "PASS",
+    "full_repository_format_check": "PREEXISTING_FAILURE",
+    "untouched_paths_reported_by_biome": [
+      "compatibility/hub.json",
+      "docs/development/d1-component-manifest-handoff-2026-09-09.json",
+      "docs/development/macos-browser-sdk-consumer-proposal-2026-09-12.json",
+      "docs/development/macos-browser-sequential-runtime-failure-2026-09-12-r2.json",
+      "docs/development/macos-browser-trust-isolation-correction-2026-09-12.json",
+      "docs/development/source-upload-2026-09-19.json"
+    ]
+  },
+  "cleanup": {
+    "temporary_package_consumers_removed": true,
+    "temporary_archives_removed": true,
+    "task_owned_browser_and_fixture_servers_running": false,
+    "accepted_historical_receipts_modified": false
+  },
+  "remaining_dependencies": [
+    "Final F1 Hub artifact runtime evidence for Node pin success/mismatch and recovery",
+    "Real-browser Web PKI/CORS/read/rotation evidence against the final Hub; raw leaf-pin pairing remains unavailable to ordinary browser Fetch",
+    "Run the updated local cross-Hub browser credential-envelope regression when the shared Chrome lane is available",
+    "ARM64 Docker package/development consumer lifecycle while the shared heavy lane is available",
+    "Declared Node/browser/OS floor evidence beyond the accepted Node 26.7.0 and Chrome 153 on macOS 27 tuple",
+    "Update from an explicitly selected predecessor package artifact",
+    "Hub six-source catalog integration, F5 real-input semantics, and F7 combined installed acceptance"
+  ],
+  "excluded": [
+    "App",
+    "Viewer",
+    "x86/x86_64/amd64/Intel",
+    "Azure",
+    "Docker and VM execution",
+    "production and public ingress",
+    "CI, release, tag, npm publication, commit and push"
+  ]
+}

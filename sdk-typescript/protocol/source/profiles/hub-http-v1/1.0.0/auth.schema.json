@@ -1,0 +1,91 @@
+{
+  "$defs": {
+    "claim": {
+      "additionalProperties": false,
+      "properties": {
+        "access_token": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "device_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "expires_at_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "device_id",
+        "access_token",
+        "expires_at_ms"
+      ],
+      "type": "object"
+    },
+    "claim_request": {
+      "additionalProperties": false,
+      "properties": {
+        "device_name": {
+          "maxLength": 65536,
+          "type": "string"
+        },
+        "secret": {
+          "maxLength": 65536,
+          "type": "string"
+        }
+      },
+      "required": [
+        "secret",
+        "device_name"
+      ],
+      "type": "object"
+    },
+    "invitation": {
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "format": "uri",
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "expiresAtMs": {
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "type": "integer"
+        },
+        "pairingId": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "pairingUri": {
+          "maxLength": 16384,
+          "pattern": "^teslatlas-hub://pair\\?",
+          "type": "string"
+        },
+        "secret": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "tlsPin": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pairingId",
+        "secret",
+        "expiresAtMs",
+        "endpoint",
+        "tlsPin",
+        "pairingUri"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-http-v1:1.0.0:auth",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

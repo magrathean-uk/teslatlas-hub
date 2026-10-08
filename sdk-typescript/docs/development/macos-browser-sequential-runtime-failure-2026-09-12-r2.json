@@ -1,0 +1,194 @@
+{
+  "schema_version": 1,
+  "kind": "teslatlas.sdk.macos_browser_sequential_failure_receipt",
+  "recorded_at": "2026-09-12",
+  "status": "failed_before_untrusted_cdp_attach",
+  "redacted": true,
+  "owner": "Teslatlas TypeScript SDK",
+  "target": {
+    "architecture": "arm64",
+    "host_os": "macOS 27.0",
+    "node": "26.7.0",
+    "browser_origin": "http://localhost:4174"
+  },
+  "source_binding": {
+    "source_commit": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+    "package": "@teslatlas/sdk@2026.36.2",
+    "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+    "profile": "hub-http-v1@1.0.0",
+    "source_review": {
+      "path": "hub/docs/development/active-macos-typescript-browser-source-review-2026-09-12-r1.json",
+      "sha256": "8f037ad095146f8d7030229ae18eabfbd97418d16f0a7ebd3da6fc5c784e3096"
+    },
+    "correction": {
+      "path": "docs/development/macos-browser-trust-isolation-correction-2026-09-12.json",
+      "sha256": "98ebe5a6195db9bff8b8310942be5aa18a40492682f423a56dbcc8a01307519a"
+    },
+    "runtime_scripts": {
+      "trust_hooks": {
+        "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/trust-hooks.mjs",
+        "sha256": "9c03572afd40e79a410e151e425d8072b72ad4d4da405511f3544e6a95ab5f79",
+        "mode": "0700"
+      },
+      "untrusted_control": {
+        "path": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/untrusted-control.mjs",
+        "sha256": "9fc160593d8bb8ae3ccaa875b2c89fa73e2bfcb4e5ea3d14c8b5c7b5b911617e",
+        "mode": "0700"
+      }
+    }
+  },
+  "handoff": {
+    "path": "hub/docs/development/active-macos-typescript-browser-consumer-handoff-2026-09-12-r2.json",
+    "sha256": "55aefb27645e873471c31518116ee455b7bad81a13d2b85d4ae46836447336a0",
+    "sha256_at_consumption": "55aefb27645e873471c31518116ee455b7bad81a13d2b85d4ae46836447336a0",
+    "sha256_after_hub_cleanup_update": "fabcee02c39b14d189750d6e70eae8f7dfb259c5481cb831884d46f476ba5e0f",
+    "state_at_start": "ready_for_one_bounded_sequential_browser_run",
+    "endpoint": "https://127.0.0.1:18525",
+    "browser_endpoint": "https://localhost:18525",
+    "hub_id": "48530fd7-d0a4-4a96-b9a3-faedf9331246",
+    "ready_descriptor_sha256": "6dd9b7c53b40c8b0994793cc4b77244522b613d2f0068be7f5c9e08fef311e4a",
+    "certificate_sha256": "857dfb1bdaf4b11bf1e264d51f6cdba01e637db34a8ecb9ff01e841b61e86a80",
+    "hub_processes": {
+      "launcher_pid": 54565,
+      "hub_pid": 54573
+    }
+  },
+  "controls": {
+    "root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1",
+    "trusted_cdp": "http://127.0.0.1:9231",
+    "untrusted_cdp": "http://127.0.0.1:9232",
+    "trust_hook_command": [
+      "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+      "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/trust-hooks.mjs"
+    ],
+    "untrusted_control_commands": {
+      "start": [
+        "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+        "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/untrusted-control.mjs",
+        "{\"operation\":\"start-untrusted\"}"
+      ],
+      "cleanup": [
+        "/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin/node",
+        "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/untrusted-control.mjs",
+        "{\"operation\":\"cleanup-untrusted\"}"
+      ]
+    },
+    "expected_certificate_export": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/evidence/imported-hub-ca.pem",
+    "witness": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/evidence/browser-trust-witness.json",
+    "acceptance_receipt": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/evidence/browser-acceptance-receipt.json",
+    "untrusted_command": [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "--user-data-dir=/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/untrusted-profile",
+      "--remote-debugging-address=127.0.0.1",
+      "--remote-debugging-port=9232",
+      "--headless=new",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "about:blank"
+    ]
+  },
+  "attempt": {
+    "runtime_attempt_count": 1,
+    "pre_attempt_shell_guard_rejection": "A wrapper containing an irreversible cleanup command was rejected before process creation; it did not consume the runtime attempt.",
+    "package_install": {
+      "status": "completed",
+      "consumer_root": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/consumer",
+      "installed_package": "@teslatlas/sdk@2026.36.2",
+      "archive_sha256": "03ddddf132185056d60a490bc5237b3f6213d8e212209cfe111be5e09cf0a75c",
+      "cleanup": "consumer root moved to the explicit user Trash path after the failed run"
+    },
+    "untrusted_control_before_runner": {
+      "status": "verified_live",
+      "pid": 65615,
+      "command_line_matches_handoff": true,
+      "cdp_url": "http://127.0.0.1:9232",
+      "cdp_status": "ready"
+    },
+    "runner": {
+      "command": "npm run test:hub:browser",
+      "result": "failed before the first untrusted browser attachment",
+      "error": "browserType.connectOverCDP: connect ECONNREFUSED 127.0.0.1:9232",
+      "call_log": "retrieving websocket url from http://127.0.0.1:9232",
+      "source_locations": [
+        "scripts/browser-hub-runner.mjs:310",
+        "scripts/browser-trust-sequence.mjs:35"
+      ]
+    },
+    "trust_boundary": {
+      "untrusted_observation_completed": false,
+      "certificate_import_started": false,
+      "trusted_browser_started": false,
+      "certificate_export_created": false,
+      "sdk_route_started": false,
+      "witness_created": false,
+      "acceptance_receipt_created": false
+    }
+  },
+  "cleanup": {
+    "typescript": {
+      "untrusted_control": {
+        "observed": true,
+        "closed": true,
+        "port_closed": true
+      },
+      "ports_closed": [4174, 9231, 9232],
+      "runtime_root_contents": [
+        "evidence/",
+        "trust-hooks.mjs",
+        "untrusted-control.mjs"
+      ],
+      "expected_runtime_artifacts_absent": true,
+      "fresh_certificate_present_in_login_keychain": false,
+      "consumer_root_absent": true
+    },
+    "hub": {
+      "launcher_pid": 54565,
+      "hub_pid": 54573,
+      "launcher_absent": true,
+      "hub_pid_absent": true,
+      "child_exit_code": 0,
+      "stopped_record_mode": "0600",
+      "stopped_record_sha256": "0ed603f57e561687c1698895c1351099b97704a839db2533920668e83ca58cac",
+      "port_18525_closed": true,
+      "scope": "Hub-owned fixture and processes only"
+    }
+  },
+  "interpretation": {
+    "supported_observation": "The untrusted Chrome/CDP was verified live before the runner, then was unavailable when the runner attempted its first CDP attach.",
+    "root_cause": "unproven",
+    "sdk_api_acceptance": false,
+    "claims_not_supported": [
+      "Hub API defect",
+      "SDK API or package defect",
+      "Chrome process exit cause",
+      "TLS trust behavior after import",
+      "CORS, credential, vehicle, drive, rotation or Fetch acceptance"
+    ],
+    "retry_policy": "One runtime attempt was consumed; do not retry this handoff or runtime tuple."
+  },
+  "diagnostic_followup": {
+    "launcher_lifecycle_evidence": {
+      "source": "/Users/bolyki/dev/teslatlas-lab/runtime-fixtures/typescript-browser-sequential-20260912-r1/untrusted-control.mjs:62-96",
+      "observed": "The controller spawns Chrome with detached=true, stdio=ignore and then calls child.unref(); it does not retain or report error, exit, close, signal or stderr data.",
+      "implication": "The launcher cannot distinguish a Chrome exit, a listener closure or another endpoint loss at the failure instant."
+    },
+    "runner_lifecycle_evidence": {
+      "source": "scripts/browser-hub-runner.mjs:307-311",
+      "observed": "The accepted runner receives an external CDP URL and its first chromium.connectOverCDP call returned ECONNREFUSED; no retry or pre-attach liveness sample is performed.",
+      "endpoint_binding": "The pre-run command line and CDP probe used 127.0.0.1:9232, matching the runner URL; endpoint mismatch is not evidenced."
+    },
+    "tool_return_probe": {
+      "control": "/bin/sleep 30 spawned with detached=true, stdio=ignore and child.unref()",
+      "pid": 98971,
+      "result": "The detached child remained alive after the launching exec_command returned, then was explicitly terminated.",
+      "scope": "Benign local diagnostic only; no Chrome, keychain or Teslatlas runtime was started."
+    },
+    "diagnosis": "The untrusted control was unavailable at first attach, but the retained evidence does not establish whether its Chrome PID exited before attach, its listener closed while the PID remained, or another Chrome-specific condition intervened. Generic tool-return teardown is not demonstrated by the detached-child probe. No SDK source lifecycle defect is demonstrated by this evidence.",
+    "missing_evidence": [
+      "Chrome PID liveness and listener state captured at the exact runner attach failure",
+      "Chrome exit code, terminating signal and child error/close events",
+      "Chrome stderr or an owner-only browser lifecycle log"
+    ],
+    "smallest_next_diagnostic": "If a future attempt is explicitly authorized, keep the untrusted launcher supervised in a persistent owner-controlled session and capture start/attach-time PID and lsof state plus exit/error/signal/stderr evidence; do not infer a root cause from post-failure cleanup."
+  }
+}

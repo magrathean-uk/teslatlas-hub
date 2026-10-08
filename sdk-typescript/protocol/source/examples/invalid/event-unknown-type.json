@@ -1,0 +1,22 @@
+{
+  "event_id": "event_demo_0042",
+  "event_type": "vehicle.secret.changed",
+  "occurred_at": "2026-08-30T12:00:01.250Z",
+  "vehicle_id": "vehicle_demo_alpha",
+  "resource_id": "vehicle_demo_alpha",
+  "revision": 42,
+  "data": {
+    "subject_type": "vehicle",
+    "subject_id": "vehicle_demo_alpha",
+    "quality": "complete",
+    "sources": [
+      "fleet_telemetry"
+    ],
+    "gap_count": 0,
+    "largest_gap_seconds": 0,
+    "derived_fields": [],
+    "projection_version": "3.1.0",
+    "assessed_at": "2026-08-30T12:00:01.250Z",
+    "issues": []
+  }
+}
