@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:error:1.2.0",
+  "title": "Teslatlas problem detail",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "type",
+    "title",
+    "status",
+    "code",
+    "request_id",
+    "instance",
+    "retryable"
+  ],
+  "properties": {
+    "type": {
+      "type": "string",
+      "format": "uri"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "status": {
+      "type": "integer",
+      "minimum": 400,
+      "maximum": 599
+    },
+    "detail": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "instance": {
+      "type": "string",
+      "format": "uri-reference"
+    },
+    "code": {
+      "enum": [
+        "invalid_request",
+        "invalid_time_range",
+        "unsupported_protocol_version",
+        "invalid_cursor",
+        "cursor_expired",
+        "cursor_query_mismatch",
+        "cursor_scope_changed",
+        "unauthorized",
+        "forbidden",
+        "not_found",
+        "precondition_required",
+        "metadata_revision_conflict",
+        "idempotency_conflict",
+        "command_not_supported",
+        "command_not_permitted",
+        "command_expired",
+        "event_replay_expired",
+        "event_id_invalid",
+        "rate_limited",
+        "request_too_large",
+        "range_too_large",
+        "concurrency_limit",
+        "internal_error",
+        "unavailable"
+      ]
+    },
+    "request_id": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "field_errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/field_error"
+      }
+    },
+    "retry_after_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 86400
+    }
+  },
+  "$defs": {
+    "field_error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "field",
+        "code"
+      ],
+      "properties": {
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]+$"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 512
+        }
+      }
+    }
+  }
+}

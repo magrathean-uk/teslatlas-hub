@@ -1,0 +1,10 @@
+{
+  "fixture_id": "changes-since-error-unknown-base-receipt-v1",
+  "response": {
+    "body": {
+      "code": "unknown_base_receipt",
+      "message": "Base receipt is not known for this vehicle."
+    },
+    "status": 422
+  }
+}

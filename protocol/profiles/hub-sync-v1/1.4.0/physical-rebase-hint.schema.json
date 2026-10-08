@@ -1,0 +1,282 @@
+{
+  "$defs": {
+    "hint": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "rebase_required"
+        },
+        "reason": {
+          "const": "compacted"
+        },
+        "replacement": {
+          "additionalProperties": false,
+          "properties": {
+            "chunks": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "chunk_index": {
+                    "maximum": 1770,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "pack": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "compressed_bytes": {
+                        "maximum": 16777216,
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "object_name": {
+                        "pattern": "^[a-z0-9][a-z0-9._/-]{0,1023}$",
+                        "type": "string"
+                      },
+                      "sha256": {
+                        "pattern": "^[0-9a-f]{64}$",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "object_name",
+                      "sha256",
+                      "compressed_bytes"
+                    ],
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "chunk_index",
+                  "pack"
+                ],
+                "type": "object"
+              },
+              "maxItems": 1771,
+              "minItems": 1,
+              "type": "array"
+            },
+            "manifest_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "manifest_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "receipt_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "2.2"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "manifest_id",
+            "receipt_id",
+            "manifest_sha256",
+            "sequence",
+            "schema_version",
+            "chunks"
+          ],
+          "type": "object"
+        },
+        "requested_base": {
+          "additionalProperties": false,
+          "properties": {
+            "manifest_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "manifest_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "receipt_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "schema_version": {
+              "const": "2.2"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "manifest_id",
+            "receipt_id",
+            "manifest_sha256",
+            "sequence",
+            "schema_version"
+          ],
+          "type": "object"
+        },
+        "retry_request": {
+          "additionalProperties": false,
+          "properties": {
+            "accepted_changed_set_formats": {
+              "maxItems": 1,
+              "minItems": 1,
+              "prefixItems": [
+                {
+                  "const": "teslatlas-physical-v3-delta-v1"
+                }
+              ],
+              "type": "array"
+            },
+            "base_manifest_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "base_manifest_schema": {
+              "const": "2.2"
+            },
+            "base_manifest_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "base_receipt_id": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            },
+            "from_sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "schema_version_range": {
+              "additionalProperties": false,
+              "properties": {
+                "maximum": {
+                  "const": "2.2"
+                },
+                "minimum": {
+                  "const": "2.2"
+                }
+              },
+              "required": [
+                "minimum",
+                "maximum"
+              ],
+              "type": "object"
+            },
+            "source": {
+              "additionalProperties": false,
+              "properties": {
+                "account_id": {
+                  "format": "uuid",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "generation": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "installation_id": {
+                  "format": "uuid",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                },
+                "selected_car_id": {
+                  "maximum": 9007199254740991,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "vehicle_id": {
+                  "format": "uuid",
+                  "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "installation_id",
+                "account_id",
+                "vehicle_id",
+                "generation",
+                "selected_car_id"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "source",
+            "base_receipt_id",
+            "base_manifest_id",
+            "base_manifest_sha256",
+            "base_manifest_schema",
+            "from_sequence",
+            "schema_version_range",
+            "accepted_changed_set_formats"
+          ],
+          "type": "object"
+        },
+        "signature": {
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "const": "ed25519"
+            },
+            "key_id": {
+              "pattern": "^ed25519-sha256-[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "signature": {
+              "pattern": "^[A-Za-z0-9+/]{86}==$",
+              "type": "string"
+            },
+            "signed_payload_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "algorithm",
+            "key_id",
+            "signed_payload_sha256",
+            "signature"
+          ],
+          "type": "object"
+        },
+        "vehicle_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "vehicle_id",
+        "requested_base",
+        "reason",
+        "replacement",
+        "retry_request",
+        "signature"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-sync-v1:1.4.0:hint",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

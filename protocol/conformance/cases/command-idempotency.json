@@ -1,0 +1,320 @@
+{
+  "capability": "commands.async",
+  "case_id": "command-idempotency",
+  "description": "Commands return asynchronous jobs, replay equal idempotency keys, reject conflicts, and avoid blind nuisance retries.",
+  "introduced_in": "1.1.0",
+  "kind": "case",
+  "steps": [
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/state",
+            "value": "accepted"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:command:1.2.0#/$defs/command_job",
+        "headers_present": [
+          "Location",
+          "ETag"
+        ],
+        "status": 202
+      },
+      "reference_response": {
+        "body_file": "examples/command-job.json",
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"zQ5dN8wL3pV7tC2m\"",
+          "Location": "/v1/commands/command_demo_0001",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 202
+      },
+      "request": {
+        "body": {
+          "command": "set_charge_limit",
+          "command_class": "charging",
+          "confirmation": {
+            "confirmed_at": "2026-08-30T12:00:00.000Z",
+            "confirmed_by": "user_demo_owner"
+          },
+          "expected_state": {
+            "charge_limit_percent": 80
+          },
+          "expires_at": "2026-08-30T12:05:00.000Z",
+          "parameters": {
+            "percent": 80
+          },
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Idempotency-Key": "11111111-1111-4111-8111-111111111111",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "POST",
+        "path": "/v1/commands",
+        "query": {}
+      },
+      "step_id": "create"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "same_as",
+            "path": "/body/command_id",
+            "ref": "create.body.command_id"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:command:1.2.0#/$defs/command_job",
+        "status": 202
+      },
+      "reference_response": {
+        "body_file": "examples/command-job.json",
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"zQ5dN8wL3pV7tC2m\"",
+          "Location": "/v1/commands/command_demo_0001",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 202
+      },
+      "request": {
+        "body": {
+          "command": "set_charge_limit",
+          "command_class": "charging",
+          "confirmation": {
+            "confirmed_at": "2026-08-30T12:00:00.000Z",
+            "confirmed_by": "user_demo_owner"
+          },
+          "expected_state": {
+            "charge_limit_percent": 80
+          },
+          "expires_at": "2026-08-30T12:05:00.000Z",
+          "parameters": {
+            "percent": 80
+          },
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Idempotency-Key": "11111111-1111-4111-8111-111111111111",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "POST",
+        "path": "/v1/commands",
+        "query": {}
+      },
+      "step_id": "replay"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 409
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "idempotency_conflict"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 409
+      },
+      "reference_response": {
+        "body": {
+          "code": "idempotency_conflict",
+          "instance": "/requests/request_idempotency_conflict",
+          "request_id": "request_idempotency_conflict",
+          "retryable": false,
+          "status": 409,
+          "title": "Idempotency conflict",
+          "type": "urn:teslatlas:problem:idempotency-conflict"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_idempotency_conflict"
+        },
+        "status": 409
+      },
+      "request": {
+        "body": {
+          "command": "set_charge_limit",
+          "command_class": "charging",
+          "confirmation": {
+            "confirmed_at": "2026-08-30T12:00:00.000Z",
+            "confirmed_by": "user_demo_owner"
+          },
+          "expected_state": {
+            "charge_limit_percent": 81
+          },
+          "expires_at": "2026-08-30T12:05:00.000Z",
+          "parameters": {
+            "percent": 81
+          },
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Idempotency-Key": "11111111-1111-4111-8111-111111111111",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "POST",
+        "path": "/v1/commands",
+        "query": {}
+      },
+      "step_id": "conflict"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 400
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "invalid_request"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 400
+      },
+      "reference_response": {
+        "body": {
+          "code": "invalid_request",
+          "detail": "The advertised command descriptor requires confirmation.",
+          "instance": "/requests/request_invalid_request",
+          "request_id": "request_invalid_request",
+          "retryable": false,
+          "status": 400,
+          "title": "Confirmation required",
+          "type": "urn:teslatlas:problem:invalid-request"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_invalid_request"
+        },
+        "status": 400
+      },
+      "request": {
+        "body": {
+          "command": "set_charge_limit",
+          "command_class": "charging",
+          "expected_state": {
+            "charge_limit_percent": 80
+          },
+          "expires_at": "2026-08-30T12:05:00.000Z",
+          "parameters": {
+            "percent": 80
+          },
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Idempotency-Key": "33333333-3333-4333-8333-333333333333",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "POST",
+        "path": "/v1/commands",
+        "query": {}
+      },
+      "step_id": "missing-confirmation"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/retry_policy",
+            "value": "none"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:command:1.2.0#/$defs/command_job",
+        "status": 202
+      },
+      "reference_response": {
+        "body": {
+          "attempt_count": 0,
+          "audit": [
+            {
+              "actor_id": "service_hub",
+              "at": "2026-08-30T12:00:00.100Z",
+              "state": "accepted"
+            }
+          ],
+          "command": "honk_horn",
+          "command_class": "nuisance",
+          "command_id": "command_demo_nuisance_0001",
+          "created_at": "2026-08-30T12:00:00.100Z",
+          "expires_at": "2026-08-30T12:05:00.000Z",
+          "links": {
+            "self": "/v1/commands/command_demo_nuisance_0001"
+          },
+          "retry_policy": "none",
+          "state": "accepted",
+          "updated_at": "2026-08-30T12:00:00.100Z",
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"kF2sH6yR9nB4qX7v\"",
+          "Location": "/v1/commands/command_demo_nuisance_0001",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 202
+      },
+      "request": {
+        "body": {
+          "command": "honk_horn",
+          "command_class": "nuisance",
+          "confirmation": {
+            "confirmed_at": "2026-08-30T12:00:00.000Z",
+            "confirmed_by": "user_demo_owner"
+          },
+          "expected_state": {
+            "honk_sequence": 1
+          },
+          "expires_at": "2026-08-30T12:05:00.000Z",
+          "parameters": {},
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Idempotency-Key": "22222222-2222-4222-8222-222222222222",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "POST",
+        "path": "/v1/commands",
+        "query": {}
+      },
+      "step_id": "nuisance-no-retry"
+    }
+  ]
+}

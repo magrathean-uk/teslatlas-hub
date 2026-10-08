@@ -1,0 +1,116 @@
+{
+  "profile_id": "hub-sync-v1@1.2.0",
+  "tables": [
+    {
+      "responses": [
+        {
+          "body": "signed changed-set receipt",
+          "status": 200
+        },
+        {
+          "body": "empty",
+          "signature": "absent",
+          "status": 401
+        },
+        {
+          "body": "signed rebase hint",
+          "status": 409
+        }
+      ],
+      "route": "POST /v1/vehicles/{vehicle_id}/sync/changes-since"
+    },
+    {
+      "responses": [
+        {
+          "body": "one signed schema 2.1 or 2.2 manifest",
+          "status": 200
+        },
+        {
+          "body": "empty",
+          "signature": "absent",
+          "status": 401
+        },
+        {
+          "body": "empty",
+          "headers": {
+            "cache_control": "no-store"
+          },
+          "signature": "absent",
+          "status": 406
+        }
+      ],
+      "route": "GET /v1/vehicles/{vehicle_id}/sync/manifest"
+    },
+    {
+      "responses": [
+        {
+          "body": "signed no-op receipt",
+          "status": 200
+        },
+        {
+          "body": "empty",
+          "signature": "absent",
+          "status": 401
+        },
+        {
+          "body": "empty",
+          "headers": {
+            "cache_control": "no-store"
+          },
+          "signature": "absent",
+          "status": 406
+        }
+      ],
+      "route": "GET /v1/vehicles/{vehicle_id}/sync/noop"
+    },
+    {
+      "responses": [
+        {
+          "body": "pack bytes",
+          "headers": {
+            "etag": "strong"
+          },
+          "status": 200
+        },
+        {
+          "body": "single contiguous byte range",
+          "headers": {
+            "content_range": "required",
+            "etag": "strong"
+          },
+          "status": 206
+        },
+        {
+          "body": "empty",
+          "signature": "absent",
+          "status": 401
+        },
+        {
+          "body": "empty",
+          "signature": "absent",
+          "status": 404
+        }
+      ],
+      "route": "GET /v1/packs/sha256/{object_name}"
+    },
+    {
+      "responses": [
+        {
+          "body": "signed prepared-artefact receipt",
+          "status": 200
+        },
+        {
+          "body": "empty",
+          "signature": "absent",
+          "status": 401
+        },
+        {
+          "body": "empty",
+          "signature": "absent",
+          "status": 404
+        }
+      ],
+      "route": "GET /v1/vehicles/{vehicle_id}/sync/prepared-artefacts/{artifact_id}"
+    }
+  ]
+}

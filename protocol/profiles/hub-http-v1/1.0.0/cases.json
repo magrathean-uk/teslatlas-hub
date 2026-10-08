@@ -1,0 +1,160 @@
+{
+  "cases": [
+    {
+      "id": "discovery-success",
+      "kind": "discovery",
+      "method": "GET",
+      "route": "/.well-known/teslatlas-hub",
+      "status": 200
+    },
+    {
+      "id": "health-success",
+      "kind": "health",
+      "method": "GET",
+      "route": "/healthz",
+      "status": 200
+    },
+    {
+      "id": "ready-success",
+      "kind": "ready",
+      "method": "GET",
+      "route": "/readyz",
+      "status": 200
+    },
+    {
+      "id": "vehicles-success",
+      "kind": "vehicles",
+      "method": "GET",
+      "route": "/v1/vehicles",
+      "status": 200
+    },
+    {
+      "id": "current-success",
+      "kind": "current",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/current",
+      "status": 200
+    },
+    {
+      "id": "drives-success",
+      "kind": "drives",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 200
+    },
+    {
+      "id": "claim-success",
+      "kind": "claim",
+      "method": "POST",
+      "route": "/v1/pairings/{pairing_id}/claim",
+      "status": 200
+    },
+    {
+      "id": "rotate-success",
+      "kind": "rotate",
+      "method": "POST",
+      "route": "/v1/device/rotate",
+      "status": 200
+    },
+    {
+      "error_code": "invalid_limit",
+      "id": "invalid_limit",
+      "kind": "drives",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives?limit=0",
+      "status": 400
+    },
+    {
+      "error_code": "invalid_time_range",
+      "id": "invalid_time_range",
+      "kind": "drives",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives?from_ms=20&to_ms=10",
+      "status": 400
+    },
+    {
+      "error_code": "invalid_query",
+      "id": "invalid_query",
+      "kind": "drives",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives?from=2026-09-01",
+      "status": 400
+    },
+    {
+      "error_code": "invalid_cursor",
+      "id": "invalid_cursor",
+      "kind": "drives",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives?cursor={other_vehicle_cursor}",
+      "status": 400
+    },
+    {
+      "body": "empty",
+      "id": "drive-conditional",
+      "kind": "drives",
+      "status": 304
+    },
+    {
+      "body": "empty",
+      "id": "pairing-replay",
+      "kind": "claim",
+      "status": 401
+    },
+    {
+      "body": "empty",
+      "id": "missing-bearer",
+      "kind": "vehicles",
+      "status": 401
+    },
+    {
+      "body": "empty",
+      "id": "bad-bearer",
+      "kind": "vehicles",
+      "status": 401
+    },
+    {
+      "body": "empty",
+      "id": "rotated-bearer",
+      "kind": "vehicles",
+      "status": 401
+    },
+    {
+      "error_code": "invalid_cursor",
+      "id": "cursor-time-binding",
+      "kind": "drives",
+      "status": 400
+    },
+    {
+      "id": "later-current",
+      "kind": "current",
+      "status": 200
+    },
+    {
+      "id": "scenario-page-2",
+      "kind": "drives",
+      "status": 200
+    },
+    {
+      "id": "scenario-page-3",
+      "kind": "drives",
+      "status": 200
+    },
+    {
+      "id": "current-empty",
+      "kind": "current",
+      "status": 200
+    },
+    {
+      "body": "empty",
+      "id": "current-unknown",
+      "kind": "current",
+      "status": 404
+    },
+    {
+      "id": "rotated-bearer-valid",
+      "kind": "vehicles",
+      "status": 200
+    }
+  ],
+  "profile_id": "hub-http-v1@1.0.0"
+}

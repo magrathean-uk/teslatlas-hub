@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:data-quality:1.2.0",
+  "title": "Teslatlas data-quality assessment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "subject_type",
+    "subject_id",
+    "quality",
+    "sources",
+    "gap_count",
+    "largest_gap_seconds",
+    "derived_fields",
+    "projection_version",
+    "assessed_at",
+    "issues"
+  ],
+  "properties": {
+    "subject_type": {
+      "enum": [
+        "vehicle",
+        "projection",
+        "drive",
+        "charge",
+        "state",
+        "update"
+      ]
+    },
+    "subject_id": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+    },
+    "quality": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/quality"
+    },
+    "sources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/source"
+      }
+    },
+    "gap_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "largest_gap_seconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "derived_fields": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$"
+      }
+    },
+    "projection_version": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/semver"
+    },
+    "assessed_at": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/issue"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "quality": {
+            "const": "complete"
+          }
+        },
+        "required": [
+          "quality"
+        ]
+      },
+      "then": {
+        "properties": {
+          "gap_count": {
+            "const": 0
+          },
+          "largest_gap_seconds": {
+            "const": 0
+          },
+          "issues": {
+            "maxItems": 0
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "gap_count": {
+            "const": 0
+          }
+        },
+        "required": [
+          "gap_count"
+        ]
+      },
+      "then": {
+        "properties": {
+          "largest_gap_seconds": {
+            "const": 0
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "missing_interval",
+            "late_observation",
+            "reordered_observation",
+            "conflicting_duplicate",
+            "clock_skew",
+            "source_unavailable",
+            "invalid_for_context"
+          ]
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "from": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "to": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "affected_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*$"
+          }
+        }
+      }
+    }
+  }
+}

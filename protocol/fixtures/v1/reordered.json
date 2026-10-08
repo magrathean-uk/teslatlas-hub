@@ -1,0 +1,261 @@
+{
+  "description": "A tied, out-of-order input set exercises source, typed sequence, and ID ordering.",
+  "expected": {
+    "accepted_observation_ids": [
+      "obs_reordered_null_0002",
+      "obs_reordered_string_0010",
+      "obs_reordered_int_0010",
+      "obs_reordered_source_0001",
+      "obs_reordered_null_0001",
+      "obs_reordered_int_0002"
+    ],
+    "duplicate_observation_ids": [],
+    "ordered_observation_ids": [
+      "obs_reordered_source_0001",
+      "obs_reordered_int_0002",
+      "obs_reordered_int_0010",
+      "obs_reordered_string_0010",
+      "obs_reordered_null_0001",
+      "obs_reordered_null_0002"
+    ],
+    "projection": {
+      "computed_at": "2026-08-30T16:00:06.250Z",
+      "input_observation_ids": [
+        "obs_reordered_source_0001",
+        "obs_reordered_int_0002",
+        "obs_reordered_int_0010",
+        "obs_reordered_string_0010",
+        "obs_reordered_null_0001",
+        "obs_reordered_null_0002"
+      ],
+      "payload": {
+        "battery_level_percent": 76,
+        "charging_state": "unknown",
+        "climate_on": null,
+        "inside_temperature_c": null,
+        "location": null,
+        "locked": null,
+        "observed_at": "2026-08-30T16:00:01.000Z",
+        "odometer_km": null,
+        "outside_temperature_c": null,
+        "quality": {
+          "assessed_at": "2026-08-30T16:00:06.250Z",
+          "derived_fields": [],
+          "gap_count": 0,
+          "issues": [
+            {
+              "affected_fields": [
+                "battery.level_percent"
+              ],
+              "code": "reordered_observation",
+              "message": "Input arrival order differs from canonical provider order.",
+              "severity": "info"
+            }
+          ],
+          "largest_gap_seconds": 0,
+          "projection_version": "3.1.0",
+          "quality": "partial",
+          "sources": [
+            "fleet_api",
+            "fleet_telemetry"
+          ],
+          "subject_id": "vehicle_demo_alpha",
+          "subject_type": "vehicle"
+        },
+        "range_km": 330.2,
+        "resource_type": "current_state",
+        "revision": 1,
+        "state": "online",
+        "vehicle_id": "vehicle_demo_alpha"
+      },
+      "projection_id": "projection_reordered_current_0001",
+      "projection_type": "current_state",
+      "projection_version": "3.1.0",
+      "quality": {
+        "assessed_at": "2026-08-30T16:00:06.250Z",
+        "derived_fields": [],
+        "gap_count": 0,
+        "issues": [
+          {
+            "affected_fields": [
+              "battery.level_percent"
+            ],
+            "code": "reordered_observation",
+            "message": "Input arrival order differs from canonical provider order.",
+            "severity": "info"
+          }
+        ],
+        "largest_gap_seconds": 0,
+        "projection_version": "3.1.0",
+        "quality": "partial",
+        "sources": [
+          "fleet_api",
+          "fleet_telemetry"
+        ],
+        "subject_id": "projection_reordered_current_0001",
+        "subject_type": "projection"
+      },
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    "quality": {
+      "assessed_at": "2026-08-30T16:00:06.250Z",
+      "derived_fields": [],
+      "gap_count": 0,
+      "issues": [
+        {
+          "affected_fields": [
+            "battery.level_percent"
+          ],
+          "code": "reordered_observation",
+          "message": "Input arrival order differs from canonical provider order.",
+          "severity": "info"
+        }
+      ],
+      "largest_gap_seconds": 0,
+      "projection_version": "3.1.0",
+      "quality": "partial",
+      "sources": [
+        "fleet_api",
+        "fleet_telemetry"
+      ],
+      "subject_id": "projection_reordered_current_0001",
+      "subject_type": "projection"
+    }
+  },
+  "fixture_version": "1.0.0",
+  "input_observations": [
+    {
+      "collector_version": "5.4.0",
+      "field": "charging.power_kw",
+      "observation_id": "obs_reordered_null_0002",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T16:00:01.000Z",
+      "quality_flags": [
+        "reordered"
+      ],
+      "raw_payload_hash": "b14dc3b96ee2f13eab25eaeb185c133f7d7b247c630173e37b0152a91748cf11",
+      "received_timestamp": "2026-08-30T16:00:02.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": null,
+      "typed_value": {
+        "kind": "number",
+        "unit": "kw",
+        "value": 0
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    {
+      "collector_version": "5.4.0",
+      "field": "climate.inside_temperature_c",
+      "observation_id": "obs_reordered_string_0010",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T16:00:01.000Z",
+      "quality_flags": [
+        "reordered"
+      ],
+      "raw_payload_hash": "21b64f37827210d5511eca33d072587f84494e0e684f020889a06209414bf92e",
+      "received_timestamp": "2026-08-30T16:00:03.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": "10",
+      "typed_value": {
+        "kind": "number",
+        "unit": "celsius",
+        "value": 21
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    {
+      "collector_version": "5.4.0",
+      "field": "vehicle.odometer_km",
+      "observation_id": "obs_reordered_int_0010",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T16:00:01.000Z",
+      "quality_flags": [
+        "reordered"
+      ],
+      "raw_payload_hash": "0fb2842511ccf27007fe8510d7f858aa93e8c707724f2ad5639574d0caf05fa9",
+      "received_timestamp": "2026-08-30T16:00:04.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": 10,
+      "typed_value": {
+        "kind": "number",
+        "unit": "km",
+        "value": 12001
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    {
+      "collector_version": "5.4.0",
+      "field": "battery.level_percent",
+      "observation_id": "obs_reordered_source_0001",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T16:00:01.000Z",
+      "quality_flags": [
+        "reordered"
+      ],
+      "raw_payload_hash": "c9b12a4bc6d22f98652553a77824d33920d2ec1601fa9449a6c2b511d4ecb451",
+      "received_timestamp": "2026-08-30T16:00:06.250Z",
+      "source": "fleet_api",
+      "source_sequence": 99,
+      "typed_value": {
+        "kind": "number",
+        "unit": "percent",
+        "value": 76
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    {
+      "collector_version": "5.4.0",
+      "field": "charging.energy_added_kwh",
+      "observation_id": "obs_reordered_null_0001",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T16:00:01.000Z",
+      "quality_flags": [
+        "reordered"
+      ],
+      "raw_payload_hash": "cc6301f0b7560e3aba24a0d47dfc8722b4ae5ba5dc7956a1677cca86a8fa0802",
+      "received_timestamp": "2026-08-30T16:00:01.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": null,
+      "typed_value": {
+        "kind": "number",
+        "unit": "kwh",
+        "value": 0
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    {
+      "collector_version": "5.4.0",
+      "field": "battery.range_km",
+      "observation_id": "obs_reordered_int_0002",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T16:00:01.000Z",
+      "quality_flags": [
+        "reordered"
+      ],
+      "raw_payload_hash": "74c5e88c4a036ba74a2b947ae142246c33ded20bcb965a19a5b900fde627db77",
+      "received_timestamp": "2026-08-30T16:00:05.250Z",
+      "source": "fleet_telemetry",
+      "source_sequence": 2,
+      "typed_value": {
+        "kind": "number",
+        "unit": "km",
+        "value": 330.2
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    }
+  ],
+  "redaction": {
+    "contains_precise_location": false,
+    "contains_real_identifiers": false,
+    "contains_secrets": false,
+    "maximum_coordinate_decimals": 2
+  },
+  "scenario_id": "reordered"
+}

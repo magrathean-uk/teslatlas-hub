@@ -1,0 +1,80 @@
+{
+  "authentication": "paired bearer",
+  "bootstrap_rule": "A client selects the hub-sync-v1@1.3.0 bootstrap representation only by sending exactly one x-teslatlas-sync-profile: hub-sync-v1@1.3.0 header and exactly one x-teslatlas-supported-schemas: 2.1,2.2 header. If an explicit profile selector is present but either header is missing, duplicated, or has any other value, the Hub MUST return an empty 406 with Cache-Control: no-store and MUST NOT fall back to legacy routing. The schema header without a profile selector remains legacy SyncManifest negotiation and MUST NOT select this representation. After applying a signed 1.3 manifest, the client MUST persist manifest.receipt_id, sequence, and schema_version. It sends those exact values as base_receipt_id, from_sequence, and base_manifest_schema on changes-since.",
+  "bootstrap_selector": {
+    "header": "x-teslatlas-sync-profile",
+    "invalid_explicit_selector": {
+      "body_bytes": 0,
+      "cache_control": "no-store",
+      "manifest_signature": "absent",
+      "status": 406
+    },
+    "required_schema_header": "x-teslatlas-supported-schemas",
+    "required_schema_value": "2.1,2.2",
+    "value": "hub-sync-v1@1.3.0",
+    "without_selector": "legacy-sync-manifest"
+  },
+  "compaction_rule": "A compacted base MUST return 409 and the signed rebase hint. The replacement MUST be a complete admitted snapshot for its declared schema and limits, never a delta, compacted delta, or partial lineage. The client applies the replacement pack for schema 2.1 or all contiguous replacement chunks for schema 2.2, persists replacement receipt_id, sequence, and manifest_schema, then sends retry_request. It MUST NOT infer a rebase target or substitute a full-history request. A Hub MUST NOT admit a checkpoint that it cannot replace with such a complete snapshot while the checkpoint can remain valid.",
+  "contract_version": "1.3.0",
+  "fixture_signing_keys": "fixture-signing-keys.json",
+  "integer_rule": "Every integer-valued wire member MUST be in the inclusive I-JSON exact-integer range -9007199254740991 through 9007199254740991. This profile defines only non-negative integer members, so every schema maximum is 9007199254740991 or a narrower limit. Values outside the member schema MUST be rejected before RFC 8785 canonicalization or signature verification.",
+  "limits": {
+    "max_changed_set_packs": 1,
+    "max_i_json_integer": 9007199254740991,
+    "max_manifest_chunks": 1771,
+    "max_pack_compressed_bytes": 16777216,
+    "max_prepared_publication_bytes_per_month": 8388608,
+    "max_prepared_segments_per_tile": 200000,
+    "max_prepared_tile_bytes": 1600000,
+    "max_prepared_tiles_per_month": 4096,
+    "max_prepared_uncompressed_bytes": 67108864,
+    "max_request_bytes": 8192,
+    "max_response_bytes": 2097152,
+    "min_pack_compressed_bytes": 1,
+    "target_pack_compressed_bytes": 8388608
+  },
+  "pack_sizing_rule": "Every compressed pack is 1 to 16 MiB inclusive. Writers SHOULD target at least 8 MiB for each non-final snapshot chunk. A complete small history, the final chunk, a changed set, or a prepared artefact MAY be smaller than 8 MiB.",
+  "prepared_artefact": "prepared-artefact.schema.json",
+  "prepared_artifact_id_rule": {
+    "domain": "teslatlas-prepared-map-month-id-v1",
+    "encoding": "ASCII fields joined by LF, including a terminal LF; integers are unsigned base-10 with no leading zeroes",
+    "fields": [
+      "domain",
+      "vehicle_id",
+      "source.input_manifest_id",
+      "source.input_receipt_id",
+      "source.input_sequence",
+      "month",
+      "window.from_ms",
+      "window.to_ms",
+      "map_style",
+      "tile_geometry_version",
+      "algorithm_version"
+    ],
+    "fixture": "examples/prepared-artefact-identified-month.json",
+    "id": "map-month-v1. + lowercase hex SHA-256 of encoded fields",
+    "scope": "one full UTC month matching one exact canonical block; use the admitted head receipt, not a transient no-op receipt",
+    "unavailable": "Authenticated 404 means no compatible prepared month; the client builds locally"
+  },
+  "prepared_pack_contract": "prepared-pack-v1-contract.json",
+  "previous_profile": "hub-sync-v1@1.2.0",
+  "product_version_binding": "none; this protocol profile has no exact Hub product-version pin",
+  "profile_id": "hub-sync-v1@1.3.0",
+  "receipt_resolution_rule": "Receipt resolution is scoped to the route vehicle. A checkpoint in the current lineage is current. Any base or delta checkpoint found in an unexpired retained prior lineage was compacted and MUST return the signed 409 rebase hint. A receipt absent from both the current lineage and every unexpired retained prior lineage MUST return unsigned 422 unknown_base_receipt.",
+  "response_size_rule": "Every JSON control response MUST be at most 2097152 encoded bytes before parsing. Pack byte responses use max_pack_compressed_bytes instead. The schema maxima also keep a compact encoding of every admitted control response within this bound.",
+  "route": {
+    "compacted_status": 409,
+    "method": "POST",
+    "path": "/v1/vehicles/{vehicle_id}/sync/changes-since",
+    "success_status": 200
+  },
+  "schema_continuity_rule": "A changed-set or no-op receipt MUST use the base manifest schema. A schema 2.2 base cannot receive a schema 2.1 delta. Any schema transition requires a signed rebase whose replacement schema is accepted by the request range.",
+  "schema_version_range": {
+    "maximum": "2.2",
+    "minimum": "2.1"
+  },
+  "scope": "One changed pack per changed-set receipt; schema 2.2 snapshot and rebase manifests may contain one or more chunks under one signature. The teslatlas-prepared-v1 payload contains changed map-month tiles only. Prepared route IDs and payloads are unsupported pending a separate contract decision.",
+  "signature_rule": "Each receipt or rebase hint MUST carry an Ed25519 detached signature over RFC 8785 canonical JSON of the object with its signature member omitted. signed_payload_sha256 is the SHA-256 of those canonical bytes. The signed object's vehicle_id and the selected signing key set's vehicle_id MUST both equal the route vehicle_id. Production clients obtain vehicle-bound keys from the authenticated no-store signing-keys route. key_id MUST equal ed25519-sha256- plus lowercase SHA-256 hex of the raw 32-byte public key. Fixtures carry deterministic Ed25519 signatures using only the published fixture public key; they are test vectors, not production trust anchors.",
+  "status": "candidate",
+  "status_tables": "status-tables.json"
+}

@@ -1,0 +1,303 @@
+{
+  "capability": "events.sse",
+  "case_id": "sse-principal-visibility",
+  "description": "Live events, resource visibility, and replay IDs remain bound to one authenticated principal.",
+  "introduced_in": "1.0.0",
+  "kind": "case",
+  "steps": [
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/vehicle_id",
+            "value": "vehicle_demo_alpha"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/current_state",
+        "status": 200
+      },
+      "reference_response": {
+        "body": {
+          "battery_level_percent": 78,
+          "charging_state": "disconnected",
+          "climate_on": false,
+          "inside_temperature_c": 21.5,
+          "location": null,
+          "locked": true,
+          "observed_at": "2026-08-30T12:00:00.000Z",
+          "odometer_km": 12000.5,
+          "outside_temperature_c": 17,
+          "quality": {
+            "assessed_at": "2026-08-30T12:00:01.250Z",
+            "derived_fields": [],
+            "gap_count": 0,
+            "issues": [],
+            "largest_gap_seconds": 0,
+            "projection_version": "3.1.0",
+            "quality": "complete",
+            "sources": [
+              "fleet_telemetry"
+            ],
+            "subject_id": "vehicle_demo_alpha",
+            "subject_type": "vehicle"
+          },
+          "range_km": 338.4,
+          "resource_type": "current_state",
+          "revision": 42,
+          "state": "online",
+          "vehicle_id": "vehicle_demo_alpha"
+        },
+        "headers": {
+          "Cache-Control": "private, max-age=0, must-revalidate",
+          "Content-Type": "application/json",
+          "ETag": "\"bY8nJ4qW2sF7kL5p\"",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "Vary": "Authorization, Teslatlas-Protocol-Version"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Conformance-Principal": "principal-a",
+          "Teslatlas-Conformance-Scenario": "principal-visibility",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/current",
+        "query": {}
+      },
+      "step_id": "principal-a-resource"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "same_as",
+            "path": "/events/0/data/data",
+            "ref": "principal-a-resource.body"
+          }
+        ],
+        "event_schema": "urn:teslatlas:protocol:schema:event:1.2.0",
+        "headers_equal": {
+          "Content-Type": "text/event-stream"
+        },
+        "status": 200
+      },
+      "reference_response": {
+        "events": [
+          {
+            "data": {
+              "data": {
+                "battery_level_percent": 78,
+                "charging_state": "disconnected",
+                "climate_on": false,
+                "inside_temperature_c": 21.5,
+                "location": null,
+                "locked": true,
+                "observed_at": "2026-08-30T12:00:00.000Z",
+                "odometer_km": 12000.5,
+                "outside_temperature_c": 17,
+                "quality": {
+                  "assessed_at": "2026-08-30T12:00:01.250Z",
+                  "derived_fields": [],
+                  "gap_count": 0,
+                  "issues": [],
+                  "largest_gap_seconds": 0,
+                  "projection_version": "3.1.0",
+                  "quality": "complete",
+                  "sources": [
+                    "fleet_telemetry"
+                  ],
+                  "subject_id": "vehicle_demo_alpha",
+                  "subject_type": "vehicle"
+                },
+                "range_km": 338.4,
+                "resource_type": "current_state",
+                "revision": 42,
+                "state": "online",
+                "vehicle_id": "vehicle_demo_alpha"
+              },
+              "event_id": "event_demo_0042",
+              "event_type": "vehicle.current.changed",
+              "occurred_at": "2026-08-30T12:00:01.250Z",
+              "resource_id": "vehicle_demo_alpha",
+              "revision": 42,
+              "vehicle_id": "vehicle_demo_alpha"
+            },
+            "event": "vehicle.current.changed",
+            "id": "event_demo_0042"
+          }
+        ],
+        "headers": {
+          "Cache-Control": "no-cache",
+          "Content-Type": "text/event-stream",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "last_event_id_after": "event_demo_0042",
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Conformance-Principal": "principal-a",
+          "Teslatlas-Conformance-Scenario": "principal-visibility",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/events",
+        "query": {
+          "vehicle_id": "vehicle_demo_alpha"
+        }
+      },
+      "step_id": "principal-a-live"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 404
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "not_found"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 404
+      },
+      "reference_response": {
+        "body": {
+          "code": "not_found",
+          "instance": "/requests/request_not_found",
+          "request_id": "request_not_found",
+          "retryable": false,
+          "status": 404,
+          "title": "Not found",
+          "type": "urn:teslatlas:problem:not-found"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_not_found"
+        },
+        "status": 404
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Conformance-Principal": "principal-b",
+          "Teslatlas-Conformance-Scenario": "principal-visibility",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/current",
+        "query": {}
+      },
+      "step_id": "principal-b-resource"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "is_empty",
+            "path": "/events"
+          }
+        ],
+        "event_schema": "urn:teslatlas:protocol:schema:event:1.2.0",
+        "headers_equal": {
+          "Content-Type": "text/event-stream"
+        },
+        "status": 200
+      },
+      "reference_response": {
+        "events": [],
+        "headers": {
+          "Cache-Control": "no-cache",
+          "Content-Type": "text/event-stream",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Conformance-Principal": "principal-b",
+          "Teslatlas-Conformance-Scenario": "principal-visibility",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/events",
+        "query": {
+          "vehicle_id": "vehicle_demo_alpha"
+        }
+      },
+      "step_id": "principal-b-live"
+    },
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 400
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "event_id_invalid"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 400
+      },
+      "reference_response": {
+        "body": {
+          "code": "event_id_invalid",
+          "instance": "/requests/request_event_id_invalid",
+          "request_id": "request_event_id_invalid",
+          "retryable": false,
+          "status": 400,
+          "title": "Invalid event ID",
+          "type": "urn:teslatlas:problem:event-id-invalid"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_event_id_invalid"
+        },
+        "status": 400
+      },
+      "request": {
+        "headers": {
+          "Last-Event-ID": "${principal-a-live.events.0.id}",
+          "Teslatlas-Conformance-Principal": "principal-b",
+          "Teslatlas-Conformance-Scenario": "principal-visibility",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/events",
+        "query": {
+          "vehicle_id": "vehicle_demo_alpha"
+        }
+      },
+      "step_id": "cross-principal-replay"
+    }
+  ]
+}

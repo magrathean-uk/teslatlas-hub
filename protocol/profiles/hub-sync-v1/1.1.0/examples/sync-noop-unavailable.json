@@ -1,0 +1,11 @@
+{
+  "fixture_id": "sync-noop-unavailable-v1",
+  "response": {
+    "body_bytes": 0,
+    "headers": {
+      "cache_control": "no-store"
+    },
+    "manifest_signature": "absent",
+    "status": 406
+  }
+}

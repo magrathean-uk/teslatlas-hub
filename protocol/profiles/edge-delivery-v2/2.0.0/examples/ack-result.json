@@ -1,0 +1,11 @@
+{
+  "acknowledged_gap_notice_ids": [
+    "73002ffc20a769d62ab2800675b51e8fc3a895ff762b370e5edf11185b864ab2"
+  ],
+  "acknowledged_record_ids": [
+    "8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9"
+  ],
+  "unknown_gap_notice_ids": [],
+  "unknown_record_ids": [],
+  "version": 2
+}

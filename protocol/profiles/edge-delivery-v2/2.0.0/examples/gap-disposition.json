@@ -1,0 +1,12 @@
+{
+  "category": "durable_gap",
+  "committed_at_ms": 1800000061000,
+  "edge_installation_id": "home-edge",
+  "edge_lineage": "spool-2026-09-05",
+  "evidence_sha256": "c2fceaa38e73c41b78386cad195a383e5ae4505db9f71c0e43e7f669a8380e53",
+  "item_id": "73002ffc20a769d62ab2800675b51e8fc3a895ff762b370e5edf11185b864ab2",
+  "item_kind": "gap",
+  "occurred_at_ms": 1800000060200,
+  "reason": "retention_expired",
+  "spool_seq": 11
+}

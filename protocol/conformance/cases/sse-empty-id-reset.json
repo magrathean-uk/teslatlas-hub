@@ -1,0 +1,41 @@
+{
+  "capability": "events.sse",
+  "case_id": "sse-empty-id-reset",
+  "description": "An empty id field resets the reconnect buffer exactly as defined by SSE.",
+  "introduced_in": "1.0.0",
+  "kind": "case",
+  "steps": [
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "is_empty",
+            "path": "/last_event_id_after"
+          }
+        ],
+        "headers_equal": {
+          "Content-Type": "text/event-stream"
+        },
+        "status": 200
+      },
+      "reference_response": {
+        "headers": {
+          "Content-Type": "text/event-stream",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "last_event_id_after": "",
+        "status": 200
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Conformance-Scenario": "empty-id-reset",
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/events",
+        "query": {}
+      },
+      "step_id": "reset"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": 4,
+  "product": "Protocol",
+  "updated_at": "2026-09-22T10:00:00Z",
+  "state": "SOURCE_PUBLISHED_LOCAL_ARTIFACTS_REMOVED",
+  "macos_working_product_state": "HISTORICALLY_ACCEPTED_RUNTIME_REMOVED",
+  "planning_state": "COMPLETE",
+  "current_goal": null,
+  "current_worker": null,
+  "source": {
+    "accepted_implementation_lineage": "788cfa2fec520896e9dc4accfc9202325327a135",
+    "main_before_cleanup_metadata": "c3ee94f2e12e22d0be7402b1ad185058aa9f0752",
+    "branch": "main",
+    "remote_ref": "refs/heads/main",
+    "publication": "SOURCE_PUBLISHED"
+  },
+  "local_state": {
+    "build_outputs": "REMOVED",
+    "candidate_artifacts": "REMOVED",
+    "external_receipts": "REMOVED",
+    "runtime": "NONE"
+  },
+  "evidence_summary": "Historical: Node, Swift and strict-browser consumers passed the recorded schema 2.2 and cursor checks.",
+  "evidence_boundary": "Historical results apply only to the exact former source and artifacts. Fresh runtime claims require a rebuild and new receipts.",
+  "remaining": [
+    "No local receipt or runtime remains; new integration claims require a fresh coordinated run."
+  ]
+}

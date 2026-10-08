@@ -1,0 +1,54 @@
+{
+  "$defs": {
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "base_manifest_schema": {
+          "enum": [
+            "2.1",
+            "2.2"
+          ],
+          "type": "string"
+        },
+        "base_receipt_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "from_sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "schema_version_range": {
+          "additionalProperties": false,
+          "properties": {
+            "maximum": {
+              "pattern": "^(?:0|[1-9][0-9]{0,2})\\.(?:0|[1-9][0-9]{0,2})$",
+              "type": "string"
+            },
+            "minimum": {
+              "pattern": "^(?:0|[1-9][0-9]{0,2})\\.(?:0|[1-9][0-9]{0,2})$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "minimum",
+            "maximum"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "base_receipt_id",
+        "base_manifest_schema",
+        "from_sequence",
+        "schema_version_range"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-sync-v1:1.3.0:changes-since-request",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

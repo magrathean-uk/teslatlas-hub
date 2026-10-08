@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:common:1.2.0",
+  "title": "Teslatlas protocol common types",
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "utc_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "opaque_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9_~-]+$"
+    },
+    "actor_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^(device|service|user)_[a-z0-9_~-]+$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "cursor": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 2048,
+      "pattern": "^[A-Za-z0-9._~-]+$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "source": {
+      "enum": [
+        "owner_api",
+        "legacy_stream",
+        "fleet_api",
+        "fleet_telemetry",
+        "teslamate_mirror",
+        "teslamate_import",
+        "manual_import",
+        "ble_gap_fill"
+      ]
+    },
+    "quality": {
+      "enum": [
+        "complete",
+        "partial",
+        "degraded"
+      ]
+    },
+    "quality_flag": {
+      "enum": [
+        "duplicate",
+        "delayed",
+        "reordered",
+        "gap_before",
+        "gap_after",
+        "clock_skew",
+        "provider_conflict",
+        "inferred",
+        "stale",
+        "invalid_for_context"
+      ]
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "latitude",
+        "longitude"
+      ],
+      "properties": {
+        "latitude": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90
+        },
+        "longitude": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180
+        },
+        "altitude_m": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    }
+  }
+}

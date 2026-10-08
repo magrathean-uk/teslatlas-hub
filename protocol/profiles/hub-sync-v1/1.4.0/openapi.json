@@ -1,0 +1,114 @@
+{
+  "info": {
+    "title": "Teslatlas PhysicalV3 changed-set extension",
+    "version": "1.4.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/vehicles/{vehicle_id}/sync/changes-since": {
+      "post": {
+        "operationId": "changesSincePhysicalV14",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "changes-since-request.schema.json#/$defs/request"
+              }
+            }
+          },
+          "required": true,
+          "x-max-body-bytes": 8192
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "physical-changed-set-receipt.schema.json#/$defs/receipt"
+                    },
+                    {
+                      "$ref": "../1.3.0/noop.schema.json#/$defs/receipt"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "signed physical changed-set or inherited signed no-op"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "physical-rebase-hint.schema.json#/$defs/hint"
+                }
+              }
+            },
+            "description": "signed complete replacement with exact 1.4 retry request"
+          }
+        }
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/sync/manifest": {
+      "get": {
+        "operationId": "bootstrapPhysicalV14",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-teslatlas-sync-profile",
+            "required": true,
+            "schema": {
+              "const": "hub-sync-v1@1.4.0"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-teslatlas-supported-schemas",
+            "required": true,
+            "schema": {
+              "const": "2.1,2.2"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../1.3.0/sync-manifest.schema.json#/$defs/schema_2_2"
+                }
+              }
+            },
+            "description": "signed schema 2.2 PhysicalV3 full snapshot"
+          },
+          "406": {
+            "description": "selector unavailable; empty body, Cache-Control: no-store"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,251 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-09-19T10:48:06.353734+00:00",
+  "purpose": "Owner-authorized source snapshot and planning upload; not a release or new runtime acceptance",
+  "branch": "main",
+  "before_head": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+  "authorization": "2026-09-19 owner: Commit and push current work",
+  "acceptance_receipts": "Retained unchanged; original tested source/dirty-tree identities remain historical",
+  "included_changes": [
+    {
+      "path": ".dockerignore",
+      "sha256": "bd9294754f7785ff24e305dfd772294e7bde843202ffb96493a3559fa0a5192d",
+      "disposition": "included"
+    },
+    {
+      "path": "AGENTS.md",
+      "sha256": "15daf2a4f2993432dfda58c0a4ccb184df17a71037e68f8192d8cd0ea03936f6",
+      "disposition": "included"
+    },
+    {
+      "path": "Dockerfile",
+      "sha256": "ce1567a285fde80fed2995da60c3420b64be380feb184b5f80b840fd463874b1",
+      "disposition": "included"
+    },
+    {
+      "path": "README.md",
+      "sha256": "6cee2c39a8df7841edf6ace00cfc0dda76ed652236babd88b6fde73347da8d2f",
+      "disposition": "included"
+    },
+    {
+      "path": "compatibility/hub.json",
+      "sha256": "b7f6564abae676ba22133aa3fb8846795733a48f6a6ebd26bf6b1822125187cd",
+      "disposition": "included"
+    },
+    {
+      "path": "conformance/hub_http.py",
+      "sha256": "d1b31ce65550837b032044ebb8b54cecdc69044fa0df6e488c7d59321a70f5d1",
+      "disposition": "included"
+    },
+    {
+      "path": "conformance/hub_matrix.py",
+      "sha256": "c3b9ee8f17e59ab70e27aca21faada550eb50b2979439cca9f36e7bcd2fa75b4",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/architecture.md",
+      "sha256": "f706fbf723603519c8c2e7e283d93b7090f187a0d4fe10e256464dc81ade877a",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/client-quickstart.md",
+      "sha256": "d51c81df78d8365cde726e587b1e66c6fbe69d85129c1ea972c0bbf00359a114",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/commands-and-metadata.md",
+      "sha256": "4430a8349072ed94a08a4585ca328a8bd8911514a3ba353acb9c3ead23093157",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/compatibility.md",
+      "sha256": "822367c093c1a3a3d7b50f0b76c735e028a714cba8bbb56ab7af9b27aa90b1e5",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/conformance.md",
+      "sha256": "a874b37931b5c256fa8f334529185954ed0a856492f4444994886bc4fe4af0c1",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/current-hub.md",
+      "sha256": "1d679d8e8a28cda7716440b7f8f3164a41ee3ed1bb9b41b07afbbe61a41645c5",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/data-model.md",
+      "sha256": "1aae60c6db3d4b2ca761e036ade0af1d6d683956765ccdec30ed24b344662bed",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/PLAN.md",
+      "sha256": "3f4dd8e1775a055ee598125be647121d8142ba89ddf2af37f6c93256a1689896",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/STATUS.json",
+      "sha256": "80e5018124a91fa51808901f9fb01d6de63ed095155a1ec4e7ea0f5f7c45bfc1",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/plans/2026-08-30-foundation.md",
+      "sha256": "8191c5c6600a5c13dcce64f7eb6100d5958d5245ebff28faa8ddc335adfa0941",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+      "sha256": "309036906afc2e8102cd51279aaf13c9acd8abaefa1b2b0d15e79e86af3e640e",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/2026-09-08/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "sha256": "7b3319a7b8d523149a9185c529d59266ac3d1f1f9bd2385bc385ee2f780764de",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/archive/README.md",
+      "sha256": "6711fe306537c214ccb16bdc43742b079849de9306868a3fad1eb829b23370a1",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/d1-component-manifest-handoff-2026-09-09.json",
+      "sha256": "54907340ce8dd04ea93403d8ebf317783faa190a43c68745e3d470962df924bd",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/g3-compatibility-admission-2026-09-19-r1.json",
+      "sha256": "1c02d1222cdbb7a7a53b4a62536eb88101bf59a0951c55701470141cf7c6ff9c",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/development/g3-compatibility-admission-2026-09-19-r2.json",
+      "sha256": "5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/docker.md",
+      "sha256": "89774a5c91655541b4fcfc5772a28329c7f76d07234c1997bd7eb7c509c1b006",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/events.md",
+      "sha256": "3589c8c3d4d57576108b748b3e1185d632dccceb0b6b08caaa909e9d4c264ab0",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/http.md",
+      "sha256": "f1c5e6a826b1473adc3b9a7a918670085390747f85c8283a08b54fccfa5a6f3e",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/plans/2026-08-30-foundation.md",
+      "sha256": "2d04ddee5c94e7f3083a71d29bb14a71501cc4a228dc3be70ae6b3682a927718",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/product-versioning.md",
+      "sha256": "06d42eb9ae4be7901de9fab5a176c71fbe89d4c9c68690a920f812c20a0e5284",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/standards.md",
+      "sha256": "13e54cad3010dc5b674c8b89be74a7065b73773f453244716cdd38bfd017db45",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-08-goal-checkpoint.json",
+      "sha256": "4360dac167971274656c5ddc05d81d8ea4278574871946b594b93dc33bcccc69",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/superpowers/plans/2026-09-08-working-product-plan.md",
+      "sha256": "dcefffc267e134027838a0f7a0862a7fbac0509a6435821483e52418b0638caf",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/verification.md",
+      "sha256": "5f34e9656c3b18a2ea39bc0b28346f43d1749882ea7e0a95af6a25ce4d3add2d",
+      "disposition": "included"
+    },
+    {
+      "path": "docs/versioning.md",
+      "sha256": "56d20591e75d5cc492e6e02fd0c92b3c246be49023852a7d0dee60ce69a0cae5",
+      "disposition": "included"
+    },
+    {
+      "path": "profiles/hub-http-v1/1.0.0/SHA256SUMS",
+      "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926",
+      "disposition": "included"
+    },
+    {
+      "path": "profiles/hub-http-v1/1.0.0/openapi.json",
+      "sha256": "af46fba327341fa016c1b25e3f45d69a56f75740f5d0feda3714a89b3c3e9bf7",
+      "disposition": "included"
+    },
+    {
+      "path": "profiles/hub-http-v1/1.0.0/profile.json",
+      "sha256": "5b939b06ffb9354cc5227734b85a3f2d7edf46d509dcdda603bccd961b839d71",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_current_hub_probe.py",
+      "sha256": "732300ae0b9a7b83c4aeb5000c4bd262f79f2c69d7b5338e7d1550698f825fe4",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_edge_delivery_profile.py",
+      "sha256": "cc3243168e5b150d08d02708cf8fc7f135063b29070c4248fdbf41af86037f58",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_hub_http_profile.py",
+      "sha256": "194895c1340971df137fef55a56f2bcb06abfdd81da39f074c933c6567625a8e",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_hub_matrix.py",
+      "sha256": "9c87aaa0df1cec51075841cb68fe4a333cc0171d55f26716bb88fdca3cb2f4a5",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_matrix_contract.py",
+      "sha256": "1d505c2971b8a00831854502cdd02a8d99dc506287a93a3b8d7f44901ac18ed6",
+      "disposition": "included"
+    },
+    {
+      "path": "tests/test_protocol_v2_adapter.py",
+      "sha256": "923f113dae5abfda0a6f7f1de9a290dff6cde9472d62b431a5ff73f849cb361b",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/build_hub_http_profile.py",
+      "sha256": "b65f4b8e235aff17e08bce98bca81ef4501ab37aa32b434cb95dd805d2e10bb1",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/check-current-hub",
+      "sha256": "1c070a237d913f1c3989ce285219545459ea756d91edd3a2775fd50de283f0c6",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/matrix-contract.json",
+      "sha256": "75bdb6380f70dc30b0f91abf92edbe7024fe0617402c67025bd5ec5dca609ca8",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/matrix_contract.py",
+      "sha256": "eef926e5d732a4c7ad46a9fe02a6089ea28d5c36b4e2523607212603b4994b24",
+      "disposition": "included"
+    },
+    {
+      "path": "tools/protocol-http-v1.schema.json",
+      "sha256": "97241f70538c98e0b851581c4d13f983b0b5f57bf543883abb8a6ede1ac23cd9",
+      "disposition": "included"
+    }
+  ],
+  "excluded_local_paths": [
+    ".serena/.gitignore",
+    ".serena/project.yml"
+  ],
+  "no_ci_release_tag_deployment": true
+}

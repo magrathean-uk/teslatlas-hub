@@ -1,0 +1,16 @@
+{
+  "type": "urn:teslatlas:problem:invalid-cursor",
+  "title": "Invalid cursor",
+  "status": 400,
+  "detail": "The cursor is malformed, forged, or not valid for this query.",
+  "instance": "/requests/request_demo_0001",
+  "code": "invalid_cursor",
+  "request_id": "request_demo_0001",
+  "retryable": false,
+  "field_errors": [
+    {
+      "field": "cursor",
+      "code": "invalid"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "cases": [
+    {
+      "id": "changes-since-changed-set",
+      "request_fixture": "changes-since-request-v1",
+      "response_fixture": "changes-since-changed-set-v1",
+      "status": 200
+    },
+    {
+      "id": "changes-since-rebase-after-compaction",
+      "request_fixture": "changes-since-request-v1",
+      "response_fixture": "changes-since-rebase-after-compaction-v1",
+      "status": 409
+    },
+    {
+      "id": "schema-2-1-single-pack-manifest",
+      "response_fixture": "schema-2-1-single-pack-manifest-v1",
+      "status": 200
+    },
+    {
+      "id": "schema-2-2-multi-chunk-manifest",
+      "response_fixture": "schema-2-2-multi-chunk-manifest-v1",
+      "status": 200
+    },
+    {
+      "id": "sync-noop-signed",
+      "response_fixture": "sync-noop-signed-v1",
+      "status": 200
+    },
+    {
+      "id": "sync-noop-unavailable",
+      "response_fixture": "sync-noop-unavailable-v1",
+      "status": 406
+    },
+    {
+      "id": "prepared-artefact-map-months-routes",
+      "response_fixture": "prepared-artefact-map-months-routes-v1",
+      "status": 200
+    }
+  ],
+  "profile_id": "hub-sync-v1@1.2.0"
+}

@@ -1,0 +1,1307 @@
+{
+  "excluded_source_fields": [
+    "addresses.raw"
+  ],
+  "format": "teslatlas-physical-v3-delta-v1",
+  "mapped_source_fields": 168,
+  "row_rule": "Each changed or context row is complete for its table; every listed column is present, including explicit NULLs. SQLite integer and blob representations are authoritative; absent columns are invalid.",
+  "tables": [
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "unit_of_length",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "unit_of_temperature",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "unit_of_pressure",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "preferred_range",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "base_url",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "grafana_url",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "language",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "theme_mode",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "inserted_at_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "updated_at_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        }
+      ],
+      "mapped_source_fields": 11,
+      "name": "global_settings"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "suspend_min",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "suspend_after_idle_min",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "req_not_unlocked",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "free_supercharging",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "use_streaming_api",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "enabled",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "lfp_battery",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        }
+      ],
+      "mapped_source_fields": 8,
+      "name": "car_settings"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "eid",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "vid",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "vin",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "name",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "model",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "efficiency",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "BLOB"
+        },
+        {
+          "name": "trim_badging",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "marketing_name",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "exterior_color",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "wheel_type",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "spoiler_type",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "display_priority",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "inserted_at_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "updated_at_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "settings_id",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        }
+      ],
+      "mapped_source_fields": 16,
+      "name": "cars"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "car_id",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_date_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_date_pg_us",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_position_id",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_position_id",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_address_id",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_address_id",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_geofence_id",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_geofence_id",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "outside_temp_avg_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "outside_temp_avg_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "inside_temp_avg_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "inside_temp_avg_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "speed_max",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "power_max",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "power_min",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_ideal_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_ideal_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_ideal_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_ideal_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_rated_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_rated_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_rated_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_rated_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_km_f64_be",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "BLOB"
+        },
+        {
+          "name": "end_km_f64_be",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "BLOB"
+        },
+        {
+          "name": "distance_f64_be",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "BLOB"
+        },
+        {
+          "name": "duration_min",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "ascent",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "descent",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        }
+      ],
+      "mapped_source_fields": 25,
+      "name": "drives"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "car_id",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "drive_id",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "date_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "latitude_e6",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "latitude_e6_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "longitude_e6",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "longitude_e6_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "elevation",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "speed",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "power",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "odometer_f64_be",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "BLOB"
+        },
+        {
+          "name": "ideal_battery_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "ideal_battery_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "est_battery_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "est_battery_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "rated_battery_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "rated_battery_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "battery_level",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "usable_battery_level",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "battery_heater",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "battery_heater_on",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "battery_heater_no_power",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "outside_temp_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "outside_temp_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "inside_temp_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "inside_temp_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "fan_status",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "driver_temp_setting_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "driver_temp_setting_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "passenger_temp_setting_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "passenger_temp_setting_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "is_climate_on",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "is_rear_defroster_on",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "is_front_defroster_on",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "tpms_pressure_fl_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "tpms_pressure_fl_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "tpms_pressure_fr_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "tpms_pressure_fr_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "tpms_pressure_rl_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "tpms_pressure_rl_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "tpms_pressure_rr_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "tpms_pressure_rr_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        }
+      ],
+      "mapped_source_fields": 30,
+      "name": "positions"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "car_id",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "position_id",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "address_id",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "geofence_id",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_date_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_date_pg_us",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charge_energy_added_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charge_energy_added_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charge_energy_used_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charge_energy_used_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_ideal_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_ideal_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_ideal_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_ideal_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_rated_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_rated_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_rated_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_rated_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_battery_level",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_battery_level",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "duration_min",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "outside_temp_avg_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "outside_temp_avg_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "cost_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "cost_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        }
+      ],
+      "mapped_source_fields": 18,
+      "name": "charging_processes"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charging_process_id",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "date_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "battery_heater",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "battery_heater_on",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "battery_heater_no_power",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "battery_level",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "usable_battery_level",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charge_energy_added_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charge_energy_added_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charger_actual_current",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charger_phases",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charger_pilot_current",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charger_power",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "charger_voltage",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "conn_charge_cable",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "fast_charger_present",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "fast_charger_brand",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "fast_charger_type",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "ideal_battery_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "ideal_battery_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "rated_battery_range_km_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "rated_battery_range_km_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "not_enough_power_to_heat",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "outside_temp_e1",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "outside_temp_e1_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        }
+      ],
+      "mapped_source_fields": 22,
+      "name": "charges"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "display_name",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "latitude_e6",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "latitude_e6_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "longitude_e6",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "longitude_e6_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "name",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "house_number",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "road",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "neighbourhood",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "city",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "county",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "postcode",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "state",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "state_district",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "country",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "inserted_at_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "updated_at_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "osm_id",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "osm_type",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        }
+      ],
+      "mapped_source_fields": 18,
+      "name": "addresses"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "name",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "latitude_e6",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "latitude_e6_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "longitude_e6",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "longitude_e6_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "radius",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "billing_type",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "cost_per_unit_e4",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "cost_per_unit_e4_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "session_fee_e2",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "session_fee_e2_is_nan",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "inserted_at_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "updated_at_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        }
+      ],
+      "mapped_source_fields": 10,
+      "name": "geofences"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "car_id",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "state",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        },
+        {
+          "name": "start_date_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_date_pg_us",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        }
+      ],
+      "mapped_source_fields": 5,
+      "name": "states"
+    },
+    {
+      "columns": [
+        {
+          "name": "id",
+          "nullable": false,
+          "primary_key": true,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "car_id",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "start_date_pg_us",
+          "nullable": false,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "end_date_pg_us",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "INTEGER"
+        },
+        {
+          "name": "version",
+          "nullable": true,
+          "primary_key": false,
+          "sqlite_type": "TEXT"
+        }
+      ],
+      "mapped_source_fields": 5,
+      "name": "updates"
+    }
+  ],
+  "wire_columns": 205
+}

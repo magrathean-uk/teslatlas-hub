@@ -1,0 +1,12 @@
+{
+  "payload": {
+    "createdAt": "2027-01-15T08:00:00.200Z",
+    "name": "userPresent"
+  },
+  "received_at_ms": 1800000000300,
+  "timestamp_ms": 1800000000200,
+  "tx_type": "alerts",
+  "txid": "edge-alert-0003",
+  "version": 1,
+  "vin": "5YJ3E1EA7KF000001"
+}

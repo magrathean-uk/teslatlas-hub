@@ -1,0 +1,10 @@
+{
+  "fixture_id": "changes-since-error-invalid-json-v1",
+  "response": {
+    "body": {
+      "code": "invalid_json",
+      "message": "Request body is not valid JSON."
+    },
+    "status": 400
+  }
+}

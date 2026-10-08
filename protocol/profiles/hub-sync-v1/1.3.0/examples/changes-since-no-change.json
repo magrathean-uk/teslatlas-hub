@@ -1,0 +1,17 @@
+{
+  "fixture_id": "changes-since-no-change-v1",
+  "receipt": {
+    "base_manifest_schema": "2.1",
+    "base_receipt_id": "receipt_demo_000042",
+    "kind": "no_op",
+    "manifest_schema": "2.1",
+    "sequence": 42,
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "A3CPiE4fZrlPhMw3xqMyXh+SOJocr+n6sOwxc/iLTBYQ+ltxnG2GCLeKKQhpwRL55sNC80wRKvbzTNx6oo8YDA==",
+      "signed_payload_sha256": "85709bdacb496aea8c7d5406a1f8fabfbae9a144eae8481539f10ef825340aa1"
+    },
+    "vehicle_id": "11111111-1111-4111-8111-111111111111"
+  }
+}

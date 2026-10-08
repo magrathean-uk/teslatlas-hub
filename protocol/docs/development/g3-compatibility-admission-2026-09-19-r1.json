@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "gate_id": "G3",
+  "result": "ACCEPTED",
+  "recorded_at": "2026-09-19T08:57:52Z",
+  "scope": "Coordinated metadata admission and readback for the exact accepted G2/G4, G5 and G6 compatibility evidence; no new runtime cohort was created.",
+  "canonical_bindings": {
+    "product_version": "2026.36.2",
+    "hub_profile": {
+      "id": "hub-http-v1",
+      "revision": "1.0.0",
+      "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+    },
+    "edge_profile": {
+      "id": "edge-delivery-v2",
+      "revision": "2.0.0",
+      "sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+    }
+  },
+  "tested_hub_source_fingerprints": {
+    "g2_g4": "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;content-manifest-sha256:e84233ed9641f525f6e4dba328700153983297932a277ebc544a75cc841cf823",
+    "g5": "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;snapshot-manifest-sha256:f3e9f240930c72909d982ad2f6429c4f6ab390eb34818505e92236f6027d443b",
+    "g6": "git:7fe8cb202c0eb7e291901a9b719d3fbe65c675bc;tracked-diff-sha256:8c3fb77fd6f540ad41e8d0b417c5e4427b05389399e9c2cb335a2faed6d243ca;content-manifest-sha256:42f1787eb94ad81595fad1e5795d547633d0fea848735dfd47ab4e86ed53249d"
+  },
+  "accepted_evidence": [
+    {
+      "gate_ids": [
+        "G2",
+        "G4"
+      ],
+      "path": "hub/docs/development/active-macos-arm64-hub-typescript-g2-g4-2026-09-18-r1.json",
+      "sha256": "6efec1707c3a703f31c5d7db3c84fa2d44c9fdff49afe22644aa3cf863eb2a7b"
+    },
+    {
+      "gate_ids": [
+        "G4"
+      ],
+      "path": "teslatlas-sdk-typescript/docs/development/macos-arm64-packed-node-browser-g4-2026-09-18-r1.json",
+      "sha256": "35a5881ffceb5ee4db3157bddc2758cbbc4e1ce25b8e96bafd1e34eab6f008e5"
+    },
+    {
+      "gate_ids": [
+        "G5"
+      ],
+      "path": "hub/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+      "sha256": "d3e78ff9f98acdb45b6d691c295df80e9fb2fbc70eb5b189c6a575ecd6e2ac5c"
+    },
+    {
+      "gate_ids": [
+        "G5"
+      ],
+      "path": "teslatlas-edge/docs/development/g5-debian-arm64-edge-hub-acceptance-2026-09-18-r5.json",
+      "sha256": "42209a8231e4ac6881a3fc4896a95573e8ba032dbb990ea747ea877e19e485f7"
+    },
+    {
+      "gate_ids": [
+        "G6"
+      ],
+      "path": "hub/docs/development/g6-macos-arm64-swift-hub-acceptance-2026-09-19-r2.json",
+      "sha256": "37ee4c1376778392c94da1457c31b1b6e69210cb4c4d504b6f08d520a1d93bca"
+    },
+    {
+      "gate_ids": [
+        "G6"
+      ],
+      "path": "teslatlas-sdk-swift/docs/development/g6-macos-arm64-external-consumer-acceptance-2026-09-19-r2.json",
+      "sha256": "dd5cfb0087f0bcf89bf8a1ef33b7bcf2fd3a28430da373e78a1bb5862472fea8"
+    }
+  ],
+  "admission_records": [
+    {
+      "path": "teslatlas-protocol/compatibility/hub.json",
+      "sha256": "b7f6564abae676ba22133aa3fb8846795733a48f6a6ebd26bf6b1822125187cd",
+      "profile": "hub-http-v1@1.0.0",
+      "source_fingerprint_count": 3,
+      "receipt_count": 6
+    },
+    {
+      "path": "teslatlas-sdk-typescript/compatibility/hub.json",
+      "sha256": "a07efb9fa16e128f9a21fdf7aa79b4c2bb6e260f3f24ee05f04b53e0a1074cb8",
+      "profile": "hub-http-v1@1.0.0",
+      "source_fingerprint_count": 1,
+      "receipt_count": 2
+    },
+    {
+      "path": "teslatlas-sdk-typescript/protocol/source/compatibility/hub.json",
+      "sha256": "b7f6564abae676ba22133aa3fb8846795733a48f6a6ebd26bf6b1822125187cd",
+      "profile": "hub-http-v1@1.0.0",
+      "source_fingerprint_count": 3,
+      "receipt_count": 6,
+      "byte_identical_to": "teslatlas-protocol/compatibility/hub.json"
+    },
+    {
+      "path": "teslatlas-edge/compatibility/hub.json",
+      "sha256": "2fb1add6e04df0c1d8bba1dd2763c593a35b5d4f6d36db71e0654f8676c8ec71",
+      "profile": "edge-delivery-v2@2.0.0",
+      "source_fingerprint_count": 1,
+      "receipt_count": 2
+    },
+    {
+      "path": "teslatlas-sdk-swift/compatibility/hub.json",
+      "sha256": "b575f0c68258a97efa4fe647e285bf791107ba47fc2d9361dffe27f048151673",
+      "profile": "hub-http-v1@1.0.0",
+      "source_fingerprint_count": 1,
+      "receipt_count": 2
+    }
+  ],
+  "validation": {
+    "profile_bytes_revalidated_across_protocol_typescript_swift_and_receipts": true,
+    "admission_command": "python3 hub/scripts/sync-ecosystem-versions.py --workspace /Users/bolyki/dev/source/teslatlas-service --admit-g3",
+    "shared_checker_tests": {
+      "result": "PASS",
+      "count": 17
+    },
+    "shared_post_admission_check": "PASS",
+    "typescript_protocol_check": "PASS",
+    "typescript_protocol_source_content_sha256": "b999629360394ad2bb82b0d65cb8ea393e8e0d3afeefe5f89f6b7f33eeef9a47",
+    "typescript_current_hub_generated_output_sha256": "3769abc73e927d20cd5842eed3a076b05bf436d1eba3026e324b5d5dfbe7c6b9",
+    "typescript_vendored_compatibility_byte_identical": true,
+    "json_and_receipt_readback": "PASS"
+  },
+  "failure_ledger": [
+    {
+      "stage": "typescript_protocol_sync_first_invocation",
+      "classification": "local toolchain PATH mismatch",
+      "effect": "npm resolved Node 26.8.2 instead of the pinned Node 26.7.0 toolchain; no runtime or credential existed and no acceptance assertion was made",
+      "disposition": "Reran the deterministic source sync with the pinned Node 26.7.0 toolchain first on PATH, then completed check-protocol and byte-identical readback successfully"
+    }
+  ],
+  "cleanup": {
+    "new_private_runtime_created": false,
+    "g6_r1_and_r2_private_roots_absent": true,
+    "owned_hub_processes_absent": true,
+    "owned_listeners_absent": true,
+    "heavy_build_lock_absent": true,
+    "task_listener_created": false
+  },
+  "limits": [
+    "G3 is metadata admission/readback of accepted evidence, not a new runtime, package publication or release.",
+    "G6 covers a current macOS 27 arm64 synthetic external consumer; the declared macOS 14 package floor was not independently exercised.",
+    "G2/G4 and G5 retain their own platform, package and synthetic-runtime limits.",
+    "No App, installer, notarization, real data, production, full platform matrix, Viewer or x86/Intel acceptance is claimed."
+  ]
+}

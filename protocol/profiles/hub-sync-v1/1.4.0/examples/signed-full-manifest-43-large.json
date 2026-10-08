@@ -1,0 +1,536 @@
+{
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-0.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000001"
+      }
+    },
+    {
+      "chunk_index": 1,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-1.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000002"
+      }
+    },
+    {
+      "chunk_index": 2,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-2.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000003"
+      }
+    },
+    {
+      "chunk_index": 3,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-3.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000004"
+      }
+    },
+    {
+      "chunk_index": 4,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-4.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000005"
+      }
+    },
+    {
+      "chunk_index": 5,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-5.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000006"
+      }
+    },
+    {
+      "chunk_index": 6,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-6.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000007"
+      }
+    },
+    {
+      "chunk_index": 7,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-7.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000008"
+      }
+    },
+    {
+      "chunk_index": 8,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-8.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000009"
+      }
+    },
+    {
+      "chunk_index": 9,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-9.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000000a"
+      }
+    },
+    {
+      "chunk_index": 10,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-10.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000000b"
+      }
+    },
+    {
+      "chunk_index": 11,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-11.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000000c"
+      }
+    },
+    {
+      "chunk_index": 12,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-12.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000000d"
+      }
+    },
+    {
+      "chunk_index": 13,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-13.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000000e"
+      }
+    },
+    {
+      "chunk_index": 14,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-14.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000000f"
+      }
+    },
+    {
+      "chunk_index": 15,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-15.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000010"
+      }
+    },
+    {
+      "chunk_index": 16,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-16.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000011"
+      }
+    },
+    {
+      "chunk_index": 17,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-17.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000012"
+      }
+    },
+    {
+      "chunk_index": 18,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-18.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000013"
+      }
+    },
+    {
+      "chunk_index": 19,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-19.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000014"
+      }
+    },
+    {
+      "chunk_index": 20,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-20.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000015"
+      }
+    },
+    {
+      "chunk_index": 21,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-21.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000016"
+      }
+    },
+    {
+      "chunk_index": 22,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-22.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000017"
+      }
+    },
+    {
+      "chunk_index": 23,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-23.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000018"
+      }
+    },
+    {
+      "chunk_index": 24,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-24.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000019"
+      }
+    },
+    {
+      "chunk_index": 25,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-25.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000001a"
+      }
+    },
+    {
+      "chunk_index": 26,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-26.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000001b"
+      }
+    },
+    {
+      "chunk_index": 27,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-27.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000001c"
+      }
+    },
+    {
+      "chunk_index": 28,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-28.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000001d"
+      }
+    },
+    {
+      "chunk_index": 29,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-29.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000001e"
+      }
+    },
+    {
+      "chunk_index": 30,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-30.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000001f"
+      }
+    },
+    {
+      "chunk_index": 31,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-31.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000020"
+      }
+    },
+    {
+      "chunk_index": 32,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-32.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000021"
+      }
+    },
+    {
+      "chunk_index": 33,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-33.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000022"
+      }
+    },
+    {
+      "chunk_index": 34,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-34.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000023"
+      }
+    },
+    {
+      "chunk_index": 35,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-35.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000024"
+      }
+    },
+    {
+      "chunk_index": 36,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-36.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000025"
+      }
+    },
+    {
+      "chunk_index": 37,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-37.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000026"
+      }
+    },
+    {
+      "chunk_index": 38,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-38.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000027"
+      }
+    },
+    {
+      "chunk_index": 39,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-39.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000028"
+      }
+    },
+    {
+      "chunk_index": 40,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-40.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000029"
+      }
+    },
+    {
+      "chunk_index": 41,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-41.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000002a"
+      }
+    },
+    {
+      "chunk_index": 42,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-42.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000002b"
+      }
+    },
+    {
+      "chunk_index": 43,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-43.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000002c"
+      }
+    },
+    {
+      "chunk_index": 44,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-44.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000002d"
+      }
+    },
+    {
+      "chunk_index": 45,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-45.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000002e"
+      }
+    },
+    {
+      "chunk_index": 46,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-46.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000002f"
+      }
+    },
+    {
+      "chunk_index": 47,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-47.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000030"
+      }
+    },
+    {
+      "chunk_index": 48,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-48.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000031"
+      }
+    },
+    {
+      "chunk_index": 49,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-49.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000032"
+      }
+    },
+    {
+      "chunk_index": 50,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-50.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000033"
+      }
+    },
+    {
+      "chunk_index": 51,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-51.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000034"
+      }
+    },
+    {
+      "chunk_index": 52,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-52.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000035"
+      }
+    },
+    {
+      "chunk_index": 53,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-53.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000036"
+      }
+    },
+    {
+      "chunk_index": 54,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-54.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000037"
+      }
+    },
+    {
+      "chunk_index": 55,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-55.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000038"
+      }
+    },
+    {
+      "chunk_index": 56,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-56.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000039"
+      }
+    },
+    {
+      "chunk_index": 57,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-57.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000003a"
+      }
+    },
+    {
+      "chunk_index": 58,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-58.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000003b"
+      }
+    },
+    {
+      "chunk_index": 59,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-59.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000003c"
+      }
+    },
+    {
+      "chunk_index": 60,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-60.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000003d"
+      }
+    },
+    {
+      "chunk_index": 61,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-61.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000003e"
+      }
+    },
+    {
+      "chunk_index": 62,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-62.sqlite.zst",
+        "sha256": "000000000000000000000000000000000000000000000000000000000000003f"
+      }
+    },
+    {
+      "chunk_index": 63,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-63.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000040"
+      }
+    },
+    {
+      "chunk_index": 64,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-43-large-64.sqlite.zst",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000041"
+      }
+    }
+  ],
+  "kind": "snapshot",
+  "manifest_id": "manifest_demo_000043_large",
+  "receipt_id": "receipt_demo_000043_large",
+  "schema_version": "2.2",
+  "sequence": 43,
+  "signature": {
+    "algorithm": "ed25519",
+    "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+    "signature": "JHBCfMub3bHiPyxtrsjlrwLDNVBEzwtZOPDVuFvaLTq+bTxo7d+/QuZHgJnA8rkMkILORLGwwEzUechZ0Mg5CQ==",
+    "signed_payload_sha256": "f76ed8bf5d11a423e6f78a4535c0b793d2c563110ee91bf1fb63a045f5330013"
+  },
+  "vehicle_id": "33333333-3333-4333-8333-333333333333"
+}

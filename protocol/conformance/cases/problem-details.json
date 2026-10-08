@@ -1,0 +1,71 @@
+{
+  "capability": "query.history",
+  "case_id": "problem-details",
+  "description": "Invalid requests return RFC 9457 problem details with stable codes and ignorable extensions.",
+  "introduced_in": "1.0.0",
+  "kind": "case",
+  "steps": [
+    {
+      "expect": {
+        "assertions": [
+          {
+            "op": "equals",
+            "path": "/body/status",
+            "value": 400
+          },
+          {
+            "op": "equals",
+            "path": "/body/code",
+            "value": "invalid_time_range"
+          },
+          {
+            "op": "exists",
+            "path": "/body/future_extension"
+          }
+        ],
+        "body_schema": "urn:teslatlas:protocol:schema:error:1.2.0",
+        "headers_equal": {
+          "Content-Type": "application/problem+json"
+        },
+        "headers_present": [
+          "Content-Type",
+          "Teslatlas-Protocol-Version",
+          "X-Request-ID"
+        ],
+        "status": 400
+      },
+      "reference_response": {
+        "body": {
+          "code": "invalid_time_range",
+          "future_extension": {
+            "safe_to_ignore": true
+          },
+          "instance": "/requests/request_invalid_time_range",
+          "request_id": "request_invalid_time_range",
+          "retryable": false,
+          "status": 400,
+          "title": "Invalid time range",
+          "type": "urn:teslatlas:problem:invalid-time-range"
+        },
+        "headers": {
+          "Content-Type": "application/problem+json",
+          "Teslatlas-Protocol-Version": "${profile}",
+          "X-Request-ID": "request_invalid_time_range"
+        },
+        "status": 400
+      },
+      "request": {
+        "headers": {
+          "Teslatlas-Protocol-Version": "${profile}"
+        },
+        "method": "GET",
+        "path": "/v1/vehicles/vehicle_demo_alpha/drives",
+        "query": {
+          "from": "2026-09-01T00:00:00.000Z",
+          "to": "2026-08-01T00:00:00.000Z"
+        }
+      },
+      "step_id": "invalid-range"
+    }
+  ]
+}

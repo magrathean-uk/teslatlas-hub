@@ -1,0 +1,17 @@
+{
+  "excluded_source_field": "addresses.raw",
+  "fixed_decimal": {
+    "_e1": "scaled by 10",
+    "_e2": "scaled by 100",
+    "_e4": "scaled by 10000",
+    "_e6": "scaled by 1000000"
+  },
+  "float_bits_be": "Eight-byte big-endian IEEE 754 binary64 bit pattern, preserving signed zero and special values; suffix _f64_be or cars.efficiency",
+  "integer": "SQLite signed 64-bit INTEGER; JSON control members remain within the profile's I-JSON safe range",
+  "nan_flags": "For a nullable numeric column x with companion x_is_nan, the flag is 0 or 1. A non-NULL finite x requires flag 0; flag 1 represents source NaN with x NULL. NULL plus flag 0 represents source NULL.",
+  "nulls": "All catalog columns are present in every full row. SQLite NULL is permitted only where the catalog marks nullable.",
+  "source_field_count": 168,
+  "text": "UTF-8 TEXT with explicit NULL for absent source values",
+  "timestamp_pg_us": "Signed microseconds from 2000-01-01T00:00:00 UTC; suffix _pg_us",
+  "wire_column_count": 205
+}

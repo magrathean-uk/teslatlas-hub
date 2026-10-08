@@ -1,0 +1,276 @@
+{
+  "components": {
+    "securitySchemes": {
+      "pairedBearer": {
+        "bearerFormat": "opaque paired bearer",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Teslatlas changes-since",
+    "version": "1.2.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/packs/sha256/{object_name}": {
+      "get": {
+        "operationId": "syncPack",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "object_name",
+            "required": true,
+            "schema": {
+              "maxLength": 1024,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "pack bytes"
+          },
+          "206": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "single byte range"
+          },
+          "401": {
+            "content": {},
+            "description": "empty authentication failure"
+          },
+          "404": {
+            "content": {},
+            "description": "empty missing pack"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/sync/changes-since": {
+      "post": {
+        "operationId": "changesSince",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "changes-since-request.schema.json#/$defs/request"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "changed-set-receipt.schema.json#/$defs/receipt"
+                }
+              }
+            },
+            "description": "signed changed-set receipt"
+          },
+          "401": {
+            "content": {},
+            "description": "missing, invalid, expired, or revoked paired bearer"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "rebase-hint.schema.json#/$defs/hint"
+                }
+              }
+            },
+            "description": "signed rebase hint after compaction"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/sync/manifest": {
+      "get": {
+        "operationId": "syncManifest",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-teslatlas-supported-schemas",
+            "required": true,
+            "schema": {
+              "pattern": "^2\\.1,2\\.2$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "sync-manifest.schema.json#/$defs/manifest"
+                }
+              }
+            },
+            "description": "signed manifest"
+          },
+          "401": {
+            "content": {},
+            "description": "empty authentication failure"
+          },
+          "406": {
+            "content": {},
+            "description": "empty unavailable response with Cache-Control: no-store"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/sync/noop": {
+      "get": {
+        "operationId": "syncNoop",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "noop.schema.json#/$defs/receipt"
+                }
+              }
+            },
+            "description": "signed no-op receipt"
+          },
+          "401": {
+            "content": {},
+            "description": "empty authentication failure"
+          },
+          "406": {
+            "content": {},
+            "description": "empty unavailable response with Cache-Control: no-store"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/sync/prepared-artefacts/{artifact_id}": {
+      "get": {
+        "operationId": "preparedArtefact",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "artifact_id",
+            "required": true,
+            "schema": {
+              "maxLength": 4096,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._~-]+$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "prepared-artefact.schema.json#/$defs/receipt"
+                }
+              }
+            },
+            "description": "signed prepared-artefact receipt"
+          },
+          "401": {
+            "content": {},
+            "description": "empty authentication failure"
+          },
+          "404": {
+            "content": {},
+            "description": "empty missing artefact"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    }
+  }
+}

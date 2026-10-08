@@ -1,0 +1,71 @@
+{
+  "fixture_id": "prepared-pack-hidden-column-v1",
+  "pack_file": "packs/negative/prepared-map-months-hidden-column.sqlite.zst",
+  "receipt": {
+    "algorithm_version": "1.0.0",
+    "artifact_id": "prepared_demo_hidden_column",
+    "artifact_schema_version": 1,
+    "artifact_type": "map_months",
+    "dirty_spans": {
+      "map_months": [
+        {
+          "drive_count": 1,
+          "from_ms": 1735689600000,
+          "month": "2025-01",
+          "reason": "changed",
+          "resolution": "readyData",
+          "tile_count": 2,
+          "to_ms": 1738368000000
+        },
+        {
+          "drive_count": 0,
+          "from_ms": 1738368000000,
+          "month": "2025-02",
+          "reason": "changed",
+          "resolution": "readyEmpty",
+          "tile_count": 0,
+          "to_ms": 1740787200000
+        }
+      ]
+    },
+    "generation": {
+      "generated_at_ms": 1740790800000,
+      "generation_id": "generation_demo_000001"
+    },
+    "map_style": "route-stroke-v8-opaque",
+    "pack": {
+      "compressed_bytes": 1204,
+      "media_type": "application/vnd.teslatlas.prepared+sqlite+zstd;version=1",
+      "object_name": "packs/negative/prepared-map-months-hidden-column.sqlite.zst",
+      "payload": "teslatlas-prepared-v1",
+      "sha256": "76cc9e2e5d8084c215c28490e50ccb12fdb09a26ed20b930d6c6260157aa0d9c",
+      "uncompressed_bytes": 16384
+    },
+    "payload": "teslatlas-prepared-v1",
+    "scope": "map_months",
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "s51YGVWbeclpkEVkzAvL6ZwN8wyKqIsNpG+fSHguvlZfsR9qbj+8XiCmD9d/zEcQkDWSmtzd6JyEsRrCAUYSBQ==",
+      "signed_payload_sha256": "517f9bca73761bbf5313ea68dcce44f843d9534126f33476304bb39234ac443c"
+    },
+    "source": {
+      "input_manifest_id": "manifest_demo_000900",
+      "input_manifest_schema": "2.2",
+      "input_receipt_id": "receipt_demo_000900",
+      "input_sequence": 900,
+      "kind": "hub_compute"
+    },
+    "tile_geometry_version": "raster-v9-rounded-tile-px",
+    "units": {
+      "coordinates": "wgs84_degrees",
+      "distance": "km",
+      "time": "ms"
+    },
+    "vehicle_id": "11111111-1111-4111-8111-111111111111",
+    "window": {
+      "from_ms": 1735689600000,
+      "to_ms": 1740787200000
+    }
+  }
+}

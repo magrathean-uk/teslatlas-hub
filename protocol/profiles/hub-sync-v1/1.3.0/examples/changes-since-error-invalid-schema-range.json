@@ -1,0 +1,10 @@
+{
+  "fixture_id": "changes-since-error-invalid-schema-range-v1",
+  "response": {
+    "body": {
+      "code": "invalid_schema_range",
+      "message": "Schema range is reversed or excludes the base schema."
+    },
+    "status": 422
+  }
+}

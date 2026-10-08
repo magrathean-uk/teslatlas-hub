@@ -1,0 +1,117 @@
+{
+  "coordination_policy": {
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high"
+  },
+  "goal_continuation": "The native goal remains blocked. With the available tools, resumption requires the user's supported Resume goal control. The parent can dispatch ordinary authorized development turns now; this does not activate the native goal. Do not replace an unfinished goal, mark it falsely complete, or edit internal app state. Continue READY owned work without waiting for native resumption; retain the full proposed objective and acceptance gates.",
+  "schema_version": 1,
+  "observed_at_utc": "2026-09-08T18:28:30Z",
+  "planning_pass": {
+    "model": "gpt-5.6-terra",
+    "effort": "high",
+    "product_implementation_performed": true,
+    "goal_database_mutated": false
+  },
+  "goal_snapshot": {
+    "thread_id": "01a07f89-48b6-7143-919f-8b389fbfb1ec",
+    "status": "blocked",
+    "original_objective": "Complete the approved Teslatlas Protocol working-product plan in teslatlas-protocol using gpt-5.6-luna with thinking=max after the orchestrator handoff. Preserve existing work and the independent main checkout. Deliver an independently usable, source-neutral current-Hub HTTP contract and validated public walkthrough; deterministic profile/schema/OpenAPI and conformance checks; fresh synthetic native evidence and Hub-owned installed acceptance for macOS arm64 and Debian 13 arm64/amd64 with exact content bindings and cleanup; truthful compatibility records coordinated with Hub and SDK owners; then Protocol-only AGENTS updates, the planned simple Docker local gate and bounded read-only probe, reconciled docs/README, and reviewed source-only GitHub publication. Distinguish local, remote-smoke, native, and installed proof; do not claim missing acceptance, modify sibling roots or App, add CI, or publish releases/artifacts. All development waits for the parent orchestrator's Luna Max execution turn.",
+    "tokens_used": 20166,
+    "time_used_seconds": 106,
+    "created_at_unix": 1788848179,
+    "created_at_utc": "2026-09-08T06:16:19Z",
+    "updated_at_unix": 1788848286,
+    "updated_at_utc": "2026-09-08T06:18:06Z",
+    "limits": {
+      "token_budget": null,
+      "time_budget_seconds": null,
+      "remaining_tokens": null,
+      "completion_budget_report": null
+    },
+    "resume_required": true,
+    "resume_note": "The native goal remains blocked. With the available tools, resumption requires the user's supported Resume goal control. The parent can dispatch ordinary authorized development turns now; this does not activate the native goal. Do not replace an unfinished goal, mark it falsely complete, or edit internal app state. Continue READY owned work without waiting for native resumption; retain the full proposed objective and acceptance gates."
+  },
+  "proposed_objective": "Complete the remaining Teslatlas Protocol working-product scope on the existing independent main checkout with gpt-5.6-terra at high reasoning. Preserve all unrelated work. Finish the Protocol-owned AGENTS guidance, reproducible Docker local gate, bounded read-only current-Hub probe, public documentation and final diff review while external runtime inputs are pending. Then consume two separate fresh Hub-owned sessions to validate the public walkthrough and native actual-Hub conformance against canonical hub-http-v1@1.0.0 manifest b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926. Execute and admit protocol_actual_hub__macos_arm64, protocol_actual_hub__debian13_arm64 and protocol_actual_hub__debian13_amd64 from Hub-generated v2 SessionInput, requiring all 21 cases per cell, exact profile/source/artifact/runtime bindings, normal child exit, evidence-ready/close-completed acknowledgement and retained cleanup/stopped evidence. Populate compatibility metadata only from accepted receipts. Reconcile Hub and SDK owner bindings, then commit and push the reviewed Protocol source/docs to main and verify the remote commit. Keep local, remote-smoke, native and installed evidence distinct; keep unsupported combinations candidate or unverified; do not modify sibling roots or App, operate quarantined hosts independently, restart production, issue vehicle commands, add remote CI, or publish releases, tags, binaries, images or artifacts. Continue across milestone boundaries until the full product acceptance criteria are satisfied; a phase pass or unavailable later resource does not complete or block the whole goal while ready Protocol-owned work remains.",
+  "plan_path": "/Users/bolyki/dev/source/teslatlas-service/teslatlas-protocol/docs/superpowers/plans/2026-09-08-working-product-plan.md",
+  "developer_model": "gpt-5.6-terra",
+  "developer_effort": "high",
+  "next_ready_milestone": {
+    "id": "M5",
+    "name": "Final review and source-only publication",
+    "status": "LOCAL REVIEW COMPLETE; PUBLICATION WAITING",
+    "action": "Await Hub sessions, installed receipts, compatibility promotion and final owner confirmations before explicit staging, commit and push."
+  },
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "Canonical contract and v2 source",
+      "status": "DONE",
+      "evidence": "Canonical profile b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926; portable v2 manifest 75bdb6380f70dc30b0f91abf92edbe7024fe0617402c67025bd5ec5dca609ca8; validator eef926e5d732a4c7ad46a9fe02a6089ea28d5c36b4e2523607212603b4994b24; raw schema 97241f70538c98e0b851581c4d13f983b0b5f57bf543883abb8a6ede1ac23cd9; settled local gates passed. Raw request IDs are hash-bound to the transcript and invocation."
+    },
+    {
+      "id": "M2",
+      "name": "Protocol-local product finish",
+      "status": "LOCAL SOURCE AND OFFLINE ARM64 GATE PASSED; REMOTE SMOKE WAITING",
+      "evidence": "Scoped AGENTS, Dockerfile, ignore boundary, bounded check-current-hub probe, focused tests and public documentation are complete. The focused probe/current-Hub suite passed 29 tests. A fresh frozen 172-file snapshot built successfully with the explicit colima-interop-20260905 daemon; the non-root Linux/arm64 image sha256:768bcb43a6a0ab69e83f7f9ec60e5f21bf406c210d64e1fe3eb86e2f26883501 completed ./tools/check under --network none: 133 tests, exit 0, OOM false. AMD64 and a container-to-Hub synthetic remote smoke remain unrun."
+    },
+    {
+      "id": "M3",
+      "name": "Fresh actual-network walkthrough and native acceptance",
+      "status": "WAITING FOR OWNER/RESOURCE",
+      "evidence": "No fresh Hub-owned walkthrough or native descriptor/receipt is present."
+    },
+    {
+      "id": "M4",
+      "name": "Three installed Protocol cells and compatibility transition",
+      "status": "WAITING FOR OWNER/RESOURCE",
+      "evidence": "Hub completion audit reports zero accepted cells; Protocol is not yet admitted into the fixed installed registry."
+    },
+    {
+      "id": "M5",
+      "name": "Final review and source-only publication",
+      "status": "LOCAL REVIEW COMPLETE; PUBLICATION WAITING",
+      "evidence": "The bounded local review corrected equal drive-bound preflight and made curl retry disabling explicit. Commit/push waits for accepted runtime receipts and final Hub/SDK content confirmation."
+    }
+  ],
+  "dependencies": [
+    {
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "owner": "Teslatlas Hub",
+      "missing_input": "Two separate live owner-only synthetic descriptors with exact b80d profile, Hub/source/seed hashes, fresh invitations, TLS identity, scenario, launcher/controller and cleanup contract.",
+      "local_work_possible": "Complete M2 and retain existing fail-closed descriptor tests.",
+      "unblock_event": "Hub delivers both descriptors and confirms the two exclusive sessions are live."
+    },
+    {
+      "owner_task_id": "01a07f89-45cb-7ea2-b96e-aa89de18fd14",
+      "owner": "Teslatlas Hub",
+      "missing_input": "Reviewed Protocol registry admission plus three live v2 SessionInput files with host registration, runtime inventory, staged contract/profile/artifacts, broker, output reservations and cleanup deadline.",
+      "local_work_possible": "Keep the verified v2 surface stable, finish M2 and prepare compatibility-record review.",
+      "unblock_event": "Hub supplies one accepted descriptor for each named installed cell and clears or replaces any quarantined host before use."
+    },
+    {
+      "owner_task_id": null,
+      "owner": "Local Docker resource",
+      "missing_input": "Reachable Docker daemon, supported arm64/amd64 targets and a container-reachable synthetic Hub endpoint with matching certificate identity.",
+      "local_work_possible": "Implement and statically test the image, probe and documentation.",
+      "unblock_event": "docker info succeeds and the synthetic endpoint is ready."
+    },
+    {
+      "owner_task_id": "01a07048-a05c-72a2-9c7a-87dd59f52e9b",
+      "owner": "Parent orchestrator",
+      "missing_input": "Final Hub, TypeScript and Swift owner confirmation of the exact Protocol content and compatibility-transition sequence.",
+      "local_work_possible": "Freeze and review Protocol-owned content and prepare the exact publication staging list.",
+      "unblock_event": "Parent reports required owner bindings and receipts accepted and returns publication to the Terra high Protocol agent."
+    }
+  ],
+  "current_model_policy": {
+    "authority": "Latest user instruction on 2026-09-08; supersedes earlier model policy and historical goal wording",
+    "coordinator_and_delegation": {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "high"
+    },
+    "product_coding_goal_and_workers": {
+      "model": "gpt-5.6-terra",
+      "reasoning_effort": "high"
+    }
+  }
+}

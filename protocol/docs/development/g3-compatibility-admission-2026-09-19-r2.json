@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "gate_id": "G3",
+  "result": "ACCEPTED",
+  "recorded_at": "2026-09-19T09:15:02Z",
+  "scope": "Scoped metadata admission and exact readback for Hub, Protocol, TypeScript, Edge and Swift using the accepted G2/G4, G5 and G6 evidence; no runtime cohort was created or rerun.",
+  "repair": {
+    "reason": "The prior admission wrote only active G3 records but then invoked the full ecosystem checker, which read products outside the active G3 gate.",
+    "implementation": "The admission now performs dedicated five-product pre-validation, writes only the five intended compatibility records, and performs dedicated five-product post-validation. A read-only --check-g3 mode uses the same scoped validator. Generic --check and --apply behavior remains separate.",
+    "viewer_read": false,
+    "viewer_detail": "Neither --admit-g3 nor --check-g3 calls the generic full-workspace checker or resolves a Viewer path. The focused fixture contains only the five active G3 products, so any deferred-product dependency would fail the test.",
+    "active_products": [
+      "Hub",
+      "Protocol",
+      "TypeScript SDK",
+      "Edge",
+      "Swift SDK"
+    ]
+  },
+  "source": {
+    "heads": {
+      "hub": "7fe8cb202c0eb7e291901a9b719d3fbe65c675bc",
+      "protocol": "05225bd5b2f56885025180d68fedf3a42baaa90b",
+      "typescript": "b1cd548fef7ddd26be2637c14bb435480166cef7",
+      "edge": "67650cd989f25835bd185d0d8c0ff4e3c8ff1bb2",
+      "swift": "51494612db6aa3d0b0dafd08001ce432befa7fbf"
+    },
+    "checker": {
+      "path": "hub/scripts/sync-ecosystem-versions.py",
+      "sha256": "1199b986c3809ac11ebda1265dde3ff12e6efbc9371f1ec27eaf83627b2c33be"
+    },
+    "focused_tests": {
+      "path": "hub/scripts/test_g3_admission.py",
+      "sha256": "28a90040fb3b1b332b74e13dbd5dd5da931ed000f4df90d8cbcc379c27a55da0"
+    },
+    "supersedes_receipt": {
+      "path": "teslatlas-protocol/docs/development/g3-compatibility-admission-2026-09-19-r1.json",
+      "sha256": "1c02d1222cdbb7a7a53b4a62536eb88101bf59a0951c55701470141cf7c6ff9c",
+      "disposition": "Retained as historical evidence; r2 binds the scoped checker repair and replaces it as the active G3 evidence path."
+    }
+  },
+  "canonical_bindings": {
+    "product_version": "2026.36.2",
+    "hub_profile": {
+      "id": "hub-http-v1",
+      "revision": "1.0.0",
+      "sha256": "b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926"
+    },
+    "edge_profile": {
+      "id": "edge-delivery-v2",
+      "revision": "2.0.0",
+      "sha256": "e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224"
+    }
+  },
+  "admission_records": [
+    {
+      "path": "teslatlas-protocol/compatibility/hub.json",
+      "sha256": "b7f6564abae676ba22133aa3fb8846795733a48f6a6ebd26bf6b1822125187cd"
+    },
+    {
+      "path": "teslatlas-sdk-typescript/compatibility/hub.json",
+      "sha256": "a07efb9fa16e128f9a21fdf7aa79b4c2bb6e260f3f24ee05f04b53e0a1074cb8"
+    },
+    {
+      "path": "teslatlas-sdk-typescript/protocol/source/compatibility/hub.json",
+      "sha256": "b7f6564abae676ba22133aa3fb8846795733a48f6a6ebd26bf6b1822125187cd",
+      "byte_identical_to": "teslatlas-protocol/compatibility/hub.json"
+    },
+    {
+      "path": "teslatlas-edge/compatibility/hub.json",
+      "sha256": "2fb1add6e04df0c1d8bba1dd2763c593a35b5d4f6d36db71e0654f8676c8ec71"
+    },
+    {
+      "path": "teslatlas-sdk-swift/compatibility/hub.json",
+      "sha256": "b575f0c68258a97efa4fe647e285bf791107ba47fc2d9361dffe27f048151673"
+    }
+  ],
+  "validation": {
+    "syntax_command": "python3 -m py_compile scripts/sync-ecosystem-versions.py scripts/test_g3_admission.py",
+    "syntax_result": "PASS",
+    "focused_test_command": "python3 -m unittest -v scripts.test_g3_admission",
+    "focused_test_result": "PASS",
+    "focused_test_count": 6,
+    "focused_test_cases": [
+      "admission succeeds with only the five active G3 products present",
+      "idempotent admission preserves accepted record bytes",
+      "wrong receipt identity is rejected before writes",
+      "wrong profile digest is rejected before writes",
+      "divergent already-accepted record is refused",
+      "scoped post-check reads back exact records and vendored byte identity"
+    ],
+    "admission_command": "python3 scripts/sync-ecosystem-versions.py --workspace /Users/bolyki/dev/source/teslatlas-service --admit-g3",
+    "admission_output": "ecosystem G3 compatibility for product version 2026.36.2 was admitted",
+    "readback_command": "python3 scripts/sync-ecosystem-versions.py --workspace /Users/bolyki/dev/source/teslatlas-service --check-g3",
+    "readback_output": "ecosystem G3 compatibility for product version 2026.36.2 is aligned",
+    "typescript_protocol_command": "env PATH=/Users/bolyki/dev/teslatlas-lab/tooling/node-v26.7.0-darwin-arm64/bin:/usr/bin:/bin npm run protocol:check",
+    "typescript_protocol_result": "Protocol lock verified",
+    "typescript_protocol_lock_sha256": "3b1ef30d07acf7ef62f91ab9d2b0993f9ceb25110bf70c29e895ef9da505ffa3",
+    "typescript_vendored_compatibility_byte_identical": true,
+    "record_bytes_unchanged_from_r1": true,
+    "targeted_diff_check": "PASS"
+  },
+  "cleanup": {
+    "new_private_runtime_created": false,
+    "runtime_or_heavy_build_started": false,
+    "credential_or_private_root_read": false,
+    "compatibility_records_churned": false
+  },
+  "limits": [
+    "This receipt repairs and verifies the G3 metadata admission boundary; it does not broaden the accepted runtime evidence.",
+    "G2/G4, G5 and G6 retain their recorded platform, package and synthetic-runtime limits.",
+    "No App, Viewer, Home Assistant, x86/Intel, installer, publication, release, real-data or production acceptance is claimed."
+  ]
+}

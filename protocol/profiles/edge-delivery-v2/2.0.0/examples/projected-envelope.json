@@ -1,0 +1,17 @@
+{
+  "payload": {
+    "createdAt": "2027-01-15T08:00:00Z",
+    "data": {
+      "Soc": {
+        "intValue": "80"
+      }
+    },
+    "vin": "5YJ3E1EA7KF000001"
+  },
+  "received_at_ms": 1800000000100,
+  "timestamp_ms": 1800000000000,
+  "tx_type": "V",
+  "txid": "edge-projected-0001",
+  "version": 1,
+  "vin": "5YJ3E1EA7KF000001"
+}

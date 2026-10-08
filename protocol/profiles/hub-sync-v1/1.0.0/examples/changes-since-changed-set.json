@@ -1,0 +1,23 @@
+{
+  "fixture_id": "changes-since-changed-set-v1",
+  "receipt": {
+    "base_receipt_id": "receipt_demo_000042",
+    "changed_set_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "from_sequence": 42,
+    "manifest_schema": "2.2",
+    "pack": {
+      "compressed_bytes": 1048576,
+      "object_name": "packs/demo-changed-set-000045.sqlite.zst",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "receipt_id": "receipt_demo_000045",
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "fixture-ed25519-2026",
+      "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+      "signed_payload_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "to_sequence": 45,
+    "vehicle_id": "11111111-1111-4111-8111-111111111111"
+  }
+}

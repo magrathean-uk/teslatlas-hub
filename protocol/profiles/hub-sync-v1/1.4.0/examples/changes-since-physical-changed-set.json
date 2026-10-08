@@ -1,0 +1,57 @@
+{
+  "fixture_id": "changes-since-physical-changed-set-v1",
+  "receipt": {
+    "affected_months": [
+      "2026-08",
+      "2026-09"
+    ],
+    "affected_projected_ids_count": 6,
+    "affected_projected_ids_sha256": "f8194dbe162e89177280459817aa05b5d5625115c6c128a5a3235ec94aff1197",
+    "base": {
+      "manifest_id": "manifest_demo_000042",
+      "manifest_sha256": "f430601b7197404e69bc85bad960917e5ecec7f02604f52610dd023e9c3ffbc1",
+      "receipt_id": "receipt_demo_000042",
+      "schema_version": "2.2",
+      "sequence": 42
+    },
+    "chunks": [
+      {
+        "chunk_index": 0,
+        "pack": {
+          "compressed_bytes": 2998,
+          "object_name": "packs/physical-changed-set-v1.sqlite.zst",
+          "sha256": "47aff1e523b0e7b60a577e2206e6ee023f8883cbd7a6415ab0e91eb821803c15"
+        }
+      }
+    ],
+    "impacted_roots_count": 2,
+    "impacted_roots_sha256": "74529e9e14c19e6ca43d8e2fe43e3178223384bff7239591660c5bc81b10f475",
+    "kind": "physical_changed_set",
+    "payload_format": "teslatlas-physical-v3-delta-v1",
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "8ZS0aCI0CeWW2p6GqvJ19hHyFsykTM4LCIdXRuGuzyRlQP6Ps6t/NLU6cf1VDxK6TdSP+lZjkPXwnw4QoEuLCQ==",
+      "signed_payload_sha256": "3804aacc405824b0592a6026d1a79636d5e9a79ae32704e78778320af807df53"
+    },
+    "source": {
+      "account_id": "22222222-2222-4222-8222-222222222222",
+      "generation": 1,
+      "installation_id": "11111111-1111-4111-8111-111111111111",
+      "selected_car_id": 1,
+      "vehicle_id": "33333333-3333-4333-8333-333333333333"
+    },
+    "target": {
+      "manifest_id": "manifest_demo_000043",
+      "manifest_sha256": "8b5ad2bc48c116cf300f5be011e69bdc0d18f8255e584ff57c8986edb6c43d80",
+      "receipt_id": "receipt_demo_000043",
+      "schema_version": "2.2",
+      "sequence": 43
+    },
+    "target_raw_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+    "total_compressed_bytes": 2998,
+    "total_rows": 6,
+    "total_uncompressed_bytes": 81920,
+    "vehicle_id": "33333333-3333-4333-8333-333333333333"
+  }
+}

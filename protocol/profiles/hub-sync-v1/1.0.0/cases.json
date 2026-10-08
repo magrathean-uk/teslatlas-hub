@@ -1,0 +1,17 @@
+{
+  "cases": [
+    {
+      "id": "changes-since-changed-set",
+      "request_fixture": "changes-since-request-v1",
+      "response_fixture": "changes-since-changed-set-v1",
+      "status": 200
+    },
+    {
+      "id": "changes-since-rebase-after-compaction",
+      "request_fixture": "changes-since-request-v1",
+      "response_fixture": "changes-since-rebase-after-compaction-v1",
+      "status": 409
+    }
+  ],
+  "profile_id": "hub-sync-v1@1.0.0"
+}

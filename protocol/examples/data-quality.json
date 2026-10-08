@@ -1,0 +1,29 @@
+{
+  "subject_type": "drive",
+  "subject_id": "drive_demo_0001",
+  "quality": "partial",
+  "sources": [
+    "fleet_telemetry",
+    "fleet_api"
+  ],
+  "gap_count": 1,
+  "largest_gap_seconds": 47,
+  "derived_fields": [
+    "energy_used_kwh"
+  ],
+  "projection_version": "3.1.0",
+  "assessed_at": "2026-08-30T12:30:00.000Z",
+  "issues": [
+    {
+      "code": "missing_interval",
+      "severity": "warning",
+      "message": "A redacted 47-second telemetry interval is unavailable.",
+      "from": "2026-08-30T12:14:00.000Z",
+      "to": "2026-08-30T12:14:47.000Z",
+      "affected_fields": [
+        "location",
+        "speed_km_h"
+      ]
+    }
+  ]
+}

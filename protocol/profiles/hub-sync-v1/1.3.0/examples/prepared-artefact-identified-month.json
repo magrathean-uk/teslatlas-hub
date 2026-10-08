@@ -1,0 +1,62 @@
+{
+  "fixture_id": "prepared-artefact-identified-month-v1",
+  "pack_file": "packs/prepared-identified-month-v1.sqlite.zst",
+  "receipt": {
+    "algorithm_version": "1.0.0",
+    "artifact_id": "map-month-v1.98e39194b223fa4fd7515a0f7fa46d373d7413e76b7a2cc8c6178398f2bd3b7f",
+    "artifact_schema_version": 1,
+    "artifact_type": "map_months",
+    "dirty_spans": {
+      "map_months": [
+        {
+          "drive_count": 1,
+          "from_ms": 1735689600000,
+          "month": "2025-01",
+          "reason": "changed",
+          "resolution": "readyData",
+          "tile_count": 2,
+          "to_ms": 1738368000000
+        }
+      ]
+    },
+    "generation": {
+      "generated_at_ms": 1738371600000,
+      "generation_id": "generation_demo_000001"
+    },
+    "map_style": "route-stroke-v8-opaque",
+    "pack": {
+      "compressed_bytes": 1192,
+      "media_type": "application/vnd.teslatlas.prepared+sqlite+zstd;version=1",
+      "object_name": "packs/prepared-identified-month-v1.sqlite.zst",
+      "payload": "teslatlas-prepared-v1",
+      "sha256": "eaf9f9cd74a875a0e3a2257f928f2c42020b851a1deba3fe2b89fa36f50c6098",
+      "uncompressed_bytes": 16384
+    },
+    "payload": "teslatlas-prepared-v1",
+    "scope": "map_months",
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "WpwE3msljVYoWLZ+BPdObwPFRjc9O5CiBpr3KDxqNVTHGakKyLlGTJGI8OH66QYH09/8lhDLR9J6IYtN/BN3AQ==",
+      "signed_payload_sha256": "b5d56b43228ac1a57f4b1ae50d906986c24893a3cce04e3d96f32ac749ed45af"
+    },
+    "source": {
+      "input_manifest_id": "manifest_demo_000900",
+      "input_manifest_schema": "2.2",
+      "input_receipt_id": "receipt_demo_000900",
+      "input_sequence": 900,
+      "kind": "hub_compute"
+    },
+    "tile_geometry_version": "raster-v9-rounded-tile-px",
+    "units": {
+      "coordinates": "wgs84_degrees",
+      "distance": "km",
+      "time": "ms"
+    },
+    "vehicle_id": "11111111-1111-4111-8111-111111111111",
+    "window": {
+      "from_ms": 1735689600000,
+      "to_ms": 1738368000000
+    }
+  }
+}

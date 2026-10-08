@@ -1,0 +1,144 @@
+{
+  "description": "A delayed observation remains visible and degrades the projection without inventing data.",
+  "expected": {
+    "accepted_observation_ids": [
+      "obs_delayed_range_0001"
+    ],
+    "duplicate_observation_ids": [],
+    "ordered_observation_ids": [
+      "obs_delayed_range_0001"
+    ],
+    "projection": {
+      "computed_at": "2026-08-30T14:10:00.000Z",
+      "input_observation_ids": [
+        "obs_delayed_range_0001"
+      ],
+      "payload": {
+        "battery_level_percent": null,
+        "charging_state": "unknown",
+        "climate_on": null,
+        "inside_temperature_c": null,
+        "location": null,
+        "locked": null,
+        "observed_at": "2026-08-30T14:00:00.000Z",
+        "odometer_km": null,
+        "outside_temperature_c": null,
+        "quality": {
+          "assessed_at": "2026-08-30T14:10:00.000Z",
+          "derived_fields": [],
+          "gap_count": 0,
+          "issues": [
+            {
+              "affected_fields": [
+                "battery.range_km"
+              ],
+              "code": "late_observation",
+              "from": "2026-08-30T14:00:00.000Z",
+              "message": "The redacted observation arrived ten minutes after provider time.",
+              "severity": "warning",
+              "to": "2026-08-30T14:10:00.000Z"
+            }
+          ],
+          "largest_gap_seconds": 0,
+          "projection_version": "3.1.0",
+          "quality": "partial",
+          "sources": [
+            "fleet_telemetry"
+          ],
+          "subject_id": "vehicle_demo_alpha",
+          "subject_type": "vehicle"
+        },
+        "range_km": 331.2,
+        "resource_type": "current_state",
+        "revision": 1,
+        "state": "online",
+        "vehicle_id": "vehicle_demo_alpha"
+      },
+      "projection_id": "projection_delayed_current_0001",
+      "projection_type": "current_state",
+      "projection_version": "3.1.0",
+      "quality": {
+        "assessed_at": "2026-08-30T14:10:00.000Z",
+        "derived_fields": [],
+        "gap_count": 0,
+        "issues": [
+          {
+            "affected_fields": [
+              "battery.range_km"
+            ],
+            "code": "late_observation",
+            "from": "2026-08-30T14:00:00.000Z",
+            "message": "The redacted observation arrived ten minutes after provider time.",
+            "severity": "warning",
+            "to": "2026-08-30T14:10:00.000Z"
+          }
+        ],
+        "largest_gap_seconds": 0,
+        "projection_version": "3.1.0",
+        "quality": "partial",
+        "sources": [
+          "fleet_telemetry"
+        ],
+        "subject_id": "projection_delayed_current_0001",
+        "subject_type": "projection"
+      },
+      "vehicle_id": "vehicle_demo_alpha"
+    },
+    "quality": {
+      "assessed_at": "2026-08-30T14:10:00.000Z",
+      "derived_fields": [],
+      "gap_count": 0,
+      "issues": [
+        {
+          "affected_fields": [
+            "battery.range_km"
+          ],
+          "code": "late_observation",
+          "from": "2026-08-30T14:00:00.000Z",
+          "message": "The redacted observation arrived ten minutes after provider time.",
+          "severity": "warning",
+          "to": "2026-08-30T14:10:00.000Z"
+        }
+      ],
+      "largest_gap_seconds": 0,
+      "projection_version": "3.1.0",
+      "quality": "partial",
+      "sources": [
+        "fleet_telemetry"
+      ],
+      "subject_id": "projection_delayed_current_0001",
+      "subject_type": "projection"
+    }
+  },
+  "fixture_version": "1.0.0",
+  "input_observations": [
+    {
+      "collector_version": "5.4.0",
+      "field": "battery.range_km",
+      "observation_id": "obs_delayed_range_0001",
+      "projection_version": "3.1.0",
+      "provider_timestamp": "2026-08-30T14:00:00.000Z",
+      "quality_flags": [
+        "delayed"
+      ],
+      "raw_payload_hash": "b47e2d652d08cee3260c6d38f2c68bddc511b6b62268d2f2206c04acb846308b",
+      "received_timestamp": "2026-08-30T14:10:00.000Z",
+      "source": "fleet_telemetry",
+      "source_sequence": "demo-delayed-0001",
+      "typed_value": {
+        "kind": "number",
+        "unit": "km",
+        "value": 331.2
+      },
+      "validity": "valid",
+      "vehicle_id": "vehicle_demo_alpha"
+    }
+  ],
+  "redaction": {
+    "contains_precise_location": false,
+    "contains_real_identifiers": false,
+    "contains_secrets": false,
+    "maximum_coordinate_decimals": 2
+  },
+  "scenario_id": "delayed"
+}

@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:sse-contract:1.2.0",
+  "title": "Teslatlas SSE contract description",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "endpoint",
+    "media_type",
+    "encoding",
+    "framing",
+    "replay",
+    "reconnect",
+    "events",
+    "examples"
+  ],
+  "properties": {
+    "protocol_version": {
+      "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/semver"
+    },
+    "endpoint": {
+      "const": "/v1/events"
+    },
+    "media_type": {
+      "const": "text/event-stream"
+    },
+    "encoding": {
+      "const": "utf-8"
+    },
+    "framing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fields",
+        "dispatch_boundary",
+        "data_lines",
+        "heartbeat_comment_seconds"
+      ],
+      "properties": {
+        "fields": {
+          "const": [
+            "id",
+            "event",
+            "data",
+            "retry"
+          ]
+        },
+        "dispatch_boundary": {
+          "const": "blank-line"
+        },
+        "data_lines": {
+          "const": "concatenate-with-newline"
+        },
+        "heartbeat_comment_seconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 15
+        }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_header",
+        "resume",
+        "minimum_retention_seconds",
+        "id_treatment",
+        "bound_to",
+        "reset",
+        "invalid_status",
+        "invalid_error_code",
+        "expired_status",
+        "expired_error_code"
+      ],
+      "properties": {
+        "request_header": {
+          "const": "Last-Event-ID"
+        },
+        "resume": {
+          "const": "strictly-after"
+        },
+        "minimum_retention_seconds": {
+          "type": "integer",
+          "minimum": 86400
+        },
+        "id_treatment": {
+          "const": "opaque"
+        },
+        "bound_to": {
+          "const": [
+            "hub_id",
+            "principal",
+            "normalized_filters"
+          ]
+        },
+        "reset": {
+          "const": "empty-id-field"
+        },
+        "invalid_status": {
+          "const": 400
+        },
+        "invalid_error_code": {
+          "const": "event_id_invalid"
+        },
+        "expired_status": {
+          "const": 410
+        },
+        "expired_error_code": {
+          "const": "event_replay_expired"
+        }
+      }
+    },
+    "reconnect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "default_retry_milliseconds",
+        "maximum_retry_milliseconds",
+        "terminal_status"
+      ],
+      "properties": {
+        "default_retry_milliseconds": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "maximum_retry_milliseconds": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "terminal_status": {
+          "const": 204
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "introduced_in",
+          "data_schema"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$"
+          },
+          "introduced_in": {
+            "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/semver"
+          },
+          "data_schema": {
+            "const": "urn:teslatlas:protocol:schema:event:1.2.0"
+          }
+        }
+      }
+    },
+    "examples": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "wire"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]+$"
+          },
+          "wire": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "fixture_id": "schema-2-2-multi-chunk-manifest-v1",
+  "manifest": {
+    "chunks": [
+      {
+        "chunk_index": 0,
+        "pack": {
+          "compressed_bytes": 8388608,
+          "object_name": "packs/demo-000900-0000.sqlite.zst",
+          "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      },
+      {
+        "chunk_index": 1,
+        "pack": {
+          "compressed_bytes": 4096,
+          "object_name": "packs/demo-000900-0001.sqlite.zst",
+          "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+        }
+      }
+    ],
+    "kind": "snapshot",
+    "manifest_id": "manifest_demo_000900",
+    "receipt_id": "receipt_demo_000900",
+    "schema_version": "2.2",
+    "sequence": 900,
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "G2SmW8CfIV8FlDiRFG5tgXvJkhwVaztxkMjQFh5lzI/WfEGEZtxiO/LRKiXVsZOzjLKd32Sy3AQxLmsvaYn3BQ==",
+      "signed_payload_sha256": "595fe29acfe3d3a3d7df609373cc365b3221f55ccf566b95abda0e53e573bc23"
+    },
+    "vehicle_id": "11111111-1111-4111-8111-111111111111"
+  }
+}

@@ -1,0 +1,1920 @@
+{
+  "$defs": {
+    "current": {
+      "additionalProperties": false,
+      "properties": {
+        "active_route_destination": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "active_route_energy_at_arrival": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "active_route_latitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "active_route_longitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "active_route_miles_to_arrival": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "active_route_minutes_to_arrival": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "active_route_traffic_minutes_delay": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "battery_level": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "car": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "efficiency_wh_per_km": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "exterior_color": {
+                  "anyOf": [
+                    {
+                      "maxLength": 65536,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "firmware_version": {
+                  "anyOf": [
+                    {
+                      "maxLength": 65536,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "maximum": 9223372036854775807,
+                  "minimum": -9223372036854775808,
+                  "type": "integer"
+                },
+                "marketing_name": {
+                  "anyOf": [
+                    {
+                      "maxLength": 65536,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "model": {
+                  "maxLength": 65536,
+                  "type": "string"
+                },
+                "name": {
+                  "maxLength": 65536,
+                  "type": "string"
+                },
+                "settings": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "free_supercharging": {
+                      "type": "boolean"
+                    },
+                    "lfp_battery": {
+                      "type": "boolean"
+                    },
+                    "req_not_unlocked": {
+                      "type": "boolean"
+                    },
+                    "suspend_after_idle_min": {
+                      "maximum": 9223372036854775807,
+                      "minimum": -9223372036854775808,
+                      "type": "integer"
+                    },
+                    "suspend_min": {
+                      "maximum": 9223372036854775807,
+                      "minimum": -9223372036854775808,
+                      "type": "integer"
+                    },
+                    "suspend_min_resolved": {
+                      "type": "boolean"
+                    },
+                    "use_streaming_api": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "use_streaming_api",
+                    "suspend_min_resolved",
+                    "req_not_unlocked",
+                    "free_supercharging",
+                    "lfp_battery",
+                    "suspend_after_idle_min",
+                    "suspend_min"
+                  ],
+                  "type": "object"
+                },
+                "source_eid": {
+                  "anyOf": [
+                    {
+                      "maximum": 9223372036854775807,
+                      "minimum": -9223372036854775808,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "source_vid": {
+                  "anyOf": [
+                    {
+                      "maximum": 9223372036854775807,
+                      "minimum": -9223372036854775808,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "spoiler_type": {
+                  "anyOf": [
+                    {
+                      "maxLength": 65536,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "trim_badging": {
+                  "anyOf": [
+                    {
+                      "maxLength": 65536,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "vin": {
+                  "anyOf": [
+                    {
+                      "maxLength": 65536,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "wheel_type": {
+                  "anyOf": [
+                    {
+                      "maxLength": 65536,
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "model",
+                "vin",
+                "trim_badging",
+                "marketing_name",
+                "exterior_color",
+                "wheel_type",
+                "spoiler_type",
+                "firmware_version",
+                "source_eid",
+                "source_vid",
+                "efficiency_wh_per_km",
+                "settings"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "center_display_state": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charge_current_request": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charge_current_request_max": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charge_energy_added": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charge_limit_soc": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charge_port_door_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charger_actual_current": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charger_phases": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charger_power": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charger_voltage": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "charging_state": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "climate_keeper_mode": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "doors_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "download_perc": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "driver_front_door_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "driver_front_window_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "driver_rear_door_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "driver_rear_window_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "elevation": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "est_battery_range_km": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exterior_color": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "frunk_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "geofence": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "heading": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "healthy": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ideal_battery_range_km": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inside_temp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "install_perc": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_climate_on": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_preconditioning": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "is_user_present": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "locked": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "longitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "model": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observed_at_ms": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "odometer": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outside_temp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "passenger_front_door_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "passenger_front_window_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "passenger_rear_door_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "passenger_rear_window_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "plugged_in": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "power": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rated_battery_range_km": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "scheduled_charging_start_time": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sentry_mode": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "service_mode": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shift_state": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "since": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "speed": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spoiler_type": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sun_roof_installed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sun_roof_percent_open": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sun_roof_state": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "time_to_full_charge": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tpms_pressure_fl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tpms_pressure_fr": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tpms_pressure_rl": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tpms_pressure_rr": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tpms_soft_warning_fl": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tpms_soft_warning_fr": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tpms_soft_warning_rl": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tpms_soft_warning_rr": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trim_badging": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "trunk_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "update_available": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "update_status": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "update_version": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "usable_battery_level": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vehicle_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "wheel_type": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "windows_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "vehicle_id",
+        "observed_at_ms",
+        "since",
+        "battery_level",
+        "usable_battery_level",
+        "speed",
+        "scheduled_charging_start_time",
+        "charge_limit_soc",
+        "charger_phases",
+        "charge_current_request",
+        "charge_current_request_max",
+        "center_display_state",
+        "sun_roof_percent_open",
+        "download_perc",
+        "install_perc",
+        "latitude",
+        "longitude",
+        "heading",
+        "ideal_battery_range_km",
+        "est_battery_range_km",
+        "rated_battery_range_km",
+        "charge_energy_added",
+        "outside_temp",
+        "inside_temp",
+        "charger_power",
+        "odometer",
+        "time_to_full_charge",
+        "charger_actual_current",
+        "charger_voltage",
+        "elevation",
+        "power",
+        "tpms_pressure_fl",
+        "tpms_pressure_fr",
+        "tpms_pressure_rl",
+        "tpms_pressure_rr",
+        "active_route_latitude",
+        "active_route_longitude",
+        "active_route_energy_at_arrival",
+        "active_route_miles_to_arrival",
+        "active_route_minutes_to_arrival",
+        "active_route_traffic_minutes_delay",
+        "healthy",
+        "is_climate_on",
+        "is_preconditioning",
+        "locked",
+        "sentry_mode",
+        "plugged_in",
+        "windows_open",
+        "driver_front_window_open",
+        "driver_rear_window_open",
+        "passenger_front_window_open",
+        "passenger_rear_window_open",
+        "doors_open",
+        "driver_front_door_open",
+        "driver_rear_door_open",
+        "passenger_front_door_open",
+        "passenger_rear_door_open",
+        "charge_port_door_open",
+        "update_available",
+        "is_user_present",
+        "trunk_open",
+        "frunk_open",
+        "tpms_soft_warning_fl",
+        "tpms_soft_warning_fr",
+        "tpms_soft_warning_rl",
+        "tpms_soft_warning_rr",
+        "service_mode",
+        "sun_roof_installed",
+        "display_name",
+        "state",
+        "charging_state",
+        "shift_state",
+        "version",
+        "update_version",
+        "update_status",
+        "geofence",
+        "model",
+        "trim_badging",
+        "exterior_color",
+        "wheel_type",
+        "spoiler_type",
+        "climate_keeper_mode",
+        "active_route_destination",
+        "sun_roof_state",
+        "car"
+      ],
+      "type": "object"
+    },
+    "drive": {
+      "additionalProperties": false,
+      "properties": {
+        "ascent": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "descent": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "distance_km": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duration_min": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "efficiency": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_address": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_date_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "type": "integer"
+        },
+        "end_geofence": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_ideal_range_km": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_latitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_longitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_rated_range_km": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "end_soc": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "id": {
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "type": "integer"
+        },
+        "inside_temp_avg": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outside_temp_avg": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "power_max": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "power_min": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "speed_max": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_address": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_date_ms": {
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "type": "integer"
+        },
+        "start_geofence": {
+          "anyOf": [
+            {
+              "maxLength": 65536,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_ideal_range_km": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_latitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_longitude": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_rated_range_km": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start_soc": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": -9223372036854775808,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vehicle_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "vehicle_id",
+        "start_date_ms",
+        "end_date_ms",
+        "duration_min",
+        "speed_max",
+        "start_soc",
+        "end_soc",
+        "ascent",
+        "descent",
+        "distance_km",
+        "efficiency",
+        "outside_temp_avg",
+        "inside_temp_avg",
+        "power_max",
+        "power_min",
+        "start_ideal_range_km",
+        "end_ideal_range_km",
+        "start_latitude",
+        "start_longitude",
+        "end_latitude",
+        "end_longitude",
+        "start_rated_range_km",
+        "end_rated_range_km",
+        "start_address",
+        "end_address",
+        "start_geofence",
+        "end_geofence"
+      ],
+      "type": "object"
+    },
+    "drives": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "ascent": {
+                "anyOf": [
+                  {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "descent": {
+                "anyOf": [
+                  {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "distance_km": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "duration_min": {
+                "anyOf": [
+                  {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "efficiency": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "end_address": {
+                "anyOf": [
+                  {
+                    "maxLength": 65536,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "end_date_ms": {
+                "maximum": 9223372036854775807,
+                "minimum": -9223372036854775808,
+                "type": "integer"
+              },
+              "end_geofence": {
+                "anyOf": [
+                  {
+                    "maxLength": 65536,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "end_ideal_range_km": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "end_latitude": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "end_longitude": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "end_rated_range_km": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "end_soc": {
+                "anyOf": [
+                  {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "maximum": 9223372036854775807,
+                "minimum": -9223372036854775808,
+                "type": "integer"
+              },
+              "inside_temp_avg": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "outside_temp_avg": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "power_max": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "power_min": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "speed_max": {
+                "anyOf": [
+                  {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "start_address": {
+                "anyOf": [
+                  {
+                    "maxLength": 65536,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "start_date_ms": {
+                "maximum": 9223372036854775807,
+                "minimum": -9223372036854775808,
+                "type": "integer"
+              },
+              "start_geofence": {
+                "anyOf": [
+                  {
+                    "maxLength": 65536,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "start_ideal_range_km": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "start_latitude": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "start_longitude": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "start_rated_range_km": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "start_soc": {
+                "anyOf": [
+                  {
+                    "maximum": 9223372036854775807,
+                    "minimum": -9223372036854775808,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "vehicle_id": {
+                "format": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "vehicle_id",
+              "start_date_ms",
+              "end_date_ms",
+              "duration_min",
+              "speed_max",
+              "start_soc",
+              "end_soc",
+              "ascent",
+              "descent",
+              "distance_km",
+              "efficiency",
+              "outside_temp_avg",
+              "inside_temp_avg",
+              "power_max",
+              "power_min",
+              "start_ideal_range_km",
+              "end_ideal_range_km",
+              "start_latitude",
+              "start_longitude",
+              "end_latitude",
+              "end_longitude",
+              "start_rated_range_km",
+              "end_rated_range_km",
+              "start_address",
+              "end_address",
+              "start_geofence",
+              "end_geofence"
+            ],
+            "type": "object"
+          },
+          "maxItems": 500,
+          "type": "array"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "type": "object"
+    },
+    "health": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "const": "ok"
+        },
+        "version": {
+          "maxLength": 65536,
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "version"
+      ],
+      "type": "object"
+    },
+    "ready": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "status": {
+              "const": "ready"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "reason": {
+              "enum": [
+                "catalogue_unavailable",
+                "lifecycle_quarantined",
+                "published_content_unservable",
+                "collector_absent",
+                "collector_stale",
+                "collector_auth_terminal"
+              ]
+            },
+            "status": {
+              "const": "not_ready"
+            }
+          },
+          "required": [
+            "status",
+            "reason"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "vehicles": {
+      "additionalProperties": false,
+      "properties": {
+        "vehicles": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "display_name": {
+                "anyOf": [
+                  {
+                    "maxLength": 65536,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "vehicle_id": {
+                "format": "uuid",
+                "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "vehicle_id",
+              "display_name"
+            ],
+            "type": "object"
+          },
+          "maxItems": 10000,
+          "type": "array"
+        }
+      },
+      "required": [
+        "vehicles"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-http-v1:1.0.0:resources",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -1,0 +1,62 @@
+{
+  "fixture_id": "prepared-artefact-ready-empty-v1",
+  "pack_file": "packs/prepared-ready-empty-v1.sqlite.zst",
+  "receipt": {
+    "algorithm_version": "1.0.0",
+    "artifact_id": "prepared_demo_ready_empty",
+    "artifact_schema_version": 1,
+    "artifact_type": "map_months",
+    "dirty_spans": {
+      "map_months": [
+        {
+          "drive_count": 0,
+          "from_ms": 1738368000000,
+          "month": "2025-02",
+          "reason": "changed",
+          "resolution": "readyEmpty",
+          "tile_count": 0,
+          "to_ms": 1740787200000
+        }
+      ]
+    },
+    "generation": {
+      "generated_at_ms": 1740790800000,
+      "generation_id": "generation_demo_000001"
+    },
+    "map_style": "route-stroke-v8-opaque",
+    "pack": {
+      "compressed_bytes": 1088,
+      "media_type": "application/vnd.teslatlas.prepared+sqlite+zstd;version=1",
+      "object_name": "packs/prepared-ready-empty-v1.sqlite.zst",
+      "payload": "teslatlas-prepared-v1",
+      "sha256": "963222b73521f6118145d199799feca3db2ce9a944bde517a442d0392468c4b3",
+      "uncompressed_bytes": 16384
+    },
+    "payload": "teslatlas-prepared-v1",
+    "scope": "map_months",
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "e3gPsfW/LhD2OFIk6id9eFJKPzFKhCeJBUh6h4TJUp67G7yfKx8ujpraRESiKk8ejc+PQtf9rbWRyOx47LhiAg==",
+      "signed_payload_sha256": "7478c04b06a2a5023226faf5d7a8419e4be75f77d3a9e73f669e9a0713bfb7ff"
+    },
+    "source": {
+      "input_manifest_id": "manifest_demo_000900",
+      "input_manifest_schema": "2.2",
+      "input_receipt_id": "receipt_demo_000900",
+      "input_sequence": 900,
+      "kind": "hub_compute"
+    },
+    "tile_geometry_version": "raster-v9-rounded-tile-px",
+    "units": {
+      "coordinates": "wgs84_degrees",
+      "distance": "km",
+      "time": "ms"
+    },
+    "vehicle_id": "11111111-1111-4111-8111-111111111111",
+    "window": {
+      "from_ms": 1738368000000,
+      "to_ms": 1740787200000
+    }
+  }
+}

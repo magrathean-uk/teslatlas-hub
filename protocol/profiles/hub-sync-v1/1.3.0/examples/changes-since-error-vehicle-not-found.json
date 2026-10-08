@@ -1,0 +1,10 @@
+{
+  "fixture_id": "changes-since-error-vehicle-not-found-v1",
+  "response": {
+    "body": {
+      "code": "vehicle_not_found",
+      "message": "Vehicle is not available to this pairing."
+    },
+    "status": 404
+  }
+}

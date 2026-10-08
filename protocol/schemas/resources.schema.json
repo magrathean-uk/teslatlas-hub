@@ -1,0 +1,528 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:teslatlas:protocol:schema:resources:1.2.0",
+  "title": "Teslatlas query resources",
+  "oneOf": [
+    { "$ref": "#/$defs/vehicle" },
+    { "$ref": "#/$defs/current_state" },
+    { "$ref": "#/$defs/drive" },
+    { "$ref": "#/$defs/position" },
+    { "$ref": "#/$defs/charge" },
+    { "$ref": "#/$defs/charge_sample" },
+    { "$ref": "#/$defs/state_interval" },
+    { "$ref": "#/$defs/software_update" },
+    { "$ref": "#/$defs/vehicle_page" },
+    { "$ref": "#/$defs/drive_page" },
+    { "$ref": "#/$defs/position_page" },
+    { "$ref": "#/$defs/charge_page" },
+    { "$ref": "#/$defs/charge_sample_page" },
+    { "$ref": "#/$defs/state_page" },
+    { "$ref": "#/$defs/update_page" },
+    { "$ref": "#/$defs/data_quality_page" },
+    { "$ref": "#/$defs/metadata_page" }
+  ],
+  "$defs": {
+    "vehicle_state": {
+      "enum": [
+        "online",
+        "asleep",
+        "offline",
+        "driving",
+        "charging",
+        "updating",
+        "unknown"
+      ]
+    },
+    "vehicle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "vehicle_id",
+        "display_name",
+        "state",
+        "last_observed_at",
+        "revision"
+      ],
+      "properties": {
+        "resource_type": { "const": "vehicle" },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "state": { "$ref": "#/$defs/vehicle_state" },
+        "last_observed_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "revision": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/revision"
+        }
+      }
+    },
+    "current_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "vehicle_id",
+        "observed_at",
+        "revision",
+        "state",
+        "battery_level_percent",
+        "range_km",
+        "odometer_km",
+        "locked",
+        "climate_on",
+        "charging_state",
+        "location",
+        "quality"
+      ],
+      "properties": {
+        "resource_type": { "const": "current_state" },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "observed_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "revision": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/revision"
+        },
+        "state": { "$ref": "#/$defs/vehicle_state" },
+        "battery_level_percent": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "range_km": { "type": ["number", "null"], "minimum": 0 },
+        "odometer_km": { "type": ["number", "null"], "minimum": 0 },
+        "inside_temperature_c": { "type": ["number", "null"] },
+        "outside_temperature_c": { "type": ["number", "null"] },
+        "locked": { "type": ["boolean", "null"] },
+        "climate_on": { "type": ["boolean", "null"] },
+        "charging_state": {
+          "enum": ["charging", "stopped", "complete", "disconnected", "unknown", null]
+        },
+        "location": {
+          "oneOf": [
+            { "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/location" },
+            { "type": "null" }
+          ]
+        },
+        "quality": {
+          "$ref": "urn:teslatlas:protocol:schema:data-quality:1.2.0"
+        }
+      }
+    },
+    "drive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "drive_id",
+        "vehicle_id",
+        "start_at",
+        "end_at",
+        "start_odometer_km",
+        "end_odometer_km",
+        "distance_km",
+        "duration_seconds",
+        "energy_used_kwh",
+        "quality"
+      ],
+      "properties": {
+        "resource_type": { "const": "drive" },
+        "drive_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "start_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "end_at": {
+          "oneOf": [
+            { "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "start_odometer_km": { "type": ["number", "null"], "minimum": 0 },
+        "end_odometer_km": { "type": ["number", "null"], "minimum": 0 },
+        "distance_km": { "type": ["number", "null"], "minimum": 0 },
+        "duration_seconds": { "type": ["integer", "null"], "minimum": 0 },
+        "energy_used_kwh": { "type": ["number", "null"], "minimum": 0 },
+        "efficiency_wh_per_km": { "type": ["number", "null"], "minimum": 0 },
+        "quality": {
+          "$ref": "urn:teslatlas:protocol:schema:data-quality:1.2.0"
+        }
+      }
+    },
+    "position": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "position_id",
+        "drive_id",
+        "vehicle_id",
+        "observed_at",
+        "location",
+        "speed_km_h",
+        "heading_degrees",
+        "quality_flags"
+      ],
+      "properties": {
+        "resource_type": { "const": "position" },
+        "position_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "drive_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "observed_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "location": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/location"
+        },
+        "speed_km_h": { "type": ["number", "null"], "minimum": 0 },
+        "heading_degrees": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "exclusiveMaximum": 360
+        },
+        "quality_flags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/quality_flag"
+          }
+        }
+      }
+    },
+    "charge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "charge_id",
+        "vehicle_id",
+        "start_at",
+        "end_at",
+        "charging_type",
+        "energy_added_kwh",
+        "start_battery_percent",
+        "end_battery_percent",
+        "location",
+        "quality"
+      ],
+      "properties": {
+        "resource_type": { "const": "charge" },
+        "charge_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "start_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "end_at": {
+          "oneOf": [
+            { "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "charging_type": { "enum": ["ac", "dc", "unknown"] },
+        "energy_added_kwh": { "type": ["number", "null"], "minimum": 0 },
+        "start_battery_percent": {
+          "type": ["number", "null"], "minimum": 0, "maximum": 100
+        },
+        "end_battery_percent": {
+          "type": ["number", "null"], "minimum": 0, "maximum": 100
+        },
+        "location": {
+          "oneOf": [
+            { "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/location" },
+            { "type": "null" }
+          ]
+        },
+        "quality": {
+          "$ref": "urn:teslatlas:protocol:schema:data-quality:1.2.0"
+        }
+      }
+    },
+    "charge_sample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "charge_sample_id",
+        "charge_id",
+        "vehicle_id",
+        "observed_at",
+        "battery_level_percent",
+        "power_kw",
+        "energy_added_kwh",
+        "voltage_v",
+        "current_a",
+        "phases",
+        "quality_flags"
+      ],
+      "properties": {
+        "resource_type": { "const": "charge_sample" },
+        "charge_sample_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "charge_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "observed_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "battery_level_percent": {
+          "type": ["number", "null"], "minimum": 0, "maximum": 100
+        },
+        "power_kw": { "type": ["number", "null"], "minimum": 0 },
+        "energy_added_kwh": { "type": ["number", "null"], "minimum": 0 },
+        "voltage_v": { "type": ["number", "null"], "minimum": 0 },
+        "current_a": { "type": ["number", "null"], "minimum": 0 },
+        "phases": { "type": ["integer", "null"], "minimum": 1, "maximum": 3 },
+        "quality_flags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/quality_flag"
+          }
+        }
+      }
+    },
+    "state_interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "state_id",
+        "vehicle_id",
+        "state",
+        "start_at",
+        "end_at",
+        "quality"
+      ],
+      "properties": {
+        "resource_type": { "const": "state_interval" },
+        "state_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "state": { "$ref": "#/$defs/vehicle_state" },
+        "start_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "end_at": {
+          "oneOf": [
+            { "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "quality": {
+          "$ref": "urn:teslatlas:protocol:schema:data-quality:1.2.0"
+        }
+      }
+    },
+    "software_update": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resource_type",
+        "update_id",
+        "vehicle_id",
+        "status",
+        "version",
+        "first_seen_at",
+        "last_seen_at",
+        "installed_at",
+        "quality"
+      ],
+      "properties": {
+        "resource_type": { "const": "software_update" },
+        "update_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "vehicle_id": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "status": {
+          "enum": ["available", "downloading", "installing", "succeeded", "failed"]
+        },
+        "version": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "first_seen_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "last_seen_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        },
+        "installed_at": {
+          "oneOf": [
+            { "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp" },
+            { "type": "null" }
+          ]
+        },
+        "quality": {
+          "$ref": "urn:teslatlas:protocol:schema:data-quality:1.2.0"
+        }
+      }
+    },
+    "page_base": {
+      "type": "object",
+      "required": [
+        "resource_type",
+        "items",
+        "next_cursor",
+        "snapshot_revision",
+        "generated_at"
+      ],
+      "properties": {
+        "resource_type": { "type": "string" },
+        "items": { "type": "array" },
+        "next_cursor": {
+          "oneOf": [
+            { "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/cursor" },
+            { "type": "null" }
+          ]
+        },
+        "snapshot_revision": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/opaque_id"
+        },
+        "generated_at": {
+          "$ref": "urn:teslatlas:protocol:schema:common:1.2.0#/$defs/utc_timestamp"
+        }
+      }
+    },
+    "vehicle_page": {
+      "allOf": [
+        { "$ref": "#/$defs/page_base" },
+        {
+          "properties": {
+            "resource_type": { "const": "vehicle_page" },
+            "items": { "items": { "$ref": "#/$defs/vehicle" } }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "drive_page": {
+      "allOf": [
+        { "$ref": "#/$defs/page_base" },
+        {
+          "properties": {
+            "resource_type": { "const": "drive_page" },
+            "items": { "items": { "$ref": "#/$defs/drive" } }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "position_page": {
+      "allOf": [
+        { "$ref": "#/$defs/page_base" },
+        {
+          "properties": {
+            "resource_type": { "const": "position_page" },
+            "items": { "items": { "$ref": "#/$defs/position" } }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "charge_page": {
+      "allOf": [
+        { "$ref": "#/$defs/page_base" },
+        {
+          "properties": {
+            "resource_type": { "const": "charge_page" },
+            "items": { "items": { "$ref": "#/$defs/charge" } }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "charge_sample_page": {
+      "allOf": [
+        { "$ref": "#/$defs/page_base" },
+        {
+          "properties": {
+            "resource_type": { "const": "charge_sample_page" },
+            "items": { "items": { "$ref": "#/$defs/charge_sample" } }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "state_page": {
+      "allOf": [
+        { "$ref": "#/$defs/page_base" },
+        {
+          "properties": {
+            "resource_type": { "const": "state_page" },
+            "items": { "items": { "$ref": "#/$defs/state_interval" } }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "update_page": {
+      "allOf": [
+        { "$ref": "#/$defs/page_base" },
+        {
+          "properties": {
+            "resource_type": { "const": "update_page" },
+            "items": { "items": { "$ref": "#/$defs/software_update" } }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "data_quality_page": {
+      "allOf": [
+        { "$ref": "#/$defs/page_base" },
+        {
+          "properties": {
+            "resource_type": { "const": "data_quality_page" },
+            "items": {
+              "items": { "$ref": "urn:teslatlas:protocol:schema:data-quality:1.2.0" }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "metadata_page": {
+      "allOf": [
+        { "$ref": "#/$defs/page_base" },
+        {
+          "properties": {
+            "resource_type": { "const": "metadata_page" },
+            "items": {
+              "items": { "$ref": "urn:teslatlas:protocol:schema:metadata:1.2.0#/$defs/metadata_record" }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}
