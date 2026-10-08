@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "charge_not_found",
+    "message": "charge was not found"
+  }
+}

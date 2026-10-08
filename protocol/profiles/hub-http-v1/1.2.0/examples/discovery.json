@@ -1,0 +1,32 @@
+{
+  "api_versions": [
+    "1.0"
+  ],
+  "attributions": [
+    {
+      "id": "osm",
+      "licence": "ODbL-1.0",
+      "text": "(c) OpenStreetMap contributors",
+      "url": "https://www.openstreetmap.org/copyright"
+    }
+  ],
+  "capabilities": [
+    "query.vehicles",
+    "query.current",
+    "query.drives",
+    "query.charges",
+    "query.charge.samples",
+    "query.positions",
+    "query.enrichment",
+    "sync.packs",
+    "auth.revoke"
+  ],
+  "hub_id": "11111111-1111-4111-8111-111111111111",
+  "manifestPublicKey": "0000000000000000000000000000000000000000000000000000000000000000",
+  "pack_format": "sqlite-zstd",
+  "profile": "hub-http-v1@1.2.0",
+  "protocol": "teslatlas-sync",
+  "protocol_major": 1,
+  "sourceUrl": "https://example.invalid/source",
+  "version": "2026.36.2"
+}

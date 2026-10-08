@@ -17,10 +17,14 @@ proprietary Teslatlas source.
 
 It carries four distinct contract families with different identities:
 
-- Candidate current-Hub HTTP: `hub-http-v1@1.1.0`, documented in
-  [`docs/reference/current-hub.md`](docs/reference/current-hub.md). It
-  describes discovery, pairing, authenticated vehicle/current/drives reads,
-  and credential rotation.
+- Current-Hub HTTP: `hub-http-v1@1.2.0`, documented in
+  [`docs/reference/current-hub.md`](docs/reference/current-hub.md). It adds
+  JSON pages for charges, charge samples and drive positions, address and
+  elevation provenance, device vehicle grants, same-successor rotation retries,
+  a bounded credential lifetime and self-revocation to the discovery, pairing,
+  vehicle, current and drives reads of the candidate `hub-http-v1@1.1.0`
+  profile, which the same guide still describes. A Hub that serves it names the
+  profile in discovery; a Hub that does not serve it yet serves `1.1.0`.
 - Candidate Hub changes-since: `hub-sync-v1@1.4.0`, documented in
   [`docs/reference/hub-sync.md`](docs/reference/hub-sync.md). It defines
   schema 2.2 PhysicalV3 bootstrap checkpoints, bounded signed changed sets,
@@ -67,15 +71,20 @@ or deployment instructions.
 - `fixtures/v1/` — deterministic normal, duplicate, delayed, missing, and
   reordered observation scenarios.
 - `compatibility/` — the current and previous two minor profiles.
-- `profiles/hub-http-v1/1.1.0/` — current-Hub HTTP schemas, OpenAPI 3.1.0,
+- `profiles/hub-http-v1/1.2.0/` — current-Hub HTTP schemas, OpenAPI 3.1.0,
   examples, cases, and content hash. Distribute the complete directory because
-  its OpenAPI references adjacent schema files.
+  its OpenAPI references adjacent schema files. Offline checks run with
+  `./conformance/run --profile hub-http-v1@1.2.0`.
+- `profiles/hub-http-v1/1.1.0/` — the candidate predecessor, with the same
+  layout and the 24-hour rotation grace.
 - `profiles/hub-sync-v1/1.4.0/` — negotiated schema 2.2 PhysicalV3 changed
   sets, typed delta packs, bounded admission, no-op and full-replacement rebase.
 - `profiles/hub-sync-v1/1.3.0/` — retained changes-since, no-op, key discovery,
   schema 2.2 multi-chunk manifests, and signed prepared map months.
 - `profiles/edge-delivery-v2/2.0.0/` — Edge pull, stable identity,
   sequence/gap, acknowledgement, and durable-consumer disposition contract.
+- `generators/` — documented `openapi-generator` recipes for
+  `profiles/hub-http-v1/1.2.0/openapi.json`; no generated code is committed.
 - `conformance/` — JSONL adapter protocol, executable cases, and runner.
 
 ## Getting started
@@ -107,6 +116,7 @@ downstream product acceptance.
 - [Product versioning](docs/reference/product-versioning.md)
 - [Architecture](docs/architecture/overview.md)
 - [Current-Hub walkthrough](docs/reference/current-hub.md)
+- [Generated-client recipes](generators/README.md)
 - [Hub changes-since contract](docs/reference/hub-sync.md)
 - [Docker checker and read-only smoke](docs/guides/docker.md)
 - [Deterministic developer bundle](docs/guides/developer-bundle.md)

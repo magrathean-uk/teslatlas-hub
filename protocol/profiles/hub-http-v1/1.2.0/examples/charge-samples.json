@@ -1,0 +1,47 @@
+{
+  "items": [
+    {
+      "battery_heater_on": false,
+      "battery_level": 30,
+      "charge_cable": "IEC",
+      "charge_energy_added_kwh": 0.0,
+      "charge_id": 201,
+      "charger_actual_current": 30.0,
+      "charger_phases": 1,
+      "charger_pilot_current": 32.0,
+      "charger_power_kw": 7.0,
+      "charger_voltage": 230.0,
+      "fast_charger_brand": null,
+      "fast_charger_present": false,
+      "fast_charger_type": null,
+      "id": 3001,
+      "ideal_range_km": null,
+      "outside_temp_c": null,
+      "rated_range_km": null,
+      "timestamp_ms": 1788560000000,
+      "usable_battery_level": 30
+    },
+    {
+      "battery_heater_on": false,
+      "battery_level": 31,
+      "charge_cable": "IEC",
+      "charge_energy_added_kwh": 0.1,
+      "charge_id": 201,
+      "charger_actual_current": 30.0,
+      "charger_phases": 1,
+      "charger_pilot_current": 32.0,
+      "charger_power_kw": 7.0,
+      "charger_voltage": 230.0,
+      "fast_charger_brand": null,
+      "fast_charger_present": false,
+      "fast_charger_type": null,
+      "id": 3002,
+      "ideal_range_km": null,
+      "outside_temp_c": null,
+      "rated_range_km": null,
+      "timestamp_ms": 1788560060000,
+      "usable_battery_level": 31
+    }
+  ],
+  "next_cursor": null
+}

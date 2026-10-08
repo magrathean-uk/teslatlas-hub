@@ -1,0 +1,1201 @@
+{
+  "components": {
+    "securitySchemes": {
+      "pairedBearer": {
+        "description": "Bearer issued by claim or rotate.",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Any route may answer 503 with an empty body when the 15 second handler time budget, which includes the wait for one of the 32 in-flight request slots, expires. Treat an empty 503 as a transient outage, except on the claim route, which is never retried automatically: the invitation is single use and the claim may already have consumed it. Any route answers 403 with an empty body and Cache-Control: no-store to a request whose Origin header the Hub does not admit (neither its own origin nor one of the owner's allowed origins) or that names a route without browser access. Which routes admit browser origins, and how the Hub answers a CORS preflight (an OPTIONS request), are set by the Hub and lie outside this profile; a client that sends no Origin header never sees any of them.",
+    "license": {
+      "identifier": "Apache-2.0",
+      "name": "Apache-2.0"
+    },
+    "title": "Teslatlas Hub public HTTP profile hub-http-v1",
+    "version": "1.2.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/.well-known/teslatlas-hub": {
+      "get": {
+        "operationId": "discovery",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "discovery.schema.json"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Empty response body (the handler time budget expired), or an application/json service_unavailable envelope. Nonempty bodies must match the JSON error schema.",
+            "x-empty-body-allowed": true
+          }
+        },
+        "security": []
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "health",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/health"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "503": {
+            "description": "Service unavailable; empty body (also the answer when the handler time budget expires)"
+          }
+        },
+        "security": []
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "ready",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/ready"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/ready"
+                }
+              }
+            },
+            "description": "Empty response body (the handler time budget expired), or an application/json readiness document whose status is not_ready.",
+            "x-empty-body-allowed": true
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/device/revoke": {
+      "post": {
+        "description": "Revoke the calling device. The request has no body; any non-empty body, including one over 4096 bytes, is 400 and revokes nothing (never 413).",
+        "operationId": "revoke",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "No content; empty body"
+          },
+          "400": {
+            "description": "Invalid request; the body is not constrained."
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer; empty body",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "const": "Bearer",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found; empty body. Paired-device authentication is off and auth.revoke is not advertised."
+          },
+          "503": {
+            "description": "Service unavailable; empty body (also the answer when the handler time budget expires)"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/device/rotate": {
+      "post": {
+        "operationId": "rotate",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "auth.schema.json#/$defs/claim"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer; empty body",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "const": "Bearer",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found; empty body. Paired-device authentication is off."
+          },
+          "503": {
+            "description": "Service unavailable; empty body (also the answer when the handler time budget expires)"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/pairings/{pairing_id}/claim": {
+      "post": {
+        "operationId": "claim",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "auth.schema.json#/$defs/claim_request"
+              }
+            }
+          },
+          "required": true,
+          "x-max-request-bytes": 4096
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "auth.schema.json#/$defs/claim"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "400": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "maxLength": 65536,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Request extraction or validation failed; body is bounded text/plain."
+          },
+          "401": {
+            "description": "The invitation secret is invalid, expired or already claimed; empty body."
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "413": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "maxLength": 65536,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The request body, of a JSON media type (application/json or application/*+json), is over the 4096 byte limit and the claim is not attempted; body is bounded text/plain."
+          },
+          "415": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "maxLength": 65536,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The Content-Type is missing or is not a JSON media type (application/json or application/*+json), whatever the size of the body; body is bounded text/plain."
+          },
+          "422": {
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "maxLength": 65536,
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The body is valid JSON but not a claim request, or its device_name is one the Hub refuses (empty, over 128 UTF-8 bytes or with a control character); the claim is not attempted and the invitation is not consumed; body is bounded text/plain."
+          },
+          "503": {
+            "description": "Service unavailable; empty body (also the answer when the handler time budget expires). Never retry a claim automatically: the invitation is single use and the claim may already have consumed it."
+          }
+        },
+        "security": []
+      }
+    },
+    "/v1/vehicles": {
+      "get": {
+        "operationId": "vehicles",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/vehicles"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer; empty body",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "const": "Bearer",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service unavailable; empty body (also the answer when the handler time budget expires)"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/charges": {
+      "get": {
+        "description": "Only closed charge sessions (end_date_ms set) are listed; a charge in progress is left out.",
+        "operationId": "charges",
+        "parameters": [
+          {
+            "description": "A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400.",
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive lower bound on the window key.",
+            "in": "query",
+            "name": "from_ms",
+            "schema": {
+              "default": 0,
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Exclusive upper bound on the window key. The default is the signed 64-bit maximum, 9223372036854775807: omit the parameter to get it, and never send that value from JavaScript, which cannot represent it exactly.",
+            "in": "query",
+            "name": "to_ms",
+            "schema": {
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque next_cursor from the previous page, unchanged.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 4096,
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "schema": {
+              "maxLength": 65536,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/charges"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "const": "no-store",
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; empty body",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "const": "no-store",
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer; empty body",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "const": "Bearer",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema.",
+            "x-empty-body-allowed": true
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/charges/{charge_id}": {
+      "get": {
+        "description": "A charge in progress is not served: its id is 404 charge_not_found.",
+        "operationId": "charge",
+        "parameters": [
+          {
+            "description": "A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400.",
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a decimal integer >= 1, including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
+            "in": "path",
+            "name": "charge_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/charge"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer; empty body",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "const": "Bearer",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema.",
+            "x-empty-body-allowed": true
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/charges/{charge_id}/samples": {
+      "get": {
+        "description": "The samples of a charge in progress are not served: its id is 404 charge_not_found.",
+        "operationId": "charge_samples",
+        "parameters": [
+          {
+            "description": "A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400.",
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a decimal integer >= 1, including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
+            "in": "path",
+            "name": "charge_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive lower bound on the window key.",
+            "in": "query",
+            "name": "from_ms",
+            "schema": {
+              "default": 0,
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Exclusive upper bound on the window key. The default is the signed 64-bit maximum, 9223372036854775807: omit the parameter to get it, and never send that value from JavaScript, which cannot represent it exactly.",
+            "in": "query",
+            "name": "to_ms",
+            "schema": {
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 1000,
+              "maximum": 2048,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque next_cursor from the previous page, unchanged.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 4096,
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "schema": {
+              "maxLength": 65536,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/charge_samples"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "const": "no-store",
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; empty body",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "const": "no-store",
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer; empty body",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "const": "Bearer",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema.",
+            "x-empty-body-allowed": true
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/current": {
+      "get": {
+        "operationId": "current",
+        "parameters": [
+          {
+            "description": "A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400.",
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/current"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer; empty body",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "const": "Bearer",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          },
+          "503": {
+            "description": "Service unavailable; empty body (also the answer when the handler time budget expires)"
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/drives": {
+      "get": {
+        "description": "Only drives that have ended are listed; a drive in progress is left out.",
+        "operationId": "drives",
+        "parameters": [
+          {
+            "description": "A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400.",
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Inclusive lower bound on the window key.",
+            "in": "query",
+            "name": "from_ms",
+            "schema": {
+              "default": 0,
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Exclusive upper bound on the window key. The default is the signed 64-bit maximum, 9223372036854775807: omit the parameter to get it, and never send that value from JavaScript, which cannot represent it exactly.",
+            "in": "query",
+            "name": "to_ms",
+            "schema": {
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque next_cursor from the previous page, unchanged.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 4096,
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "schema": {
+              "maxLength": 65536,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/drives"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "const": "no-store",
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; empty body",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "const": "no-store",
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer; empty body",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "const": "Bearer",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema.",
+            "x-empty-body-allowed": true
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/drives/{drive_id}": {
+      "get": {
+        "description": "A drive in progress is not served: its id is 404 drive_not_found.",
+        "operationId": "drive",
+        "parameters": [
+          {
+            "description": "A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400.",
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a decimal integer >= 1, including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
+            "in": "path",
+            "name": "drive_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/drive"
+                }
+              }
+            },
+            "description": "Successful response"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer; empty body",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "const": "Bearer",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema.",
+            "x-empty-body-allowed": true
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/drives/{drive_id}/positions": {
+      "get": {
+        "description": "The positions of a drive in progress are not served: its id is 404 drive_not_found.",
+        "operationId": "drive_positions",
+        "parameters": [
+          {
+            "description": "A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400.",
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a decimal integer >= 1, including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
+            "in": "path",
+            "name": "drive_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Inclusive lower bound on the window key.",
+            "in": "query",
+            "name": "from_ms",
+            "schema": {
+              "default": 0,
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Exclusive upper bound on the window key. The default is the signed 64-bit maximum, 9223372036854775807: omit the parameter to get it, and never send that value from JavaScript, which cannot represent it exactly.",
+            "in": "query",
+            "name": "to_ms",
+            "schema": {
+              "format": "int64",
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "default": 1000,
+              "maximum": 2048,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Opaque next_cursor from the previous page, unchanged.",
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "maxLength": 4096,
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "schema": {
+              "maxLength": 65536,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "resources.schema.json#/$defs/positions"
+                }
+              }
+            },
+            "description": "Successful response",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "const": "no-store",
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified; empty body",
+            "headers": {
+              "Cache-Control": {
+                "required": true,
+                "schema": {
+                  "const": "no-store",
+                  "type": "string"
+                }
+              },
+              "ETag": {
+                "required": true,
+                "schema": {
+                  "maxLength": 128,
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Missing, invalid, expired or revoked bearer; empty body",
+            "headers": {
+              "WWW-Authenticate": {
+                "schema": {
+                  "const": "Bearer",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Not found"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "errors.schema.json"
+                }
+              }
+            },
+            "description": "Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema.",
+            "x-empty-body-allowed": true
+          }
+        },
+        "security": [
+          {
+            "pairedBearer": []
+          }
+        ]
+      }
+    }
+  }
+}

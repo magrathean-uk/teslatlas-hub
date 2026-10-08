@@ -15,8 +15,9 @@ the private directory created for the session.
 The profile is source-neutral and does not require Hub source or an SDK. It is
 separate from the richer semantic profiles (`1.0.0`, `1.1.0`, and
 `1.2.0`) and from the Edge delivery profile. It has no protocol-version
-request header, SSE stream, vehicle command route, metadata CRUD, or public
-charge-query route.
+request header, SSE stream, vehicle command route, or metadata CRUD. It has no
+public charge-query route in `hub-http-v1@1.1.0`; `hub-http-v1@1.2.0` adds
+charge, charge-sample and position pages (see below).
 
 `hub-http-v1@1.1.0` is a candidate successor to the frozen
 `hub-http-v1@1.0.0` profile. It defines the paired-bearer grace and schema 2.2
@@ -26,6 +27,276 @@ admit this distinct `1.1.0` manifest. Fresh Hub evidence is required before
 claiming runtime acceptance for `1.1.0`. See
 [`docs/compatibility.md`](compatibility.md) and
 [`docs/verification.md`](verification.md) for the accepted `1.0.0` boundary.
+
+## hub-http-v1@1.2.0
+
+`hub-http-v1@1.2.0` is the successor of `1.1.0` (`previous_profile`; the `1.1.0`
+manifest is not pinned) and has profile status `served`. Use it when discovery returns
+`"profile": "hub-http-v1@1.2.0"`; a Hub whose discovery has no `profile` field serves
+`1.1.0`. Its contract is the directory
+[`profiles/hub-http-v1/1.2.0/`](../../profiles/hub-http-v1/1.2.0/): `profile.json`
+(routes, limits, rules), `openapi.json`, the schemas, `cases.json`, `examples/` and
+`SHA256SUMS`. Copy the whole directory. Everything below this section describes
+`1.1.0` and stays true for the routes `1.2.0` keeps; this section lists what
+`1.2.0` changes. Generate clients with [`generators/README.md`](../../generators/README.md).
+
+The additive policy: clients ignore unknown object fields and unknown capability
+tokens; servers may add optional fields and tokens within 1.x; removing or retyping
+a field, changing an enum value, or changing a route's status set is a new major
+profile. Response objects in the schemas are therefore open. Conformance holds a
+Hub to a stricter form that forbids undocumented fields.
+
+**Discovery.** `api_versions` stays `["1.0"]`, `protocol` stays `teslatlas-sync` and
+`protocol_major` stays `1`; `query.vehicles` and `query.current` stay advertised, so
+Home Assistant keeps working unchanged. Discovery gains `profile`
+(`hub-http-v1@1.2.0`) and, when enrichment is enabled, `attributions` (at most 8 of
+`{id, text, licence, url}`). Capability tokens match `^[a-z0-9.]{1,64}$`, at most 16,
+unique. A token is advertised only when its routes are served:
+
+| Token | Advertised when |
+| --- | --- |
+| `query.vehicles`, `query.current` | always |
+| `query.drives`, `query.charges`, `query.positions`, `query.charge.samples`, `sync.packs` | the Hub has a cursor key |
+| `auth.revoke` | paired-device authentication is on |
+| `query.enrichment` | address or terrain enrichment is enabled |
+
+**New routes.**
+
+| Method and path | Responses | Limit default / max |
+| --- | --- | --- |
+| `GET /v1/vehicles/{vehicle_id}/drives/{drive_id}` | `200`, `401`, `404`, `503` | |
+| `GET /v1/vehicles/{vehicle_id}/drives/{drive_id}/positions` | `200`, `304`, `400`, `401`, `404`, `503` | 1000 / 2048 |
+| `GET /v1/vehicles/{vehicle_id}/charges` | `200`, `304`, `400`, `401`, `404`, `503` | 100 / 500 |
+| `GET /v1/vehicles/{vehicle_id}/charges/{charge_id}` | `200`, `401`, `404`, `503` | |
+| `GET /v1/vehicles/{vehicle_id}/charges/{charge_id}/samples` | `200`, `304`, `400`, `401`, `404`, `503` | 1000 / 2048 |
+| `POST /v1/device/revoke` | `204`, `400`, `401`, `404`, `503` | |
+
+The drives route keeps its `1.1.0` limits (100 / 500) and its two `1.1.0` `503` forms (empty,
+and JSON `service_unavailable`); like every route it can also answer the empty handler-timeout `503`
+(see Handler time budget below). Order is
+`start_date_ms DESC, id DESC` for drives and charges, `date_ms ASC, id ASC` for
+positions and `timestamp_ms ASC, id ASC` for samples. A `404` on drive or charge is
+JSON `drive_not_found` or `charge_not_found` for an unknown id of a granted vehicle and
+JSON `vehicle_not_found` for an unknown or ungranted vehicle. `drive_id` and `charge_id`
+are signed 64-bit integers of at least 1; any other value (non-numeric, zero, negative,
+out of range) is the same `404` JSON, never `400`. Only closed sessions are served: a drive or
+charge that has not ended (no `end_date_ms`) is left out of the lists, and its id is `404 drive_not_found`
+or `404 charge_not_found` on the item route and on the positions and samples routes.
+
+**Pages.** All four page routes share one rule set: query `from_ms` (inclusive, default
+0, at least 0), `to_ms` (exclusive, default 9223372036854775807: omit it, and never send
+that value from JavaScript, which cannot represent it), `limit` and `cursor`;
+an unknown query parameter is `400 invalid_query`; the other `400` codes are
+`invalid_time_range`, `invalid_limit` and `invalid_cursor`. A query value that does not
+parse as a decimal integer in the parameter's range (`limit` 0 to 4294967295, `from_ms` and
+`to_ms` signed 64-bit; for example `limit=abc`, `limit=-1`, `from_ms=1.5` or
+`to_ms=9223372036854775808`) is also `400 invalid_query`: `invalid_limit` and
+`invalid_time_range` apply only to well-formed values (`limit=0` or above the route maximum,
+`from_ms=-1`, `from_ms` not below `to_ms`). The response is
+`{"items": [...], "next_cursor": string|null}`. A serialised page is at most 1048576
+bytes and is never split inside an item; an item that alone exceeds the cap is
+`503 service_unavailable`. Every page has a strong `ETag` (the quoted lowercase hex
+SHA-256 of the body), `Cache-Control: no-store` and `Content-Type: application/json`;
+`If-None-Match` with the current `ETag` gives `304` with an empty body.
+
+**Cursors.** `next_cursor` is opaque: keep it byte for byte, percent-encode it once as a
+query value, and never parse or log it. Hubs issue `tqp1.<116 hex>.<64 hex>`: a 58-byte
+payload (version 1, kind 1 drives / 2 charges / 3 positions / 4 charge samples, vehicle
+UUID, scope id, `from_ms`, `to_ms`, last key A, last key B) and an HMAC-SHA256 tag under
+the Hub's cursor key. A cursor is bound to that key, its kind, the vehicle, the scope
+(the drive or charge id for nested pages, otherwise 0) and the exact window, so reusing it
+anywhere else is `400 invalid_cursor`. The drives route still accepts the legacy `tqd1`
+cursor for one release and no longer issues it. [`cursor.schema.json`](../../profiles/hub-http-v1/1.2.0/cursor.schema.json)
+holds both grammars for Hubs and conformance; clients do not need them.
+
+**Fields.** `drive` is the `1.1.0` drive plus optional `start_address_provenance` and
+`end_address_provenance`. `position`, `charge` and `charge_sample` list their fields in
+`resources.schema.json`; ids and `*_ms` values are signed 64-bit integers and never
+null, `vehicle_id` is a UUID, every integer schema that spans signed 64 bits (ids, `*_ms`, and the
+`from_ms`, `to_ms` and id parameters of the OpenAPI document) carries `format: int64` so a generator
+picks a 64-bit type (an annotation: no validator of this package assigns it a check and it changes no
+verdict), `end_date_ms` of a drive and of a charge is never null
+(closed sessions only), and every other field may be null. `cost`, `cost_per_unit` and
+`session_fee` are JSON numbers. `position.power` and the charge-sample charger fields are
+whole numbers in TeslaMate but are typed `number`, because the page routes serve the
+materialised projections of the Hub, which hold them as floating point: expect `12` or `12.0`. `address_provenance` is
+`{source: import|geocoder|manual, provider, endpoint_host, language, licence, looked_up_at_ms}`
+and `elevation_provenance` is `{source: vehicle|import|terrain, dataset, dataset_version, tile}`;
+the provenance fields may be absent or null when no record exists.
+
+**Access.** Every vehicle-scoped route checks the paired device's vehicle grant before
+it reads the query, and answers an ungranted vehicle exactly as it answers an unknown one:
+`404 vehicle_not_found` on JSON routes and an empty `404` on `/current`. The current drives route
+does not check the vehicle before it reads the query yet: it parses the query first, so an unknown or
+ungranted vehicle with an invalid query is `400` today, and the later Hub batch must move the check first,
+as the case `ungranted-vehicle-404` holds a Hub to.
+Each sync route keeps the `404` the Hub gives an unknown vehicle today, and an ungranted vehicle gets that same `404`.
+`hub-sync-v1@1.3.0` lists the JSON `vehicle_not_found` `404` on changes-since and an empty `404` on
+signing-keys and prepared-artefacts (its `status-tables.json`; `hub-sync-v1@1.4.0` publishes no status table and its OpenAPI
+lists no `404` on changes-since or the manifest). It lists no `404` on manifest and no-op, where the Hub answers
+the JSON `vehicle_not_found` envelope for a well-formed unknown vehicle id and an empty `404` for a
+malformed one: `1.2.0` asserts those two statuses (it does not inherit them). Conformance checks the
+manifest's (JSON `vehicle_not_found` for a well-formed unknown, ungranted or nil vehicle id, an empty `404` for a
+malformed one) and does not check the no-op's. For a well-formed unknown vehicle the Hub also answers JSON on prepared-artefacts,
+where `hub-sync-v1@1.3.0` lists an empty `404`; `1.2.0` changes neither. The manifest route is served
+whether or not `sync.packs` is advertised, so its `401` and `404` answers do not depend on that token.
+`GET /v1/vehicles` lists only granted vehicles. A pack is requested by object name (the
+lowercase hex SHA-256 digest plus `.sqlite.zst`, `GET /v1/packs/sha256/{object_name}`); it
+resolves its owning vehicle before streaming, and an ungranted digest is an empty `404`
+indistinguishable from an unknown one.
+
+**Malformed identifiers.** A `vehicle_id` that is not a UUID, a path segment (`vehicle_id`, `drive_id`,
+`charge_id` or a pack name) that percent-decodes to bytes that are not UTF-8 (for example `%FF`), and the nil
+UUID `00000000-0000-0000-0000-000000000000` (well formed, but no vehicle can have it) are answered as not found
+(each route's malformed-identifier answer), after the bearer check: an empty `404` on `/current`; JSON `vehicle_not_found` on the JSON routes
+(`drive_not_found` or `charge_not_found` for such a `drive_id` or `charge_id`); on the sync manifest and no-op an
+empty `404` for a malformed id and JSON `vehicle_not_found` for the nil UUID; an empty `404` on the pack route for a
+name that is not a digest plus `.sqlite.zst`; the other sync routes answer as `access.sync_routes` of `profile.json` says. A request without
+a valid bearer is `401` whatever its path, never `400`. Only the lowercase hyphenated form of a `vehicle_id` and the plain decimal
+form of a `drive_id` or `charge_id` are specified: a Hub's parser may also accept another spelling of the same value (a UUID in upper
+case, without hyphens, in braces or as `urn:uuid:`; an integer with a plus sign or leading zeros) and serve the same resource, which a
+client must not rely on being refused. The current Hub does not do this yet, and the later Hub batch must: its handlers take the path as
+`Path<String>`, which axum answers `400` with a `text/plain` body for an undecodable segment before the handler
+runs, so before authentication, and the nil UUID is `503` on `/current` and the sync routes (the drives route already
+answers it as unknown). Take the path through `Result<Path<_>, PathRejection>` (or a raw segment), authenticate
+first, then answer any path rejection with the route's not-found form, and treat the nil UUID as an unknown vehicle
+on every vehicle-scoped route, the hub-sync-v1 routes included.
+
+**Rotation, lifetime and revocation.** The prior bearer stays valid for normal requests
+through `rotation_at_ms + 86400000` (exclusive). A retry of rotate with the prior bearer
+during the grace window returns the same successor; it never issues a different token.
+After the window the prior bearer is `401`. Only the bearer replaced by the latest rotation has
+a grace window: a further rotation ends the earlier bearer's grace, and it is then `401`. A bearer's `expires_at_ms` slides to at most
+now plus 30 days on use and never beyond the device's absolute maximum (owner-configurable,
+default 180 days from pairing). When rotation cannot move the expiry later, rotate returns
+`200` with the current bearer and expiry unchanged and `"reason": "max_lifetime"`, and
+issues nothing: ask the owner to re-pair before `expires_at_ms`. `POST /v1/device/revoke`
+takes the current or grace bearer and no request body (a non-empty body, including one over 4096
+bytes, is `400` and revokes nothing, never `413`), revokes the calling device and returns `204`. Afterwards the bearer is
+`401` on every route, so a repeated revoke is `401`; treat `401` on revoke as already
+revoked. Call it only when discovery advertises `auth.revoke`: when paired-device
+authentication is off the token is absent and the route answers `404` with an empty body,
+as rotate does.
+
+**Claim size.** `POST /v1/pairings/{pairing_id}/claim` takes at most 4096 bytes of request body.
+A larger body with a JSON `Content-Type` (`application/json` or any `application/*+json`) is `413` with a bounded `text/plain` body (axum's "Failed to buffer the
+request body: length limit exceeded"), and the claim is not attempted; a missing `Content-Type`, or one that is not a JSON media type
+(neither `application/json` nor `application/*+json`), is `415` whatever the size, because the extractor checks it before it reads the body. `413` is therefore part of the claim route's status
+set in `1.2.0` (`200`, `400`, `401`, `404`, `413`, `415`, `422`, `503`), and the "unobserved `413`"
+advice in the `1.1.0` text below does not apply to `1.2.0`. The revoke route has no such status:
+no layer of the Hub rejects an over-limit body it does not read, and a revoke handler must not read
+it through an extractor that would answer `413`.
+
+**Device name.** A claim's `device_name` is 1 to 128 UTF-8 bytes with no control character (U+0000 to U+001F and U+007F to U+009F).
+A name that breaks the rule is `422` with a bounded `text/plain` body, answered before the invitation is consulted: the refusal consumes
+nothing, and the same invitation still claims with a valid name. The schema says `minLength` 1, `maxLength` 128 and the
+control-character rule, but `maxLength` counts characters and cannot state the byte limit, so a client checks the byte length itself.
+The current Hub does not do this yet, and the later Hub batch must: it validates the name inside the store call, where an empty name, one
+over 128 bytes or one with a control character is an error that the claim handler answers with an empty `503`, which no client can correct
+by retrying. Conformance sends six such names before the real claim and expects `422` for each, then a `200` for the claim itself.
+A client that takes the name from free text, such as the Home Assistant integration, can reach this case.
+
+**Handler time budget.** The Hub answers any route, including `/healthz`, `/readyz`, the
+discovery route and the `hub-sync-v1` routes, with `503` and an empty body (no content type) once
+its 15 second handler budget is spent; the budget includes the wait for one of the 32 in-flight
+request slots. Treat an empty `503` on any route except the claim as a transient outage and retry later. A claim is never retried
+automatically (see the `1.1.0` text on the claim below): the invitation is single use, and a claim that ended in an empty `503` may
+already have consumed it. A route that lists a JSON `503` (`service_unavailable` on discovery, the page and the item routes,
+`not_ready` on `/readyz`) can therefore also answer an empty one, and `/healthz` lists `503` for
+this reason alone.
+
+**Browser origins.** A request that carries an `Origin` header is answered `403` with an empty body and
+`Cache-Control: no-store`, before the route runs, on any route (the `hub-sync-v1` routes included), when the Hub does
+not admit that origin (neither its own origin nor one of the owner's allowed origins) or the route has no browser
+access. It is in no route's status set, like the handler-timeout `503`. Which routes admit browser origins, and how the Hub
+answers a CORS preflight (an `OPTIONS` request), are set by the Hub and lie outside this profile. A native client sends no `Origin`
+header and never sees any of them.
+
+**Errors.** `{"error": {"code", "message"}}` with `code` matching `^[a-z_]{1,64}$`; handle
+an unknown code as a generic failure of its status. Known codes: `invalid_query`,
+`invalid_time_range`, `invalid_limit`, `invalid_cursor`, `vehicle_not_found`,
+`service_unavailable`, `drive_not_found`, `charge_not_found`. Unsupported: vehicle
+commands, SSE, metadata CRUD, snapshot revisions and the protocol-version header; the root
+`teslatlas-v1` family is not served.
+
+**Conformance.** The offline checks need no Hub and never prove anything about one:
+
+```sh
+./conformance/run --profile hub-http-v1@1.2.0
+```
+
+They verify the profile directory (exact `SHA256SUMS`, strict JSON, Draft 2020-12
+schemas, OpenAPI, every example against the open and the server-strict schema, `maxItems`
+on every array, capability grammar, cases, cursors, rotation and error text, field
+semantics). The 50 native cases run only with `--config`, never because of an environment
+variable, and only against a Hub you own: they revoke and rotate the disposable bearers the
+descriptor names. A case that declares several routes runs on all of them or is `not_run`
+(naming each capability the Hub did not advertise) before anything is sent: a case never passes on
+part of its routes. The claim case first sends the six `device_name` values a Hub must refuse (see Device name) and then the
+claim itself, which must still succeed because a refusal consumed nothing. `--config` is a private owner-only descriptor
+(`schema_version` 1, `kind` `hub-http-v1-actual-hub`, `profile_id`, a loopback HTTPS
+`endpoint`, `certificate_path`, optional `tls_pin`, and `inputs` named in
+`cases.json`). A case whose inputs, advertised capability or data are missing is reported
+`not_run` with the missing item named; it is never counted as passed. The grant cases first
+read their target with `bearer` (`ungranted_vehicle_id` must be a vehicle `bearer` can read,
+`ungranted_pack_digest` a pack `bearer` can download), so a vehicle or digest that does not exist
+is `not_run`, not a pass; `expired_grace_bearer` is attested by the descriptor, because a
+bearer the Hub never issued is also `401`. The runner gives the
+native checks 80 percent of `--timeout-seconds` (default 10); raise it, for example to
+`--timeout-seconds 300`, or most native cases report `not_run` for the time budget. An
+exchange never outlasts that budget and does not start with less than a quarter of a second of it
+left, so the report of the cases already run is kept. An exchange that the budget ends while it is in flight
+makes its case `not_run` for the time budget, never a failure of the Hub; an exchange that reaches its own
+five second limit with budget to spare is still a failure. The
+exit status is `0` only when everything requested passed (the offline checks, and with
+`--config` every one of the 50 cases), `1` when a check failed and `3` when nothing failed
+but a requested check did not run, so a run that left cases `not_run` never reads as a pass.
+The `later-current` case asks the harness to append one observation and waits up to 30
+seconds for the receipt file (a run budget that ends first makes the case `not_run` for the time
+budget, not a failure); a harness should write it to a private temporary file and
+rename it into place, though a receipt that exists before it has content is read again
+until it parses. Output carries case ids and fixed labels only, never a bearer.
+
+**Deviations from the design note.** Page capabilities follow cursor-key availability,
+not unconditional advertisement. Rotation near the absolute maximum returns the current
+bearer with `reason: "max_lifetime"` instead of minting a capped token. A repeated revoke
+is `401`, not `204`. Invalid `drive_id` and `charge_id` are `404`, not `400`.
+
+**Beyond the specification.** Seventeen choices go past the G2-0a specification and are
+recorded here until the specification lists them. (1) The revoke route lists `400` for a
+non-empty body, and `404` for a Hub with paired-device authentication off, so its status set
+is `204`, `400`, `401`, `404`, `503`; a non-empty body of any size, including one over 4096 bytes, is
+`400` and never `413`. That is a requirement on the Hub, because no layer of it rejects a body the
+handler does not read. (2) `position.power` and the four charge-sample charger
+fields are typed `number`, not integer: the page readers return `ProjectionPosition` and
+`ProjectionChargeSample`, whose values are floating point, not the integer
+`Projection*V2_2` pack mirrors. (3) Each sync route keeps the `404` the Hub gives an unknown
+vehicle today, for an ungranted vehicle too, instead of becoming an empty `404`. The manifest and
+no-op `404`s (JSON `vehicle_not_found` for a well-formed unknown vehicle, empty for a malformed id) are
+asserted by this profile, not inherited: `hub-sync-v1@1.3.0` lists no `404` on those two routes. (4) The pack
+route is `/v1/packs/sha256/{object_name}`, the object name being the digest plus `.sqlite.zst`, as in
+`hub-sync-v1` and `1.1.0`. (5) The OpenAPI `to_ms` parameter has no schema `default`: the
+default, 9223372036854775807, is in its description and in `profile.json`, because generated
+JavaScript clients would otherwise send a value they cannot represent. (6) The handler time
+budget makes an empty `503` possible on every route, so `/healthz` lists `503` (the specification
+leaves its status set unchanged), discovery lists an empty `503` besides its JSON one and `/readyz`
+an empty one besides `not_ready`. (7) Only closed sessions are served: a drive or charge in
+progress is not listed and its id is `404 drive_not_found` or `404 charge_not_found` (the specification
+only makes `end_date_ms` non-null). (8) The claim route lists `413`, with a `text/plain` body, for a
+request body over 4096 bytes. (9) The manifest route is served whether or not `sync.packs` is
+advertised, so its `401` and `404` answers do not depend on that token. (10) Every integer schema that
+spans signed 64 bits carries `format: int64`, an annotation that changes no validation verdict.
+(11) A query value that is not an integer of the parameter's type is `400 invalid_query`. (12) A
+further rotation ends the earlier bearer's grace. (13) A path segment that is not valid UTF-8 and the nil UUID are
+malformed or unknown identifiers answered with a `404` after the bearer check, never `400`, and never `503` because of the value
+(a requirement on the later Hub batch; see Malformed identifiers). (14) A request with an `Origin` header the Hub does not admit is
+`403` on any route. (15) Conformance has one case beyond the specification's list, `malformed-identifier-404`. (16) A claim whose
+`device_name` is empty, over 128 UTF-8 bytes or has a control character is `422` with a `text/plain` body and consumes nothing (a
+requirement on the later Hub batch; see Device name), and a claim is never retried automatically, so the empty `503` rule
+excludes it. (17) Every vehicle-scoped route checks the grant before it reads the query (a requirement on the later Hub batch for
+the drives route; see Access).
+Changing any of these after the profile is frozen
+is a new major profile.
 
 ## Choose the profile
 
@@ -270,7 +541,8 @@ The serialized UTF-8 claim body MUST be at most 4,096 bytes. This is the
 profile's client bound; the exact status and body a Hub emits for an
 over-limit request still require runtime observation. Do not rely on an
 unobserved `413` representation or retry an over-limit claim with the same
-invitation.
+invitation. (`hub-http-v1@1.2.0` specifies the answer: `413` with a bounded
+`text/plain` body, see Claim size in the `1.2.0` section.)
 
 ## Read resources
 
@@ -632,7 +904,7 @@ Do not retry it. A `503` may indicate an unavailable service, but a claim that
 timed out still requires a fresh owner invitation before another attempt.
 
 The current-Hub profile intentionally has no public SSE/events endpoint,
-command submission, metadata CRUD, snapshot revision, or charge-query route.
+command submission, metadata CRUD, snapshot revision, or (in `1.1.0`) charge-query route.
 Do not send rich-profile headers such as `Teslatlas-Protocol-Version` and do
 not infer unsupported routes from discovery. The sync appendix documents pack
 delivery checks separately from these HTTP query semantics. A schema 2.2

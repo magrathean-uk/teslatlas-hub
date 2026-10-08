@@ -1,0 +1,29 @@
+{
+  "$defs": {
+    "tqd1": {
+      "description": "\"tqd1.\" + 98 lowercase hex (49-byte payload) + \".\" + 64 lowercase hex (32-byte tag). Legacy drives cursor.",
+      "maxLength": 168,
+      "minLength": 168,
+      "pattern": "^tqd1\\.[0-9a-f]{98}\\.[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "tqp1": {
+      "description": "\"tqp1.\" + 116 lowercase hex (58-byte payload) + \".\" + 64 lowercase hex (32-byte HMAC-SHA256 tag).",
+      "maxLength": 186,
+      "minLength": 186,
+      "pattern": "^tqp1\\.[0-9a-f]{116}\\.[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "$id": "urn:teslatlas:hub-http-v1:1.2.0:cursor",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Page cursors are opaque to clients. These grammars serve Hubs and conformance only: tqp1 is issued for every page route; tqd1 is the legacy drives cursor, accepted for one release and never issued.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/tqp1"
+    },
+    {
+      "$ref": "#/$defs/tqd1"
+    }
+  ]
+}

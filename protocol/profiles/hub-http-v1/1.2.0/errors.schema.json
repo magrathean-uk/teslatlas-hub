@@ -1,0 +1,27 @@
+{
+  "$id": "urn:teslatlas:hub-http-v1:1.2.0:errors",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "error": {
+      "properties": {
+        "code": {
+          "pattern": "^[a-z_]{1,64}$",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 65536,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "error"
+  ],
+  "type": "object"
+}

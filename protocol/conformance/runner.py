@@ -31,6 +31,7 @@ DISCOVERY_SCHEMA = "urn:teslatlas:protocol:schema:discovery:1.2.0"
 METADATA_SCHEMA = "urn:teslatlas:protocol:schema:metadata:1.2.0"
 METADATA_PAGE_SCHEMA = "urn:teslatlas:protocol:schema:resources:1.2.0#/$defs/metadata_page"
 HUB_SYNC_PROFILE = hub_sync.PROFILE_ID
+HUB_HTTP_12_PROFILE = "hub-http-v1@1.2.0"
 
 
 class ConformanceError(Exception):
@@ -939,7 +940,7 @@ def run() -> int:
     parser = argparse.ArgumentParser(description="Run Teslatlas language-neutral conformance cases")
     parser.add_argument("--profile", action="append", help="protocol profile; repeatable")
     parser.add_argument("--adapter", help="JSONL adapter executable or Python script")
-    parser.add_argument("--config", help="private actual-Hub connection descriptor")
+    parser.add_argument("--config", help="private actual-Hub connection descriptor (hub-http-v1 profiles)")
     parser.add_argument(
         "--timeout-seconds",
         type=float,
@@ -952,6 +953,21 @@ def run() -> int:
         raise ConformanceError("timeout-seconds must be finite and positive")
     if args.timeout_seconds > TIMEOUT_MAX:
         raise ConformanceError("timeout-seconds exceeds the platform wait limit")
+
+    if args.profile and HUB_HTTP_12_PROFILE in args.profile:
+        # Offline profile checks always run; native cases only when a private actual-Hub
+        # descriptor is supplied. The whole run is one owned process group with one deadline,
+        # and the child keeps 20 percent of it back so it can report cases it had no time for.
+        if args.profile != [HUB_HTTP_12_PROFILE]:
+            raise ConformanceError("hub-http-v1@1.2.0 must run separately from other profiles")
+        if args.adapter is not None:
+            raise ConformanceError("hub-http-v1@1.2.0 uses no adapter executable; supply a private --config descriptor for native cases")
+        command = [sys.executable, str(ROOT / "conformance/hub_http_12.py"), "--timeout-seconds", repr(args.timeout_seconds * 0.8)]
+        if args.config:
+            command += ["--config", args.config]
+        if args.json:
+            command += ["--json"]
+        return run_actual_hub(command, args.timeout_seconds)
 
     if args.profile and "hub-http-v1@1.1.0" in args.profile:
         if args.profile != ["hub-http-v1@1.1.0"]:

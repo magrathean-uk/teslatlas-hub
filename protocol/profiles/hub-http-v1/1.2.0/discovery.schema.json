@@ -1,0 +1,117 @@
+{
+  "$id": "urn:teslatlas:hub-http-v1:1.2.0:discovery",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "api_versions": {
+      "const": [
+        "1.0"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "type": "array"
+    },
+    "attributions": {
+      "items": {
+        "properties": {
+          "id": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "licence": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "text": {
+            "maxLength": 1024,
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "maxLength": 4096,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "licence",
+          "url"
+        ],
+        "type": "object"
+      },
+      "maxItems": 8,
+      "type": "array"
+    },
+    "capabilities": {
+      "allOf": [
+        {
+          "contains": {
+            "const": "query.vehicles"
+          }
+        },
+        {
+          "contains": {
+            "const": "query.current"
+          }
+        }
+      ],
+      "items": {
+        "pattern": "^[a-z0-9.]{1,64}$",
+        "type": "string"
+      },
+      "maxItems": 16,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "hub_id": {
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "type": "string"
+    },
+    "manifestPublicKey": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "pack_format": {
+      "const": "sqlite-zstd",
+      "type": "string"
+    },
+    "profile": {
+      "maxLength": 64,
+      "pattern": "^hub-http-v1@1\\.[0-9]+\\.[0-9]+$",
+      "type": "string"
+    },
+    "protocol": {
+      "const": "teslatlas-sync",
+      "type": "string"
+    },
+    "protocol_major": {
+      "const": 1,
+      "type": "integer"
+    },
+    "sourceUrl": {
+      "format": "uri",
+      "maxLength": 4096,
+      "type": "string"
+    },
+    "version": {
+      "maxLength": 65536,
+      "type": "string"
+    }
+  },
+  "required": [
+    "hub_id",
+    "protocol",
+    "protocol_major",
+    "api_versions",
+    "capabilities",
+    "version",
+    "sourceUrl",
+    "pack_format",
+    "profile"
+  ],
+  "type": "object"
+}

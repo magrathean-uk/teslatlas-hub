@@ -1,0 +1,759 @@
+{
+  "cases": [
+    {
+      "id": "discovery-success",
+      "inputs": [],
+      "kind": "discovery",
+      "method": "GET",
+      "route": "/.well-known/teslatlas-hub",
+      "status": 200
+    },
+    {
+      "id": "health-success",
+      "inputs": [],
+      "kind": "health",
+      "method": "GET",
+      "route": "/healthz",
+      "status": 200
+    },
+    {
+      "id": "ready-success",
+      "inputs": [],
+      "kind": "ready",
+      "method": "GET",
+      "route": "/readyz",
+      "status": 200
+    },
+    {
+      "id": "vehicles-success",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "vehicles",
+      "method": "GET",
+      "route": "/v1/vehicles",
+      "status": 200
+    },
+    {
+      "id": "current-success",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "current",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/current",
+      "status": 200
+    },
+    {
+      "id": "drives-success",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "drives",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 200
+    },
+    {
+      "description": "With the invitation file, over the TLS identity the invitation pins: six device_name values a Hub must refuse (empty, 129 bytes, 65 two-byte characters, a newline, DEL and a C1 control character) are each 422 with a bounded text/plain body and consume nothing; then the claim itself is 200.",
+      "id": "claim-success",
+      "inputs": [
+        "invitation_path"
+      ],
+      "kind": "claim",
+      "method": "POST",
+      "route": "/v1/pairings/{pairing_id}/claim",
+      "status": 200
+    },
+    {
+      "destructive": true,
+      "id": "rotate-success",
+      "inputs": [
+        "rotation_bearer"
+      ],
+      "kind": "rotate",
+      "method": "POST",
+      "route": "/v1/device/rotate",
+      "status": 200
+    },
+    {
+      "description": "A limit of 0 and a limit above the route maximum are 400 invalid_limit. Checked on drives and, when the descriptor supplies drive_id or charge_id, on every other page route.",
+      "error_code": "invalid_limit",
+      "id": "invalid_limit",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "drives",
+      "kinds": [
+        "drives",
+        "drive_positions",
+        "charges",
+        "charge_samples"
+      ],
+      "method": "GET",
+      "optional_inputs": [
+        "drive_id",
+        "charge_id"
+      ],
+      "route": "/v1/vehicles/{vehicle_id}/drives?limit=0",
+      "status": 400
+    },
+    {
+      "description": "from_ms above to_ms and a negative from_ms are 400 invalid_time_range. Checked on drives and, when the descriptor supplies drive_id or charge_id, on every other page route.",
+      "error_code": "invalid_time_range",
+      "id": "invalid_time_range",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "drives",
+      "kinds": [
+        "drives",
+        "drive_positions",
+        "charges",
+        "charge_samples"
+      ],
+      "method": "GET",
+      "optional_inputs": [
+        "drive_id",
+        "charge_id"
+      ],
+      "route": "/v1/vehicles/{vehicle_id}/drives?from_ms=20&to_ms=10",
+      "status": 400
+    },
+    {
+      "description": "An unknown query parameter and a value that is not an integer of the parameter's type (limit=abc, limit=-1, from_ms=1.5, to_ms=9223372036854775808) are 400 invalid_query. Checked on drives and, when the descriptor supplies drive_id or charge_id, on every other page route.",
+      "error_code": "invalid_query",
+      "id": "invalid_query",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "drives",
+      "kinds": [
+        "drives",
+        "drive_positions",
+        "charges",
+        "charge_samples"
+      ],
+      "method": "GET",
+      "optional_inputs": [
+        "drive_id",
+        "charge_id"
+      ],
+      "route": "/v1/vehicles/{vehicle_id}/drives?from=2026-09-01",
+      "status": 400
+    },
+    {
+      "description": "A cursor of another vehicle, a malformed cursor and a tampered tag are 400 invalid_cursor on drives and, when the descriptor supplies drive_id or charge_id, on every other page route.",
+      "error_code": "invalid_cursor",
+      "id": "invalid_cursor",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "other_vehicle_id"
+      ],
+      "kind": "drives",
+      "kinds": [
+        "drives",
+        "drive_positions",
+        "charges",
+        "charge_samples"
+      ],
+      "method": "GET",
+      "optional_inputs": [
+        "drive_id",
+        "charge_id"
+      ],
+      "route": "/v1/vehicles/{vehicle_id}/drives?cursor={other_vehicle_cursor}",
+      "status": 400
+    },
+    {
+      "body": "empty",
+      "id": "drive-conditional",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "drives",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 304
+    },
+    {
+      "body": "empty",
+      "id": "pairing-replay",
+      "inputs": [
+        "invitation_path"
+      ],
+      "kind": "claim",
+      "method": "POST",
+      "route": "/v1/pairings/{pairing_id}/claim",
+      "status": 401
+    },
+    {
+      "body": "empty",
+      "id": "missing-bearer",
+      "inputs": [],
+      "kind": "vehicles",
+      "method": "GET",
+      "route": "/v1/vehicles",
+      "status": 401
+    },
+    {
+      "body": "empty",
+      "id": "bad-bearer",
+      "inputs": [],
+      "kind": "vehicles",
+      "method": "GET",
+      "route": "/v1/vehicles",
+      "status": 401
+    },
+    {
+      "id": "rotated-bearer-grace-valid",
+      "inputs": [
+        "rotation_bearer"
+      ],
+      "kind": "vehicles",
+      "method": "GET",
+      "route": "/v1/vehicles",
+      "status": 200
+    },
+    {
+      "description": "A retry of rotate with the prior bearer returns the first successor: access_token equals the first rotation's access_token.",
+      "destructive": true,
+      "id": "rotation-lost-response-retry",
+      "inputs": [
+        "rotation_bearer"
+      ],
+      "kind": "rotate",
+      "method": "POST",
+      "returns": "same_successor",
+      "route": "/v1/device/rotate",
+      "status": 200
+    },
+    {
+      "error_code": "invalid_cursor",
+      "id": "cursor-time-binding",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "drives",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 400
+    },
+    {
+      "id": "later-current",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "update_request_path",
+        "update_receipt_path"
+      ],
+      "kind": "current",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/current",
+      "status": 200
+    },
+    {
+      "id": "scenario-page-2",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "drives",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 200
+    },
+    {
+      "id": "scenario-page-3",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "drives",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 200
+    },
+    {
+      "id": "current-empty",
+      "inputs": [
+        "bearer",
+        "empty_vehicle_id"
+      ],
+      "kind": "current",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/current",
+      "status": 200
+    },
+    {
+      "body": "empty",
+      "id": "current-unknown",
+      "inputs": [
+        "bearer"
+      ],
+      "kind": "current",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/current",
+      "status": 404
+    },
+    {
+      "id": "rotated-bearer-valid",
+      "inputs": [
+        "rotation_bearer"
+      ],
+      "kind": "vehicles",
+      "method": "GET",
+      "route": "/v1/vehicles",
+      "status": 200
+    },
+    {
+      "id": "drive-success",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "drive_id"
+      ],
+      "kind": "drive",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives/{drive_id}",
+      "status": 200
+    },
+    {
+      "description": "An unknown id, and a non-numeric, zero, negative, out-of-range or undecodable (%FF) id, return one 404 drive_not_found shape; positions of an unknown drive too.",
+      "error_code": "drive_not_found",
+      "id": "drive-unknown",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "drive",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives/{drive_id}",
+      "status": 404
+    },
+    {
+      "id": "positions-success",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "drive_id"
+      ],
+      "kind": "drive_positions",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives/{drive_id}/positions",
+      "status": 200
+    },
+    {
+      "description": "A window beyond the data returns {\"items\": [], \"next_cursor\": null}.",
+      "id": "positions-empty",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "drive_id"
+      ],
+      "kind": "drive_positions",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives/{drive_id}/positions",
+      "status": 200
+    },
+    {
+      "description": "Three consecutive pages at limit 1 have no duplicate and no missing id and match the first items of an unpaged read.",
+      "id": "positions-keyset-three-pages",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "drive_id"
+      ],
+      "kind": "drive_positions",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives/{drive_id}/positions",
+      "status": 200
+    },
+    {
+      "id": "charges-success",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "charges",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/charges",
+      "status": 200
+    },
+    {
+      "description": "A window beyond the data returns {\"items\": [], \"next_cursor\": null}.",
+      "id": "charges-empty",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "charges",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/charges",
+      "status": 200
+    },
+    {
+      "id": "charge-success",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "charge_id"
+      ],
+      "kind": "charge",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/charges/{charge_id}",
+      "status": 200
+    },
+    {
+      "description": "An unknown id, and a non-numeric, zero, negative, out-of-range or undecodable (%FF) id, return one 404 charge_not_found shape; samples of an unknown charge too.",
+      "error_code": "charge_not_found",
+      "id": "charge-unknown",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "charge",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/charges/{charge_id}",
+      "status": 404
+    },
+    {
+      "description": "With bearer, every route that takes a vehicle id answers each of abc (not a UUID), %FF (percent-decodes to invalid UTF-8) and the nil UUID 00000000-0000-0000-0000-000000000000 (no vehicle can have it) as not found, after the bearer check, with the answer of the route: an empty 404 on /current, JSON vehicle_not_found on the JSON routes, and on the sync manifest an empty 404 for abc and %FF and JSON vehicle_not_found for the nil UUID. The pack route answers a pack name of abc or %FF with an empty 404. The same %FF request without a valid bearer is 401 on every route, never 400. Every listed route is checked: a route the Hub does not advertise makes the whole case not_run.",
+      "error_code": "vehicle_not_found",
+      "id": "malformed-identifier-404",
+      "inputs": [
+        "bearer"
+      ],
+      "kind": "drives",
+      "kinds": [
+        "current",
+        "drives",
+        "drive",
+        "drive_positions",
+        "charges",
+        "charge",
+        "charge_samples",
+        "sync_manifest",
+        "pack"
+      ],
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 404
+    },
+    {
+      "id": "charge-samples-success",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "charge_id"
+      ],
+      "kind": "charge_samples",
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/charges/{charge_id}/samples",
+      "status": 200
+    },
+    {
+      "body": "empty",
+      "id": "page-conditional",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "drive_id",
+        "charge_id"
+      ],
+      "kind": "drives",
+      "kinds": [
+        "drives",
+        "drive_positions",
+        "charges",
+        "charge_samples"
+      ],
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 304
+    },
+    {
+      "description": "A drives cursor presented to charges (and a charges cursor to drives) is 400 invalid_cursor.",
+      "error_code": "invalid_cursor",
+      "id": "cursor-kind-binding",
+      "inputs": [
+        "bearer",
+        "vehicle_id"
+      ],
+      "kind": "charges",
+      "kinds": [
+        "drives",
+        "charges"
+      ],
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/charges",
+      "status": 400
+    },
+    {
+      "error_code": "invalid_cursor",
+      "id": "cursor-vehicle-binding",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "other_vehicle_id"
+      ],
+      "kind": "drives",
+      "kinds": [
+        "drives",
+        "charges"
+      ],
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 400
+    },
+    {
+      "description": "A positions cursor of drive A presented to drive B is 400 invalid_cursor; with charge_id and other_charge_id, a samples cursor of one charge presented to the other is too.",
+      "error_code": "invalid_cursor",
+      "id": "cursor-scope-binding",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "drive_id",
+        "other_drive_id"
+      ],
+      "kind": "drive_positions",
+      "kinds": [
+        "drive_positions",
+        "charge_samples"
+      ],
+      "method": "GET",
+      "optional_inputs": [
+        "other_charge_id",
+        "charge_id"
+      ],
+      "route": "/v1/vehicles/{vehicle_id}/drives/{drive_id}/positions",
+      "status": 400
+    },
+    {
+      "description": "A cursor presented with a different from_ms or to_ms is 400 invalid_cursor on charges and positions and, when the descriptor supplies charge_id, on charge samples; drives is covered by cursor-time-binding.",
+      "error_code": "invalid_cursor",
+      "id": "cursor-window-binding",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "drive_id"
+      ],
+      "kind": "drive_positions",
+      "kinds": [
+        "charges",
+        "drive_positions",
+        "charge_samples"
+      ],
+      "method": "GET",
+      "optional_inputs": [
+        "charge_id"
+      ],
+      "route": "/v1/vehicles/{vehicle_id}/drives/{drive_id}/positions",
+      "status": 400
+    },
+    {
+      "description": "At the maximum limit no page exceeds 1048576 bytes.",
+      "id": "page-byte-cap",
+      "inputs": [
+        "bearer",
+        "vehicle_id",
+        "drive_id",
+        "charge_id"
+      ],
+      "kind": "drives",
+      "kinds": [
+        "drives",
+        "drive_positions",
+        "charges",
+        "charge_samples"
+      ],
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 200
+    },
+    {
+      "description": "First bearer reads /current of ungranted_vehicle_id (200; otherwise not_run). Then, for second_bearer, JSON routes answer vehicle_not_found, /current an empty 404 and the sync manifest the 404 an unknown vehicle gets (JSON vehicle_not_found), each identical to an unknown vehicle, and an invalid query on a page route does not turn the answer into 400. Every listed route is checked: a route the Hub does not advertise makes the whole case not_run.",
+      "error_code": "vehicle_not_found",
+      "id": "ungranted-vehicle-404",
+      "inputs": [
+        "bearer",
+        "second_bearer",
+        "ungranted_vehicle_id"
+      ],
+      "kind": "drives",
+      "kinds": [
+        "current",
+        "drives",
+        "drive",
+        "drive_positions",
+        "charges",
+        "charge",
+        "charge_samples",
+        "sync_manifest"
+      ],
+      "method": "GET",
+      "route": "/v1/vehicles/{vehicle_id}/drives",
+      "status": 404
+    },
+    {
+      "description": "The list of bearer includes ungranted_vehicle_id (otherwise not_run) and the list of second_bearer does not.",
+      "id": "ungranted-vehicles-list",
+      "inputs": [
+        "bearer",
+        "second_bearer",
+        "ungranted_vehicle_id"
+      ],
+      "kind": "vehicles",
+      "method": "GET",
+      "route": "/v1/vehicles",
+      "status": 200
+    },
+    {
+      "body": "empty",
+      "description": "First bearer downloads ungranted_pack_digest, requested as <digest>.sqlite.zst (200; otherwise not_run). Then an ungranted pack digest is an empty 404 for second_bearer, identical to an unknown digest.",
+      "id": "ungranted-pack-404",
+      "inputs": [
+        "bearer",
+        "second_bearer",
+        "ungranted_pack_digest"
+      ],
+      "kind": "pack",
+      "method": "GET",
+      "route": "/v1/packs/sha256/{object_name}",
+      "status": 404
+    },
+    {
+      "body": "empty",
+      "description": "First a non-empty body, including one over 4096 bytes, is 400 and revokes nothing. Then the revoke is 204 and every listed step is 401. All steps run or the whole case is not_run before anything is sent: a step whose capability is not advertised makes the case not_run.",
+      "destructive": true,
+      "id": "revoke-then-401",
+      "inputs": [
+        "disposable_bearer",
+        "vehicle_id"
+      ],
+      "kind": "revoke",
+      "kinds": [
+        "revoke",
+        "vehicles",
+        "current",
+        "charges",
+        "sync_manifest",
+        "pack"
+      ],
+      "method": "POST",
+      "route": "/v1/device/revoke",
+      "status": 204,
+      "steps": [
+        {
+          "kind": "revoke",
+          "status": 204
+        },
+        {
+          "kind": "vehicles",
+          "status": 401
+        },
+        {
+          "kind": "current",
+          "status": 401
+        },
+        {
+          "kind": "charges",
+          "status": 401
+        },
+        {
+          "kind": "sync_manifest",
+          "status": 401
+        },
+        {
+          "kind": "pack",
+          "status": 401
+        }
+      ]
+    },
+    {
+      "body": "empty",
+      "destructive": true,
+      "id": "revoke-again-401",
+      "inputs": [
+        "disposable_bearer",
+        "vehicle_id"
+      ],
+      "kind": "revoke",
+      "method": "POST",
+      "route": "/v1/device/revoke",
+      "status": 401
+    },
+    {
+      "description": "Repeated retries with the prior bearer inside the grace window return the same successor; no other token is issued.",
+      "destructive": true,
+      "id": "rotation-grace-same-successor",
+      "inputs": [
+        "rotation_bearer"
+      ],
+      "kind": "rotate",
+      "method": "POST",
+      "returns": "same_successor",
+      "route": "/v1/device/rotate",
+      "status": 200
+    },
+    {
+      "body": "empty",
+      "description": "A bearer whose grace window ended is 401 on rotate and on vehicles. expired_grace_bearer is descriptor-attested: a bearer the Hub never issued passes too.",
+      "id": "rotation-after-grace-401",
+      "inputs": [
+        "expired_grace_bearer"
+      ],
+      "kind": "rotate",
+      "kinds": [
+        "rotate",
+        "vehicles"
+      ],
+      "method": "POST",
+      "route": "/v1/device/rotate",
+      "status": 401
+    },
+    {
+      "description": "Discovery names this profile and keeps the Home Assistant invariants: api_versions [\"1.0\"], protocol teslatlas-sync, protocol_major 1, query.vehicles and query.current.",
+      "id": "discovery-profile",
+      "inputs": [],
+      "kind": "discovery",
+      "method": "GET",
+      "route": "/.well-known/teslatlas-hub",
+      "status": 200
+    }
+  ],
+  "global_inputs": {
+    "certificate_path": "PEM file used for normal CA and hostname validation.",
+    "endpoint": "Owned loopback HTTPS origin of the Hub under test.",
+    "tls_pin": "Optional lowercase SHA-256 of the DER leaf certificate; checked on the connected socket when present."
+  },
+  "inputs": {
+    "bearer": "Bearer of a paired device granted vehicle_id and, for the grant cases, ungranted_vehicle_id.",
+    "charge_id": "A charge of vehicle_id with at least three samples.",
+    "disposable_bearer": "Bearer of a device paired for this run only and granted vehicle_id; the run revokes it.",
+    "drive_id": "A drive of vehicle_id with at least three positions.",
+    "empty_vehicle_id": "A vehicle granted to bearer that has no observation.",
+    "expired_grace_bearer": "A prior bearer whose rotation grace window has ended. The descriptor attests this: the run cannot tell it from a bearer the Hub never issued, so name a bearer that really was rotated out.",
+    "invitation_path": "Private file holding a fresh single-use invitation.",
+    "other_charge_id": "A second charge of vehicle_id (optional: cursor-scope-binding also checks charge samples when it is supplied).",
+    "other_drive_id": "A second drive of vehicle_id.",
+    "other_vehicle_id": "A second vehicle granted to bearer (it may have no data).",
+    "rotation_bearer": "Bearer of a device paired for this run only; the run rotates it.",
+    "second_bearer": "Bearer of a different device whose grant excludes ungranted_vehicle_id.",
+    "ungranted_pack_digest": "SHA-256 digest (64 lowercase hex) of a pack that bearer can download and that belongs only to vehicles not granted to second_bearer; the run requests it as <digest>.sqlite.zst with bearer first, so a digest the Hub does not hold is not_run, never a pass.",
+    "ungranted_vehicle_id": "An existing vehicle that is granted to bearer and not granted to second_bearer; the run reads it with bearer first, so a vehicle that does not exist is not_run, never a pass.",
+    "update_receipt_path": "Private path the harness writes when the appended observation is committed.",
+    "update_request_path": "Private marker path the harness watches to append one synthetic observation.",
+    "vehicle_id": "Vehicle granted to bearer with at least five closed drives, three closed charges and the data named by drive_id and charge_id."
+  },
+  "profile_id": "hub-http-v1@1.2.0"
+}
