@@ -58,6 +58,7 @@ Hub; use its stop control when pausing collection.
 | Use the Mac app | [Mac setup](../docs/guides/install-macos.md) |
 | Run Debian (specification) | [Debian installation](../docs/guides/install-debian.md) |
 | Run Docker (specification) | [Docker installation](../docs/guides/install-docker.md) |
+| Choose how data reaches Hub | [Collection paths](../docs/guides/collection-paths.md) |
 | Configure Fleet | [Fleet setup](../docs/guides/fleet-setup.md) |
 | Use the CLI | [CLI reference](../docs/guides/cli.md) |
 | Diagnose or recover | [Troubleshooting](../docs/guides/troubleshooting.md) · [Backup and recovery](../docs/operations/backup-and-recovery.md) |
