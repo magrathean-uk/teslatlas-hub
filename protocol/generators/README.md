@@ -102,6 +102,9 @@ undocumented fields); clients are not.
   `application/*+json`, is `415` whatever its size); `POST /v1/device/revoke` takes no body at all (any body is `400`).
 - A claim's `device_name` is 1 to 128 UTF-8 bytes with no control character; a name that breaks the rule is `422` with a
   bounded `text/plain` body and the invitation is not consumed. The schema's `maxLength` counts characters, so check the byte length yourself.
+  The schema states the control-character rule as `not` over a `pattern` that is one plain character class (no anchor, no look-ahead, no
+  escape class): the regular-expression subset that JSON Schema 2020-12 Core section 6.4 recommends, so an engine without look-ahead
+  (Go `regexp`, Rust `regex`) can load the schema.
 - On the bearer routes, a `vehicle_id`, `drive_id`, `charge_id` or pack name that is malformed, including one that is not valid UTF-8
   (`%FF`), and the nil UUID are a `404` (an unknown vehicle, drive or charge), never a `400`. The `pairing_id` of the claim route is
   not covered by this rule.

@@ -198,6 +198,13 @@ class GeneratorTests(Scratch):
         digest = hashlib.sha256((PROFILE / 'SHA256SUMS').read_bytes()).hexdigest()
         self.assertEqual(result.stdout.decode().strip(), PROFILE_ID + ' sha256=' + digest)
 
+    def test_json_text_writes_del_and_the_c1_controls_as_escapes_and_leaves_other_text_raw(self):
+        value = {'a': 'x\x00\x1f\x7f\x80\x85\x9f\u00a0\u00e9\u2028\U0001f697'}
+        raw = self.generator.json_text(value)
+        self.assertEqual(raw, b'{\n  "a": "x\\u0000\\u001f\\u007f\\u0080\\u0085\\u009f\xc2\xa0\xc3\xa9\xe2\x80\xa8\xf0\x9f\x9a\x97"\n}\n')
+        self.assertEqual(json.loads(raw), value)  # the escape and the character are the same JSON string
+        self.assertEqual(self.generator.json_text({'b': 1, 'a': [1.5]}), json.dumps({'b': 1, 'a': [1.5]}, ensure_ascii=False, sort_keys=True, indent=2).encode() + b'\n')
+
     @unittest.skipUnless((ROOT / 'tools/build_hub_http_profile.py').is_file(), 'the 1.1.0 generator is retired')
     def test_the_1_1_0_generator_is_still_byte_identical(self):
         result = run_script(ROOT / 'tools/build_hub_http_profile.py', '--check')
@@ -265,6 +272,13 @@ class BundleClosureTests(Scratch):
         for name, digest in listed.items():
             self.assertEqual(hashlib.sha256((PROFILE / name).read_bytes()).hexdigest(), digest, name)
         self.assertEqual(len(on_disk), 12 + 19)  # twelve top-level files plus nineteen examples
+
+    def test_no_generated_file_holds_a_raw_control_character_and_the_tree_is_utf_8(self):
+        # json.dumps escapes U+0000 to U+001F but leaves DEL and the C1 controls raw; the generator writes them as escapes, so none sits invisible in a file (R5-text-N3)
+        for path in sorted(item for item in PROFILE.rglob('*') if item.is_file()):
+            text = path.read_bytes().decode('utf-8')
+            raw = sorted({hex(ord(char)) for char in text if unicodedata.category(char) == 'Cc' and char != '\n'})
+            self.assertEqual(raw, [], path.relative_to(PROFILE).as_posix())
 
     def test_required_files_are_present(self):
         for name in ('profile.json', 'openapi.json', 'discovery.schema.json', 'errors.schema.json', 'auth.schema.json', 'resources.schema.json',
@@ -464,8 +478,13 @@ class ProfileContentTests(unittest.TestCase):
                        'can still be over 128 bytes, and is refused all the same'):
             self.assertIn(phrase, name['rule'])
         for phrase in ('answered 422 with a bounded text/plain body', 'before the invitation is consulted', 'consumes nothing',
-                       'does not reveal whether the invitation exists', 'the same invitation still claims with a valid name', 'never an empty 503'):
+                       'does not reveal whether the invitation exists', 'the same invitation still claims with a valid name',
+                       # the name never causes a 503; it is not an absolute: the handler time budget can still end any request, the claim included (R5-text-N1)
+                       'The name never causes a 503 (an empty 503 for another reason, such as the handler time budget, can still happen, '
+                       'and the claim\'s never-retry rule then applies).'):
             self.assertIn(phrase, name['refused']['rule'])
+        self.assertNotIn('never an empty 503', name['refused']['rule'])  # that absolute contradicted limits.handler_timeout_response
+        self.assertIn('every route', self.profile['limits']['handler_timeout_response']['applies_to'])
         self.assertEqual(name['schema'], 'auth.schema.json#/$defs/claim_request')
         self.assertEqual(self.profile['pairing']['claim_fields'], ['secret', 'device_name'])
         route = self.routes['claim']
@@ -510,9 +529,19 @@ class ProfileContentTests(unittest.TestCase):
             self.assertNotIn('Any other value', vehicle['description'])  # the pattern admits only the lowercase hyphenated form; the Hub's parser admits more
         description = next(item for item in document['paths']['/v1/vehicles/{vehicle_id}/drives/{drive_id}']['get']['parameters'] if item['name'] == 'drive_id')['description']
         for phrase in ('percent-decodes to invalid UTF-8', 'in plain decimal form', 'the only form this profile specifies', 'a plus sign or leading zeros',
-                       'Any value that does not parse as a decimal integer >= 1', 'never 400'):
+                       'Any value that does not parse as a signed 64-bit decimal integer >= 1 (non-numeric, zero, negative or out of range)', 'never 400'):
             self.assertIn(phrase, description)
         self.assertNotIn('Any other value', description)
+        self.assertNotIn('Any value that does not parse as a decimal integer >= 1', description)  # 9223372036854775808 is a decimal integer >= 1: out of range must be named
+        for parameter in ('drive_id', 'charge_id'):  # every OpenAPI path that takes one says it
+            carrying = [(path, found) for path, item in document['paths'].items() for operation in item.values() for found in operation.get('parameters', [])
+                        if found['name'] == parameter]
+            self.assertTrue(carrying, parameter)
+            for path, found in carrying:
+                self.assertIn('(non-numeric, zero, negative or out of range)', found['description'], path)
+        # the cases probe a decimal integer >= 1 that is out of range, so the parameter text has to cover it (R5-text-N2)
+        self.assertEqual(conf.UNKNOWN_IDENTIFIERS, ('abc', '0', '-1', '9223372036854775808', '%FF'))
+        self.assertGreater(int('9223372036854775808'), I64_MAX)
         # only the specified spellings are promised: the Hub's parsers accept more, and a client must not rely on the others being refused
         for phrase in ('lowercase hyphenated form of a vehicle_id', 'plain decimal form of a drive_id or charge_id', 'upper case, without hyphens, in braces or as urn:uuid:',
                        'an integer with a plus sign or leading zeros', 'does not rely on the others being refused'):
@@ -563,6 +592,7 @@ class ProfileContentTests(unittest.TestCase):
                        'lists only granted vehicles', 'indistinguishable from an unknown digest',
                        'hub-sync-v1@1.3.0 lists the JSON vehicle_not_found 404 on changes-since and an empty 404 on signing-keys and prepared-artefacts',
                        'It lists no 404 on manifest and no-op', 'JSON vehicle_not_found for a well-formed unknown vehicle id and an empty 404 for a malformed one',
+                       '(the manifest also answers an empty 404 for a known vehicle that has no published full snapshot yet)',
                        'asserted, not inherited, statuses'):
             self.assertIn(phrase, access['text'])
         self.assertNotIn('empty-body 404 on /current, sync routes', access['text'])
@@ -599,6 +629,10 @@ class ProfileContentTests(unittest.TestCase):
             with self.subTest(route):
                 self.assertEqual((item['hub_sync_v1_lists'], item['malformed_vehicle_id'], item['unknown_vehicle'], item['asserted_by_this_profile']),
                                  (lists, malformed, unknown, asserted))
+        # the manifest also answers an empty 404 for a known vehicle with no published full snapshot (the store selects only mode full_snapshot); no other entry has it (R5-reality-N1)
+        self.assertEqual(by_route['GET /v1/vehicles/{vehicle_id}/sync/manifest']['no_full_snapshot'], 'empty 404')
+        self.assertIn('an empty 404 on the manifest means a malformed vehicle id or that no full snapshot is published yet', by_route['GET /v1/vehicles/{vehicle_id}/sync/manifest']['note'])
+        self.assertEqual([key for key, value in by_route.items() if 'no_full_snapshot' in value], ['GET /v1/vehicles/{vehicle_id}/sync/manifest'])
         # only the two routes that hub-sync-v1 gives no 404 are asserted here
         self.assertEqual([key for key, value in by_route.items() if value['asserted_by_this_profile']],
                          ['GET /v1/vehicles/{vehicle_id}/sync/manifest', 'GET /v1/vehicles/{vehicle_id}/sync/noop'])
@@ -629,8 +663,12 @@ class ProfileContentTests(unittest.TestCase):
         self.assertIn('hub-sync-v1@1.3.0 also defines 200 and 406 and lists no 404 for this route', manifest['note'])
         self.assertIn('asserted by this profile, not inherited from hub-sync-v1', manifest['note'])
         # what the Hub also answers on the manifest and the pack (server.rs: the manifest handler answers an empty 400 for a bad header, the pack handler 406, 416 and 503)
-        self.assertIn('an empty 400 (an invalid x-teslatlas-sync-capability or x-teslatlas-supported-schemas header) and empty 503s on it, '
+        self.assertIn('an empty 400 (an invalid x-teslatlas-sync-capability or x-teslatlas-supported-schemas header) and 503s '
+                      '(empty, or the JSON service_unavailable envelope when the vehicle check fails) on it, '
                       'which hub-sync-v1@1.3.0 does not list and this profile does not assert', manifest['note'])
+        self.assertNotIn('and empty 503s on it', manifest['note'])  # the vehicle check answers a JSON 503 as well (R5-text-N4, R5-reality-N2)
+        # the manifest's empty 404 is not only the answer for a malformed id: a known vehicle with no published full snapshot gets it too (R5-reality-N1)
+        self.assertIn('an empty body for a malformed one, or an empty body for a known vehicle that has no published full snapshot yet', manifest['note'])
         self.assertNotIn('the full status set is defined by hub-sync-v1', json.dumps(self.profile))
         # hub-sync-v1@1.3.0 lists 200, 206, 401 and an empty 404 for the pack; the Hub also answers 406 and empty 503s, which neither lists nor this profile asserts
         statuses = {item['status'] for table in json.loads((ROOT / 'profiles/hub-sync-v1/1.3.0/status-tables.json').read_text())['tables']
@@ -724,6 +762,14 @@ class ProfileContentTests(unittest.TestCase):
             self.assertEqual(response.get('x-empty-body-allowed', False), shape != 'empty', kind)
             self.assertIn('time budget', response['description'], kind)
         self.assertIn('not_ready', document['paths']['/readyz']['get']['responses']['503']['description'])
+        # the health answer is a plain 200, so the handler time budget is the only cause of the 503 of /healthz and its text names no second cause (R5-reality-N3);
+        # every other empty-503 route has one (the authentication or query store) and keeps 'also'
+        self.assertEqual(document['paths']['/healthz']['get']['responses']['503']['description'], 'Empty body; only when the handler time budget expires.')
+        self.assertNotIn('also', document['paths']['/healthz']['get']['responses']['503']['description'])
+        for kind in ('vehicles', 'current', 'claim', 'rotate', 'revoke'):
+            route = self.routes[kind]
+            self.assertIn('also the answer when the handler time budget expires',
+                          document['paths'][route['path']][route['method'].lower()]['responses']['503']['description'], kind)
 
     def test_a_request_with_an_origin_the_hub_does_not_admit_is_403_on_any_route(self):
         # The browser CORS layer of the Hub (browser_cors.rs: deny = 403, Cache-Control no-store, empty body) runs before every route.
@@ -968,6 +1014,54 @@ class SchemaTests(unittest.TestCase):
         # the OpenAPI request body is this schema
         claim = load('openapi.json')['paths']['/v1/pairings/{pairing_id}/claim']['post']
         self.assertEqual(claim['requestBody']['content']['application/json']['schema'], {'$ref': 'auth.schema.json#/$defs/claim_request'})
+
+    # The pattern the device_name schema carried before R5-text-N3: a negative look-ahead and the [\s\S] class, which RE2-based engines and the Rust regex crate cannot compile.
+    FORMER_DEVICE_NAME_PATTERN = r'^(?![\s\S]*[\u0000-\u001f\u007f-\u009f])'
+
+    def test_the_device_name_rule_is_one_plain_character_class_that_refuses_and_accepts_the_names_the_look_ahead_did(self):
+        validator = self.validator('auth.schema.json#/$defs/claim_request')
+        schema = load('auth.schema.json')['$defs']['claim_request']['properties']['device_name']
+        # the portable form: no pattern of its own, `not` over one pattern, the length limits kept, nothing else added
+        self.assertEqual(sorted(schema), ['description', 'maxLength', 'minLength', 'not', 'type'])
+        self.assertEqual((schema['type'], schema['minLength'], schema['maxLength']), ('string', 1, 128))
+        self.assertEqual(list(schema['not']), ['pattern'])
+        pattern = schema['not']['pattern']
+        # one class, written here from its code points: the Cc category (U+0000 to U+001F, U+007F to U+009F)
+        self.assertEqual(pattern, '[' + chr(0x00) + '-' + chr(0x1f) + chr(0x7f) + '-' + chr(0x9f) + ']')
+        # and nothing but a class: no anchor, group, look-ahead, escape, alternation or quantifier (the subset of JSON Schema 2020-12 Core section 6.4)
+        self.assertEqual(set(pattern) - set('[]-'), {chr(0x00), chr(0x1f), chr(0x7f), chr(0x9f)})
+        self.assertEqual(pattern.count('['), 1)
+        self.assertEqual(pattern.count(']'), 1)
+        self.assertEqual(pattern.count('-'), 2)
+        # the file says it with JSON escapes, so no control character is written into it raw (and nothing of the former pattern is left)
+        raw = (PROFILE / 'auth.schema.json').read_text(encoding='utf-8')
+        self.assertIn('"pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"', raw)
+        for left_over in ('(?!', '[\\s\\S]', '^(?'):
+            self.assertNotIn(left_over, raw)
+        # every code point, alone and between two letters: the class finds a control character exactly where the Cc category has one, and the verdict is the look-ahead's
+        found, former = re.compile(pattern), re.compile(self.FORMER_DEVICE_NAME_PATTERN)
+        differing = []
+        for code in range(0x110000):
+            if 0xd800 <= code <= 0xdfff:
+                continue  # a surrogate is not a character of a JSON string
+            name = 'a' + chr(code) + 'b'
+            control = unicodedata.category(chr(code)) == 'Cc'
+            if (found.search(name) is not None) != control or (former.search(name) is None) != control:
+                differing.append(hex(code))
+        self.assertEqual(differing, [])
+        # the schema itself, by its own validator, gives the verdict of the former pattern on names that exercise each position and each range edge
+        positions = ('{c}', 'a{c}', '{c}a', 'a{c}b', '{c}{c}', 'x' * 126 + '{c}')
+        edges = (0x00, 0x01, 0x09, 0x0a, 0x0d, 0x1f, 0x20, 0x7e, 0x7f, 0x80, 0x84, 0x85, 0x86, 0x9f, 0xa0, 0xad, 0xff, 0x2028, 0x2029, 0xfeff, 0x1f697)
+        for code in edges:
+            for position in positions:
+                name = position.format(c=chr(code))
+                with self.subTest(code=hex(code), name=ascii(name)):
+                    self.assertEqual(validator.is_valid({'secret': 's', 'device_name': name}), former.search(name) is not None)
+                    self.assertEqual(validator.is_valid({'secret': 's', 'device_name': name}), unicodedata.category(chr(code)) != 'Cc')
+        for name in ('', 'x' * 129, '\u00e9' * 129):  # the length limits are still the schema's own
+            self.assertFalse(validator.is_valid({'secret': 's', 'device_name': name}), ascii(name[:8]))
+        for name in ('a', 'x' * 128, '\u00e9' * 128, '\u00e9' * 65, 'Home Assistant'):
+            self.assertTrue(validator.is_valid({'secret': 's', 'device_name': name}), ascii(name[:8]))
 
     def test_errors_and_auth_schemas(self):
         errors = load('errors.schema.json')
@@ -3348,15 +3442,26 @@ def make_certificate(root, name):
     return certificate, key
 
 
+# A text only the garbage answers of the listener carry: a label that quoted the answer of the server would show it.
+GARBAGE_MARKER = b'SERVER-TEXT-4c1f9a'
+# Answers that are not HTTP framing: a status line that is not HTTP, a status code that is not a number, and a chunked body whose first chunk size is not hex.
+GARBAGE_ANSWERS = {
+    'a status line that is not HTTP': b'NOT-HTTP-' + GARBAGE_MARKER + b'\r\n\r\n',
+    'a status code that is not a number': b'HTTP/1.1 2x0 ' + GARBAGE_MARKER + b'\r\nContent-Length: 0\r\n\r\n',
+    'a chunk size that is not hexadecimal': b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\nzz-' + GARBAGE_MARKER + b'\r\n'}
+
+
 class TlsListener:
     """A TLS listener on 127.0.0.1 that records the request bytes it receives and answers as `mode` says.
 
-    Modes: `ok` (200 with `body`), `big` (a 3 MiB body), `exact` (a body of exactly 1048576 bytes) and `stall` (reads the request, never answers).
+    Modes: `ok` (200 with `body`), `big` (a 3 MiB body), `exact` (a body of exactly 1048576 bytes), `stall` (reads the request, never answers) and
+    `garbage` (reads the request, then writes the bytes of `garbage`, which are not an HTTP response, and hangs up).
     `delay` seconds pass between the request and the answer; `respond(head, body)` may choose the answer as (status line, content type, body).
     """
 
     def __init__(self, certificate, key):
         self.received, self.mode, self.body = [], 'ok', b'{}'
+        self.garbage = GARBAGE_ANSWERS['a status line that is not HTTP']
         self.delay, self.respond = 0.0, None
         self.release, self.lock, self.active = threading.Event(), threading.Condition(), 0
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -3380,7 +3485,9 @@ class TlsListener:
 
         self.server = Server(('127.0.0.1', 0), Handler)
         self.endpoint = 'https://127.0.0.1:' + str(self.server.server_address[1])
-        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05})
+        # a daemon, so that a process that stops before close() runs (an interrupt, a harness that crashed) is not held by it for ever; the handler threads
+        # stay non-daemon, so that server_close() on the normal path still joins them
+        self.thread = threading.Thread(target=self.server.serve_forever, kwargs={'poll_interval': 0.05}, daemon=True)
         self.thread.start()
 
     def serve(self, context, raw):
@@ -3406,6 +3513,9 @@ class TlsListener:
             self.received.append(head + b'\r\n\r\n' + rest)
             if self.mode == 'stall':
                 self.release.wait(6)
+                return
+            if self.mode == 'garbage':
+                connection.sendall(self.garbage)
                 return
             if self.delay:
                 self.release.wait(self.delay)  # a Hub that answers late, whatever its own bound
@@ -3461,6 +3571,7 @@ class LoopbackTransportTests(unittest.TestCase):
         self.listener.received.clear()
         self.listener.mode, self.listener.body = 'ok', b'{}'
         self.listener.delay, self.listener.respond = 0.0, None
+        self.listener.garbage = GARBAGE_ANSWERS['a status line that is not HTTP']
 
     def client(self, certificate=None, pin=None, **options):
         options.setdefault('total_timeout', 3.0)
@@ -3541,6 +3652,49 @@ class LoopbackTransportTests(unittest.TestCase):
         response = self.client().exchange('GET', '/v1/vehicles', bearer=bearer)
         self.assertEqual(len(response.body), conf.MAX_BYTES)  # a body of exactly the limit is not over it
         self.assertNotIn('response exceeds byte limit', conf.validate_raw(self.profile, 'vehicles', 200, response.headers, response.body))
+
+    def test_a_response_that_is_not_http_gives_a_fixed_framing_label_with_none_of_the_text_the_server_sent(self):
+        # The branch for http.client.HTTPException and ValueError: the label is fixed and `from None`, so nothing the server wrote (the status line of a
+        # BadStatusLine, say) reaches a report through the label or through the cause.
+        for label, answer in GARBAGE_ANSWERS.items():
+            with self.subTest(label):
+                self.listener.settle()
+                self.listener.received.clear()
+                self.listener.mode, self.listener.garbage = 'garbage', answer
+                client = self.client()
+                with self.assertRaises(conf.hub_http.AcceptanceError) as failure:
+                    client.exchange('GET', '/v1/vehicles', bearer=token('loopback bearer'))
+                self.assertEqual(str(failure.exception), 'HTTP response framing is invalid')
+                self.assertIsNone(failure.exception.__cause__)  # `from None`: no chain that carries the text of the answer
+                self.assertTrue(failure.exception.__suppress_context__)
+                for text in (GARBAGE_MARKER.decode(), 'NOT-HTTP', 'BadStatusLine', 'IncompleteRead', '127.0.0.1'):
+                    self.assertNotIn(text, str(failure.exception))
+                self.assertEqual(client.requests, 1)  # the request went out: it is the answer that is refused
+                self.listener.settle()
+                self.assertEqual(len(self.listener.received), 1)
+
+    def test_a_native_run_fails_a_case_whose_answer_is_not_http_with_the_fixed_label_only(self):
+        self.listener.mode = 'garbage'
+        run = conf.NativeRun(self.profile, self.descriptor())
+        run.execute('health-success')
+        self.assertEqual(run.results['health-success'], {'scope': 'native', 'case_id': 'health-success', 'status': 'failed', 'detail': 'HTTP response framing is invalid'})
+        self.assertNotIn(GARBAGE_MARKER.decode(), json.dumps(run.results))
+        summary = conf.summarize([run.results['health-success']], 'x', native_requested=True)
+        self.assertEqual((summary['failed'], summary['not_run'], conf.exit_code(summary)), (1, 0, 1))  # a malformed answer is a failure of the Hub
+
+    def test_the_listener_thread_is_a_daemon_so_a_run_that_stops_early_does_not_hang_the_interpreter(self):
+        self.assertTrue(self.listener.thread.daemon)
+        self.assertFalse(self.listener.server.daemon_threads)  # the handler threads are joined by server_close() on the normal path
+        # a process that ends without closing its listener (an interrupt, a harness that crashed) must still exit: a non-daemon serve_forever thread would hold it
+        code = ('import sys, tempfile\nfrom pathlib import Path\nsys.path.insert(0, %r)\nfrom tests import test_hub_http_12_profile as t\n'
+                'with tempfile.TemporaryDirectory() as temp:\n    certificate, key = t.make_certificate(Path(temp), "x")\n    listener = t.TlsListener(certificate, key)\n'
+                'print(listener.thread.is_alive())\n') % str(ROOT)  # no close(): the interpreter is left to end with the thread running
+        try:
+            done = subprocess.run([sys.executable, '-c', code], cwd=ROOT, capture_output=True, timeout=20)
+        except subprocess.TimeoutExpired:
+            self.fail('the interpreter did not exit while the listener thread was still serving')
+        self.assertEqual(done.returncode, 0, done.stderr.decode())
+        self.assertEqual(done.stdout.decode().strip(), 'True')  # the thread was serving when the interpreter ended
 
     def test_a_server_that_never_answers_fails_the_exchange_within_its_timeout(self):
         self.listener.mode = 'stall'
@@ -3879,6 +4033,13 @@ class DocumentationTests(unittest.TestCase):
                        'except on the claim route, which is never retried automatically (the invitation is single use and the claim may already have consumed it)'):
             self.assertIn(phrase, ' '.join(section.split()))
 
+    def test_generators_readme_says_the_device_name_pattern_is_one_plain_character_class(self):
+        text = ' '.join((ROOT / 'generators/README.md').read_text().split())
+        for phrase in ('The schema states the control-character rule as `not` over a `pattern` that is one plain character class (no anchor, no look-ahead, no escape class)',
+                       'the regular-expression subset that JSON Schema 2020-12 Core section 6.4 recommends',
+                       'so an engine without look-ahead (Go `regexp`, Rust `regex`) can load the schema'):
+            self.assertIn(phrase, text)
+
     def test_readme_lists_the_1_2_0_profile(self):
         text = (ROOT / 'README.md').read_text()
         self.assertIn('hub-http-v1@1.2.0', text)
@@ -3912,12 +4073,13 @@ class DocumentationTests(unittest.TestCase):
             self.assertIn(phrase, text)
         section = text[text.index('## hub-http-v1@1.2.0'):text.index('## Choose the profile')]
         for phrase in ('**Handler time budget.**', '15 second handler budget', 'empty body', '`/healthz` lists `503`', 'Only closed sessions are served',
-                       '`404 drive_not_found`', '`404 charge_not_found`', 'Seventeen choices', 'to_ms', 'no schema `default`', 'is `not_run`, not a pass',
+                       '`404 drive_not_found`', '`404 charge_not_found`', 'Eighteen choices', 'to_ms', 'no schema `default`', 'is `not_run`, not a pass',
                        'attested by the descriptor', 'not a failure'):
             self.assertIn(phrase, section)
         self.assertNotIn('Six choices', section)
         self.assertNotIn('Twelve choices', section)
         self.assertNotIn('Fifteen choices', section)
+        self.assertNotIn('Seventeen choices', section)
         flat = ' '.join(section.split())
         for phrase in (
                 # the drives route keeps the two 1.1.0 forms (N3), and the empty 503 of the handler budget besides
@@ -3957,7 +4119,8 @@ class DocumentationTests(unittest.TestCase):
                 'The claim case first sends the six `device_name` values a Hub must refuse (see Device name) and then the claim itself, which must still succeed because a refusal consumed nothing',
                 # malformed identifiers: an undecodable segment, the nil UUID, and the bearer first (HR4-1, r4-reality-N1)
                 '**Malformed identifiers.**', 'percent-decodes to bytes that are not UTF-8 (for example `%FF`)', 'the nil UUID `00000000-0000-0000-0000-000000000000`',
-                'are answered as not found (each route\'s malformed-identifier answer), after the bearer check', 'A request without a valid bearer is `401` whatever its path, never `400`',
+                'are answered as not found (each route\'s malformed-identifier answer, or for the nil UUID its unknown-vehicle answer), after the bearer check',
+                'A request without a valid bearer is `401` whatever its path, never `400`',
                 'the other sync routes answer as `access.sync_routes` of `profile.json` says',
                 'Only the lowercase hyphenated form of a `vehicle_id` and the plain decimal form of a `drive_id` or `charge_id` are specified',
                 'a UUID in upper case, without hyphens, in braces or as `urn:uuid:`; an integer with a plus sign or leading zeros', 'client must not rely on being refused',
@@ -3971,6 +4134,14 @@ class DocumentationTests(unittest.TestCase):
                 '(15) Conformance has one case beyond the specification\'s list, `malformed-identifier-404`', 'The 50 native cases',
                 '(16) A claim whose `device_name` is empty, over 128 UTF-8 bytes or has a control character is `422`', 'so the empty `503` rule excludes it',
                 '(17) Every vehicle-scoped route checks the grant before it reads the query',
+                # the identifier spellings are the 18th choice beyond the specification (R5-text-N5)
+                '(18) Only the lowercase hyphenated UUID and plain decimal ids are specified: other spellings a Hub\'s parser accepts may be served, '
+                'and a client must not rely on their refusal',
+                # the manifest's empty 404 is not only the answer for a malformed id (R5-reality-N1)
+                '(the manifest also answers an empty `404` for a known vehicle that has no published full snapshot yet, so on the manifest an empty `404` means '
+                'a malformed id or that no snapshot is published yet)', 'does not check the no-op\'s or the no-snapshot answer',
+                '(the manifest\'s empty `404` is also what a known vehicle with no published full snapshot answers; see Access)',
+                'and on the manifest also empty for a known vehicle with no published full snapshot yet',
                 # int64 (HR3-3) and the declared routes of a case (N2)
                 'carries `format: int64`', 'runs on all of them or is `not_run`',
                 'An exchange never outlasts that budget and does not start with less than a quarter of a second of it left',
@@ -3984,6 +4155,7 @@ class DocumentationTests(unittest.TestCase):
         self.assertNotIn('and its conformance holds a Hub to them', flat)
         self.assertNotIn('The 49 native cases', flat)
         self.assertNotIn('answered as an unknown vehicle, after the bearer check', flat)
+        self.assertNotIn('malformed-identifier answer), after the bearer check', flat)  # the nil UUID gets its unknown-vehicle answer, not the malformed one (R5-text-N6)
         self.assertNotIn('Treat an empty `503` on any route as a transient outage', flat)
         self.assertNotIn('never `400` or `503` (a requirement', flat)
         self.assertNotIn('`hub-sync-v1` lists', flat)  # every statement about what hub-sync-v1 lists names the version it is read from

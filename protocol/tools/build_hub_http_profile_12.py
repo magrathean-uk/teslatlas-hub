@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import hmac
 import json
+import re
 import struct
 import urllib.parse
 import uuid
@@ -34,9 +35,13 @@ BOOL = {'type': 'boolean'}
 HEX64 = {'type': 'string', 'pattern': '^[0-9a-f]{64}$'}
 URI = {'type': 'string', 'format': 'uri', 'maxLength': 4096}
 # A claim's device_name: 1 to 128 UTF-8 bytes, no control character (the Cc category: U+0000 to U+001F and U+007F to U+009F). maxLength counts
-# characters and cannot state the byte limit; it is a necessary condition (a name over 128 characters is over 128 bytes). The pattern is a
-# negative look-ahead over the whole string so that no anchor quirk (a trailing newline before $) lets a control character through.
-DEVICE_NAME = {'type': 'string', 'minLength': 1, 'maxLength': 128, 'pattern': r'^(?![\s\S]*[\u0000-\u001f\u007f-\u009f])',
+# characters and cannot state the byte limit; it is a necessary condition (a name over 128 characters is over 128 bytes). The control-character rule
+# is `not` over a pattern that is one plain character class of literal characters (written as JSON escapes in the file): no anchor, no look-ahead and
+# no escape class: the subset that JSON Schema 2020-12 Core section 6.4 recommends, which avoids what RE2-based engines (Go regexp) and the Rust regex
+# crate cannot compile. A pattern matches anywhere in the string, so the class alone finds a control character in any position, and no anchor quirk
+# (a trailing newline before $) can let one through.
+CONTROL_CHARACTERS = '[' + chr(0x00) + '-' + chr(0x1f) + chr(0x7f) + '-' + chr(0x9f) + ']'
+DEVICE_NAME = {'type': 'string', 'minLength': 1, 'maxLength': 128, 'not': {'pattern': CONTROL_CHARACTERS},
                'description': 'A name of 1 to 128 UTF-8 bytes with no control character (U+0000 to U+001F, U+007F to U+009F). maxLength counts characters and cannot '
                               'state the byte limit: a name of at most 128 characters can still be over 128 bytes, and is refused all the same (422, nothing consumed).'}
 
@@ -311,7 +316,7 @@ COMPANION_ROUTES = [  # defined by hub-sync-v1; named here only so access and re
      'defined_by': 'hub-sync-v1', 'statuses': [401, 404],
      'responses': {'401': 'empty', '404': 'empty_or_error'}, 'error_codes': {'404': ['vehicle_not_found']},
      'availability': 'Served by every Hub of this profile whether or not sync.packs is advertised: its 401 and 404 answers do not depend on that token.',
-     'note': 'Only the statuses this profile asserts are listed. hub-sync-v1@1.3.0 also defines 200 and 406 and lists no 404 for this route: the 404 (JSON vehicle_not_found for a well-formed unknown or ungranted vehicle id, an empty body for a malformed one) is asserted by this profile, not inherited from hub-sync-v1. The Hub also answers an empty 400 (an invalid x-teslatlas-sync-capability or x-teslatlas-supported-schemas header) and empty 503s on it, which hub-sync-v1@1.3.0 does not list and this profile does not assert.'},
+     'note': 'Only the statuses this profile asserts are listed. hub-sync-v1@1.3.0 also defines 200 and 406 and lists no 404 for this route: the 404 (JSON vehicle_not_found for a well-formed unknown or ungranted vehicle id, an empty body for a malformed one, or an empty body for a known vehicle that has no published full snapshot yet) is asserted by this profile, not inherited from hub-sync-v1. The Hub also answers an empty 400 (an invalid x-teslatlas-sync-capability or x-teslatlas-supported-schemas header) and 503s (empty, or the JSON service_unavailable envelope when the vehicle check fails) on it, which hub-sync-v1@1.3.0 does not list and this profile does not assert.'},
     {'kind': 'pack', 'method': 'GET', 'path': '/v1/packs/sha256/{object_name}', 'bearer': True,
      'capability': 'sync.packs', 'defined_by': 'hub-sync-v1', 'statuses': [401, 404], 'responses': {'401': 'empty', '404': 'empty'},
      'object_name': 'The lowercase hex SHA-256 pack digest followed by .sqlite.zst; a name of any other form is an empty 404.',
@@ -320,7 +325,8 @@ COMPANION_ROUTES = [  # defined by hub-sync-v1; named here only so access and re
 # What hub-sync-v1@1.3.0 (its status-tables.json) lists for a vehicle that is not served and what the Hub answers (it answers an unknown vehicle exactly as an ungranted one).
 SYNC_VEHICLE_404 = [
     {'route': 'GET /v1/vehicles/{vehicle_id}/sync/manifest', 'hub_sync_v1_lists': 'no 404 (200, 401, 406)',
-     'malformed_vehicle_id': 'empty 404', 'unknown_vehicle': '404 JSON vehicle_not_found', 'asserted_by_this_profile': True},
+     'malformed_vehicle_id': 'empty 404', 'unknown_vehicle': '404 JSON vehicle_not_found', 'no_full_snapshot': 'empty 404', 'asserted_by_this_profile': True,
+     'note': 'no_full_snapshot is the answer for a well-formed vehicle the Hub serves that has no published full snapshot yet, so an empty 404 on the manifest means a malformed vehicle id or that no full snapshot is published yet.'},
     {'route': 'GET /v1/vehicles/{vehicle_id}/sync/noop', 'hub_sync_v1_lists': 'no 404 (200, 401, 406)',
      'malformed_vehicle_id': 'empty 404', 'unknown_vehicle': '404 JSON vehicle_not_found', 'asserted_by_this_profile': True},
     {'route': 'POST /v1/vehicles/{vehicle_id}/sync/changes-since', 'hub_sync_v1_lists': '404 JSON vehicle_not_found',
@@ -426,7 +432,7 @@ def build_profile():
                                  'answers': {'current': 'empty 404', 'json_routes': '404 JSON vehicle_not_found', 'sync_manifest': '404 JSON vehicle_not_found', 'sync_noop': '404 JSON vehicle_not_found'}},
                              'spellings': 'Only the lowercase hyphenated form of a vehicle_id and the plain decimal form of a drive_id or charge_id are specified. A Hub\'s parser may also accept other spellings of the same value (a UUID in upper case, without hyphens, in braces or as urn:uuid:; an integer with a plus sign or leading zeros) and serve the same resource: a client sends only the specified forms and does not rely on the others being refused.'},
         'access': {
-            'text': 'Every vehicle-scoped route checks the paired device\'s vehicle grant. An ungranted vehicle is answered exactly as an unknown vehicle on the same route: 404 vehicle_not_found on JSON routes and an empty-body 404 on /current. Each sync route keeps the 404 the Hub gives an unknown vehicle today, and an ungranted vehicle gets that same 404. hub-sync-v1@1.3.0 lists the JSON vehicle_not_found 404 on changes-since and an empty 404 on signing-keys and prepared-artefacts. It lists no 404 on manifest and no-op, where the Hub answers JSON vehicle_not_found for a well-formed unknown vehicle id and an empty 404 for a malformed one; this profile records those two as asserted, not inherited, statuses. GET /v1/vehicles lists only granted vehicles. Packs resolve their owning vehicle before streaming; an ungranted digest is an empty 404 indistinguishable from an unknown digest.',
+            'text': 'Every vehicle-scoped route checks the paired device\'s vehicle grant. An ungranted vehicle is answered exactly as an unknown vehicle on the same route: 404 vehicle_not_found on JSON routes and an empty-body 404 on /current. Each sync route keeps the 404 the Hub gives an unknown vehicle today, and an ungranted vehicle gets that same 404. hub-sync-v1@1.3.0 lists the JSON vehicle_not_found 404 on changes-since and an empty 404 on signing-keys and prepared-artefacts. It lists no 404 on manifest and no-op, where the Hub answers JSON vehicle_not_found for a well-formed unknown vehicle id and an empty 404 for a malformed one (the manifest also answers an empty 404 for a known vehicle that has no published full snapshot yet); this profile records those two as asserted, not inherited, statuses. GET /v1/vehicles lists only granted vehicles. Packs resolve their owning vehicle before streaming; an ungranted digest is an empty 404 indistinguishable from an unknown digest.',
             'vehicle_scoped_routes_check_grant': True, 'check_before_query_parsing': True, 'unknown_equals_ungranted': True,
             'json_routes_not_found': {'status': 404, 'error_code': 'vehicle_not_found'},
             'empty_404_routes': ['current', 'pack'],
@@ -441,7 +447,7 @@ def build_profile():
             'device_name': {
                 'rule': 'device_name is 1 to 128 UTF-8 bytes and has no control character (U+0000 to U+001F, U+007F to U+009F). The schema states the character limit (maxLength 128) and the control-character rule, but a character count cannot state the byte limit: a name of at most 128 characters can still be over 128 bytes, and is refused all the same.',
                 'refused': {'status': 422, 'body': 'bounded text/plain',
-                            'rule': 'A name that breaks the rule is answered 422 with a bounded text/plain body before the invitation is consulted: the refusal consumes nothing and does not reveal whether the invitation exists, so the same invitation still claims with a valid name. It is never an empty 503, which a client cannot correct.'},
+                            'rule': 'A name that breaks the rule is answered 422 with a bounded text/plain body before the invitation is consulted: the refusal consumes nothing and does not reveal whether the invitation exists, so the same invitation still claims with a valid name. The name never causes a 503 (an empty 503 for another reason, such as the handler time budget, can still happen, and the claim\'s never-retry rule then applies).'},
                 'max_bytes': 128, 'consumes_invitation': False, 'schema': 'auth.schema.json#/$defs/claim_request'},
             'invitation_lifetime': 'expiresAtMs epoch milliseconds; default invitation lifetime 900 seconds, owner-configurable; single use.',
             'lifetime': {
@@ -517,7 +523,7 @@ def build_openapi():
             if '{' + name + '}' in path:
                 parameters.append({'name': name, 'in': 'path', 'required': True, 'schema': ID_PARAMETER,
                                    'description': 'Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub\'s integer parser may also accept a plus sign or leading zeros, which a client must not rely on). '
-                                                  'Any value that does not parse as a decimal integer >= 1, including one that percent-decodes to invalid UTF-8, is 404 with the route\'s not-found JSON, never 400.'})
+                                                  'Any value that does not parse as a signed 64-bit decimal integer >= 1 (non-numeric, zero, negative or out of range), including one that percent-decodes to invalid UTF-8, is 404 with the route\'s not-found JSON, never 400.'})
         if 'limit' in route:
             limit = route['limit']
             parameters += [
@@ -569,6 +575,8 @@ def build_openapi():
                 response['description'] = 'Not found; empty body. Paired-device authentication is off and auth.revoke is not advertised.'
             if kind == 'rotate' and status == 404:
                 response['description'] = 'Not found; empty body. Paired-device authentication is off.'
+            if kind == 'health' and status == 503:
+                response['description'] = 'Empty body; only when the handler time budget expires.'  # the health answer itself is never 503, so there is no second cause
             if kind == 'claim' and status == 401:
                 response['description'] = 'The invitation secret is invalid, expired or already claimed; empty body.'
             if kind == 'claim' and status == 503:
@@ -933,13 +941,20 @@ def build_sync_regression():
             'acceptance_boundary': 'Passing query conformance does not prove sync ingestion, schema-2.2 client correctness, migration preservation, or platform matrix completion.'}
 
 
+def json_text(value):
+    """The bytes of one generated file. json.dumps always writes U+0000 to U+001F as escapes but leaves DEL and the C1 controls (U+007F to U+009F) raw;
+    they are written as escapes too, so that no invisible character sits in a committed file. The escape and the character are the same JSON string."""
+    text = json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + '\n'
+    return re.sub('[\u007f-\u009f]', lambda match: '\\u%04x' % ord(match.group()), text).encode()
+
+
 def bundle():
     schemas, current, drive, position, charge, charge_sample = build_schemas()
     cases, cases_document = build_cases()
     output = {'profile.json': build_profile(), 'openapi.json': build_openapi(), 'field-semantics.json': build_semantics(current, drive, position, charge, charge_sample),
               'cases.json': cases_document, 'sync-regression.json': build_sync_regression(), **schemas}
     output.update({'examples/' + name + '.json': example for name, example in build_examples(current, drive, position, charge, charge_sample).items()})
-    return {name: (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + '\n').encode() for name, value in output.items()}
+    return {name: json_text(value) for name, value in output.items()}
 
 
 def main():

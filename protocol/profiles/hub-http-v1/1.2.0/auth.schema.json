@@ -37,7 +37,9 @@
           "description": "A name of 1 to 128 UTF-8 bytes with no control character (U+0000 to U+001F, U+007F to U+009F). maxLength counts characters and cannot state the byte limit: a name of at most 128 characters can still be over 128 bytes, and is refused all the same (422, nothing consumed).",
           "maxLength": 128,
           "minLength": 1,
-          "pattern": "^(?![\\s\\S]*[\\u0000-\\u001f\\u007f-\\u009f])",
+          "not": {
+            "pattern": "[\u0000-\u001f\u007f-\u009f]"
+          },
           "type": "string"
         },
         "secret": {

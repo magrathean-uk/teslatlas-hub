@@ -65,7 +65,7 @@
             "description": "Successful response"
           },
           "503": {
-            "description": "Service unavailable; empty body (also the answer when the handler time budget expires)"
+            "description": "Empty body; only when the handler time budget expires."
           }
         },
         "security": []
@@ -489,7 +489,7 @@
             }
           },
           {
-            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a decimal integer >= 1, including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
+            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a signed 64-bit decimal integer >= 1 (non-numeric, zero, negative or out of range), including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
             "in": "path",
             "name": "charge_id",
             "required": true,
@@ -569,7 +569,7 @@
             }
           },
           {
-            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a decimal integer >= 1, including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
+            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a signed 64-bit decimal integer >= 1 (non-numeric, zero, negative or out of range), including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
             "in": "path",
             "name": "charge_id",
             "required": true,
@@ -959,7 +959,7 @@
             }
           },
           {
-            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a decimal integer >= 1, including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
+            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a signed 64-bit decimal integer >= 1 (non-numeric, zero, negative or out of range), including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
             "in": "path",
             "name": "drive_id",
             "required": true,
@@ -1039,7 +1039,7 @@
             }
           },
           {
-            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a decimal integer >= 1, including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
+            "description": "Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a signed 64-bit decimal integer >= 1 (non-numeric, zero, negative or out of range), including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400.",
             "in": "path",
             "name": "drive_id",
             "required": true,

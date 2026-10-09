@@ -135,9 +135,10 @@ Each sync route keeps the `404` the Hub gives an unknown vehicle today, and an u
 signing-keys and prepared-artefacts (its `status-tables.json`; `hub-sync-v1@1.4.0` publishes no status table and its OpenAPI
 lists no `404` on changes-since or the manifest). It lists no `404` on manifest and no-op, where the Hub answers
 the JSON `vehicle_not_found` envelope for a well-formed unknown vehicle id and an empty `404` for a
-malformed one: `1.2.0` asserts those two statuses (it does not inherit them). Conformance checks the
+malformed one (the manifest also answers an empty `404` for a known vehicle that has no published full snapshot yet, so on the
+manifest an empty `404` means a malformed id or that no snapshot is published yet): `1.2.0` asserts those two statuses (it does not inherit them). Conformance checks the
 manifest's (JSON `vehicle_not_found` for a well-formed unknown, ungranted or nil vehicle id, an empty `404` for a
-malformed one) and does not check the no-op's. For a well-formed unknown vehicle the Hub also answers JSON on prepared-artefacts,
+malformed one) and does not check the no-op's or the no-snapshot answer. For a well-formed unknown vehicle the Hub also answers JSON on prepared-artefacts,
 where `hub-sync-v1@1.3.0` lists an empty `404`; `1.2.0` changes neither. The manifest route is served
 whether or not `sync.packs` is advertised, so its `401` and `404` answers do not depend on that token.
 `GET /v1/vehicles` lists only granted vehicles. A pack is requested by object name (the
@@ -148,9 +149,10 @@ indistinguishable from an unknown one.
 **Malformed identifiers.** A `vehicle_id` that is not a UUID, a path segment (`vehicle_id`, `drive_id`,
 `charge_id` or a pack name) that percent-decodes to bytes that are not UTF-8 (for example `%FF`), and the nil
 UUID `00000000-0000-0000-0000-000000000000` (well formed, but no vehicle can have it) are answered as not found
-(each route's malformed-identifier answer), after the bearer check: an empty `404` on `/current`; JSON `vehicle_not_found` on the JSON routes
+(each route's malformed-identifier answer, or for the nil UUID its unknown-vehicle answer), after the bearer check: an empty `404` on `/current`; JSON `vehicle_not_found` on the JSON routes
 (`drive_not_found` or `charge_not_found` for such a `drive_id` or `charge_id`); on the sync manifest and no-op an
-empty `404` for a malformed id and JSON `vehicle_not_found` for the nil UUID; an empty `404` on the pack route for a
+empty `404` for a malformed id and JSON `vehicle_not_found` for the nil UUID (the manifest's empty `404` is also what a known vehicle with no
+published full snapshot answers; see Access); an empty `404` on the pack route for a
 name that is not a digest plus `.sqlite.zst`; the other sync routes answer as `access.sync_routes` of `profile.json` says. A request without
 a valid bearer is `401` whatever its path, never `400`. Only the lowercase hyphenated form of a `vehicle_id` and the plain decimal
 form of a `drive_id` or `charge_id` are specified: a Hub's parser may also accept another spelling of the same value (a UUID in upper
@@ -262,7 +264,7 @@ not unconditional advertisement. Rotation near the absolute maximum returns the 
 bearer with `reason: "max_lifetime"` instead of minting a capped token. A repeated revoke
 is `401`, not `204`. Invalid `drive_id` and `charge_id` are `404`, not `400`.
 
-**Beyond the specification.** Seventeen choices go past the G2-0a specification and are
+**Beyond the specification.** Eighteen choices go past the G2-0a specification and are
 recorded here until the specification lists them. (1) The revoke route lists `400` for a
 non-empty body, and `404` for a Hub with paired-device authentication off, so its status set
 is `204`, `400`, `401`, `404`, `503`; a non-empty body of any size, including one over 4096 bytes, is
@@ -272,8 +274,8 @@ fields are typed `number`, not integer: the page readers return `ProjectionPosit
 `ProjectionChargeSample`, whose values are floating point, not the integer
 `Projection*V2_2` pack mirrors. (3) Each sync route keeps the `404` the Hub gives an unknown
 vehicle today, for an ungranted vehicle too, instead of becoming an empty `404`. The manifest and
-no-op `404`s (JSON `vehicle_not_found` for a well-formed unknown vehicle, empty for a malformed id) are
-asserted by this profile, not inherited: `hub-sync-v1@1.3.0` lists no `404` on those two routes. (4) The pack
+no-op `404`s (JSON `vehicle_not_found` for a well-formed unknown vehicle, empty for a malformed id, and on the manifest also empty
+for a known vehicle with no published full snapshot yet) are asserted by this profile, not inherited: `hub-sync-v1@1.3.0` lists no `404` on those two routes. (4) The pack
 route is `/v1/packs/sha256/{object_name}`, the object name being the digest plus `.sqlite.zst`, as in
 `hub-sync-v1` and `1.1.0`. (5) The OpenAPI `to_ms` parameter has no schema `default`: the
 default, 9223372036854775807, is in its description and in `profile.json`, because generated
@@ -294,7 +296,8 @@ malformed or unknown identifiers answered with a `404` after the bearer check, n
 `device_name` is empty, over 128 UTF-8 bytes or has a control character is `422` with a `text/plain` body and consumes nothing (a
 requirement on the later Hub batch; see Device name), and a claim is never retried automatically, so the empty `503` rule
 excludes it. (17) Every vehicle-scoped route checks the grant before it reads the query (a requirement on the later Hub batch for
-the drives route; see Access).
+the drives route; see Access). (18) Only the lowercase hyphenated UUID and plain decimal ids are specified: other spellings a Hub's
+parser accepts may be served, and a client must not rely on their refusal (see Malformed identifiers).
 Changing any of these after the profile is frozen
 is a new major profile.
 

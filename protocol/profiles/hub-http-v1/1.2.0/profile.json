@@ -17,6 +17,8 @@
           "asserted_by_this_profile": true,
           "hub_sync_v1_lists": "no 404 (200, 401, 406)",
           "malformed_vehicle_id": "empty 404",
+          "no_full_snapshot": "empty 404",
+          "note": "no_full_snapshot is the answer for a well-formed vehicle the Hub serves that has no published full snapshot yet, so an empty 404 on the manifest means a malformed vehicle id or that no full snapshot is published yet.",
           "route": "GET /v1/vehicles/{vehicle_id}/sync/manifest",
           "unknown_vehicle": "404 JSON vehicle_not_found"
         },
@@ -52,7 +54,7 @@
       ],
       "rule": "Each sync route keeps the 404 the Hub gives an unknown vehicle today, and an ungranted vehicle is answered exactly as an unknown vehicle. The manifest and no-op 404s are asserted by this profile, not inherited: hub-sync-v1@1.3.0 lists no 404 for them. The other routes keep what they have."
     },
-    "text": "Every vehicle-scoped route checks the paired device's vehicle grant. An ungranted vehicle is answered exactly as an unknown vehicle on the same route: 404 vehicle_not_found on JSON routes and an empty-body 404 on /current. Each sync route keeps the 404 the Hub gives an unknown vehicle today, and an ungranted vehicle gets that same 404. hub-sync-v1@1.3.0 lists the JSON vehicle_not_found 404 on changes-since and an empty 404 on signing-keys and prepared-artefacts. It lists no 404 on manifest and no-op, where the Hub answers JSON vehicle_not_found for a well-formed unknown vehicle id and an empty 404 for a malformed one; this profile records those two as asserted, not inherited, statuses. GET /v1/vehicles lists only granted vehicles. Packs resolve their owning vehicle before streaming; an ungranted digest is an empty 404 indistinguishable from an unknown digest.",
+    "text": "Every vehicle-scoped route checks the paired device's vehicle grant. An ungranted vehicle is answered exactly as an unknown vehicle on the same route: 404 vehicle_not_found on JSON routes and an empty-body 404 on /current. Each sync route keeps the 404 the Hub gives an unknown vehicle today, and an ungranted vehicle gets that same 404. hub-sync-v1@1.3.0 lists the JSON vehicle_not_found 404 on changes-since and an empty 404 on signing-keys and prepared-artefacts. It lists no 404 on manifest and no-op, where the Hub answers JSON vehicle_not_found for a well-formed unknown vehicle id and an empty 404 for a malformed one (the manifest also answers an empty 404 for a known vehicle that has no published full snapshot yet); this profile records those two as asserted, not inherited, statuses. GET /v1/vehicles lists only granted vehicles. Packs resolve their owning vehicle before streaming; an ungranted digest is an empty 404 indistinguishable from an unknown digest.",
     "unknown_equals_ungranted": true,
     "vehicle_scoped_routes_check_grant": true,
     "vehicles_list": "granted vehicles only"
@@ -108,7 +110,7 @@
       },
       "kind": "sync_manifest",
       "method": "GET",
-      "note": "Only the statuses this profile asserts are listed. hub-sync-v1@1.3.0 also defines 200 and 406 and lists no 404 for this route: the 404 (JSON vehicle_not_found for a well-formed unknown or ungranted vehicle id, an empty body for a malformed one) is asserted by this profile, not inherited from hub-sync-v1. The Hub also answers an empty 400 (an invalid x-teslatlas-sync-capability or x-teslatlas-supported-schemas header) and empty 503s on it, which hub-sync-v1@1.3.0 does not list and this profile does not assert.",
+      "note": "Only the statuses this profile asserts are listed. hub-sync-v1@1.3.0 also defines 200 and 406 and lists no 404 for this route: the 404 (JSON vehicle_not_found for a well-formed unknown or ungranted vehicle id, an empty body for a malformed one, or an empty body for a known vehicle that has no published full snapshot yet) is asserted by this profile, not inherited from hub-sync-v1. The Hub also answers an empty 400 (an invalid x-teslatlas-sync-capability or x-teslatlas-supported-schemas header) and 503s (empty, or the JSON service_unavailable envelope when the vehicle check fails) on it, which hub-sync-v1@1.3.0 does not list and this profile does not assert.",
       "path": "/v1/vehicles/{vehicle_id}/sync/manifest",
       "responses": {
         "401": "empty",
@@ -344,7 +346,7 @@
       "max_bytes": 128,
       "refused": {
         "body": "bounded text/plain",
-        "rule": "A name that breaks the rule is answered 422 with a bounded text/plain body before the invitation is consulted: the refusal consumes nothing and does not reveal whether the invitation exists, so the same invitation still claims with a valid name. It is never an empty 503, which a client cannot correct.",
+        "rule": "A name that breaks the rule is answered 422 with a bounded text/plain body before the invitation is consulted: the refusal consumes nothing and does not reveal whether the invitation exists, so the same invitation still claims with a valid name. The name never causes a 503 (an empty 503 for another reason, such as the handler time budget, can still happen, and the claim's never-retry rule then applies).",
         "status": 422
       },
       "rule": "device_name is 1 to 128 UTF-8 bytes and has no control character (U+0000 to U+001F, U+007F to U+009F). The schema states the character limit (maxLength 128) and the control-character rule, but a character count cannot state the byte limit: a name of at most 128 characters can still be over 128 bytes, and is refused all the same.",
