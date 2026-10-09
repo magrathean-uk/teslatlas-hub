@@ -22,7 +22,7 @@ Status: G2-0 design, 2026-10-08. Not implemented. Edge (`teslatlas-edge@9aa14d9`
 | Config | `[collector.edge]` (`runtime/config.rs:274-276, 431-540, 1126-1132, 1239-1241`), consumers in `diagnostics.rs`, `dispatch.rs`, `main/migration.rs`, `platform/macos_launch_agent.rs` | |
 | Dev mode | `DevelopmentHubMode.edge` (Swift `DevelopmentHubRuntime.swift:65-69,132`; Rust `DevelopmentServeMode::Edge`, `cli.rs:34,44,53`) | |
 | Dependency | `serde_jcs_legacy` (`Cargo.toml:55-56`; only user `edge_delivery.rs:797-801`) | |
-| Tooling | `tools/source_run_receiver_edge_hub.py` (675), Edge lanes in `fixture.py`, companions recipes and catalog entries, `packaging/components.json` Edge component, `scripts/sync-ecosystem-versions.py` and `test_g3_admission.py` Edge pins | |
+| Tooling | `tools/source_run_receiver_edge_hub.py` (675), Edge lanes in `fixture.py`, `scripts/sync-ecosystem-versions.py` and `test_g3_admission.py` Edge pins | |
 
 Audit items closed by this retirement without a fix: STO-01, X03, COL-01, STO-15 (Hub side); Edge C10/C11 remain historical findings in the archived repository.
 

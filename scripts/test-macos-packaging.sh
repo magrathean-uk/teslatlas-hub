@@ -104,13 +104,6 @@ for cargo_rust_version in 1.98.2 1.99 invalid; do
         fail "incompatible Cargo minimum was accepted: $cargo_rust_version"
     fi
 done
-/usr/bin/grep -Fq 'bootstrap-companions.py' "$SERVICE_BUILD" \
-    || fail "service package does not include the companion bootstrap helper"
-/usr/bin/grep -Fq 'catalog-current.json' "$SERVICE_BUILD" \
-    || fail "service package does not include the fixed shipped companion catalog"
-if /usr/bin/grep -Fq 'bootstrap-companions.py' "$POSTINSTALL"; then
-    fail "privileged postinstall must not run the companion bootstrap"
-fi
 /usr/bin/plutil -lint "$PLIST" >/dev/null || fail "invalid LaunchAgent template"
 /usr/bin/python3 -m json.tool "$FLEET_TELEMETRY_EXAMPLE" >/dev/null \
     || fail "invalid Fleet Telemetry receiver example"

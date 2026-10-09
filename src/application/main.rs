@@ -12,7 +12,7 @@ use std::{
 #[cfg(unix)]
 use std::future::Future;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use qrcode::{QrCode, render::unicode::Dense1x2};
 use rustix::fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open};
 use rustix::process::getuid;
@@ -86,7 +86,6 @@ const IMMUTABLE_DIAGNOSTIC_OPEN_DELAY: Duration = Duration::ZERO;
 include!("main/macos_service.rs");
 include!("main/cli.rs");
 include!("main/healthcheck.rs");
-include!("main/companions.rs");
 include!("main/control.rs");
 include!("main/teslamate_check.rs");
 include!("main/dispatch.rs");

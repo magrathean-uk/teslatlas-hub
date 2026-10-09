@@ -16,8 +16,7 @@ health probe.
 
 The current Compose file is a core Hub candidate. Optional Fleet, Home
 Assistant, and Edge services require their own reviewed source cohort and
-acceptance evidence. An empty public companion catalog does not make those
-services available automatically.
+acceptance evidence.
 
 The Dockerfile deliberately avoids `COPY --chmod`, but the candidate
 distributable container path requires Docker 26, its Buildx CLI component, and
@@ -273,6 +272,6 @@ containers. The first exact-export ARM64 runtime attempt was rejected after
 cleanup because its raw evidence was not retained for independent inspection
 and its original empty-volume handoff was unsafe. A Docker build, health
 response or local synthetic test does not establish native Linux ARM64/AMD64
-support, Fleet telemetry, public companion availability, or live Tesla
+support, Fleet telemetry, or live Tesla
 collection. Those claims require the isolated runtime, upgrade, recovery and
 consumer acceptance records described by the compatibility plan.

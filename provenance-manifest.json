@@ -57,7 +57,6 @@
         "docs/governance/individual-contributor-assignment-agreement.md",
         "docs/guides/api.md",
         "docs/guides/cli.md",
-        "docs/guides/companion-setup.md",
         "docs/guides/configuration.md",
         "docs/guides/fleet-setup.md",
         "docs/guides/getting-started.md",
@@ -471,15 +470,6 @@
       ]
     },
     {
-      "id": "companion-bootstrap-tooling",
-      "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Repository-maintained fixed companion source bootstrap, schemas, catalog, and focused tests.",
-      "globs": [
-        "tools/companions/*",
-        "tools/companions/tests/*"
-      ]
-    },
-    {
       "id": "ecosystem-compatibility-contracts",
       "class": "MAGRATHEAN-ORIGINAL",
       "rationale": "Repository-maintained ecosystem release record.",
@@ -526,7 +516,6 @@
         "docs/maintainers/design-review-2026-09-21.md",
         "macos/TeslatlasHubApp/DEVELOPMENT.md",
         "macos/TeslatlasHubApp/TeslatlasHubApp/DevelopmentHubRuntime.swift",
-        "packaging/components.json",
         "packaging/docker/base-images.json",
         "packaging/docker/config.toml",
         "packaging/docker/config.toml.example",

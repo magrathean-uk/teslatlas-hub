@@ -212,126 +212,6 @@ enum WriteBackCommand {
     },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-enum CompanionMode {
-    Production,
-    LocalCandidate,
-}
-
-impl CompanionMode {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Production => "production",
-            Self::LocalCandidate => "local-candidate",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Args)]
-struct CompanionOperationArgs {
-    /// Unique comma-separated companion set.
-    #[arg(long, value_delimiter = ',', num_args = 1..)]
-    components: Vec<String>,
-    /// Absolute unprivileged installation prefix outside the Hub package.
-    #[arg(long)]
-    prefix: PathBuf,
-    /// Published Git cohort or an explicitly bound local candidate.
-    #[arg(long, value_enum, default_value_t = CompanionMode::Production)]
-    mode: CompanionMode,
-    /// Explicit catalog for local-candidate mode.
-    #[arg(long)]
-    catalog: Option<PathBuf>,
-    /// Byte-complete source manifest for local-candidate mode.
-    #[arg(long)]
-    local_sources: Option<PathBuf>,
-    /// Directory containing the pinned Node.js executable.
-    #[arg(long)]
-    node_bin: Option<PathBuf>,
-    /// Explicit Home Assistant configuration directory.
-    #[arg(long)]
-    ha_config: Option<PathBuf>,
-    /// Explicit supported Edge deployment target.
-    #[arg(long, value_parser = ["local-linux"])]
-    edge_target: Option<String>,
-    /// Verified Go binary used only with an explicit Edge tool root.
-    #[arg(long)]
-    edge_go_binary: Option<PathBuf>,
-    /// Verified isolated Edge toolchain root.
-    #[arg(long)]
-    edge_tool_root: Option<PathBuf>,
-    /// Per-process deadline forwarded to the fixed recipes.
-    #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u16).range(1..=1800))]
-    timeout_seconds: u16,
-}
-
-#[derive(Clone, Debug, Args)]
-struct CompanionPrefixArgs {
-    /// Absolute unprivileged installation prefix outside the Hub package.
-    #[arg(long)]
-    prefix: PathBuf,
-}
-
-#[derive(Clone, Debug, Args)]
-struct CompanionD1PlanArgs {
-    /// One explicit D1 component; only admitted source-only selectors may be planned.
-    #[arg(long, value_delimiter = ',', num_args = 1..)]
-    components: Vec<String>,
-    /// Selector identity from the reviewed D1 component manifest.
-    #[arg(long)]
-    selector: String,
-    /// Absolute D1 component manifest supplied by the owner.
-    #[arg(long)]
-    component_manifest: PathBuf,
-}
-
-#[derive(Clone, Debug, Args)]
-struct CompanionD1InstallArgs {
-    /// The only D1 component admitted to the source-only local candidate path.
-    #[arg(long, value_delimiter = ',', num_args = 1..)]
-    components: Vec<String>,
-    /// Selector identity from the reviewed D1 component manifest.
-    #[arg(long)]
-    selector: String,
-    /// Absolute D1 component manifest supplied by the owner.
-    #[arg(long)]
-    component_manifest: PathBuf,
-    /// Absolute unprivileged disposable installation prefix outside the Hub package.
-    #[arg(long)]
-    prefix: PathBuf,
-    /// Caller-supplied byte-complete Home Assistant local source manifest.
-    #[arg(long)]
-    local_sources: PathBuf,
-    /// Explicit existing Home Assistant configuration directory.
-    #[arg(long)]
-    ha_config: PathBuf,
-    /// Per-process deadline forwarded to the fixed Home Assistant recipe.
-    #[arg(long, default_value_t = 300, value_parser = clap::value_parser!(u16).range(1..=1800))]
-    timeout_seconds: u16,
-}
-
-#[derive(Clone, Debug, Subcommand)]
-enum CompanionCommand {
-    /// Install the newest admitted compatible cohort without refreshing the catalog.
-    Install(CompanionOperationArgs),
-    /// Refresh the fixed canonical catalog and install a compatible cohort.
-    Update(CompanionOperationArgs),
-    /// Inspect and recover the installed companion set without network access.
-    Status(CompanionPrefixArgs),
-    /// Activate the most recent retained verified cohort without network access.
-    Rollback(CompanionPrefixArgs),
-    /// Remove replaceable companion code while preserving data and configuration.
-    Remove(CompanionPrefixArgs),
-    /// Verify sources, prerequisites, recipes, and targets without activation.
-    #[command(name = "dry-run")]
-    DryRun(CompanionOperationArgs),
-    /// Bind an admitted D1 selector into a source-only plan; this never installs or starts anything.
-    #[command(name = "d1-plan")]
-    D1Plan(CompanionD1PlanArgs),
-    /// Materialize the admitted D1 Home Assistant source as one explicit local candidate.
-    #[command(name = "d1-install")]
-    D1Install(CompanionD1InstallArgs),
-}
-
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Print licence, source, and independence notices.
@@ -353,12 +233,6 @@ enum Command {
     /// Create the configured local store for a packaged Linux installation.
     #[cfg(unix)]
     Bootstrap,
-    /// Install and manage compatible source-built companion projects.
-    #[command(name = "companions", visible_alias = "setup-companions")]
-    Companions {
-        #[command(subcommand)]
-        command: CompanionCommand,
-    },
     /// Configure one or every vehicle directly from private Owner tokens.
     #[cfg(unix)]
     Setup {

@@ -756,16 +756,6 @@ printf '%s\n' \
     '  [ ! -e "$1/usr/lib/teslatlas-hub/tesla-http-proxy" ]' \
     '  [ ! -e "$1/usr/lib/teslatlas-hub/fleet-telemetry" ]' \
     'fi' \
-    'cmp "$EXPECTED_COMPANION_WRAPPER" "$1/usr/lib/teslatlas-hub/bootstrap-companions.py"' \
-    'for companion_module in __init__.py cli.py core.py processes.py recipes.py targets.py; do' \
-    '  cmp "$EXPECTED_COMPANION_MODULES/$companion_module" "$1/usr/lib/teslatlas-hub/companions/$companion_module"' \
-    'done' \
-    'for companion_metadata in catalog-current.json catalog-template.json catalog.schema.json local-sources.schema.json; do' \
-    '  cmp "$EXPECTED_COMPANION_MODULES/$companion_metadata" "$1/usr/share/teslatlas-hub/companions/$companion_metadata"' \
-    'done' \
-    '[ ! -e "$1/usr/lib/teslatlas-hub/companions/tests" ]' \
-    '[ ! -e "$1/usr/share/teslatlas-hub/companions/teslatlas-protocol" ]' \
-    '[ ! -e "$1/usr/share/teslatlas-hub/companions/node_modules" ]' \
     'cp "$1/DEBIAN/control" "$CAPTURED_CONTROL"' \
     ': > "$2"' > "$elf_bin/dpkg-deb"
 chmod 0755 "$elf_bin/dpkg-deb"
@@ -785,9 +775,6 @@ chmod 0755 "$test_root/fake-binary"
 package_fixture="$test_root/package-fixture"
 mkdir -p "$package_fixture/scripts" "$package_fixture/packaging"
 cp "$root/scripts/build-deb.sh" "$package_fixture/scripts/build-deb.sh"
-cp "$root/scripts/bootstrap-companions.py" "$package_fixture/scripts/bootstrap-companions.py"
-mkdir -p "$package_fixture/tools"
-cp -R "$root/tools/companions" "$package_fixture/tools/companions"
 cat >"$package_fixture/scripts/legal-bundle.py" <<'PY'
 #!/usr/bin/env python3
 import argparse
@@ -924,8 +911,6 @@ run_package() {
             EXPECTED_FLEET="$test_root/fake-fleet-telemetry" \
             EXPECTED_PROXY_SHA="$package_proxy_sha" EXPECTED_FLEET_SHA="$package_fleet_sha" \
             EXPECTED_SIDECAR_LOCK="$package_fixture/packaging/linux/sidecar-sha256.lock" \
-            EXPECTED_COMPANION_WRAPPER="$root/scripts/bootstrap-companions.py" \
-            EXPECTED_COMPANION_MODULES="$root/tools/companions" \
             PATH="$elf_bin:$PATH" TMPDIR="$test_root" \
             sh "$package_builder" "$@"
     ) > "$test_root/package-output" 2>&1

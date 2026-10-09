@@ -590,9 +590,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let store = HubStore::initialize(&config.data_dir)?;
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
     match cli.command {
-        Command::Companions { .. } => {
-            unreachable!("companion commands are delegated before Hub configuration")
-        }
         Command::Init => {
             println!("initialized {}", store.database_path().display());
         }

@@ -18,9 +18,6 @@ async fn main() -> ExitCode {
         .init();
 
     let cli = Cli::parse();
-    if let Command::Companions { command } = &cli.command {
-        return run_companion_command(command).await;
-    }
     let kind = match &cli.command {
         Command::Migrate { .. } => dev::Kind::Import,
         Command::Serve => dev::Kind::Serve,
