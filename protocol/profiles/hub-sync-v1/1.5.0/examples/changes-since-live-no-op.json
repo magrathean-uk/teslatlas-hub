@@ -1,0 +1,19 @@
+{
+  "fixture_id": "changes-since-live-no-op-v1",
+  "no_op": {
+    "base_manifest_schema": "2.2",
+    "base_manifest_sha256": "18587f220f3b03eff629ce1d84eb9aef45c1ad366573fe5405f45c160f87fcb1",
+    "base_receipt_id": "receipt_demo_000043",
+    "kind": "no_op",
+    "live_sequence": 1,
+    "manifest_schema": "2.2",
+    "sequence": 43,
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "SQVbCVX5AFYzuRvzE1AbHUZfDx+dRKN57qwZSvrWcpc60bT5A1e+NUSG/6auuXuHvbZFckLjuevwsDFliatFCg==",
+      "signed_payload_sha256": "dfeb4aa3d886a997c2bf9b30c4b3da406e2a706a294eda08057311011a6e47a0"
+    },
+    "vehicle_id": "33333333-3333-4333-8333-333333333333"
+  }
+}

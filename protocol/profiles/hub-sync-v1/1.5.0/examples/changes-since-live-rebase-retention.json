@@ -1,0 +1,61 @@
+{
+  "fixture_id": "changes-since-live-rebase-retention-v1",
+  "hint": {
+    "kind": "rebase_required",
+    "reason": "live_retention",
+    "replacement": {
+      "chunks": [
+        {
+          "chunk_index": 0,
+          "pack": {
+            "compressed_bytes": 4096,
+            "object_name": "packs/demo-full-44.sqlite.zst",
+            "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+          }
+        }
+      ],
+      "manifest_id": "manifest_demo_000044",
+      "manifest_sha256": "5b4a073e511827c8e6109f4369f38cc4e588b9ecc5071c28e85c8bb4ee0bbab1",
+      "receipt_id": "receipt_demo_000044",
+      "schema_version": "2.2",
+      "sequence": 44
+    },
+    "requested_base": {
+      "manifest_id": "manifest_demo_000043",
+      "manifest_sha256": "18587f220f3b03eff629ce1d84eb9aef45c1ad366573fe5405f45c160f87fcb1",
+      "receipt_id": "receipt_demo_000043",
+      "schema_version": "2.2",
+      "sequence": 43
+    },
+    "requested_live_sequence": 2,
+    "retry_request": {
+      "accepted_changed_set_formats": [
+        "teslatlas-physical-v3-delta-v1"
+      ],
+      "base_live_sequence": 0,
+      "base_manifest_id": "manifest_demo_000044",
+      "base_manifest_schema": "2.2",
+      "base_manifest_sha256": "5b4a073e511827c8e6109f4369f38cc4e588b9ecc5071c28e85c8bb4ee0bbab1",
+      "base_receipt_id": "receipt_demo_000044",
+      "from_sequence": 44,
+      "schema_version_range": {
+        "maximum": "2.2",
+        "minimum": "2.2"
+      },
+      "source": {
+        "account_id": "22222222-2222-4222-8222-222222222222",
+        "generation": 1,
+        "installation_id": "11111111-1111-4111-8111-111111111111",
+        "selected_car_id": 1,
+        "vehicle_id": "33333333-3333-4333-8333-333333333333"
+      }
+    },
+    "signature": {
+      "algorithm": "ed25519",
+      "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+      "signature": "o7qocNdiUOX4K6uccRahvLaO13JQYl4MWWeEiWBifEydtlj3UP0SkQSighxAVXfri839EbLgwRgoFpLTaQQRDQ==",
+      "signed_payload_sha256": "62ee9427fcdd96f7f9bc09c4af45ecc940496101ed058a40b253c3cd4781b3e0"
+    },
+    "vehicle_id": "33333333-3333-4333-8333-333333333333"
+  }
+}

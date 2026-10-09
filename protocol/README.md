@@ -31,6 +31,9 @@ It carries four distinct contract families with different identities:
   no-op receipts, vehicle-bound signing-key discovery, and complete signed
   replacement after compaction. The retained `1.3.0` profile also defines
   signed prepared map months.
+  The candidate `hub-sync-v1@1.5.0` adds a live overlay (`base_live_sequence`,
+  `live_sequence`, the `sync.live` capability) to a PhysicalV3 head; no Hub
+  serves it yet.
 - Rich semantic HTTP and event profiles: `1.0.0`, `1.1.0`, and `1.2.0`. The
   local conformance gate covers the current minor and its two predecessors.
   Their walkthrough is
@@ -77,6 +80,11 @@ or deployment instructions.
   `./conformance/run --profile hub-http-v1@1.2.0`.
 - `profiles/hub-http-v1/1.1.0/` — the candidate predecessor, with the same
   layout and the 24-hour rotation grace.
+- `profiles/hub-sync-v1/1.5.0/` — candidate live overlay on a PhysicalV3 head:
+  `base_live_sequence`, one-step live changed sets, a live no-op, a signed
+  rebase for any superseded or expired head, and an in-place upgrade of a 1.4
+  checkpoint, chained on 1.4.0 and referring to its unchanged artefacts by
+  relative path.
 - `profiles/hub-sync-v1/1.4.0/` — negotiated schema 2.2 PhysicalV3 changed
   sets, typed delta packs, bounded admission, no-op and full-replacement rebase.
 - `profiles/hub-sync-v1/1.3.0/` — retained changes-since, no-op, key discovery,

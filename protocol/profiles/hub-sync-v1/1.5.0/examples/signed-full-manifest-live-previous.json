@@ -1,0 +1,25 @@
+{
+  "chunks": [
+    {
+      "chunk_index": 0,
+      "pack": {
+        "compressed_bytes": 4096,
+        "object_name": "packs/demo-full-42.sqlite.zst",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    }
+  ],
+  "kind": "snapshot",
+  "live_sequence": 0,
+  "manifest_id": "manifest_demo_000042",
+  "receipt_id": "receipt_demo_000042",
+  "schema_version": "2.2",
+  "sequence": 42,
+  "signature": {
+    "algorithm": "ed25519",
+    "key_id": "ed25519-sha256-21fe31dfa154a261626bf854046fd2271b7bed4b6abe45aa58877ef47f9721b9",
+    "signature": "lxrh+zTy04TTVRwtqOeyuu9BNISyL6bdNjU0qbDqHfpPzH0GrilhPoPUCLks75a0MxCXNe2rNIYqA9DOaEvXAg==",
+    "signed_payload_sha256": "6372681456df15a44a2be314603842f05d22ce16be7bd17cddc295899de3526f"
+  },
+  "vehicle_id": "33333333-3333-4333-8333-333333333333"
+}

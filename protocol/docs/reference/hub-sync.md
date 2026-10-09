@@ -38,6 +38,163 @@ most 16 MiB compressed and 256 MiB uncompressed. A valid change that cannot
 fit uses the signed `409` complete replacement; clients do not raise these
 limits locally.
 
+[`hub-sync-v1@1.5.0`](../../profiles/hub-sync-v1/1.5.0/) is a candidate that
+adds a live overlay to a PhysicalV3 head. No Hub serves it yet. A Hub lists the
+discovery capability `sync.live` if and only if it serves the overlay and the
+discovery profile it names defines that token; a Hub that does not serve the
+overlay answers the 1.5 selector with an empty `406`. `hub-http-v1@1.2.0` and
+`1.1.0` do not define `sync.live`, so a Hub that serves 1.5 under either of them
+does not advertise it; a later `hub-http-v1` minor adds the token, and the exact
+capability equality of the 1.1.0 actual-Hub matrix is adjusted then. A client
+selects it with `x-teslatlas-sync-profile: hub-sync-v1@1.5.0` and the same
+`x-teslatlas-supported-schemas: 2.1,2.2` header, and every changes-since request
+adds the required `base_live_sequence` (0 through 9007199254740991). A request
+without it keeps the 1.4 behaviour and never receives an overlay; the closed 1.4
+and 1.5 request schemas make the two shapes mutually exclusive.
+
+The overlay is a second position, `live_sequence`, against one exact head. A
+checkpoint is `(receipt_id, manifest_sha256, live_sequence)`. When the head
+matches and the client is behind, the Hub returns the next live changed set: a
+`physical_changed_set` whose `base` and `target` are both that head, byte-equal,
+with `from_live_sequence`, `to_live_sequence` and `live_sequence` added, where
+`to_live_sequence` is `from_live_sequence` plus 1, `live_sequence` equals
+`to_live_sequence`, and `from_live_sequence` equals the request's
+`base_live_sequence`. A client rejects a gap or a receipt naming another head.
+When the client is current the Hub returns a signed
+live `no_op`, which names the exact `receipt_id`, `manifest_sha256`, `sequence`
+and `live_sequence` it proves current; the 1.3 no-op is never a live answer. A
+live changed set never deletes: its pack uses the unchanged 1.4 pack contract
+with both metadata sides naming the head, an empty tombstone table and only
+closed impacted roots, because only closed drives and charges are published
+live and a root published while open could later need a delete. A synthesised
+stationary position for a live charge is an ordinary `changed` row.
+
+A `409` `rebase_required` is returned only when the base head is no longer the
+one to serve, whatever its `base_live_sequence`: reason `head_changed` after a
+later import, `live_retention` after a fold that pruned the live journal of the
+requested head (a client offline beyond the live-journal retention), and
+`live_ahead` when the head was rotated away because of a regression and the
+client's `base_live_sequence` is above the position the Hub recorded for that
+head but not above its high-water mark (below). The reason is diagnostic; a
+client takes the same action for every reason. None of them is an error, even
+for a head whose packs have expired, because a Hub keeps the identity of every
+head it has published for the vehicle (`manifest_id`, `receipt_id`,
+`manifest_sha256`, `sequence` and source binding), the position it holds for the
+head and the highest `live_sequence` it ever signed for it (the high-water mark),
+for the life of the vehicle. The immediate predecessor is included: the 1.4
+single-step head transition is not offered to a 1.5 client, so a base that is not
+the head to serve always receives a signed complete replacement, a head that
+already exists, so answering costs no rebuild. The replacement is a head with a
+different `receipt_id` and a greater sequence, so a rebase cannot loop on an
+unchanged head, and the exact `retry_request` carries `base_live_sequence` 0. A
+Hub therefore keeps every live changed set of its current head from
+`live_sequence` 1, or folds the live rows into a new head before pruning them.
+A watermark over paired devices is not enough: a new, reinstalled or rebased
+device and a 1.4 upgrade start at `live_sequence` 0 and need step 1, which no
+paired device's acknowledgement protects. A live publication that cannot fit the 1.4 admission limits or closure in one
+step is split into consecutive live steps, each admitted by the 1.4 limits and
+closed over its own roots (a root is never split across steps). Only a single
+root whose closure alone exceeds the 1.4 limits is answered with a fold into a
+new head and `head_changed`; a live step is never answered with a replacement of
+the same head.
+Only a receipt the Hub did not record for the vehicle, a known receipt with a
+different manifest ID, manifest digest or sequence (such as the digest of a 1.4
+manifest), or, for the head to serve, a `base_live_sequence` above the head's
+high-water mark fails closed as the unsigned `422 unknown_base_receipt` of 1.3
+and 1.4. A client answered that way drops its checkpoint, does a full bootstrap
+under the 1.5 selector and then requests with `base_live_sequence` 0; it never
+retries the same request. The Hub resolves a base in this order, first match
+wins: identity, then whether the head is still the one to serve, then a paused
+rotation, then the high-water mark, then a regression, then no-op or the next
+changed set. Error statuses are inherited from 1.3.0 and are unsigned; the 1.5
+OpenAPI lists only `200` and `409` for changes-since and `200` and `406` for the
+manifest, as 1.4 does. The wire key document is the 1.3.0 signing-keys route
+and schema; the 1.4.0 key schema the profile refers to covers only the fixture
+key set.
+
+A client applies a live changed set only when its stored `(receipt_id,
+manifest_sha256, live_sequence)` equals the receipt's base and
+`from_live_sequence`, and then atomically activates `(receipt_id,
+manifest_sha256, to_live_sequence)`. The target of a live receipt is the head the
+client already has active, so the 1.4 rule that replay of an already activated
+target is idempotent does not apply: a live receipt is a replay only when the
+client's stored `live_sequence` already equals `to_live_sequence`. The
+`target_raw_sha256` of a live changed set is the head's own all-history target
+commitment, the value that the receipt which published the head carries, and it
+is the same in every live step of the head; the step itself is bound by the
+signed receipt, not by this member. As in 1.4 a client is not required to
+reproduce it, and a client that holds the head's commitment compares it.
+
+A live position is a bare counter under an unchanged head, so the profile fixes
+its meaning. A `(receipt_id, manifest_sha256, live_sequence)` is signed for at
+most one changed set: a Hub that answers the same step twice returns identical
+content, which makes crash replay idempotent, and never re-issues a
+`live_sequence` of a head with different content. An operation that can lower a
+head's live position (a backup restore, a lost journal tail) rotates the head
+before live service resumes, and a restore also rolls back the head ledger, so a
+head the restored ledger does not record is answered with the unsigned `422` and
+the client recovers by a full 1.5 bootstrap. A Hub that finds `base_live_sequence`
+above the position it holds for the head to serve but not above the head's
+high-water mark has detected a regression it did not rotate on: it never answers
+a changed set or a no-op from that head. It never builds the replacement inside
+the request, because a fold is O(history) and a client chooses
+`base_live_sequence`; it answers with a transient failure that this profile does
+not define, starts the rotation outside the request and pauses live service for
+the head until the rotation completes, and a client keeps its checkpoint and
+retries the same request later. A `409` `live_ahead` therefore names a
+replacement that already exists: once the head has been rotated away, a request
+that names it is answered with it. A `base_live_sequence` above the high-water
+mark of the head to serve is not recorded by this Hub as issued and is answered
+at once, without rebuilding anything, with the unsigned `422`, so a client cannot
+make a Hub rotate by naming a position it holds no record of issuing. A client
+that holds two receipts for one step with different content rejects the second.
+
+An import folds live rows into the new stage before publication. The 1.4 head
+transition from head N to head N+1 stays as in 1.4 and is computed from head N's
+packs at `live_sequence` 0, because a 1.4 client never holds live rows: it
+carries every folded live row of N+1 as a changed row and never tombstones a live
+row. A live duplicate that an import replaces is absent from N+1 and from that
+transition and reaches no client as a tombstone, because a 1.5 client above
+`live_sequence` 0 never receives a head transition and always receives a complete
+replacement.
+
+After a bootstrap the client likewise requests the overlay at once from the
+manifest's position: the 1.5 bootstrap manifest adds a signed `live_sequence`,
+which is 0 for the life of its head because head packs are never rewritten. The
+manifest therefore does not change as live changed sets are published, but it
+differs from the 1.4 manifest of the same head, so the exact-bytes
+`manifest_sha256` of a 1.4 checkpoint is never a 1.5 base. A client upgrades
+without a rebase: it fetches the 1.5 bootstrap manifest of the head the Hub
+serves (one signed document, no packs), verifies it, and adopts it as its 1.5
+checkpoint at `live_sequence` 0 when its vehicle, `manifest_id`, `receipt_id`,
+sequence and schema version equal those of the 1.4 checkpoint. Both kinds of 1.4
+checkpoint qualify. A client that holds the signed 1.4 bootstrap manifest of the
+head also compares the chunk list. A client that reached the head through a 1.4
+changed set holds only the receipt's `target`, which carries no chunk list, so it
+compares the identity members alone: the signed 1.5 manifest binds that identity
+and a head identity names the head's content. The client stores the SHA-256 of
+the 1.5 manifest bytes, keeps its materialised state, and asks for the overlay
+with `base_live_sequence` 0. If any compared member differs it does a full
+bootstrap under the 1.5 selector, and if the Hub answers the selector with `406`
+it keeps its 1.4 checkpoint and sends 1.4 requests. It keeps the 1.4
+`manifest_sha256` beside its 1.5 checkpoint until the head changes: if the Hub
+later stops serving 1.5, a client at `live_sequence` 0 holds exactly the head's
+packs and resumes 1.4 requests from that checkpoint, while a client that applied
+any live changed set holds rows no 1.4 head contains and does a full 1.4
+bootstrap. A client that reached its head under 1.5 has no kept 1.4 checkpoint:
+at `live_sequence` 0 it fetches the 1.4 manifest of the same head and adopts it
+when its identity members and chunk list equal those of its 1.5 manifest, and
+otherwise does a full 1.4 bootstrap. A 1.5 request that carries a 1.4 manifest
+digest is answered, like any known receipt with a different digest, with the
+unsigned `422 unknown_base_receipt`.
+
+The profile refers to the unchanged 1.4 field catalog, value semantics, pack
+contract and SQL, fixture signing keys and signing-keys schema by relative path
+and pins each by digest, and chains on the digest of the 1.4 `SHA256SUMS`. Its
+limits are the 1.4 limits. It commits no live pack: the advance example points at
+the committed 1.4 positive pack digest as a placeholder, and pack-level live rules
+are exercised by conformance that derives a live pack at run time.
+
 [`hub-sync-v1@1.3.0`](../../profiles/hub-sync-v1/1.3.0/) is the candidate,
 source-neutral successor to retained `hub-sync-v1@1.0.0`, `1.1.0`, and `1.2.0` candidates. It
 has no exact Hub product-version pin. A client selects its bootstrap
@@ -126,6 +283,11 @@ and exact retry before accepting their parsed bindings. A schema-valid
 combination that exceeds any of these joint limits is inadmissible; it MUST NOT
 produce an oversized retry or an incomplete replacement. The candidate's
 4096-character identity and 1771-chunk schema maxima remain intact.
+
+Candidate `1.5.0` keeps the same bounds. Its 8192-byte request bound counts the
+`base_live_sequence` member, the exact retry carries it as 0, and the signed
+`live_sequence` of a bootstrap or replacement manifest counts toward the
+2,097,152-byte bound.
 
 Every integer-valued wire member is also bounded to the I-JSON exact-integer
 range. This profile uses non-negative integers, so `sequence`, request and

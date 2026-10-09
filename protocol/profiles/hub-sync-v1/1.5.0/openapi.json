@@ -1,0 +1,134 @@
+{
+  "info": {
+    "title": "Teslatlas PhysicalV3 live overlay extension",
+    "version": "1.5.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/vehicles/{vehicle_id}/sync/changes-since": {
+      "post": {
+        "operationId": "changesSincePhysicalV15",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "changes-since-request.schema.json#/$defs/request"
+                  },
+                  {
+                    "$ref": "../1.4.0/changes-since-request.schema.json#/$defs/request"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true,
+          "x-max-body-bytes": 8192
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "physical-changed-set-receipt.schema.json#/$defs/receipt"
+                    },
+                    {
+                      "$ref": "live-overlay.schema.json#/$defs/no_op"
+                    },
+                    {
+                      "$ref": "../1.4.0/physical-changed-set-receipt.schema.json#/$defs/receipt"
+                    },
+                    {
+                      "$ref": "../1.3.0/noop.schema.json#/$defs/receipt"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "signed live changed set or live no-op for a 1.5 request; the 1.4 changed set or 1.3 no-op for a request without base_live_sequence"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "physical-rebase-hint.schema.json#/$defs/hint"
+                    },
+                    {
+                      "$ref": "../1.4.0/physical-rebase-hint.schema.json#/$defs/hint"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "signed complete replacement with exact retry request; 1.5 carries base_live_sequence 0"
+          }
+        }
+      }
+    },
+    "/v1/vehicles/{vehicle_id}/sync/manifest": {
+      "get": {
+        "operationId": "bootstrapPhysicalV15",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "vehicle_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-teslatlas-sync-profile",
+            "required": true,
+            "schema": {
+              "const": "hub-sync-v1@1.5.0"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-teslatlas-supported-schemas",
+            "required": true,
+            "schema": {
+              "const": "2.1,2.2"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "live-overlay.schema.json#/$defs/manifest"
+                }
+              }
+            },
+            "description": "signed schema 2.2 PhysicalV3 full snapshot carrying live_sequence"
+          },
+          "406": {
+            "description": "selector unavailable; empty body, Cache-Control: no-store"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,205 @@
+{
+  "$defs": {
+    "manifest": {
+      "additionalProperties": false,
+      "properties": {
+        "chunks": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "chunk_index": {
+                "maximum": 1770,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "pack": {
+                "additionalProperties": false,
+                "properties": {
+                  "compressed_bytes": {
+                    "maximum": 16777216,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "object_name": {
+                    "pattern": "^[a-z0-9][a-z0-9._/-]{0,1023}$",
+                    "type": "string"
+                  },
+                  "sha256": {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "object_name",
+                  "sha256",
+                  "compressed_bytes"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "chunk_index",
+              "pack"
+            ],
+            "type": "object"
+          },
+          "maxItems": 1771,
+          "minItems": 1,
+          "type": "array"
+        },
+        "kind": {
+          "const": "snapshot"
+        },
+        "live_sequence": {
+          "const": 0
+        },
+        "manifest_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "receipt_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "2.2"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "signature": {
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "const": "ed25519"
+            },
+            "key_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9._-]+$",
+              "type": "string"
+            },
+            "signature": {
+              "pattern": "^[A-Za-z0-9+/]{86}==$",
+              "type": "string"
+            },
+            "signed_payload_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "algorithm",
+            "key_id",
+            "signed_payload_sha256",
+            "signature"
+          ],
+          "type": "object"
+        },
+        "vehicle_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "manifest_id",
+        "receipt_id",
+        "vehicle_id",
+        "kind",
+        "schema_version",
+        "sequence",
+        "chunks",
+        "signature",
+        "live_sequence"
+      ],
+      "type": "object"
+    },
+    "no_op": {
+      "additionalProperties": false,
+      "properties": {
+        "base_manifest_schema": {
+          "const": "2.2"
+        },
+        "base_manifest_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "base_receipt_id": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._~-]+$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "no_op"
+        },
+        "live_sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "manifest_schema": {
+          "const": "2.2"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "signature": {
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": {
+              "const": "ed25519"
+            },
+            "key_id": {
+              "pattern": "^ed25519-sha256-[0-9a-f]{64}$",
+              "type": "string"
+            },
+            "signature": {
+              "pattern": "^[A-Za-z0-9+/]{86}==$",
+              "type": "string"
+            },
+            "signed_payload_sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "algorithm",
+            "key_id",
+            "signed_payload_sha256",
+            "signature"
+          ],
+          "type": "object"
+        },
+        "vehicle_id": {
+          "format": "uuid",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "vehicle_id",
+        "base_receipt_id",
+        "base_manifest_sha256",
+        "base_manifest_schema",
+        "sequence",
+        "manifest_schema",
+        "live_sequence",
+        "signature"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:teslatlas:hub-sync-v1:1.5.0:live-overlay",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

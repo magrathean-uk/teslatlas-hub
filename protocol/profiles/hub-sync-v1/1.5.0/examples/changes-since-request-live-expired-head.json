@@ -1,0 +1,25 @@
+{
+  "fixture_id": "changes-since-request-live-expired-head-v1",
+  "request": {
+    "accepted_changed_set_formats": [
+      "teslatlas-physical-v3-delta-v1"
+    ],
+    "base_live_sequence": 7,
+    "base_manifest_id": "manifest_demo_000040",
+    "base_manifest_schema": "2.2",
+    "base_manifest_sha256": "279b37935109d8c1ef4a99e544a03eff9f018b641436f8ebb5b0b9bb7c49898e",
+    "base_receipt_id": "receipt_demo_000040",
+    "from_sequence": 40,
+    "schema_version_range": {
+      "maximum": "2.2",
+      "minimum": "2.2"
+    },
+    "source": {
+      "account_id": "22222222-2222-4222-8222-222222222222",
+      "generation": 1,
+      "installation_id": "11111111-1111-4111-8111-111111111111",
+      "selected_car_id": 1,
+      "vehicle_id": "33333333-3333-4333-8333-333333333333"
+    }
+  }
+}

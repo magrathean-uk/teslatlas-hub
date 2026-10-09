@@ -1,0 +1,143 @@
+{
+  "cases": [
+    {
+      "expected_errors": [],
+      "id": "live-advance",
+      "manifest_fixture": "signed-full-manifest-live",
+      "request_fixture": "changes-since-request-live-v1",
+      "response_fixture": "changes-since-live-advance-v1",
+      "status": 200,
+      "validator": "live_receipt"
+    },
+    {
+      "expected_errors": [],
+      "id": "live-no-op-when-current",
+      "request_fixture": "changes-since-request-live-current-v1",
+      "response_fixture": "changes-since-live-no-op-v1",
+      "status": 200,
+      "validator": "live_no_op"
+    },
+    {
+      "expected_errors": [
+        "live sequence gap"
+      ],
+      "id": "live-gap-rejected",
+      "request_fixture": "changes-since-request-live-v1",
+      "response_fixture": "changes-since-live-gap-v1",
+      "status": 200,
+      "validator": "live_receipt"
+    },
+    {
+      "expected_errors": [
+        "base checkpoint mismatch"
+      ],
+      "id": "live-wrong-head-rejected",
+      "request_fixture": "changes-since-request-live-v1",
+      "response_fixture": "changes-since-live-wrong-head-v1",
+      "status": 200,
+      "validator": "live_receipt"
+    },
+    {
+      "expected_errors": [],
+      "id": "live-rebase-after-import",
+      "manifest_fixture": "signed-full-manifest-live",
+      "request_fixture": "changes-since-request-live-stale-head-v1",
+      "response_fixture": "changes-since-live-rebase-head-changed-v1",
+      "status": 409,
+      "validator": "live_rebase"
+    },
+    {
+      "expected_errors": [],
+      "id": "live-rebase-after-retention",
+      "manifest_fixture": "signed-full-manifest-live-next",
+      "request_fixture": "changes-since-request-live-retained-v1",
+      "response_fixture": "changes-since-live-rebase-retention-v1",
+      "status": 409,
+      "validator": "live_rebase"
+    },
+    {
+      "expected_errors": [],
+      "id": "live-request-1-4-compatible",
+      "request_file": "../1.4.0/examples/changes-since-request-physical.json",
+      "response_file": "../1.4.0/examples/changes-since-physical-changed-set.json",
+      "status": 200,
+      "validator": "legacy_exchange"
+    },
+    {
+      "expected_errors": [],
+      "id": "live-bootstrap-then-overlay",
+      "manifest_fixture": "signed-full-manifest-live",
+      "request_fixture": "changes-since-request-live-v1",
+      "response_fixture": "changes-since-live-advance-v1",
+      "status": 200,
+      "validator": "bootstrap_then_overlay"
+    },
+    {
+      "expected_errors": [],
+      "id": "live-rebase-after-head-expiry",
+      "manifest_fixture": "signed-full-manifest-live-next",
+      "request_fixture": "changes-since-request-live-expired-head-v1",
+      "response_fixture": "changes-since-live-rebase-head-expired-v1",
+      "status": 409,
+      "validator": "live_rebase"
+    },
+    {
+      "expected_errors": [],
+      "id": "live-rebase-when-client-ahead",
+      "manifest_fixture": "signed-full-manifest-live-next",
+      "request_fixture": "changes-since-request-live-ahead-v1",
+      "response_fixture": "changes-since-live-rebase-ahead-v1",
+      "status": 409,
+      "validator": "live_rebase"
+    },
+    {
+      "expected_errors": [
+        "live step reissued with different content"
+      ],
+      "id": "live-step-reissue-rejected",
+      "request_fixture": "changes-since-request-live-v1",
+      "response_fixture": "changes-since-live-advance-v1",
+      "second_fixture": "changes-since-live-reissued-v1",
+      "status": 200,
+      "validator": "live_step_unique"
+    },
+    {
+      "checkpoint_file": "../1.4.0/examples/signed-full-manifest-43.json",
+      "expected_errors": [],
+      "id": "live-checkpoint-upgrade-from-1-4",
+      "manifest_fixture": "signed-full-manifest-live",
+      "status": 200,
+      "validator": "checkpoint_upgrade"
+    },
+    {
+      "checkpoint_file": "../1.4.0/examples/signed-full-manifest-42.json",
+      "expected_errors": [
+        "checkpoint upgrade does not match the bootstrap manifest"
+      ],
+      "id": "live-checkpoint-upgrade-other-head-rejected",
+      "manifest_fixture": "signed-full-manifest-live",
+      "status": 200,
+      "validator": "checkpoint_upgrade"
+    },
+    {
+      "checkpoint_file": "../1.4.0/examples/changes-since-physical-changed-set.json",
+      "checkpoint_member": "target",
+      "expected_errors": [],
+      "id": "live-checkpoint-upgrade-from-1-4-changed-set",
+      "manifest_fixture": "signed-full-manifest-live",
+      "status": 200,
+      "validator": "checkpoint_upgrade"
+    },
+    {
+      "checkpoint_file": "../1.4.0/examples/changes-since-physical-changed-set.json",
+      "checkpoint_member": "base",
+      "expected_errors": [
+        "checkpoint upgrade does not match the bootstrap manifest"
+      ],
+      "id": "live-checkpoint-upgrade-changed-set-other-head-rejected",
+      "manifest_fixture": "signed-full-manifest-live",
+      "status": 200,
+      "validator": "checkpoint_upgrade"
+    }
+  ]
+}
