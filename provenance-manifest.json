@@ -327,7 +327,7 @@
       "exception": {
         "origin": "Captured from reviewed Tesla upstream revisions, archives, toolchains, and local clean builds identified inside each lock.",
         "licensing": "Recorded facts do not replace Apache-2.0, dependency, notice, or source-offer obligations for the locked components.",
-        "release_treatment": "Verify the exact locks and their referenced bytes in the release-evidence gate; regenerate rather than hand-edit."
+        "release_treatment": "Verify the exact locks and their referenced bytes in the Go and Fleet Telemetry evidence verifiers; regenerate rather than hand-edit."
       }
     },
     {
@@ -494,7 +494,7 @@
     {
       "id": "project-release-tooling",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Repository-maintained build, audit, evidence, release, native Debian attestation, and hermetic test tooling.",
+      "rationale": "Repository-maintained build, audit, evidence, release, and hermetic test tooling.",
       "globs": [
         "scripts/*.py",
         "scripts/*.sh"

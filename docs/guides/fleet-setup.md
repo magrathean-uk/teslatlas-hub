@@ -195,9 +195,9 @@ following the [release runbook](../releases/releasing.md). Go evidence generatio
 locked Go 1.27.1/Xcode host and records the clean target rebuild. On Debian,
 `--verify-dir` validates that evidence but does not rebuild it; Fleet evidence
 binds its receiver subject and complete source/legal corpus without claiming a
-clean receiver rebuild. Native Debian proof additionally binds the tagged
-architecture row in `packaging/linux/sidecar-sha256.lock`, the package's
-matching `SIDECAR_SHA256SUMS`, and the signed native attestation.
+clean receiver rebuild. The Debian package build reads the row for its
+`--architecture` from `packaging/linux/sidecar-sha256.lock` in the working tree
+and writes the package's matching `SIDECAR_SHA256SUMS`.
 Transfer the matching binaries, evidence directories, and platform-invariant
 legal bundle byte-for-byte. Replace every occurrence of `amd64` with `arm64` on
 ARM64:

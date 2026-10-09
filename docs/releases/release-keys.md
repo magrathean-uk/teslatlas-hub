@@ -5,9 +5,8 @@ downloadable release assets, checksum bundle, or active release-key workflow.
 The tag itself is the public source boundary.
 
 Earlier prerelease work explored separate release, provenance, and Debian
-attestation identities. Those experiments remain visible in Git history and in
-the evidence tooling for reproducibility, but they are not trust requirements
-or publication claims for v1.0.0.
+attestation identities. Those experiments remain visible in Git history, but
+they are not trust requirements or publication claims for v1.0.0.
 
 Verify the current source identity directly:
 
