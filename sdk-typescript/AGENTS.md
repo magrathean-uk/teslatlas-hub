@@ -14,8 +14,8 @@ Authorisations row.
 
 - Derive public types from the canonical contract; use `camelCase` TypeScript names and
   lowercase-hyphenated documentation names.
-- Keep credential and checkpoint persistence caller-owned. Preserve typed errors,
-  ETags and cursor binding.
+- Keep credential persistence caller-owned. Preserve typed errors, ETags and cursor
+  binding.
 - Keep the pairing boundary intact: the Node claim transport verifies normal TLS trust,
   hostname and the invitation leaf pin on one connection.
 - Do not turn fixture, unit or package checks into a claim about a live Hub.
@@ -28,9 +28,10 @@ Authorisations row.
 ## Working locally
 
 Use the commands in `package.json` and run the smallest relevant check: `npm run build`
-then `npm run typecheck`, `npm run test:unit`, `npm run test:conformance`, or
+then `npm run typecheck`, `npm run test:unit`, `npm run protocol:check`, or
 `npm run verify` for the full local suite. `npm run build` writes `dist/` in this
-checkout. Run everything through `../scripts/dev/run.sh teslatlas-sdk-typescript ...`.
+checkout. From the workspace root, run everything through
+`scripts/dev/run.sh hub-sdk-typescript ...`.
 
 <!-- clean-development-policy:v2 (canonical text: ~/dev/source/dev-bootstrap/snippets/clean-development-policy.md) -->
 ## Clean development (mandatory)

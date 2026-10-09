@@ -47,6 +47,7 @@ import {
 const discoveryPath = "/.well-known/teslatlas-hub";
 const maximumResponseBytes = 1_048_576;
 const maximumClaimRequestBytes = 4_096;
+const maximumDeviceNameBytes = 128;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 const tokenPattern = /^[0-9a-f]{64}$/u;
 const maximumHubEntityTagLength = 65_536;
@@ -270,10 +271,11 @@ class StaticHubClient implements HubClient {
   ): Promise<HubResponse<HubClaim>> {
     const operation = this.#beginOperation(options.signal);
     validateInvitation(invitation, this.#endpoint);
-    if (deviceName.length === 0 || deviceName.length > 65_536) {
+    if (!isValidDeviceName(deviceName)) {
       throw new ProtocolValidationError("HubClaimRequest.deviceName");
     }
     const body = JSON.stringify({ secret: invitation.secret, device_name: deviceName });
+    // Backstop: the validated secret and 128-byte device name keep the body far below this bound.
     if (new TextEncoder().encode(body).byteLength > maximumClaimRequestBytes) {
       throw new ProtocolValidationError("HubClaimRequest.size");
     }
@@ -618,8 +620,9 @@ class StaticHubClient implements HubClient {
     if (body.length === 0) throw new HubHttpError(response.status, "hub_http_error");
     requireJsonContentType(response, "HubError");
     const envelope = decodeHubJson(body, validateHubError, "HubError");
-    const code: HubErrorCode = envelope.error.code;
-    const expectedStatus = statusForHubError(code);
+    const code = envelope.error.code;
+    if (!isHubErrorCode(code)) throw new ProtocolValidationError("HubError.code");
+    const expectedStatus = hubErrorStatuses[code];
     if (
       expectedStatus !== response.status ||
       (route === "discovery" && code !== "service_unavailable") ||
@@ -853,18 +856,31 @@ function cursorBinding(
   return `${vehicleId}\u0000${fromMs ?? 0}\u0000${toMs ?? 9_007_199_254_740_991}`;
 }
 
-function statusForHubError(code: HubErrorCode): number {
-  switch (code) {
-    case "invalid_query":
-    case "invalid_time_range":
-    case "invalid_limit":
-    case "invalid_cursor":
-      return 400;
-    case "vehicle_not_found":
-      return 404;
-    case "service_unavailable":
-      return 503;
-    default:
-      throw new ProtocolValidationError("HubError.code");
-  }
+const hubErrorStatuses = {
+  invalid_query: 400,
+  invalid_time_range: 400,
+  invalid_limit: 400,
+  invalid_cursor: 400,
+  vehicle_not_found: 404,
+  drive_not_found: 404,
+  charge_not_found: 404,
+  service_unavailable: 503,
+} as const satisfies Record<HubErrorCode, number>;
+
+// hub-http-v1@1.2.0 lets any ^[a-z_]{1,64}$ token through as an error code, but this client only
+// maps the codes it knows to a status; anything else stays a validation failure.
+function isHubErrorCode(code: string): code is HubErrorCode {
+  return Object.hasOwn(hubErrorStatuses, code);
+}
+
+// hub-http-v1@1.2.0: 1 to 128 UTF-8 bytes and no C0 or C1 control character. The Hub refuses
+// any other name with 422 before it consults the invitation, so refuse it before sending.
+function isValidDeviceName(deviceName: string): boolean {
+  return (
+    deviceName.length > 0 &&
+    // Every UTF-16 code unit encodes to at least one byte, so a longer string is already over.
+    deviceName.length <= maximumDeviceNameBytes &&
+    !/\p{Cc}/u.test(deviceName) &&
+    new TextEncoder().encode(deviceName).byteLength <= maximumDeviceNameBytes
+  );
 }

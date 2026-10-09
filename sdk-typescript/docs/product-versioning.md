@@ -4,14 +4,12 @@ The npm package carries the shared ecosystem product version `2026.36.2` in
 `package.json` and `package-lock.json`. The package remains private, and this
 bounded compatibility number does not authorize registry publication.
 
-The calendar product number is independent of richer protocol profile `1.2.0`
-and the separate `hub-http-v1@1.0.0` profile. `protocol/lock.json` pins the
-immutable richer input and generated output by SHA256. The current-Hub
-binding is also content-addressed: its input bundle is
-`68dca68355cd1011c31004f7d39eaabfef068706fb89ef0a5823496f26d3727e`, its
-generated output is
-`3769abc73e927d20cd5842eed3a076b05bf436d1eba3026e324b5d5dfbe7c6b9`, and the
-profile bundle is
+The calendar product number is independent of the `hub-http-v1` profile the client
+targets. The client reads profile `1.2.0` in place from
+`../protocol/profiles/hub-http-v1/1.2.0`, and `npm run protocol:check` verifies that
+profile's `SHA256SUMS` and the generated outputs. The separate acceptance record
+`compatibility/hub.json` names the earlier `hub-http-v1@1.0.0` profile, whose bundle
+digest is
 `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
 
 `compatibility/hub.json` is accepted for product `2026.36.2`. It binds the
@@ -32,6 +30,6 @@ matrix. No source publication or tag is implied.
 
 The compatibility record is an exact historical cohort, not a compatibility promise for every Hub with the same version string. The later [Docker receipt](https://github.com/magrathean-uk/teslatlas-sdk-typescript/blob/main/docs/development/f6-native-linux-arm64-docker-package-2026-09-20-r1.json) records a package-only pass for archive `070906b5e3ead04a32223ca996d88ebf6f22be252821e56ef1839da3a13e23d7`. The [development record](https://github.com/magrathean-uk/teslatlas-sdk-typescript/blob/main/docs/development/PLAN.md) explains the subsequent removal of local artifacts.
 
-`protocol/lock.json` still labels the current-Hub input `candidate`; `compatibility/hub.json` records an accepted bounded product cohort. These fields describe different records. Do not relabel or broaden either record through a documentation change.
+`compatibility/hub.json` records an accepted bounded product cohort for the `1.0.0` profile; it is not a statement about the `1.2.0` profile the client now targets. Do not relabel or broaden that record through a documentation change.
 
 The Hub G2/G4 receipt path recorded in `compatibility/hub.json` is absent from the current workspace. The compatibility record and retained SDK receipt preserve the reference; this guide does not claim a fresh readback of that missing Hub receipt.

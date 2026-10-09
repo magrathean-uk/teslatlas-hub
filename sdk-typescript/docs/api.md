@@ -2,44 +2,55 @@
 
 ## Entry points
 
-Use `@teslatlas/sdk/browser` or `@teslatlas/sdk/node` for `createClient`.
-The root `@teslatlas/sdk` entry point intentionally has no factory; it exports
-public types, safe errors, opaque constructors, and caller-owned interfaces.
+Use `@teslatlas/sdk/node` for `createHubClient`. The root `@teslatlas/sdk` entry
+point intentionally has no factory; it exports public types, safe errors, opaque
+constructors, and caller-owned interfaces. There is no browser entry point.
 
 ```ts
-import { createClient } from "@teslatlas/sdk/node";
-import { asEntityTag } from "@teslatlas/sdk";
+import { createHubClient } from "@teslatlas/sdk/node";
+import { asStrongEntityTag } from "@teslatlas/sdk";
 
-const client = await createClient({
-  baseUrl: "https://hub.example.invalid",
-  authorization: () => undefined,
+const client = createHubClient({
+  endpoint: "https://hub.example.invalid",
+  expectedHubId: "11111111-1111-4111-8111-111111111111",
+  credentials, // A caller-owned HubCredentialStore.
 });
 
-const vehicles = await client.listVehicles({ ifNoneMatch: asEntityTag('W/"saved"') });
+const page = await client.drives(vehicleId, { ifNoneMatch: asStrongEntityTag('"saved"') });
 ```
 
-`CreateClientOptions` accepts a bootstrap URL, an authorization provider, an
-optional injected Fetch implementation, an optional requested profile, and an
-abort signal. Discovery is public and unauthenticated; authenticated operations
-ask the provider immediately before dispatch.
+`CreateHubClientOptions` accepts one fixed endpoint (HTTPS, or HTTP on loopback), the
+expected Hub UUID, a caller-owned `HubCredentialStore`, an optional injected Fetch
+implementation, an optional `claimTransport`, and an abort signal. The Node entry
+point adds `nodeTls`.
 
-## Current Hub client
+## Hub client
 
-The browser and Node entry points also export `createHubClient`, a dedicated
-adapter for the frozen `hub-http-v1@1.0.0` profile. It requires one fixed HTTPS
-endpoint, the expected Hub UUID, and a caller-owned `HubCredentialStore`.
-Its methods are `discover`, `health`, `readiness`, `claimPairing`,
-`rotateDevice`, `vehicles`, `current`, and `drives`.
+`createHubClient` is a dedicated client for the `hub-http-v1@1.2.0` profile. Its
+methods are `discover`, `health`, `readiness`, `claimPairing`, `rotateDevice`,
+`vehicles`, `current`, and `drives`.
 
 `discover` is always unauthenticated and verifies the returned Hub identity
-before an authenticated method can dispatch. `drives` returns either a `page`
-or `notModified`; cursors are bound to the vehicle and millisecond filter set.
-`claimPairing` serializes its compact JSON request as UTF-8 and rejects bodies
-over 4,096 bytes with `ProtocolValidationError` (`HubClaimRequest.size`) before
-dispatching the claim request. Claim extractor failures with status `400`,
-`415`, or `422` must be nonempty `text/plain`; the SDK exposes them as a
-body-free `HubHttpError` with code `hub_http_error` and never retains the
-extractor text. Other error responses use the profile's validated JSON shape.
+before an authenticated method can dispatch. The discovery document must carry
+`profile`, so a Hub that predates the 1.2.0 profile is refused. `vehicles`,
+`current`, and `drives` also check that discovery advertises the capability each
+needs (`query.vehicles`, `query.current`, or `query.drives`) and otherwise fail
+with `UnsupportedHubMethodError`. Capabilities are open tokens: a token the
+client does not use is accepted and ignored. `drives` returns either a `page` or
+`notModified`; cursors are bound to the vehicle and millisecond filter set.
+
+`claimPairing` rejects a device name that is empty, longer than 128 UTF-8 bytes,
+or holds a C0 or C1 control character (U+0000 to U+001F, U+007F to U+009F) with
+`ProtocolValidationError` (`HubClaimRequest.deviceName`) before any network I/O,
+as the profile's Hub would refuse it with 422. It also serializes its compact
+JSON request as UTF-8 and keeps the profile's 4,096-byte body bound as a backstop
+(`ProtocolValidationError`, `HubClaimRequest.size`); the device-name and secret
+rules keep the body far below that bound, so the public API does not reach it.
+Claim extractor failures with status `400`, `415`, or `422` must be nonempty
+`text/plain`; the SDK exposes them as a body-free `HubHttpError` with
+code `hub_http_error` and never retains the extractor text. Other error
+responses use the profile's validated JSON shape. A claim or rotation response
+may carry `reason: "max_lifetime"`, which the SDK accepts and does not act on.
 `logout()` aborts pending work, invalidates cached identity, waits for SDK-owned
 credential writes already dispatched, and then clears caller credentials. A
 failed clear rejects; it is not retried. `dispose()` aborts pending work and
@@ -61,72 +72,62 @@ hostname failures are exposed as the bounded `TransportError`; a valid TLS peer
 whose leaf does not match the invitation is `HubTlsPinMismatchError`. None of
 these errors retains the invitation secret or a native TLS cause.
 
-Browser Fetch does not expose the connected certificate. The browser entry
-point therefore throws `HubTlsPinUnavailableError` before discovery or claim
-network I/O unless the caller supplies a pin-capable `claimTransport`, such as
-a trusted native bridge. Normal Web PKI remains enabled for browser reads and
-rotation; the SDK never disables certificate validation or pretends a discovery
-value proves the connected certificate.
+A client built without a claim transport throws `HubTlsPinUnavailableError`
+before discovery or claim network I/O. The SDK never disables certificate
+validation or pretends a discovery value proves the connected certificate.
 
 ## Results and errors
 
-JSON reads return `ReadResult<T>`: either `modified` with a validated `value`,
-or `not-modified` for `304`. Both carry safe `ResponseMetadata`, including the
-HTTP status and validated ETag when supplied. Writes return `WriteResult<T>`.
+Reads return `HubResponse<T>`: a validated `value` and safe `HubResponseMetadata`
+(the HTTP status, the request ID when valid, and the ETag when supplied). `drives`
+returns `HubDrivesResult`: a `page` with a validated value and a strong ETag, or
+`notModified` for `304`.
 
-Safe failures include `ProtocolValidationError`, `ProtocolHttpError`,
-`IncompatibleProtocolError`, `MissingCapabilityError`, `ReplayGapError`,
-`CommandUncertainError`, and `TransportError`. They retain only stable typed
-fields; they do not retain response bodies, authorization values, or arbitrary
-causes.
+Safe failures include `ProtocolValidationError`, `HubHttpError`,
+`HubIdentityMismatchError`, `VehicleIdentityMismatchError`,
+`UnsupportedHubMethodError`, `HubClientDisposedError`,
+`HubTlsPinUnavailableError`, `HubTlsPinMismatchError`, and `TransportError`. They
+retain only stable typed fields; they do not retain response bodies,
+authorization values, or arbitrary causes.
+
+`HubHttpError.code` is `hub_http_error` for a bare status, or one of the profile
+error codes the client maps to a status: `invalid_query`, `invalid_time_range`,
+`invalid_limit`, `invalid_cursor`, `vehicle_not_found`, `drive_not_found`,
+`charge_not_found`, and `service_unavailable`. The profile lets any lowercase
+token through as an error code; a well-formed code the client does not know, or
+one whose status does not match, is a `ProtocolValidationError`.
 
 ## Opaque inputs
 
-`asOpaqueCursor`, `asEntityTag`, `asStrongEntityTag`, and
-`asIdempotencyKey` construct the protocol-sensitive opaque inputs accepted by
-the relevant methods. Cursors and ordinary ETags remain opaque; strong ETags
-are required for metadata replacement/deletion; command creation requires a
-caller-supplied UUID idempotency key.
+`asStrongEntityTag` constructs the strong ETag that `drives` accepts for
+`ifNoneMatch`. `asOpaqueCursor` and `asEntityTag` are also exported; the drives
+cursor is passed through unchanged as a string.
 
 ## Client methods
 
-The public client has 20 named methods:
+The Hub client has eight named methods:
 
-- discovery and vehicles: `discoverHub`, `listVehicles`,
-  `getVehicleCurrentState`;
-- drives, positions, charges, samples, states, and updates:
-  `listVehicleDrives`, `getDrive`, `listDrivePositions`,
-  `listVehicleCharges`, `getCharge`, `listChargeSamples`,
-  `listVehicleStates`, `listVehicleUpdates`;
-- events and data quality: `streamEvents`, `listDataQuality`;
-- commands: `createCommand`, `getCommand`;
-- metadata: `listVehicleMetadata`, `createMetadata`, `getMetadata`,
-  `replaceMetadata`, `deleteMetadata`.
+- discovery and health: `discover`, `health`, `readiness`;
+- pairing and credentials: `claimPairing`, `rotateDevice`, plus the local
+  `logout` and `dispose`;
+- reads: `vehicles`, `current`, `drives`.
 
-The full per-method compatibility, pagination, event replay, and uncertainty
-semantics are in [compatibility.md](compatibility.md).
+The profile, result, and pagination semantics are in
+[compatibility.md](compatibility.md).
 
 ## Caller-owned state
 
-The SDK does not implement credential storage. `AuthorizationProvider` supplies
-one complete authorization value per request. `SseCheckpointStore` is also
-caller-owned; scope it to the authorization principal and stable stream filters
-that own the checkpoint.
+The SDK does not implement credential storage. `HubCredentialStore` loads, saves,
+and clears the one credential the client uses. Saves and clears through a single
+client are ordered; callers sharing a store across clients must coordinate
+rotations and external writes.
 
 ## Response resource bounds
 
-The rich-protocol discovery, success and problem JSON readers enforce a 16 MiB
-received-byte limit before parsing, including chunked bodies with no reliable
-Content-Length. Cancellation interrupts a stalled read and cancels its upstream
-reader. The current-Hub binding retains its separate 1 MiB response limit.
+Hub JSON and text responses enforce a 1 MiB received-byte limit before parsing,
+including chunked bodies with no reliable Content-Length. Cancellation interrupts a
+stalled read and cancels its upstream reader.
 
-SSE accepts at most 8 MiB plus 6 bytes per UTF-8 line and 8 MiB of data fields
-per event (including their appended line separators). These are local admission
-bounds; framing bytes can make total event wire input larger.
-Oversize lines/events cancel the reader and terminate the subscription without
-consulting the reconnect policy. IO failures retain the normal caller-owned
-reconnect policy and checkpoints. Parsing applies backpressure within large chunks.
-
-Current-Hub drive pages are admitted only within the requested limit and half-open
+Drive pages are admitted only within the requested limit and half-open
 start-time range, in descending start time and ID order, with matching vehicle
 identity. A malformed page is rejected before its cursor is retained.

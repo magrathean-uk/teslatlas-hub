@@ -7,9 +7,17 @@ import { asStrongEntityTag } from "../../src/http/strong-etag.js";
 const hubId = "11111111-1111-4111-8111-111111111111";
 const otherId = "22222222-2222-4222-8222-222222222222";
 const endpoint = "https://hub.example.invalid";
-const root = new URL("../../protocol/source/profiles/hub-http-v1/1.0.0/examples/", import.meta.url);
+const root = new URL("../../../protocol/profiles/hub-http-v1/1.2.0/examples/", import.meta.url);
 async function fixture(name: string) {
   return JSON.parse(await readFile(new URL(`${name}.json`, root), "utf8"));
+}
+// The 1.2.0 drives example holds two items. The second (id 101) is the one in-window item
+// these tests admit with a limit of 1, so serve it alone as the last page.
+async function singleDrivePage() {
+  const page = await fixture("drives");
+  page.items = page.items.slice(1);
+  page.next_cursor = null;
+  return page;
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -35,7 +43,7 @@ describe("CurrentHub immutable authority", () => {
     async (bad, mutation) => {
       const pending = deferred<Response>();
       const entered = deferred<Request>();
-      const page = await fixture("drives");
+      const page = await singleDrivePage();
       if (bad) page.items[0].start_date_ms += 1_000_000;
       const client = createHubClient({
         endpoint,
@@ -105,7 +113,7 @@ describe("CurrentHub immutable authority", () => {
           values.fromMs = 1_900_000_000_000;
           return Response.json(await fixture("discovery"));
         }
-        return Response.json(await fixture("drives"), { headers });
+        return Response.json(await singleDrivePage(), { headers });
       },
     });
     await expect(client.drives(hubId, options as HubDrivesOptions)).resolves.toMatchObject({

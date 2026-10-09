@@ -10,7 +10,6 @@
       "**",
       "!dist",
       "!node_modules",
-      "!protocol",
       "!src/generated",
       "!compatibility/hub.json",
       "!docs/development"

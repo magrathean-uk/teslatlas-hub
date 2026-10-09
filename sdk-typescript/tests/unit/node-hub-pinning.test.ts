@@ -10,7 +10,7 @@ const secret = "7".repeat(64);
 const certificatePath = new URL("../fixtures/tls/localhost-cert.pem", import.meta.url);
 const privateKeyPath = new URL("../fixtures/tls/localhost-key.pem", import.meta.url);
 const discoveryPath = new URL(
-  "../../protocol/source/profiles/hub-http-v1/1.0.0/examples/discovery.json",
+  "../../../protocol/profiles/hub-http-v1/1.2.0/examples/discovery.json",
   import.meta.url,
 );
 

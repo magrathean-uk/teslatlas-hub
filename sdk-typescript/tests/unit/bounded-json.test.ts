@@ -4,11 +4,8 @@ import {
   readBoundedJson,
   readBoundedText,
 } from "../../src/http/bounded-json.js";
-import { createClientSession } from "../../src/client/session.js";
-import { decodeReadResponse } from "../../src/http/response-decoder.js";
-import { validateCurrentState } from "../../src/generated/validators.js";
 
-describe("bounded rich JSON responses", () => {
+describe("bounded JSON responses", () => {
   it("accepts the exact byte bound across chunks", async () => {
     const chunk = new TextEncoder().encode(`"${"a".repeat(maximumJsonResponseBytes - 2)}"`);
     const stream = new ReadableStream<Uint8Array>({
@@ -22,39 +19,28 @@ describe("bounded rich JSON responses", () => {
     expect((value as string).length).toBe(maximumJsonResponseBytes - 2);
   });
 
-  it.each(["discovery", "response"])(
-    "bounds chunked %s even with a false length and cancels upstream",
-    async (route) => {
-      let cancelled = 0;
-      let calls = 0;
-      const stream = new ReadableStream<Uint8Array>({
-        pull(controller) {
-          calls += 1;
-          controller.enqueue(new Uint8Array(1_024 * 1_024));
-        },
-        cancel() {
-          cancelled += 1;
-        },
-      });
-      const response = new Response(stream, {
-        headers: { ETag: '"test"', "Content-Type": "application/json", "Content-Length": "1" },
-      });
-      const result =
-        route === "discovery"
-          ? createClientSession({
-              baseUrl: "https://hub.example.invalid",
-              authorization: () => undefined,
-              fetch: async () => response,
-            })
-          : decodeReadResponse(response, validateCurrentState, "validateCurrentState");
-      await expect(result).rejects.toMatchObject({
-        code: "protocol_validation",
-        validator: route === "discovery" ? "validateDiscovery.size" : "validateCurrentState.size",
-      });
-      expect(cancelled).toBe(1);
-      expect(calls).toBeLessThanOrEqual(18);
-    },
-  );
+  it("bounds a chunked body even with a false length and cancels upstream", async () => {
+    let cancelled = 0;
+    let calls = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        calls += 1;
+        controller.enqueue(new Uint8Array(1_024 * 1_024));
+      },
+      cancel() {
+        cancelled += 1;
+      },
+    });
+    const response = new Response(stream, {
+      headers: { ETag: '"test"', "Content-Type": "application/json", "Content-Length": "1" },
+    });
+    await expect(readBoundedJson(response, undefined, "test")).rejects.toMatchObject({
+      code: "protocol_validation",
+      validator: "test.size",
+    });
+    expect(cancelled).toBe(1);
+    expect(calls).toBeLessThanOrEqual(18);
+  });
 
   it("abort interrupts a stalled reader and preserves the caller reason", async () => {
     let cancelled = false;

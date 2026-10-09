@@ -54,6 +54,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/device/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Revoke the calling device. The request has no body; any non-empty body, including one over 4096 bytes, is 400 and revokes nothing (never 413). */
+        post: operations["revoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/device/rotate": {
         parameters: {
             query?: never;
@@ -102,6 +119,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/vehicles/{vehicle_id}/charges": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Only closed charge sessions (end_date_ms set) are listed; a charge in progress is left out. */
+        get: operations["charges"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/vehicles/{vehicle_id}/charges/{charge_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description A charge in progress is not served: its id is 404 charge_not_found. */
+        get: operations["charge"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/vehicles/{vehicle_id}/charges/{charge_id}/samples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The samples of a charge in progress are not served: its id is 404 charge_not_found. */
+        get: operations["charge_samples"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/vehicles/{vehicle_id}/current": {
         parameters: {
             query?: never;
@@ -125,7 +193,42 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** @description Only drives that have ended are listed; a drive in progress is left out. */
         get: operations["drives"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/vehicles/{vehicle_id}/drives/{drive_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description A drive in progress is not served: its id is 404 drive_not_found. */
+        get: operations["drive"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/vehicles/{vehicle_id}/drives/{drive_id}/positions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The positions of a drive in progress are not served: its id is 404 drive_not_found. */
+        get: operations["drive_positions"];
         put?: never;
         post?: never;
         delete?: never;
@@ -143,20 +246,20 @@ export interface components {
             api_versions: [
                 "1.0"
             ];
-            capabilities: [
-                "query.vehicles",
-                "query.current"
-            ] | [
-                "query.vehicles",
-                "query.current",
-                "query.drives",
-                "sync.packs"
-            ];
+            attributions?: {
+                id: string;
+                licence: string;
+                text: string;
+                /** Format: uri */
+                url: string;
+            }[];
+            capabilities: string[] & (unknown & unknown);
             /** Format: uuid */
             hub_id: string;
             manifestPublicKey?: string;
             /** @constant */
             pack_format: "sqlite-zstd";
+            profile: string;
             /** @constant */
             protocol: "teslatlas-sync";
             /** @constant */
@@ -167,8 +270,7 @@ export interface components {
         };
         "errors.schema": {
             error: {
-                /** @enum {unknown} */
-                code: "invalid_query" | "invalid_time_range" | "invalid_limit" | "invalid_cursor" | "vehicle_not_found" | "service_unavailable";
+                code: string;
                 message: string;
             };
         };
@@ -190,9 +292,13 @@ export interface components {
             access_token: string;
             /** Format: uuid */
             device_id: string;
+            /** Format: int64 */
             expires_at_ms: number;
+            /** @enum {unknown} */
+            reason?: "max_lifetime";
         };
         claim_request: {
+            /** @description A name of 1 to 128 UTF-8 bytes with no control character (U+0000 to U+001F, U+007F to U+009F). maxLength counts characters and cannot state the byte limit: a name of at most 128 characters can still be over 128 bytes, and is refused all the same (422, nothing consumed). */
             device_name: string;
             secret: string;
         };
@@ -202,6 +308,81 @@ export interface components {
                 /** Format: uuid */
                 vehicle_id: string;
             }[];
+        };
+        address_provenance: {
+            endpoint_host: string | null;
+            language: string | null;
+            licence: string | null;
+            looked_up_at_ms: number | null;
+            provider: string | null;
+            /** @enum {unknown} */
+            source: "import" | "geocoder" | "manual";
+        };
+        charge: {
+            address: string | null;
+            address_provenance?: components["schemas"]["address_provenance"] | null;
+            billing_type: string | null;
+            charge_energy_added: number | null;
+            charge_energy_used_kwh: number | null;
+            charge_rate_km_per_hour: number | null;
+            cost: number | null;
+            cost_per_unit: number | null;
+            duration_min: number | null;
+            end_battery_level: number | null;
+            /** Format: int64 */
+            end_date_ms: number;
+            end_ideal_range_km: number | null;
+            end_rated_range_km: number | null;
+            fast_charger_type: string | null;
+            geofence: string | null;
+            /** Format: int64 */
+            id: number;
+            is_dc: boolean | null;
+            location_name: string | null;
+            max_charger_power_kw: number | null;
+            outside_temp_avg: number | null;
+            session_fee: number | null;
+            start_battery_level: number | null;
+            /** Format: int64 */
+            start_date_ms: number;
+            start_ideal_range_km: number | null;
+            start_latitude: number | null;
+            start_longitude: number | null;
+            start_rated_range_km: number | null;
+            /** Format: uuid */
+            vehicle_id: string;
+        };
+        charges: {
+            items: components["schemas"]["charge"][];
+            next_cursor: string | null;
+        };
+        charge_sample: {
+            battery_heater_on: boolean | null;
+            battery_level: number | null;
+            charge_cable: string | null;
+            charge_energy_added_kwh: number | null;
+            /** Format: int64 */
+            charge_id: number;
+            charger_actual_current: number | null;
+            charger_phases: number | null;
+            charger_pilot_current: number | null;
+            charger_power_kw: number | null;
+            charger_voltage: number | null;
+            fast_charger_brand: string | null;
+            fast_charger_present: boolean | null;
+            fast_charger_type: string | null;
+            /** Format: int64 */
+            id: number;
+            ideal_range_km: number | null;
+            outside_temp_c: number | null;
+            rated_range_km: number | null;
+            /** Format: int64 */
+            timestamp_ms: number;
+            usable_battery_level: number | null;
+        };
+        charge_samples: {
+            items: components["schemas"]["charge_sample"][];
+            next_cursor: string | null;
         };
         current: {
             active_route_destination: string | null;
@@ -216,6 +397,7 @@ export interface components {
                 efficiency_wh_per_km: number | null;
                 exterior_color: string | null;
                 firmware_version: string | null;
+                /** Format: int64 */
                 id: number;
                 marketing_name: string | null;
                 model: string;
@@ -225,7 +407,9 @@ export interface components {
                     free_supercharging: boolean;
                     lfp_battery: boolean;
                     req_not_unlocked: boolean;
+                    /** Format: int64 */
                     suspend_after_idle_min: number;
+                    /** Format: int64 */
                     suspend_min: number;
                     suspend_min_resolved: boolean;
                     use_streaming_api: boolean;
@@ -315,38 +499,87 @@ export interface components {
             wheel_type: string | null;
             windows_open: boolean | null;
         };
+        drive: {
+            ascent: number | null;
+            descent: number | null;
+            distance_km: number | null;
+            duration_min: number | null;
+            efficiency: number | null;
+            end_address: string | null;
+            end_address_provenance?: components["schemas"]["address_provenance"] | null;
+            /** Format: int64 */
+            end_date_ms: number;
+            end_geofence: string | null;
+            end_ideal_range_km: number | null;
+            end_latitude: number | null;
+            end_longitude: number | null;
+            end_rated_range_km: number | null;
+            end_soc: number | null;
+            /** Format: int64 */
+            id: number;
+            inside_temp_avg: number | null;
+            outside_temp_avg: number | null;
+            power_max: number | null;
+            power_min: number | null;
+            speed_max: number | null;
+            start_address: string | null;
+            start_address_provenance?: components["schemas"]["address_provenance"] | null;
+            /** Format: int64 */
+            start_date_ms: number;
+            start_geofence: string | null;
+            start_ideal_range_km: number | null;
+            start_latitude: number | null;
+            start_longitude: number | null;
+            start_rated_range_km: number | null;
+            start_soc: number | null;
+            /** Format: uuid */
+            vehicle_id: string;
+        };
         drives: {
-            items: {
-                ascent: number | null;
-                descent: number | null;
-                distance_km: number | null;
-                duration_min: number | null;
-                efficiency: number | null;
-                end_address: string | null;
-                end_date_ms: number;
-                end_geofence: string | null;
-                end_ideal_range_km: number | null;
-                end_latitude: number | null;
-                end_longitude: number | null;
-                end_rated_range_km: number | null;
-                end_soc: number | null;
-                id: number;
-                inside_temp_avg: number | null;
-                outside_temp_avg: number | null;
-                power_max: number | null;
-                power_min: number | null;
-                speed_max: number | null;
-                start_address: string | null;
-                start_date_ms: number;
-                start_geofence: string | null;
-                start_ideal_range_km: number | null;
-                start_latitude: number | null;
-                start_longitude: number | null;
-                start_rated_range_km: number | null;
-                start_soc: number | null;
-                /** Format: uuid */
-                vehicle_id: string;
-            }[];
+            items: components["schemas"]["drive"][];
+            next_cursor: string | null;
+        };
+        elevation_provenance: {
+            dataset: string | null;
+            dataset_version: string | null;
+            /** @enum {unknown} */
+            source: "vehicle" | "import" | "terrain";
+            tile: string | null;
+        };
+        position: {
+            battery_heater: boolean | null;
+            battery_heater_on: boolean | null;
+            battery_level: number | null;
+            /** Format: int64 */
+            date_ms: number;
+            /** Format: int64 */
+            drive_id: number;
+            driver_temp_setting: number | null;
+            elevation: number | null;
+            elevation_provenance?: components["schemas"]["elevation_provenance"] | null;
+            est_battery_range_km: number | null;
+            fan_status: number | null;
+            /** Format: int64 */
+            id: number;
+            ideal_battery_range_km: number | null;
+            inside_temp: number | null;
+            is_climate_on: boolean | null;
+            latitude: number | null;
+            longitude: number | null;
+            odometer: number | null;
+            outside_temp: number | null;
+            passenger_temp_setting: number | null;
+            power: number | null;
+            rated_battery_range_km: number | null;
+            speed: number | null;
+            tpms_pressure_fl: number | null;
+            tpms_pressure_fr: number | null;
+            tpms_pressure_rl: number | null;
+            tpms_pressure_rr: number | null;
+            usable_battery_level: number | null;
+        };
+        positions: {
+            items: components["schemas"]["position"][];
             next_cursor: string | null;
         };
     };
@@ -376,7 +609,7 @@ export interface operations {
                     "application/json": components["schemas"]["discovery.schema"];
                 };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Empty response body (the handler time budget expired), or an application/json service_unavailable envelope. Nonempty bodies must match the JSON error schema. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -405,6 +638,13 @@ export interface operations {
                     "application/json": components["schemas"]["health"];
                 };
             };
+            /** @description Empty body; only when the handler time budget expires. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     ready: {
@@ -425,7 +665,7 @@ export interface operations {
                     "application/json": components["schemas"]["ready"];
                 };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Empty response body (the handler time budget expired), or an application/json readiness document whose status is not_ready. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -433,6 +673,53 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ready"];
                 };
+            };
+        };
+    };
+    revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No content; empty body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request; the body is not constrained. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Missing, invalid, expired or revoked bearer; empty body */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: "Bearer";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found; empty body. Paired-device authentication is off and auth.revoke is not advertised. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Service unavailable; empty body (also the answer when the handler time budget expires) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -454,21 +741,22 @@ export interface operations {
                     "application/json": components["schemas"]["claim"];
                 };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Missing, invalid, expired or revoked bearer; empty body */
             401: {
                 headers: {
+                    "WWW-Authenticate"?: "Bearer";
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Not found; empty body. Paired-device authentication is off. */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Service unavailable; empty body (also the answer when the handler time budget expires) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -510,21 +798,30 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description The invitation secret is invalid, expired or already claimed; empty body. */
             401: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Request extraction or validation failed; body is bounded text/plain. */
+            /** @description The request body, of a JSON media type (application/json or application/*+json), is over the 4096 byte limit and the claim is not attempted; body is bounded text/plain. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description The Content-Type is missing or is not a JSON media type (application/json or application/*+json), whatever the size of the body; body is bounded text/plain. */
             415: {
                 headers: {
                     [name: string]: unknown;
@@ -533,7 +830,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description Request extraction or validation failed; body is bounded text/plain. */
+            /** @description The body is valid JSON but not a claim request, or its device_name is one the Hub refuses (empty, over 128 UTF-8 bytes or with a control character); the claim is not attempted and the invitation is not consumed; body is bounded text/plain. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -542,7 +839,7 @@ export interface operations {
                     "text/plain": string;
                 };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Service unavailable; empty body (also the answer when the handler time budget expires). Never retry a claim automatically: the invitation is single use and the claim may already have consumed it. */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -569,14 +866,15 @@ export interface operations {
                     "application/json": components["schemas"]["vehicles"];
                 };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Missing, invalid, expired or revoked bearer; empty body */
             401: {
                 headers: {
+                    "WWW-Authenticate"?: "Bearer";
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Service unavailable; empty body (also the answer when the handler time budget expires) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -585,11 +883,223 @@ export interface operations {
             };
         };
     };
+    charges: {
+        parameters: {
+            query?: {
+                /** @description Inclusive lower bound on the window key. */
+                from_ms?: number;
+                /** @description Exclusive upper bound on the window key. The default is the signed 64-bit maximum, 9223372036854775807: omit the parameter to get it, and never send that value from JavaScript, which cannot represent it exactly. */
+                to_ms?: number;
+                limit?: number;
+                /** @description Opaque next_cursor from the previous page, unchanged. */
+                cursor?: string;
+            };
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path: {
+                /** @description A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400. */
+                vehicle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    "Cache-Control": "no-store";
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["charges"];
+                };
+            };
+            /** @description Not modified; empty body */
+            304: {
+                headers: {
+                    "Cache-Control": "no-store";
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+            /** @description Missing, invalid, expired or revoked bearer; empty body */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: "Bearer";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+            /** @description Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+        };
+    };
+    charge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400. */
+                vehicle_id: string;
+                /** @description Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a signed 64-bit decimal integer >= 1 (non-numeric, zero, negative or out of range), including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400. */
+                charge_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["charge"];
+                };
+            };
+            /** @description Missing, invalid, expired or revoked bearer; empty body */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: "Bearer";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+            /** @description Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+        };
+    };
+    charge_samples: {
+        parameters: {
+            query?: {
+                /** @description Inclusive lower bound on the window key. */
+                from_ms?: number;
+                /** @description Exclusive upper bound on the window key. The default is the signed 64-bit maximum, 9223372036854775807: omit the parameter to get it, and never send that value from JavaScript, which cannot represent it exactly. */
+                to_ms?: number;
+                limit?: number;
+                /** @description Opaque next_cursor from the previous page, unchanged. */
+                cursor?: string;
+            };
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path: {
+                /** @description A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400. */
+                vehicle_id: string;
+                /** @description Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a signed 64-bit decimal integer >= 1 (non-numeric, zero, negative or out of range), including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400. */
+                charge_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    "Cache-Control": "no-store";
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["charge_samples"];
+                };
+            };
+            /** @description Not modified; empty body */
+            304: {
+                headers: {
+                    "Cache-Control": "no-store";
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+            /** @description Missing, invalid, expired or revoked bearer; empty body */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: "Bearer";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+            /** @description Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+        };
+    };
     current: {
         parameters: {
             query?: never;
             header?: never;
             path: {
+                /** @description A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400. */
                 vehicle_id: string;
             };
             cookie?: never;
@@ -605,21 +1115,22 @@ export interface operations {
                     "application/json": components["schemas"]["current"];
                 };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Missing, invalid, expired or revoked bearer; empty body */
             401: {
                 headers: {
+                    "WWW-Authenticate"?: "Bearer";
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Service unavailable; empty body (also the answer when the handler time budget expires) */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -631,15 +1142,19 @@ export interface operations {
     drives: {
         parameters: {
             query?: {
+                /** @description Inclusive lower bound on the window key. */
                 from_ms?: number;
+                /** @description Exclusive upper bound on the window key. The default is the signed 64-bit maximum, 9223372036854775807: omit the parameter to get it, and never send that value from JavaScript, which cannot represent it exactly. */
                 to_ms?: number;
                 limit?: number;
+                /** @description Opaque next_cursor from the previous page, unchanged. */
                 cursor?: string;
             };
             header?: {
                 "If-None-Match"?: string;
             };
             path: {
+                /** @description A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400. */
                 vehicle_id: string;
             };
             cookie?: never;
@@ -657,7 +1172,7 @@ export interface operations {
                     "application/json": components["schemas"]["drives"];
                 };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Not modified; empty body */
             304: {
                 headers: {
                     "Cache-Control": "no-store";
@@ -666,7 +1181,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Invalid request */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -675,14 +1190,15 @@ export interface operations {
                     "application/json": components["schemas"]["errors.schema"];
                 };
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Missing, invalid, expired or revoked bearer; empty body */
             401: {
                 headers: {
+                    "WWW-Authenticate"?: "Bearer";
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description Route-specific error or conditional response; see profile cases */
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -691,7 +1207,139 @@ export interface operations {
                     "application/json": components["schemas"]["errors.schema"];
                 };
             };
-            /** @description Authentication-store outage: empty response body; query-originated outage: application/json service_unavailable envelope. Nonempty bodies must match the JSON error schema. */
+            /** @description Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+        };
+    };
+    drive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400. */
+                vehicle_id: string;
+                /** @description Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a signed 64-bit decimal integer >= 1 (non-numeric, zero, negative or out of range), including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400. */
+                drive_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["drive"];
+                };
+            };
+            /** @description Missing, invalid, expired or revoked bearer; empty body */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: "Bearer";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+            /** @description Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+        };
+    };
+    drive_positions: {
+        parameters: {
+            query?: {
+                /** @description Inclusive lower bound on the window key. */
+                from_ms?: number;
+                /** @description Exclusive upper bound on the window key. The default is the signed 64-bit maximum, 9223372036854775807: omit the parameter to get it, and never send that value from JavaScript, which cannot represent it exactly. */
+                to_ms?: number;
+                limit?: number;
+                /** @description Opaque next_cursor from the previous page, unchanged. */
+                cursor?: string;
+            };
+            header?: {
+                "If-None-Match"?: string;
+            };
+            path: {
+                /** @description A vehicle UUID, in its lowercase hyphenated form (the only form this profile specifies: a Hub's UUID parser may also accept upper case, no hyphens, braces or urn:uuid: and resolve them to the same vehicle, which a client must not rely on). Any value that does not parse as a UUID, including one that percent-decodes to invalid UTF-8, and the nil UUID, is answered as an unknown vehicle (404) after the bearer check, never 400. */
+                vehicle_id: string;
+                /** @description Signed 64-bit integer >= 1, in plain decimal form (the only form this profile specifies: a Hub's integer parser may also accept a plus sign or leading zeros, which a client must not rely on). Any value that does not parse as a signed 64-bit decimal integer >= 1 (non-numeric, zero, negative or out of range), including one that percent-decodes to invalid UTF-8, is 404 with the route's not-found JSON, never 400. */
+                drive_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful response */
+            200: {
+                headers: {
+                    "Cache-Control": "no-store";
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["positions"];
+                };
+            };
+            /** @description Not modified; empty body */
+            304: {
+                headers: {
+                    "Cache-Control": "no-store";
+                    ETag: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+            /** @description Missing, invalid, expired or revoked bearer; empty body */
+            401: {
+                headers: {
+                    "WWW-Authenticate"?: "Bearer";
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["errors.schema"];
+                };
+            };
+            /** @description Empty response body (the handler time budget expired, or an authentication-store outage), or an application/json service_unavailable envelope (a query-originated outage). Nonempty bodies must match the JSON error schema. */
             503: {
                 headers: {
                     [name: string]: unknown;

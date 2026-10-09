@@ -14,42 +14,26 @@ describe("package surface", () => {
 
   it("uses one implementation for ESM imports", () => {
     expect(manifest.exports["."].import).toBe(manifest.exports["."].default);
-    expect(manifest.exports["./browser"].import).toBe(manifest.exports["./browser"].default);
     expect(manifest.exports["./node"].import).toBe(manifest.exports["./node"].default);
-    expect(Object.keys(manifest.exports).sort()).toEqual([
-      ".",
-      "./browser",
-      "./node",
-      "./package.json",
-    ]);
+    expect(Object.keys(manifest.exports).sort()).toEqual([".", "./node", "./package.json"]);
     expect(manifest.files).toContain("docs/compatibility.md");
-    expect(manifest.files).toContain("docs/docker.md");
-    expect(manifest.files).toContain("docs/package-lifecycle.md");
     expect(manifest.files).toContain("docs/product-versioning.md");
-    expect(manifest.files).toContain("tools/node-image-lock.json");
-    expect(manifest.files).toContain("tools/f3-f6-catalog.schema.json");
-    expect(manifest.files).toContain("tools/package-admission.schema.json");
-    expect(manifest.files).toContain("tools/platform-support.json");
   });
 
   it("runtime-imports only the closed package entry points", async () => {
     const script = `
       const root = await import("@teslatlas/sdk");
-      const browser = await import("@teslatlas/sdk/browser");
       const node = await import("@teslatlas/sdk/node");
       if (typeof root.TeslatlasError !== "function" || typeof root.asOpaqueCursor !== "function") throw new Error("root exports missing");
-      if (typeof root.createClient !== "undefined") throw new Error("root factory leaked");
       if (typeof root.createHubClient !== "undefined") throw new Error("root Hub factory leaked");
-      for (const api of [root, browser, node]) {
-        for (const name of ["FetchTransport", "parseSseStream", "subscribeToSse"]) {
+      for (const api of [root, node]) {
+        for (const name of ["FetchTransport", "createClient", "parseSseStream", "subscribeToSse"]) {
           if (typeof api[name] !== "undefined") throw new Error("internal export leaked: " + name);
         }
       }
-      if (typeof browser.createClient !== "function" || typeof node.createClient !== "function") throw new Error("runtime factory missing");
-      if (typeof browser.createHubClient !== "function" || typeof node.createHubClient !== "function") throw new Error("Hub runtime factory missing");
+      if (typeof node.createHubClient !== "function") throw new Error("Hub runtime factory missing");
       const paths = [
         import.meta.resolve("@teslatlas/sdk"),
-        import.meta.resolve("@teslatlas/sdk/browser"),
         import.meta.resolve("@teslatlas/sdk/node"),
       ];
       process.stdout.write(JSON.stringify(paths));
@@ -68,9 +52,17 @@ describe("package surface", () => {
     const paths = JSON.parse(result.stdout) as string[];
     expect(paths.map((path) => new URL(path).pathname)).toEqual([
       expect.stringMatching(/\/dist\/index\.js$/u),
-      expect.stringMatching(/\/dist\/browser\.js$/u),
       expect.stringMatching(/\/dist\/node\.js$/u),
     ]);
+  });
+
+  it.each([
+    "@teslatlas/sdk/browser",
+    "@teslatlas/sdk/http/fetch-transport",
+    "@teslatlas/sdk/generated/hub-protocol",
+    "@teslatlas/sdk/hub/client",
+  ])("rejects the retired or private import %s", async (specifier) => {
+    await expect(import(specifier)).rejects.toThrow("is not exported");
   });
 
   it("packs public documentation and runtime internals without source maps or source inputs", async () => {
@@ -91,20 +83,15 @@ describe("package surface", () => {
     const files = new Set(reports[0]?.files?.map((entry) => entry.path).filter(isString));
 
     expect(files.has("docs/compatibility.md")).toBe(true);
-    expect(files.has("docs/docker.md")).toBe(true);
-    expect(files.has("docs/package-lifecycle.md")).toBe(true);
     expect(files.has("docs/product-versioning.md")).toBe(true);
-    expect(files.has("dist/generated/validators.js")).toBe(true);
-    expect(files.has("dist/generated/validators.d.ts")).toBe(true);
+    expect(files.has("dist/index.js")).toBe(true);
+    expect(files.has("dist/node.js")).toBe(true);
+    expect(files.has("dist/browser.js")).toBe(false);
     expect(files.has("dist/generated/hub-validators.js")).toBe(true);
     expect(files.has("dist/generated/hub-validators.d.ts")).toBe(true);
     expect(files.has("dist/hub/client.js")).toBe(true);
     expect(files.has("dist/hub/node-claim-transport.js")).toBe(true);
     expect(files.has("dist/hub/node-claim-transport.d.ts")).toBe(true);
-    expect(files.has("tools/node-image-lock.json")).toBe(true);
-    expect(files.has("tools/f3-f6-catalog.schema.json")).toBe(true);
-    expect(files.has("tools/package-admission.schema.json")).toBe(true);
-    expect(files.has("tools/platform-support.json")).toBe(true);
     expect([...files].filter((path) => path.endsWith(".map"))).toEqual([]);
     expect(
       [...files].filter((path) =>

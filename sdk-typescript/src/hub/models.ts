@@ -35,6 +35,8 @@ export type HubErrorCode =
   | "invalid_limit"
   | "invalid_cursor"
   | "vehicle_not_found"
+  | "drive_not_found"
+  | "charge_not_found"
   | "service_unavailable";
 
 export interface HubInvitation {

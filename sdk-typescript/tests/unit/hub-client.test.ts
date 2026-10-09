@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { createHubClient as createBrowserHubClient } from "../../src/browser.js";
 import { createHubClient as createCoreHubClient } from "../../src/hub/client.js";
 import type {
   CreateHubClientOptions,
@@ -13,10 +12,17 @@ const hubId = "11111111-1111-4111-8111-111111111111";
 const otherHubId = "22222222-2222-4222-8222-222222222222";
 const endpoint = "https://hub.example.invalid";
 const jsonHeaders = { "Content-Type": "application/json", "X-Request-ID": "request-1" };
-const profileRoot = new URL("../../protocol/source/profiles/hub-http-v1/1.0.0/", import.meta.url);
+const profileRoot = new URL("../../../protocol/profiles/hub-http-v1/1.2.0/", import.meta.url);
 
 async function example(name: string): Promise<string> {
   return readFile(new URL(`examples/${name}.json`, profileRoot), "utf8");
+}
+
+// The 1.2.0 drives example holds two items. The second (id 101) is the one in-window item
+// that the limit and time-window cases below admit, so serve it alone as the last page.
+async function singleDriveExample(nextCursor: string | null = null): Promise<string> {
+  const page = JSON.parse(await example("drives")) as { items: unknown[]; next_cursor: unknown };
+  return JSON.stringify({ items: page.items.slice(1), next_cursor: nextCursor });
 }
 
 class MemoryCredentials implements HubCredentialStore {
@@ -37,6 +43,14 @@ class MemoryCredentials implements HubCredentialStore {
     this.clearCount += 1;
     this.credential = undefined;
   }
+}
+
+async function claimInvitation(): Promise<Record<string, unknown>> {
+  const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
+  invitation.endpoint = endpoint;
+  invitation.expiresAtMs = Date.now() + 60_000;
+  invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+  return invitation;
 }
 
 function queuedFetch(responses: Response[]) {
@@ -107,7 +121,7 @@ async function discoveryResponse(capabilities?: readonly string[]): Promise<Resp
 describe("current Hub client", () => {
   it("refuses pairing before network when no pin-capable claim transport is available", async () => {
     const requests: Request[] = [];
-    const client = createBrowserHubClient({
+    const client = createCoreHubClient({
       endpoint,
       expectedHubId: hubId,
       credentials: new MemoryCredentials(),
@@ -121,7 +135,7 @@ describe("current Hub client", () => {
     invitation.expiresAtMs = Date.now() + 60_000;
     invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${invitation.pairingId}&secret=${invitation.secret}&tls_pin=${invitation.tlsPin}`;
 
-    await expect(client.claimPairing(invitation, "Browser device")).rejects.toMatchObject({
+    await expect(client.claimPairing(invitation, "Test device")).rejects.toMatchObject({
       code: "hub_tls_pin_unavailable",
     });
     expect(requests).toEqual([]);
@@ -230,6 +244,33 @@ describe("current Hub client", () => {
     },
   );
 
+  it("decodes the full 1.2.0 drives page with its address provenance and cursor", async () => {
+    const queue = queuedFetch([
+      await discoveryResponse(),
+      new Response(await example("drives"), {
+        status: 200,
+        headers: { ...jsonHeaders, ETag: '"drive-page"', "Cache-Control": "no-store" },
+      }),
+    ]);
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials: new MemoryCredentials(),
+      fetch: queue.fetch,
+    });
+
+    const page = await client.drives(hubId);
+
+    if (page.kind !== "page") throw new Error("expected a drives page");
+    expect(page.value.items.map((drive) => drive.id)).toEqual([102, 101]);
+    expect(page.value.items[0]).toMatchObject({
+      endAddressProvenance: { source: "geocoder", provider: "synthetic-geocoder" },
+      startAddressProvenance: { source: "import", provider: null, lookedUpAtMs: null },
+    });
+    expect(page.value.nextCursor).toMatch(/^tqp1\./u);
+    expect(page.metadata).toEqual({ status: 200, etag: '"drive-page"', requestId: "request-1" });
+  });
+
   it("sends exact millisecond drive filters and distinguishes page from notModified", async () => {
     const credentials = new MemoryCredentials();
     credentials.credential = {
@@ -239,7 +280,7 @@ describe("current Hub client", () => {
     };
     const queue = queuedFetch([
       await discoveryResponse(),
-      new Response(await example("drives"), {
+      new Response(await singleDriveExample(), {
         status: 200,
         headers: { ...jsonHeaders, ETag: '"drive-page"', "Cache-Control": "no-store" },
       }),
@@ -287,11 +328,10 @@ describe("current Hub client", () => {
   ])(
     "rejects a drives cursor reused with a %s binding before any request",
     async (_label, vehicleId, changed) => {
-      const payload = JSON.parse(await example("drives"));
-      payload.next_cursor = "cursor-page-2";
+      const payload = await singleDriveExample("cursor-page-2");
       const queue = queuedFetch([
         await discoveryResponse(),
-        new Response(JSON.stringify(payload), {
+        new Response(payload, {
           status: 200,
           headers: { ...jsonHeaders, ETag: '"drive-page"', "Cache-Control": "no-store" },
         }),
@@ -450,6 +490,55 @@ describe("current Hub client", () => {
     await expect(client.drives(hubId)).rejects.toMatchObject({ code: "protocol_validation" });
   });
 
+  it.each(["vehicle_not_found", "drive_not_found", "charge_not_found"])(
+    "maps the Hub error code %s to its 404 status",
+    async (code) => {
+      const queue = queuedFetch([
+        await discoveryResponse(),
+        new Response(JSON.stringify({ error: { code, message: "gone" } }), {
+          status: 404,
+          headers: jsonHeaders,
+        }),
+      ]);
+      const client = createHubClient({
+        endpoint,
+        expectedHubId: hubId,
+        credentials: new MemoryCredentials(),
+        fetch: queue.fetch,
+      });
+
+      await expect(client.drives(hubId)).rejects.toMatchObject({
+        code,
+        status: 404,
+        message: "gone",
+      });
+    },
+  );
+
+  it.each(["future_code", "__proto__", "constructor"])(
+    "refuses the well-formed Hub error code %s that the client does not know",
+    async (code) => {
+      const queue = queuedFetch([
+        await discoveryResponse(),
+        new Response(JSON.stringify({ error: { code, message: "unknown" } }), {
+          status: 404,
+          headers: jsonHeaders,
+        }),
+      ]);
+      const client = createHubClient({
+        endpoint,
+        expectedHubId: hubId,
+        credentials: new MemoryCredentials(),
+        fetch: queue.fetch,
+      });
+
+      await expect(client.drives(hubId)).rejects.toMatchObject({
+        code: "protocol_validation",
+        validator: "HubError.code",
+      });
+    },
+  );
+
   it("claims and rotates by saving only fully validated credentials", async () => {
     const credentials = new MemoryCredentials();
     const claim = (await example("claim")).replace("1788567300000", "1900000000000");
@@ -472,7 +561,7 @@ describe("current Hub client", () => {
     invitation.expiresAtMs = 1_900_000_000_000;
     invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${invitation.pairingId}&secret=${invitation.secret}&tls_pin=${invitation.tlsPin}`;
 
-    await client.claimPairing(invitation, "Browser device");
+    await client.claimPairing(invitation, "Test device");
     await client.rotateDevice();
 
     expect(credentials.saves).toHaveLength(2);
@@ -480,17 +569,23 @@ describe("current Hub client", () => {
     expect(queue.requests[1]?.headers.has("Authorization")).toBe(false);
     expect(await queue.requests[1]?.json()).toEqual({
       secret: "0".repeat(64),
-      device_name: "Browser device",
+      device_name: "Test device",
     });
     expect(queue.requests[2]?.headers.get("Authorization")).toBe(`Bearer ${"0".repeat(64)}`);
     expect(queue.requests.every((request: Request) => request.redirect === "error")).toBe(true);
   });
 
-  it("rejects an oversized UTF-8 claim body before any network request", async () => {
-    const invitation = JSON.parse(await example("invitation")) as Record<string, unknown>;
-    invitation.endpoint = endpoint;
-    invitation.expiresAtMs = Date.now() + 60_000;
-    invitation.pairingUri = `teslatlas-hub://pair?endpoint=${encodeURIComponent(endpoint)}&pairing_id=${String(invitation.pairingId)}&secret=${String(invitation.secret)}&tls_pin=${String(invitation.tlsPin)}`;
+  it.each([
+    ["an empty name", ""],
+    ["more than 128 characters", "a".repeat(129)],
+    ["fewer than 129 characters but more than 128 UTF-8 bytes", "é".repeat(65)],
+    ["an oversized UTF-8 body", "😀".repeat(1_024)],
+    ["a C0 control character", "device\u0000name"],
+    ["a line feed", "device\nname"],
+    ["a DEL character", "device\u007fname"],
+    ["a C1 control character", "device\u009fname"],
+  ])("rejects a device name with %s before any network request", async (_label, deviceName) => {
+    const invitation = await claimInvitation();
     const queue = queuedFetch([]);
     const client = createHubClient({
       endpoint,
@@ -499,14 +594,37 @@ describe("current Hub client", () => {
       fetch: queue.fetch,
     });
 
-    await expect(
-      client.claimPairing(invitation as never, "😀".repeat(1_024)),
-    ).rejects.toMatchObject({
+    await expect(client.claimPairing(invitation as never, deviceName)).rejects.toMatchObject({
       code: "protocol_validation",
-      validator: "HubClaimRequest.size",
+      validator: "HubClaimRequest.deviceName",
     });
     expect(queue.requests).toHaveLength(0);
   });
+
+  it.each(["a".repeat(128), "é".repeat(64), "😀".repeat(32)])(
+    "sends a device name of exactly 128 UTF-8 bytes: %#",
+    async (deviceName) => {
+      const claim = (await example("claim")).replace("1788567300000", "1900000000000");
+      const queue = queuedFetch([
+        await discoveryResponse(),
+        new Response(claim, { status: 200, headers: jsonHeaders }),
+      ]);
+      const client = createHubClient({
+        endpoint,
+        expectedHubId: hubId,
+        credentials: new MemoryCredentials(),
+        fetch: queue.fetch,
+      });
+
+      await client.claimPairing((await claimInvitation()) as never, deviceName);
+
+      expect(new TextEncoder().encode(deviceName).byteLength).toBe(128);
+      expect(await queue.requests[1]?.json()).toEqual({
+        secret: "0".repeat(64),
+        device_name: deviceName,
+      });
+    },
+  );
 
   it.each([400, 415, 422])(
     "surfaces a nonempty claim extractor response as a body-free HTTP error: %i",

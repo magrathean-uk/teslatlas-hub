@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 
 export async function verifyPackedSdk({
   packageRoot,
@@ -9,7 +9,7 @@ export async function verifyPackedSdk({
   expectedTarballSha256,
   entryKind,
 }) {
-  if (entryKind !== "node" && entryKind !== "browser") throw new Error("invalid SDK entry kind");
+  if (entryKind !== "node") throw new Error("invalid SDK entry kind");
   const root = await realpath(resolve(packageRoot));
   if (!root.endsWith(`${sep}node_modules${sep}@teslatlas${sep}sdk`)) {
     throw new Error("SDK package root must be an installed @teslatlas/sdk package");
@@ -66,138 +66,6 @@ export async function verifyPackedSdk({
   };
 }
 
-export function assertSafeBrowserArguments(arguments_) {
-  if (!Array.isArray(arguments_) || arguments_.some((value) => typeof value !== "string")) {
-    throw new Error("browser arguments are invalid");
-  }
-  const forbidden = [
-    "--ignore-certificate-errors",
-    "--ignore-certificate-errors-spki-list",
-    "--allow-insecure-localhost",
-    "--test-type",
-  ];
-  if (
-    arguments_.some((value) =>
-      forbidden.some((flag) => value === flag || value.startsWith(`${flag}=`)),
-    )
-  ) {
-    throw new Error("browser certificate bypass flag is forbidden");
-  }
-}
-
-export async function verifyBrowserTrustWitness({
-  mode,
-  witnessPath,
-  certificatePath,
-  expectedCertificateExportPath,
-  trustedArguments,
-  untrustedArguments,
-}) {
-  const witnessFile = await ownerOnlyRegularFile(witnessPath, "browser trust witness");
-  const witness = JSON.parse(await readFile(witnessFile.path, "utf8"));
-  const trustMode = mode ?? witness.mode ?? "legacy-simultaneous";
-  const trusted =
-    trustMode === "sequential-macos-login-keychain" ? witness.trustedAfterImport : witness.trusted;
-  const untrusted =
-    trustMode === "sequential-macos-login-keychain"
-      ? witness.untrustedBeforeImport
-      : witness.untrusted;
-  const certificateExportPath =
-    trustMode === "sequential-macos-login-keychain"
-      ? trusted?.certificateExportPath
-      : (trusted?.certificateExportPath ?? trusted?.nssCaExportPath);
-  const trustedTrustStore =
-    trustMode === "sequential-macos-login-keychain"
-      ? trusted?.trustStorePath
-      : (trusted?.trustStorePath ?? trusted?.nssDatabase);
-  const untrustedTrustStore =
-    trustMode === "sequential-macos-login-keychain"
-      ? untrusted?.trustStorePath
-      : (untrusted?.trustStorePath ?? untrusted?.nssDatabase);
-  const sequentialWitnessValid =
-    trustMode !== "sequential-macos-login-keychain" ||
-    (witness.mode === trustMode &&
-      typeof untrusted?.error === "string" &&
-      untrusted.error.includes("ERR_CERT_AUTHORITY_INVALID") &&
-      untrusted.cdpResult !== undefined &&
-      trusted?.cdpResult !== undefined &&
-      JSON.stringify(witness.phaseOrder) ===
-        JSON.stringify([
-          "untrusted_started_without_ca",
-          "untrusted_healthz_rejected_ERR_CERT_AUTHORITY_INVALID",
-          "untrusted_closed",
-          "fresh_ca_imported",
-          "trusted_started_with_ca",
-          "trusted_route_observed",
-        ]));
-  assertSafeBrowserArguments(trustedArguments);
-  assertSafeBrowserArguments(untrustedArguments);
-  if (
-    (trustMode === "sequential-macos-login-keychain"
-      ? witness.schemaVersion !== 2
-      : witness.schemaVersion !== 1) ||
-    !sequentialWitnessValid ||
-    JSON.stringify(trusted?.arguments) !== JSON.stringify(trustedArguments) ||
-    JSON.stringify(untrusted?.arguments) !== JSON.stringify(untrustedArguments) ||
-    typeof certificateExportPath !== "string" ||
-    typeof trustedTrustStore !== "string" ||
-    typeof untrustedTrustStore !== "string"
-  ) {
-    throw new Error("browser launch witness does not match live CDP arguments");
-  }
-  const certificateCanonicalPath = await canonicalPath(certificatePath, "fixture certificate");
-  const exportFile = await ownerOnlyRegularFile(certificateExportPath, "exported certificate");
-  if (exportFile.path === certificateCanonicalPath) {
-    throw new Error("exported certificate must be distinct from the fixture certificate");
-  }
-  if (
-    trustMode === "sequential-macos-login-keychain" &&
-    (typeof expectedCertificateExportPath !== "string" ||
-      expectedCertificateExportPath !== exportFile.path)
-  ) {
-    throw new Error("exported certificate does not match the expected fresh export path");
-  }
-  const certificateSha256 = certificateDigest(await readFile(certificateCanonicalPath));
-  const exportedCertificateSha256 = certificateDigest(await readFile(exportFile.path));
-  if (
-    witness.certificateSha256 !== certificateSha256 ||
-    exportedCertificateSha256 !== certificateSha256
-  ) {
-    throw new Error("browser trust witness does not match fixture certificate");
-  }
-  return {
-    certificateSha256,
-    trustedTrustStore,
-    untrustedTrustStore,
-    certificateExportPath,
-    trustMode,
-  };
-}
-
-async function ownerOnlyRegularFile(filePath, label) {
-  const path = await canonicalPath(filePath, label);
-  const metadata = await lstat(path);
-  if (
-    !metadata.isFile() ||
-    metadata.isSymbolicLink() ||
-    metadata.nlink !== 1 ||
-    (metadata.mode & 0o077) !== 0 ||
-    (process.getuid !== undefined && metadata.uid !== process.getuid())
-  ) {
-    throw new Error(`${label} must be an owner-only regular single-link file`);
-  }
-  return { path, metadata };
-}
-
-async function canonicalPath(filePath, label) {
-  if (typeof filePath !== "string" || !isAbsolute(filePath)) {
-    throw new Error(`${label} path must be absolute`);
-  }
-  const canonical = await realpath(filePath);
-  if (canonical !== filePath) throw new Error(`${label} path must be canonical`);
-  return canonical;
-}
-
 function readPacked(tarball, member) {
   return execFileSync("tar", ["-xOf", tarball, member], { maxBuffer: 8 * 1024 * 1024 });
 }
@@ -223,12 +91,4 @@ function packedFileMembers(tarball) {
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
-}
-
-export function certificateDigest(bytes) {
-  const text = bytes.toString("ascii");
-  const match = text.match(
-    /-----BEGIN CERTIFICATE-----([A-Za-z0-9+/=\s]+)-----END CERTIFICATE-----/u,
-  );
-  return sha256(match === null ? bytes : Buffer.from(match[1].replaceAll(/\s/gu, ""), "base64"));
 }

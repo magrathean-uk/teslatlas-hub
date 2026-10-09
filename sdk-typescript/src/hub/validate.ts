@@ -50,9 +50,11 @@ export function decodeHubJson<T>(
   return camelize(wire) as CamelizeKeys<T>;
 }
 
-// Integer-valued fields in the frozen hub-http-v1@1.0.0 resource/auth schemas,
-// plus discovery's integral protocol_major const. Other numeric fields remain
-// binary64 measurements; this list does not impose an integer rule on them.
+// Integer-valued fields reachable from the nine validators in the hub-http-v1@1.2.0
+// resource/auth schemas, plus discovery's integral protocol_major const. Other numeric
+// fields remain binary64 measurements; this list does not impose an integer rule on them.
+// Integer keys that only the charge, position and sample routes use are not listed: this
+// client calls none of those routes.
 const integerFields = new Set([
   "ascent",
   "battery_level",
@@ -70,6 +72,7 @@ const integerFields = new Set([
   "expiresAtMs",
   "id",
   "install_perc",
+  "looked_up_at_ms",
   "observed_at_ms",
   "protocol_major",
   "scheduled_charging_start_time",

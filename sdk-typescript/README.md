@@ -4,7 +4,7 @@
 
 <h1 align="center">Teslatlas TypeScript SDK</h1>
 
-<p align="center">A private, protocol-derived client for Node.js and browser applications.</p>
+<p align="center">A private, protocol-derived Hub client for Node.js.</p>
 
 <p align="center">
   <a href="docs/architecture.md">Documentation</a> ·
@@ -13,41 +13,38 @@
 
 ## Overview
 
-The Teslatlas TypeScript SDK is a private, protocol-derived client for Node.js and browser applications. It exposes the released Teslatlas operations through typed methods and validates discovery responses, protocol data, errors, metadata, command jobs, and server-sent events before returning them to the caller.
+The Teslatlas TypeScript SDK is a private, protocol-derived client for the Teslatlas Hub read API on Node.js. It talks to one fixed Hub endpoint through typed methods and validates every JSON discovery, resource, pairing, and error response against validators generated from the in-repository `hub-http-v1@1.2.0` contract before returning it to the caller. There is no browser client.
 
-The package is private and is not a registry release. The package manifest identifies version `2026.36.2`, Apache-2.0 licensing, and an evidence-only runtime policy. Local protocol fixtures and consumer checks demonstrate SDK behavior against checked-in inputs. They do not establish the behavior of a remote Hub or a production deployment.
+The package is private and is not a registry release. The package manifest identifies version `2026.36.2`, Apache-2.0 licensing, and an evidence-only runtime policy. Local fixtures and unit checks demonstrate SDK behavior against checked-in inputs. They do not establish the behavior of a live Hub or a production deployment.
 
 ## Entry points
 
-Use a runtime-specific entry point to create a client:
+Create a client from the Node entry point:
 
 ```ts
-import { createClient } from "@teslatlas/sdk/node";
+import { createHubClient } from "@teslatlas/sdk/node";
 
-const client = await createClient({
-  baseUrl: "https://hub.example.invalid",
-  authorization: () => undefined, // Supply a complete authorization value for protected reads.
+const client = createHubClient({
+  endpoint: "https://hub.example.invalid",
+  expectedHubId: "11111111-1111-4111-8111-111111111111", // From trusted setup context.
+  credentials, // A caller-owned HubCredentialStore.
 });
 
-const vehicles = await client.listVehicles();
-if (vehicles.kind === "modified") {
-  console.log(vehicles.value.items);
-}
+const discovery = await client.discover();
+const vehicles = await client.vehicles();
 ```
 
-Import `createClient` from `@teslatlas/sdk/node` or `@teslatlas/sdk/browser`. The root `@teslatlas/sdk` entry point exports public types, errors, opaque value constructors, and caller-owned interfaces. It does not expose an arbitrary route executor or a runtime factory.
+The root `@teslatlas/sdk` entry point exports public types, errors, opaque value constructors, and caller-owned interfaces. It has no factory: only `@teslatlas/sdk/node` carries a claim transport that can enforce the invitation pin.
 
-The example URL is a placeholder. The authorization provider is caller-owned; protected reads require a valid credential.
+The example endpoint and Hub UUID are placeholders, and the credential store is caller-owned. The [API reference](docs/api.md) lists the methods. The [compatibility guide](docs/compatibility.md) describes the profile, result, error, ETag, and pagination behavior.
 
-The public client has 20 named operations covering discovery, vehicles, current state, drives, positions, charges, samples, states, updates, events, data quality, commands, and metadata. The [API reference](docs/api.md) lists the entry points and methods. The [compatibility guide](docs/compatibility.md) describes result, error, ETag, pagination, command, and event replay behavior.
+## Hub client
 
-## Current Hub adapter
+`createHubClient` targets `hub-http-v1@1.2.0`. It uses a fixed HTTPS endpoint, an expected Hub UUID, and a caller-owned credential store. Its operations cover discovery, health, readiness, pairing, credential rotation, vehicles, current state, and drives. The client requires `profile` in the discovery document, so it refuses a Hub that predates that profile.
 
-The browser and Node entry points also export `createHubClient` for the locked `hub-http-v1@1.0.0` profile. It uses a fixed HTTPS endpoint, an expected Hub UUID, and a caller-owned credential store. Its operations cover discovery, health, readiness, pairing, credential rotation, vehicles, current state, and drives.
+The Node entry point keeps normal CA and hostname verification. During pairing it checks the invitation `tlsPin` against the SHA-256 digest of the connected leaf certificate DER bytes on the same new TLS connection before sending claim bytes. Without a claim transport that can do this, pairing fails with `hub_tls_pin_unavailable` before discovery or claim network I/O. The SDK never disables certificate verification.
 
-The Node adapter keeps normal CA and hostname verification. During pairing it checks the invitation `tlsPin` against the SHA-256 digest of the connected leaf certificate DER bytes on the same new TLS connection before sending claim bytes. Browser Fetch cannot inspect the connected certificate, so browser pairing fails with `hub_tls_pin_unavailable` before discovery or claim network I/O unless the embedding supplies a pin-capable claim transport. Browser reads and rotation continue to use normal Web PKI. The SDK never disables certificate verification.
-
-Credentials and event checkpoints remain caller-owned. Do not put authorization values or invitations in source files, command arguments, browser code, or published logs. See the [architecture guide](docs/architecture.md) for lifecycle and boundary details.
+Credentials remain caller-owned. Do not put authorization values or invitations in source files, command arguments, or published logs. See the [architecture guide](docs/architecture.md) for lifecycle and boundary details.
 
 ## Local development
 
@@ -61,27 +58,18 @@ npm run build
 npm run verify
 ```
 
-Browser conformance needs the Playwright Chromium runtime to be available. Dependency installation alone does not establish that prerequisite.
-
-The `verify` script runs formatting, linting, type checking, protocol checks, the build, unit and conformance suites, protocol cases, the Node example, package checks, and the clean-package test. Targeted commands are also available:
+The `verify` script runs formatting, linting, type checking, the protocol check, the build, the unit and script tests, the package check, and the clean-package test. Targeted commands are also available:
 
 ```bash
-npm run test:unit
-npm run test:conformance
-npm run test:protocol
+npm run build
 npm run typecheck
+npm run test:unit
 npm run protocol:check
 npm run pack:check
+npm run test:package
 ```
 
-The examples use local fixture responses:
-
-```bash
-npm run example:node
-npm run example:browser
-```
-
-The current-Hub Node and browser examples require an operator-provisioned external fixture and caller-owned credentials. Their source files are under `examples/hub/`; the compatibility and package lifecycle guides describe the contracts without embedding credentials or private runtime paths.
+Types and validators are generated from `../protocol/profiles/hub-http-v1/1.2.0`, which the generator reads in place. `npm run protocol:generate` regenerates them, and `npm run protocol:check` verifies the profile's `SHA256SUMS` and that the committed output matches a fresh generation.
 
 ## Further reading
 
@@ -89,9 +77,6 @@ The current-Hub Node and browser examples require an operator-provisioned extern
 - [Architecture](docs/architecture.md)
 - [Compatibility](docs/compatibility.md)
 - [Product versioning](docs/product-versioning.md)
-- [Protocol dependency gate](docs/protocol-dependency-gate.md)
-- [Docker package gate](docs/docker.md)
-- [Package lifecycle](docs/package-lifecycle.md)
 - [Apache-2.0 licence](LICENSE)
 
 Repository-only guides are available in the [source repository](https://github.com/magrathean-uk/teslatlas-sdk-typescript): `.github/CONTRIBUTING.md`, `.github/SUPPORT.md`, `.github/SECURITY.md`, and `docs/legal/licensing.md`. They are not bundled in the npm archive.

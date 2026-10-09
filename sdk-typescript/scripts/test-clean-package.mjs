@@ -37,7 +37,6 @@ try {
       "src",
       "scripts",
       "docs",
-      "tools",
       "LICENSE",
       "README.md",
       "package.json",
@@ -48,7 +47,7 @@ try {
     ]) {
       await cp(join(repositoryRoot, path), join(source, path), { recursive: true });
     }
-    // Copy rather than symlink: bundler region comments include resolved dependency paths.
+    // Copy rather than symlink so each tree resolves its own dependencies.
     await cp(join(repositoryRoot, "node_modules"), join(source, "node_modules"), {
       recursive: true,
       verbatimSymlinks: true,
@@ -80,10 +79,9 @@ try {
       join(consumer, "validators.ts"),
       `import type { HubClient } from "@teslatlas/sdk";
 import { createHubClient as createNodeHubClient } from "@teslatlas/sdk/node";
-import { createHubClient as createBrowserHubClient } from "@teslatlas/sdk/browser";
 import { ${validatorNames.join(", ")} } from "./node_modules/@teslatlas/sdk/dist/generated/hub-validators.js";
 declare const options: Parameters<typeof createNodeHubClient>[0];
-const clients: HubClient[] = [createNodeHubClient(options), createBrowserHubClient(options)];
+const clients: HubClient[] = [createNodeHubClient(options)];
 void clients;
 for (const validate of [${validatorNames.join(", ")}]) {
   const valid: boolean = validate({});
@@ -161,10 +159,8 @@ console.log(JSON.stringify(Object.keys(validators).sort()));`,
   const importCheck = `
     const root = await import("@teslatlas/sdk");
     const node = await import("@teslatlas/sdk/node");
-    const browser = await import("@teslatlas/sdk/browser");
     if (typeof root.TeslatlasError !== "function" || typeof root.createHubClient !== "undefined") throw new Error("invalid root exports");
-    if (typeof node.createClient !== "function" || typeof node.createHubClient !== "function") throw new Error("invalid Node exports");
-    if (typeof browser.createClient !== "function" || typeof browser.createHubClient !== "function") throw new Error("invalid browser exports");
+    if (typeof node.createHubClient !== "function") throw new Error("invalid Node exports");
   `;
   run(process.execPath, ["--input-type=module", "--eval", importCheck], lifecycleConsumer);
   run(npmExecutable, installArguments, lifecycleConsumer);

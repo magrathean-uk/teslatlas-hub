@@ -12,7 +12,6 @@ import {
 } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { build as bundleBrowser } from "vite";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, "..");
@@ -113,75 +112,6 @@ if (result.status !== 0) {
     resolve(distributionDirectory, "generated/hub-validators.d.ts"),
   );
   await preserveGeneratedNoCheckDirectives();
-  // Root is a facade over the standalone browser implementation. Public errors and
-  // factories therefore share one constructor even across mixed package imports.
-  const rootModule = await readFile(resolve(distributionDirectory, "index.js"), "utf8");
-  const rootExports = [...rootModule.matchAll(/export\s*\{([^}]+)\}\s*from\s*[^;]+;/gu)].flatMap(
-    (match) =>
-      match[1]
-        .split(",")
-        .map((name) => name.trim())
-        .filter(Boolean),
-  );
-  if (rootExports.length === 0) throw new Error("No compiled public root exports found");
-  await bundleBrowser({
-    configFile: false,
-    logLevel: "error",
-    publicDir: false,
-    build: {
-      emptyOutDir: false,
-      lib: {
-        entry: resolve(repositoryRoot, "src/browser.ts"),
-        fileName: () => "browser.js",
-        formats: ["es"],
-      },
-      outDir: distributionDirectory,
-      rollupOptions: {
-        output: { codeSplitting: false },
-      },
-      sourcemap: false,
-      target: "es2022",
-    },
-  });
-  await writeFile(
-    resolve(distributionDirectory, "index.js"),
-    `export { ${rootExports.join(", ")} } from "./browser.js";\n`,
-  );
-  await bundleBrowser({
-    configFile: false,
-    logLevel: "error",
-    publicDir: false,
-    plugins: [
-      {
-        name: "shared-public-browser-runtime",
-        enforce: "pre",
-        resolveId(source, importer) {
-          if (source.startsWith("node:")) return { id: source, external: true };
-          if (importer === undefined) return;
-          const target = resolve(dirname(importer), source).replace(/\.ts$/u, ".js");
-          if (
-            ["src/browser.js", "src/index.js", "src/core/errors.js", "src/hub/client.js"].some(
-              (path) => target === resolve(repositoryRoot, path),
-            )
-          ) {
-            return { id: "./browser.js", external: true };
-          }
-        },
-      },
-    ],
-    build: {
-      emptyOutDir: false,
-      lib: {
-        entry: resolve(repositoryRoot, "src/node.ts"),
-        fileName: () => "node.js",
-        formats: ["es"],
-      },
-      outDir: distributionDirectory,
-      rollupOptions: { output: { codeSplitting: false } },
-      sourcemap: false,
-      target: "es2022",
-    },
-  });
   await removeSourceMaps(distributionDirectory);
 }
 

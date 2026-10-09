@@ -11,21 +11,5 @@ export function verifyPackedSdk(options: {
   packageRoot: string;
   tarballPath: string;
   expectedTarballSha256: string;
-  entryKind: "node" | "browser";
+  entryKind: "node";
 }): Promise<{ entry: string; witness: PackedSdkWitness }>;
-export function assertSafeBrowserArguments(arguments_: readonly string[]): void;
-export function certificateDigest(bytes: Uint8Array): string;
-export function verifyBrowserTrustWitness(options: {
-  mode?: "legacy-simultaneous" | "sequential-macos-login-keychain";
-  witnessPath: string;
-  certificatePath: string;
-  expectedCertificateExportPath?: string;
-  trustedArguments: readonly string[];
-  untrustedArguments: readonly string[];
-}): Promise<{
-  certificateSha256: string;
-  trustedTrustStore: string;
-  untrustedTrustStore: string;
-  certificateExportPath: string;
-  trustMode: "legacy-simultaneous" | "sequential-macos-login-keychain";
-}>;

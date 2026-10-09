@@ -1,17 +1,12 @@
 import { describe, expect, it } from "vitest";
-import hubDiscovery from "../../protocol/source/profiles/hub-http-v1/1.0.0/examples/discovery.json" with {
+import hubDiscovery from "../../../protocol/profiles/hub-http-v1/1.2.0/examples/discovery.json" with {
   type: "json",
 };
-import drives from "../../protocol/source/profiles/hub-http-v1/1.0.0/examples/drives.json" with {
+import drives from "../../../protocol/profiles/hub-http-v1/1.2.0/examples/drives.json" with {
   type: "json",
 };
-import { createClientSession } from "../../src/client/session.js";
 import { createHubClient } from "../../src/hub/client.js";
 import type { HubCredentialStore } from "../../src/hub/models.js";
-import {
-  decodeReadResponse,
-  decodeProtocolProblemResponse,
-} from "../../src/http/response-decoder.js";
 import { cancelResponseBody, withResponseOwnership } from "../../src/http/response-ownership.js";
 
 const hubId = hubDiscovery.hub_id;
@@ -45,45 +40,6 @@ function openBody(stallCancellation = false) {
 }
 
 describe("response lifecycle remediation", () => {
-  it.each(["success", "problem"] as const)(
-    "cancels a %s body rejected before JSON reading",
-    async (kind) => {
-      const body = openBody();
-      const response = new Response(body.stream, {
-        status: kind === "problem" ? 500 : 200,
-        headers: { "Content-Type": "text/plain" },
-      });
-      const read =
-        kind === "problem"
-          ? decodeProtocolProblemResponse(response, undefined)
-          : decodeReadResponse(response, () => true, "synthetic");
-      await expect(read).rejects.toMatchObject({ code: "protocol_validation" });
-      expect(body.cancellations()).toBe(1);
-      expect(body.stream.locked).toBe(false);
-    },
-  );
-
-  it.each(["status", "etag"] as const)(
-    "cancels bootstrap discovery on rejected %s",
-    async (kind) => {
-      const body = openBody();
-      await expect(
-        createClientSession({
-          baseUrl: endpoint,
-          authorization: () => undefined,
-          fetch: async () =>
-            new Response(body.stream, {
-              status: kind === "status" ? 500 : 200,
-              headers: { "Content-Type": "application/json" },
-            }),
-        }),
-      ).rejects.toMatchObject({
-        validator: kind === "status" ? "Discovery.status" : "Discovery.etag",
-      });
-      expect(body.cancellations()).toBe(1);
-    },
-  );
-
   it("does not await a custom cancellation sink or replace the admission failure", async () => {
     const body = openBody(true);
     const response = new Response(body.stream);

@@ -1,8 +1,4 @@
 node_modules/
 dist/
-.vitest-attachments/
 coverage/
-playwright-report/
-test-results/
-tests/**/__screenshots__/
 *.tgz

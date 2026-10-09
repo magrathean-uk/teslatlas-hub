@@ -1,67 +1,65 @@
 # Teslatlas SDK compatibility
 
-## Locked input and regeneration
+## Contract input and regeneration
 
-The SDK is generated and tested against the reviewed Protocol candidate based on
-`05225bd5b2f56885025180d68fedf3a42baaa90b`. The current profile is `1.2.0`;
-the supported profile set is `1.0.0`, `1.1.0`, and `1.2.0`.
-
-`protocol/lock.json` records every vendored input and generated-output SHA-256
-digest. Validate the checked snapshot with:
-
-```bash
-npm run protocol:check
-shasum -a 256 protocol/lock.json
-```
-
-The current lock has `source.kind: local-content`, with a base commit and content digest. It cannot be reproduced by checking out only that base commit. Do not sync an arbitrary latest Protocol checkout into it.
-
-For an intentional reviewed contract update, `protocol:sync -- --candidate` imports the selected checkout's current files, regenerates outputs, and rewrites the lock:
+The SDK is generated and tested against the Protocol profile `hub-http-v1@1.2.0`.
+The generator reads `../protocol/profiles/hub-http-v1/1.2.0` in place. There is no
+vendored copy and no lock file. Generation emits only `src/generated/hub-protocol.ts`
+(OpenAPI types), `src/generated/hub-validators.js` (standalone Ajv validators), and
+`src/generated/hub-validators.d.ts`.
 
 ```bash
-npm run protocol:sync -- --candidate /absolute/path/to/teslatlas-protocol
+npm run protocol:generate
 npm run protocol:check
-npm run test:protocol
 ```
 
-Use that command only with the reviewed Protocol input. A plain `protocol:sync -- /absolute/path/to/teslatlas-protocol` is for a lock whose source kind is `git-commit` and whose commit matches the supplied checkout; it rejects this current content-bound lock. `npm run protocol:generate` regenerates outputs from already vendored inputs, but does not itself update the lock hashes.
+`protocol:check` verifies that the profile's `SHA256SUMS` lists exactly the files in
+the profile directory and that every digest matches, then regenerates into a
+temporary directory and compares the three generated files byte for byte with the
+committed ones. A change to a profile file makes it fail until the outputs are
+regenerated; do not hand-edit generated files.
 
-## Current Hub profile
+## Hub profile
 
-The current-Hub adapter is independently bound to `hub-http-v1@1.0.0` and the
-bundle manifest SHA-256
-`b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
-This pin does not replace or weaken the richer profile pin above. Generated
-current-Hub OpenAPI types and standalone validators are covered by the lock's
-separate input and output hashes.
+The client targets `hub-http-v1@1.2.0`. The validators accept additive fields. Against
+the 1.0.0 profile this client was first built for, 1.2.0 changes what the client
+checks:
 
-Run `npm run test:hub:node` and `npm run test:hub:browser` only with the private
-fixture environment variables described by the task harness. These lanes use
-default Fetch from a freshly packed SDK. The browser lane additionally requires
-a normally trusted CA, a cross-origin allowlisted fixture origin, and a CDP URL;
-certificate-error bypass flags are outside the acceptance contract.
+- Discovery must carry `profile` (`hub-http-v1@1.x.y`). A Hub that predates the
+  1.2.0 profile does not send it, and the client refuses that discovery.
+- Discovery `capabilities` are up to 16 unique tokens matching `^[a-z0-9.]{1,64}$`
+  that include `query.vehicles` and `query.current`. Other tokens are accepted.
+  `attributions` and `manifestPublicKey` are optional.
+- An error `code` is any `^[a-z_]{1,64}$` token. The client maps the codes it knows
+  to a status and rejects any other code as invalid. `drive_not_found` and
+  `charge_not_found` join the profile's codes.
+- A claim or rotation response may carry `reason: "max_lifetime"`.
+- A claim device name is 1 to 128 UTF-8 bytes with no C0 or C1 control character.
+- A drive may carry `start_address_provenance` and `end_address_provenance`
+  (either may be null); `looked_up_at_ms`, when present, is an exact signed 64-bit
+  integer.
 
-For a real current-Hub run, pair with an invitation produced by Hub's
-`pair --json` command and supply the expected Hub UUID from trusted setup
-context. The Node entry point validates CA trust and hostname, then compares
-the invitation `tlsPin` with the connected leaf DER SHA-256 before request
-bytes. `nodeTls.ca` affects only that native claim connection; private-CA users
-must separately configure the caller-owned Fetch path used by discovery and
-authenticated reads. A custom `claimTransport` must provide the same guarantee.
+Run `npm run test:hub:node` only with the private fixture environment variables
+described by the task harness. The lane uses default Fetch from a freshly packed SDK.
 
-Browser Fetch cannot inspect the connected certificate. Browser
-`claimPairing` therefore fails with `hub_tls_pin_unavailable` before network I/O
-unless an embedding supplies a pin-capable claim transport. Browser reads and
-rotation use normal Web PKI, require an exact allowlisted origin and real
-`OPTIONS` preflights, and can surface denied-origin or untrusted-certificate
-failures as generic Fetch errors. The SDK does not perform mDNS discovery,
-background polling, or automatic reconnect/rotation.
+For a real Hub run, pair with an invitation produced by Hub's `pair --json`
+command and supply the expected Hub UUID from trusted setup context. The Node entry
+point validates CA trust and hostname, then compares the invitation `tlsPin` with
+the connected leaf DER SHA-256 before request bytes. `nodeTls.ca` affects only that
+native claim connection; private-CA users must separately configure the
+caller-owned Fetch path used by discovery and authenticated reads. A custom
+`claimTransport` must provide the same guarantee. A client without a claim
+transport fails with `hub_tls_pin_unavailable` before network I/O. The SDK does not
+perform mDNS discovery, background polling, or automatic reconnect/rotation.
 
-The current reproducibility tuple is Node 26.10.0 and npm 12.1.0. Current accepted
-runtime evidence remains Node 26.7.0 and Chrome 153 on macOS 27; no broader Node,
-browser, or operating-system floor is claimed by that evidence.
-`tools/platform-support.json` encodes this as evidence with null declared
-Node/npm/browser floors; null means unaccepted, not unlimited support. The historical 2026-09-20 Docker receipt records a bounded package-only pass; see [Docker](docker.md). The `acceptance_boundary` string in `tools/platform-support.json` still says that lane is unrun and predates that receipt. Neither record establishes current final-Hub acceptance. New runtime claims need exact-source receipts.
+The current reproducibility tuple is Node 26.10.0 and npm 12.1.0. The accepted
+runtime evidence recorded in `package.json` remains Node 26.7.0 on macOS 27; no
+broader Node or operating-system floor is claimed by that evidence. The declared
+Node and npm floors are null, which means unaccepted, not unlimited support. The
+historical 2026-09-20 Docker receipt records a bounded package-only pass; the
+Docker lane itself was retired on 2026-10-08. Neither
+record establishes current final-Hub acceptance. New runtime claims need
+exact-source receipts.
 
 `logout()` is the local credential-store operation and is distinct from server
 revocation. Consumers await it before `dispose()` and must pair again after a
@@ -69,79 +67,54 @@ revocation. Consumers await it before `dispose()` and must pair again after a
 the cached identity on transport failure or UUID mismatch, so an authenticated
 request cannot silently reuse an old discovery result.
 
-The current-Hub `claimPairing` request is compact JSON measured after UTF-8
-serialization. The SDK rejects a body over the profile's 4,096-byte client
-bound as `ProtocolValidationError` (`HubClaimRequest.size`) before dispatching
-the claim request. Hub claim extractor statuses `400`, `415`, and `422` are
-accepted only as nonempty bounded `text/plain` responses and surface as a
-body-free `HubHttpError` (`hub_http_error`); extractor text is never retained.
+The `claimPairing` request is compact JSON measured after UTF-8 serialization.
+The SDK rejects a device name outside the profile's rule as
+`ProtocolValidationError` (`HubClaimRequest.deviceName`) before dispatching the
+claim request. It also enforces the profile's 4,096-byte body bound
+(`HubClaimRequest.size`) as a backstop; the device-name and secret rules keep a
+body far below that bound, so the public API does not reach it. Hub claim extractor statuses `400`, `415`, and `422` are accepted
+only as nonempty bounded `text/plain` responses and surface as a body-free
+`HubHttpError` (`hub_http_error`); extractor text is never retained.
 
 ## Public methods
 
-The closed `TeslatlasClient` surface contains exactly these named operations:
+The closed `HubClient` surface contains exactly these named operations:
 
 | Area | Methods |
 | --- | --- |
-| Discovery and vehicle query | `discoverHub`, `listVehicles`, `getVehicleCurrentState` |
-| Drives and positions | `listVehicleDrives`, `getDrive`, `listDrivePositions` |
-| Charges | `listVehicleCharges`, `getCharge`, `listChargeSamples` |
-| State and update history | `listVehicleStates`, `listVehicleUpdates` |
-| Events and data quality | `streamEvents`, `listDataQuality` |
-| Commands | `createCommand`, `getCommand` |
-| Metadata | `listVehicleMetadata`, `createMetadata`, `getMetadata`, `replaceMetadata`, `deleteMetadata` |
+| Discovery and health | `discover`, `health`, `readiness` |
+| Pairing and credentials | `claimPairing`, `rotateDevice` |
+| Reads | `vehicles`, `current`, `drives` |
+| Local lifecycle | `logout`, `dispose` |
 
-Browser and Node.js factories are available from `@teslatlas/sdk/browser` and
-`@teslatlas/sdk/node`. The root entry point exports public types and safe
-constructors only; it does not export an arbitrary route executor or a factory.
+The Node.js factory is available from `@teslatlas/sdk/node`. The root entry point
+exports public types and safe constructors only; it does not export an arbitrary
+route executor or a factory.
 
 ## Results, metadata, and errors
 
-Successful reads use `ReadResult<T>`. A `200` is `modified` and includes a
-validated value; a `304` is `not-modified` and never invents an empty value.
-Successful writes use `WriteResult<T>`. Both result shapes carry safe response
-metadata: status, ETag where supplied, Location where supplied, request ID
-where valid, and protocol version where supplied.
+Successful reads use `HubResponse<T>`, carrying a validated value and safe response
+metadata: status, the request ID where valid, and the ETag where supplied. `drives`
+uses `HubDrivesResult`: a `200` is a `page` with a validated value and a required
+strong ETag, and a `304` is `notModified` and never invents an empty value.
 
-All JSON GET responses require a protocol-valid ETag. `If-None-Match` values
-are ordinary opaque ETags, limited only on the outgoing request boundary.
-Metadata entity reads and mutations require strong quoted ETags; metadata
-replacement and deletion send the caller-provided `If-Match` unchanged.
+`If-None-Match` values for `drives` are strong quoted ETags, limited on the outgoing
+request boundary. `ProtocolValidationError` represents an invalid local or profile
+boundary. `HubHttpError` represents a validated profile error response or a bare
+status. Error objects retain safe scalar fields only: no raw body, header
+collection, authorization value, credential-bearing URL, or arbitrary cause is
+retained.
 
-`ProtocolValidationError` represents an invalid local/protocol boundary.
-`ProtocolHttpError` represents a validated problem response. Capability and
-profile failures use typed errors. Error objects retain safe scalar fields only:
-no raw body, header collection, authorization value, credential-bearing URL, or
-arbitrary cause is retained.
+## Pagination
 
-## Pagination and events
-
-Opaque cursors are passed unchanged. Page iteration stops on a missing or
-repeated cursor and does not merge or retry pages.
-
-`streamEvents` validates known event payloads and ignores unknown event names
-before parsing. It sends replay state strictly after the last accepted event.
-An empty event ID clears the checkpoint. A yielded event is saved only when the
-consumer asks for the next one, preserving at-least-once replay. `204` ends the
-stream without reconnecting; replay expiry is a typed terminal failure.
-
-Checkpoints and credentials are caller-owned. Scope every checkpoint store to
-the caller's authorization principal and stable event filters. Reusing one in a
-different scope can yield the terminal protocol event-ID failure and is not
-retried by the SDK.
-
-## Commands
-
-`createCommand` requires a caller-supplied UUID `Idempotency-Key` and makes one
-dispatch. It never generates, stores, retries, or reissues the key. A
-conforming problem response remains `ProtocolHttpError`. If dispatch began and
-no conforming response arrived because of an abort or transport failure, the
-result is cause-free `CommandUncertainError`; callers must decide what to do
-next. `getCommand` provides typed status reads with ordinary conditional ETag
-support.
+Opaque cursors are passed unchanged. A cursor the client received is bound to the
+vehicle and the millisecond filter set that produced it; reusing it with another
+vehicle or filter is rejected before any request. The page iteration helper in
+`scripts/drive-pagination.mjs` stops on a missing or repeated cursor and does not
+merge or retry pages.
 
 ## Evidence boundary
 
-SDK protocol-case evidence is not server conformance. The local Node and
-Chromium suites show that this package maps the vendored cases through its
-public API consistently. They do not establish the behavior of any remote
-deployment.
+SDK fixture evidence is not server conformance. The local Node suites show that this
+package maps the profile's examples through its public API consistently. They do not
+establish the behavior of any remote deployment.
