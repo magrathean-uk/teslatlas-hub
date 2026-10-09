@@ -482,33 +482,23 @@
     {
       "id": "ecosystem-compatibility-contracts",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Repository-maintained compatibility release records, execution state, test matrix, and receipt schema.",
+      "rationale": "Repository-maintained ecosystem release record.",
       "paths": [
-        "docs/compatibility/ecosystem-release.json",
-        "docs/compatibility/execution-state.json",
-        "docs/compatibility/matrix.json",
-        "docs/compatibility/receipt.schema.json"
+        "docs/compatibility/ecosystem-release.json"
       ]
     },
     {
       "id": "ecosystem-interop-harness",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Repository-maintained interoperability fixtures, runners, client-lane harnesses, configuration, and focused tests.",
+      "rationale": "Repository-maintained synthetic Hub fixture, launcher, smoke check and focused tests.",
       "paths": [
         "examples/interop_fixture.rs",
         "tests/interop/scenario.json",
         "tests/interop/seed.rs",
         "tools/interop/README.md",
         "tools/interop/fixture.py",
-        "tools/interop/run.py",
         "tools/interop/smoke.py",
-        "tools/interop/test_fixture.py",
-        "tools/interop/test_run.py"
-      ],
-      "globs": [
-        "tools/interop/client_lanes/*",
-        "tools/interop/matrix_runner/*",
-        "tools/interop/installed_hosts/*"
+        "tools/interop/test_fixture.py"
       ]
     },
     {
@@ -548,10 +538,6 @@
         "src/api/server/tests/hub_sync.rs",
         "src/api/server/tests/loopback_access.rs",
         "tools/interop/__init__.py",
-        "tools/interop/edge_fixture_binding.py",
-        "tools/interop/edge_ledger_observer.py",
-        "tools/interop/test_edge_fixture_binding.py",
-        "tools/interop/test_edge_ledger_observer.py",
         "tools/source_run_receiver_edge_hub.py"
       ]
     },
@@ -677,6 +663,7 @@
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubL10n.swift",
         "packaging/macos-app/scripts/preinstall",
         "src/api/server/tests/drive_byte_budget.rs",
+        "src/api/server/tests/public_history.rs",
         "src/collection/teslamate_current.rs",
         "src/collection/teslamate_current/tests.rs"
       ]

@@ -109,7 +109,7 @@ From the workspace root:
 
 ```sh
 scripts/dev/with-heavy-build-lock.sh \
-  scripts/dev/run.sh teslatlas-compute cargo test --all-targets
+  scripts/dev/run.sh hub cargo test --locked -p teslatlas-compute --all-targets
 ```
 
 Build output is routed outside the checkout by clean-development.

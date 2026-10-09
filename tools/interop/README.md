@@ -6,11 +6,10 @@ credentials. Passing the fixture does not establish migration preservation,
 packaged client behaviour, sync ingestion correctness, Linux execution, or the
 full platform matrix.
 
-The launcher needs the sibling `teslatlas-protocol` checkout because it imports
-its native-evidence helper. Run Hub commands from the Hub root. Build the binary
-and harness using the existing workspace runner, or the standalone command
-below outside that workspace:
-
+The launcher imports the native-evidence helper from
+`protocol/conformance/hub_native_evidence.py` in this repository. Run Hub
+commands from the Hub root. Build the binary and harness using the existing
+workspace runner, or the standalone command below outside that workspace:
 
 ```sh
 cargo build --locked --bin teslatlas-hub --example interop_fixture --features interop-fixture
@@ -27,7 +26,7 @@ paths and the digest with your actual binaries and exported profile;
   "output_dir": "/private/new-fixture",
   "lifetime_seconds": 3600,
   "profile_id": "hub-http-v1@1.0.0",
-  "profile_path": "/absolute/teslatlas-protocol/profiles/hub-http-v1/1.0.0",
+  "profile_path": "/absolute/hub/protocol/profiles/hub-http-v1/1.0.0",
   "profile_sha256": "SHA256 of the exact SHA256SUMS file bytes"
 }
 ```
@@ -40,11 +39,12 @@ The config binds the Hub binary, seed harness, fresh output directory, profile
 ID and path, profile checksum, and optional loopback port. The launcher stages
 and hashes both executables, creates a supported one-use pairing invitation,
 starts the TLS server, and writes a private `ready.json` descriptor. Use that
-descriptor for acceptance. Run this command from the sibling Protocol root:
+descriptor for acceptance. Run this command from the `protocol/` directory of
+this repository:
 
 ```sh
 ./conformance/run --profile hub-http-v1@1.0.0 \
-  --adapter /absolute/teslatlas-protocol/conformance/adapters/actual-hub \
+  --adapter /absolute/hub/protocol/conformance/adapters/actual-hub \
   --config /private/new-fixture/ready.json --json
 ```
 

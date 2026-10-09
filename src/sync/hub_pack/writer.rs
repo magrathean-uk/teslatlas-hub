@@ -112,10 +112,6 @@ impl ProjectionPackWriter {
             .ok_or(ProjectionPackError::CapacityOverflow)
     }
 
-    pub(crate) fn incremental_capture_transient_bytes(&self) -> Result<u64, ProjectionPackError> {
-        self.transient_write_bytes()
-    }
-
     /// Write and verify an immutable, complete mirror snapshot. The caller
     /// supplies a bounded projection; the writer never inspects raw telemetry.
     pub fn write_full_snapshot(

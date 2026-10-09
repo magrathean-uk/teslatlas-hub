@@ -53,9 +53,10 @@ python3 scripts/verify-repository-layout.py
 python3 scripts/verify-provenance.py
 ```
 
-Both gates fail on the current tree (tracked `AGENTS.md`, unclassified provenance
-entries). They are amended in plan group G2-2 with the workspace conversion; do not
-force-add or remove files to satisfy them as part of a docs edit.
+Both gates must pass on the current tree. They read the tracked-file list
+(`git ls-files`), so run them again after staging added or deleted paths, and classify
+every new tracked file in `provenance-manifest.json`. Do not force-add or remove files
+to satisfy them as part of a docs edit.
 
 Legal files are owner-controlled (owner, 2026-09-27). These are `NOTICE`, `LICENSE`,
 `.github/CONTRIBUTING.md`, `docs/legal/additional-terms.md`, `docs/legal/overview.md`,

@@ -16,7 +16,7 @@ def main():
     # Validate owner-only descriptor before handing its path to the independent
     # Apache protocol adapter. Only synthetic redacted receipts leave that tool.
     read_private_json(args.descriptor)
-    protocol=Path(__file__).resolve().parents[3]/'teslatlas-protocol'
+    protocol=Path(__file__).resolve().parents[2]/'protocol'
     result=subprocess.run([str(protocol/'conformance/run'),'--profile','hub-http-v1@1.0.0',
         '--adapter',str(protocol/'conformance/adapters/actual-hub'),'--config',str(args.descriptor),'--json'],
         stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,timeout=120)

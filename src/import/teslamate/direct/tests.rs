@@ -1,18 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use std::{
-    fs,
-    os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
-    time::{Duration, Instant},
-};
-
-use serde::Deserialize;
-use sha2::{Digest, Sha256};
+use std::{fs, os::unix::fs::PermissionsExt, path::PathBuf};
 
 use super::*;
 use crate::{
     credentials::TeslaMatePostgresPassword,
+    hub_pack::ProjectionPackError,
     teslamate::ReadOnlySource,
     teslamate_projection_state::{
         PriorProjectionStateLookup, TeslaMateProjectionState, TeslaMateProjectionStateCursor,
@@ -64,37 +57,14 @@ impl PriorProjectionStateLookup for DirectTestPrior {
     }
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct NativeFixtureCounts {
-    cars: u64,
-    drives: u64,
-    positions: u64,
-    charging_processes: u64,
-    charges: u64,
-    schema_migrations: u64,
-    private_tokens: u64,
-}
-
-fn configured_native_postgres_source(
-    allow_local_fixture: bool,
-) -> Option<(ReadOnlySource, TeslaMatePostgresPassword)> {
-    let url = std::env::var("TESLATLAS_HUB_TEST_POSTGRES_URL")
-        .ok()
-        .or_else(|| {
-            allow_local_fixture
-                .then(|| std::env::var("TESLATLAS_LOCAL_TESLAMATE_URL").ok())
-                .flatten()
-        })?;
+fn configured_native_postgres_source() -> Option<(ReadOnlySource, TeslaMatePostgresPassword)> {
+    let url = std::env::var("TESLATLAS_HUB_TEST_POSTGRES_URL").ok()?;
     let source = ReadOnlySource::parse(&url).expect("credential-free source URL");
-    Some((
-        source,
-        configured_native_postgres_password(allow_local_fixture),
-    ))
+    Some((source, configured_native_postgres_password()))
 }
 
 /// Read an explicitly supplied password file using the production parser.
-fn configured_native_postgres_password(allow_local_fixture: bool) -> TeslaMatePostgresPassword {
+fn configured_native_postgres_password() -> TeslaMatePostgresPassword {
     if let Some(credentials_directory) =
         std::env::var_os("TESLATLAS_HUB_TEST_POSTGRES_CREDENTIALS_DIRECTORY")
     {
@@ -109,11 +79,6 @@ fn configured_native_postgres_password(allow_local_fixture: bool) -> TeslaMatePo
     }
 
     let password_file = std::env::var_os("TESLATLAS_HUB_TEST_POSTGRES_PASSWORD_FILE")
-        .or_else(|| {
-            allow_local_fixture
-                .then(|| std::env::var_os("TESLATLAS_LOCAL_TESLAMATE_POSTGRES_PASSWORD_FILE"))
-                .flatten()
-        })
         .map(PathBuf::from)
         .expect("a private PostgreSQL password-file environment value");
     let metadata =
@@ -177,183 +142,6 @@ fn private_postgres_password_adapter_accepts_one_terminal_line_ending_only() {
             "only one terminal LF or CRLF is accepted"
         );
     }
-}
-
-fn validated_native_fixture_source_counts(
-    path: &Path,
-    expected_sha256: Option<String>,
-) -> NativeFixtureCounts {
-    let metadata = fs::symlink_metadata(path).expect("fixture counts metadata");
-    assert!(
-        metadata.file_type().is_file(),
-        "fixture counts metadata must be a regular file"
-    );
-    let bytes = fs::read(path).expect("read fixture counts metadata");
-    if let Some(expected_sha256) = expected_sha256 {
-        assert_eq!(expected_sha256.len(), 64, "fixture counts digest length");
-        assert!(
-            expected_sha256.bytes().all(|byte| byte.is_ascii_hexdigit()),
-            "fixture counts digest must be hexadecimal"
-        );
-        assert_eq!(
-            hex::encode(Sha256::digest(&bytes)),
-            expected_sha256.to_ascii_lowercase(),
-            "fixture counts digest"
-        );
-    }
-    let counts: NativeFixtureCounts =
-        serde_json::from_slice(&bytes).expect("valid fixture counts metadata");
-    assert!(counts.cars >= 1, "fixture counts must include a car");
-    assert!(
-        counts.positions > 0,
-        "fixture counts must include positions"
-    );
-    assert_eq!(
-        counts.private_tokens, 0,
-        "fixture counts must remain token-redacted"
-    );
-    let audited_rows = counts
-        .cars
-        .checked_add(counts.drives)
-        .and_then(|value| value.checked_add(counts.positions))
-        .and_then(|value| value.checked_add(counts.charging_processes))
-        .and_then(|value| value.checked_add(counts.charges))
-        .and_then(|value| value.checked_add(counts.schema_migrations))
-        .expect("fixture counts total must fit u64");
-    assert!(audited_rows >= counts.positions);
-    counts
-}
-
-async fn native_ten_million_expected_source_counts(
-    source: &ReadOnlySource,
-    password: &TeslaMatePostgresPassword,
-    limits: TeslaMateReadLimits,
-    packs_dir: &Path,
-) -> TeslaMateSourceCounts {
-    let expected_positions = std::env::var("TESLATLAS_HUB_TEST_EXPECTED_POSITIONS")
-        .ok()
-        .map(|value| {
-            let positions = value
-                .parse::<u64>()
-                .expect("TESLATLAS_HUB_TEST_EXPECTED_POSITIONS must be an unsigned integer");
-            assert!(positions > 0, "expected source positions must be positive");
-            positions
-        });
-
-    let counts = std::env::var_os("TESLATLAS_HUB_TEST_COUNTS_FILE")
-        .map(|path| {
-            (
-                PathBuf::from(path),
-                std::env::var("TESLATLAS_HUB_TEST_COUNTS_SHA256").ok(),
-            )
-        })
-        .or_else(|| {
-            std::env::var_os("TESLATLAS_LOCAL_TESLAMATE_COUNTS_FILE").map(|path| {
-                (
-                    PathBuf::from(path),
-                    std::env::var("TESLATLAS_LOCAL_TESLAMATE_COUNTS_SHA256").ok(),
-                )
-            })
-        });
-    let fixture_counts = counts.map(|(counts_file, expected_sha256)| {
-        validated_native_fixture_source_counts(&counts_file, expected_sha256)
-    });
-    if let Some(fixture_counts) = fixture_counts.as_ref()
-        && let Some(expected_positions) = expected_positions
-    {
-        assert_eq!(
-            fixture_counts.positions, expected_positions,
-            "position environment override must match validated fixture metadata"
-        );
-    }
-
-    let source_counts = preflight_teslamate_import(source, password, 1, limits, packs_dir)
-        .await
-        .expect("source-count preflight")
-        .source_row_counts;
-    if let Some(expected_positions) = expected_positions {
-        assert_eq!(
-            source_counts.positions, expected_positions,
-            "position environment override must match source preflight"
-        );
-    }
-    if let Some(fixture_counts) = fixture_counts {
-        assert_eq!(
-            source_counts.cars, fixture_counts.cars,
-            "source preflight cars must match validated fixture metadata"
-        );
-        assert_eq!(
-            source_counts.drives, fixture_counts.drives,
-            "source preflight drives must match validated fixture metadata"
-        );
-        assert_eq!(
-            source_counts.positions, fixture_counts.positions,
-            "source preflight positions must match validated fixture metadata"
-        );
-        assert_eq!(
-            source_counts.charging_processes, fixture_counts.charging_processes,
-            "source preflight charging processes must match validated fixture metadata"
-        );
-        assert_eq!(
-            source_counts.charges, fixture_counts.charges,
-            "source preflight charges must match validated fixture metadata"
-        );
-    }
-    source_counts
-}
-
-#[test]
-fn preflight_report_is_bounded_and_redacted() {
-    let report = TeslaMatePreflightReport {
-        selected_car_id: 17,
-        source_database_bytes: 123,
-        schema: TeslaMateSchemaInfo {
-            observed_migration_version: 20260808090000,
-            observed_migration_count: 105,
-            minimum_supported_migration_version: 20260808090000,
-            maximum_validated_migration_version: 20260808090000,
-            pinned_source_revision: "d6c43bc8c48784da8f0b701945b80b20911b3d1a",
-            pinned_migration_set_sha256: "ea850d1b038c4af950db32e7a0939aa5ebe8f1dcefe5e56dcd592f3451038868",
-            fingerprint: "abc".to_owned(),
-        },
-        source_row_counts: TeslaMateSourceCounts {
-            cars: 1,
-            drives: 2,
-            positions: 3,
-            charging_processes: 4,
-            charges: 5,
-            states: 6,
-            addresses: 7,
-            geofences: 8,
-            updates: 9,
-        },
-        target_available_bytes: 456,
-        estimated_target_output_bytes: 100,
-        projection_state_maximum_bytes: 200,
-        active_pack_transient_bytes: 300,
-        target_required_bytes: 1_112,
-        configured_maximum_rows: 20_000_000,
-        configured_staging_limit_bytes: 4 * 1024 * 1024 * 1024,
-        configured_staging_reserve_bytes: 512 * 1024 * 1024,
-        admission: TeslaMatePreflightAdmission {
-            passed: true,
-            reason: None,
-        },
-    };
-    let value = serde_json::to_value(report).expect("preflight JSON");
-    assert_eq!(value["selectedCarId"], 17);
-    assert_eq!(value["sourceRowCounts"]["positions"], 3);
-    assert_eq!(value["sourceRowCounts"]["addresses"], 7);
-    assert_eq!(value["sourceRowCounts"]["geofences"], 8);
-    assert_eq!(value["sourceRowCounts"]["updates"], 9);
-    assert_eq!(value["estimatedTargetOutputBytes"], 100);
-    assert_eq!(value["projectionStateMaximumBytes"], 200);
-    assert_eq!(value["activePackTransientBytes"], 300);
-    assert_eq!(value["targetRequiredBytes"], 1_112);
-    assert_eq!(value["admission"]["passed"], true);
-    assert!(value.get("password").is_none());
-    assert!(value.get("sourceUrl").is_none());
-    assert!(value.get("snapshotId").is_none());
 }
 
 fn direct_retention_test_counts() -> TeslaMateSourceCounts {
@@ -1232,7 +1020,7 @@ fn selected_car_output_admission_rejects_overflow() {
 #[tokio::test]
 #[ignore = "needs PostgreSQL: set TESLATLAS_HUB_TEST_POSTGRES_URL and TESLATLAS_HUB_TEST_POSTGRES_PASSWORD_FILE or TESLATLAS_HUB_TEST_POSTGRES_CREDENTIALS_DIRECTORY (run with --ignored)"]
 async fn native_complete_corpus_direct_import_projects_every_kind_when_configured() {
-    let (source, password) = configured_native_postgres_source(false)
+    let (source, password) = configured_native_postgres_source()
         .expect("set TESLATLAS_HUB_TEST_POSTGRES_URL to run this ignored test");
     let packs = tempfile::tempdir().expect("pack directory");
     let result = write_direct_full_snapshot(
@@ -1268,102 +1056,4 @@ async fn native_complete_corpus_direct_import_projects_every_kind_when_configure
     assert_eq!(result.report.projected_charges, 1);
     assert_eq!(result.report.projected_charge_samples, 1);
     assert_eq!(result.report.projected_states, 1);
-}
-
-#[tokio::test]
-#[ignore = "needs PostgreSQL: set TESLATLAS_HUB_RUN_10M=1, TESLATLAS_HUB_TEST_POSTGRES_URL or TESLATLAS_LOCAL_TESLAMATE_URL, and TESLATLAS_HUB_TEST_POSTGRES_PASSWORD_FILE, TESLATLAS_LOCAL_TESLAMATE_POSTGRES_PASSWORD_FILE or TESLATLAS_HUB_TEST_POSTGRES_CREDENTIALS_DIRECTORY (run with --ignored)"]
-async fn native_ten_million_corpus_direct_import_meets_target_when_enabled() {
-    assert_eq!(
-        std::env::var("TESLATLAS_HUB_RUN_10M").as_deref(),
-        Ok("1"),
-        "set TESLATLAS_HUB_RUN_10M=1 to run this ignored test"
-    );
-    let (source, password) = configured_native_postgres_source(true)
-        .expect("10m test source URL or local TeslaMate fixture URL");
-    let packs = tempfile::tempdir().expect("pack directory");
-    let limits = TeslaMateReadLimits {
-        // The canonical source contains 10.4M positions before drives,
-        // charges, state rows, and metadata are counted. Keep the direct
-        // capture bounded while leaving a proven ceiling for that corpus.
-        maximum_rows: 20_000_000,
-        parallel_copy_lanes: 3,
-        ..TeslaMateReadLimits::default()
-    };
-    let expected_source_counts =
-        native_ten_million_expected_source_counts(&source, &password, limits, packs.path()).await;
-    let writer = ProjectionPackWriter::new(packs.path());
-    let mut phase_trace = native_ten_million_phase_trace::enabled_from_environment();
-    let started = Instant::now();
-    let import = tokio::time::timeout(
-        Duration::from_secs(600),
-        write_direct_full_snapshot_with_projection_state(
-            &source,
-            &password,
-            1,
-            limits,
-            &writer,
-            ProjectionBinding {
-                installation_id: Uuid::new_v4(),
-                account_id: Uuid::new_v4(),
-                vehicle_id: Uuid::new_v4(),
-                generation: 1,
-                selected_car_id: 1,
-            },
-            Uuid::new_v4(),
-            SequenceRange {
-                from_exclusive: 0,
-                to_inclusive: 1,
-            },
-            false,
-            None,
-            TeslaMateMigrationProgressReporter::default(),
-            |state_limits| {
-                TeslaMateProjectionState::create(packs.path(), state_limits)
-                    .map(TeslaMateProjectionStateCapture::for_initial_base)
-                    .map_err(Into::into)
-            },
-        ),
-    )
-    .await;
-    match &import {
-        Err(_) => {
-            if let Some(trace) = phase_trace.as_mut() {
-                trace.report("timeout");
-            }
-        }
-        Ok(Err(_)) => {
-            if let Some(trace) = phase_trace.as_mut() {
-                trace.report("import_error");
-            }
-        }
-        Ok(Ok(_)) => {}
-    }
-    let mut result = import
-        .expect("ten-million direct import timed out")
-        .expect("ten-million direct import")
-        .packs;
-    if let Some(trace) = phase_trace.as_mut() {
-        trace.report("completed");
-    }
-
-    assert!(started.elapsed() < Duration::from_secs(600));
-    let updates_accounted = result
-        .report
-        .projected_updates
-        .checked_add(result.report.skipped_incomplete_updates)
-        .expect("update counts do not overflow");
-    validate_direct_source_counts(expected_source_counts, result.report, updates_accounted)
-        .expect("direct report must account for every validated source row");
-    let state = result
-        .projection_state
-        .as_mut()
-        .expect("direct stateful capture must retain its projection state");
-    let state_stats = state.seal().expect("seal direct projection state");
-    assert!(state_stats.sealed);
-    assert_eq!(state_stats.changed_row_count, 0);
-    assert_eq!(state_stats.changed_payload_bytes, 0);
-    assert!(
-        state_stats.row_count >= result.report.logical_row_count().expect("row count"),
-        "state capture must cover every projected typed row"
-    );
 }

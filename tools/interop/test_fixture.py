@@ -23,7 +23,7 @@ class ConfigTests(unittest.TestCase):
         self.executable = self.root / "binary"
         self.executable.write_text("fixture")
         self.executable.chmod(0o700)
-        profile = MODULE.resolve().parents[3] / "teslatlas-protocol/profiles/hub-http-v1/1.0.0"
+        profile = MODULE.resolve().parents[2] / "protocol/profiles/hub-http-v1/1.0.0"
         self.config = {
             "profile_id":"hub-http-v1@1.0.0",
             "profile_path":str(profile),
@@ -218,7 +218,7 @@ class ConfigTests(unittest.TestCase):
         ])
 
     def test_physical_v3_selector_requires_exact_profile_port_and_seed_receipt(self):
-        profile = MODULE.resolve().parents[3] / "teslatlas-protocol/profiles/hub-sync-v1/1.3.0"
+        profile = MODULE.resolve().parents[2] / "protocol/profiles/hub-sync-v1/1.3.0"
         self.config.update({
             "scenario_id": fixture.PHYSICAL_V3_SCENARIO_ID,
             "profile_id": fixture.PHYSICAL_V3_PROFILE_ID,

@@ -454,7 +454,7 @@ impl<'a> PreparedInserter<'a> {
     }
 }
 
-// Exact pre-reuse inserter retained for test and measurement parity.
+// Exact pre-reuse inserter retained for test parity.
 #[cfg(test)]
 fn insert_row(
     tx: &rusqlite::Transaction<'_>,

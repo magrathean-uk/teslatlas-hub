@@ -8,13 +8,12 @@
 
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
-    path::{Path, PathBuf},
+    path::Path,
     pin::pin,
     time::Instant,
 };
 
 use futures_util::TryStreamExt;
-use rustix::fs::statvfs;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -25,8 +24,8 @@ use crate::{
     credentials::TeslaMatePostgresPassword,
     db::StoreError,
     hub_pack::{
-        ProjectionBinding, ProjectionCharge, ProjectionDrive, ProjectionPackError,
-        ProjectionPackWriter, ProjectionPosition, ProjectionSnapshot,
+        ProjectionBinding, ProjectionCharge, ProjectionDrive, ProjectionPackWriter,
+        ProjectionPosition, ProjectionSnapshot,
     },
     protocol::{SequenceRange, Sha256Digest},
     teslamate::ReadOnlySource,
@@ -52,11 +51,10 @@ use crate::{
         TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits, TeslaMateReaderError,
         TeslaMateSchemaInfo, binary_copy_sql, charge_copy_types, decode_binary_charge,
         decode_binary_position, open_exported_snapshot_lease, open_snapshot_capture_lane,
-        open_snapshot_session_with_schema, position_copy_types, read_addresses,
-        read_car_and_car_settings_v2_2, read_cars, read_charging_processes, read_drives,
-        read_geofences, read_legacy_token_ciphertexts_in_client, read_open_session,
-        read_open_session_in_client, read_settings_v2_2, read_updates_v2_2,
-        related_positions_binary_copy_sql,
+        position_copy_types, read_addresses, read_car_and_car_settings_v2_2, read_cars,
+        read_charging_processes, read_drives, read_geofences,
+        read_legacy_token_ciphertexts_in_client, read_open_session, read_open_session_in_client,
+        read_settings_v2_2, read_updates_v2_2, related_positions_binary_copy_sql,
     },
     teslamate_schema::SourceTable,
 };
@@ -574,14 +572,6 @@ async fn write_direct_full_snapshot_once(
         snapshot_id = %snapshot_id,
         "capturing TeslaMate source snapshot"
     );
-    // This marker exists only in test builds and remains inert unless the
-    // native 10M test explicitly enables its phase trace. It deliberately
-    // covers the direct source/projection path while PackSink records its
-    // nested immutable-pack and projection-state work separately.
-    #[cfg(test)]
-    let mut source_projection_phase = native_ten_million_phase_trace::mark(
-        native_ten_million_phase_trace::NativeTenMillionPhase::SourceProjection,
-    );
     let result = write_from_session(
         lane.client(),
         selected_car_id,
@@ -604,8 +594,6 @@ async fn write_direct_full_snapshot_once(
         progress,
     )
     .await;
-    #[cfg(test)]
-    source_projection_phase.complete();
     let lane_finish = lane.finish().await;
     match (result, lane_finish) {
         (Ok(packs), Ok(())) => Ok(packs),
@@ -627,12 +615,11 @@ pub async fn read_direct_open_session(
         .map_err(Into::into)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TeslaMateSourceCounts {
     pub cars: u64,
     pub drives: u64,
     pub positions: u64,
-    #[serde(rename = "chargingProcesses")]
     pub charging_processes: u64,
     pub charges: u64,
     pub states: u64,
@@ -728,144 +715,6 @@ impl DirectProjectionFingerprint {
 
     fn finish(self) -> Sha256Digest {
         Sha256Digest::from_bytes(self.digest.finalize().into())
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TeslaMatePreflightAdmission {
-    pub passed: bool,
-    pub reason: Option<&'static str>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TeslaMatePreflightReport {
-    #[serde(rename = "selectedCarId")]
-    pub selected_car_id: i64,
-    #[serde(rename = "sourceDatabaseBytes")]
-    pub source_database_bytes: u64,
-    pub schema: TeslaMateSchemaInfo,
-    #[serde(rename = "sourceRowCounts")]
-    pub source_row_counts: TeslaMateSourceCounts,
-    #[serde(rename = "targetAvailableBytes")]
-    pub target_available_bytes: u64,
-    #[serde(rename = "estimatedTargetOutputBytes")]
-    pub estimated_target_output_bytes: u64,
-    #[serde(rename = "projectionStateMaximumBytes")]
-    pub projection_state_maximum_bytes: u64,
-    #[serde(rename = "activePackTransientBytes")]
-    pub active_pack_transient_bytes: u64,
-    #[serde(rename = "targetRequiredBytes")]
-    pub target_required_bytes: u64,
-    #[serde(rename = "configuredMaximumRows")]
-    pub configured_maximum_rows: usize,
-    #[serde(rename = "configuredStagingLimitBytes")]
-    pub configured_staging_limit_bytes: u64,
-    #[serde(rename = "configuredStagingReserveBytes")]
-    pub configured_staging_reserve_bytes: u64,
-    pub admission: TeslaMatePreflightAdmission,
-}
-
-pub async fn preflight_teslamate_import(
-    source: &ReadOnlySource,
-    password: &TeslaMatePostgresPassword,
-    selected_car_id: i64,
-    read_limits: TeslaMateReadLimits,
-    target_packs_dir: &Path,
-) -> Result<TeslaMatePreflightReport, TeslaMateDirectError> {
-    let (session, selected_car_id_i16, schema) =
-        open_snapshot_session_with_schema(source, password, selected_car_id, read_limits).await?;
-    let result = async {
-        let source_database_bytes = read_source_database_size(session.client()).await?;
-        let source_row_counts =
-            read_direct_source_counts(session.client(), selected_car_id_i16).await?;
-        let retention_reason = match admit_direct_retention(source_row_counts, read_limits) {
-            Ok(_) => None,
-            Err(error) => Some(direct_retention_preflight_reason(&error).ok_or(error)?),
-        };
-        let state_limits = direct_projection_state_limits(
-            source_row_counts,
-            read_limits,
-            DirectCaptureMode::PublishPacks,
-        )?;
-        let capture_reserve_bytes = read_limits
-            .minimum_free_bytes
-            .checked_add(state_limits.max_state_bytes)
-            .ok_or(TeslaMateDirectError::TargetCapacityOverflow)?;
-        let estimated_target_output_bytes = direct_projected_output_estimate(source_row_counts)?;
-        let (
-            target_available_bytes,
-            active_pack_transient_bytes,
-            target_required_bytes,
-            capacity_passed,
-        ) = preflight_target_capacity(
-            target_packs_dir,
-            estimated_target_output_bytes,
-            capture_reserve_bytes,
-        )?;
-        Ok(TeslaMatePreflightReport {
-            selected_car_id,
-            source_database_bytes,
-            schema,
-            source_row_counts,
-            target_available_bytes,
-            estimated_target_output_bytes,
-            projection_state_maximum_bytes: state_limits.max_state_bytes,
-            active_pack_transient_bytes,
-            target_required_bytes,
-            configured_maximum_rows: read_limits.maximum_rows,
-            configured_staging_limit_bytes: read_limits.maximum_stage_bytes,
-            configured_staging_reserve_bytes: read_limits.minimum_free_bytes,
-            admission: TeslaMatePreflightAdmission {
-                passed: capacity_passed && retention_reason.is_none(),
-                reason: (!capacity_passed)
-                    .then_some("insufficient_estimated_target_capacity")
-                    .or(retention_reason),
-            },
-        })
-    }
-    .await;
-    let finish = session.finish().await;
-    match (result, finish) {
-        (Ok(report), Ok(())) => Ok(report),
-        (Err(error), _) => Err(error),
-        (Ok(_), Err(error)) => Err(error.into()),
-    }
-}
-
-async fn read_source_database_size(client: &Client) -> Result<u64, TeslaMateDirectError> {
-    let row = client
-        .query_one(
-            "SELECT pg_database_size(current_database())::bigint AS \"bytes\"",
-            &[],
-        )
-        .await?;
-    let bytes: i64 = row.try_get("bytes")?;
-    u64::try_from(bytes).map_err(|_| TeslaMateDirectError::InvalidSourceDatabaseSize { bytes })
-}
-
-fn preflight_target_capacity(
-    target_packs_dir: &Path,
-    estimated_final_bytes: u64,
-    minimum_free_bytes: u64,
-) -> Result<(u64, u64, u64, bool), TeslaMateDirectError> {
-    let writer = ProjectionPackWriter::new(target_packs_dir);
-    let transient_bytes = writer.incremental_capture_transient_bytes()?;
-    let required_bytes =
-        writer.incremental_capture_required_bytes(estimated_final_bytes, minimum_free_bytes)?;
-    match writer.ensure_incremental_capture_capacity_with_final_estimate(
-        estimated_final_bytes,
-        minimum_free_bytes,
-    ) {
-        Ok(()) => Ok((
-            target_available_bytes(target_packs_dir)?,
-            transient_bytes,
-            required_bytes,
-            true,
-        )),
-        Err(ProjectionPackError::InsufficientFreeSpace { available, .. }) => {
-            Ok((available, transient_bytes, required_bytes, false))
-        }
-        Err(error) => Err(error.into()),
     }
 }
 
@@ -974,17 +823,6 @@ fn direct_projected_output_estimate(
             .and_then(|bytes| total.checked_add(bytes))
             .ok_or(TeslaMateDirectError::TargetCapacityOverflow)
     })
-}
-
-fn target_available_bytes(path: &Path) -> Result<u64, TeslaMateDirectError> {
-    let stats = statvfs(path).map_err(|source| TeslaMateDirectError::TargetFilesystemSpace {
-        path: path.to_path_buf(),
-        source,
-    })?;
-    stats
-        .f_bavail
-        .checked_mul(stats.f_frsize)
-        .ok_or(TeslaMateDirectError::TargetCapacityOverflow)
 }
 
 async fn read_addresses_lane(
@@ -1810,19 +1648,6 @@ fn elapsed_millis(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
-fn direct_retention_preflight_reason(error: &TeslaMateDirectError) -> Option<&'static str> {
-    match error {
-        TeslaMateDirectError::MaximumRowsExceeded { .. } => Some("source_row_ceiling_exceeded"),
-        TeslaMateDirectError::DirectRetainedTableLimitExceeded { .. } => {
-            Some("direct_retained_table_limit_exceeded")
-        }
-        TeslaMateDirectError::DirectRetainedAggregateLimitExceeded { .. } => {
-            Some("direct_retained_aggregate_limit_exceeded")
-        }
-        _ => None,
-    }
-}
-
 fn checked_retained_units(values: &[u64]) -> Result<u64, TeslaMateDirectError> {
     values.iter().try_fold(0_u64, |total, value| {
         total
@@ -2570,13 +2395,6 @@ pub enum TeslaMateDirectError {
     SourceEvidence(#[from] TeslaMateSourceEvidenceError),
     #[error("direct update projection changed between scans of one exported source snapshot")]
     UpdateProjectionReconciliation,
-    #[error("TeslaMate source database size is invalid: {bytes}")]
-    InvalidSourceDatabaseSize { bytes: i64 },
-    #[error("could not inspect target free space at {path}: {source}")]
-    TargetFilesystemSpace {
-        path: PathBuf,
-        source: rustix::io::Errno,
-    },
     #[error("target free-space calculation overflowed")]
     TargetCapacityOverflow,
     #[error("TeslaMate projection-state capacity calculation overflowed")]
@@ -2605,338 +2423,6 @@ pub enum TeslaMateDirectError {
     ProjectionState(#[from] TeslaMateProjectionStateError),
     #[error(transparent)]
     Store(#[from] StoreError),
-}
-
-/// Test-only diagnostics for the opt-in native 10M import exercise.
-///
-/// The direct import and fragment writer compile without this module outside
-/// tests. When enabled, its markers are deliberately coarse: the source
-/// marker includes nested pack and state work, and the final report subtracts
-/// those nested measurements to show the estimated exclusive source time.
-#[cfg(test)]
-pub(crate) mod native_ten_million_phase_trace {
-    use std::{
-        sync::{
-            Arc, Mutex, OnceLock,
-            atomic::{AtomicU8, AtomicU64, Ordering},
-        },
-        time::Instant,
-    };
-
-    const NO_PHASE: u8 = 0;
-
-    #[derive(Clone, Copy)]
-    #[repr(u8)]
-    pub(crate) enum NativeTenMillionPhase {
-        SourceProjection = 1,
-        PackBuild = 2,
-        ProjectionStateCapture = 3,
-    }
-
-    impl NativeTenMillionPhase {
-        const fn name(self) -> &'static str {
-            match self {
-                Self::SourceProjection => "source_projection",
-                Self::PackBuild => "pack_build",
-                Self::ProjectionStateCapture => "projection_state_capture",
-            }
-        }
-
-        const fn from_raw(raw: u8) -> Option<Self> {
-            match raw {
-                1 => Some(Self::SourceProjection),
-                2 => Some(Self::PackBuild),
-                3 => Some(Self::ProjectionStateCapture),
-                _ => None,
-            }
-        }
-    }
-
-    struct PhaseTraceState {
-        current_phase: AtomicU8,
-        last_entered_phase: AtomicU8,
-        interrupted_phase: AtomicU8,
-        source_projection_millis: AtomicU64,
-        pack_build_millis: AtomicU64,
-        projection_state_capture_millis: AtomicU64,
-        source_projection_windows: AtomicU64,
-        pack_builds: AtomicU64,
-        projection_state_captures: AtomicU64,
-    }
-
-    impl PhaseTraceState {
-        fn record(&self, phase: NativeTenMillionPhase, elapsed_millis: u64) {
-            match phase {
-                NativeTenMillionPhase::SourceProjection => {
-                    self.source_projection_millis
-                        .fetch_add(elapsed_millis, Ordering::Relaxed);
-                    self.source_projection_windows
-                        .fetch_add(1, Ordering::Relaxed);
-                }
-                NativeTenMillionPhase::PackBuild => {
-                    self.pack_build_millis
-                        .fetch_add(elapsed_millis, Ordering::Relaxed);
-                    self.pack_builds.fetch_add(1, Ordering::Relaxed);
-                }
-                NativeTenMillionPhase::ProjectionStateCapture => {
-                    self.projection_state_capture_millis
-                        .fetch_add(elapsed_millis, Ordering::Relaxed);
-                    self.projection_state_captures
-                        .fetch_add(1, Ordering::Relaxed);
-                }
-            }
-        }
-
-        fn snapshot(&self) -> PhaseTraceSnapshot {
-            let source_projection_inclusive_millis =
-                self.source_projection_millis.load(Ordering::Relaxed);
-            let pack_build_millis = self.pack_build_millis.load(Ordering::Relaxed);
-            let projection_state_capture_millis =
-                self.projection_state_capture_millis.load(Ordering::Relaxed);
-            let source_projection_exclusive_millis = source_projection_inclusive_millis
-                .saturating_sub(pack_build_millis.saturating_add(projection_state_capture_millis));
-            let dominant_phase = [
-                ("source_projection", source_projection_exclusive_millis),
-                ("pack_build", pack_build_millis),
-                ("projection_state_capture", projection_state_capture_millis),
-            ]
-            .into_iter()
-            .max_by_key(|(_, elapsed_millis)| *elapsed_millis)
-            .filter(|(_, elapsed_millis)| *elapsed_millis > 0)
-            .map_or("none", |(phase, _)| phase);
-            PhaseTraceSnapshot {
-                interrupted_phase: phase_name(self.interrupted_phase.load(Ordering::Relaxed)),
-                last_entered_phase: phase_name(self.last_entered_phase.load(Ordering::Relaxed)),
-                dominant_phase,
-                source_projection_exclusive_millis,
-                pack_build_millis,
-                projection_state_capture_millis,
-                source_projection_windows: self.source_projection_windows.load(Ordering::Relaxed),
-                pack_builds: self.pack_builds.load(Ordering::Relaxed),
-                projection_state_captures: self.projection_state_captures.load(Ordering::Relaxed),
-            }
-        }
-    }
-
-    fn phase_name(raw: u8) -> &'static str {
-        NativeTenMillionPhase::from_raw(raw).map_or("none", NativeTenMillionPhase::name)
-    }
-
-    struct PhaseTraceSnapshot {
-        interrupted_phase: &'static str,
-        last_entered_phase: &'static str,
-        dominant_phase: &'static str,
-        source_projection_exclusive_millis: u64,
-        pack_build_millis: u64,
-        projection_state_capture_millis: u64,
-        source_projection_windows: u64,
-        pack_builds: u64,
-        projection_state_captures: u64,
-    }
-
-    fn active_trace() -> &'static Mutex<Option<Arc<PhaseTraceState>>> {
-        static ACTIVE_TRACE: OnceLock<Mutex<Option<Arc<PhaseTraceState>>>> = OnceLock::new();
-        ACTIVE_TRACE.get_or_init(|| Mutex::new(None))
-    }
-
-    /// Install the trace only for an explicit 10M diagnostic run. Nothing is
-    /// emitted unless `TESLATLAS_HUB_TRACE_10M_PHASES=1` is set.
-    pub(crate) fn enabled_from_environment() -> Option<NativeTenMillionPhaseTrace> {
-        if std::env::var("TESLATLAS_HUB_TRACE_10M_PHASES").as_deref() != Ok("1") {
-            return None;
-        }
-        let state = Arc::new(PhaseTraceState {
-            current_phase: AtomicU8::new(NO_PHASE),
-            last_entered_phase: AtomicU8::new(NO_PHASE),
-            interrupted_phase: AtomicU8::new(NO_PHASE),
-            source_projection_millis: AtomicU64::new(0),
-            pack_build_millis: AtomicU64::new(0),
-            projection_state_capture_millis: AtomicU64::new(0),
-            source_projection_windows: AtomicU64::new(0),
-            pack_builds: AtomicU64::new(0),
-            projection_state_captures: AtomicU64::new(0),
-        });
-        let mut active = active_trace().lock().expect("native 10M phase trace mutex");
-        assert!(
-            active.is_none(),
-            "only one native 10M phase trace may be active"
-        );
-        *active = Some(Arc::clone(&state));
-        Some(NativeTenMillionPhaseTrace {
-            state,
-            emitted: false,
-        })
-    }
-
-    /// A scoped marker records completed time normally and records the first
-    /// unfinished inner phase if timeout cancellation drops the import future.
-    pub(crate) struct PhaseMarker {
-        state: Option<Arc<PhaseTraceState>>,
-        phase: NativeTenMillionPhase,
-        previous_phase: u8,
-        started: Option<Instant>,
-        completed: bool,
-    }
-
-    pub(crate) fn mark(phase: NativeTenMillionPhase) -> PhaseMarker {
-        let state = active_trace()
-            .lock()
-            .expect("native 10M phase trace mutex")
-            .as_ref()
-            .map(Arc::clone);
-        let Some(state) = state else {
-            return PhaseMarker {
-                state: None,
-                phase,
-                previous_phase: NO_PHASE,
-                started: None,
-                completed: true,
-            };
-        };
-        let previous_phase = state.current_phase.swap(phase as u8, Ordering::Relaxed);
-        state
-            .last_entered_phase
-            .store(phase as u8, Ordering::Relaxed);
-        PhaseMarker {
-            state: Some(state),
-            phase,
-            previous_phase,
-            started: Some(Instant::now()),
-            completed: false,
-        }
-    }
-
-    impl PhaseMarker {
-        /// Mark a returned success or error as complete. If the future is
-        /// cancelled before this point, Drop retains this phase for reporting.
-        pub(crate) fn complete(&mut self) {
-            if self.completed {
-                return;
-            }
-            self.record_elapsed();
-            self.completed = true;
-        }
-
-        fn record_elapsed(&mut self) {
-            let (Some(state), Some(started)) = (&self.state, self.started.take()) else {
-                return;
-            };
-            let elapsed_millis = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-            state.record(self.phase, elapsed_millis);
-        }
-    }
-
-    impl Drop for PhaseMarker {
-        fn drop(&mut self) {
-            let Some(state) = self.state.as_ref().map(Arc::clone) else {
-                return;
-            };
-            if !self.completed {
-                self.record_elapsed();
-                let _ = state.interrupted_phase.compare_exchange(
-                    NO_PHASE,
-                    self.phase as u8,
-                    Ordering::Relaxed,
-                    Ordering::Relaxed,
-                );
-            }
-            let _ = state.current_phase.compare_exchange(
-                self.phase as u8,
-                self.previous_phase,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            );
-        }
-    }
-
-    /// Owns the active test-only trace and emits a redacted summary when the
-    /// timeout returns or unwinding cancels the import future.
-    pub(crate) struct NativeTenMillionPhaseTrace {
-        state: Arc<PhaseTraceState>,
-        emitted: bool,
-    }
-
-    impl NativeTenMillionPhaseTrace {
-        pub(crate) fn report(&mut self, reason: &'static str) {
-            if self.emitted {
-                return;
-            }
-            let snapshot = self.state.snapshot();
-            eprintln!(
-                "teslatlas-hub 10m phase trace: reason={reason} interrupted_phase={} last_entered_phase={} dominant_phase={} source_projection_exclusive_ms={} pack_build_ms={} projection_state_capture_ms={} source_projection_windows={} pack_builds={} projection_state_captures={}",
-                snapshot.interrupted_phase,
-                snapshot.last_entered_phase,
-                snapshot.dominant_phase,
-                snapshot.source_projection_exclusive_millis,
-                snapshot.pack_build_millis,
-                snapshot.projection_state_capture_millis,
-                snapshot.source_projection_windows,
-                snapshot.pack_builds,
-                snapshot.projection_state_captures,
-            );
-            self.emitted = true;
-        }
-    }
-
-    impl Drop for NativeTenMillionPhaseTrace {
-        fn drop(&mut self) {
-            if !self.emitted {
-                self.report("cancelled_or_panicked");
-            }
-            let mut active = active_trace().lock().expect("native 10M phase trace mutex");
-            if active
-                .as_ref()
-                .is_some_and(|state| Arc::ptr_eq(state, &self.state))
-            {
-                *active = None;
-            }
-        }
-    }
-
-    #[test]
-    fn phase_marker_records_nested_work_and_the_innermost_interruption() {
-        let state = Arc::new(PhaseTraceState {
-            current_phase: AtomicU8::new(NO_PHASE),
-            last_entered_phase: AtomicU8::new(NO_PHASE),
-            interrupted_phase: AtomicU8::new(NO_PHASE),
-            source_projection_millis: AtomicU64::new(0),
-            pack_build_millis: AtomicU64::new(0),
-            projection_state_capture_millis: AtomicU64::new(0),
-            source_projection_windows: AtomicU64::new(0),
-            pack_builds: AtomicU64::new(0),
-            projection_state_captures: AtomicU64::new(0),
-        });
-        {
-            state.current_phase.store(
-                NativeTenMillionPhase::SourceProjection as u8,
-                Ordering::Relaxed,
-            );
-            let _source = PhaseMarker {
-                state: Some(Arc::clone(&state)),
-                phase: NativeTenMillionPhase::SourceProjection,
-                previous_phase: NO_PHASE,
-                started: Some(Instant::now()),
-                completed: false,
-            };
-            state.current_phase.store(
-                NativeTenMillionPhase::ProjectionStateCapture as u8,
-                Ordering::Relaxed,
-            );
-            let _capture = PhaseMarker {
-                state: Some(Arc::clone(&state)),
-                phase: NativeTenMillionPhase::ProjectionStateCapture,
-                previous_phase: NativeTenMillionPhase::SourceProjection as u8,
-                started: Some(Instant::now()),
-                completed: false,
-            };
-        }
-        let snapshot = state.snapshot();
-        assert_eq!(snapshot.interrupted_phase, "projection_state_capture");
-        assert_eq!(snapshot.source_projection_windows, 1);
-        assert_eq!(snapshot.projection_state_captures, 1);
-        assert_eq!(snapshot.pack_builds, 0);
-        assert_eq!(state.current_phase.load(Ordering::Relaxed), NO_PHASE);
-    }
 }
 
 #[cfg(test)]

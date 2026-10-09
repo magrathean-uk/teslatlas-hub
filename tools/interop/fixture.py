@@ -68,7 +68,7 @@ EDGE_COLLECTOR_FIELDS = {
     "lineage", "source_id", "vehicle_id", "vin", "car_id",
 }
 
-_native_path = Path(__file__).resolve().parents[3] / "teslatlas-protocol/conformance/hub_native_evidence.py"
+_native_path = Path(__file__).resolve().parents[2] / "protocol/conformance/hub_native_evidence.py"
 _native_spec = importlib.util.spec_from_file_location("hub_native_evidence", _native_path)
 native_evidence = importlib.util.module_from_spec(_native_spec)
 _native_spec.loader.exec_module(native_evidence)

@@ -1530,14 +1530,7 @@ impl<'a> PackSink<'a> {
         &mut self,
         completed: PackBuildResult,
     ) -> Result<(), TeslaMateFragmentError> {
-        #[cfg(test)]
-        let mut pack_build_phase =
-            crate::teslamate_direct::native_ten_million_phase_trace::mark(
-                crate::teslamate_direct::native_ten_million_phase_trace::NativeTenMillionPhase::PackBuild,
-            );
         let built = completed.built?;
-        #[cfg(test)]
-        pack_build_phase.complete();
         self.accept_snapshot(completed.snapshot, &completed.updates, Some(built))
     }
 
@@ -1563,15 +1556,7 @@ impl<'a> PackSink<'a> {
             });
         }
         self.selected_car = Some(selected_car);
-        #[cfg(test)]
-        let mut projection_state_capture_phase =
-            crate::teslamate_direct::native_ten_million_phase_trace::mark(
-                crate::teslamate_direct::native_ten_million_phase_trace::NativeTenMillionPhase::ProjectionStateCapture,
-            );
-        let captured = self.capture_written_snapshot(&snapshot, updates);
-        #[cfg(test)]
-        projection_state_capture_phase.complete();
-        captured?;
+        self.capture_written_snapshot(&snapshot, updates)?;
         self.written_fragments = self
             .written_fragments
             .checked_add(1)
