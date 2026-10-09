@@ -158,8 +158,8 @@ fn projected_coordinates_outside_i16_fail_without_rejecting_legitimate_extended_
         let length =
             u32::from_le_bytes(bytes[offset + 12..offset + 16].try_into().unwrap()) as usize;
         offset += 16;
-        for coordinate in bytes[offset..offset + length].chunks_exact(2) {
-            let coordinate = i16::from_le_bytes(coordinate.try_into().unwrap());
+        for coordinate in bytes[offset..offset + length].as_chunks::<2>().0 {
+            let coordinate = i16::from_le_bytes(*coordinate);
             has_negative_offset |= coordinate < 0;
             has_offset_beyond_tile |= coordinate > 512;
         }
@@ -574,7 +574,7 @@ fn exactly_4096_cross_tier_tiles_admit_duplicates_and_preserve_bytes() {
     assert_eq!(payload.len(), 8 + 4096 * (16 + 8));
     // Independent wire decoding confirms nonempty, one-segment publication and
     // the exact cross-tier directory, rather than trusting diagnostics alone.
-    for (index, tile) in payload[8..].chunks_exact(24).enumerate() {
+    for (index, tile) in payload[8..].as_chunks::<24>().0.iter().enumerate() {
         let read = |offset| u32::from_le_bytes(tile[offset..offset + 4].try_into().unwrap());
         assert_eq!(read(0), if index == 0 { 10 } else { 13 });
         assert_eq!(read(4), if index == 0 { 0 } else { (index - 1) as u32 });

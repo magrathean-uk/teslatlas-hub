@@ -132,7 +132,7 @@ pub(crate) fn publish_sealed_physical_v3_stage_with_gate_at(
 #[derive(Debug)]
 enum IntendedPublication {
     First,
-    Rotate(PendingPhysicalV3Admission),
+    Rotate(Box<PendingPhysicalV3Admission>),
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -203,7 +203,7 @@ fn publish_sealed_physical_v3_stage_inner(
                 .checked_add(1)
                 .filter(|sequence| *sequence <= MAX_IJSON_INTEGER)
                 .ok_or(TeslaMatePhysicalPublicationError::SequenceExhausted)?;
-            (next, IntendedPublication::Rotate(current))
+            (next, IntendedPublication::Rotate(Box::new(current)))
         }
         PhysicalV3PublicationState::Blocked { .. } => {
             return Err(TeslaMatePhysicalPublicationError::DifferentBlockedRotation);

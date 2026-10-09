@@ -1018,6 +1018,18 @@ pub(super) fn unavailable_bootstrap_manifest() -> Response {
         .into_response()
 }
 
+fn development_sync_event(
+    outcome: crate::runtime::development_event_log::Outcome,
+    base: u64,
+    target: u64,
+) {
+    use crate::runtime::development_event_log as dev;
+    let mut event = dev::Event::new(dev::Kind::Sync, outcome);
+    event.base_sequence = Some(base);
+    event.target_sequence = Some(target);
+    dev::record(event);
+}
+
 #[cfg(test)]
 mod tests {
     use http_body_util::BodyExt;
@@ -1292,16 +1304,4 @@ mod tests {
         );
         assert!(invalid.headers().get(header::CACHE_CONTROL).is_none());
     }
-}
-
-fn development_sync_event(
-    outcome: crate::runtime::development_event_log::Outcome,
-    base: u64,
-    target: u64,
-) {
-    use crate::runtime::development_event_log as dev;
-    let mut event = dev::Event::new(dev::Kind::Sync, outcome);
-    event.base_sequence = Some(base);
-    event.target_sequence = Some(target);
-    dev::record(event);
 }

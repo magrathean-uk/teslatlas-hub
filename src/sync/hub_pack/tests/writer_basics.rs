@@ -3,10 +3,12 @@
 #[test]
 fn unbounded_full_snapshot_capacity_uses_the_protocol_ceiling_without_overflow() {
     let temp = crate::private_tempdir().unwrap();
-    let mut limits = ProtocolLimits::default();
-    limits.max_chunks = 1;
-    limits.max_compressed_pack_bytes = 1024;
-    limits.max_uncompressed_pack_bytes = 4096;
+    let limits = ProtocolLimits {
+        max_chunks: 1,
+        max_compressed_pack_bytes: 1024,
+        max_uncompressed_pack_bytes: 4096,
+        ..Default::default()
+    };
     ProjectionPackWriter::with_limits(temp.path(), limits)
         .ensure_full_snapshot_capacity(0)
         .expect("unbounded capture clamps to finite protocol capacity");

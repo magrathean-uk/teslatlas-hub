@@ -559,7 +559,7 @@ fn measure_retained_physical_json_sizing() {
         for repeat in 0..3 {
             // Alternate order per page/repeat; both paths consume the same decoded page.
             for turn in 0..2 {
-                let reference = (repeat + page_index + turn) % 2 == 0;
+                let reference = (repeat + page_index + turn).is_multiple_of(2);
                 let started = Instant::now();
                 let mut bytes = 0_u64;
                 for row in &projected {

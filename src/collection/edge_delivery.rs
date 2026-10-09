@@ -970,9 +970,8 @@ mod tests {
                 &request.binding,
             )
             .unwrap();
-        let bytes = include_bytes!(
-            "../../protocol/profiles/edge-delivery-v2/2.0.0/examples/batch.json"
-        );
+        let bytes =
+            include_bytes!("../../protocol/profiles/edge-delivery-v2/2.0.0/examples/batch.json");
         let batch: Batch = serde_json::from_slice(bytes).unwrap();
         let item = verify_record(&batch.records[0], &binding.vin).unwrap();
         store
@@ -1078,9 +1077,8 @@ mod tests {
 
     #[test]
     fn accepted_profile_literal_batch_and_records_verify() {
-        let bytes = include_bytes!(
-            "../../protocol/profiles/edge-delivery-v2/2.0.0/examples/batch.json"
-        );
+        let bytes =
+            include_bytes!("../../protocol/profiles/edge-delivery-v2/2.0.0/examples/batch.json");
         let batch: Batch = serde_json::from_slice(bytes).unwrap();
         validate_batch(&batch).unwrap();
         assert!(matches!(
@@ -1147,9 +1145,8 @@ mod tests {
 
     #[test]
     fn changed_payload_or_batch_identity_fails_closed() {
-        let bytes = include_bytes!(
-            "../../protocol/profiles/edge-delivery-v2/2.0.0/examples/batch.json"
-        );
+        let bytes =
+            include_bytes!("../../protocol/profiles/edge-delivery-v2/2.0.0/examples/batch.json");
         let mut batch: Batch = serde_json::from_slice(bytes).unwrap();
         batch.records[0].envelope["payload"]["data"]["Soc"]["intValue"] =
             Value::String("81".into());

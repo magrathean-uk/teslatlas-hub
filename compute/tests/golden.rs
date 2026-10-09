@@ -84,7 +84,9 @@ fn decoded_keys(bytes: &[u8]) -> Vec<(u32, u32, u32)> {
         assert!(len > 0 && len.is_multiple_of(8));
         assert!(len <= bytes.len().saturating_sub(offset));
         let segments = bytes[offset..offset + len]
-            .chunks_exact(8)
+            .as_chunks::<8>()
+            .0
+            .iter()
             .map(|segment| {
                 std::array::from_fn::<_, 4, _>(|index| {
                     i16::from_le_bytes(segment[index * 2..index * 2 + 2].try_into().unwrap())

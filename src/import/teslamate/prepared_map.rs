@@ -1978,8 +1978,7 @@ mod tests {
             "ok"
         );
         drop(checked);
-        let protocol_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("protocol");
+        let protocol_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("protocol");
         let script = "import sqlite3,sys\n".to_owned()
             + "from pathlib import Path\n"
             + "sys.path.insert(0,sys.argv[1])\n"
@@ -2602,8 +2601,7 @@ mod tests {
                 .expect("required Protocol validator gate");
             let receipt_file = NamedTempFile::new_in(temporary.path()).unwrap();
             fs::write(receipt_file.path(), &receipt).unwrap();
-            let protocol_root = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("protocol");
+            let protocol_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("protocol");
             let script = "import json,sys\n".to_owned()
                 + "sys.path.insert(0,sys.argv[1])\n"
                 + "from conformance import hub_sync\n"
