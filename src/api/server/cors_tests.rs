@@ -142,6 +142,104 @@ async fn cors_public_preflight_is_explicit_and_auth_failures_remain_readable() {
 }
 
 #[tokio::test]
+async fn cors_history_routes_share_the_drives_header_policy() {
+    let (_root, app) = app();
+    let vehicle = "11111111-1111-4111-8111-111111111111";
+    let admitted = [
+        format!("/v1/vehicles/{vehicle}/drives"),
+        format!("/v1/vehicles/{vehicle}/drives/7"),
+        format!("/v1/vehicles/{vehicle}/drives/7/positions"),
+        format!("/v1/vehicles/{vehicle}/charges"),
+        format!("/v1/vehicles/{vehicle}/charges/7"),
+        format!("/v1/vehicles/{vehicle}/charges/7/samples"),
+    ];
+    for path in &admitted {
+        // A preflight for GET with the basic headers is admitted, as on drives.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("OPTIONS")
+                    .uri(path)
+                    .header("Origin", "https://client.example")
+                    .header("Access-Control-Request-Method", "GET")
+                    .header(
+                        "Access-Control-Request-Headers",
+                        "authorization, if-none-match",
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NO_CONTENT, "{path}");
+        assert_eq!(response.headers()["access-control-allow-methods"], "GET");
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            "https://client.example"
+        );
+        // Headers outside the policy and other methods are refused.
+        for (method, headers) in [("GET", "range"), ("POST", "authorization")] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("OPTIONS")
+                        .uri(path)
+                        .header("Origin", "https://client.example")
+                        .header("Access-Control-Request-Method", method)
+                        .header("Access-Control-Request-Headers", headers)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::FORBIDDEN,
+                "{path} {method} {headers}"
+            );
+        }
+        // An origin the owner did not list is refused; a native request is not.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .header("Origin", "https://evil.example")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN, "{path}");
+        let response = app
+            .clone()
+            .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        // The admitted origin reaches the handler, which answers 401 readably.
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(path)
+                    .header("Origin", "https://client.example")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{path}");
+        assert_eq!(
+            response.headers()["access-control-allow-origin"],
+            "https://client.example"
+        );
+    }
+}
+
+#[tokio::test]
 async fn cors_rejects_unlisted_origins_methods_and_headers_before_handlers() {
     let (_root, app) = app();
     for (origin, method, headers) in [

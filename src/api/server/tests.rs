@@ -60,6 +60,9 @@ mod hub_sync;
 #[path = "tests/catalogue.rs"]
 mod catalogue;
 
+#[path = "tests/public_history.rs"]
+mod public_history;
+
 #[tokio::test]
 async fn physical_pack_verification_buffers_immutable_bytes_from_same_open_descriptor() {
     let temporary = crate::private_tempdir().expect("temporary directory");
@@ -2441,9 +2444,10 @@ async fn public_current_profile_errors_have_empty_bodies() {
     let store = HubStore::initialize(temp.path()).expect("store");
     let app = public_query_router(store, 46);
 
+    // The nil UUID is an unknown vehicle like any other, never a 503.
     for (vehicle_id, expected_status) in [
         (Uuid::new_v4(), StatusCode::NOT_FOUND),
-        (Uuid::nil(), StatusCode::SERVICE_UNAVAILABLE),
+        (Uuid::nil(), StatusCode::NOT_FOUND),
     ] {
         let response = app
             .clone()
@@ -2733,13 +2737,28 @@ async fn public_drive_query_rejects_invalid_scope_and_preserves_device_auth() {
         .expect("unauthorized drive query");
     assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
 
+    let source = store
+        .register_source(
+            &SourceDescriptor::new("owner_api", "public-drive-invalid-scope"),
+            1_000,
+        )
+        .expect("source");
+    let vehicle = store
+        .register_vehicle(
+            &VehicleDescriptor::new(source.source_id, "9").with_tesla_identity(Some(9), None),
+            1_000,
+        )
+        .expect("vehicle");
+    mark_vehicle_published(&store, vehicle.vehicle_id);
     let local = public_query_router(store, 47);
+    // A known, published vehicle: bad query values are reported.
     let invalid_range = local
         .clone()
         .oneshot(
             Request::builder()
                 .uri(format!(
-                    "/v1/vehicles/{unknown_vehicle}/drives?from_ms=2000&to_ms=2000"
+                    "/v1/vehicles/{}/drives?from_ms=2000&to_ms=2000",
+                    vehicle.vehicle_id
                 ))
                 .body(Body::empty())
                 .unwrap(),
@@ -2756,7 +2775,10 @@ async fn public_drive_query_rejects_invalid_scope_and_preserves_device_auth() {
         .clone()
         .oneshot(
             Request::builder()
-                .uri(format!("/v1/vehicles/{unknown_vehicle}/drives?limit=501"))
+                .uri(format!(
+                    "/v1/vehicles/{}/drives?limit=501",
+                    vehicle.vehicle_id
+                ))
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -2768,20 +2790,25 @@ async fn public_drive_query_rejects_invalid_scope_and_preserves_device_auth() {
         "invalid_limit"
     );
 
-    let unknown = local
-        .oneshot(
-            Request::builder()
-                .uri(format!("/v1/vehicles/{unknown_vehicle}/drives"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("unknown vehicle response");
-    assert_eq!(unknown.status(), StatusCode::NOT_FOUND);
-    assert_eq!(
-        response_json(unknown).await["error"]["code"],
-        "vehicle_not_found"
-    );
+    // An unknown vehicle is 404 whatever the query says: the vehicle is checked
+    // before the query is read (deviation 25).
+    for query in ["", "?from_ms=2000&to_ms=2000", "?limit=501", "?limit=abc"] {
+        let unknown = local
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/v1/vehicles/{unknown_vehicle}/drives{query}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("unknown vehicle response");
+        assert_eq!(unknown.status(), StatusCode::NOT_FOUND, "query {query:?}");
+        assert_eq!(
+            response_json(unknown).await["error"]["code"],
+            "vehicle_not_found"
+        );
+    }
 }
 
 #[tokio::test]

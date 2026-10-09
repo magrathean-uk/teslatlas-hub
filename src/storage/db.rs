@@ -84,12 +84,62 @@ const OBSERVATIONS_AFTER_ID_SQL: &str = "SELECT observation_id, source_id, vehic
      ORDER BY observation_id ASC LIMIT ?3";
 const PUBLIC_DRIVES_PAGE_SQL: &str = "SELECT drive_id, drive_json FROM materialised_drives
      WHERE vehicle_id = ?1
+       AND json_extract(drive_json, '$.end_date_ms') IS NOT NULL
        AND CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER) >= ?2
        AND CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER) < ?3
        AND (CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER), drive_id) < (?4, ?5)
      ORDER BY CAST(json_extract(drive_json, '$.start_date_ms') AS INTEGER) DESC,
               drive_id DESC
      LIMIT ?6";
+/// One closed drive of one vehicle. A drive without an end date is not served.
+const PUBLIC_DRIVE_ITEM_SQL: &str = "SELECT drive_id, drive_json FROM materialised_drives
+     WHERE vehicle_id = ?1 AND drive_id = ?2
+       AND json_extract(drive_json, '$.end_date_ms') IS NOT NULL";
+/// A drive's positions in `(date_ms, position_id)` order inside a half-open
+/// window, joined to the terrain lookup record by its primary key. The drive's
+/// rows come from `materialised_positions_drive`; the order is sorted in a
+/// TEMP B-TREE, which is bounded by one drive's positions.
+const PUBLIC_POSITIONS_PAGE_SQL: &str = "SELECT p.position_id, p.drive_id, p.position_json,
+            t.status, t.dataset_source, t.dataset_version, t.tile_name
+     FROM materialised_positions p
+     LEFT JOIN terrain_elevation_provenance t
+            ON t.vehicle_id = p.vehicle_id AND t.position_id = p.position_id
+     WHERE p.vehicle_id = ?1 AND p.drive_id = ?2
+       AND CAST(json_extract(p.position_json, '$.date_ms') AS INTEGER) >= ?3
+       AND CAST(json_extract(p.position_json, '$.date_ms') AS INTEGER) < ?4
+       AND (CAST(json_extract(p.position_json, '$.date_ms') AS INTEGER), p.position_id) > (?5, ?6)
+     ORDER BY CAST(json_extract(p.position_json, '$.date_ms') AS INTEGER) ASC,
+              p.position_id ASC
+     LIMIT ?7";
+/// Closed charge sessions of one vehicle, newest first inside a half-open
+/// window on the start date. There is no vehicle-time index for charges: the
+/// plan is a bounded scan of one vehicle's charges (the primary-key prefix)
+/// with a TEMP B-TREE sort, accepted because a vehicle has few hundred
+/// sessions. An expression index would need a schema migration.
+const PUBLIC_CHARGES_PAGE_SQL: &str = "SELECT charge_id, charge_json FROM materialised_charges
+     WHERE vehicle_id = ?1
+       AND json_extract(charge_json, '$.end_date_ms') IS NOT NULL
+       AND CAST(json_extract(charge_json, '$.start_date_ms') AS INTEGER) >= ?2
+       AND CAST(json_extract(charge_json, '$.start_date_ms') AS INTEGER) < ?3
+       AND (CAST(json_extract(charge_json, '$.start_date_ms') AS INTEGER), charge_id) < (?4, ?5)
+     ORDER BY CAST(json_extract(charge_json, '$.start_date_ms') AS INTEGER) DESC,
+              charge_id DESC
+     LIMIT ?6";
+/// One closed charge session of one vehicle.
+const PUBLIC_CHARGE_ITEM_SQL: &str = "SELECT charge_id, charge_json FROM materialised_charges
+     WHERE vehicle_id = ?1 AND charge_id = ?2
+       AND json_extract(charge_json, '$.end_date_ms') IS NOT NULL";
+/// A charge's samples in `(timestamp_ms, sample_id)` order inside a half-open
+/// window. The charge's rows come from index `materialised_charge_samples_charge`;
+/// the order is sorted in a TEMP B-TREE, which is bounded by one charge's samples.
+const PUBLIC_CHARGE_SAMPLES_PAGE_SQL: &str = "SELECT sample_id, charge_id, sample_json
+     FROM materialised_charge_samples
+     WHERE vehicle_id = ?1 AND charge_id = ?2
+       AND CAST(json_extract(sample_json, '$.timestamp_ms') AS INTEGER) >= ?3
+       AND CAST(json_extract(sample_json, '$.timestamp_ms') AS INTEGER) < ?4
+       AND (CAST(json_extract(sample_json, '$.timestamp_ms') AS INTEGER), sample_id) > (?5, ?6)
+     ORDER BY CAST(json_extract(sample_json, '$.timestamp_ms') AS INTEGER) ASC, sample_id ASC
+     LIMIT ?7";
 /// Request-ledger reads are metadata-only and bounded independently from raw
 /// observation reads so proof commands cannot accidentally load an unbounded
 /// audit history into memory.

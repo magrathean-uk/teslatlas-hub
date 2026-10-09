@@ -377,6 +377,10 @@ pub enum StoreError {
     InvalidDriveProjectionIdentity,
     #[error("drive position page limit {0} is invalid")]
     InvalidDrivePositionPageLimit(u32),
+    #[error("public page query is invalid: {0}")]
+    InvalidPublicPageQuery(&'static str),
+    #[error("materialised {0} identity differs from its catalogue key")]
+    InvalidPublicProjectionIdentity(&'static str),
     #[error("charge id must be positive")]
     InvalidChargeId,
     #[error("charge cost must be a finite nonnegative value")]

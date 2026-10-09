@@ -95,9 +95,35 @@ fn route_policy(path: &str) -> Option<RoutePolicy> {
             method: "POST",
             request_headers: BASIC_REQUEST_HEADERS,
         }),
-        ["v1", "vehicles", vehicle_id, "current" | "drives"] if !vehicle_id.is_empty() => {
-            Some(get(BASIC_REQUEST_HEADERS))
-        }
+        [
+            "v1",
+            "vehicles",
+            vehicle_id,
+            "current" | "drives" | "charges",
+        ] if !vehicle_id.is_empty() => Some(get(BASIC_REQUEST_HEADERS)),
+        [
+            "v1",
+            "vehicles",
+            vehicle_id,
+            "drives" | "charges",
+            session_id,
+        ] if !vehicle_id.is_empty() && !session_id.is_empty() => Some(get(BASIC_REQUEST_HEADERS)),
+        [
+            "v1",
+            "vehicles",
+            vehicle_id,
+            "drives",
+            session_id,
+            "positions",
+        ]
+        | [
+            "v1",
+            "vehicles",
+            vehicle_id,
+            "charges",
+            session_id,
+            "samples",
+        ] if !vehicle_id.is_empty() && !session_id.is_empty() => Some(get(BASIC_REQUEST_HEADERS)),
         ["v1", "vehicles", vehicle_id, "sync", "manifest" | "noop"] if !vehicle_id.is_empty() => {
             Some(get(SYNC_REQUEST_HEADERS))
         }

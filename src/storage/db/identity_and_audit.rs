@@ -461,6 +461,27 @@ impl HubStore {
             .map_err(StoreError::Query)
     }
 
+    /// Whether a vehicle is visible on the public history routes: active (not
+    /// retired) AND published (it has a sync manifest). This is the predicate
+    /// of `published_vehicles` for one vehicle. Nil is a caller error here;
+    /// the HTTP layer answers it as an unknown vehicle before asking.
+    pub fn vehicle_is_published_and_active(&self, vehicle_id: Uuid) -> Result<bool, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let connection = self.open_read_only_connection()?;
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM vehicles
+                                WHERE vehicle_id = ?1 AND retired_at_ms IS NULL
+                                  AND EXISTS (SELECT 1 FROM sync_manifests
+                                              WHERE sync_manifests.vehicle_id = vehicles.vehicle_id))",
+                params![vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)
+    }
+
     /// Idempotently retire one exact UUID without deleting any catalogue data.
     pub fn retire_vehicle(&self, vehicle_id: Uuid, retired_at_ms: i64) -> Result<bool, StoreError> {
         validate_timestamp("vehicle retired_at_ms", retired_at_ms)?;

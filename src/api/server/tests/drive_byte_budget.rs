@@ -34,17 +34,10 @@ const BUDGET: usize = 1_048_576;
 
 #[test]
 fn empty_and_unservable_single_drive_pages_are_bounded() {
-    use super::super::bounded_public_drive_page;
-    use crate::api::public_query::{DriveQuery, PublicDrive};
-    let key = CursorKey::from_bytes([61; 32]);
+    use crate::api::public_query::{PublicDrive, bounded_public_page};
     let vehicle = Uuid::new_v4();
-    let query = DriveQuery {
-        from_ms: 0,
-        to_ms: i64::MAX,
-        limit: 500,
-        after: None,
-    };
-    let empty = bounded_public_drive_page(Vec::new(), false, query, &key, vehicle)
+    let cursor = |_: (i64, i64)| "cursor".to_owned();
+    let empty = bounded_public_page(Vec::<PublicDrive>::new(), false, cursor)
         .unwrap()
         .unwrap();
     assert!(empty.items.is_empty());
@@ -54,12 +47,10 @@ fn empty_and_unservable_single_drive_pages_are_bounded() {
     }))
     .unwrap();
     assert!(
-        bounded_public_drive_page(
+        bounded_public_page(
             vec![PublicDrive::from_projection(vehicle, drive)],
             false,
-            query,
-            &key,
-            vehicle
+            cursor
         )
         .unwrap()
         .is_none()

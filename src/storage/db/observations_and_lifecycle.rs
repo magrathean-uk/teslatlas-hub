@@ -872,7 +872,8 @@ impl HubStore {
 
     /// One bounded newest-first page of completed drives in a half-open UTC
     /// millisecond range. The extra row lets the HTTP layer issue a cursor
-    /// without a second count query.
+    /// without a second count query. The caller has already checked that the
+    /// vehicle is active and published (`vehicle_is_published_and_active`).
     pub fn materialised_drives_page(
         &self,
         vehicle_id: Uuid,
@@ -898,22 +899,6 @@ impl HubStore {
         }
         let (before_start_ms, before_drive_id) = before.unwrap_or((i64::MAX, i64::MAX));
         let connection = self.open_read_only_connection()?;
-        let exists = connection
-            .query_row(
-                "SELECT 1 FROM vehicles
-                 WHERE vehicle_id = ?1
-                   AND EXISTS (
-                       SELECT 1 FROM sync_manifests
-                       WHERE sync_manifests.vehicle_id = vehicles.vehicle_id
-                   )",
-                params![vehicle_id.to_string()],
-                |_| Ok(()),
-            )
-            .optional()
-            .map_err(StoreError::Query)?;
-        if exists.is_none() {
-            return Err(StoreError::UnknownVehicle(vehicle_id));
-        }
         let mut statement = connection
             .prepare(PUBLIC_DRIVES_PAGE_SQL)
             .map_err(StoreError::Query)?;
@@ -989,6 +974,262 @@ impl HubStore {
                 value.map_err(StoreError::Query).and_then(|value| {
                     serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)
                 })
+            })
+            .collect()
+    }
+
+    /// One closed drive of one vehicle for the public read API. A drive
+    /// without an end date is not served and reads as absent. Unlike
+    /// `materialised_drive_for_vehicle` this checks the JSON identity.
+    pub fn materialised_closed_drive_for_vehicle(
+        &self,
+        vehicle_id: Uuid,
+        drive_id: i64,
+    ) -> Result<Option<crate::hub_pack::ProjectionDrive>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if drive_id <= 0 {
+            return Err(StoreError::InvalidDriveId);
+        }
+        let connection = self.open_read_only_connection()?;
+        connection
+            .query_row(
+                PUBLIC_DRIVE_ITEM_SQL,
+                params![vehicle_id.to_string(), drive_id],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(StoreError::Query)?
+            .map(|(stored_drive_id, value)| {
+                let drive: crate::hub_pack::ProjectionDrive =
+                    serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)?;
+                if drive.id != stored_drive_id {
+                    return Err(StoreError::InvalidDriveProjectionIdentity);
+                }
+                Ok(drive)
+            })
+            .transpose()
+    }
+
+    /// One bounded page of a drive's positions for the public read API, in
+    /// `(date_ms, id)` order inside the half-open window `[from_ms, to_ms)`,
+    /// after the keyset `after`. The caller looks the parent drive up first.
+    /// Additive: `drive_positions_page` and the GPX export are unchanged.
+    pub fn drive_positions_window_page(
+        &self,
+        vehicle_id: Uuid,
+        drive_id: i64,
+        from_ms: i64,
+        to_ms: i64,
+        after: Option<(i64, i64)>,
+        limit: u32,
+    ) -> Result<Vec<PublicPositionRow>, StoreError> {
+        const MAXIMUM_FETCH: u32 = 2049;
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if drive_id <= 0 {
+            return Err(StoreError::InvalidDriveId);
+        }
+        let (after_date_ms, after_id) =
+            validate_public_page_arguments(from_ms, to_ms, after, limit, MAXIMUM_FETCH, (-1, 0))?;
+        let connection = self.open_read_only_connection()?;
+        let mut statement = connection
+            .prepare(PUBLIC_POSITIONS_PAGE_SQL)
+            .map_err(StoreError::Query)?;
+        statement
+            .query_map(
+                params![
+                    vehicle_id.to_string(),
+                    drive_id,
+                    from_ms,
+                    to_ms,
+                    after_date_ms,
+                    after_id,
+                    i64::from(limit)
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<String>>(3)?,
+                        row.get::<_, Option<String>>(4)?,
+                        row.get::<_, Option<String>>(5)?,
+                        row.get::<_, Option<String>>(6)?,
+                    ))
+                },
+            )
+            .map_err(StoreError::Query)?
+            .map(|row| {
+                let (stored_position_id, stored_drive_id, value, status, dataset, version, tile) =
+                    row.map_err(StoreError::Query)?;
+                let position: crate::hub_pack::ProjectionPosition =
+                    serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)?;
+                if position.id != stored_position_id
+                    || stored_drive_id != drive_id
+                    || position.drive_id != Some(drive_id)
+                {
+                    return Err(StoreError::InvalidPublicProjectionIdentity("position"));
+                }
+                Ok(PublicPositionRow {
+                    position,
+                    terrain: (status.as_deref() == Some("success")).then_some(
+                        PositionTerrainLookup {
+                            dataset,
+                            dataset_version: version,
+                            tile,
+                        },
+                    ),
+                })
+            })
+            .collect()
+    }
+
+    /// One closed charge session of one vehicle for the public read API. A
+    /// session without an end date is not served and reads as absent.
+    pub fn materialised_charge_for_vehicle(
+        &self,
+        vehicle_id: Uuid,
+        charge_id: i64,
+    ) -> Result<Option<crate::hub_pack::ProjectionCharge>, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if charge_id <= 0 {
+            return Err(StoreError::InvalidChargeId);
+        }
+        let connection = self.open_read_only_connection()?;
+        connection
+            .query_row(
+                PUBLIC_CHARGE_ITEM_SQL,
+                params![vehicle_id.to_string(), charge_id],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .optional()
+            .map_err(StoreError::Query)?
+            .map(|(stored_charge_id, value)| {
+                let charge: crate::hub_pack::ProjectionCharge =
+                    serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)?;
+                if charge.id != stored_charge_id {
+                    return Err(StoreError::InvalidPublicProjectionIdentity("charge"));
+                }
+                Ok(charge)
+            })
+            .transpose()
+    }
+
+    /// One bounded newest-first page of closed charge sessions inside the
+    /// half-open window `[from_ms, to_ms)` on the start date. The extra row
+    /// lets the HTTP layer issue a cursor without a second count query. The
+    /// caller has already checked that the vehicle is active and published.
+    pub fn materialised_charges_page(
+        &self,
+        vehicle_id: Uuid,
+        from_ms: i64,
+        to_ms: i64,
+        before: Option<(i64, i64)>,
+        limit: u32,
+    ) -> Result<Vec<crate::hub_pack::ProjectionCharge>, StoreError> {
+        const MAXIMUM_FETCH: u32 = 501;
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let (before_start_ms, before_charge_id) = validate_public_page_arguments(
+            from_ms,
+            to_ms,
+            before,
+            limit,
+            MAXIMUM_FETCH,
+            (i64::MAX, i64::MAX),
+        )?;
+        let connection = self.open_read_only_connection()?;
+        let mut statement = connection
+            .prepare(PUBLIC_CHARGES_PAGE_SQL)
+            .map_err(StoreError::Query)?;
+        statement
+            .query_map(
+                params![
+                    vehicle_id.to_string(),
+                    from_ms,
+                    to_ms,
+                    before_start_ms,
+                    before_charge_id,
+                    i64::from(limit)
+                ],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .map_err(StoreError::Query)?
+            .map(|row| {
+                let (stored_charge_id, value) = row.map_err(StoreError::Query)?;
+                let charge: crate::hub_pack::ProjectionCharge =
+                    serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)?;
+                if charge.id != stored_charge_id {
+                    return Err(StoreError::InvalidPublicProjectionIdentity("charge"));
+                }
+                Ok(charge)
+            })
+            .collect()
+    }
+
+    /// One bounded page of a charge's samples for the public read API, in
+    /// `(timestamp_ms, id)` order inside the half-open window `[from_ms, to_ms)`,
+    /// after the keyset `after`. The caller looks the parent charge up first.
+    pub fn charge_samples_page(
+        &self,
+        vehicle_id: Uuid,
+        charge_id: i64,
+        from_ms: i64,
+        to_ms: i64,
+        after: Option<(i64, i64)>,
+        limit: u32,
+    ) -> Result<Vec<crate::hub_pack::ProjectionChargeSample>, StoreError> {
+        const MAXIMUM_FETCH: u32 = 2049;
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        if charge_id <= 0 {
+            return Err(StoreError::InvalidChargeId);
+        }
+        let (after_timestamp_ms, after_id) =
+            validate_public_page_arguments(from_ms, to_ms, after, limit, MAXIMUM_FETCH, (-1, 0))?;
+        let connection = self.open_read_only_connection()?;
+        let mut statement = connection
+            .prepare(PUBLIC_CHARGE_SAMPLES_PAGE_SQL)
+            .map_err(StoreError::Query)?;
+        statement
+            .query_map(
+                params![
+                    vehicle_id.to_string(),
+                    charge_id,
+                    from_ms,
+                    to_ms,
+                    after_timestamp_ms,
+                    after_id,
+                    i64::from(limit)
+                ],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .map_err(StoreError::Query)?
+            .map(|row| {
+                let (stored_sample_id, stored_charge_id, value) =
+                    row.map_err(StoreError::Query)?;
+                let sample: crate::hub_pack::ProjectionChargeSample =
+                    serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)?;
+                if sample.id != stored_sample_id
+                    || stored_charge_id != charge_id
+                    || sample.charge_process_id != charge_id
+                {
+                    return Err(StoreError::InvalidPublicProjectionIdentity("charge sample"));
+                }
+                Ok(sample)
             })
             .collect()
     }
@@ -1700,4 +1941,42 @@ impl HubStore {
             .map_err(|_| StoreError::InvalidLifecycleSession)?;
         Ok(Some(session))
     }
+}
+
+/// A drive position read for the public API with its recorded terrain lookup.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PublicPositionRow {
+    pub position: crate::hub_pack::ProjectionPosition,
+    /// The terrain lookup that succeeded for this position, if any.
+    pub terrain: Option<PositionTerrainLookup>,
+}
+
+/// What `terrain_elevation_provenance` records about a successful lookup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PositionTerrainLookup {
+    pub dataset: Option<String>,
+    pub dataset_version: Option<String>,
+    pub tile: Option<String>,
+}
+
+/// Shared argument validation of the public page queries. Returns the keyset
+/// to bind: the cursor's last keys, or `unbounded` for a first page.
+fn validate_public_page_arguments(
+    from_ms: i64,
+    to_ms: i64,
+    cursor: Option<(i64, i64)>,
+    limit: u32,
+    maximum_fetch: u32,
+    unbounded: (i64, i64),
+) -> Result<(i64, i64), StoreError> {
+    if from_ms < 0 || to_ms < 0 || from_ms >= to_ms {
+        return Err(StoreError::InvalidPublicPageQuery("time range"));
+    }
+    if limit == 0 || limit > maximum_fetch {
+        return Err(StoreError::InvalidPublicPageQuery("limit"));
+    }
+    if cursor.is_some_and(|(key_a, key_b)| key_a < from_ms || key_a >= to_ms || key_b <= 0) {
+        return Err(StoreError::InvalidPublicPageQuery("cursor"));
+    }
+    Ok(cursor.unwrap_or(unbounded))
 }

@@ -16,7 +16,7 @@ use axum::{
     Json, Router,
     body::{Body, Bytes},
     extract::{DefaultBodyLimit, Path, Query, State, rejection::QueryRejection},
-    http::{HeaderMap, HeaderValue, Request, StatusCode, header},
+    http::{HeaderMap, HeaderValue, Request, StatusCode, Uri, header},
     middleware::Next,
     response::{IntoResponse, Response},
     routing::{get, post},
@@ -35,7 +35,10 @@ use tower_http::{
 };
 use uuid::Uuid;
 
-use super::public_query::{DriveQuery, DriveQueryError, DriveQueryParameters, PublicDrive};
+use super::public_query::{
+    MAX_PUBLIC_PAGE_BYTES, PageItem, PageKind, PageQuery, PageQueryError, PageQueryParameters,
+    PublicCharge, PublicChargeSample, PublicDrive, PublicPage, PublicPosition, bounded_public_page,
+};
 
 #[path = "server/browser_cors.rs"]
 mod browser_cors;
@@ -43,6 +46,9 @@ use browser_cors::CorsPolicy;
 
 #[path = "server/hub_sync_v1.rs"]
 mod hub_sync_v1;
+
+#[path = "server/history_routes.rs"]
+mod history_routes;
 
 #[cfg(unix)]
 use crate::config::HubConfig;
@@ -730,7 +736,30 @@ fn router_with_access_telemetry_and_http(
         .route("/v1/device/rotate", post(rotate_device))
         .route("/v1/vehicles", get(vehicles))
         .route("/v1/vehicles/{vehicle_id}/current", get(current_vehicle))
-        .route("/v1/vehicles/{vehicle_id}/drives", get(drives))
+        .route(
+            "/v1/vehicles/{vehicle_id}/drives",
+            get(history_routes::drives),
+        )
+        .route(
+            "/v1/vehicles/{vehicle_id}/drives/{drive_id}",
+            get(history_routes::drive),
+        )
+        .route(
+            "/v1/vehicles/{vehicle_id}/drives/{drive_id}/positions",
+            get(history_routes::drive_positions),
+        )
+        .route(
+            "/v1/vehicles/{vehicle_id}/charges",
+            get(history_routes::charges),
+        )
+        .route(
+            "/v1/vehicles/{vehicle_id}/charges/{charge_id}",
+            get(history_routes::charge),
+        )
+        .route(
+            "/v1/vehicles/{vehicle_id}/charges/{charge_id}/samples",
+            get(history_routes::charge_samples),
+        )
         .route(
             "/v1/vehicles/{vehicle_id}/sync/signing-keys",
             get(signing_keys),
@@ -1314,15 +1343,12 @@ fn require_active_vehicle(state: &AppState, vehicle_id: Uuid) -> Result<(), Resp
     }
 }
 
-async fn current_vehicle(
-    State(state): State<AppState>,
-    Path(vehicle_id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
+async fn current_vehicle(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
     if let Err(status) = require_authorized_device(&state, &headers) {
         return device_auth_reject(status);
     }
-    let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
+    // The nil UUID is a well-formed id no vehicle can have: an unknown vehicle.
+    let Some(vehicle_id) = path_vehicle_id(&uri) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     if let Err(response) = require_active_vehicle(&state, vehicle_id) {
@@ -1380,171 +1406,93 @@ async fn current_vehicle(
         .into_response()
 }
 
-async fn drives(
-    State(state): State<AppState>,
-    Path(vehicle_id): Path<String>,
-    headers: HeaderMap,
-    parameters: Result<Query<DriveQueryParameters>, QueryRejection>,
-) -> Response {
-    if let Err(status) = require_authorized_device(&state, &headers) {
-        return device_auth_reject(status);
-    }
-    let Some(cursor_key) = state.cursor_key.as_deref() else {
-        return public_api_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "service_unavailable",
-            "drive history cursor integrity is unavailable",
-        );
-    };
-    let Some(vehicle_id) = Uuid::parse_str(&vehicle_id)
-        .ok()
-        .filter(|value| !value.is_nil())
-    else {
-        return public_api_error(
-            StatusCode::NOT_FOUND,
-            "vehicle_not_found",
-            "vehicle was not found",
-        );
-    };
-    let Query(parameters) = match parameters {
-        Ok(parameters) => parameters,
-        Err(_) => {
-            return public_api_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_query",
-                "query parameters are invalid",
-            );
-        }
-    };
-    let query = match DriveQuery::parse(cursor_key, vehicle_id, parameters) {
-        Ok(query) => query,
-        Err(DriveQueryError::TimeRange) => {
-            return public_api_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_time_range",
-                "from_ms must be nonnegative and earlier than to_ms",
-            );
-        }
-        Err(DriveQueryError::Limit) => {
-            return public_api_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_limit",
-                "limit must be between 1 and 500",
-            );
-        }
-        Err(DriveQueryError::Cursor) => {
-            return public_api_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_cursor",
-                "cursor is invalid for this vehicle and time range",
-            );
-        }
-    };
-    if let Err(response) = require_active_vehicle(&state, vehicle_id) {
-        return response;
-    }
-    let fetch_limit = query
-        .limit
-        .checked_add(1)
-        .expect("bounded drive page limit has one-row lookahead");
-    let mut items = match state.store.materialised_drives_page(
-        vehicle_id,
-        query.from_ms,
-        query.to_ms,
-        query.after,
-        fetch_limit,
-    ) {
-        Ok(items) => items,
-        Err(crate::db::StoreError::UnknownVehicle(_)) => {
-            return public_api_error(
-                StatusCode::NOT_FOUND,
-                "vehicle_not_found",
-                "vehicle was not found",
-            );
-        }
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot load public drive page");
-            return public_api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "service_unavailable",
-                "drive history is temporarily unavailable",
-            );
-        }
-    };
-    let has_more = items.len() > query.limit as usize;
-    if has_more {
-        items.truncate(query.limit as usize);
-    }
-    let items = items
-        .into_iter()
-        .map(|drive| PublicDrive::from_projection(vehicle_id, drive))
-        .collect();
-    let page = match bounded_public_drive_page(items, has_more, query, cursor_key, vehicle_id) {
-        Ok(Some(page)) => page,
-        Ok(None) => {
-            return public_api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "service_unavailable",
-                "a drive exceeds the response byte limit",
-            );
-        }
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot size public drive page");
-            return public_api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "service_unavailable",
-                "drive history is temporarily unavailable",
-            );
-        }
-    };
-    match public_json_response_with_etag(&headers, &page) {
-        Ok(response) => response,
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot serialize public drive page");
-            public_api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "service_unavailable",
-                "drive history is temporarily unavailable",
-            )
+/// Segment positions of `/v1/vehicles/{vehicle_id}/...` after the leading `/`:
+/// `v1`, `vehicles`, the vehicle id, the collection, then the drive or charge
+/// id. The router has already matched the route, so the shape is fixed.
+const VEHICLE_ID_SEGMENT: usize = 2;
+const SESSION_ID_SEGMENT: usize = 4;
+
+/// Percent-decode one raw path segment the way axum does (a `%` that does not
+/// start two hexadecimal digits stays literal). `None` when the decoded bytes
+/// are not UTF-8: such a segment is a malformed identifier, which the routes
+/// answer after authentication, never with a framework 400.
+fn decode_path_segment(raw: &str) -> Option<String> {
+    let bytes = raw.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        let hexadecimal_pair = (bytes[index] == b'%')
+            .then(|| bytes.get(index + 1..index + 3))
+            .flatten()
+            .and_then(|pair| {
+                let high = char::from(pair[0]).to_digit(16)?;
+                let low = char::from(pair[1]).to_digit(16)?;
+                u8::try_from(high * 16 + low).ok()
+            });
+        if let Some(byte) = hexadecimal_pair {
+            decoded.push(byte);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
         }
     }
+    String::from_utf8(decoded).ok()
 }
 
-const MAX_PUBLIC_DRIVE_PAGE_BYTES: usize = 1024 * 1024;
+/// One decoded path segment read from the raw request path. A two-parameter
+/// `Path<(String, String)>` loses both values when either segment is not
+/// UTF-8, so the vehicle id could not be checked before the drive or charge id.
+fn raw_path_segment(uri: &Uri, index: usize) -> Option<String> {
+    decode_path_segment(uri.path().strip_prefix('/')?.split('/').nth(index)?)
+}
 
-/// Size the exact serialized rows and envelope once per candidate. The cursor
-/// always names the last emitted row, including when bytes shorten a row page.
-fn bounded_public_drive_page(
-    mut items: Vec<PublicDrive>,
-    fetched_has_more: bool,
-    query: DriveQuery,
-    cursor_key: &CursorKey,
-    vehicle_id: Uuid,
-) -> Result<Option<PublicDrivePage>, serde_json::Error> {
-    let mut row_bytes = 0;
-    let mut retained = 0;
-    let mut next_cursor = None;
-    for (index, item) in items.iter().enumerate() {
-        let candidate_bytes = row_bytes + usize::from(index > 0) + serde_json::to_vec(item)?.len();
-        let cursor = (fetched_has_more || index + 1 < items.len())
-            .then(|| query.next_cursor(cursor_key, vehicle_id, (item.start_date_ms, item.id)));
-        let envelope_bytes = serde_json::to_vec(&PublicDrivePage {
-            items: Vec::new(),
-            next_cursor: cursor.clone(),
-        })?
-        .len();
-        if candidate_bytes + envelope_bytes > MAX_PUBLIC_DRIVE_PAGE_BYTES {
-            break;
-        }
-        row_bytes = candidate_bytes;
-        retained = index + 1;
-        next_cursor = cursor;
-    }
-    if retained == 0 && !items.is_empty() {
-        return Ok(None);
-    }
-    items.truncate(retained);
-    Ok(Some(PublicDrivePage { items, next_cursor }))
+/// The vehicle of a vehicle-scoped path, or `None` for a malformed id, an id
+/// that is not UTF-8 and the nil UUID, all of which are unknown vehicles.
+fn path_vehicle_id(uri: &Uri) -> Option<Uuid> {
+    Uuid::parse_str(&raw_path_segment(uri, VEHICLE_ID_SEGMENT)?)
+        .ok()
+        .filter(|value| !value.is_nil())
+}
+
+/// The drive or charge id of a nested path: a signed 64-bit integer >= 1.
+fn path_session_id(uri: &Uri) -> Option<i64> {
+    raw_path_segment(uri, SESSION_ID_SEGMENT)?
+        .parse::<i64>()
+        .ok()
+        .filter(|value| *value >= 1)
+}
+
+fn vehicle_not_found() -> Response {
+    public_api_error(
+        StatusCode::NOT_FOUND,
+        "vehicle_not_found",
+        "vehicle was not found",
+    )
+}
+
+fn drive_not_found() -> Response {
+    public_api_error(
+        StatusCode::NOT_FOUND,
+        "drive_not_found",
+        "drive was not found",
+    )
+}
+
+fn charge_not_found() -> Response {
+    public_api_error(
+        StatusCode::NOT_FOUND,
+        "charge_not_found",
+        "charge was not found",
+    )
+}
+
+fn service_unavailable(message: &'static str) -> Response {
+    public_api_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "service_unavailable",
+        message,
+    )
 }
 
 fn public_json_response_with_etag<T: Serialize>(
@@ -2598,12 +2546,6 @@ impl std::fmt::Debug for PairingSecretInput {
 #[serde(rename_all = "camelCase")]
 struct VehicleList {
     vehicles: Vec<PublishedVehicle>,
-}
-
-#[derive(Serialize)]
-struct PublicDrivePage {
-    items: Vec<PublicDrive>,
-    next_cursor: Option<String>,
 }
 
 #[derive(Serialize)]
