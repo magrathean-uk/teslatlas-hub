@@ -40,6 +40,156 @@ expect_failure() {
   fi
 }
 
+expect_failure_with() {
+  pattern=$1
+  shift
+  if "$@" >"$TMP/expect-failure.out" 2>&1; then
+    printf '%s\n' "expected failure: $*" >&2
+    exit 1
+  fi
+  if ! grep -Eq "$pattern" "$TMP/expect-failure.out"; then
+    printf '%s\n' "failed for the wrong reason (wanted $pattern): $*" >&2
+    cat "$TMP/expect-failure.out" >&2
+    exit 1
+  fi
+}
+
+# Workspace member parsing, run with the current and the system interpreter so
+# the new code stays compatible with the oldest Python the gate supports.
+member_parser_units() {
+  PYTHONDONTWRITEBYTECODE=1 "$1" - "$HELPER" "$TMP" <<'PY'
+import importlib.util
+from pathlib import Path
+import sys
+import tempfile
+
+spec = importlib.util.spec_from_file_location("rust_source_members", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+tmp = Path(sys.argv[2])
+PACKAGE = b'[package]\nname = "f"\nversion = "1.0.0"\n'
+
+
+def rejected(function, *arguments):
+    try:
+        function(*arguments)
+    except module.GateError:
+        return
+    raise AssertionError(f"accepted: {function.__name__}{arguments!r}")
+
+
+members = module.parse_workspace_members
+assert members(PACKAGE) == []
+assert members(PACKAGE + b'\n[workspace]\nmembers = ["compute"]\n') == ["compute"]
+assert members(
+    PACKAGE + b'\n[workspace]\nresolver = "3"\nmembers = [ "a", "b/c", ]  # note\n'
+) == ["a", "b/c"]
+assert members(PACKAGE + b'\n[workspace]\nmembers = []\n') == []
+assert members(PACKAGE + b'\n[workspace]\nresolver = "3"\n') == []
+assert members(PACKAGE + b'\n[workspace.dependencies]\nitoa = "1"\n') == []
+assert members(PACKAGE + b'\n[package.metadata]\nmembers = ["x"]\n') == []
+for invalid in (
+    b'[workspace]\nmembers = [\n  "a",\n]\n',
+    b'[workspace]\nmembers = [1]\n',
+    b'[workspace]\nmembers = ["a" "b"]\n',
+    b'[workspace]\nmembers = ["a",,]\n',
+    b'[workspace]\nmembers = "a"\n',
+    b'[workspace]\nmembers = { a = 1 }\n',
+    b'[workspace]\nmembers.extra = ["a"]\n',
+    b'[workspace]\nmembers = ["a"]\nmembers = ["b"]\n',
+    b'[workspace]\nmembers = ["a"]\n[workspace]\n',
+    b'[[workspace]]\nmembers = ["a"]\n',
+    b'[workspace]\nmembers = ["a"]',
+    b'[workspace]\n"members" = ["a"]\n',
+    b"[workspace]\n'members' = [\"a\"]\n",
+    b'[workspace]\n"members".extra = ["a"]\n',
+    b'["workspace"]\nmembers = ["a"]\n',
+    b"['workspace']\nmembers = [\"a\"]\n",
+    b'[[ "workspace" ]]\nmembers = ["a"]\n',
+):
+    rejected(members, invalid)
+
+for plain in ("compute", "crates/a-b_c.d", "a..b", "_x"):
+    assert module.MEMBER_RE.fullmatch(plain), plain
+for unsafe in (
+    "", ".", "..", "../x", "/abs", "a/", "a//b", "a/./b", "a/../b", "a/*", "a?", "a[1]",
+    ".hidden", "a\\b", "a b", "a\n",
+):
+    assert module.MEMBER_RE.fullmatch(unsafe) is None, repr(unsafe)
+
+for invalid_member in (
+    b'[package]\nname = "m"\nversion.workspace = true\n',
+    b'[package]\nname = "m"\nversion = { workspace = true }\n',
+    b'[package]\nname = "m"\n',
+    b'[workspace]\nmembers = []\n',
+    b'[package]\nname = "m"\nversion = "1.0.0"\n[package]\n',
+):
+    rejected(module.parse_manifest_identity, invalid_member, "workspace member m", "m/Cargo.toml")
+    rejected(module.parse_root_manifest_identity, invalid_member)
+try:
+    module.parse_manifest_identity(
+        b'[package]\nname = "m"\nversion = { workspace = true }\n',
+        "workspace member m",
+        "m/Cargo.toml",
+    )
+except module.GateError as exc:
+    assert "m/Cargo.toml" in str(exc), exc
+else:
+    raise AssertionError("accepted: workspace member version with workspace = true")
+assert module.parse_manifest_identity(
+    b'[package]\nname = "m"\nversion = "0.2.0"\n', "workspace member m", "m/Cargo.toml"
+) == ("m", "0.2.0")
+
+repo = Path(tempfile.mkdtemp(prefix="member-units-", dir=str(tmp)))
+(repo / "m").mkdir()
+(repo / "n").mkdir()
+(repo / "m" / "Cargo.toml").write_bytes(b'[package]\nname = "m"\nversion = "0.2.0"\n')
+(repo / "n" / "Cargo.toml").write_bytes(b'[package]\nname = "n"\nversion = "0.3.0"\n')
+(repo / "same").mkdir()
+(repo / "same" / "Cargo.toml").write_bytes(PACKAGE)
+
+
+def manifest(listed):
+    return PACKAGE + b'\n[workspace]\nmembers = [' + listed + b']\n'
+
+
+assert module.workspace_packages(repo, PACKAGE) == [("", ("f", "1.0.0"))]
+assert module.workspace_packages(repo, manifest(b'"m", "n"')) == [
+    ("", ("f", "1.0.0")), ("m", ("m", "0.2.0")), ("n", ("n", "0.3.0")),
+]
+for listed in (
+    b'"../m"', b'"/m"', b'"m/"', b'"m/*"', b'"."', b'"m", "m"', b'"missing"',
+    b'"same"',
+):
+    rejected(module.workspace_packages, repo, manifest(listed))
+
+# The scrubbed Cargo environment keeps the routed rustup home and toolchain:
+# without them the rustup proxy on PATH installs a toolchain under $HOME/.rustup.
+import os
+
+saved = {name: os.environ.pop(name, None) for name in ("RUSTUP_HOME", "RUSTUP_TOOLCHAIN")}
+try:
+    bare = module.cargo_environment(Path("/cargo-home"))
+    assert "RUSTUP_HOME" not in bare and "RUSTUP_TOOLCHAIN" not in bare, bare
+    os.environ["RUSTUP_HOME"] = "/routed/rustup"
+    os.environ["RUSTUP_TOOLCHAIN"] = "1.98.1"
+    routed = module.cargo_environment(Path("/cargo-home"))
+    assert routed["RUSTUP_HOME"] == "/routed/rustup", routed
+    assert routed["RUSTUP_TOOLCHAIN"] == "1.98.1", routed
+    assert routed["CARGO_HOME"] == "/cargo-home", routed
+finally:
+    for name, value in saved.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value
+PY
+}
+member_parser_units python3
+if [ -x /usr/bin/python3 ]; then
+  member_parser_units /usr/bin/python3
+fi
+
 mkdir -p "$TMP/repo/src"
 cat >"$TMP/repo/Cargo.toml" <<'EOF'
 [package]
@@ -168,7 +318,7 @@ mutate_archive() {
   destination=$1
   operation=$2
   cp -R "$TMP/evidence-a" "$destination"
-  python3 - "$HELPER" "$destination" "$operation" <<'PY'
+  PYTHONDONTWRITEBYTECODE=1 python3 - "$HELPER" "$destination" "$operation" <<'PY'
 import importlib.util
 import json
 import os
@@ -308,6 +458,213 @@ expect_failure python3 "$HELPER" \
   --cargo-home "$CARGO_HOME" \
   --bin rust-source-fixture \
   --output-dir "$TMP/path-source"
+
+# A listed [workspace] path member is Corresponding Source in the tagged tree: it
+# is accepted as a source-less lock package and is not vendored. The fixture
+# lives in its own directory because the case above mutates $TMP/repo.
+member_manifest() {
+  cat >"$1/Cargo.toml" <<EOF
+[package]
+name = "rust-source-member-fixture"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+
+[workspace]
+members = [$2]
+
+[[bin]]
+name = "rust-source-member-fixture"
+path = "src/main.rs"
+
+[dependencies]
+itoa = "=1.0.18"
+member-fixture = { path = "member" }
+EOF
+}
+mkdir -p "$TMP/member-repo/src" "$TMP/member-repo/member/src" "$TMP/outside"
+member_manifest "$TMP/member-repo" '"member"'
+cat >"$TMP/member-repo/member/Cargo.toml" <<'EOF'
+[package]
+name = "member-fixture"
+version = "0.2.0"
+edition = "2024"
+EOF
+printf '%s\n' 'pub fn value() -> u8 { 3 }' >"$TMP/member-repo/member/src/lib.rs"
+cat >"$TMP/member-repo/src/main.rs" <<'EOF'
+fn main() {
+    println!("{}", itoa::Buffer::new().format(member_fixture::value()));
+}
+EOF
+cat >"$TMP/outside/Cargo.toml" <<'EOF'
+[package]
+name = "outside-member"
+version = "0.4.0"
+edition = "2024"
+EOF
+(cd "$TMP/member-repo" && cargo generate-lockfile --offline)
+python3 "$HELPER" \
+  --repo "$TMP/member-repo" \
+  --cargo-home "$CARGO_HOME" \
+  --bin rust-source-member-fixture \
+  --output-dir "$TMP/member-evidence" >/dev/null
+CARGO_HOME="$TMP/unavailable-after-generation" \
+  python3 "$HELPER" --repo "$TMP/member-repo" --verify-dir "$TMP/member-evidence"
+if [ -x /usr/bin/python3 ]; then
+  CARGO_HOME="$TMP/unavailable-after-generation" \
+    PYTHONDONTWRITEBYTECODE=1 /usr/bin/python3 "$HELPER" \
+      --repo "$TMP/member-repo" --verify-dir "$TMP/member-evidence"
+fi
+python3 "$HELPER" --repo "$TMP/member-repo" --verify-dir "$TMP/member-evidence" --rebuild
+PYTHONDONTWRITEBYTECODE=1 python3 - "$HELPER" "$TMP/member-repo" "$TMP/member-evidence" <<'PY'
+import importlib.util
+import json
+from pathlib import Path
+import sys
+import tarfile
+
+helper, repo, evidence = (Path(value) for value in sys.argv[1:])
+spec = importlib.util.spec_from_file_location("rust_source_member", helper)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+_, registry, workspace = module.load_lock(repo)
+assert workspace == [("member-fixture", "0.2.0"), ("rust-source-member-fixture", "0.1.0")]
+assert [(item["name"], item["version"]) for item in registry] == [("itoa", "1.0.18")]
+inventory = json.loads((evidence / module.INVENTORY_NAME).read_text())
+assert inventory["dependency_count"] == 1
+assert [item["name"] for item in inventory["packages"]] == ["itoa"]
+with tarfile.open(evidence / module.ARCHIVE_NAME, "r:gz") as archive:
+    names = {member.name for member in archive}
+assert "vendor/itoa-1.0.18/.cargo-checksum.json" in names
+assert not any(
+    name.startswith(("vendor/member-fixture", "crate-archives/member-fixture")) for name in names
+)
+PY
+
+# The member directories and the lock must agree exactly. Each variant is
+# verified against the good evidence, so it fails inside load_lock, and the
+# message is checked so none of them can pass for another reason.
+mkdir "$TMP/member-repo/stray"
+cat >"$TMP/member-repo/stray/Cargo.toml" <<'EOF'
+[package]
+name = "stray-fixture"
+version = "0.3.0"
+edition = "2024"
+EOF
+MEMBER_PATHS='exactly the repository root package'
+PLAIN_MEMBER='not a plain relative directory'
+
+cp -R "$TMP/member-repo" "$TMP/member-implicit"
+member_manifest "$TMP/member-implicit" ''
+expect_failure_with "$MEMBER_PATHS" \
+  python3 "$HELPER" --repo "$TMP/member-implicit" --verify-dir "$TMP/member-evidence"
+
+cp -R "$TMP/member-repo" "$TMP/member-stray"
+member_manifest "$TMP/member-stray" '"member", "stray"'
+expect_failure_with "$MEMBER_PATHS" \
+  python3 "$HELPER" --repo "$TMP/member-stray" --verify-dir "$TMP/member-evidence"
+
+cp -R "$TMP/member-repo" "$TMP/member-ghost"
+chmod u+w "$TMP/member-ghost/Cargo.lock"
+printf '\n[[package]]\nname = "ghost"\nversion = "0.0.1"\n' >>"$TMP/member-ghost/Cargo.lock"
+expect_failure_with "$MEMBER_PATHS" \
+  python3 "$HELPER" --repo "$TMP/member-ghost" --verify-dir "$TMP/member-evidence"
+
+count=0
+for listed in '"../outside"' '"member/"' "\"$TMP/member-repo/member\"" '"member/*"' '"."' '"member", "member"'; do
+  count=$((count + 1))
+  cp -R "$TMP/member-repo" "$TMP/member-unsafe-$count"
+  member_manifest "$TMP/member-unsafe-$count" "$listed"
+  case "$listed" in
+    *'"member", "member"'*) pattern='listed twice' ;;
+    *) pattern=$PLAIN_MEMBER ;;
+  esac
+  expect_failure_with "$pattern" \
+    python3 "$HELPER" --repo "$TMP/member-unsafe-$count" --verify-dir "$TMP/member-evidence"
+done
+
+cp -R "$TMP/member-repo" "$TMP/member-symlink"
+mv "$TMP/member-symlink/member" "$TMP/member-symlink/member-real"
+ln -s member-real "$TMP/member-symlink/member"
+expect_failure_with 'symlink or non-directory' \
+  python3 "$HELPER" --repo "$TMP/member-symlink" --verify-dir "$TMP/member-evidence"
+
+cp -R "$TMP/member-repo" "$TMP/member-inherited"
+cat >"$TMP/member-inherited/member/Cargo.toml" <<'EOF'
+[package]
+name = "member-fixture"
+version.workspace = true
+edition = "2024"
+EOF
+expect_failure_with 'workspace member member\.version is invalid' \
+  python3 "$HELPER" --repo "$TMP/member-inherited" --verify-dir "$TMP/member-evidence"
+cat >"$TMP/member-inherited/member/Cargo.toml" <<'EOF'
+[package]
+name = "member-fixture"
+version = { workspace = true }
+edition = "2024"
+EOF
+expect_failure_with 'member/Cargo\.toml package identity must use literal basic strings' \
+  python3 "$HELPER" --repo "$TMP/member-inherited" --verify-dir "$TMP/member-evidence"
+
+cp -R "$TMP/member-repo" "$TMP/member-nopackage"
+printf '%s\n' '[lib]' 'path = "src/lib.rs"' >"$TMP/member-nopackage/member/Cargo.toml"
+expect_failure_with 'workspace member member\.name is invalid' \
+  python3 "$HELPER" --repo "$TMP/member-nopackage" --verify-dir "$TMP/member-evidence"
+
+# generate() also requires Cargo metadata to report only the root and the listed
+# members as path packages, each at its own manifest.
+PYTHONDONTWRITEBYTECODE=1 python3 - "$HELPER" "$TMP/member-repo" "$TMP/outside" <<'PY'
+import importlib.util
+import json
+from pathlib import Path
+import sys
+
+helper, repo, outside = (Path(value) for value in sys.argv[1:])
+spec = importlib.util.spec_from_file_location("rust_source_metadata", helper)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+
+
+def metadata(member_manifest):
+    packages = [
+        {"name": "rust-source-member-fixture", "version": "0.1.0", "id": "root",
+         "source": None, "manifest_path": str(repo / "Cargo.toml")},
+        {"name": "member-fixture", "version": "0.2.0", "id": "member",
+         "source": None, "manifest_path": str(member_manifest)},
+        {"name": "itoa", "version": "1.0.18", "id": "itoa",
+         "source": module.CRATES_IO_SOURCE, "manifest_path": "/registry/itoa/Cargo.toml"},
+    ]
+    nodes = [{"id": item["id"]} for item in packages]
+    return json.dumps({"packages": packages, "resolve": {"nodes": nodes}})
+
+
+def run(member_manifest):
+    module.run_output = lambda command, cwd, env, label: metadata(member_manifest)
+    return module.metadata_set(repo, Path("cargo"), Path("/unused"))
+
+
+assert run(repo / "member" / "Cargo.toml") == {
+    ("rust-source-member-fixture", "0.1.0", None),
+    ("member-fixture", "0.2.0", None),
+    ("itoa", "1.0.18", module.CRATES_IO_SOURCE),
+}
+for unlisted, reason in (
+    (repo / "stray" / "Cargo.toml", "may be path packages"),
+    (outside / "Cargo.toml", "may be path packages"),
+    (repo / "Cargo.toml", "may be path packages"),
+    (repo / "missing" / "Cargo.toml", "manifest is unavailable"),
+):
+    try:
+        run(unlisted)
+    except module.GateError as exc:
+        if reason not in str(exc):
+            raise AssertionError(f"refused for the wrong reason at {unlisted}: {exc}")
+    else:
+        raise AssertionError(f"path package accepted at {unlisted}")
+PY
 
 # An exact-commit Git dependency is vendored with its raw commit object, and
 # verification proves the vendored tree is that commit's tree without Git.

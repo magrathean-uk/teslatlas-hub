@@ -56,8 +56,9 @@ git cat-file -e "${HUB_SOURCE_COMMIT}^{commit}"
 git ls-remote origin | awk -v commit="$HUB_SOURCE_COMMIT" '$1 == commit { found=1 } END { exit !found }'
 ```
 
-The Hub commit's `Cargo.lock` fixes the Compute source commit. Keep the commit,
-toolchain versions and artifact checksums with your build record.
+The Hub commit contains the Compute source in `compute/`, a workspace member, so
+the commit identifies it. Keep the commit, toolchain versions and artifact
+checksums with your build record.
 Build identity does not confer signing, notarisation or support.
 
 ## macOS app and combined installer

@@ -48,6 +48,9 @@ MAX_TOTAL_EXPANDED = 4 * 1024 * 1024 * 1024
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$")
 VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}$")
+# A workspace member is a plain relative directory below the repository root:
+# no glob, absolute, backslash, dot or empty component.
+MEMBER_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*(?:/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$")
 
 
 class GateError(RuntimeError):
@@ -452,8 +455,11 @@ def parse_lock_toml(data: bytes) -> list[dict[str, str]]:
     return packages
 
 
-def parse_root_manifest_identity(data: bytes) -> tuple[str, str]:
-    text = strict_toml_text(data, "Cargo.toml")
+def parse_manifest_identity(
+    data: bytes, label: str, manifest: str = "Cargo.toml"
+) -> tuple[str, str]:
+    """Return the literal [package] name and version of one Cargo manifest."""
+    text = strict_toml_text(data, manifest)
     in_package = False
     seen_package = False
     fields: dict[str, str] = {}
@@ -467,7 +473,7 @@ def parse_root_manifest_identity(data: bytes) -> tuple[str, str]:
             table_name = (array_table or table).group(1).strip()
             if table_name == "package":
                 if seen_package:
-                    raise GateError("Cargo.toml has duplicate package tables")
+                    raise GateError(f"{manifest} has duplicate package tables")
                 seen_package = True
                 in_package = True
             else:
@@ -482,15 +488,99 @@ def parse_root_manifest_identity(data: bytes) -> tuple[str, str]:
         if field_match is not None:
             field, value = field_match.groups()
             if field in fields:
-                raise GateError(f"Cargo.toml package has duplicate field: {field}")
+                raise GateError(f"{manifest} package has duplicate field: {field}")
             fields[field] = value
         elif re.match(r"(?:name|version)(?:\s|=)", stripped):
-            raise GateError("Cargo.toml root package identity must use literal basic strings")
-    return validate_identity(fields.get("name"), fields.get("version"), "root Cargo package")
+            raise GateError(f"{manifest} package identity must use literal basic strings")
+    return validate_identity(fields.get("name"), fields.get("version"), label)
+
+
+def parse_root_manifest_identity(data: bytes) -> tuple[str, str]:
+    return parse_manifest_identity(data, "root Cargo package")
+
+
+def parse_workspace_members(data: bytes) -> list[str]:
+    """Return the [workspace] members of a root manifest, or [] without any.
+
+    Only a one-line array of literal strings is accepted. Every other members
+    shape, including a quoted `"members"` key or a quoted `["workspace"]` header,
+    raises here, so no member can be hidden from the lock comparison.
+    """
+    text = strict_toml_text(data, "Cargo.toml")
+    in_workspace = False
+    seen_workspace = False
+    seen_members = False
+    members: list[str] = []
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        array_table = re.fullmatch(r"\[\[([^\[\]\r\n]+)\]\]\s*(?:#.*)?", stripped)
+        table = re.fullmatch(r"\[([^\[\]\r\n]+)\]\s*(?:#.*)?", stripped)
+        if array_table is not None or table is not None:
+            table_name = (array_table or table).group(1).strip()
+            if table_name != "workspace" and re.sub(r"[\s\"']", "", table_name) == "workspace":
+                raise GateError("Cargo.toml workspace table must use the bare key workspace")
+            if array_table is not None and table_name == "workspace":
+                raise GateError("Cargo.toml workspace must be a table, not an array of tables")
+            in_workspace = array_table is None and table_name == "workspace"
+            if in_workspace:
+                if seen_workspace:
+                    raise GateError("Cargo.toml has duplicate workspace tables")
+                seen_workspace = True
+            continue
+        if in_workspace and re.match(r"[\"']\s*members\s*[\"']", stripped) is not None:
+            raise GateError("Cargo.toml workspace members must use the bare key members")
+        if not in_workspace or re.match(r"members(?:\s|=|\.)", stripped) is None:
+            continue
+        if seen_members:
+            raise GateError("Cargo.toml workspace has duplicate members")
+        seen_members = True
+        array = re.fullmatch(r"members\s*=\s*\[([^\]#]*)\]\s*(?:#.*)?", stripped)
+        if array is None:
+            raise GateError("workspace members must be a one-line array of literal strings")
+        rest = array.group(1).strip()
+        while rest:
+            item = re.match(r'"([^"\\\x00-\x1f]+)"\s*(?:,\s*|\Z)', rest)
+            if item is None:
+                raise GateError("workspace members must be a one-line array of literal strings")
+            members.append(item.group(1))
+            rest = rest[item.end():]
+    return members
+
+
+def workspace_packages(
+    repo: Path, manifest_data: bytes
+) -> list[tuple[str, tuple[str, str]]]:
+    """Return (directory, (name, version)) for the root package and each member."""
+    root_identity = parse_root_manifest_identity(manifest_data)
+    packages = [("", root_identity)]
+    directories: set[str] = set()
+    identities = {root_identity}
+    for member in parse_workspace_members(manifest_data):
+        if MEMBER_RE.fullmatch(member) is None:
+            raise GateError(f"workspace member is not a plain relative directory: {member}")
+        safe_relative(member, "workspace member")
+        if member in directories:
+            raise GateError(f"workspace member is listed twice: {member}")
+        directories.add(member)
+        directory = child_directory(repo, tuple(member.split("/")), f"workspace member {member}")
+        data = regular_bytes(
+            directory / "Cargo.toml", f"workspace member {member}/Cargo.toml", MAX_LOCK_BYTES
+        )
+        identity = parse_manifest_identity(
+            data, f"workspace member {member}", f"{member}/Cargo.toml"
+        )
+        if identity in identities:
+            raise GateError(f"workspace member repeats another package identity: {member}")
+        identities.add(identity)
+        packages.append((member, identity))
+    return packages
 
 
 def load_lock(repo: Path) -> tuple[bytes, list[dict[str, Any]], list[tuple[str, str]]]:
-    """Return the lock bytes, locked crates.io and exact-commit Git packages, and the root."""
+    """Return the lock bytes, locked crates.io and exact-commit Git packages, and the
+    root package plus its path members."""
     data = regular_bytes(repo / "Cargo.lock", "Cargo.lock", MAX_LOCK_BYTES)
     packages = parse_lock_toml(data)
     registry: list[dict[str, Any]] = []
@@ -524,9 +614,12 @@ def load_lock(repo: Path) -> tuple[bytes, list[dict[str, Any]], list[tuple[str, 
     if not registry or not workspace:
         raise GateError("Cargo.lock must contain workspace and registry packages")
     manifest_data = regular_bytes(repo / "Cargo.toml", "Cargo.toml", MAX_LOCK_BYTES)
-    root_identity = parse_root_manifest_identity(manifest_data)
-    if workspace != [root_identity]:
-        raise GateError("only the tagged repository root package may be a path dependency")
+    expected = sorted(identity for _, identity in workspace_packages(repo, manifest_data))
+    if workspace != expected:
+        raise GateError(
+            "Cargo.lock path packages must be exactly the repository root package "
+            "and its listed [workspace] members"
+        )
     vendor_paths = [f"{item['name']}-{item['version']}" for item in registry]
     if len(vendor_paths) != len(set(vendor_paths)):
         raise GateError("Cargo.lock dependencies collide in versioned vendor paths")
@@ -542,8 +635,11 @@ def cargo_environment(cargo_home: Path) -> dict[str, str]:
         "CARGO_TERM_COLOR": "never",
         "GIT_CONFIG_NOSYSTEM": "1",
     }
-    if os.environ.get("RUSTUP_TOOLCHAIN"):
-        value["RUSTUP_TOOLCHAIN"] = os.environ["RUSTUP_TOOLCHAIN"]
+    # The rustup proxy on PATH falls back to $HOME/.rustup (and installs a second
+    # toolchain there) unless the routed home and toolchain are passed through.
+    for name in ("RUSTUP_HOME", "RUSTUP_TOOLCHAIN"):
+        if os.environ.get(name):
+            value[name] = os.environ[name]
     return value
 
 
@@ -579,6 +675,15 @@ def metadata_set(repo: Path, cargo: Path, cargo_home: Path) -> set[tuple[str, st
         raise GateError("Cargo metadata output is invalid") from exc
     if not isinstance(packages, list) or not isinstance(nodes, list) or len(packages) != len(nodes):
         raise GateError("Cargo metadata package graph is incomplete")
+    try:
+        allowed = {
+            (repo / directory / "Cargo.toml").resolve(strict=True): identity
+            for directory, identity in workspace_packages(
+                repo, regular_bytes(repo / "Cargo.toml", "Cargo.toml", MAX_LOCK_BYTES)
+            )
+        }
+    except OSError as exc:
+        raise GateError("repository or workspace member manifest is unavailable") from exc
     identities: set[tuple[str, str, str | None]] = set()
     ids: set[str] = set()
     for index, item in enumerate(packages):
@@ -593,9 +698,10 @@ def metadata_set(repo: Path, cargo: Path, cargo_home: Path) -> set[tuple[str, st
             if not isinstance(manifest_path, str):
                 raise GateError("Cargo metadata path package lacks a manifest path")
             try:
-                if Path(manifest_path).resolve(strict=True) != (repo / "Cargo.toml").resolve(strict=True):
+                if allowed.get(Path(manifest_path).resolve(strict=True)) != (name, version):
                     raise GateError(
-                        "only the tagged repository root package may be a path dependency"
+                        "only the repository root package and its listed workspace "
+                        "members may be path packages"
                     )
             except OSError as exc:
                 raise GateError("Cargo metadata path package manifest is unavailable") from exc
