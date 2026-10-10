@@ -383,6 +383,18 @@ async fn cors_pairing_and_sync_headers_are_scoped_to_their_routes() {
             StatusCode::NO_CONTENT,
         ),
         (
+            "/v1/device/revoke",
+            "POST",
+            "authorization, content-type",
+            StatusCode::NO_CONTENT,
+        ),
+        (
+            "/v1/device/revoke",
+            "GET",
+            "authorization",
+            StatusCode::FORBIDDEN,
+        ),
+        (
             "/v1/pairings/test/claim",
             "POST",
             "content-type",

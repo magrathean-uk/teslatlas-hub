@@ -11,6 +11,7 @@ include!("tests/database_and_migrations.rs");
 include!("tests/edge_delivery.rs");
 include!("tests/catalogue_and_pairing.rs");
 include!("tests/device_vehicle_grants.rs");
+include!("tests/device_credentials.rs");
 include!("tests/observations_and_import_setup.rs");
 include!("tests/projection_state.rs");
 include!("tests/live_sync.rs");

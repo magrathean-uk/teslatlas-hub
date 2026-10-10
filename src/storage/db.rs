@@ -12,6 +12,10 @@ use std::{
 #[cfg(test)]
 use std::sync::{Arc, Mutex};
 
+use aes_gcm::{
+    Aes256Gcm, Nonce,
+    aead::{Aead, KeyInit, Payload},
+};
 use rusqlite::{
     Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, backup::Backup,
     params,
@@ -60,12 +64,19 @@ pub const SCHEMA_VERSION: i32 = 68;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
-/// Absolute cap on how long one pairing may keep renewing its bearer, counted
-/// from the claim. The claim writes `claimed_at + this` into
-/// `paired_devices.max_expires_at_ms` through this one constant; the v68
-/// migration backfills existing devices with the same span.
+/// Default absolute cap on how long one pairing may keep renewing its bearer,
+/// counted from the claim; the owner sets another span with
+/// `[pairing] device_max_lifetime_days`. [`HubStore::claim_pairing`] writes
+/// `claimed_at + this` into `paired_devices.max_expires_at_ms` and
+/// [`HubStore::claim_pairing_with_max_lifetime`] writes the configured span;
+/// the v68 migration backfilled existing devices with its own 180 days.
 pub const PAIRED_DEVICE_MAX_LIFETIME_MS: i64 = 180 * 24 * 60 * 60 * 1_000;
 pub const PAIRED_DEVICE_ROTATION_GRACE_MS: i64 = 24 * 60 * 60 * 1_000;
+/// Authenticating a bearer slides its stored lifetime and stamps
+/// `last_authenticated_at_ms`, but only when either would move by more than
+/// this much; every other request is read-only. Revocation, expiry and the
+/// absolute cap are still judged on every request.
+pub const PAIRED_DEVICE_AUTH_WRITE_INTERVAL_MS: i64 = 15 * 60 * 1_000;
 
 /// A supervised collector renews this durable lease from an independent task.
 /// The interval is deliberately much shorter than the lease so a short SQLite
@@ -339,6 +350,8 @@ pub struct HubStore {
     stream_fault: Arc<Mutex<Option<StreamFaultPoint>>>,
     #[cfg(test)]
     projection_state_detach_fault: Arc<Mutex<bool>>,
+    #[cfg(test)]
+    credential_write_hook: Arc<Mutex<Option<CredentialWriteHook>>>,
 }
 
 /// One collector-owned SQLite handle for high-rate stream writes. Each
@@ -1318,6 +1331,7 @@ include!("db/live_sync.rs");
 include!("db/import_finalization.rs");
 include!("db/lineage_verification.rs");
 include!("db/identity_and_audit.rs");
+include!("db/device_credentials.rs");
 include!("db/device_grants.rs");
 include!("db/observations_and_lifecycle.rs");
 include!("db/edge_delivery.rs");

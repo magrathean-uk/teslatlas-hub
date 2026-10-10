@@ -47,6 +47,80 @@ fn cors_configuration_accepts_only_canonical_explicit_origins() {
 }
 
 #[test]
+fn pairing_lifetime_defaults_to_180_days_and_is_limited_to_1_through_3650() {
+    let base = valid_config(Path::new("/var/lib/teslatlas"));
+    let parse = |table: &str| HubConfig::from_exact_bytes(format!("{base}{table}").as_bytes());
+
+    // No table, an empty table and an explicit 180 are the one default, and
+    // it is the span the store writes without configuration.
+    for table in [
+        "",
+        "[pairing]\n",
+        "[pairing]\ndevice_max_lifetime_days = 180\n",
+    ] {
+        let (config, _) = parse(table).expect("the default lifetime");
+        assert_eq!(config.pairing, PairingConfig::default(), "{table:?}");
+        assert_eq!(config.pairing.device_max_lifetime_days, 180);
+        assert_eq!(
+            config.pairing.device_max_lifetime_ms(),
+            crate::db::PAIRED_DEVICE_MAX_LIFETIME_MS
+        );
+    }
+    for days in [1_u32, 2, 30, 365, 3650] {
+        let (config, _) = parse(&format!("[pairing]\ndevice_max_lifetime_days = {days}\n"))
+            .unwrap_or_else(|error| panic!("{days} days: {error}"));
+        assert_eq!(config.pairing.device_max_lifetime_days, days);
+        assert_eq!(
+            config.pairing.device_max_lifetime_ms(),
+            i64::from(days) * 86_400_000
+        );
+    }
+    // Out of range is a validation error naming the key, not a parse error.
+    for days in ["0", "3651", "4294967295"] {
+        match parse(&format!("[pairing]\ndevice_max_lifetime_days = {days}\n")) {
+            Err(ConfigError::Invalid(message)) => {
+                assert!(
+                    message.contains("pairing.device_max_lifetime_days"),
+                    "{message}"
+                );
+            }
+            other => panic!("{days} days must be refused by validation: {other:?}"),
+        }
+    }
+    // Not an unsigned whole number of days, or not a number.
+    for value in ["-1", "1.5", "'180'", "true", "4294967296"] {
+        assert!(
+            matches!(
+                parse(&format!("[pairing]\ndevice_max_lifetime_days = {value}\n")),
+                Err(ConfigError::Parse(_))
+            ),
+            "{value}"
+        );
+    }
+    // The table takes this key and no other.
+    assert!(matches!(
+        parse("[pairing]\ndevice_max_lifetime = 180\n"),
+        Err(ConfigError::Parse(_))
+    ));
+    assert!(matches!(
+        parse("[pairing]\ndevice_max_lifetime_days = 180\nunknown = 1\n"),
+        Err(ConfigError::Parse(_))
+    ));
+    // Validation is also what the serve path relies on when it builds a
+    // config by hand.
+    let mut config = HubConfig::from_exact_bytes(base.as_bytes()).unwrap().0;
+    config.pairing.device_max_lifetime_days = 0;
+    assert!(matches!(config.validate(), Err(ConfigError::Invalid(_))));
+    assert_eq!(
+        PairingConfig {
+            device_max_lifetime_days: u32::MAX
+        }
+        .device_max_lifetime_ms(),
+        i64::from(u32::MAX) * 86_400_000
+    );
+}
+
+#[test]
 fn load_rejects_oversized_symlinked_and_wrong_mode_config_files() {
     use std::os::unix::fs::symlink;
 

@@ -121,6 +121,12 @@ impl DeviceAccessToken {
         Zeroizing::new(std::mem::take(&mut self.0))
     }
 
+    /// Wrap a bearer a client presented, after it passed the wire check, so a
+    /// rotation can hand the same credential back.
+    fn from_wire(value: &str) -> Option<Self> {
+        DeviceAccessToken::digest_from_wire(value).map(|_| Self(value.to_owned()))
+    }
+
     fn digest(&self) -> [u8; ACCESS_TOKEN_BYTES] {
         sha256_bytes(self.0.as_bytes())
     }
@@ -136,12 +142,18 @@ impl std::fmt::Debug for DeviceAccessToken {
     }
 }
 
-/// The only credential-bearing result of a successful pairing claim.
+/// The only credential-bearing result of a successful pairing claim or
+/// rotation.
 #[derive(Debug, PartialEq, Eq)]
 pub struct PairedDeviceAccess {
     pub device_id: Uuid,
     pub access_token: DeviceAccessToken,
     pub expires_at_ms: i64,
+    /// Set only by a rotation at the device's absolute maximum lifetime: the
+    /// token is the one that was presented, nothing was issued or written,
+    /// and the client should ask the owner to pair again before
+    /// `expires_at_ms`.
+    pub at_maximum_lifetime: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

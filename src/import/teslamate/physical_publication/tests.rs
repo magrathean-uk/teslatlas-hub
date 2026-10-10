@@ -657,30 +657,44 @@ async fn physical_delta_pack_is_found_only_for_a_device_granted_the_owning_vehic
                 )
                 .await
                 .expect("pack response");
+            // Everything a client can observe: the status, every header but
+            // the per-request id, and the body.
             let status = response.status();
-            let content_type = response.headers().get(header::CONTENT_TYPE).cloned();
+            let mut headers: Vec<(String, Vec<u8>)> = response
+                .headers()
+                .iter()
+                .filter(|(name, _)| name.as_str() != "x-request-id")
+                .map(|(name, value)| (name.as_str().to_owned(), value.as_bytes().to_vec()))
+                .collect();
+            headers.sort();
             let body = response
                 .into_body()
                 .collect()
                 .await
                 .expect("body")
                 .to_bytes();
-            (status, content_type, body)
+            (status, headers, body)
         }
     };
-    let (status, content_type, body) = fetch(digest, owner_bearer.clone()).await;
+    let (status, headers, body) = fetch(digest, owner_bearer.clone()).await;
     assert_eq!(status, StatusCode::OK);
+    let content_type = headers
+        .iter()
+        .find(|(name, _)| name == "content-type")
+        .map(|(_, value)| value.as_slice())
+        .expect("content type");
     assert_eq!(
-        content_type.expect("content type"),
-        "application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1"
+        content_type,
+        b"application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1"
     );
     assert!(!body.is_empty());
     let ungranted = fetch(digest, other_bearer.clone()).await;
     let unknown = fetch(Sha256Digest::of_bytes(b"unknown delta"), other_bearer).await;
     assert_eq!(ungranted.0, StatusCode::NOT_FOUND);
+    assert!(ungranted.2.is_empty(), "the 404 has no body");
     assert_eq!(
         ungranted, unknown,
-        "an ungranted delta pack is an unknown one"
+        "an ungranted delta pack is an unknown one: same status, headers and body"
     );
 
     // De-granting the owner removes the pack on the next lookup and request.
@@ -693,7 +707,11 @@ async fn physical_delta_pack_is_found_only_for_a_device_granted_the_owning_vehic
         )
         .expect("de-grant");
     assert!(lookup(VehicleScope::Device(owner_device)).is_none());
-    assert_eq!(fetch(digest, owner_bearer).await.0, StatusCode::NOT_FOUND);
+    assert_eq!(
+        fetch(digest, owner_bearer).await,
+        unknown,
+        "a removed grant withdraws the pack: now an unknown digest in full"
+    );
 }
 
 #[tokio::test]

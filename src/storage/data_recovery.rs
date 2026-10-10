@@ -60,6 +60,11 @@ const COPY_BUFFER_BYTES: usize = 1024 * 1024;
 const COPY_CAPACITY_HEADROOM_DIVISOR: u64 = 20;
 const COPY_CAPACITY_FIXED_HEADROOM_BYTES: u64 = 8 * 1024 * 1024;
 const MIN_RESTORABLE_SCHEMA_VERSION: i32 = 52;
+/// The first schema whose catalogue always holds the per-device vehicle grant
+/// tables (and, with them, every pairing table). A backup of an older schema
+/// may lack the grant tables and the rotation grace table; a backup that
+/// declares this schema or a later one must hold all of them.
+const FIRST_SCHEMA_WITH_GRANT_TABLES: i32 = 68;
 const EXCLUDED_HOST_STATE: [&str; 5] = [
     "collector_decryption_key",
     "cursor_signing_key",
@@ -453,7 +458,8 @@ pub fn restore_data_backup(
     // digests. Sanitize every restored catalogue after its exact source copy
     // has been verified and before the staging directory can be published.
     seal_staged_catalogue(&staging.path)?;
-    validate_pairing_authority_absent(&staging.path)?;
+    // Sealed and, if need be, migrated: the staged catalogue is current.
+    validate_pairing_tables(&staging.path, SCHEMA_VERSION, true)?;
 
     let restored_store = HubStore::open_immutable_read_only(&staging.path)?;
     restored_store.catalogue_check()?;
@@ -983,9 +989,11 @@ fn validate_backup_tree(
     )?;
     let data = root.join(DATA_DIRECTORY);
     require_directory_entries(&data, ["hub.sqlite", "packs"], "data-backup payload")?;
-    if format == BackupFormat::Current {
-        validate_pairing_authority_absent(&data)?;
-    }
+    // Both formats must hold every pairing table their declared schema has,
+    // or a restore would fail when it empties them. Only a Current backup must
+    // also hold no authority: a legacy v3 generation may carry live pairing
+    // rows, which the restore revokes before it publishes anything.
+    validate_pairing_tables(&data, manifest.hub_schema, format == BackupFormat::Current)?;
     let expected_noops = current_schema_22_noop_pairs(&data)?;
     if expected_noops.is_empty() {
         require_directory_entries(
@@ -1331,12 +1339,21 @@ fn open_immutable_catalogue(data: &Path) -> Result<Connection, DataRecoveryError
 
 /// Pairing authority is host-local and never survives a backup or a restore:
 /// no challenge, device, rotation grace or vehicle grant. The two base tables
-/// exist in every schema a Current-format backup can have (from
-/// `MIN_RESTORABLE_SCHEMA_VERSION` on), so a catalogue missing one is rejected:
-/// its count fails. The tables a backup of an older schema lacks (rotation
-/// grace, then the two grant tables from v68) are counted only where they
-/// exist.
-fn validate_pairing_authority_absent(data: &Path) -> Result<(), DataRecoveryError> {
+/// exist in every schema a backup can have (from
+/// `MIN_RESTORABLE_SCHEMA_VERSION` on). The rotation grace table and the two
+/// grant tables are optional only in a backup that declares a schema older
+/// than [`FIRST_SCHEMA_WITH_GRANT_TABLES`]: a catalogue that declares that
+/// schema or a later one without one of them is rejected here, at verification,
+/// and not left to fail when the restore tries to empty it. This holds for the
+/// current and the legacy v3 backup format alike. With `require_empty` every
+/// table that is present must also hold no row (a Current backup, and the
+/// staged catalogue after sealing); a legacy v3 backup is the one that may
+/// still carry rows, which the restore deletes.
+fn validate_pairing_tables(
+    data: &Path,
+    declared_schema: i32,
+    require_empty: bool,
+) -> Result<(), DataRecoveryError> {
     let connection = open_immutable_catalogue(data)?;
     for (table, in_every_schema) in [
         ("pairing_challenges", true),
@@ -1345,17 +1362,23 @@ fn validate_pairing_authority_absent(data: &Path) -> Result<(), DataRecoveryErro
         ("device_vehicle_grants", false),
         ("pairing_challenge_vehicles", false),
     ] {
-        if !in_every_schema {
-            let present: bool = connection
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
-                    [table],
-                    |row| row.get(0),
-                )
-                .map_err(DataRecoveryError::CatalogueIdentity)?;
-            if !present {
-                continue;
+        let present: bool = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
+                [table],
+                |row| row.get(0),
+            )
+            .map_err(DataRecoveryError::CatalogueIdentity)?;
+        if !present {
+            if in_every_schema || declared_schema >= FIRST_SCHEMA_WITH_GRANT_TABLES {
+                return Err(invalid(format!(
+                    "data-backup catalogue declares schema {declared_schema} but lacks the {table} table"
+                )));
             }
+            continue;
+        }
+        if !require_empty {
+            continue;
         }
         // The names above are this function's own constants, never input.
         let rows: i64 = connection

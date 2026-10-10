@@ -50,6 +50,9 @@ mod hub_sync_v1;
 #[path = "server/history_routes.rs"]
 mod history_routes;
 
+#[path = "server/device_revoke.rs"]
+mod device_revoke;
+
 #[path = "server/vehicle_access.rs"]
 mod vehicle_access;
 use vehicle_access::{VehicleAccessDenied, json_sync_route_vehicle, require_vehicle_access};
@@ -60,8 +63,9 @@ use crate::{
     BUILD_VERSION,
     config::TlsListenerConfig,
     db::{
-        HubStore, PairedDeviceRecord, PublishedVehicle, ReadinessReasonCode, StoredPack,
-        VehicleScope, VehicleVisibility,
+        HubStore, PAIRED_DEVICE_MAX_LIFETIME_MS, PairedDeviceRecord, PublishedVehicle,
+        ReadinessReasonCode, StoredPack, VehicleScope, VehicleVisibility,
+        validate_paired_device_name,
     },
     discovery_source_url,
     fleet_telemetry::{FleetTelemetryAccumulator, MAX_FLEET_TELEMETRY_INPUT_BYTES, vin_from_json},
@@ -380,6 +384,10 @@ pub struct AppState {
     supervised_collector_required: bool,
     require_device_auth: bool,
     pairing_claim_enabled: bool,
+    /// The absolute lifetime each claimed device is given
+    /// (`[pairing] device_max_lifetime_days`); the default until
+    /// [`AppState::with_device_max_lifetime_ms`] sets the configured one.
+    device_max_lifetime_ms: i64,
     manifest_signing: Option<Arc<ManifestSigning>>,
     cursor_key: Option<Arc<CursorKey>>,
     native_config_digest: Option<Sha256Digest>,
@@ -548,6 +556,7 @@ impl AppState {
             supervised_collector_required,
             require_device_auth,
             pairing_claim_enabled,
+            device_max_lifetime_ms: PAIRED_DEVICE_MAX_LIFETIME_MS,
             manifest_signing: manifest_signing.map(Arc::new),
             cursor_key: cursor_key.map(Arc::new),
             native_config_digest,
@@ -558,6 +567,12 @@ impl AppState {
             pack_streams_by_device: Arc::new(Mutex::new(HashMap::new())),
             fleet_telemetry: fleet_telemetry.map(Arc::new),
         }
+    }
+
+    /// The lifetime cap claimed devices get, in milliseconds.
+    fn with_device_max_lifetime_ms(mut self, device_max_lifetime_ms: i64) -> Self {
+        self.device_max_lifetime_ms = device_max_lifetime_ms;
+        self
     }
 
     fn try_acquire_pack_device_slot(&self, device_id: Uuid) -> Option<PackDeviceSlot> {
@@ -735,12 +750,56 @@ fn router_with_access_telemetry_and_http(
     fleet_telemetry: Option<FleetTelemetryIngress>,
     cors: CorsPolicy,
 ) -> Router {
+    router_for_state(
+        AppState::new(
+            store,
+            supervised_collector_required,
+            require_device_auth,
+            pairing_claim_enabled,
+            manifest_signing,
+            cursor_key,
+            native_config_digest,
+            fleet_telemetry,
+        ),
+        cors,
+    )
+}
+
+/// The TLS-facing router of a configured Hub: device authentication and
+/// pairing claims on, browser origins and the devices' lifetime cap from the
+/// owner's configuration.
+#[cfg(unix)]
+fn tls_router_for_config(
+    store: HubStore,
+    supervised_collector_required: bool,
+    cursor_key: &CursorKey,
+    native_config_digest: Sha256Digest,
+    config: &HubConfig,
+) -> Router {
+    router_for_state(
+        AppState::new(
+            store,
+            supervised_collector_required,
+            true,
+            true,
+            Some(ManifestSigning::from_cursor_key(cursor_key)),
+            Some(cursor_key.clone()),
+            Some(native_config_digest),
+            None,
+        )
+        .with_device_max_lifetime_ms(config.pairing.device_max_lifetime_ms()),
+        CorsPolicy::for_config(config),
+    )
+}
+
+fn router_for_state(state: AppState, cors: CorsPolicy) -> Router {
     let ordinary = Router::new()
         .route("/healthz", get(health))
         .route("/readyz", get(ready))
         .route("/.well-known/teslatlas-hub", get(capabilities))
         .route("/v1/pairings/{pairing_id}/claim", post(claim_pairing))
         .route("/v1/device/rotate", post(rotate_device))
+        .route("/v1/device/revoke", post(device_revoke::revoke_device))
         .route("/v1/vehicles", get(vehicles))
         .route("/v1/vehicles/{vehicle_id}/current", get(current_vehicle))
         .route(
@@ -793,16 +852,7 @@ fn router_with_access_telemetry_and_http(
     let router = trace_router(ordinary.merge(telemetry))
         .layer(PropagateRequestIdLayer::x_request_id())
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
-        .with_state(AppState::new(
-            store,
-            supervised_collector_required,
-            require_device_auth,
-            pairing_claim_enabled,
-            manifest_signing,
-            cursor_key,
-            native_config_digest,
-            fleet_telemetry,
-        ));
+        .with_state(state);
     apply_http_resource_limits_with_cors(
         router,
         MAX_IN_FLIGHT_HTTP_REQUESTS,
@@ -1051,16 +1101,12 @@ where
                 public_handle,
                 tokio::spawn(
                     public_server.serve(
-                        router_with_access_telemetry_and_http(
+                        tls_router_for_config(
                             store.clone(),
                             supervised_collector_required,
-                            true,
-                            true,
-                            Some(ManifestSigning::from_cursor_key(&cursor_key)),
-                            Some(cursor_key.clone()),
-                            Some(native_config_digest),
-                            None,
-                            CorsPolicy::for_config(config),
+                            &cursor_key,
+                            native_config_digest,
+                            config,
                         )
                         .into_make_service(),
                     ),
@@ -1090,16 +1136,12 @@ where
                 handle,
                 tokio::spawn(
                     server.serve(
-                        router_with_access_telemetry_and_http(
+                        tls_router_for_config(
                             store,
                             supervised_collector_required,
-                            true,
-                            true,
-                            Some(ManifestSigning::from_cursor_key(&cursor_key)),
-                            Some(cursor_key.clone()),
-                            Some(native_config_digest),
-                            None,
-                            CorsPolicy::for_config(config),
+                            &cursor_key,
+                            native_config_digest,
+                            config,
                         )
                         .into_make_service(),
                     ),
@@ -1551,22 +1593,30 @@ async fn claim_pairing(
     if !state.pairing_claim_enabled {
         return StatusCode::NOT_FOUND.into_response();
     }
+    // A name the Hub refuses is answered before the invitation is consulted:
+    // the refusal consumes nothing and tells nothing about the invitation, so
+    // the same invitation still claims with a valid name.
+    if validate_paired_device_name(&request.device_name).is_err() {
+        return device_name_refused();
+    }
     let Ok(pairing_id) = Uuid::parse_str(&pairing_id) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
     let Ok(claimed_at_ms) = current_epoch_ms() else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
-    match state.store.claim_pairing(
+    match state.store.claim_pairing_with_max_lifetime(
         pairing_id,
         request.secret.as_str(),
         &request.device_name,
         claimed_at_ms,
+        state.device_max_lifetime_ms,
     ) {
         Ok(mut access) => Json(PairingClaimResponse {
             device_id: access.device_id,
             access_token: access.access_token.take_bearer().into(),
             expires_at_ms: access.expires_at_ms,
+            reason: None,
         })
         .into_response(),
         // Do not distinguish a bad secret from expiry, reuse, or an unknown
@@ -1577,6 +1627,21 @@ async fn claim_pairing(
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }
+}
+
+/// The 422 of a claim whose `device_name` is empty, over 128 UTF-8 bytes or
+/// holds a control character: a short text/plain body, like the framework's own
+/// 422 for a claim that is not a claim request.
+fn device_name_refused() -> Response {
+    (
+        StatusCode::UNPROCESSABLE_ENTITY,
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; charset=utf-8"),
+        )],
+        "device_name must be 1 to 128 UTF-8 bytes with no control character",
+    )
+        .into_response()
 }
 
 async fn rotate_device(State(state): State<AppState>, headers: HeaderMap) -> Response {
@@ -1594,6 +1659,9 @@ async fn rotate_device(State(state): State<AppState>, headers: HeaderMap) -> Res
             device_id: access.device_id,
             access_token: access.access_token.take_bearer().into(),
             expires_at_ms: access.expires_at_ms,
+            // Only a rotation at the device's absolute maximum says why it
+            // issued nothing; the grace retry and an ordinary one carry none.
+            reason: access.at_maximum_lifetime.then_some("max_lifetime"),
         })
         .into_response(),
         Err(crate::db::StoreError::PairingRejected) => unauthorized(),
@@ -2527,6 +2595,8 @@ struct PairingClaimResponse {
     device_id: Uuid,
     access_token: PairingBearer,
     expires_at_ms: i64,
+    /// `"max_lifetime"` on a rotation at the absolute maximum, else absent.
+    reason: Option<&'static str>,
 }
 
 impl Serialize for PairingClaimResponse {
@@ -2536,10 +2606,16 @@ impl Serialize for PairingClaimResponse {
     {
         use serde::ser::SerializeStruct;
 
-        let mut response = serializer.serialize_struct("PairingClaimResponse", 3)?;
+        let mut response = serializer.serialize_struct(
+            "PairingClaimResponse",
+            3 + usize::from(self.reason.is_some()),
+        )?;
         response.serialize_field("device_id", &self.device_id)?;
         response.serialize_field("access_token", self.access_token.0.as_str())?;
         response.serialize_field("expires_at_ms", &self.expires_at_ms)?;
+        if let Some(reason) = self.reason {
+            response.serialize_field("reason", reason)?;
+        }
         response.end()
     }
 }

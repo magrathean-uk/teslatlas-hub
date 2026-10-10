@@ -159,6 +159,10 @@ impl HubStore {
     /// Consume one valid pairing challenge and return the device bearer token.
     /// A failed or expired claim deliberately has one opaque outcome; callers
     /// cannot learn whether a challenge existed, expired, or had a bad secret.
+    /// The device may keep renewing its bearer for
+    /// [`PAIRED_DEVICE_MAX_LIFETIME_MS`] from the claim; the Hub serves claims
+    /// through [`Self::claim_pairing_with_max_lifetime`] with the owner's
+    /// configured span.
     pub fn claim_pairing(
         &self,
         pairing_id: Uuid,
@@ -166,8 +170,31 @@ impl HubStore {
         device_name: &str,
         claimed_at_ms: i64,
     ) -> Result<PairedDeviceAccess, StoreError> {
-        validate_identity("paired device name", device_name, MAX_DEVICE_NAME_BYTES)?;
+        self.claim_pairing_with_max_lifetime(
+            pairing_id,
+            secret,
+            device_name,
+            claimed_at_ms,
+            PAIRED_DEVICE_MAX_LIFETIME_MS,
+        )
+    }
+
+    /// [`Self::claim_pairing`] for a device whose bearer may be renewed for
+    /// `max_lifetime_ms` from the claim and not longer: the claim writes that
+    /// absolute maximum, and the first bearer never outlives it.
+    pub fn claim_pairing_with_max_lifetime(
+        &self,
+        pairing_id: Uuid,
+        secret: &str,
+        device_name: &str,
+        claimed_at_ms: i64,
+        max_lifetime_ms: i64,
+    ) -> Result<PairedDeviceAccess, StoreError> {
+        validate_paired_device_name(device_name)?;
         validate_timestamp("pairing claimed_at_ms", claimed_at_ms)?;
+        if max_lifetime_ms <= 0 {
+            return Err(StoreError::InvalidDeviceMaxLifetime);
+        }
         let Some(secret_digest) = PairingSecret::digest_from_wire(secret) else {
             return Err(StoreError::PairingRejected);
         };
@@ -218,8 +245,10 @@ impl HubStore {
 
         let device_id = Uuid::new_v4();
         let access_token = DeviceAccessToken::generate()?;
-        let expires_at_ms = claimed_at_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS);
-        let max_expires_at_ms = claimed_at_ms.saturating_add(PAIRED_DEVICE_MAX_LIFETIME_MS);
+        let max_expires_at_ms = claimed_at_ms.saturating_add(max_lifetime_ms);
+        let expires_at_ms = claimed_at_ms
+            .saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS)
+            .min(max_expires_at_ms);
         transaction
             .execute(
                 "INSERT INTO paired_devices \
@@ -268,6 +297,7 @@ impl HubStore {
             device_id,
             access_token,
             expires_at_ms,
+            at_maximum_lifetime: false,
         })
     }
 
@@ -282,6 +312,27 @@ impl HubStore {
         self.authenticate_device_at(access_token, now_ms)
     }
 
+    /// Authenticate `access_token` at `now_ms`: the device's current bearer, or
+    /// the one its latest rotation replaced inside the 24 hour grace window.
+    ///
+    /// A bearer is refused once its device is revoked, its expiry has passed or
+    /// the device's absolute maximum (`max_expires_at_ms`) has; all three are
+    /// judged on every request, from a fresh read-only connection. Using the
+    /// current bearer slides its stored expiry to `now + 30 days` (never beyond
+    /// the maximum) and stamps `last_authenticated_at_ms`, but those writes
+    /// are coalesced: they happen only when the expiry would move by more than
+    /// [`PAIRED_DEVICE_AUTH_WRITE_INTERVAL_MS`] or the stored stamp is that old
+    /// (or absent), so a busy client costs the writer one update per interval,
+    /// not one per request. The returned record is the stored one, with its
+    /// expiry limited to the maximum.
+    ///
+    /// The read that decides a write is stale by the time the writer is free,
+    /// so the `UPDATE` repeats the whole decision against the row it locks:
+    /// the bearer, the revocation, the expiry, the maximum and the coalescing
+    /// interval. A request that finds the row already refreshed by another one
+    /// writes nothing and is answered from a new read, as is one whose bearer a
+    /// rotation replaced meanwhile (it is the grace bearer now); a revocation
+    /// or an expiry that landed meanwhile refuses it.
     pub fn authenticate_device_at(
         &self,
         access_token: &str,
@@ -290,67 +341,128 @@ impl HubStore {
         let Some(token_digest) = DeviceAccessToken::digest_from_wire(access_token) else {
             return Ok(None);
         };
-        let connection = self.open()?;
-        let current = connection
-            .query_row(
-                "SELECT device_id, display_name, created_at_ms, expires_at_ms, revoked_at_ms, last_authenticated_at_ms \
-                 FROM paired_devices
-                  WHERE token_sha256 = ?1 AND revoked_at_ms IS NULL AND expires_at_ms > ?2",
-                params![token_digest.as_slice(), now_ms],
-                paired_device_from_row,
-            )
-            .optional()
-            .map_err(StoreError::Query)?;
-        if let Some(mut device) = current {
+        let connection = self.open_read_only_connection()?;
+        if let Some((mut device, max_expires_at_ms)) =
+            read_current_bearer_device(&connection, &token_digest, now_ms)?
+        {
             if now_ms < device.created_at_ms {
                 return Ok(None);
             }
-            let next_expiry = device
-                .expires_at_ms
-                .max(now_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS));
+            device.expires_at_ms = cap_expiry(device.expires_at_ms, max_expires_at_ms);
+            let next_expiry = cap_expiry(
+                device
+                    .expires_at_ms
+                    .max(now_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS)),
+                max_expires_at_ms,
+            );
             let next_authenticated = device.last_authenticated_at_ms.unwrap_or(0).max(now_ms);
-            if next_expiry != device.expires_at_ms
-                || device.last_authenticated_at_ms != Some(next_authenticated)
-            {
-                let changed = connection
-                    .execute(
-                        "UPDATE paired_devices
-                         SET expires_at_ms = MAX(expires_at_ms, ?1),
-                             last_authenticated_at_ms = MAX(COALESCE(last_authenticated_at_ms, 0), ?2)
-                         WHERE device_id = ?3 AND token_sha256 = ?4
-                           AND revoked_at_ms IS NULL AND expires_at_ms > ?2",
-                        params![
-                            next_expiry,
-                            now_ms,
-                            device.device_id.to_string(),
-                            token_digest.as_slice(),
-                        ],
-                    )
-                    .map_err(StoreError::Query)?;
-                if changed != 1 {
-                    return Ok(None);
-                }
+            let expiry_moves = next_expiry
+                > device
+                    .expires_at_ms
+                    .saturating_add(PAIRED_DEVICE_AUTH_WRITE_INTERVAL_MS);
+            let stamp_is_stale = device.last_authenticated_at_ms.is_none_or(|last| {
+                next_authenticated.saturating_sub(last) > PAIRED_DEVICE_AUTH_WRITE_INTERVAL_MS
+            });
+            if !expiry_moves && !stamp_is_stale {
+                return Ok(Some(device));
+            }
+            #[cfg(test)]
+            self.before_credential_write(CredentialWriteStage::Authenticate);
+            let writer = self.open()?;
+            // The guards repeat the read's, and so does the interval test: a
+            // revocation, an expiry or the maximum that landed since the read
+            // leaves the row alone, and so does a refresh by a request that
+            // got the writer first. The clamp keeps concurrent slides
+            // monotonic and inside the cap.
+            let changed = writer
+                .execute(
+                    "UPDATE paired_devices
+                     SET expires_at_ms = MIN(MAX(expires_at_ms, ?1),
+                                             COALESCE(max_expires_at_ms, 9223372036854775807)),
+                         last_authenticated_at_ms = MAX(COALESCE(last_authenticated_at_ms, 0), ?2)
+                     WHERE device_id = ?3 AND token_sha256 = ?4
+                       AND revoked_at_ms IS NULL AND expires_at_ms > ?2
+                       AND (max_expires_at_ms IS NULL OR max_expires_at_ms > ?2)
+                       AND (last_authenticated_at_ms IS NULL
+                            OR ?2 - last_authenticated_at_ms > ?5
+                            OR MIN(MAX(expires_at_ms, ?1),
+                                   COALESCE(max_expires_at_ms, 9223372036854775807))
+                               - MIN(expires_at_ms,
+                                     COALESCE(max_expires_at_ms, 9223372036854775807)) > ?5)",
+                    params![
+                        next_expiry,
+                        now_ms,
+                        device.device_id.to_string(),
+                        token_digest.as_slice(),
+                        PAIRED_DEVICE_AUTH_WRITE_INTERVAL_MS,
+                    ],
+                )
+                .map_err(StoreError::Query)?;
+            if changed == 1 {
+                // The writer is the last connection to close, as it was when
+                // every request wrote: closing it checkpoints the WAL, which a
+                // reader of the catalogue file alone (a backup, `doctor`) sees.
+                drop(connection);
+                drop(writer);
                 device.expires_at_ms = next_expiry;
                 device.last_authenticated_at_ms = Some(next_authenticated);
+                return Ok(Some(device));
             }
-            return Ok(Some(device));
+            drop(writer);
+            // Nothing was written: the row moved on since the read. Judge the
+            // request again from the row as it is now. A refresh by another
+            // request leaves the bearer current; a rotation leaves it the
+            // grace bearer (looked up below); a revocation or expiry refuses.
+            if let Some((mut fresh, max_expires_at_ms)) =
+                read_current_bearer_device(&connection, &token_digest, now_ms)?
+            {
+                if now_ms < fresh.created_at_ms {
+                    return Ok(None);
+                }
+                fresh.expires_at_ms = cap_expiry(fresh.expires_at_ms, max_expires_at_ms);
+                return Ok(Some(fresh));
+            }
         }
-        connection
+        // The grace bearer authenticates but never slides or stamps anything.
+        let grace = connection
             .query_row(
                 "SELECT p.device_id, p.display_name, p.created_at_ms, p.expires_at_ms,
-                        p.revoked_at_ms, p.last_authenticated_at_ms
+                        p.revoked_at_ms, p.last_authenticated_at_ms, p.max_expires_at_ms
                    FROM paired_devices AS p
                    JOIN paired_device_token_grace AS g ON g.device_id = p.device_id
                   WHERE g.token_sha256 = ?1 AND g.valid_until_ms > ?2
                     AND p.created_at_ms <= ?2 AND p.revoked_at_ms IS NULL
-                    AND p.expires_at_ms > ?2",
+                    AND p.expires_at_ms > ?2
+                    AND (p.max_expires_at_ms IS NULL OR p.max_expires_at_ms > ?2)",
                 params![token_digest.as_slice(), now_ms],
-                paired_device_from_row,
+                |row| Ok((paired_device_from_row(row)?, row.get::<_, Option<i64>>(6)?)),
             )
             .optional()
-            .map_err(StoreError::Query)
+            .map_err(StoreError::Query)?;
+        Ok(grace.map(|(mut device, max_expires_at_ms)| {
+            device.expires_at_ms = cap_expiry(device.expires_at_ms, max_expires_at_ms);
+            device
+        }))
     }
 
+    /// Rotate the bearer `access_token` at `now_ms`.
+    ///
+    /// * The device's current bearer `T1` issues a successor `T2`: `T1` moves
+    ///   into the device's one grace row for 24 hours with `T2` sealed under a
+    ///   key derived from `T1`, and `T2` becomes current with an expiry of
+    ///   `min(max(stored, now + 30 days), maximum)`.
+    /// * The grace bearer `T1` retried inside its window gets exactly `T2`
+    ///   back (the sealed successor) and changes nothing, provided `T2` is
+    ///   still the device's current bearer. Outside the window, for a grace
+    ///   row without a sealed successor, or once the device rotated again
+    ///   (which replaces the grace row, so `T1` is gone) it is rejected.
+    /// * The current bearer of a device whose stored expiry has reached its
+    ///   absolute maximum gets that same bearer back with
+    ///   [`PairedDeviceAccess::at_maximum_lifetime`] set: nothing is issued
+    ///   or written, because no successor could outlive it.
+    ///
+    /// Anything unusable (unknown, revoked, expired, past the maximum) is
+    /// [`StoreError::PairingRejected`], without joining the writer queue.
     pub fn rotate_device(
         &self,
         access_token: &str,
@@ -360,80 +472,47 @@ impl HubStore {
             return Err(StoreError::PairingRejected);
         };
         // As with pairing claims, an invalid bearer must not acquire a write
-        // lock. The mutation transaction repeats the lookup atomically.
+        // lock, and neither does a retry or a rotation at the maximum: they
+        // are answered from this read. Only an issue goes on to the writer,
+        // which decides again inside its transaction.
         let read_only = self.open_read_only_connection()?;
-        let plausible: bool = read_only
-            .query_row(
-                "SELECT EXISTS(
-                    SELECT 1 FROM paired_devices AS p
-                     LEFT JOIN paired_device_token_grace AS g ON g.device_id = p.device_id
-                     WHERE (p.token_sha256 = ?1 OR
-                            (g.token_sha256 = ?1 AND g.valid_until_ms > ?2))
-                       AND p.created_at_ms <= ?2 AND p.revoked_at_ms IS NULL
-                       AND p.expires_at_ms > ?2
-                 )",
-                params![token_digest.as_slice(), now_ms],
-                |row| row.get(0),
-            )
-            .map_err(StoreError::RotateDevice)?;
-        if !plausible {
-            return Err(StoreError::PairingRejected);
+        if let RotationOutcome::Answered(access) =
+            rotation_outcome(&read_only, access_token, &token_digest, now_ms)?
+        {
+            return Ok(access);
         }
+        drop(read_only);
+        #[cfg(test)]
+        self.before_credential_write(CredentialWriteStage::Rotate);
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        let device: Option<(Uuid, Vec<u8>, i64, Option<i64>)> = transaction
-            .query_row(
-                "SELECT p.device_id, p.token_sha256, p.expires_at_ms, g.valid_until_ms
-                   FROM paired_devices AS p
-                   LEFT JOIN paired_device_token_grace AS g ON g.device_id = p.device_id
-                  WHERE (p.token_sha256 = ?1 OR
-                         (g.token_sha256 = ?1 AND g.valid_until_ms > ?2))
-                    AND p.created_at_ms <= ?2 AND p.revoked_at_ms IS NULL
-                    AND p.expires_at_ms > ?2",
-                params![token_digest.as_slice(), now_ms],
-                |row| {
-                    let id: String = row.get(0)?;
-                    let id = Uuid::parse_str(&id).map_err(|error| {
-                        rusqlite::Error::FromSqlConversionFailure(
-                            0,
-                            rusqlite::types::Type::Text,
-                            Box::new(error),
-                        )
-                    })?;
-                    Ok((id, row.get(1)?, row.get(2)?, row.get(3)?))
-                },
-            )
-            .optional()
-            .map_err(StoreError::RotateDevice)?;
-        let Some((device_id, current_digest, current_expiry_ms, prior_grace_until_ms)) = device
-        else {
-            return Err(StoreError::PairingRejected);
+        let target = match rotation_outcome(&transaction, access_token, &token_digest, now_ms)? {
+            // Another request got here first: this bearer is now the grace
+            // one, and a retry is answered with the successor that request
+            // sealed.
+            RotationOutcome::Answered(access) => return Ok(access),
+            RotationOutcome::Issue(target) => target,
         };
         let replacement = DeviceAccessToken::generate()?;
-        let expires_at_ms =
-            current_expiry_ms.max(now_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS));
-        let is_current = current_digest.as_slice() == token_digest.as_slice();
-        let grace_until_ms = if is_current {
-            now_ms.saturating_add(PAIRED_DEVICE_ROTATION_GRACE_MS)
-        } else {
-            prior_grace_until_ms.ok_or(StoreError::PairingRejected)?
-        };
-        // `sealed_successor` (schema 68) stays NULL here: nothing seals a
-        // successor yet. Once a rotation does, the conflict arm below must set
-        // it as well, or a second rotation would keep the first one's.
+        let expires_at_ms = target.successor_expires_at_ms(now_ms);
+        let key = grace_successor_key(access_token, target.device_id);
+        let sealed_successor = seal_successor(&key, target.device_id, replacement.as_bearer())?;
         transaction
             .execute(
-                "INSERT INTO paired_device_token_grace(device_id, token_sha256, valid_until_ms)
-                 VALUES (?1, ?2, ?3)
+                "INSERT INTO paired_device_token_grace
+                     (device_id, token_sha256, valid_until_ms, sealed_successor)
+                 VALUES (?1, ?2, ?3, ?4)
                  ON CONFLICT(device_id) DO UPDATE SET
                    token_sha256 = excluded.token_sha256,
-                   valid_until_ms = excluded.valid_until_ms",
+                   valid_until_ms = excluded.valid_until_ms,
+                   sealed_successor = excluded.sealed_successor",
                 params![
-                    device_id.to_string(),
+                    target.device_id.to_string(),
                     token_digest.as_slice(),
-                    grace_until_ms
+                    now_ms.saturating_add(PAIRED_DEVICE_ROTATION_GRACE_MS),
+                    sealed_successor,
                 ],
             )
             .map_err(StoreError::RotateDevice)?;
@@ -447,8 +526,8 @@ impl HubStore {
                     replacement.digest().as_slice(),
                     expires_at_ms,
                     now_ms,
-                    device_id.to_string(),
-                    current_digest,
+                    target.device_id.to_string(),
+                    target.current_digest.as_slice(),
                 ],
             )
             .map_err(StoreError::RotateDevice)?;
@@ -457,9 +536,10 @@ impl HubStore {
         }
         transaction.commit().map_err(StoreError::RotateDevice)?;
         Ok(PairedDeviceAccess {
-            device_id,
+            device_id: target.device_id,
             access_token: replacement,
             expires_at_ms,
+            at_maximum_lifetime: false,
         })
     }
 

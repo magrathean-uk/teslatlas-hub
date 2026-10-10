@@ -629,6 +629,8 @@ impl HubStore {
             stream_fault: Arc::new(Mutex::new(None)),
             #[cfg(test)]
             projection_state_detach_fault: Arc::new(Mutex::new(false)),
+            #[cfg(test)]
+            credential_write_hook: Arc::new(Mutex::new(None)),
         };
         let mut visited = HashSet::new();
         for payload in manifest_rows {

@@ -1274,6 +1274,7 @@ async fn disabled_geocoder_leaves_pending_jobs_untouched() {
         bind: "127.0.0.1:8080".parse().expect("bind"),
         tls: None,
         http: Default::default(),
+        pairing: Default::default(),
         collector: crate::config::CollectorConfig::default(),
         geocoder: crate::config::GeocoderConfig {
             enabled: false,

@@ -651,6 +651,7 @@
         "macos/TeslatlasHubApp/TeslatlasHubApp/DevelopmentEventLog.swift",
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubL10n.swift",
         "packaging/macos-app/scripts/preinstall",
+        "src/api/server/tests/device_credentials.rs",
         "src/api/server/tests/drive_byte_budget.rs",
         "src/api/server/tests/public_history.rs",
         "src/api/server/tests/vehicle_grants.rs",

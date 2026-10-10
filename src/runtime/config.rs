@@ -66,6 +66,56 @@ pub struct HubConfig {
     pub terrain: TerrainConfig,
     #[serde(default)]
     pub http: HttpConfig,
+    #[serde(default)]
+    pub pairing: PairingConfig,
+}
+
+/// How long a paired device may keep renewing its bearer. Each claim writes
+/// this span, counted from the claim, as the device's absolute maximum: the
+/// bearer slides 30 days on use but never past it, and the device must pair
+/// again afterwards. A change applies to devices paired after the Hub restarts;
+/// existing devices keep the maximum they were given.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PairingConfig {
+    #[serde(default = "default_device_max_lifetime_days")]
+    pub device_max_lifetime_days: u32,
+}
+
+pub const MIN_DEVICE_MAX_LIFETIME_DAYS: u32 = 1;
+pub const MAX_DEVICE_MAX_LIFETIME_DAYS: u32 = 3650;
+const MILLISECONDS_PER_DAY: i64 = 24 * 60 * 60 * 1_000;
+
+const fn default_device_max_lifetime_days() -> u32 {
+    180
+}
+
+impl Default for PairingConfig {
+    fn default() -> Self {
+        Self {
+            device_max_lifetime_days: default_device_max_lifetime_days(),
+        }
+    }
+}
+
+impl PairingConfig {
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        if !(MIN_DEVICE_MAX_LIFETIME_DAYS..=MAX_DEVICE_MAX_LIFETIME_DAYS)
+            .contains(&self.device_max_lifetime_days)
+        {
+            return Err(ConfigError::Invalid(
+                "pairing.device_max_lifetime_days must be between 1 and 3650",
+            ));
+        }
+        Ok(())
+    }
+
+    /// The absolute maximum lifetime in milliseconds. The configured value is
+    /// at most 3650 days; an unvalidated larger one saturates instead of
+    /// overflowing.
+    pub fn device_max_lifetime_ms(&self) -> i64 {
+        i64::from(self.device_max_lifetime_days).saturating_mul(MILLISECONDS_PER_DAY)
+    }
 }
 
 /// Browser access is disabled until exact serialized origins are configured.
@@ -1076,6 +1126,7 @@ impl HubConfig {
             tls.validate()?;
         }
         self.http.validate()?;
+        self.pairing.validate()?;
         if self.collector.request_timeout_seconds == 0 {
             return Err(ConfigError::InvalidOwnerApiTimeout);
         }

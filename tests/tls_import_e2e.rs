@@ -63,7 +63,7 @@ async fn claim_manifest_and_range_resume_over_real_tls() {
     let base = format!("https://127.0.0.1:{}", addr.port());
     wait_until_ready(&client, &base).await;
 
-    assert_pairing_and_pack_transfer(
+    let claim = assert_pairing_and_pack_transfer(
         &client,
         &base,
         &published,
@@ -71,17 +71,26 @@ async fn claim_manifest_and_range_resume_over_real_tls() {
         invitation.secret(),
     )
     .await;
+    // Without configuration the first bearer slides 30 days (the default
+    // 180-day maximum is far off).
+    let lifetime = claim_lifetime_ms(&claim);
+    assert!(
+        (30 * DAY_MS - 600_000..=30 * DAY_MS).contains(&lifetime),
+        "{lifetime}"
+    );
     let _ = shutdown_tx.send(());
     let _ = server.await;
 }
 
+/// Claim, read and stream over TLS as a paired device; returns the claim
+/// response so the caller can judge the lifetime the Hub gave the device.
 async fn assert_pairing_and_pack_transfer(
     client: &Client,
     base: &str,
     published: &Published,
     pairing_id: Uuid,
     pairing_secret: &str,
-) {
+) -> serde_json::Value {
     for path in [
         "/v1/vehicles".to_owned(),
         format!("/v1/vehicles/{}/sync/manifest", published.vehicle_id),
@@ -290,6 +299,21 @@ async fn assert_pairing_and_pack_transfer(
         .await
         .expect("wrong vehicle");
     assert_eq!(wrong.status(), reqwest::StatusCode::NOT_FOUND);
+    claim
+}
+
+const DAY_MS: i64 = 24 * 60 * 60 * 1_000;
+
+/// How far ahead of now the claim's first bearer expires, in milliseconds.
+fn claim_lifetime_ms(claim: &serde_json::Value) -> i64 {
+    let now_ms = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("clock")
+            .as_millis(),
+    )
+    .expect("clock fits");
+    claim["expires_at_ms"].as_i64().expect("expires_at_ms") - now_ms
 }
 
 /// Run the source-binary standalone-mode smoke for the seeded schema-2.1
@@ -347,7 +371,8 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
          [tls]\ncertificate_path = {cert:?}\nprivate_key_path = {private_key:?}\npublic_url = {base:?}\n\
          [collector]\ninterval_seconds = 0\nowner_api_base_url = {owner_api:?}\n\
          [collector.legacy_auth]\nenabled = false\n\
-         [terrain]\nenabled = false\n[geocoder]\nenabled = false\n",
+         [terrain]\nenabled = false\n[geocoder]\nenabled = false\n\
+         [pairing]\ndevice_max_lifetime_days = 10\n",
         data_dir = data_dir.to_str().expect("UTF-8 path"),
         address = address.to_string(),
         cert = cert.to_str().expect("UTF-8 cert path"),
@@ -420,7 +445,7 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
         .expect("readiness");
     assert_eq!(ready.status(), reqwest::StatusCode::OK);
     assert_eq!(read_json(ready).await["status"], "ready");
-    assert_pairing_and_pack_transfer(
+    let claim = assert_pairing_and_pack_transfer(
         &client,
         &base,
         &published,
@@ -428,6 +453,14 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
         invitation.secret(),
     )
     .await;
+    // The `[pairing]` span of the configuration reaches the claim through the
+    // real serve path: a 10-day maximum ends the first bearer at 10 days, not
+    // at the 30-day slide.
+    let lifetime = claim_lifetime_ms(&claim);
+    assert!(
+        (10 * DAY_MS - 600_000..=10 * DAY_MS).contains(&lifetime),
+        "{lifetime}"
+    );
     assert_eq!(
         owner_api_sink
             .accept()

@@ -724,10 +724,20 @@ fn paired_bearer_rotation_grace_allows_lost_response_retry_and_revoke() {
             .expect("new auth")
             .is_some()
     );
+    let before_retry = credential_rows(&store);
     let retried = store
         .rotate_device(&old_bearer, 16_001)
         .expect("lost-response retry succeeds during grace");
     assert_eq!(retried.device_id, access.device_id);
+    // The retry never issues a different token: it is the successor the first
+    // rotation made, and it changes no row.
+    assert_eq!(
+        retried.access_token.as_bearer(),
+        rotated.access_token.as_bearer()
+    );
+    assert_eq!(retried.expires_at_ms, rotated.expires_at_ms);
+    assert!(!retried.at_maximum_lifetime);
+    assert_eq!(credential_rows(&store), before_retry);
     assert!(
         store
             .authenticate_device_at(retried.access_token.as_bearer(), 16_001)
@@ -776,6 +786,20 @@ fn paired_bearer_rotation_grace_expires_at_24_hours() {
             .expect("last grace millisecond")
             .is_some()
     );
+    // The lost-response retry is served through the last grace millisecond
+    // with the very successor the first rotation issued, and not after it.
+    assert_eq!(
+        store
+            .rotate_device(&old, 16_000 + PAIRED_DEVICE_ROTATION_GRACE_MS - 1)
+            .expect("retry in the last grace millisecond")
+            .access_token
+            .as_bearer(),
+        rotated.access_token.as_bearer()
+    );
+    assert!(matches!(
+        store.rotate_device(&old, 16_000 + PAIRED_DEVICE_ROTATION_GRACE_MS),
+        Err(StoreError::PairingRejected)
+    ));
     assert!(
         store
             .authenticate_device_at(&old, 16_000 + PAIRED_DEVICE_ROTATION_GRACE_MS)

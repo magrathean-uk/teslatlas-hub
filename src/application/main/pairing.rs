@@ -116,6 +116,40 @@ fn pairing_scope_from_flags(
     }
 }
 
+/// Whether `c` could hide or reorder text on the operator's terminal: a control
+/// character (Cc), a Unicode format character (Cf: the bidirectional marks,
+/// embeddings, overrides and isolates U+200E, U+200F, U+202A..U+202E and
+/// U+2066..U+2069, zero-width and joiner characters, the soft hyphen, tag
+/// characters and the other invisible formatters) or a line or paragraph
+/// separator (U+2028, U+2029). `char` has no general-category test, so the
+/// Cf ranges are listed (Unicode 16).
+fn hidden_in_terminal(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            u32::from(c),
+            0xAD | 0x600..=0x605
+                | 0x61C
+                | 0x6DD
+                | 0x70F
+                | 0x890..=0x891
+                | 0x8E2
+                | 0x180E
+                | 0x200B..=0x200F
+                | 0x2028..=0x202E
+                | 0x2060..=0x2064
+                | 0x2066..=0x206F
+                | 0xFEFF
+                | 0xFFF9..=0xFFFB
+                | 0x110BD
+                | 0x110CD
+                | 0x13430..=0x1343F
+                | 0x1BCA0..=0x1BCA3
+                | 0x1D173..=0x1D17A
+                | 0xE0001
+                | 0xE0020..=0xE007F
+        )
+}
+
 /// The scope line of the text presentation. The invitation URI and the JSON
 /// payload never carry the scope.
 fn pairing_grants_text(named: Option<&[teslatlas_hub::db::PublishedVehicle]>) -> String {
@@ -133,7 +167,7 @@ fn pairing_grants_text(named: Option<&[teslatlas_hub::db::PublishedVehicle]>) ->
                     || vehicle.vehicle_id.to_string(),
                     |name| {
                         name.chars()
-                            .map(|c| if c.is_control() { '?' } else { c })
+                            .map(|c| if hidden_in_terminal(c) { '?' } else { c })
                             .collect()
                     },
                 )

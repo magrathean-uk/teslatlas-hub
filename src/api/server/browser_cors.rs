@@ -81,7 +81,7 @@ fn route_policy(path: &str) -> Option<RoutePolicy> {
         "/healthz" | "/readyz" | "/.well-known/teslatlas-hub" | "/v1/vehicles" => {
             return Some(get(BASIC_REQUEST_HEADERS));
         }
-        "/v1/device/rotate" => {
+        "/v1/device/rotate" | "/v1/device/revoke" => {
             return Some(RoutePolicy {
                 method: "POST",
                 request_headers: BASIC_REQUEST_HEADERS,

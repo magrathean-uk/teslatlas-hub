@@ -39,6 +39,8 @@ impl HubStore {
             stream_fault: Arc::new(Mutex::new(None)),
             #[cfg(test)]
             projection_state_detach_fault: Arc::new(Mutex::new(false)),
+            #[cfg(test)]
+            credential_write_hook: Arc::new(Mutex::new(None)),
         };
         ensure_shared_sqlite_catalogue_file_with_repair(&store.database_path, false)?;
         let mut connection = store.open()?;
@@ -299,6 +301,8 @@ impl HubStore {
             stream_fault: Arc::new(Mutex::new(None)),
             #[cfg(test)]
             projection_state_detach_fault: Arc::new(Mutex::new(false)),
+            #[cfg(test)]
+            credential_write_hook: Arc::new(Mutex::new(None)),
         };
         let connection = store.open_read_only_connection()?;
         let application_id: i32 = connection

@@ -32,7 +32,8 @@ The accepted binding does not add routes beyond those advertised by discovery.
 | `GET` | `/readyz` | Collector and serving readiness. |
 | `GET` | `/.well-known/teslatlas-hub` | Stable Hub identity, API versions, capabilities, build, sync protocol, and configured source route. |
 | `POST` | `/v1/pairings/{pairing_id}/claim` | Claim one pairing invitation. |
-| `POST` | `/v1/device/rotate` | Rotate the current device bearer. |
+| `POST` | `/v1/device/rotate` | Rotate the current device bearer. The prior bearer keeps serving for 24 hours, and retrying with it returns the same successor. Once the device's stored expiry has reached its absolute maximum lifetime, and until that time arrives, it returns the current bearer unchanged with `"reason": "max_lifetime"`; from the maximum on the bearer is 401. |
+| `POST` | `/v1/device/revoke` | Revoke the calling device (no request body; any body is 400). `204`; every bearer of the device is then 401. Clients call it only when discovery advertises `auth.revoke`, which the Hub does from the discovery flip on. |
 | `GET` | `/v1/vehicles` | List vehicles visible to the paired device. |
 | `GET` | `/v1/vehicles/{vehicle_id}/current` | Get bounded current state. |
 | `GET` | `/v1/vehicles/{vehicle_id}/drives` | Get one bounded, newest-first drive page. |

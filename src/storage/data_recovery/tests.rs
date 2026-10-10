@@ -356,12 +356,24 @@ fn reseal_backup_as_legacy_v3_with_pairing(backup: &Path, bearer: &str) {
             .expect("orphaned grant authority");
     }
     drop(connection);
+    reseal_backup_as_legacy_v3(backup);
+}
 
+/// Seal the backup's manifest and marker as the legacy v3 format over the
+/// catalogue as it is now; a manifest already sealed as legacy is sealed again.
+/// The declared schema stays as the manifest has it.
+fn reseal_backup_as_legacy_v3(backup: &Path) {
+    let catalogue = backup.join(CATALOGUE_MEMBER);
     let current_manifest_path = backup.join(MANIFEST_NAME);
     let legacy_manifest_path = backup.join(LEGACY_MANIFEST_NAME);
+    let source_manifest_path = if current_manifest_path.exists() {
+        current_manifest_path.clone()
+    } else {
+        legacy_manifest_path.clone()
+    };
     let mut manifest: BackupManifest =
-        parse_canonical_json(&fs::read(&current_manifest_path).expect("current manifest bytes"))
-            .expect("current manifest");
+        parse_canonical_json(&fs::read(&source_manifest_path).expect("manifest bytes"))
+            .expect("manifest");
     manifest.kind = LEGACY_BACKUP_KIND.to_owned();
     manifest.scope = LEGACY_BACKUP_SCOPE.to_owned();
     let catalogue_member = manifest
@@ -373,7 +385,10 @@ fn reseal_backup_as_legacy_v3_with_pairing(backup: &Path, bearer: &str) {
         .expect("legacy catalogue metadata")
         .len();
     catalogue_member.sha256 = sha256_file_hex(&catalogue).expect("legacy catalogue digest");
-    fs::rename(&current_manifest_path, &legacy_manifest_path).expect("legacy manifest filename");
+    if source_manifest_path == current_manifest_path {
+        fs::rename(&current_manifest_path, &legacy_manifest_path)
+            .expect("legacy manifest filename");
+    }
     let manifest_bytes = canonical_json(&manifest).expect("legacy manifest bytes");
     fs::write(&legacy_manifest_path, &manifest_bytes).expect("legacy manifest");
     set_mode(
@@ -1275,6 +1290,111 @@ fn a_historical_backup_missing_a_base_pairing_table_is_rejected() {
         );
         let restored = temporary.path().join("never-restored");
         assert!(restore_data_backup(&backup, &restored).is_err());
+        assert!(!restored.exists());
+    }
+}
+
+#[test]
+fn a_schema_68_backup_missing_a_pairing_table_is_rejected_at_verification() {
+    // From schema 68 on the grant tables and the rotation grace table are
+    // always present. A catalogue that declares schema 68 without one is
+    // refused when the backup is verified (the optional-table rule is for older
+    // schemas only, as the v67 test below shows), and a restore never starts.
+    for missing in [
+        "device_vehicle_grants",
+        "pairing_challenge_vehicles",
+        "paired_device_token_grace",
+    ] {
+        let (temporary, store) = create_fixture();
+        let backup = temporary.path().join("missing-v68-table");
+        create_data_backup(&store, &backup).expect("create backup fixture");
+        verify_data_backup(&backup).expect("the intact schema 68 backup verifies");
+        let connection = Connection::open_with_flags(
+            backup.join(CATALOGUE_MEMBER),
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .expect("backup catalogue");
+        connection
+            .execute_batch(&format!("PRAGMA foreign_keys = OFF; DROP TABLE {missing};"))
+            .unwrap_or_else(|error| panic!("drop {missing}: {error}"));
+        connection
+            .pragma_update(None, "journal_mode", "DELETE")
+            .expect("sealed journal mode");
+        drop(connection);
+        let manifest = reseal_backup_manifest(&backup, SCHEMA_VERSION);
+        assert_eq!(manifest.hub_schema, 68);
+        let error = verify_data_backup(&backup)
+            .expect_err("a schema 68 catalogue without a pairing table must not verify");
+        let message = error.to_string();
+        assert!(
+            message.contains(missing) && message.contains("declares schema 68"),
+            "{missing}: the rejection names the table and the declared schema: {message}"
+        );
+        let restored = temporary.path().join("never-restored");
+        let error = restore_data_backup(&backup, &restored)
+            .expect_err("a restore must be refused up front");
+        // The refusal is the verification's own, not the sealing step's "no such
+        // table" after a staged copy.
+        assert!(
+            error.to_string().contains("declares schema 68") && error.to_string().contains(missing),
+            "{missing}: {error}"
+        );
+        assert!(!restored.exists());
+    }
+}
+
+#[test]
+fn a_legacy_v3_schema_68_backup_missing_a_pairing_table_is_rejected_at_verification() {
+    // The table-presence rule is the same for the legacy v3 format: it carries
+    // live pairing rows (which the restore revokes), but a catalogue declaring
+    // schema 68 without one of the five tables cannot be emptied, so it must
+    // fail at verification and not when the restore reaches the deletes.
+    for missing in [
+        "device_vehicle_grants",
+        "pairing_challenge_vehicles",
+        "paired_device_token_grace",
+        "pairing_challenges",
+        "paired_devices",
+    ] {
+        let (temporary, store) = create_fixture();
+        let backup = temporary.path().join("legacy-missing-v68-table");
+        create_data_backup(&store, &backup).expect("create backup fixture");
+        reseal_backup_as_legacy_v3_with_pairing(&backup, "legacy-missing-table-bearer");
+        let intact = verify_data_backup(&backup).expect("the intact legacy backup verifies");
+        assert_eq!(intact.scope, LEGACY_BACKUP_SCOPE);
+        let connection = Connection::open_with_flags(
+            backup.join(CATALOGUE_MEMBER),
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .expect("backup catalogue");
+        connection
+            .execute_batch(&format!("PRAGMA foreign_keys = OFF; DROP TABLE {missing};"))
+            .unwrap_or_else(|error| panic!("drop {missing}: {error}"));
+        connection
+            .pragma_update(None, "journal_mode", "DELETE")
+            .expect("sealed journal mode");
+        drop(connection);
+        reseal_backup_as_legacy_v3(&backup);
+        let manifest: BackupManifest = parse_canonical_json(
+            &fs::read(backup.join(LEGACY_MANIFEST_NAME)).expect("legacy manifest bytes"),
+        )
+        .expect("legacy manifest");
+        assert_eq!(manifest.hub_schema, SCHEMA_VERSION);
+        assert_eq!(manifest.hub_schema, 68);
+        let error = verify_data_backup(&backup)
+            .expect_err("a legacy schema 68 catalogue without a pairing table must not verify");
+        let message = error.to_string();
+        assert!(
+            message.contains(missing) && message.contains("declares schema 68"),
+            "{missing}: the rejection names the table and the declared schema: {message}"
+        );
+        let restored = temporary.path().join("never-restored");
+        let error = restore_data_backup(&backup, &restored)
+            .expect_err("a legacy restore must be refused up front");
+        assert!(
+            error.to_string().contains("declares schema 68") && error.to_string().contains(missing),
+            "{missing}: the refusal is the verification's own: {error}"
+        );
         assert!(!restored.exists());
     }
 }

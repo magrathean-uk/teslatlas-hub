@@ -7,6 +7,9 @@
 use super::*;
 use crate::db::{PairingScope, VehicleScope};
 
+#[path = "device_credentials.rs"]
+mod device_credentials;
+
 const GRANT_KEY_BYTE: u8 = 83;
 
 fn grant_key() -> CursorKey {

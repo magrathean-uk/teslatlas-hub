@@ -14,7 +14,7 @@ use super::{io, write_test_identity};
 use crate::{
     Cli, Command, ControlCommand, PairingCommandError, PairingCommandInput,
     command_requires_user_hub_admission, execute_pairing_at, pair_with_configured_tls,
-    paired_devices_json, pairing_grants_text, pairing_scope_from_flags,
+    paired_devices_json, pairing_grants_text, pairing_scope_from_flags, run_control,
 };
 
 const ALPHA: &str = "11111111-1111-4111-8111-111111111111";
@@ -276,6 +276,105 @@ fn the_grants_line_hides_control_characters_and_names_an_unnamed_vehicle_by_id()
         pairing_grants_text(Some(&[vehicle(alpha, None)])),
         format!("Grants: {alpha}.")
     );
+}
+
+#[test]
+fn the_grants_line_also_hides_bidi_and_other_format_characters() {
+    let vehicle = |name: &str| PublishedVehicle {
+        vehicle_id: uuid(ALPHA),
+        display_name: Some(name.to_owned()),
+    };
+    // A bidirectional override turns "Car<RLO>evil" into text that reads
+    // differently from what is stored; the marks, embeddings and isolates, the
+    // zero-width and joiner characters, the soft hyphen, the byte-order mark,
+    // tag characters and the line and paragraph separators are all hidden.
+    for (hidden, label) in [
+        ('\u{200E}', "left-to-right mark"),
+        ('\u{200F}', "right-to-left mark"),
+        ('\u{202A}', "left-to-right embedding"),
+        ('\u{202B}', "right-to-left embedding"),
+        ('\u{202C}', "pop directional formatting"),
+        ('\u{202D}', "left-to-right override"),
+        ('\u{202E}', "right-to-left override"),
+        ('\u{2066}', "left-to-right isolate"),
+        ('\u{2067}', "right-to-left isolate"),
+        ('\u{2068}', "first strong isolate"),
+        ('\u{2069}', "pop directional isolate"),
+        ('\u{061C}', "arabic letter mark"),
+        ('\u{200B}', "zero width space"),
+        ('\u{200C}', "zero width non-joiner"),
+        ('\u{200D}', "zero width joiner"),
+        ('\u{2060}', "word joiner"),
+        ('\u{206F}', "nominal digit shapes"),
+        ('\u{00AD}', "soft hyphen"),
+        ('\u{FEFF}', "byte order mark"),
+        ('\u{E0041}', "tag latin capital letter a"),
+        ('\u{E007F}', "cancel tag"),
+        ('\u{2028}', "line separator"),
+        ('\u{2029}', "paragraph separator"),
+        ('\u{0085}', "next line (a C1 control)"),
+        ('\u{001B}', "escape"),
+    ] {
+        let line = pairing_grants_text(Some(&[vehicle(&format!("Car{hidden}evil"))]));
+        assert_eq!(
+            line,
+            "Grants: Car?evil.",
+            "{label} (U+{:04X})",
+            u32::from(hidden)
+        );
+    }
+    let line = pairing_grants_text(Some(&[vehicle(
+        "a\u{202E}b\u{200F}c\u{2066}d\u{2069}e\u{1b}f",
+    )]));
+    assert_eq!(line, "Grants: a?b?c?d?e?f.");
+    // Printable text, including other scripts, spaces and characters next to
+    // the hidden ranges, is kept as it is.
+    let kept =
+        "M\u{fc}ller's \u{160}koda \u{540d}\u{524d} \u{1f697} \u{2027}\u{202F}\u{2070}\u{E0080}";
+    assert_eq!(
+        pairing_grants_text(Some(&[vehicle(kept)])),
+        format!("Grants: {kept}.")
+    );
+}
+
+#[tokio::test]
+async fn control_vehicle_id_is_refused_for_pair_before_anything_is_opened() {
+    // clap takes the flag in front of the subcommand, so the command itself
+    // refuses it: a silent ignore would hand out an invitation for every car.
+    let cli = parse(&["control", "--vehicle-id", ALPHA, "pair", "--vehicle", BETA])
+        .expect("the flag parses ahead of the subcommand");
+    let Command::Control {
+        vehicle_id,
+        command,
+    } = cli.command
+    else {
+        panic!("not a control command");
+    };
+    assert_eq!(vehicle_id, Some(uuid(ALPHA)));
+    // The configuration does not exist: the refusal comes before it is read.
+    let missing = std::path::Path::new("/nonexistent/teslatlas-hub-config.toml");
+    let error = run_control(missing, vehicle_id, &command)
+        .await
+        .expect_err("--vehicle-id must not be ignored by pair");
+    let message = error.to_string();
+    assert!(message.contains("--vehicle-id"), "{message}");
+    assert!(message.contains("control pair --vehicle"), "{message}");
+    assert!(message.contains("--all-vehicles"), "{message}");
+    // Without the flag the same command goes on to read its configuration.
+    let error = run_control(missing, None, &command)
+        .await
+        .expect_err("the configuration is missing");
+    assert!(!error.to_string().contains("--vehicle-id"), "{error}");
+    // The other global controls keep ignoring a vehicle they do not use.
+    let paired_devices = parse(&["control", "--vehicle-id", ALPHA, "paired-devices"])
+        .expect("paired-devices with a vehicle id parses");
+    assert!(matches!(
+        paired_devices.command,
+        Command::Control {
+            command: ControlCommand::PairedDevices,
+            ..
+        }
+    ));
 }
 
 #[tokio::test]

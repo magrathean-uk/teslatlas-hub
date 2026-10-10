@@ -451,7 +451,7 @@ fn schema_60_upgrade_keeps_paired_bearers_and_adds_rotation_grace() {
             .expect("existing bearer after migration")
             .is_some()
     );
-    store
+    let rotated = store
         .rotate_device(&old, 17_000)
         .expect("rotate after migration");
     assert!(
@@ -459,6 +459,15 @@ fn schema_60_upgrade_keeps_paired_bearers_and_adds_rotation_grace() {
             .authenticate_device_at(&old, 18_000)
             .expect("old bearer in grace after migration")
             .is_some()
+    );
+    // The rotation after the migration seals its successor, so the lost-response
+    // retry returns exactly that successor.
+    let retried = store
+        .rotate_device(&old, 18_000)
+        .expect("retry after migration");
+    assert_eq!(
+        retried.access_token.as_bearer(),
+        rotated.access_token.as_bearer()
     );
 }
 
@@ -622,6 +631,18 @@ fn schema_67_upgrade_grants_active_vehicles_and_backfills_the_lifetime_cap() {
         (1, 0),
         "pre-migration grace rows have no sealed successor"
     );
+    // That bearer still authenticates inside its window, but a retry of its
+    // rotation is refused: there is no successor sealed for it to return.
+    assert!(
+        store
+            .authenticate_device_at(&live_bearer, 11_500)
+            .unwrap()
+            .is_some()
+    );
+    assert!(matches!(
+        store.rotate_device(&live_bearer, 11_500),
+        Err(StoreError::PairingRejected)
+    ));
     let (all_vehicles, scoped): (i64, i64) = connection
         .query_row(
             "SELECT (SELECT all_vehicles FROM pairing_challenges WHERE pairing_id = ?1),

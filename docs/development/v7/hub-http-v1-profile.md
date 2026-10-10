@@ -33,8 +33,8 @@ The Hub constants `PUBLIC_API_VERSIONS` and `PUBLIC_CAPABILITIES` (`server.rs:74
 - `GET /v1/vehicles` lists only granted vehicles.
 - `GET /v1/packs/sha256/{digest}` resolves the pack's vehicle before streaming; ungranted packs are an empty 404.
 - `POST /v1/device/rotate` with a grace (previous) bearer returns the successor already issued to that device, unchanged, or `401` after the grace window; it never mints new authority (plan decision 2026-10-08; replaces 1.1.0's `rotation-lost-response-retry` semantics).
-- `POST /v1/device/revoke` (new, bearer): revokes the calling device, `204`, idempotent; subsequent requests `401`. Client logout calls it.
-- Token lifetime: sliding expiry as today plus an absolute maximum (owner-set, default 180 days) carried in `expires_at_ms`.
+- `POST /v1/device/revoke` (new, bearer): revokes the calling device, `204`; subsequent requests, a repeated revoke included, are `401`, and a client treats `401` on revoke as already revoked. A request with a body is `400`, never `413`. Client logout calls it.
+- Token lifetime: sliding expiry as today plus an absolute maximum (owner-set with `[pairing] device_max_lifetime_days`, default 180 days) carried in `expires_at_ms`. When the stored expiry has reached the absolute maximum, `POST /v1/device/rotate` answers `200` with the current bearer and expiry unchanged and `reason: "max_lifetime"`, and issues nothing.
 
 ## Pages
 

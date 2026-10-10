@@ -335,6 +335,7 @@ fn local_tls_server_config(
         teslamate: Default::default(),
         terrain: Default::default(),
         http: Default::default(),
+        pairing: Default::default(),
     }
 }
 
@@ -348,6 +349,7 @@ fn local_plain_server_config(data_dir: std::path::PathBuf, bind: SocketAddr) -> 
         teslamate: Default::default(),
         terrain: Default::default(),
         http: Default::default(),
+        pairing: Default::default(),
     }
 }
 
@@ -2086,132 +2088,59 @@ async fn tls_router_requires_a_paired_device_and_claims_once() {
     let invitation = store
         .create_pairing("iPhone", 1_000, i64::MAX)
         .expect("pairing invitation");
-    let cursor_key = CursorKey::from_bytes([31; 32]);
-    let app = paired_router(store, &cursor_key);
+    let app = paired_router(store, &CursorKey::from_bytes([31; 32]));
+    let call = |method: &'static str, uri: String, bearer: Option<String>, body: Option<String>| {
+        let app = app.clone();
+        async move {
+            let mut request = Request::builder().method(method).uri(uri);
+            if let Some(bearer) = bearer {
+                request = request.header(header::AUTHORIZATION, format!("Bearer {bearer}"));
+            }
+            if body.is_some() {
+                request = request.header(header::CONTENT_TYPE, "application/json");
+            }
+            let body = body.map_or_else(Body::empty, Body::from);
+            let response = app.oneshot(request.body(body).unwrap()).await;
+            let response = response.expect("response");
+            let status = response.status();
+            let payload = response.into_body().collect().await.expect("payload");
+            let json = serde_json::from_slice(&payload.to_bytes());
+            (status, json.unwrap_or(serde_json::Value::Null))
+        }
+    };
+    let vehicles = |bearer: Option<String>| call("GET", "/v1/vehicles".to_owned(), bearer, None);
+    let rotate = |bearer: String| call("POST", "/v1/device/rotate".to_owned(), Some(bearer), None);
+    let claim = |name: &'static str| {
+        let uri = format!("/v1/pairings/{}/claim", invitation.pairing_id);
+        let body = serde_json::json!({"secret": invitation.secret(), "device_name": name});
+        call("POST", uri, None, Some(body.to_string()))
+    };
+    assert_eq!(vehicles(None).await.0, StatusCode::UNAUTHORIZED);
 
-    let denied = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/v1/vehicles")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("response");
-    assert_eq!(denied.status(), StatusCode::UNAUTHORIZED);
-
-    let claim_body = serde_json::json!({
-        "secret": invitation.secret(),
-        "device_name": "Bolyki iPhone",
-    })
-    .to_string();
-    let claimed = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/v1/pairings/{}/claim", invitation.pairing_id))
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(claim_body))
-                .unwrap(),
-        )
-        .await
-        .expect("claim response");
-    assert_eq!(claimed.status(), StatusCode::OK);
-    let payload = claimed
-        .into_body()
-        .collect()
-        .await
-        .expect("claim payload")
-        .to_bytes();
-    let claimed = serde_json::from_slice::<serde_json::Value>(&payload).expect("claim JSON");
-    let access_token = claimed["access_token"]
-        .as_str()
-        .expect("access token")
-        .to_owned();
+    let (status, claimed) = claim("Bolyki iPhone").await;
+    assert_eq!(status, StatusCode::OK);
+    let access_token = claimed["access_token"].as_str().expect("token").to_owned();
     assert!(claimed["expires_at_ms"].as_i64().unwrap() > 0);
+    assert_eq!(vehicles(Some(access_token.clone())).await.0, StatusCode::OK);
 
-    let listed = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/v1/vehicles")
-                .header(header::AUTHORIZATION, format!("Bearer {access_token}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("vehicle response");
-    assert_eq!(listed.status(), StatusCode::OK);
+    // Rotation issues a successor; the replaced bearer keeps serving through
+    // its grace window, and a lost-response retry with it returns exactly the
+    // successor, never a second one.
+    let (status, rotated) = rotate(access_token.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    let rotated_token = rotated["access_token"].as_str().expect("token").to_owned();
+    assert_ne!(rotated_token, access_token);
+    assert_eq!(vehicles(Some(access_token.clone())).await.0, StatusCode::OK);
+    assert_eq!(
+        vehicles(Some(rotated_token.clone())).await.0,
+        StatusCode::OK
+    );
+    let (status, retried) = rotate(access_token).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(retried, rotated, "the retry is the same successor");
 
-    let rotated = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri("/v1/device/rotate")
-                .header(header::AUTHORIZATION, format!("Bearer {access_token}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("rotation response");
-    assert_eq!(rotated.status(), StatusCode::OK);
-    let rotated_payload = rotated
-        .into_body()
-        .collect()
-        .await
-        .expect("rotation payload")
-        .to_bytes();
-    let rotated_token = serde_json::from_slice::<serde_json::Value>(&rotated_payload)
-        .expect("rotation JSON")["access_token"]
-        .as_str()
-        .expect("rotated access token")
-        .to_owned();
-    let old_after_rotation = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/v1/vehicles")
-                .header(header::AUTHORIZATION, format!("Bearer {access_token}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("old token response");
-    assert_eq!(old_after_rotation.status(), StatusCode::OK);
-    let new_after_rotation = app
-        .clone()
-        .oneshot(
-            Request::builder()
-                .uri("/v1/vehicles")
-                .header(header::AUTHORIZATION, format!("Bearer {rotated_token}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("new token response");
-    assert_eq!(new_after_rotation.status(), StatusCode::OK);
-
-    let replay = app
-        .oneshot(
-            Request::builder()
-                .method("POST")
-                .uri(format!("/v1/pairings/{}/claim", invitation.pairing_id))
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(
-                    serde_json::json!({
-                        "secret": invitation.secret(),
-                        "device_name": "Second phone",
-                    })
-                    .to_string(),
-                ))
-                .unwrap(),
-        )
-        .await
-        .expect("replay response");
-    assert_eq!(replay.status(), StatusCode::UNAUTHORIZED);
+    // The invitation was single use.
+    assert_eq!(claim("Second phone").await.0, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
@@ -2891,9 +2820,18 @@ fn pairing_claim_credentials_are_zeroizing_and_redacted() {
         device_id: Uuid::nil(),
         access_token: bearer,
         expires_at_ms: 123,
+        reason: None,
     };
     let encoded = serde_json::to_vec(&response).expect("pairing response JSON");
     assert!(String::from_utf8_lossy(&encoded).contains("bearer-token-canary"));
+    assert!(!String::from_utf8_lossy(&encoded).contains("reason"));
+    let response = PairingClaimResponse {
+        reason: Some("max_lifetime"),
+        ..response
+    };
+    let encoded = serde_json::to_value(&response).expect("pairing response JSON");
+    assert_eq!(encoded["reason"], "max_lifetime");
+    assert_eq!(encoded.as_object().expect("members").len(), 4);
 }
 
 #[test]

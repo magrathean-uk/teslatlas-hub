@@ -104,7 +104,11 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml control pair --all-vehicles
 ```
 
-The terminal output names the scope. The invitation link and QR never carry
+The control-level `--vehicle-id` picks the car of a vehicle action and does not
+apply to `control pair`: the command refuses it and names `control pair --vehicle`
+as the way to scope an invitation. The terminal output names the scope (names
+from the provider have control and invisible formatting characters replaced
+with `?`). The invitation link and QR never carry
 it, and a vehicle added to the Hub later is never granted to an existing
 device. A device with no grant sees no vehicle: every vehicle route answers it
 as it answers an unknown vehicle, and `GET /v1/vehicles` is empty.

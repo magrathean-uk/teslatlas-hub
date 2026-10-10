@@ -1356,26 +1356,36 @@ fn decode_cursor_claims(bytes: &[u8; CURSOR_PAYLOAD_BYTES]) -> Result<CursorClai
     Ok(claims)
 }
 
-fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
+/// HMAC-SHA-256 (RFC 2104). Also the primitive under the credential HKDF in
+/// the store, so the pads and the key block are wiped; the hasher's own state
+/// is outside this function's reach.
+pub(crate) fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     const BLOCK_BYTES: usize = 64;
-    let mut key_block = [0_u8; BLOCK_BYTES];
+    let mut key_block = zeroize::Zeroizing::new([0_u8; BLOCK_BYTES]);
     if key.len() > BLOCK_BYTES {
         key_block[..32].copy_from_slice(&Sha256::digest(key));
     } else {
         key_block[..key.len()].copy_from_slice(key);
     }
+    let mut pad = zeroize::Zeroizing::new([0_u8; BLOCK_BYTES]);
+    for (pad_byte, key_byte) in pad.iter_mut().zip(key_block.iter()) {
+        *pad_byte = key_byte ^ 0x36;
+    }
     let mut inner = Sha256::new();
-    inner.update(key_block.map(|byte| byte ^ 0x36));
+    inner.update(pad.as_slice());
     inner.update(message);
     let inner_digest = inner.finalize();
 
+    for (pad_byte, key_byte) in pad.iter_mut().zip(key_block.iter()) {
+        *pad_byte = key_byte ^ 0x5c;
+    }
     let mut outer = Sha256::new();
-    outer.update(key_block.map(|byte| byte ^ 0x5c));
+    outer.update(pad.as_slice());
     outer.update(inner_digest);
     outer.finalize().into()
 }
 
-fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     if left.len() != right.len() {
         return false;
     }

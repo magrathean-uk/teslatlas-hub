@@ -38,6 +38,23 @@ public_url = "https://hub.example.net/"
 TLS-facing sync endpoints require a paired-device bearer. The one-time pairing
 claim is the only unauthenticated mutation. Never reuse pairing invitations.
 
+A paired device's bearer slides 30 days on use but never past an absolute maximum
+that counts from the claim, 180 days by default. Set another span, 1 to 3650 days,
+with:
+
+```toml
+[pairing]
+device_max_lifetime_days = 365
+```
+
+A change applies to devices paired after the Hub restarts; a device keeps the
+maximum it was given. From the maximum on the bearer is refused with 401 and the
+device must pair again. Until then, once a device's stored expiry has reached
+the maximum, rotating its bearer returns the current bearer unchanged with
+`"reason": "max_lifetime"` and nothing is issued. A device can revoke itself
+with `POST /v1/device/revoke`; clients call it only when discovery advertises
+`auth.revoke`, which the Hub does from the discovery flip on.
+
 ## Browser clients
 
 Cross-origin browser access is disabled by default. List each permitted browser
@@ -62,7 +79,7 @@ the listed method. The common request headers are `Authorization`,
 | --- | --- | --- |
 | `/healthz`, `/readyz`, `/.well-known/teslatlas-hub`, `/v1/vehicles` | GET | None |
 | `/v1/vehicles/{vehicle_id}/current`, `/v1/vehicles/{vehicle_id}/drives` | GET | None |
-| `/v1/pairings/{pairing_id}/claim`, `/v1/device/rotate` | POST | None |
+| `/v1/pairings/{pairing_id}/claim`, `/v1/device/rotate`, `/v1/device/revoke` | POST | None |
 | `/v1/vehicles/{vehicle_id}/sync/manifest`, `/v1/vehicles/{vehicle_id}/sync/noop` | GET | `X-Teslatlas-Supported-Schemas`, `X-Teslatlas-Sync-Capability`, `X-Teslatlas-Sync-Profile` |
 | `/v1/packs/sha256/{object_name}` | GET | `Range`, `If-Range` |
 

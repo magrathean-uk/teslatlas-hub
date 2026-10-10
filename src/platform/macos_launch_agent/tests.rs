@@ -231,6 +231,7 @@ fn source_run_config(temporary: &Path, data_dir: &Path) -> HubConfig {
         teslamate: Default::default(),
         terrain: Default::default(),
         http: Default::default(),
+        pairing: Default::default(),
     }
 }
 

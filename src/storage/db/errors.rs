@@ -347,6 +347,10 @@ pub enum StoreError {
     PairingVehicleUnavailable(Uuid),
     #[error("pairing scope names no vehicle")]
     EmptyPairingScope,
+    #[error("paired device maximum lifetime must be positive")]
+    InvalidDeviceMaxLifetime,
+    #[error("cannot seal the rotation successor")]
+    SealRotationSuccessor,
     #[error("source id must not be nil")]
     NilSourceId,
     #[error("vehicle id must not be nil")]

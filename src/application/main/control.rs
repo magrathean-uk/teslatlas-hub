@@ -219,11 +219,22 @@ fn migration_outcome_ambiguous(
     .into()
 }
 
+/// What `control --vehicle-id X pair` says: that flag picks the car a vehicle
+/// command acts on, and an invitation is scoped by `pair --vehicle` instead.
+const CONTROL_PAIR_VEHICLE_ID_USAGE: &str = "--vehicle-id does not apply to `control pair`: it \
+    selects the car of a vehicle command. Scope the invitation with `control pair --vehicle <UUID>` \
+    (repeatable) or `--all-vehicles`";
+
 async fn run_control(
     config_path: &Path,
     requested_vehicle_id: Option<uuid::Uuid>,
     command: &ControlCommand,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Refused up front, before any configuration or catalogue is opened: an
+    // invitation that silently ignored the flag would grant every vehicle.
+    if requested_vehicle_id.is_some() && matches!(command, ControlCommand::Pair { .. }) {
+        return Err(CONTROL_PAIR_VEHICLE_ID_USAGE.into());
+    }
     let config = HubConfig::load(config_path)?;
     let store = HubStore::open_existing(&config.data_dir)?;
     match command {
