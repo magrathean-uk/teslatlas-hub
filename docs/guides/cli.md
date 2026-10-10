@@ -42,7 +42,7 @@ appear in process arguments.
 | `status` | Print redacted local state. |
 | `doctor` | Check database, credentials, TLS, and collector readiness. |
 | `preflight` | Confirm one configured vehicle can be served. |
-| `repair` | Validate integrity and remove orphaned packs. |
+| `repair` | Validate integrity, remove orphaned packs and clear ended rotation-grace successors. |
 | `observe` | Observe one admitted vehicle for a bounded duration. |
 
 ## Data and recovery

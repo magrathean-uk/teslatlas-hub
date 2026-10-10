@@ -1230,6 +1230,10 @@ impl HubStore {
     /// A quarantine is evidence of a semantic projection failure. Clearing it
     /// without reconstructing from the immutable journal would make a damaged
     /// cursor appear healthy, so this safe repair deliberately preserves it.
+    ///
+    /// The pass also drops the sealed successor of every rotation grace window
+    /// that has ended, so a rotated device that never authenticates again does
+    /// not keep one in the catalogue.
     pub fn repair(&self) -> Result<RepairReport, StoreError> {
         self.repair_at(retired_lineage_clock_ms()?)
     }
@@ -1315,6 +1319,16 @@ impl HubStore {
                 params![retired_cleanup_cutoff],
             )
             .map_err(StoreError::LineageCatalog)?;
+        // An ended grace window (`valid_until_ms <= now`, the bound a grace
+        // retry and a grace authentication refuse at) has no use for the
+        // successor sealed in it. The row and its digest stay.
+        transaction
+            .execute(
+                "UPDATE paired_device_token_grace SET sealed_successor = NULL
+                 WHERE valid_until_ms <= ?1 AND sealed_successor IS NOT NULL",
+                params![now_ms],
+            )
+            .map_err(StoreError::RotateDevice)?;
         transaction.commit().map_err(StoreError::LineageCatalog)?;
 
         Ok(RepairReport {

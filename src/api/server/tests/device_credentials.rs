@@ -97,6 +97,20 @@ async fn revoke(app: &Router, bearer: Option<&str>, body: Option<Vec<u8>>) -> Re
         .expect("in-memory response")
 }
 
+/// Whether the device's grace row holds a sealed successor.
+fn grace_is_sealed(store: &HubStore, device_id: &str) -> bool {
+    store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT sealed_successor IS NOT NULL FROM paired_device_token_grace
+              WHERE device_id = ?1",
+            [device_id],
+            |row| row.get(0),
+        )
+        .expect("grace row")
+}
+
 /// Every device row and grace row, to prove a request changed nothing.
 fn credential_rows(store: &HubStore) -> Vec<String> {
     let connection = store.open().expect("catalogue");
@@ -642,6 +656,7 @@ async fn revoke_is_204_and_then_the_bearer_is_401_on_json_sync_and_pack_routes()
     let again = revoke(&grants.app, Some(&bearer), None).await;
     assert_eq!(again.status(), StatusCode::UNAUTHORIZED);
     assert!(is_bearer_challenge(again.headers()));
+    assert!(body_bytes(again).await.is_empty());
 
     // Another device is untouched.
     assert_eq!(
@@ -690,8 +705,11 @@ async fn a_request_body_of_any_size_is_a_400_never_a_413_and_revokes_nothing() {
         let response = revoke(&grants.app, bearer, Some(b"{}".to_vec())).await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert!(is_bearer_challenge(response.headers()));
+        assert!(body_bytes(response).await.is_empty());
         let response = revoke(&grants.app, bearer, None).await;
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(is_bearer_challenge(response.headers()));
+        assert!(body_bytes(response).await.is_empty());
     }
     // And the empty request still revokes.
     assert_eq!(
@@ -717,6 +735,10 @@ async fn revoke_with_the_current_or_the_grace_bearer_revokes_the_device() {
             );
         }
         let presented = if use_grace { &first } else { &second };
+        assert!(
+            grace_is_sealed(&grants.store, &device.to_string()),
+            "grace: {use_grace}: the rotation sealed a successor"
+        );
         let revoked = revoke(&grants.app, Some(presented), None).await;
         assert_eq!(
             revoked.status(),
@@ -725,6 +747,10 @@ async fn revoke_with_the_current_or_the_grace_bearer_revokes_the_device() {
         );
         let (_, _, _, revoked_at) = device_columns(&grants.store, &device.to_string());
         assert!(revoked_at.is_some());
+        assert!(
+            !grace_is_sealed(&grants.store, &device.to_string()),
+            "grace: {use_grace}: the revocation cleared the sealed successor"
+        );
         // Both bearers of the device are dead, on every route.
         for bearer in [&first, &second] {
             for (method, uri) in [
@@ -817,23 +843,27 @@ async fn a_bearer_at_its_absolute_maximum_is_401_on_json_sync_pack_rotate_and_re
     assert!(other_revoked.is_none());
 }
 
-#[test]
-fn a_revocation_answer_is_204_401_for_a_vanished_device_and_503_for_a_store_failure() {
+#[tokio::test]
+async fn a_revocation_answer_is_204_401_for_a_vanished_device_and_503_for_a_store_failure() {
     use super::super::super::device_revoke::revocation_response;
     let revoked = revocation_response(Ok(()));
     assert_eq!(revoked.status(), StatusCode::NO_CONTENT);
     assert_eq!(revoked.headers()[header::CACHE_CONTROL], "no-store");
     assert!(!revoked.headers().contains_key(header::WWW_AUTHENTICATE));
+    assert!(body_bytes(revoked).await.is_empty());
     // The device row vanished between the bearer check and the revocation.
     let gone = revocation_response(Err(crate::db::StoreError::PairingRejected));
     assert_eq!(gone.status(), StatusCode::UNAUTHORIZED);
     assert!(is_bearer_challenge(gone.headers()));
+    assert!(body_bytes(gone).await.is_empty());
     // Any other store failure is the empty 503, with nothing of it exposed.
     let failed = revocation_response(Err(crate::db::StoreError::RevokeDevice(
         rusqlite::Error::InvalidQuery,
     )));
     assert_eq!(failed.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert!(!failed.headers().contains_key(header::WWW_AUTHENTICATE));
+    assert!(!failed.headers().contains_key(header::CONTENT_TYPE));
+    assert!(body_bytes(failed).await.is_empty());
 }
 
 #[tokio::test]
@@ -904,4 +934,5 @@ async fn an_admitted_origin_can_post_a_real_revoke_and_read_the_answers() {
     let again = post(ORIGIN).await;
     assert_eq!(again.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(again.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN], ORIGIN);
+    assert!(body_bytes(again).await.is_empty());
 }

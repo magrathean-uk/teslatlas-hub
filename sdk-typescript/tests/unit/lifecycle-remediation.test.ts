@@ -97,7 +97,8 @@ describe("independent Hub discovery callers", () => {
       const client = createHubClient({
         endpoint,
         expectedHubId: hubId,
-        credentials,
+        // Nothing stored: logout has nothing to revoke, so it fetches no discovery of its own.
+        credentials: { ...credentials, load: () => undefined },
         signal: owner.signal,
         fetch: async (_input, init) => {
           calls += 1;
@@ -228,7 +229,11 @@ describe("Current Hub independent header and identity rules", () => {
         },
         fetch: async () => {
           calls += 1;
-          return Response.json(hubDiscovery);
+          // No auth.revoke: logout then sends nothing and does not load the credential again.
+          return Response.json({
+            ...hubDiscovery,
+            capabilities: ["query.vehicles", "query.current"],
+          });
         },
       });
       await expect(client.vehicles()).rejects.toMatchObject({ name: "AbortError" });

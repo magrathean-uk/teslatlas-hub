@@ -1295,10 +1295,10 @@ fn a_historical_backup_missing_a_base_pairing_table_is_rejected() {
 }
 
 #[test]
-fn a_schema_68_backup_missing_a_pairing_table_is_rejected_at_verification() {
+fn a_current_schema_backup_missing_a_pairing_table_is_rejected_at_verification() {
     // From schema 68 on the grant tables and the rotation grace table are
-    // always present. A catalogue that declares schema 68 without one is
-    // refused when the backup is verified (the optional-table rule is for older
+    // always present. A catalogue that declares the current schema (68 or a
+    // later one) without one is refused when the backup is verified (the optional-table rule is for older
     // schemas only, as the v67 test below shows), and a restore never starts.
     for missing in [
         "device_vehicle_grants",
@@ -1306,9 +1306,9 @@ fn a_schema_68_backup_missing_a_pairing_table_is_rejected_at_verification() {
         "paired_device_token_grace",
     ] {
         let (temporary, store) = create_fixture();
-        let backup = temporary.path().join("missing-v68-table");
+        let backup = temporary.path().join("missing-pairing-table");
         create_data_backup(&store, &backup).expect("create backup fixture");
-        verify_data_backup(&backup).expect("the intact schema 68 backup verifies");
+        verify_data_backup(&backup).expect("the intact current-schema backup verifies");
         let connection = Connection::open_with_flags(
             backup.join(CATALOGUE_MEMBER),
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -1322,12 +1322,13 @@ fn a_schema_68_backup_missing_a_pairing_table_is_rejected_at_verification() {
             .expect("sealed journal mode");
         drop(connection);
         let manifest = reseal_backup_manifest(&backup, SCHEMA_VERSION);
-        assert_eq!(manifest.hub_schema, 68);
+        assert_eq!(manifest.hub_schema, SCHEMA_VERSION);
+        let declared = format!("declares schema {SCHEMA_VERSION}");
         let error = verify_data_backup(&backup)
-            .expect_err("a schema 68 catalogue without a pairing table must not verify");
+            .expect_err("a current-schema catalogue without a pairing table must not verify");
         let message = error.to_string();
         assert!(
-            message.contains(missing) && message.contains("declares schema 68"),
+            message.contains(missing) && message.contains(&declared),
             "{missing}: the rejection names the table and the declared schema: {message}"
         );
         let restored = temporary.path().join("never-restored");
@@ -1336,7 +1337,7 @@ fn a_schema_68_backup_missing_a_pairing_table_is_rejected_at_verification() {
         // The refusal is the verification's own, not the sealing step's "no such
         // table" after a staged copy.
         assert!(
-            error.to_string().contains("declares schema 68") && error.to_string().contains(missing),
+            error.to_string().contains(&declared) && error.to_string().contains(missing),
             "{missing}: {error}"
         );
         assert!(!restored.exists());
@@ -1344,11 +1345,12 @@ fn a_schema_68_backup_missing_a_pairing_table_is_rejected_at_verification() {
 }
 
 #[test]
-fn a_legacy_v3_schema_68_backup_missing_a_pairing_table_is_rejected_at_verification() {
+fn a_legacy_v3_current_schema_backup_missing_a_pairing_table_is_rejected_at_verification() {
     // The table-presence rule is the same for the legacy v3 format: it carries
     // live pairing rows (which the restore revokes), but a catalogue declaring
-    // schema 68 without one of the five tables cannot be emptied, so it must
-    // fail at verification and not when the restore reaches the deletes.
+    // the current schema (68 or a later one) without one of the five tables
+    // cannot be emptied, so it must fail at verification and not when the
+    // restore reaches the deletes.
     for missing in [
         "device_vehicle_grants",
         "pairing_challenge_vehicles",
@@ -1357,7 +1359,7 @@ fn a_legacy_v3_schema_68_backup_missing_a_pairing_table_is_rejected_at_verificat
         "paired_devices",
     ] {
         let (temporary, store) = create_fixture();
-        let backup = temporary.path().join("legacy-missing-v68-table");
+        let backup = temporary.path().join("legacy-missing-pairing-table");
         create_data_backup(&store, &backup).expect("create backup fixture");
         reseal_backup_as_legacy_v3_with_pairing(&backup, "legacy-missing-table-bearer");
         let intact = verify_data_backup(&backup).expect("the intact legacy backup verifies");
@@ -1380,19 +1382,20 @@ fn a_legacy_v3_schema_68_backup_missing_a_pairing_table_is_rejected_at_verificat
         )
         .expect("legacy manifest");
         assert_eq!(manifest.hub_schema, SCHEMA_VERSION);
-        assert_eq!(manifest.hub_schema, 68);
-        let error = verify_data_backup(&backup)
-            .expect_err("a legacy schema 68 catalogue without a pairing table must not verify");
+        let declared = format!("declares schema {SCHEMA_VERSION}");
+        let error = verify_data_backup(&backup).expect_err(
+            "a legacy current-schema catalogue without a pairing table must not verify",
+        );
         let message = error.to_string();
         assert!(
-            message.contains(missing) && message.contains("declares schema 68"),
+            message.contains(missing) && message.contains(&declared),
             "{missing}: the rejection names the table and the declared schema: {message}"
         );
         let restored = temporary.path().join("never-restored");
         let error = restore_data_backup(&backup, &restored)
             .expect_err("a legacy restore must be refused up front");
         assert!(
-            error.to_string().contains("declares schema 68") && error.to_string().contains(missing),
+            error.to_string().contains(&declared) && error.to_string().contains(missing),
             "{missing}: the refusal is the verification's own: {error}"
         );
         assert!(!restored.exists());

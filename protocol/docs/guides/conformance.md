@@ -59,8 +59,15 @@ only adapter-exercised rich cases.
 
 ## Current-Hub acceptance
 
-`hub-http-v1@1.1.0` is a separate current-Hub profile. Run it by itself with
-the actual-Hub adapter and a private descriptor supplied by the Hub owner:
+`hub-http-v1@1.1.0` is a separate current-Hub profile. The current Teslatlas
+Hub names `hub-http-v1@1.2.0` in discovery, and the `1.1.0` discovery schema
+closes its member list and defines only two exact capability arrays, so this
+`1.1.0` actual-Hub lane cannot pass against that Hub. That is the intended
+profile change; run the `1.2.0` native cases (`./conformance/run --profile
+hub-http-v1@1.2.0 --config ...`, described in
+[`current-hub.md`](../reference/current-hub.md)) against it instead. The lane
+remains for a Hub that still serves `1.1.0`. Run it by itself with the
+actual-Hub adapter and a private descriptor supplied by the Hub owner:
 
 ```sh
 TESLATLAS_HUB_HTTP_CONFIG=/absolute/private/ready-or-matrix.json

@@ -116,6 +116,10 @@ impl FleetSetupCredentials {
         FleetAccessToken::new(self.access_token.as_str()).map_err(Into::into)
     }
 
+    pub(crate) fn refresh_token(&self) -> Result<FleetRefreshToken, FleetCredentialError> {
+        FleetRefreshToken::new(self.refresh_token.as_str()).map_err(Into::into)
+    }
+
     pub(crate) const fn region(&self) -> FleetRegion {
         self.region
     }
@@ -388,6 +392,16 @@ impl FleetAuthManager {
     ) -> Result<&FleetAccessToken, FleetCredentialError> {
         self.assert_sensitive_access()?;
         Ok(&self.access_token)
+    }
+
+    /// The live refresh token, behind the same admission check as the access
+    /// token. It exists only so a provider response that echoes it can be
+    /// scrubbed before storage; it is never sent, logged or formatted.
+    pub(crate) fn refresh_token_for_sensitive_use(
+        &self,
+    ) -> Result<&FleetRefreshToken, FleetCredentialError> {
+        self.assert_sensitive_access()?;
+        Ok(&self.refresh_token)
     }
 
     pub(crate) const fn region(&self) -> FleetRegion {

@@ -34,6 +34,9 @@ use crate::{
     tesla_stream::{StreamPowerGate, StreamRegion},
 };
 
+pub(crate) mod provider_secrets;
+pub use provider_secrets::ProviderSecrets;
+
 /// Four MiB is comfortably above a normal vehicle-data response while keeping
 /// a bad upstream response from turning a manual collection into an unbounded
 /// allocation.
@@ -247,7 +250,13 @@ impl OwnerApi {
         let envelope: ResponseEnvelope<Vec<ProductWire>> = self
             .get_envelope_with_legacy_auth_url_fused(auth, fuse, endpoint, None)
             .await?;
-        parse_vehicle_list(envelope).map_err(OwnerApiAuthError::Owner)
+        let mut vehicles = parse_vehicle_list(envelope).map_err(OwnerApiAuthError::Owner)?;
+        ProviderSecrets::new(&[
+            auth.access_token_for_sensitive_use()?,
+            auth.refresh_token_for_sensitive_use()?,
+        ])
+        .scrub_vehicle_list(&mut vehicles);
+        Ok(vehicles)
     }
 
     /// Native first-run discovery performs one bounded products request with
@@ -261,7 +270,10 @@ impl OwnerApi {
         let envelope: ResponseEnvelope<Vec<ProductWire>> = self
             .execute_envelope_request(self.envelope_request(auth.access_token(), endpoint))
             .await?;
-        parse_vehicle_list(envelope)
+        let mut vehicles = parse_vehicle_list(envelope)?;
+        ProviderSecrets::new(&[auth.access_token(), auth.refresh_token()])
+            .scrub_vehicle_list(&mut vehicles);
+        Ok(vehicles)
     }
 
     /// Execute one explicit legacy Owner API action using the resident
@@ -373,7 +385,13 @@ impl OwnerApi {
         let envelope: Value = self
             .get_envelope_with_legacy_auth_url_fused(auth, fuse, endpoint, power_gate)
             .await?;
-        parse_vehicle_data(vehicle_id, envelope).map_err(OwnerApiAuthError::Owner)
+        // Refresh happens only before the request, so the pair read here is
+        // exactly the pair that was sent and the one a provider could echo.
+        let secrets = ProviderSecrets::new(&[
+            auth.access_token_for_sensitive_use()?,
+            auth.refresh_token_for_sensitive_use()?,
+        ]);
+        parse_vehicle_data(vehicle_id, envelope, &secrets).map_err(OwnerApiAuthError::Owner)
     }
 
     pub(crate) async fn vehicle_probe_with_legacy_auth_fused(
@@ -403,7 +421,14 @@ impl OwnerApi {
         let envelope: ResponseEnvelope<Map<String, Value>> = self
             .get_envelope_with_legacy_auth_url_fused(auth, fuse, endpoint, None)
             .await?;
-        parse_vehicle_state(envelope.response).map_err(OwnerApiAuthError::Owner)
+        let state = parse_vehicle_state(envelope.response).map_err(OwnerApiAuthError::Owner)?;
+        // The state is stored as the vehicle's source state and served as its current state, so
+        // a credential echoed into it is replaced here, before the scheduler or the store sees it.
+        let secrets = ProviderSecrets::new(&[
+            auth.access_token_for_sensitive_use()?,
+            auth.refresh_token_for_sensitive_use()?,
+        ]);
+        Ok(secrets.scrub_vehicle_state(state))
     }
 
     fn vehicle_data_endpoint(&self, vehicle_id: VehicleId) -> Result<Url, OwnerApiError> {
@@ -589,8 +614,9 @@ fn parse_vehicle_list(
 fn parse_vehicle_data(
     vehicle_id: VehicleId,
     raw_json: Value,
+    secrets: &ProviderSecrets<'_>,
 ) -> Result<VehicleData, OwnerApiError> {
-    VehicleData::from_provider_raw_json(vehicle_id, raw_json)
+    VehicleData::from_provider_raw_json(vehicle_id, raw_json, secrets)
 }
 
 impl fmt::Debug for OwnerApi {
@@ -778,9 +804,13 @@ impl VehicleData {
         &self.provider_raw_json
     }
 
+    /// Project one provider response. `secrets` are the live credentials in
+    /// scope for it: any kept string that is or contains one is replaced by
+    /// null here, before anything can store, cache or serve the data.
     pub(crate) fn from_provider_raw_json(
         vehicle_id: VehicleId,
         raw_json: Value,
+        secrets: &ProviderSecrets<'_>,
     ) -> Result<Self, OwnerApiError> {
         let count_is_invalid = raw_json
             .as_object()
@@ -790,7 +820,16 @@ impl VehicleData {
             return Err(OwnerApiError::InvalidVehicleDataEnvelope);
         }
 
-        let fields = allowlisted_provider_response_v1(&raw_json)?;
+        let mut fields = allowlisted_provider_response_v1(&raw_json)?;
+        let reflected = secrets.scrub_fields(&mut fields);
+        if !reflected.is_empty() {
+            // Paths are allowlisted provider key names; no value is logged.
+            tracing::warn!(
+                paths = %reflected.join(", "),
+                fields = reflected.len(),
+                "provider response reflected a live credential; the affected fields were replaced by null"
+            );
+        }
         let mut provider_raw_json = json!({"response": fields});
         scrub_sensitive_value(&mut provider_raw_json);
         let fields = provider_raw_json["response"]

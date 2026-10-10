@@ -2,10 +2,15 @@
 
 This guide covers the public HTTP surface implemented by a current Teslatlas
 Hub. Run the shell blocks in one session, in order, with the private directory
-and validated endpoint produced by the earlier blocks. The wire contract is
-`hub-http-v1@1.1.0` in
-[`profiles/hub-http-v1/1.1.0/`](../../profiles/hub-http-v1/1.1.0/). Copy the whole
-directory when distributing the contract: its OpenAPI 3.1.0 document resolves
+and validated endpoint produced by the earlier blocks. A Hub built from the
+current source names `hub-http-v1@1.2.0` in its discovery document and is held to
+the contract in [`profiles/hub-http-v1/1.2.0/`](../../profiles/hub-http-v1/1.2.0/);
+the `hub-http-v1@1.2.0` section below says what that profile changes. The
+walkthrough after that section is written against `hub-http-v1@1.1.0` in
+[`profiles/hub-http-v1/1.1.0/`](../../profiles/hub-http-v1/1.1.0/) and applies as
+written only to a Hub whose discovery has no `profile` member; its discovery
+check rejects a `1.2.0` Hub (see "Discover and pair a client safely"). Copy the whole
+directory when distributing a contract: its OpenAPI 3.1.0 document resolves
 schemas from the adjacent profile files.
 
 Run the command examples from the Protocol repository root. They use the
@@ -37,8 +42,9 @@ manifest is not pinned) and has profile status `served`. Use it when discovery r
 [`profiles/hub-http-v1/1.2.0/`](../../profiles/hub-http-v1/1.2.0/): `profile.json`
 (routes, limits, rules), `openapi.json`, the schemas, `cases.json`, `examples/` and
 `SHA256SUMS`. Copy the whole directory. Everything below this section describes
-`1.1.0` and stays true for the routes `1.2.0` keeps; this section lists what
-`1.2.0` changes. Generate clients with [`generators/README.md`](../../generators/README.md).
+`1.1.0` and stays true for the routes `1.2.0` keeps, except discovery, which the
+Discovery paragraph below replaces; this section lists what `1.2.0` changes.
+Generate clients with [`generators/README.md`](../../generators/README.md).
 
 The additive policy: clients ignore unknown object fields and unknown capability
 tokens; servers may add optional fields and tokens within 1.x; removing or retyping
@@ -193,9 +199,10 @@ it through an extractor that would answer `413`.
 A name that breaks the rule is `422` with a bounded `text/plain` body, answered before the invitation is consulted: the refusal consumes
 nothing, and the same invitation still claims with a valid name. The schema says `minLength` 1, `maxLength` 128 and the
 control-character rule, but `maxLength` counts characters and cannot state the byte limit, so a client checks the byte length itself.
-The current Hub does not do this yet, and the later Hub batch must: it validates the name inside the store call, where an empty name, one
-over 128 bytes or one with a control character is an error that the claim handler answers with an empty `503`, which no client can correct
-by retrying. Conformance sends six such names before the real claim and expects `422` for each, then a `200` for the claim itself.
+The current Hub does this: the claim handler judges the name with the same function the store applies as its first statement, before it
+parses the pairing id or reaches the store, and answers `422` with a short `text/plain` sentence that states the rule; the name itself
+never causes a `503`. (A Hub before this change left the check to the store, where the same names ended as an empty `503`, which no client can correct
+by retrying.) Conformance sends six such names before the real claim and expects `422` for each, then a `200` for the claim itself.
 A client that takes the name from free text, such as the Home Assistant integration, can reach this case.
 
 **Handler time budget.** The Hub answers any route, including `/healthz`, `/readyz`, the
@@ -293,8 +300,8 @@ further rotation ends the earlier bearer's grace. (13) A path segment that is no
 malformed or unknown identifiers answered with a `404` after the bearer check, never `400`, and never `503` because of the value
 (a requirement on the later Hub batch; see Malformed identifiers). (14) A request with an `Origin` header the Hub does not admit is
 `403` on any route. (15) Conformance has one case beyond the specification's list, `malformed-identifier-404`. (16) A claim whose
-`device_name` is empty, over 128 UTF-8 bytes or has a control character is `422` with a `text/plain` body and consumes nothing (a
-requirement on the later Hub batch; see Device name), and a claim is never retried automatically, so the empty `503` rule
+`device_name` is empty, over 128 UTF-8 bytes or has a control character is `422` with a `text/plain` body and consumes nothing (see
+Device name), and a claim is never retried automatically, so the empty `503` rule
 excludes it. (17) Every vehicle-scoped route checks the grant before it reads the query (a requirement on the later Hub batch for
 the drives route; see Access). (18) Only the lowercase hyphenated UUID and plain decimal ids are specified: other spellings a Hub's
 parser accepts may be served, and a client must not rely on their refusal (see Malformed identifiers).
@@ -302,6 +309,12 @@ Changing any of these after the profile is frozen
 is a new major profile.
 
 ## Choose the profile
+
+This section and the walkthrough that follows describe `1.1.0`, the profile of a
+Hub whose discovery has no `profile` member. A Hub whose discovery names
+`hub-http-v1@1.2.0` has a `profile` member and advertises the tokens of the
+Discovery paragraph of the `hub-http-v1@1.2.0` section (two to eight, by
+configuration), not only the two sets below.
 
 Use this profile when discovery returns `protocol: "teslatlas-sync"`,
 `protocol_major: 1`, and `api_versions: ["1.0"]`. A Hub advertises either
@@ -336,7 +349,12 @@ must not be used as credentials.
 Discovery is unauthenticated and has no rich-profile version header. Obtain the
 Hub origin from the owner or deployment configuration; do not copy an endpoint
 from another Hub. Save the response privately and validate it against the
-profile before choosing capabilities:
+profile before choosing capabilities. The block below validates against
+`hub-http-v1@1.1.0`, so it exits on a Hub whose discovery names
+`hub-http-v1@1.2.0` (a Hub built from the current source): the `1.1.0` schema
+rejects the `profile` member and the token set. Against such a Hub, validate with
+`$PWD/profiles/hub-http-v1/1.2.0` instead, as the `hub-http-v1@1.2.0` section
+above describes:
 
 ~~~sh
 set -eu
@@ -388,7 +406,7 @@ value = json.loads(raw)
 schema = json.loads((profile / "discovery.schema.json").read_bytes())
 errors = list(Draft202012Validator(schema, format_checker=FormatChecker()).iter_errors(value))
 if errors:
-    raise SystemExit("discovery does not match hub-http-v1@1.1.0")
+    raise SystemExit(f"discovery does not match {profile.parent.name}@{profile.name}")
 if "query.vehicles" not in value["capabilities"] or "query.current" not in value["capabilities"]:
     raise SystemExit("Hub does not advertise the required query capabilities")
 PY

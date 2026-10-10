@@ -564,13 +564,19 @@ async fn fleet_list_vehicles_with_auth(
         manager.refresh_if_due(auth_api, SystemTime::now()).await?;
     }
     let first = api
-        .list_vehicles(manager.access_token_for_sensitive_use()?)
+        .list_vehicles(
+            manager.access_token_for_sensitive_use()?,
+            manager.refresh_token_for_sensitive_use()?,
+        )
         .await;
     if allow_refresh && matches!(first, Err(FleetApiError::HttpStatus(401 | 403))) {
         manager.mark_refresh_due();
         manager.refresh_if_due(auth_api, SystemTime::now()).await?;
         return api
-            .list_vehicles(manager.access_token_for_sensitive_use()?)
+            .list_vehicles(
+                manager.access_token_for_sensitive_use()?,
+                manager.refresh_token_for_sensitive_use()?,
+            )
             .await
             .map_err(Into::into);
     }
@@ -591,13 +597,24 @@ async fn fleet_vehicle_data_with_auth(
         manager.refresh_if_due(auth_api, SystemTime::now()).await?;
     }
     let first = api
-        .vehicle_data(manager.access_token_for_sensitive_use()?, vehicle.id, &vin)
+        .vehicle_data(
+            manager.access_token_for_sensitive_use()?,
+            manager.refresh_token_for_sensitive_use()?,
+            vehicle.id,
+            &vin,
+        )
         .await;
     if allow_refresh && matches!(first, Err(FleetApiError::HttpStatus(401 | 403))) {
         manager.mark_refresh_due();
         manager.refresh_if_due(auth_api, SystemTime::now()).await?;
+        // The retry reads the pair the refresh just installed.
         return api
-            .vehicle_data(manager.access_token_for_sensitive_use()?, vehicle.id, &vin)
+            .vehicle_data(
+                manager.access_token_for_sensitive_use()?,
+                manager.refresh_token_for_sensitive_use()?,
+                vehicle.id,
+                &vin,
+            )
             .await
             .map_err(Into::into);
     }

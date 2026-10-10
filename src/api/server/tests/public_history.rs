@@ -2378,10 +2378,12 @@ async fn rows_whose_json_identity_differs_from_the_catalogue_key_fail_closed() {
 #[tokio::test]
 async fn home_assistant_discovery_invariants_hold_with_and_without_a_cursor_key() {
     let history = History::new();
-    for app in [
-        public_query_router(history.store.clone(), KEY_BYTE),
-        router(history.store.clone()),
-        paired_router(history.store.clone(), &cursor_key()),
+    // Only the paired router, which requires paired-device authentication and
+    // so serves the revoke route, advertises `auth.revoke`.
+    for (app, paired) in [
+        (public_query_router(history.store.clone(), KEY_BYTE), false),
+        (router(history.store.clone()), false),
+        (paired_router(history.store.clone(), &cursor_key()), true),
     ] {
         let response = call(&app, "/.well-known/teslatlas-hub").await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -2390,6 +2392,8 @@ async fn home_assistant_discovery_invariants_hold_with_and_without_a_cursor_key(
         assert_eq!(payload["api_versions"], serde_json::json!(["1.0"]));
         assert_eq!(payload["protocol"], "teslatlas-sync");
         assert_eq!(payload["protocol_major"], 1);
+        // The profile the Hub serves; Home Assistant ignores the member.
+        assert_eq!(payload["profile"], "hub-http-v1@1.2.0");
         let capabilities = payload["capabilities"].as_array().expect("capabilities");
         for required in ["query.vehicles", "query.current"] {
             assert!(
@@ -2397,5 +2401,10 @@ async fn home_assistant_discovery_invariants_hold_with_and_without_a_cursor_key(
                 "{required} is advertised"
             );
         }
+        assert_eq!(
+            capabilities.iter().any(|token| token == "auth.revoke"),
+            paired,
+            "auth.revoke is advertised with paired-device authentication only"
+        );
     }
 }

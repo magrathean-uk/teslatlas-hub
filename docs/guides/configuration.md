@@ -53,7 +53,7 @@ device must pair again. Until then, once a device's stored expiry has reached
 the maximum, rotating its bearer returns the current bearer unchanged with
 `"reason": "max_lifetime"` and nothing is issued. A device can revoke itself
 with `POST /v1/device/revoke`; clients call it only when discovery advertises
-`auth.revoke`, which the Hub does from the discovery flip on.
+`auth.revoke`, which the Hub does whenever paired-device authentication is on.
 
 ## Browser clients
 

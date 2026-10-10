@@ -4114,7 +4114,10 @@ class DocumentationTests(unittest.TestCase):
                 '**Device name.**', 'is 1 to 128 UTF-8 bytes with no control character (U+0000 to U+001F and U+007F to U+009F)',
                 'A name that breaks the rule is `422` with a bounded `text/plain` body, answered before the invitation is consulted: the refusal consumes nothing, '
                 'and the same invitation still claims with a valid name', '`maxLength` counts characters and cannot state the byte limit, so a client checks the byte length itself',
-                'an empty `503`, which no client can correct by retrying', 'Conformance sends six such names before the real claim and expects `422` for each, then a `200` for the claim itself',
+                'The current Hub does this: the claim handler judges the name with the same function the store applies as its first statement',
+                'answers `422` with a short `text/plain` sentence that states the rule; the name itself never causes a `503`',
+                '(A Hub before this change left the check to the store, where the same names ended as an empty `503`, which no client can correct by retrying.)',
+                'Conformance sends six such names before the real claim and expects `422` for each, then a `200` for the claim itself',
                 'Treat an empty `503` on any route except the claim as a transient outage and retry later. A claim is never retried automatically',
                 'The claim case first sends the six `device_name` values a Hub must refuse (see Device name) and then the claim itself, which must still succeed because a refusal consumed nothing',
                 # malformed identifiers: an undecodable segment, the nil UUID, and the bearer first (HR4-1, r4-reality-N1)
@@ -4157,10 +4160,29 @@ class DocumentationTests(unittest.TestCase):
         self.assertNotIn('answered as an unknown vehicle, after the bearer check', flat)
         self.assertNotIn('malformed-identifier answer), after the bearer check', flat)  # the nil UUID gets its unknown-vehicle answer, not the malformed one (R5-text-N6)
         self.assertNotIn('Treat an empty `503` on any route as a transient outage', flat)
+        self.assertNotIn('The current Hub does not do this yet, and the later Hub batch must: it validates the name inside the store call', flat)
+        self.assertNotIn('consumes nothing (a requirement on the later Hub batch; see Device name)', flat)
         self.assertNotIn('never `400` or `503` (a requirement', flat)
         self.assertNotIn('`hub-sync-v1` lists', flat)  # every statement about what hub-sync-v1 lists names the version it is read from
         self.assertNotIn('every one of the 49 cases', flat)
         self.assertNotIn('(the extractor\'s "Failed to buffer the request body")', flat)  # the text carries the inner error
+
+    def test_current_hub_reference_says_the_1_1_0_walkthrough_does_not_fit_a_1_2_0_hub(self):
+        flat = ' '.join((ROOT / 'docs/reference/current-hub.md').read_text().split())
+        for phrase in (
+                # the introduction: which profile a Hub built from the current source names, and where the 1.1.0 walkthrough applies
+                'A Hub built from the current source names `hub-http-v1@1.2.0` in its discovery document',
+                'applies as written only to a Hub whose discovery has no `profile` member; its discovery check rejects a `1.2.0` Hub',
+                # the 1.2.0 section no longer says the 1.1.0 text stays true for discovery
+                'stays true for the routes `1.2.0` keeps, except discovery, which the Discovery paragraph below replaces',
+                # the profile choice and the first walkthrough block
+                'A Hub whose discovery names `hub-http-v1@1.2.0` has a `profile` member',
+                'so it exits on a Hub whose discovery names `hub-http-v1@1.2.0`',
+                'the `1.1.0` schema rejects the `profile` member and the token set',
+                'validate with `$PWD/profiles/hub-http-v1/1.2.0` instead'):
+            self.assertIn(phrase, flat)
+        # the discovery block reports the profile it was given, so the same block serves both directories
+        self.assertIn('raise SystemExit(f"discovery does not match {profile.parent.name}@{profile.name}")', (ROOT / 'docs/reference/current-hub.md').read_text())
 
     def test_the_documents_name_the_same_page_limits_as_the_profile(self):
         text = (ROOT / 'docs/reference/current-hub.md').read_text()

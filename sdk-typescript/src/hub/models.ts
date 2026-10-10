@@ -56,8 +56,11 @@ export interface HubCredential {
 
 /**
  * Rotation uses one loaded credential snapshot for authentication and identity.
- * Saves/clears through a single client are ordered. Callers sharing a store across
- * clients must coordinate rotations and external writes; this interface has no CAS.
+ * Saves/clears through a single client are ordered. A load that a bearer operation starts after
+ * `logout()` waits until the clear has finished, and a rotation never saves a credential derived
+ * from a load that ran before the logout. `logout()` itself also loads once, to revoke at the Hub,
+ * before it clears. Callers sharing a store across clients must coordinate rotations and external
+ * writes; this interface has no CAS.
  */
 export interface HubCredentialStore {
   load(): MaybePromise<HubCredential | undefined>;
@@ -139,18 +142,42 @@ export interface HubClient {
     deviceName: string,
     options?: HubRequestOptions,
   ): Promise<HubResponse<HubClaim>>;
+  /**
+   * Rotate the stored credential and save the successor. A device at its absolute lifetime gets
+   * 200 with the current bearer and `reason: "max_lifetime"`: no successor is issued, the stored
+   * bearer stays, no second rotate is sent, and the returned claim carries that `reason`. The
+   * stored credential takes the `expiresAtMs` of the answer (saved only when it differs from the
+   * stored one, and only while the store still holds the presented bearer and device id), so the
+   * SDK's expiry follows the Hub's. Branch on
+   * `result.value.reason === "max_lifetime"`: the device must be paired again before
+   * `result.value.expiresAtMs`. After the stored expiry passes, the SDK rejects the credential
+   * locally with `ProtocolValidationError("HubCredential.expiry")` before any authenticated
+   * request, so the expired bearer is never sent (an uncached discovery request may still go out
+   * first); it does not surface a 401 for it, so re-pair before that expiry. A max_lifetime answer that names
+   * another device or another bearer than the stored one is a `ProtocolValidationError` and
+   * nothing is saved.
+   */
   rotateDevice(options?: HubRequestOptions): Promise<HubResponse<HubClaim>>;
   vehicles(options?: HubRequestOptions): Promise<HubResponse<HubVehicles>>;
   current(vehicleId: string, options?: HubRequestOptions): Promise<HubResponse<HubCurrent>>;
   drives(vehicleId: string, options?: HubDrivesOptions): Promise<HubDrivesResult>;
   /**
-   * Abort the current session and clear credentials after SDK-owned mutations already dispatched.
-   * Credential mutations started after logout are ordered after that clear.
+   * Abort the current session, revoke the device at the Hub on a best-effort basis, and clear
+   * credentials after SDK-owned mutations already dispatched. When the stored credential is valid
+   * and the Hub advertises `auth.revoke` (by the discovery cached when logout started, or by one
+   * fresh discovery that names the expected Hub when none was cached), logout sends one
+   * `POST /v1/device/revoke` with that bearer, bounded together with the load and the discovery by
+   * one short deadline. 204 and 401 both count as revoked; any other status, a transport failure,
+   * the deadline or `dispose()` mean not revoked. There is no retry, and the local clear always
+   * happens: logout rejects only when `clear()` does. Credential mutations started after logout
+   * are ordered after that clear, and credential loads that bearer operations start after logout
+   * wait for it.
    */
   logout(): Promise<void>;
   /**
    * Abort the current session while retaining credentials. Caller persistence already dispatched
-   * may finish, but the interrupted operation cannot report success.
+   * may finish, but the interrupted operation cannot report success. A revoke that a pending
+   * `logout()` has in flight is abandoned; that logout still clears the credentials.
    */
   dispose(): void;
 }

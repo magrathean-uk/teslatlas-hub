@@ -77,8 +77,9 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml doctor
 ```
 
-Repair validates the catalogue and packs, reports quarantined sessions, and
-removes orphaned packs. Back up before repair and preserve diagnostic output.
+Repair validates the catalogue and packs, reports quarantined sessions,
+removes orphaned packs and clears the sealed successors of ended bearer-rotation
+grace windows. Back up before repair and preserve diagnostic output.
 
 ## Vehicle controls
 

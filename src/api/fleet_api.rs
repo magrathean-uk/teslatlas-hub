@@ -27,7 +27,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::{
     hub_pack::ProjectionCarSettings,
-    owner_api::{StreamVehicleId, Vehicle, VehicleData, VehicleId},
+    owner_api::{ProviderSecrets, StreamVehicleId, Vehicle, VehicleData, VehicleId},
 };
 
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
@@ -851,9 +851,13 @@ impl FleetApi {
         })
     }
 
+    /// `refresh_token` is the live refresh token for the same grant. It is
+    /// never sent; with the bearer it forms the secret set a reflected vehicle
+    /// name or state is checked against before the list is returned.
     pub async fn list_vehicles(
         &self,
         access_token: &FleetAccessToken,
+        refresh_token: &FleetRefreshToken,
     ) -> Result<Vec<Vehicle>, FleetApiError> {
         let endpoint = endpoint(&self.base_url, "api/1/vehicles")?;
         let envelope: ResponseEnvelope<Vec<FleetVehicleWire>> = execute_json(
@@ -869,16 +873,24 @@ impl FleetApi {
         {
             return Err(FleetApiError::InvalidResponse);
         }
-        envelope
+        let mut vehicles = envelope
             .response
             .into_iter()
             .map(FleetVehicleWire::into_vehicle)
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        ProviderSecrets::new(&[access_token.expose(), refresh_token.expose()])
+            .scrub_vehicle_list(&mut vehicles);
+        Ok(vehicles)
     }
 
+    /// `refresh_token` is the live refresh token for the same grant. It is
+    /// never sent; with the bearer it forms the secret set that a reflected
+    /// credential in the response is scrubbed against before the data is
+    /// returned (and so before anything can store it).
     pub async fn vehicle_data(
         &self,
         access_token: &FleetAccessToken,
+        refresh_token: &FleetRefreshToken,
         vehicle_id: VehicleId,
         vin: &VehicleVin,
     ) -> Result<VehicleData, FleetApiError> {
@@ -894,7 +906,8 @@ impl FleetApi {
                 .bearer_auth(access_token.expose()),
         )
         .await?;
-        VehicleData::from_provider_raw_json(vehicle_id, raw_json)
+        let secrets = ProviderSecrets::new(&[access_token.expose(), refresh_token.expose()]);
+        VehicleData::from_provider_raw_json(vehicle_id, raw_json, &secrets)
             .map_err(|_| FleetApiError::InvalidResponse)
     }
 

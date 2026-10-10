@@ -8,4 +8,4 @@ Include the SDK version and source commit or package digest, Node/npm versions, 
 
 Never attach authorization headers, invitations, credentials, private keys, raw Hub descriptors, vehicle identifiers, or location history. Reproduce with local fixtures where possible.
 
-Before reporting, check [compatibility](../docs/compatibility.md), [API behaviour](../docs/api.md), and [historical acceptance boundaries](../docs/development/archive/acceptance.md). A browser pairing error of `hub_tls_pin_unavailable` is expected without a caller-provided pin-capable transport. A local `logout()` does not revoke a device at the Hub.
+Before reporting, check [compatibility](../docs/compatibility.md), [API behaviour](../docs/api.md), and [historical acceptance boundaries](../docs/development/archive/acceptance.md). A browser pairing error of `hub_tls_pin_unavailable` is expected without a caller-provided pin-capable transport. `logout()` revokes the device at the Hub only on a best-effort basis (when the Hub advertises `auth.revoke`) and always clears the local credential.

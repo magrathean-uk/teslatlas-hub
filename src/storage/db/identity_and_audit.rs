@@ -324,7 +324,9 @@ impl HubStore {
     /// [`PAIRED_DEVICE_AUTH_WRITE_INTERVAL_MS`] or the stored stamp is that old
     /// (or absent), so a busy client costs the writer one update per interval,
     /// not one per request. The returned record is the stored one, with its
-    /// expiry limited to the maximum.
+    /// expiry limited to the maximum. The same write drops the sealed
+    /// successor of a grace window that has ended (`valid_until_ms <= now`);
+    /// a window still open keeps it.
     ///
     /// The read that decides a write is stale by the time the writer is free,
     /// so the `UPDATE` repeats the whole decision against the row it locks:
@@ -368,13 +370,16 @@ impl HubStore {
             }
             #[cfg(test)]
             self.before_credential_write(CredentialWriteStage::Authenticate);
-            let writer = self.open()?;
+            let mut writer = self.open()?;
+            let transaction = writer
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .map_err(StoreError::Begin)?;
             // The guards repeat the read's, and so does the interval test: a
             // revocation, an expiry or the maximum that landed since the read
             // leaves the row alone, and so does a refresh by a request that
             // got the writer first. The clamp keeps concurrent slides
             // monotonic and inside the cap.
-            let changed = writer
+            let changed = transaction
                 .execute(
                     "UPDATE paired_devices
                      SET expires_at_ms = MIN(MAX(expires_at_ms, ?1),
@@ -399,6 +404,18 @@ impl HubStore {
                 )
                 .map_err(StoreError::Query)?;
             if changed == 1 {
+                // The device is using its current bearer, so a grace window
+                // that has ended no longer needs the successor sealed in it:
+                // this write is the next one to touch the device's row.
+                transaction
+                    .execute(
+                        "UPDATE paired_device_token_grace SET sealed_successor = NULL
+                         WHERE device_id = ?1 AND valid_until_ms <= ?2
+                           AND sealed_successor IS NOT NULL",
+                        params![device.device_id.to_string(), now_ms],
+                    )
+                    .map_err(StoreError::Query)?;
+                transaction.commit().map_err(StoreError::Query)?;
                 // The writer is the last connection to close, as it was when
                 // every request wrote: closing it checkpoints the WAL, which a
                 // reader of the catalogue file alone (a backup, `doctor`) sees.
@@ -408,6 +425,7 @@ impl HubStore {
                 device.last_authenticated_at_ms = Some(next_authenticated);
                 return Ok(Some(device));
             }
+            drop(transaction);
             drop(writer);
             // Nothing was written: the row moved on since the read. Judge the
             // request again from the row as it is now. A refresh by another
@@ -558,6 +576,8 @@ impl HubStore {
             .map_err(StoreError::Query)
     }
 
+    /// Revoke `device_id` now. The device's grace row loses its sealed
+    /// successor in the same transaction ([`Self::revoke_device_at`]).
     pub fn revoke_device(&self, device_id: Uuid) -> Result<(), StoreError> {
         self.revoke_device_at(device_id, retired_lineage_clock_ms()?)
     }
@@ -577,6 +597,16 @@ impl HubStore {
         if changed != 1 {
             return Err(StoreError::PairingRejected);
         }
+        // A revoked device has nothing left to retry, and its grace bearer
+        // authenticates nowhere: the sealed successor goes with the revocation,
+        // in the same transaction, even when the device was revoked before.
+        transaction
+            .execute(
+                "UPDATE paired_device_token_grace SET sealed_successor = NULL
+                 WHERE device_id = ?1 AND sealed_successor IS NOT NULL",
+                params![device_id.to_string()],
+            )
+            .map_err(StoreError::RevokeDevice)?;
         transaction.commit().map_err(StoreError::RevokeDevice)
     }
 

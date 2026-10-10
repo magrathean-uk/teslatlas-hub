@@ -53,6 +53,9 @@ mod history_routes;
 #[path = "server/device_revoke.rs"]
 mod device_revoke;
 
+#[path = "server/discovery.rs"]
+mod discovery;
+
 #[path = "server/vehicle_access.rs"]
 mod vehicle_access;
 use vehicle_access::{VehicleAccessDenied, json_sync_route_vehicle, require_vehicle_access};
@@ -88,14 +91,10 @@ const READINESS_CACHE_TTL: Duration = Duration::from_secs(1);
 const MAX_SYNC_CONTROL_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ADMITTED_PHYSICAL_PACK_BYTES: u64 = 16 * 1024 * 1024;
 const HUB_SYNC_PROFILE_ID: &str = "hub-sync-v1@1.3.0";
+/// The `hub-http-v1` revision discovery names. It tracks the committed profile
+/// under `protocol/profiles/hub-http-v1/`; a test pins the two together.
+const HUB_HTTP_PROFILE_ID: &str = "hub-http-v1@1.2.0";
 const PUBLIC_API_VERSIONS: [&str; 1] = ["1.0"];
-const PUBLIC_BASE_CAPABILITIES: [&str; 2] = ["query.vehicles", "query.current"];
-const PUBLIC_CAPABILITIES: [&str; 4] = [
-    "query.vehicles",
-    "query.current",
-    "query.drives",
-    "sync.packs",
-];
 
 pub async fn rustls_config_from_identity(
     tls: &TlsListenerConfig,
@@ -1334,11 +1333,8 @@ async fn capabilities(State(state): State<AppState>) -> Response {
             );
         }
     };
-    let capabilities: &[&str] = if state.cursor_key.is_some() {
-        &PUBLIC_CAPABILITIES
-    } else {
-        &PUBLIC_BASE_CAPABILITIES
-    };
+    let capabilities =
+        discovery::advertised_capabilities(state.cursor_key.is_some(), state.require_device_auth);
     (
         [(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))],
         Json(Capabilities {
@@ -1346,7 +1342,8 @@ async fn capabilities(State(state): State<AppState>) -> Response {
             protocol: "teslatlas-sync",
             protocol_major: 1,
             api_versions: &PUBLIC_API_VERSIONS,
-            capabilities,
+            capabilities: &capabilities,
+            profile: HUB_HTTP_PROFILE_ID,
             version: BUILD_VERSION,
             source_url: discovery_source_url(),
             pack_format: "sqlite-zstd",
@@ -2580,6 +2577,7 @@ struct Capabilities<'a> {
     #[serde(rename = "sourceUrl")]
     source_url: String,
     pack_format: &'a str,
+    profile: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "manifestPublicKey")]
     manifest_public_key: Option<String>,

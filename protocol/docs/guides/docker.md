@@ -29,6 +29,12 @@ discovery through curl's `--header @file` form. It disables curl's implicit
 configuration and proxy use, does not follow redirects or retry, requires CA
 and hostname verification, and returns a redacted JSON receipt.
 
+It holds the Hub to `hub-http-v1@1.2.0` through `conformance/hub_http_12.py`:
+discovery must name that profile in its `profile` member and advertise only
+tokens its `profile.json` lists, every response must satisfy the server-strict
+schemas, and a drive page's `ETag` must be the quoted SHA-256 of its body. A Hub
+that serves `hub-http-v1@1.1.0` or `1.0.0` fails at discovery.
+
 Place these three owner-only files directly in one private directory (mode
 `0700`): `probe.json`, `ca.pem`, and `authorization.header`. Every file must
 be owned by the invoking user with mode `0600`; `authorization.header` contains

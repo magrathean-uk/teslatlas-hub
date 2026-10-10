@@ -63,6 +63,9 @@ mod catalogue;
 #[path = "tests/public_history.rs"]
 mod public_history;
 
+#[path = "tests/discovery.rs"]
+mod discovery_tests;
+
 #[tokio::test]
 async fn physical_pack_verification_buffers_immutable_bytes_from_same_open_descriptor() {
     let temporary = crate::private_tempdir().expect("temporary directory");
@@ -1192,7 +1195,6 @@ async fn exposes_health_and_capabilities() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store");
     let installation_id = store.installation_id().expect("installation identity");
-    let unsigned = router(store.clone());
     let app = public_query_router(store, 46);
 
     let health = app
@@ -1232,31 +1234,8 @@ async fn exposes_health_and_capabilities() {
     );
     assert_eq!(payload["hub_id"], installation_id.to_string());
     assert_eq!(payload["api_versions"], serde_json::json!(["1.0"]));
-    assert_eq!(
-        payload["capabilities"],
-        serde_json::json!([
-            "query.vehicles",
-            "query.current",
-            "query.drives",
-            "sync.packs"
-        ])
-    );
+    // The advertised tokens and the profile are pinned in tests/discovery.rs.
     assert!(payload["manifestPublicKey"].as_str().is_some());
-
-    let unsigned_capabilities = unsigned
-        .oneshot(
-            Request::builder()
-                .uri("/.well-known/teslatlas-hub")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("unsigned capabilities response");
-    let unsigned_payload = response_json(unsigned_capabilities).await;
-    assert_eq!(
-        unsigned_payload["capabilities"],
-        serde_json::json!(["query.vehicles", "query.current"])
-    );
 }
 
 #[tokio::test]

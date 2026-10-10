@@ -54,7 +54,7 @@ receipts.
 | `./tools/check` | Generated-artifact consistency, unit checks, and reference conformance cases | No installed or remote product acceptance |
 | Reference adapter | Agreement between the runner and embedded vectors | No independently implemented server is exercised |
 | Actual-Hub adapter | Behavior of the owned Hub described by the supplied private descriptor | Limited to the exact source, artifacts, host, cases, and receipts |
-| `tools/check-current-hub` | Bounded read-only remote-wire smoke | No pairing, lifecycle, native process provenance, or complete-history proof |
+| `tools/check-current-hub` | Bounded read-only remote-wire smoke, held to `hub-http-v1@1.2.0` (discovery must name it) | No pairing, lifecycle, native process provenance, or complete-history proof |
 | Developer bundle verification | Archive structure, membership, and content integrity | No runtime or installation evidence |
 | Docker gate | Checks inside the exact built image | No container-to-Hub or installed-service acceptance by itself |
 

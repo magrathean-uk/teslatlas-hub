@@ -616,17 +616,16 @@ fn rotation_refuses_a_revoked_expired_or_unknown_bearer_and_never_waits_for_the_
     let transaction = writer
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .expect("hold the writer lock");
-    let started = std::time::Instant::now();
-    let retried = store.rotate_device(&old, 16_001).expect("retry");
+    // A request that joined the writer queue would wait out the 5 second busy
+    // timeout and then fail with SQLITE_BUSY, which none of these answers is.
+    let retried = store
+        .rotate_device(&old, 16_001)
+        .expect("a grace retry is answered while the writer is held");
     assert_eq!(retried.access_token.as_bearer(), current);
     assert!(credential_rejected(
         store.rotate_device(&"b".repeat(64), 16_001)
     ));
     assert!(credential_rejected(store.rotate_device("short", 16_001)));
-    assert!(
-        started.elapsed() < Duration::from_secs(3),
-        "no rotation answer joined the writer queue"
-    );
     transaction.rollback().expect("release the writer lock");
     drop(writer);
 
@@ -641,6 +640,241 @@ fn rotation_refuses_a_revoked_expired_or_unknown_bearer_and_never_waits_for_the_
         credential_rejected(store.rotate_device(&old, 16_501)),
         "a revoked device's grace bearer cannot retry"
     );
+}
+
+/// The digest, the window end and the sealed blob of a device's grace row.
+fn credential_grace(store: &HubStore, device_id: Uuid) -> (Vec<u8>, i64, Option<Vec<u8>>) {
+    store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT token_sha256, valid_until_ms, sealed_successor
+               FROM paired_device_token_grace WHERE device_id = ?1",
+            [device_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("grace row")
+}
+
+fn credential_revoked_at(store: &HubStore, device_id: Uuid) -> Option<i64> {
+    store
+        .open()
+        .expect("catalogue")
+        .query_row(
+            "SELECT revoked_at_ms FROM paired_devices WHERE device_id = ?1",
+            [device_id.to_string()],
+            |row| row.get(0),
+        )
+        .expect("device row")
+}
+
+fn assert_sealed(blob: &Option<Vec<u8>>, label: &str) {
+    assert!(
+        blob.as_ref()
+            .is_some_and(|blob| blob.len() > SEALED_NONCE_BYTES + SEALED_TAG_BYTES),
+        "{label}: a sealed successor is held"
+    );
+}
+
+/// A device that claimed at `claimed_at_ms` and rotated once at
+/// `rotated_at_ms`: its grace row holds the successor sealed under `old`, and
+/// the window ends at `rotated_at_ms + CRED_GRACE_MS`.
+struct RotatedDevice {
+    device_id: Uuid,
+    old: String,
+    current: String,
+}
+
+fn rotated_device(store: &HubStore, claimed_at_ms: i64, rotated_at_ms: i64) -> RotatedDevice {
+    let access = credential_claim(store, claimed_at_ms, PAIRED_DEVICE_MAX_LIFETIME_MS);
+    let old = access.access_token.as_bearer().to_owned();
+    let rotated = store.rotate_device(&old, rotated_at_ms).expect("rotation");
+    RotatedDevice {
+        device_id: access.device_id,
+        old,
+        current: rotated.access_token.as_bearer().to_owned(),
+    }
+}
+
+#[test]
+fn revoking_a_device_clears_its_sealed_successor_and_nobody_elses() {
+    let (_temporary, store) = credential_store();
+    let first = rotated_device(&store, 15_000, 16_000);
+    let second = rotated_device(&store, 15_100, 16_000);
+    // Inside the window: the revocation does not wait for it to end.
+    let (digest, valid_until, sealed) = credential_grace(&store, first.device_id);
+    assert_sealed(&sealed, "before the revocation");
+    assert!(valid_until > 16_500);
+    let untouched = credential_grace(&store, second.device_id);
+    assert_sealed(&untouched.2, "the other device");
+
+    store
+        .revoke_device_at(first.device_id, 16_500)
+        .expect("revoke");
+    assert_eq!(
+        credential_grace(&store, first.device_id),
+        (digest.clone(), valid_until, None),
+        "only the sealed successor goes; the row, its digest and its window stay"
+    );
+    assert_eq!(
+        credential_grace(&store, second.device_id),
+        untouched,
+        "another device's grace row is untouched"
+    );
+    assert_eq!(credential_revoked_at(&store, first.device_id), Some(16_500));
+    assert!(credential_rejected(store.rotate_device(&first.old, 16_501)));
+
+    // A revocation that finds the device already revoked keeps the first time
+    // and still clears a successor an earlier revocation left behind.
+    credential_sql(
+        &store,
+        "UPDATE paired_device_token_grace SET sealed_successor = ?1 WHERE device_id = ?2",
+        params![vec![7_u8; 64], first.device_id.to_string()],
+    );
+    store
+        .revoke_device_at(first.device_id, 17_000)
+        .expect("a repeat revocation");
+    assert_eq!(credential_revoked_at(&store, first.device_id), Some(16_500));
+    assert_eq!(
+        credential_grace(&store, first.device_id),
+        (digest, valid_until, None)
+    );
+
+    // A device that is not there changes nothing.
+    assert!(matches!(
+        store.revoke_device_at(Uuid::new_v4(), 17_000),
+        Err(StoreError::PairingRejected)
+    ));
+    assert_eq!(credential_grace(&store, second.device_id), untouched);
+    assert_eq!(credential_revoked_at(&store, second.device_id), None);
+}
+
+#[test]
+fn the_authentication_write_after_the_window_clears_the_device_sealed_successor() {
+    let (_temporary, store) = credential_store();
+    let first = rotated_device(&store, 15_000, 16_000);
+    let second = rotated_device(&store, 15_100, 16_000);
+    let window_end = 16_000 + CRED_GRACE_MS;
+    let sealed = credential_grace(&store, first.device_id);
+    let other = credential_grace(&store, second.device_id);
+    assert_eq!(sealed.1, window_end);
+    assert_sealed(&sealed.2, "first");
+    assert_sealed(&other.2, "second");
+    credential_log_updates(&store);
+
+    // The grace bearer authenticates and writes nothing.
+    assert!(
+        store
+            .authenticate_device_at(&first.old, window_end - 1)
+            .unwrap()
+            .is_some()
+    );
+    assert_eq!(credential_logged_updates(&store), 0);
+    assert_eq!(credential_grace(&store, first.device_id), sealed);
+    // A coalesced write inside the window keeps the successor: a retry can
+    // still ask for it.
+    store
+        .authenticate_device_at(&first.current, window_end - 1)
+        .unwrap()
+        .expect("the current bearer writes");
+    assert_eq!(credential_logged_updates(&store), 1);
+    assert_eq!(credential_grace(&store, first.device_id), sealed);
+    // The window has ended, but this request is inside the coalescing interval
+    // and writes nothing, so nothing is cleared yet.
+    store
+        .authenticate_device_at(&first.current, window_end + 1_000)
+        .unwrap()
+        .expect("read-only request");
+    assert_eq!(credential_logged_updates(&store), 1);
+    assert_eq!(credential_grace(&store, first.device_id), sealed);
+    // The next write after the window drops the successor. The row, its digest
+    // and its window stay, and another device's row is not this request's.
+    store
+        .authenticate_device_at(&first.current, window_end + CRED_WRITE_MS + 1_000)
+        .unwrap()
+        .expect("the current bearer writes again");
+    assert_eq!(credential_logged_updates(&store), 2);
+    assert_eq!(
+        credential_grace(&store, first.device_id),
+        (sealed.0.clone(), window_end, None)
+    );
+    assert_eq!(credential_grace(&store, second.device_id), other);
+    // The ended window refuses the grace bearer, as it did before.
+    assert!(
+        store
+            .authenticate_device_at(&first.old, window_end + CRED_WRITE_MS + 2_000)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn the_window_end_itself_counts_as_ended_for_the_authentication_write() {
+    for (at_ms, cleared) in [
+        (16_000 + CRED_GRACE_MS - 1, false),
+        (16_000 + CRED_GRACE_MS, true),
+    ] {
+        let (_temporary, store) = credential_store();
+        let device = rotated_device(&store, 15_000, 16_000);
+        store
+            .authenticate_device_at(&device.current, at_ms)
+            .unwrap()
+            .expect("the current bearer writes");
+        let (_, window_end, sealed) = credential_grace(&store, device.device_id);
+        assert_eq!(window_end, 16_000 + CRED_GRACE_MS);
+        assert_eq!(sealed.is_none(), cleared, "authenticated at {at_ms}");
+    }
+}
+
+#[test]
+fn the_repair_pass_clears_the_sealed_successor_of_ended_windows_only() {
+    let (_temporary, store) = credential_store();
+    // The second device rotated half a day after the first, so its window ends
+    // half a day after the first one's.
+    let first = rotated_device(&store, 15_000, 16_000);
+    let second = rotated_device(&store, 15_100, 16_000 + CRED_GRACE_MS / 2);
+    let first_end = 16_000 + CRED_GRACE_MS;
+    let second_end = 16_000 + CRED_GRACE_MS / 2 + CRED_GRACE_MS;
+    let first_before = credential_grace(&store, first.device_id);
+    let second_before = credential_grace(&store, second.device_id);
+    assert_eq!((first_before.1, second_before.1), (first_end, second_end));
+    assert_sealed(&first_before.2, "first");
+    assert_sealed(&second_before.2, "second");
+
+    // One millisecond before the first window ends there is nothing to clear.
+    store.repair_at(first_end - 1).expect("repair");
+    assert_eq!(credential_grace(&store, first.device_id), first_before);
+    assert_eq!(credential_grace(&store, second.device_id), second_before);
+
+    // At the window end the first device's successor goes, and only that: the
+    // row, its digest and its window stay, and the second window is open.
+    store.repair_at(first_end).expect("repair");
+    assert_eq!(
+        credential_grace(&store, first.device_id),
+        (first_before.0.clone(), first_end, None)
+    );
+    assert_eq!(credential_grace(&store, second.device_id), second_before);
+    let rows = credential_rows(&store);
+    store.repair_at(first_end).expect("a repeated repair");
+    assert_eq!(credential_rows(&store), rows, "a repeat changes nothing");
+
+    // The open window still answers its retry after the repair.
+    let retried = store
+        .rotate_device(&second.old, first_end + 1)
+        .expect("the second device's retry");
+    assert_eq!(retried.access_token.as_bearer(), second.current);
+    assert!(credential_rejected(
+        store.rotate_device(&first.old, first_end + 1)
+    ));
+
+    store.repair_at(second_end).expect("repair");
+    assert_eq!(
+        credential_grace(&store, second.device_id),
+        (second_before.0, second_end, None)
+    );
+    assert!(credential_rejected(
+        store.rotate_device(&second.old, second_end)
+    ));
 }
 
 // ------------------------------------------------------------------ the cap
@@ -1261,7 +1495,8 @@ fn a_coalesced_authentication_neither_needs_nor_waits_for_the_writer() {
     let transaction = writer
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .expect("hold the writer lock");
-    let started = std::time::Instant::now();
+    // A request that joined the writer queue would wait out the 5 second busy
+    // timeout and then fail with SQLITE_BUSY: the unwraps below are the check.
     assert!(
         store
             .authenticate_device_at(&bearer, claimed + 2_000)
@@ -1273,10 +1508,6 @@ fn a_coalesced_authentication_neither_needs_nor_waits_for_the_writer() {
             .authenticate_device_at(&"d".repeat(64), claimed + 2_000)
             .unwrap()
             .is_none()
-    );
-    assert!(
-        started.elapsed() < Duration::from_secs(3),
-        "a request inside the interval does not join the writer queue"
     );
     transaction.rollback().expect("release the writer lock");
 }

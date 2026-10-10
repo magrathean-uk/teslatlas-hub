@@ -13,8 +13,10 @@ use axum::{
 use tokio::{net::TcpListener, task::JoinHandle};
 
 use super::*;
+use crate::owner_api::provider_secrets::capture::LogCapture;
 
 const TEST_TOKEN: &str = "fleet-test-token";
+const TEST_REFRESH_TOKEN: &str = "fleet-test-refresh-token";
 const TEST_VIN: &str = "5YJ3E1EA7KF000001";
 
 fn telemetry_ca_pem() -> String {
@@ -46,6 +48,17 @@ enum FakeResponse {
     Redirect,
     RateLimited,
     GatewayTimeout,
+    /// Vehicle data and discovery echo the given credentials into allowlisted
+    /// fields, as a hostile or misbehaving upstream could.
+    Reflecting {
+        access: &'static str,
+        refresh: &'static str,
+    },
+    /// Discovery echoes the given credentials into each vehicle's `state`.
+    ReflectingState {
+        access: &'static str,
+        refresh: &'static str,
+    },
 }
 
 #[derive(Clone)]
@@ -167,6 +180,23 @@ async fn fake_handler(State(state): State<FakeState>, request: Request<Body>) ->
             return (StatusCode::GATEWAY_TIMEOUT, "").into_response();
         }
         FakeResponse::Normal => {}
+        FakeResponse::Reflecting { access, refresh } => {
+            if route_path.ends_with("/vehicle_data") {
+                return (StatusCode::OK, reflecting_vehicle_data(access, refresh)).into_response();
+            }
+            if route_path == "/api/1/vehicles" {
+                return (StatusCode::OK, reflecting_vehicle_list(access, refresh)).into_response();
+            }
+        }
+        FakeResponse::ReflectingState { access, refresh } => {
+            if route_path == "/api/1/vehicles" {
+                return (
+                    StatusCode::OK,
+                    state_reflecting_vehicle_list(access, refresh),
+                )
+                    .into_response();
+            }
+        }
     }
     if route_path == "/oauth2/v3/token" {
         (
@@ -346,12 +376,17 @@ async fn fleet_reads_discovery_and_vehicle_data_without_wake() {
     let fake = FakeServer::spawn(FakeResponse::Normal).await;
     let client = fake.fleet_client();
     let token = FleetAccessToken::new(TEST_TOKEN).expect("token");
-    let vehicles = client.list_vehicles(&token).await.expect("vehicles");
+    let refresh = FleetRefreshToken::new(TEST_REFRESH_TOKEN).expect("refresh token");
+    let vehicles = client
+        .list_vehicles(&token, &refresh)
+        .await
+        .expect("vehicles");
     assert_eq!(vehicles.len(), 1);
     assert_eq!(vehicles[0].id.get(), 70);
     let data = client
         .vehicle_data(
             &token,
+            &refresh,
             vehicles[0].id,
             &VehicleVin::parse(TEST_VIN).expect("VIN"),
         )
@@ -734,4 +769,275 @@ async fn connection_failure_is_known_unsent() {
         .expect_err("connection must fail"),
         FleetApiError::RequestNotSent
     );
+}
+
+// Bearer reflection (csf_2a9d): a Fleet response that echoes a live credential
+// into an allowlisted field must not reach VehicleData or the vehicle list.
+
+const SHORT_ACCESS: &str = "short-access";
+const SHORT_REFRESH: &str = "short-refresh";
+
+fn reflecting_vehicle_data(access: &str, refresh: &str) -> String {
+    serde_json::json!({"response": {
+        "id": 70,
+        "vehicle_id": 71,
+        "vin": TEST_VIN,
+        "state": "online",
+        "display_name": access,
+        "drive_state": {"shift_state": "P", "timestamp": 1_800_000_000_000_i64},
+        "charge_state": {"battery_level": 80, "charging_state": "Charging"},
+        "vehicle_state": {
+            "car_version": format!("build {refresh} end"),
+            "vehicle_name": format!("Bearer {access}"),
+            "odometer": 1234.5,
+            "software_update": {
+                "status": "available",
+                "version": format!(" {refresh}\n")
+            }
+        },
+        "vehicle_config": {"car_type": "model3"}
+    }})
+    .to_string()
+}
+
+fn reflecting_vehicle_list(access: &str, refresh: &str) -> String {
+    serde_json::json!({"response": [
+        {"id": 70, "vehicle_id": 71, "vin": "5YJ3E1EA7KF000001", "state": "online", "display_name": access},
+        {"id": 80, "vehicle_id": 81, "vin": "5YJ3E1EA7KF000002", "state": "asleep", "display_name": format!("Bearer {refresh}")},
+        {"id": 90, "vehicle_id": 91, "vin": "5YJ3E1EA7KF000003", "state": "online", "display_name": "Athena"}
+    ], "count": 3})
+    .to_string()
+}
+
+/// The access token, the refresh token inside longer text (graphic characters
+/// only, as `valid_short_text` needs) and an ordinary state, one per vehicle.
+fn state_reflecting_vehicle_list(access: &str, refresh: &str) -> String {
+    serde_json::json!({"response": [
+        {"id": 70, "vehicle_id": 71, "vin": "5YJ3E1EA7KF000001", "state": access, "display_name": "Athena"},
+        {"id": 80, "vehicle_id": 81, "vin": "5YJ3E1EA7KF000002", "state": format!("x-{refresh}-y"), "display_name": "Hermes"},
+        {"id": 90, "vehicle_id": 91, "vin": "5YJ3E1EA7KF000003", "state": "asleep", "display_name": "Apollo"}
+    ], "count": 3})
+    .to_string()
+}
+
+fn assert_no_credential_bytes(rendered: &str, secrets: &[&str]) {
+    for secret in secrets {
+        assert!(!rendered.contains(secret), "credential bytes survived");
+    }
+}
+
+#[tokio::test]
+async fn fleet_vehicle_data_scrubs_reflected_long_credentials_before_returning() {
+    let log = LogCapture::start();
+    let fake = FakeServer::spawn(FakeResponse::Reflecting {
+        access: TEST_TOKEN,
+        refresh: TEST_REFRESH_TOKEN,
+    })
+    .await;
+    let access = FleetAccessToken::new(TEST_TOKEN).expect("access token");
+    let refresh = FleetRefreshToken::new(TEST_REFRESH_TOKEN).expect("refresh token");
+
+    let data = fake
+        .fleet_client()
+        .vehicle_data(
+            &access,
+            &refresh,
+            VehicleId::try_from_i64(70).expect("vehicle id"),
+            &VehicleVin::parse(TEST_VIN).expect("VIN"),
+        )
+        .await
+        .expect("vehicle data");
+
+    let fields = data.fields();
+    assert_eq!(fields["display_name"], Value::Null);
+    assert_eq!(fields["vehicle_state"]["car_version"], Value::Null);
+    assert_eq!(fields["vehicle_state"]["vehicle_name"], Value::Null);
+    assert_eq!(
+        fields["vehicle_state"]["software_update"],
+        serde_json::json!({"status": "available", "version": null})
+    );
+    assert_eq!(fields["vin"], TEST_VIN);
+    assert_eq!(fields["charge_state"]["battery_level"], 80);
+    assert_eq!(fields["vehicle_state"]["odometer"], 1234.5);
+    assert_eq!(fields["vehicle_config"]["car_type"], "model3");
+    assert_no_credential_bytes(
+        &data.provider_raw_json().to_string(),
+        &[TEST_TOKEN, TEST_REFRESH_TOKEN],
+    );
+    assert_eq!(fake.state.requests.lock().expect("ledger").len(), 1);
+
+    let log = log.contents();
+    assert_eq!(log.matches("WARN").count(), 1, "{log}");
+    assert!(log.contains("fields=4"), "{log}");
+    for path in [
+        "display_name",
+        "vehicle_state.car_version",
+        "vehicle_state.vehicle_name",
+        "vehicle_state.software_update.version",
+    ] {
+        assert!(log.contains(path), "warning names {path}");
+    }
+    assert_no_credential_bytes(&log, &[TEST_TOKEN, TEST_REFRESH_TOKEN]);
+}
+
+#[tokio::test]
+async fn fleet_vehicle_data_scrubs_short_credentials_only_by_equality() {
+    let log = LogCapture::start();
+    let fake = FakeServer::spawn(FakeResponse::Reflecting {
+        access: SHORT_ACCESS,
+        refresh: SHORT_REFRESH,
+    })
+    .await;
+    let access = FleetAccessToken::new(SHORT_ACCESS).expect("access token");
+    let refresh = FleetRefreshToken::new(SHORT_REFRESH).expect("refresh token");
+
+    let data = fake
+        .fleet_client()
+        .vehicle_data(
+            &access,
+            &refresh,
+            VehicleId::try_from_i64(70).expect("vehicle id"),
+            &VehicleVin::parse(TEST_VIN).expect("VIN"),
+        )
+        .await
+        .expect("vehicle data");
+
+    let fields = data.fields();
+    assert_eq!(fields["display_name"], Value::Null);
+    assert_eq!(fields["vehicle_state"]["vehicle_name"], Value::Null);
+    assert_eq!(
+        fields["vehicle_state"]["software_update"]["version"],
+        Value::Null
+    );
+    assert_eq!(
+        fields["vehicle_state"]["car_version"],
+        format!("build {SHORT_REFRESH} end"),
+        "a short secret inside longer text is not searched for"
+    );
+    assert_eq!(fields["charge_state"]["battery_level"], 80);
+
+    let log = log.contents();
+    assert_eq!(log.matches("WARN").count(), 1, "{log}");
+    assert!(log.contains("fields=3"), "{log}");
+    assert_no_credential_bytes(&log, &[SHORT_ACCESS, SHORT_REFRESH]);
+}
+
+#[tokio::test]
+async fn fleet_discovery_drops_vehicle_names_that_reflect_a_credential() {
+    let log = LogCapture::start();
+    let fake = FakeServer::spawn(FakeResponse::Reflecting {
+        access: TEST_TOKEN,
+        refresh: TEST_REFRESH_TOKEN,
+    })
+    .await;
+    let access = FleetAccessToken::new(TEST_TOKEN).expect("access token");
+    let refresh = FleetRefreshToken::new(TEST_REFRESH_TOKEN).expect("refresh token");
+
+    let vehicles = fake
+        .fleet_client()
+        .list_vehicles(&access, &refresh)
+        .await
+        .expect("vehicles");
+
+    assert_eq!(
+        vehicles
+            .iter()
+            .map(|vehicle| vehicle.display_name.as_deref())
+            .collect::<Vec<_>>(),
+        vec![None, None, Some("Athena")]
+    );
+    assert_eq!(
+        vehicles
+            .iter()
+            .map(|vehicle| vehicle.id.get())
+            .collect::<Vec<_>>(),
+        vec![70, 80, 90]
+    );
+    assert_eq!(vehicles[1].state, "asleep");
+    assert_eq!(vehicles[0].vin, "5YJ3E1EA7KF000001");
+
+    let log = log.contents();
+    assert_eq!(log.matches("WARN").count(), 1, "{log}");
+    assert!(log.contains("response[].display_name"), "{log}");
+    assert!(log.contains("vehicles=2"), "{log}");
+    assert_no_credential_bytes(&log, &[TEST_TOKEN, TEST_REFRESH_TOKEN]);
+}
+
+#[tokio::test]
+async fn fleet_discovery_replaces_provider_states_that_reflect_a_credential() {
+    let log = LogCapture::start();
+    let fake = FakeServer::spawn(FakeResponse::ReflectingState {
+        access: TEST_TOKEN,
+        refresh: TEST_REFRESH_TOKEN,
+    })
+    .await;
+    let access = FleetAccessToken::new(TEST_TOKEN).expect("access token");
+    let refresh = FleetRefreshToken::new(TEST_REFRESH_TOKEN).expect("refresh token");
+
+    let vehicles = fake
+        .fleet_client()
+        .list_vehicles(&access, &refresh)
+        .await
+        .expect("vehicles");
+
+    assert_eq!(
+        vehicles
+            .iter()
+            .map(|vehicle| vehicle.state.as_str())
+            .collect::<Vec<_>>(),
+        vec!["unknown", "unknown", "asleep"]
+    );
+    // Everything else the provider said is intact, the names included.
+    assert_eq!(
+        vehicles
+            .iter()
+            .map(|vehicle| vehicle.display_name.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("Athena"), Some("Hermes"), Some("Apollo")]
+    );
+    assert_eq!(
+        vehicles
+            .iter()
+            .map(|vehicle| vehicle.id.get())
+            .collect::<Vec<_>>(),
+        vec![70, 80, 90]
+    );
+    assert_eq!(vehicles[0].vin, "5YJ3E1EA7KF000001");
+
+    let log = log.contents();
+    assert_eq!(log.matches("WARN").count(), 1, "{log}");
+    assert!(log.contains("response[].state"), "{log}");
+    assert!(!log.contains("display_name"), "{log}");
+    assert!(log.contains("vehicles=2"), "{log}");
+    assert_no_credential_bytes(&log, &[TEST_TOKEN, TEST_REFRESH_TOKEN]);
+}
+
+#[tokio::test]
+async fn fleet_discovery_replaces_a_short_credential_in_state_only_by_equality() {
+    let log = LogCapture::start();
+    let fake = FakeServer::spawn(FakeResponse::ReflectingState {
+        access: SHORT_ACCESS,
+        refresh: SHORT_REFRESH,
+    })
+    .await;
+    let access = FleetAccessToken::new(SHORT_ACCESS).expect("access token");
+    let refresh = FleetRefreshToken::new(SHORT_REFRESH).expect("refresh token");
+
+    let vehicles = fake
+        .fleet_client()
+        .list_vehicles(&access, &refresh)
+        .await
+        .expect("vehicles");
+
+    assert_eq!(
+        vehicles
+            .iter()
+            .map(|vehicle| vehicle.state.as_str())
+            .collect::<Vec<_>>(),
+        vec!["unknown", "x-short-refresh-y", "asleep"],
+        "a short secret inside longer text is not searched for"
+    );
+    let log = log.contents();
+    assert_eq!(log.matches("WARN").count(), 1, "{log}");
+    assert_no_credential_bytes(&log, &[SHORT_ACCESS, SHORT_REFRESH]);
 }

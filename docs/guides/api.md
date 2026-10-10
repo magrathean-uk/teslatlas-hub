@@ -11,6 +11,8 @@ SHA-256
 `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
 The richer external specification and event stream remain separate surfaces.
 The accepted binding does not add routes beyond those advertised by discovery.
+That record is historical: discovery now names the profile the Hub serves,
+`hub-http-v1@1.2.0` (see Discovery below).
 
 ## Transport and authentication
 
@@ -33,7 +35,7 @@ The accepted binding does not add routes beyond those advertised by discovery.
 | `GET` | `/.well-known/teslatlas-hub` | Stable Hub identity, API versions, capabilities, build, sync protocol, and configured source route. |
 | `POST` | `/v1/pairings/{pairing_id}/claim` | Claim one pairing invitation. |
 | `POST` | `/v1/device/rotate` | Rotate the current device bearer. The prior bearer keeps serving for 24 hours, and retrying with it returns the same successor. Once the device's stored expiry has reached its absolute maximum lifetime, and until that time arrives, it returns the current bearer unchanged with `"reason": "max_lifetime"`; from the maximum on the bearer is 401. |
-| `POST` | `/v1/device/revoke` | Revoke the calling device (no request body; any body is 400). `204`; every bearer of the device is then 401. Clients call it only when discovery advertises `auth.revoke`, which the Hub does from the discovery flip on. |
+| `POST` | `/v1/device/revoke` | Revoke the calling device (no request body; any body is 400). `204`; every bearer of the device is then 401. Clients call it only when discovery advertises `auth.revoke`, which the Hub does whenever paired-device authentication is on. |
 | `GET` | `/v1/vehicles` | List vehicles visible to the paired device. |
 | `GET` | `/v1/vehicles/{vehicle_id}/current` | Get bounded current state. |
 | `GET` | `/v1/vehicles/{vehicle_id}/drives` | Get one bounded, newest-first drive page. |
@@ -86,14 +88,31 @@ workspace master plan.
 
 ## Discovery and drive queries
 
-`GET /.well-known/teslatlas-hub` is not secret-bearing. Its `hub_id` is the
-stable installation UUID. `api_versions` currently contains `"1.0"`.
-The `version` field is the Hub product version (`2026.36.2` for the accepted
-cohort), not the wire profile revision.
-`capabilities` contains only implemented and currently usable surfaces. A Hub
-with its protected cursor-signing key advertises `query.vehicles`,
-`query.current`, `query.drives`, and `sync.packs`. An unsigned loopback test or
-recovery instance advertises only `query.vehicles` and `query.current`.
+`GET /.well-known/teslatlas-hub` is not secret-bearing and is never cached
+(`Cache-Control: no-store`). Its `hub_id` is the stable installation UUID.
+`api_versions` currently contains `"1.0"`, `protocol` is `teslatlas-sync` and
+`protocol_major` is `1`, so Home Assistant keeps working unchanged. The
+`profile` member always names the wire profile the Hub serves,
+`hub-http-v1@1.2.0`; it is the wire profile revision, which the `version` field
+(the Hub product version, `2026.36.2` for the accepted cohort) is not.
+
+`capabilities` contains only implemented and currently usable surfaces: a token
+is advertised only when its routes are served, so the set is computed from how
+the Hub runs.
+
+| Token | Advertised when |
+|---|---|
+| `query.vehicles`, `query.current` | Always. |
+| `query.drives`, `query.charges`, `query.charge.samples`, `query.positions`, `sync.packs` | The Hub holds its protected cursor-signing key. All five or none. |
+| `auth.revoke` | Paired-device authentication is on, as on the TLS-facing router: only then is `POST /v1/device/revoke` served (a trusted local router answers it `404`). |
+
+Tokens appear in the order of the `capabilities` list in the profile's
+`profile.json`; the contract treats the list as a set. A TLS-facing Hub, which
+has both its cursor key and paired-device authentication, advertises all eight
+tokens. An unsigned loopback test or recovery instance, without the key,
+advertises only `query.vehicles` and `query.current`. `query.enrichment`, the
+ninth token of the profile, is not advertised: it requires the `attributions`
+member, which this Hub does not emit.
 
 `GET /v1/vehicles/{vehicle_id}/drives` requires the same paired-device bearer
 as other non-loopback mirror reads. Query parameters are:

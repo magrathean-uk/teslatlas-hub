@@ -68,8 +68,8 @@ use crate::{
     location::Wgs84Point,
     owner_api::{
         LegacyVehicleAction, LegacyVehicleActionResult, ManualCollection, OwnerApi,
-        OwnerApiAuthError, OwnerApiConfigError, OwnerApiError, StreamVehicleId, Vehicle,
-        VehicleCollectionFailure, VehicleData, VehicleId,
+        OwnerApiAuthError, OwnerApiConfigError, OwnerApiError, ProviderSecrets, StreamVehicleId,
+        Vehicle, VehicleCollectionFailure, VehicleData, VehicleId,
     },
     protocol::{
         CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V2, LineageDelta, OpaqueCursor, PROTOCOL_V1,

@@ -85,8 +85,12 @@ fn fleet_collection_round_trips_sanitized_provider_raw_json_without_duplication(
     let collection = ManualCollection {
         vehicles: vec![Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online")],
         snapshots: vec![
-            VehicleData::from_provider_raw_json(VehicleId::from_test(9), raw.clone())
-                .expect("Fleet response"),
+            VehicleData::from_provider_raw_json(
+                VehicleId::from_test(9),
+                raw.clone(),
+                &ProviderSecrets::none(),
+            )
+            .expect("Fleet response"),
         ],
         failures: vec![],
     };
@@ -157,6 +161,7 @@ fn fleet_atomic_collection_closes_located_drive_after_restart_without_duplicates
             VehicleData::from_provider_raw_json(
                 VehicleId::from_test(9),
                 json!({"response": vehicle_data}),
+                &ProviderSecrets::none(),
             )
             .expect("Fleet response"),
         ],
@@ -265,6 +270,7 @@ fn fleet_atomic_collection_discards_one_position_drive_without_open_row_leak() {
             VehicleData::from_provider_raw_json(
                 VehicleId::from_test(9),
                 json!({"response": vehicle_data}),
+                &ProviderSecrets::none(),
             )
             .expect("Fleet response"),
         ],

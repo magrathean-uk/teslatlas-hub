@@ -46,9 +46,13 @@ pub(crate) async fn persist_fleet_telemetry_snapshot(
         .filter(|value| !value.is_empty() && value.len() <= 64)
         .unwrap_or("unknown")
         .to_owned();
+    // Fleet Telemetry arrives from the vehicle fleet over the receiver, not as
+    // the answer to a bearer request, and no credential is in scope here: the
+    // scrub gets an empty secret set and is a no-op.
     let data = VehicleData::from_provider_raw_json(
         source_vehicle_id,
         serde_json::json!({"response": snapshot.owner_data}),
+        &ProviderSecrets::none(),
     )?;
     let vehicle = Vehicle {
         id: source_vehicle_id,
@@ -311,11 +315,15 @@ pub async fn setup_fleet_vehicle(
         Duration::from_secs(config.collector.request_timeout_seconds),
     )?;
     let access_token = credentials.access_token()?;
+    let refresh_token = credentials.refresh_token()?;
     admission.assert_sensitive_access()?;
     let vehicles = accept_complete_provider_inventory(
         store,
         CollectorProvider::Fleet,
-        client.list_vehicles(&access_token).await.map_err(Into::into),
+        client
+            .list_vehicles(&access_token, &refresh_token)
+            .await
+            .map_err(Into::into),
     )?;
     ensure_fleet_inventory_contains_configured(store, &vehicles)?;
     let mut vehicle = select_native_setup_vehicle(vehicles, requested_vehicle_id)?;
@@ -368,11 +376,15 @@ pub async fn setup_fleet_vehicles(
         Duration::from_secs(config.collector.request_timeout_seconds),
     )?;
     let access_token = credentials.access_token()?;
+    let refresh_token = credentials.refresh_token()?;
     admission.assert_sensitive_access()?;
     let mut vehicles = accept_complete_provider_inventory(
         store,
         CollectorProvider::Fleet,
-        client.list_vehicles(&access_token).await.map_err(Into::into),
+        client
+            .list_vehicles(&access_token, &refresh_token)
+            .await
+            .map_err(Into::into),
     )?;
     ensure_fleet_inventory_contains_configured(store, &vehicles)?;
     if vehicles.is_empty() {

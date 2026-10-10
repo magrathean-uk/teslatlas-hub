@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded, read-only remote wire smoke for the current-Hub profile."""
+"""Bounded, read-only remote wire smoke for the current-Hub profile, hub-http-v1@1.2.0."""
 import argparse
 import json
 import os
@@ -16,10 +16,13 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from conformance import hub_http
+from conformance import hub_http, hub_http_12
 
 
-PROFILE = ROOT / "profiles" / "hub-http-v1" / "1.1.0"
+# The profile a Hub must name in discovery. The 1.1.0 and 1.0.0 revisions are other
+# profiles: a Hub that serves them fails this smoke at discovery.
+PROFILE = hub_http_12.DEFAULT_PROFILE
+PROFILE_ID = hub_http_12.PROFILE_ID
 HEADER_LIMIT = 16 * 1024
 CONFIG_FIELDS = {
     "endpoint",
@@ -176,7 +179,7 @@ def _headers(raw):
 
 def _response_value(raw):
     try:
-        return hub_http.strict_json(raw)
+        return hub_http_12.strict_json(raw)
     except (ValueError, UnicodeDecodeError, TypeError) as error:
         raise ProbeError("probe failed") from error
 
@@ -216,7 +219,7 @@ def _curl(config, deadline, url, *, authenticated, if_none_match=None):
             "--max-time",
             f"{remaining:.3f}",
             "--max-filesize",
-            str(hub_http.MAX_BYTES),
+            str(hub_http_12.MAX_BYTES),
             "--cacert",
             str(config["ca_path"]),
             "--dump-header",
@@ -253,10 +256,10 @@ def _curl(config, deadline, url, *, authenticated, if_none_match=None):
         status, headers = _headers(_bounded_bytes(headers_path, HEADER_LIMIT))
         if status != int(status_raw):
             raise ProbeError("probe failed")
-        return status, headers, _bounded_bytes(body_path, hub_http.MAX_BYTES)
+        return status, headers, _bounded_bytes(body_path, hub_http_12.MAX_BYTES)
 
 
-def _checked_get(config, deadline, kind, path, *, authenticated, if_none_match=None):
+def _checked_get(profile, config, deadline, kind, path, *, authenticated, if_none_match=None):
     status, headers, raw = _curl(
         config,
         deadline,
@@ -264,32 +267,44 @@ def _checked_get(config, deadline, kind, path, *, authenticated, if_none_match=N
         authenticated=authenticated,
         if_none_match=if_none_match,
     )
-    if status not in (200, 304) or hub_http.validate_raw(PROFILE, kind, status, headers, raw):
+    # Server-strict forms: undocumented members, a page ETag that is not the quoted SHA-256
+    # of the body, and a missing no-store all fail here.
+    if status not in (200, 304) or hub_http_12.validate_raw(profile, kind, status, headers, raw):
         raise ProbeError("probe failed")
     return status, headers, raw
 
 
+def _load_profile():
+    try:
+        # Verifies SHA256SUMS against the files on disk before anything is read from them.
+        return hub_http_12.Profile(PROFILE)
+    except (hub_http_12.ContractError, OSError, ValueError, KeyError, TypeError) as error:
+        raise ProbeError("probe failed") from error
+
+
 def run(config):
-    profile = hub_http.load_profile(PROFILE)
+    profile = _load_profile()
     deadline = time.monotonic() + config["timeout_seconds"]
     operations = []
-    _, _, raw = _checked_get(config, deadline, "discovery", "/.well-known/teslatlas-hub", authenticated=False)
+    _, _, raw = _checked_get(
+        profile, config, deadline, "discovery", "/.well-known/teslatlas-hub", authenticated=False
+    )
     discovery = _response_value(raw)
-    capabilities = set(discovery.get("capabilities", []))
-    if (
-        discovery.get("hub_id") != config["expected_hub_id"]
-        or not {"query.vehicles", "query.current"} <= capabilities
-        or not capabilities <= set(profile["capabilities"])
+    # The Hub must name this profile and advertise only tokens profile.json defines, with the
+    # Home Assistant invariants and the cursor-key, attribution and token-grammar rules.
+    if discovery.get("hub_id") != config["expected_hub_id"] or hub_http_12.check_discovery(
+        discovery, profile_id=PROFILE_ID, tokens=set(profile.profile["capabilities"])
     ):
         raise ProbeError("probe failed")
+    capabilities = set(discovery["capabilities"])
     operations.append("discovery")
-    _, _, raw = _checked_get(config, deadline, "vehicles", "/v1/vehicles", authenticated=True)
+    _, _, raw = _checked_get(profile, config, deadline, "vehicles", "/v1/vehicles", authenticated=True)
     vehicles = _response_value(raw)
     if config["vehicle_id"] not in {item.get("vehicle_id") for item in vehicles["vehicles"]}:
         raise ProbeError("probe failed")
     operations.append("vehicles")
     current_path = "/v1/vehicles/" + config["vehicle_id"] + "/current"
-    _, _, raw = _checked_get(config, deadline, "current", current_path, authenticated=True)
+    _, _, raw = _checked_get(profile, config, deadline, "current", current_path, authenticated=True)
     if _response_value(raw).get("vehicle_id") != config["vehicle_id"]:
         raise ProbeError("probe failed")
     operations.append("current")
@@ -303,13 +318,14 @@ def run(config):
     seen_cursors = set()
     for page_number in range(config["max_pages"]):
         path = drive_path if cursor is None else drive_path + "&cursor=" + urllib.parse.quote(cursor, safe="")
-        _, headers, raw = _checked_get(config, deadline, "drives", path, authenticated=True)
+        _, headers, raw = _checked_get(profile, config, deadline, "drives", path, authenticated=True)
         page = _response_value(raw)
         if any(item.get("vehicle_id") != config["vehicle_id"] for item in page["items"]):
             raise ProbeError("probe failed")
         operations.append("drives" if page_number == 0 else "drives-next-page")
         if page_number == 0:
             status, _, conditional_raw = _checked_get(
+                profile,
                 config,
                 deadline,
                 "drives",

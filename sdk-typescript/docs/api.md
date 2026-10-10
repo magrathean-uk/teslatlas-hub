@@ -49,15 +49,48 @@ rules keep the body far below that bound, so the public API does not reach it.
 Claim extractor failures with status `400`, `415`, or `422` must be nonempty
 `text/plain`; the SDK exposes them as a body-free `HubHttpError` with
 code `hub_http_error` and never retains the extractor text. Other error
-responses use the profile's validated JSON shape. A claim or rotation response
-may carry `reason: "max_lifetime"`, which the SDK accepts and does not act on.
-`logout()` aborts pending work, invalidates cached identity, waits for SDK-owned
-credential writes already dispatched, and then clears caller credentials. A
-failed clear rejects; it is not retried. `dispose()` aborts pending work and
-permanently closes that client while preserving caller credentials. If a caller
-save was already dispatched, disposal cannot cancel that caller I/O, so callers
-that need deletion must await `logout()` before disposal.
-Neither operation claims to revoke credentials at the Hub.
+responses use the profile's validated JSON shape.
+
+`rotateDevice` saves the successor only after it validates. When the device is at
+its absolute lifetime the Hub answers 200 with the current bearer and
+`reason: "max_lifetime"`, and issues nothing. The SDK then keeps the stored
+bearer, saves the expiry the answer states into the stored credential (only when
+it differs from the stored one, so the SDK's expiry follows the Hub's), sends no
+second rotate, and returns that claim: branch on
+`result.value.reason === "max_lifetime"`, which means the device must be paired
+again before `result.value.expiresAtMs`. That save is a compare-and-set inside
+the credential-mutation queue: it writes only if the store still holds the same
+bearer and device id as the credential the rotation presented, so a pairing
+claimed while the rotation was in flight keeps its credential and nothing is
+written. Once the stored `expiresAtMs` has passed, the SDK rejects the credential
+locally with `ProtocolValidationError` (`HubCredential.expiry`) before it
+dispatches any authenticated request, so the expired bearer never reaches the
+Hub (an uncached discovery request may still go out first) and the SDK does not
+surface a 401 for it; callers must re-pair before that expiry. A
+`max_lifetime` answer that carries a different device or a different bearer than
+the stored credential is a `ProtocolValidationError` (`HubClaim.deviceId` or
+`HubClaim.accessToken`) and nothing is saved. An answer without `reason` behaves
+as before.
+
+`logout()` aborts pending work, invalidates cached identity, and revokes the
+device at the Hub on a best-effort basis before it clears: when the stored
+credential is valid and the Hub advertises `auth.revoke`, it sends one
+`POST /v1/device/revoke` with that bearer and no body. The Hub is the one named
+by the discovery cached when `logout()` started or, when none was cached, by one
+fresh discovery whose Hub identity matches `expectedHubId`; a cached discovery
+without `auth.revoke` sends nothing. One 2 second deadline bounds the credential
+load, that discovery and the request. A 204 or a 401 counts as revoked (a
+repeated revoke is 401 because the bearer is already unusable). Any other status,
+a transport failure, the deadline or `dispose()` mean not revoked. There is no
+retry. Either way `logout()` then waits for SDK-owned credential writes already
+dispatched and clears caller credentials, and it rejects only when that clear
+rejects; a failed clear is not retried. A credential load that an operation
+starts after `logout()` waits until the clear has finished, and a rotation never
+saves a credential derived from a load that ran before the logout. `dispose()`
+aborts pending work, abandons a revoke that a pending `logout()` has in flight,
+and permanently closes that client while preserving caller credentials. If a
+caller save was already dispatched, disposal cannot cancel that caller I/O, so
+callers that need deletion must await `logout()` before disposal.
 
 The Node entry point verifies normal CA/hostname trust and the invitation's
 lowercase DER leaf SHA-256 on the same new TLS connection before it sends the
@@ -108,8 +141,8 @@ cursor is passed through unchanged as a string.
 The Hub client has eight named methods:
 
 - discovery and health: `discover`, `health`, `readiness`;
-- pairing and credentials: `claimPairing`, `rotateDevice`, plus the local
-  `logout` and `dispose`;
+- pairing and credentials: `claimPairing`, `rotateDevice`, plus `logout` (one
+  best-effort revoke at the Hub, then the local clear) and the local `dispose`;
 - reads: `vehicles`, `current`, `drives`.
 
 The profile, result, and pagination semantics are in

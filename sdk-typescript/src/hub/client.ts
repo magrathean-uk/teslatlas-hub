@@ -12,7 +12,8 @@ import {
   isStrongEntityTag,
   type StrongEntityTag,
 } from "../http/strong-etag.js";
-import { withResponseOwnership } from "../http/response-ownership.js";
+import { cancelResponseBody, withResponseOwnership } from "../http/response-ownership.js";
+import type { operations, paths } from "../generated/hub-protocol.js";
 import type {
   CreateHubClientOptions,
   HubCapability,
@@ -52,9 +53,29 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const tokenPattern = /^[0-9a-f]{64}$/u;
 const maximumHubEntityTagLength = 65_536;
 
+/**
+ * One deadline bounds everything logout does before it clears the local credential for the
+ * best-effort revoke: the credential load, a discovery fetch when none is cached, and the request.
+ * It stays far below a UI's patience and below the 5 s default per-test timeout of the unit tests.
+ */
+export const hubLogoutRevokeDeadlineMs = 2_000;
+const revokeCapability: HubCapability = "auth.revoke";
+const revokePath = "/v1/device/revoke" satisfies keyof paths;
+type RevokeStatus = keyof operations["revoke"]["responses"];
+// 204: revoked now. 401: the bearer is already unusable everywhere (revoked, expired or unknown),
+// which is what the caller wants, so a repeated or late call counts as revoked as well.
+const revokedStatuses = [204, 401] as const satisfies readonly RevokeStatus[];
+const rotationAtMaximum = "max_lifetime" satisfies NonNullable<HubClaim["reason"]>;
+
 interface HubOperation {
   readonly generation: number;
   readonly signal: AbortSignal;
+}
+
+interface LoadedCredential {
+  readonly credential: HubCredential | undefined;
+  /** The logout barrier epoch this load ran under. */
+  readonly epoch: number;
 }
 
 interface PendingDiscovery {
@@ -133,12 +154,16 @@ class StaticHubClient implements HubClient {
   };
   readonly #unauthenticatedTransport: FetchTransport;
   readonly #ownerSignal: AbortSignal | undefined;
+  readonly #disposeAbort = new AbortController();
   #sessionAbort = new AbortController();
   #discovery: HubDiscovery | undefined;
   #discoveryPending: PendingDiscovery | undefined;
   #disposed = false;
   #sessionGeneration = 0;
   #credentialMutation: Promise<void> = Promise.resolve();
+  // Set while a logout has not finished its queued clear; credential loads wait for it.
+  #barrier: Promise<void> | undefined;
+  #barrierEpoch = 0;
   readonly #cursorBindings = new Map<string, string>();
 
   constructor(options: CreateHubClientOptions) {
@@ -312,8 +337,9 @@ class StaticHubClient implements HubClient {
   async rotateDevice(options: HubRequestOptions = {}): Promise<HubResponse<HubClaim>> {
     const operation = this.#beginOperation(options.signal);
     await this.#ensureDiscovery(operation);
-    const previous = await this.#loadCredential(operation);
+    const loaded = await this.#loadCredential(operation);
     this.#assertOperation(operation);
+    const previous = loaded.credential;
     if (previous === undefined) throw new HubHttpError(401, "hub_http_error");
     validateCredential(previous);
     const result = await this.#writeClaim(
@@ -328,8 +354,24 @@ class StaticHubClient implements HubClient {
     if (result.value.deviceId !== previous.deviceId) {
       throw new ProtocolValidationError("HubClaim.deviceId");
     }
+    if (result.value.reason === rotationAtMaximum) {
+      // The device is at its absolute lifetime: the Hub issued nothing and answered with the
+      // bearer we presented. Keep that bearer and do not retry; the caller branches on `reason`
+      // and has until `expiresAtMs` to re-pair. The stored expiry follows the Hub's, so it is
+      // written when the answer states a different one (the bearer and the device are unchanged).
+      // The write is a compare-and-set against the credential this rotation presented: a pairing
+      // claimed meanwhile has replaced it, and its credential must stay.
+      if (result.value.accessToken !== previous.accessToken) {
+        throw new ProtocolValidationError("HubClaim.accessToken");
+      }
+      if (result.value.expiresAtMs !== previous.expiresAtMs) {
+        await this.#saveCredential(asCredential(result.value), operation, loaded.epoch, previous);
+        this.#assertOperation(operation);
+      }
+      return result;
+    }
     const credential = asCredential(result.value);
-    await this.#saveCredential(credential, operation);
+    await this.#saveCredential(credential, operation, loaded.epoch);
     this.#assertOperation(operation);
     return result;
   }
@@ -448,13 +490,29 @@ class StaticHubClient implements HubClient {
 
   async logout(): Promise<void> {
     this.#requireActive();
-    this.#sessionAbort.abort(new DOMException("Hub client logged out", "AbortError"));
-    this.#sessionGeneration += 1;
-    this.#sessionAbort = new AbortController();
-    this.#cursorBindings.clear();
-    this.#discovery = undefined;
-    this.#discoveryPending = undefined;
-    await this.#enqueueCredentialMutation(() => this.#credentials.clear());
+    const cachedDiscovery = this.#discovery;
+    // The barrier goes up before the generation moves: from here on a bearer operation waits for
+    // the clear instead of loading the credential that is about to go.
+    const barrier = this.#raiseBarrier();
+    try {
+      // The queue entry is reserved in the same synchronous step as the barrier, before any abort
+      // listener can run: a listener that logs out again or saves a credential re-entrantly queues
+      // behind this clear, so the barriers and the clears keep the same order and an inner logout
+      // cannot lower the barrier of an outer clear that has not finished.
+      const cleared = this.#enqueueCredentialMutation(async () => {
+        await this.#revokeBestEffort(cachedDiscovery);
+        await this.#credentials.clear();
+      });
+      this.#sessionAbort.abort(new DOMException("Hub client logged out", "AbortError"));
+      this.#sessionGeneration += 1;
+      this.#sessionAbort = new AbortController();
+      this.#cursorBindings.clear();
+      this.#discovery = undefined;
+      this.#discoveryPending = undefined;
+      await cleared;
+    } finally {
+      barrier.lower();
+    }
   }
 
   dispose(): void {
@@ -462,6 +520,7 @@ class StaticHubClient implements HubClient {
     this.#disposed = true;
     this.#sessionGeneration += 1;
     this.#sessionAbort.abort(new DOMException("Hub client disposed", "AbortError"));
+    this.#disposeAbort.abort(new DOMException("Hub client disposed", "AbortError"));
     this.#cursorBindings.clear();
     this.#discovery = undefined;
     this.#discoveryPending = undefined;
@@ -472,28 +531,75 @@ class StaticHubClient implements HubClient {
     return this.#discovery ?? (await this.#discover(operation)).value;
   }
 
-  async #loadCredential(operation: HubOperation): Promise<HubCredential | undefined> {
+  #raiseBarrier(): { lower(): void } {
+    let settle!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    this.#barrier = barrier;
+    this.#barrierEpoch += 1;
+    return {
+      lower: () => {
+        settle();
+        if (this.#barrier === barrier) this.#barrier = undefined;
+      },
+    };
+  }
+
+  async #loadCredential(operation: HubOperation): Promise<LoadedCredential> {
     this.#assertOperation(operation);
+    const barrier = this.#barrier;
+    if (barrier !== undefined) {
+      // A logout is clearing the store: load only what is there once it has finished.
+      await raceAbort(barrier, operation.signal);
+      this.#assertOperation(operation);
+    }
+    const epoch = this.#barrierEpoch;
     try {
       const credential = await this.#credentials.load();
       this.#assertOperation(operation);
-      return credential === undefined
-        ? undefined
-        : {
-            accessToken: credential.accessToken,
-            deviceId: credential.deviceId,
-            expiresAtMs: credential.expiresAtMs,
-          };
+      return {
+        credential: credential === undefined ? undefined : snapshotCredential(credential),
+        epoch,
+      };
     } catch (error) {
       if (this.#isExpired(operation) || operation.signal.aborted) this.#assertOperation(operation);
       throw error;
     }
   }
 
-  async #saveCredential(credential: HubCredential, operation: HubOperation): Promise<void> {
+  /**
+   * Save `credential` in the credential-mutation queue. With `onlyIfStoredIs`, the save is a
+   * compare-and-set: the store is read inside the queue entry, after every earlier mutation, and
+   * nothing is written unless it still holds the same bearer and device id as `onlyIfStoredIs`.
+   * A store that holds anything else (another pairing, or nothing) keeps what it has.
+   */
+  async #saveCredential(
+    credential: HubCredential,
+    operation: HubOperation,
+    loadEpoch?: number,
+    onlyIfStoredIs?: HubCredential,
+  ): Promise<void> {
     try {
       await this.#enqueueCredentialMutation(async () => {
         this.#assertOperation(operation);
+        if (loadEpoch !== undefined && loadEpoch !== this.#barrierEpoch) {
+          // The credential this one derives from was loaded before a logout.
+          throw new DOMException("Hub client credential predates a logout", "AbortError");
+        }
+        if (onlyIfStoredIs !== undefined) {
+          // Straight from the store: this entry runs inside the queue, and no logout is pending
+          // (the epoch above is current), so there is no barrier to wait for.
+          const current = await this.#credentials.load();
+          this.#assertOperation(operation);
+          if (
+            current === undefined ||
+            current.accessToken !== onlyIfStoredIs.accessToken ||
+            current.deviceId !== onlyIfStoredIs.deviceId
+          ) {
+            return;
+          }
+        }
         await this.#credentials.save(credential);
       });
       this.#assertOperation(operation);
@@ -509,6 +615,82 @@ class StaticHubClient implements HubClient {
     return operation;
   }
 
+  /**
+   * Best-effort device self-revoke for logout, run inside the credential-mutation entry that
+   * clears the store. It never throws and never retries: whatever happens, the caller clears the
+   * local credential next. The bearer is sent only to a Hub that advertises `auth.revoke`, by the
+   * discovery cached when logout started or, when none was cached, by one fresh discovery whose
+   * identity matches the expected Hub.
+   */
+  async #revokeBestEffort(cached: HubDiscovery | undefined): Promise<boolean> {
+    if (cached !== undefined && !advertisesRevoke(cached)) return false;
+    const deadline = new AbortController();
+    const timer = setTimeout(() => {
+      deadline.abort(new DOMException("Hub revoke deadline reached", "TimeoutError"));
+    }, hubLogoutRevokeDeadlineMs);
+    // Not the session signal: logout has just aborted it. Dispose still stops the revoke.
+    const signal = AbortSignal.any([deadline.signal, this.#disposeAbort.signal]);
+    try {
+      return await raceAbort(this.#revoke(cached, signal), signal);
+    } catch {
+      // Best effort: a refused, failed or abandoned revoke never blocks the local clear.
+      return false;
+    } finally {
+      clearTimeout(timer);
+      // An attempt that lost the race must not dispatch anything later.
+      deadline.abort(new DOMException("Hub revoke attempt is over", "AbortError"));
+    }
+  }
+
+  async #revoke(cached: HubDiscovery | undefined, signal: AbortSignal): Promise<boolean> {
+    signal.throwIfAborted();
+    // Straight from the store: this load must not wait for the barrier logout itself installed.
+    const stored = await raceAbort((async () => this.#credentials.load())(), signal);
+    if (stored === undefined) return false;
+    const credential = snapshotCredential(stored);
+    validateCredential(credential);
+    signal.throwIfAborted();
+    const discovery = cached ?? (await this.#discoverForRevoke(signal));
+    if (discovery === undefined || !advertisesRevoke(discovery)) return false;
+    signal.throwIfAborted();
+    const transport = new FetchTransport({
+      ...this.#transportOptions,
+      authorization: () => `Bearer ${credential.accessToken}`,
+    });
+    const response = await transport.request(revokePath, {
+      method: "POST",
+      redirect: "error",
+      signal,
+    });
+    return withResponseOwnership(response, async () => {
+      // The route takes no body and answers with none; check that for the 204 and drop the rest.
+      if (response.status === 204) await requireEmptyResponseBody(response, signal, "HubRevoke");
+      else await cancelResponseBody(response);
+      return (revokedStatuses as readonly number[]).includes(response.status);
+    });
+  }
+
+  async #discoverForRevoke(signal: AbortSignal): Promise<HubDiscovery | undefined> {
+    const response = await this.#unauthenticatedTransport.request(discoveryPath, {
+      redirect: "error",
+      signal,
+    });
+    return withResponseOwnership(response, async () => {
+      if (response.status !== 200) {
+        await cancelResponseBody(response);
+        return undefined;
+      }
+      const discovery = await decodeResponse(
+        response,
+        validateHubDiscovery,
+        "HubDiscovery",
+        signal,
+      );
+      // Never hand a bearer to an endpoint that is not the Hub this client was built for.
+      return discovery.hubId === this.#expectedHubId ? discovery : undefined;
+    });
+  }
+
   async #requireCapability(capability: HubCapability, operation: HubOperation): Promise<void> {
     this.#assertOperation(operation);
     const discovery = await this.#ensureDiscovery(operation);
@@ -522,7 +704,7 @@ class StaticHubClient implements HubClient {
     return new FetchTransport({
       ...this.#transportOptions,
       authorization: async () => {
-        const credential = snapshot ?? (await this.#loadCredential(operation));
+        const credential = snapshot ?? (await this.#loadCredential(operation)).credential;
         if (credential === undefined) return undefined;
         validateCredential(credential);
         return `Bearer ${credential.accessToken}`;
@@ -668,6 +850,38 @@ class StaticHubClient implements HubClient {
 
   #requireActive(): void {
     if (this.#disposed) throw new HubClientDisposedError();
+  }
+}
+
+function advertisesRevoke(discovery: HubDiscovery): boolean {
+  return discovery.capabilities.includes(revokeCapability);
+}
+
+function snapshotCredential(credential: HubCredential): HubCredential {
+  return {
+    accessToken: credential.accessToken,
+    deviceId: credential.deviceId,
+    expiresAtMs: credential.expiresAtMs,
+  };
+}
+
+/** Settle with `promise`, or reject with the signal's reason as soon as the signal aborts. */
+async function raceAbort<T>(promise: PromiseLike<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    // Nobody will await `promise`; observe it so that a later rejection is not unhandled.
+    void Promise.resolve(promise).catch(() => undefined);
+    throw signal.reason ?? new DOMException("Aborted", "AbortError");
+  }
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    // Promise.race also observes a rejection of `promise` after the abort won.
+    return await Promise.race([promise, aborted]);
+  } finally {
+    if (onAbort !== undefined) signal.removeEventListener("abort", onAbort);
   }
 }
 

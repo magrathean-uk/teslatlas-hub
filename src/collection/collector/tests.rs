@@ -37,3 +37,4 @@ include!("tests/projection_and_outbox.rs");
 include!("tests/supervised_restart.rs");
 include!("tests/scheduler.rs");
 include!("tests/terrain.rs");
+include!("tests/provider_secret_scrub.rs");

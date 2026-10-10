@@ -40,9 +40,16 @@ The client is a static-endpoint client. It shares safe Fetch transport
 primitives where wire semantics match, and uses validators generated from the
 in-repository `hub-http-v1@1.2.0` profile. Explicit logout or disposal provides
 the required abort and identity reset boundary without inventing a mutable
-endpoint API. Logout serializes SDK-owned credential mutations and clears
-caller state after those writes; disposal is synchronous, preserves existing
-credentials, and rejects stale operation success.
+endpoint API. Logout raises a barrier before it moves the session generation,
+serializes SDK-owned credential mutations, and, inside that queue and before
+the clear, makes one best-effort revoke at the Hub when `auth.revoke` is
+advertised (the discovery cached at that moment, else one identity-checked
+discovery; one short deadline; 204 and 401 count as revoked; no retry). It then
+clears caller state; the barrier settles when the clear completes or fails, and
+a credential load started after logout waits for it, so a rotation cannot send
+or save a credential the logout is about to clear. Disposal is synchronous,
+preserves existing credentials, abandons a revoke in flight, and rejects stale
+operation success.
 
 The Node claim transport opens a non-pooled TLS connection, retains Node's CA
 and hostname validation, checks the connected leaf DER SHA-256, and only then

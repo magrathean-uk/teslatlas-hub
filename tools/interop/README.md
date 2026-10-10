@@ -48,6 +48,12 @@ this repository:
   --config /private/new-fixture/ready.json --json
 ```
 
+This `1.0.0` lane, and `smoke.py` below, predate the Hub's discovery flip: a Hub
+built from this source names `hub-http-v1@1.2.0` in discovery, which the `1.0.0`
+and `1.1.0` discovery schemas reject, so these runs fail at discovery against it.
+The `1.2.0` native cases in `protocol/docs/guides/conformance.md` are the
+acceptance path for the current Hub.
+
 Or, from the Hub root, save a redacted smoke receipt:
 
 ```sh

@@ -33,7 +33,18 @@ checks:
 - An error `code` is any `^[a-z_]{1,64}$` token. The client maps the codes it knows
   to a status and rejects any other code as invalid. `drive_not_found` and
   `charge_not_found` join the profile's codes.
-- A claim or rotation response may carry `reason: "max_lifetime"`.
+- A claim or rotation response may carry `reason: "max_lifetime"`. On rotation it means the
+  device is at its absolute lifetime and the Hub issued nothing: the SDK keeps the stored
+  bearer, saves the answer's `expiresAtMs` into the stored credential when it differs (only
+  while the store still holds the presented bearer and device id; a pairing claimed meanwhile
+  is never overwritten), does not retry, and returns the claim with `reason` set, which tells
+  the caller to re-pair before `expiresAtMs`. After the stored `expiresAtMs` passes, the SDK
+  rejects the credential locally with `ProtocolValidationError` (`HubCredential.expiry`)
+  before any authenticated request, so the expired bearer is never sent and no 401 reaches the
+  caller through the SDK for that case; an uncached discovery request may still go out first.
+- Discovery that advertises `auth.revoke` offers `POST /v1/device/revoke` (no request body;
+  204, 400, 401, 404 or 503, all with an empty body or one the SDK ignores). `logout()` uses it
+  once, best effort; 204 and 401 count as revoked.
 - A claim device name is 1 to 128 UTF-8 bytes with no C0 or C1 control character.
 - A drive may carry `start_address_provenance` and `end_address_provenance`
   (either may be null); `looked_up_at_ms`, when present, is an exact signed 64-bit
@@ -61,9 +72,13 @@ Docker lane itself was retired on 2026-10-08. Neither
 record establishes current final-Hub acceptance. New runtime claims need
 exact-source receipts.
 
-`logout()` is the local credential-store operation and is distinct from server
-revocation. Consumers await it before `dispose()` and must pair again after a
-401 or a confirmed server revocation. An explicit discovery refresh invalidates
+`logout()` clears the local credential store, and first asks the Hub to revoke the
+device when discovery advertises `auth.revoke` (one `POST /v1/device/revoke`, a 2 second
+deadline for the load, any discovery and the request, no retry). A 204 or a 401 counts as
+revoked; any other outcome means the Hub may still honour the old bearer until it expires.
+The local clear happens in every case. Consumers await it before `dispose()` and must pair
+again after a 401, a `max_lifetime` rotation answer or a confirmed server revocation. An
+explicit discovery refresh invalidates
 the cached identity on transport failure or UUID mismatch, so an authenticated
 request cannot silently reuse an old discovery result.
 
@@ -85,7 +100,7 @@ The closed `HubClient` surface contains exactly these named operations:
 | Discovery and health | `discover`, `health`, `readiness` |
 | Pairing and credentials | `claimPairing`, `rotateDevice` |
 | Reads | `vehicles`, `current`, `drives` |
-| Local lifecycle | `logout`, `dispose` |
+| Lifecycle | `logout` (best-effort Hub revoke, then local clear), `dispose` (local) |
 
 The Node.js factory is available from `@teslatlas/sdk/node`. The root entry point
 exports public types and safe constructors only; it does not export an arbitrary

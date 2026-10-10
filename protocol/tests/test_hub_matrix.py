@@ -27,6 +27,8 @@ from conformance import hub_matrix
 
 ROOT = Path(__file__).resolve().parents[1]
 PROFILE = ROOT / "profiles/hub-http-v1/1.1.0"
+# The current Hub serves 1.2.0; only the probe smoke below uses these bytes. The matrix itself stays 1.1.0.
+PROFILE_12 = ROOT / "profiles/hub-http-v1/1.2.0"
 HUB_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 NORMAL_PAIRING = "44444444-4444-4444-8444-444444444444"
 EXPIRED_PAIRING = "66666666-6666-4666-8666-666666666666"
@@ -94,6 +96,9 @@ class SyntheticHub:
         self.claim_count = 0
         self.next_request = 0
         self.discovery_capabilities = None
+        # The profile whose example bytes the Hub serves, and whether page ETags are the 1.2.0 quoted SHA-256.
+        self.served_profile = PROFILE
+        self.sha256_etags = False
         self.outage_mode = "disconnect"
         self.trickle_path = None
         self.trickle_delay = 0.0
@@ -211,7 +216,7 @@ class SyntheticHub:
                     if owner.outage_mode == "missing_request_id":
                         return self._send(200, None, {"vehicles": SYNTHETIC_SCENARIO["vehicles"]})
                 if parsed.path == "/.well-known/teslatlas-hub":
-                    value = json.loads((PROFILE / "examples/discovery.json").read_text())
+                    value = json.loads((owner.served_profile / "examples/discovery.json").read_text())
                     value.update(hub_id=HUB_ID, version="2026.36.2")
                     if owner.discovery_capabilities is not None:
                         value["capabilities"] = owner.discovery_capabilities
@@ -231,7 +236,7 @@ class SyntheticHub:
                     if vehicle_id == "33333333-3333-4333-8333-333333333333":
                         return self._send(404, request_id)
                     scenario = SYNTHETIC_SCENARIO
-                    value = json.loads((PROFILE / "examples/current.json").read_text())
+                    value = json.loads((owner.served_profile / "examples/current.json").read_text())
                     if vehicle_id == scenario["vehicle_ids"][0]:
                         value.update(scenario["current"])
                     elif vehicle_id == scenario["vehicle_ids"][1]:
@@ -264,18 +269,22 @@ class SyntheticHub:
                 if cursor not in pages:
                     return self._send(400, request_id, {"error": {"code": "invalid_cursor", "message": "synthetic"}})
                 page_index, next_cursor = pages[cursor]
-                etag = '"synthetic-page-' + str(page_index + 1) + '"'
-                headers = {"ETag": etag, "Cache-Control": "no-store"}
-                if self.headers.get("if-none-match") == etag:
-                    return self._send(304, request_id, headers=headers)
-                example = json.loads((PROFILE / "examples/drives.json").read_text())["items"][0]
+                example = json.loads((owner.served_profile / "examples/drives.json").read_text())["items"][0]
                 items = []
                 for drive_id in scenario["drive_pages_at_limit_2"][page_index]:
                     item = dict(example)
                     item.update(scenario["drives"][str(drive_id)])
                     item.update(id=drive_id, vehicle_id=scenario["vehicle_ids"][0])
                     items.append(item)
-                return self._send(200, request_id, {"items": items, "next_cursor": next_cursor}, headers=headers)
+                page = {"items": items, "next_cursor": next_cursor}
+                etag = '"synthetic-page-' + str(page_index + 1) + '"'
+                if owner.sha256_etags:
+                    raw = json.dumps(page, ensure_ascii=False, separators=(",", ":")).encode()
+                    etag = '"' + hashlib.sha256(raw).hexdigest() + '"'
+                headers = {"ETag": etag, "Cache-Control": "no-store"}
+                if self.headers.get("if-none-match") == etag:
+                    return self._send(304, request_id, headers=headers)
+                return self._send(200, request_id, page, headers=headers)
 
             def do_POST(self):
                 begun = self._begin()
@@ -824,6 +833,9 @@ class HubMatrixTests(unittest.TestCase):
                 self.hub.used_pairings.clear();self.hub.revoked_devices.clear();self.hub.grace_tokens.clear()
 
     def test_actual_curl_smoke_bodyless_304_and_pagination(self):
+        # The probe holds a Hub to hub-http-v1@1.2.0: this synthetic Hub serves its example bytes and
+        # SHA-256 page ETags for this test only.
+        self.hub.served_profile=PROFILE_12;self.hub.sha256_etags=True
         self.hub.current_token=TOKEN_1;self.hub.current_device=FIRST_DEVICE
         private=self.root/'curl-private';private.mkdir(mode=0o700)
         ca=private/'ca.pem';shutil.copyfile(self.hub.cert,ca);ca.chmod(0o600)

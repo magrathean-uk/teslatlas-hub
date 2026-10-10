@@ -1,4 +1,5 @@
-"""Executable tests for the bounded, read-only current-Hub curl probe."""
+"""Executable tests for the bounded, read-only current-Hub curl probe (hub-http-v1@1.2.0)."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -11,7 +12,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 PROBE = ROOT / "tools" / "check-current-hub"
-PROFILE = ROOT / "profiles" / "hub-http-v1" / "1.0.0"
+PROFILE = ROOT / "profiles" / "hub-http-v1" / "1.2.0"
 SECRET = "Bearer private-token-that-must-never-appear"
 HUB_ID = "11111111-1111-4111-8111-111111111111"
 
@@ -39,6 +40,8 @@ class CurrentHubProbeTests(unittest.TestCase):
         self.force_cursor = False
         self.reduced_capabilities = False
         self.missing_output = False
+        self.discovery_change = ""
+        self.etag_change = ""
         self.write_fake_curl()
 
     def write_config(self, **updates):
@@ -62,7 +65,7 @@ class CurrentHubProbeTests(unittest.TestCase):
         script = self.bin / "curl"
         script.write_text(
             f"""#!{sys.executable}
-import json, os, sys
+import hashlib, json, os, sys
 from pathlib import Path
 args = sys.argv[1:]
 Path(os.environ['PROBE_CURL_LOG']).open('a', encoding='utf-8').write(json.dumps(args) + '\\n')
@@ -70,26 +73,40 @@ def value(flag): return args[args.index(flag) + 1]
 output = Path(value('--output')); headers = Path(value('--dump-header'))
 url = args[-1]
 root = Path(os.environ['PROBE_PROFILE'])
+etag = None
 if '/.well-known/' in url:
     body = (root / 'examples/discovery.json').read_bytes()
+    discovery = json.loads(body)
     if os.environ.get('PROBE_REDUCED_CAPABILITIES') == '1':
-        discovery = json.loads(body)
         discovery['capabilities'] = ['query.vehicles', 'query.current']
-        body = json.dumps(discovery).encode()
+    change = os.environ.get('PROBE_DISCOVERY_CHANGE')
+    if change == 'no-profile': del discovery['profile']
+    elif change == 'profile-1.1.0': discovery['profile'] = 'hub-http-v1@1.1.0'
+    elif change == 'foreign-token': discovery['capabilities'].append('x.foreign')
+    elif change == 'enrichment-without-attributions': del discovery['attributions']
+    elif change == 'partial-cursor-key':
+        discovery['capabilities'] = [token for token in discovery['capabilities'] if token != 'query.charges']
+    elif change == 'unsigned-example': discovery = json.loads((root / 'examples/discovery-unsigned.json').read_bytes())
+    body = json.dumps(discovery).encode()
     kind = 'discovery'; status = 200
 elif url.endswith('/v1/vehicles'): body = (root / 'examples/vehicles.json').read_bytes(); kind = 'vehicles'; status = 200
 elif '/current' in url: body = (root / 'examples/current.json').read_bytes(); kind = 'current'; status = 200
 elif '/drives' in url:
     if '--header' in args and args[args.index('--header') + 1].startswith('If-None-Match:'):
         body = b''; status = 304
+        etag = args[args.index('--header') + 1].split(': ', 1)[1]
     else:
-        body = (root / 'examples/drives.json').read_bytes()
-        if os.environ.get('PROBE_FORCE_CURSOR') == '1':
-            page = json.loads(body); page['next_cursor'] = 'opaque-cursor'; body = json.dumps(page).encode()
+        # The 1.2.0 example page has a next page; this Hub has one page unless forced to have more.
+        page = json.loads((root / 'examples/drives.json').read_bytes())
+        page['next_cursor'] = 'opaque-cursor' if os.environ.get('PROBE_FORCE_CURSOR') == '1' else None
+        body = json.dumps(page).encode()
         status = 200
+        etag = '"' + hashlib.sha256(body).hexdigest() + '"'
+    if os.environ.get('PROBE_ETAG_CHANGE') == 'not-the-body-digest': etag = '"' + '0' * 64 + '"'
+    elif os.environ.get('PROBE_ETAG_CHANGE') == 'not-a-digest': etag = '"probe-page"'
     kind = 'drives'
 else: body = b''; kind = 'unknown'; status = 404
-headers.write_text('HTTP/1.1 %s synthetic\\r\\nContent-Type: application/json\\r\\n' % status + ('ETag: \\\"probe-page\\\"\\r\\nCache-Control: no-store\\r\\n' if kind == 'drives' else '') + '\\r\\n', encoding='ascii')
+headers.write_text('HTTP/1.1 %s synthetic\\r\\nContent-Type: application/json\\r\\n' % status + ('ETag: %s\\r\\nCache-Control: no-store\\r\\n' % etag if kind == 'drives' else '') + '\\r\\n', encoding='ascii')
 if status != 304 and os.environ.get('PROBE_MISSING_OUTPUT') != '1': output.write_bytes(body)
 sys.stdout.write(str(status))
 """,
@@ -107,6 +124,8 @@ sys.stdout.write(str(status))
                 "PROBE_FORCE_CURSOR": "1" if self.force_cursor else "0",
                 "PROBE_REDUCED_CAPABILITIES": "1" if self.reduced_capabilities else "0",
                 "PROBE_MISSING_OUTPUT": "1" if self.missing_output else "0",
+                "PROBE_DISCOVERY_CHANGE": self.discovery_change,
+                "PROBE_ETAG_CHANGE": self.etag_change,
             }
         )
         environment["PATH"] = str(ROOT / ".venv" / "bin") + os.pathsep + environment["PATH"]
@@ -136,6 +155,54 @@ sys.stdout.write(str(status))
             self.assertNotIn("private-token", " ".join(call))
             self.assertEqual(call[call.index("--retry") + 1], "0")
             self.assertNotIn("--location", call)
+        # The page validator is the 1.2.0 ETag: the quoted SHA-256 of the body, sent back as is.
+        page = json.loads((PROFILE / "examples" / "drives.json").read_bytes())
+        page["next_cursor"] = None
+        digest = hashlib.sha256(json.dumps(page).encode()).hexdigest()
+        self.assertIn('If-None-Match: "' + digest + '"', calls[4])
+
+    def assertProbeRejects(self, result):
+        """A fixed label, exit 1 and no bearer anywhere in what the probe printed."""
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"status": "failed", "error": "probe failed"})
+        self.assertNotIn("private-token", result.stdout + result.stderr)
+
+    def logged_calls(self):
+        return [json.loads(line) for line in self.log.read_text().splitlines()]
+
+    def test_discovery_the_profile_does_not_define_is_rejected_before_the_bearer_is_sent(self):
+        """The probe holds discovery to hub-http-v1@1.2.0: its profile member, its tokens and its rules."""
+        for change in (
+            "no-profile",
+            "profile-1.1.0",
+            "foreign-token",
+            "enrichment-without-attributions",
+            "partial-cursor-key",
+        ):
+            with self.subTest(change=change):
+                self.log.unlink(missing_ok=True)
+                self.discovery_change = change
+                self.assertProbeRejects(self.run_probe())
+                calls = self.logged_calls()
+                self.assertEqual(len(calls), 1)
+                self.assertNotIn("--header", calls[0])
+                self.assertNotIn("@" + str(self.header), calls[0])
+
+    def test_unsigned_1_2_0_discovery_example_passes_without_drives(self):
+        """The profile's own unsigned example (profile member, two tokens) is a valid Hub."""
+        self.discovery_change = "unsigned-example"
+        result = self.run_probe()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["operations"], ["discovery", "vehicles", "current"])
+
+    def test_drive_page_etag_that_is_not_the_body_digest_is_rejected(self):
+        """1.2.0 pages carry the quoted SHA-256 of their body as the ETag."""
+        for change in ("not-the-body-digest", "not-a-digest"):
+            with self.subTest(change=change):
+                self.log.unlink(missing_ok=True)
+                self.etag_change = change
+                self.assertProbeRejects(self.run_probe())
+                self.assertEqual(len(self.logged_calls()), 4)
 
     def test_unknown_config_member_fails_before_any_transport(self):
         """Accepting arbitrary options would permit uncontrolled curl behavior."""
@@ -160,7 +227,7 @@ sys.stdout.write(str(status))
         receipt = json.loads(result.stdout)
         self.assertEqual(receipt["status"], "passed")
         self.assertEqual(receipt["operations"], ["discovery", "vehicles", "current"])
-        calls = [json.loads(line) for line in self.log.read_text().splitlines()]
+        calls = self.logged_calls()
         self.assertEqual(len(calls), 3)
         self.assertTrue(all("/drives" not in call[-1] for call in calls))
 

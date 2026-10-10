@@ -375,6 +375,13 @@ impl LegacyAuthManager {
         self.assert_sensitive_access()?;
         Ok(self.auth.access_token())
     }
+    /// The live refresh token, behind the same admission check as the access
+    /// token. It exists only so a provider response that echoes it can be
+    /// scrubbed before storage; it is never sent, logged or formatted.
+    pub(crate) fn refresh_token_for_sensitive_use(&self) -> Result<&str, LegacyAuthManagerError> {
+        self.assert_sensitive_access()?;
+        Ok(self.auth.refresh_token())
+    }
     #[cfg(test)]
     pub(crate) fn refresh_token(&self) -> &str {
         self.auth.refresh_token()
