@@ -50,12 +50,19 @@ mod hub_sync_v1;
 #[path = "server/history_routes.rs"]
 mod history_routes;
 
+#[path = "server/vehicle_access.rs"]
+mod vehicle_access;
+use vehicle_access::{VehicleAccessDenied, json_sync_route_vehicle, require_vehicle_access};
+
 #[cfg(unix)]
 use crate::config::HubConfig;
 use crate::{
     BUILD_VERSION,
     config::TlsListenerConfig,
-    db::{HubStore, PairedDeviceRecord, PublishedVehicle, ReadinessReasonCode, StoredPack},
+    db::{
+        HubStore, PairedDeviceRecord, PublishedVehicle, ReadinessReasonCode, StoredPack,
+        VehicleScope, VehicleVisibility,
+    },
     discovery_source_url,
     fleet_telemetry::{FleetTelemetryAccumulator, MAX_FLEET_TELEMETRY_INPUT_BYTES, vin_from_json},
     http_range::{parse_single_range, unsatisfied_content_range},
@@ -1311,10 +1318,15 @@ async fn capabilities(State(state): State<AppState>) -> Response {
 }
 
 async fn vehicles(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if let Err(status) = require_authorized_device(&state, &headers) {
-        return device_auth_reject(status);
-    }
-    match state.store.published_vehicles() {
+    let device = match require_authorized_device(&state, &headers) {
+        Ok(device) => device,
+        Err(status) => return device_auth_reject(status),
+    };
+    // A device lists only the vehicles it is granted.
+    match state
+        .store
+        .published_vehicles_in_scope(state.vehicle_scope(&device))
+    {
         Ok(vehicles) => Json(VehicleList { vehicles }).into_response(),
         Err(error) => {
             tracing::error!(%error, "cannot load published vehicles");
@@ -1323,38 +1335,25 @@ async fn vehicles(State(state): State<AppState>, headers: HeaderMap) -> Response
     }
 }
 
-#[allow(clippy::result_large_err)] // an axum Response is the handler error by design
-fn require_active_vehicle(state: &AppState, vehicle_id: Uuid) -> Result<(), Response> {
-    match state.store.vehicle_is_active(vehicle_id) {
-        Ok(true) => Ok(()),
-        Ok(false) => Err(public_api_error(
-            StatusCode::NOT_FOUND,
-            "vehicle_not_found",
-            "vehicle was not found",
-        )),
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot check public vehicle visibility");
-            Err(public_api_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "service_unavailable",
-                "vehicle visibility is temporarily unavailable",
-            ))
-        }
-    }
-}
-
 async fn current_vehicle(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
-    if let Err(status) = require_authorized_device(&state, &headers) {
-        return device_auth_reject(status);
-    }
+    let device = match require_authorized_device(&state, &headers) {
+        Ok(device) => device,
+        Err(status) => return device_auth_reject(status),
+    };
     // The nil UUID is a well-formed id no vehicle can have: an unknown vehicle.
     let Some(vehicle_id) = path_vehicle_id(&uri) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if let Err(response) = require_active_vehicle(&state, vehicle_id) {
-        // hub-http-v1 deliberately keeps current-read 404/503 responses empty,
-        // while endpoints such as drives expose the structured public error.
-        return response.status().into_response();
+    // Active and published, like /v1/vehicles. hub-http-v1 deliberately keeps
+    // the current-read 404/503 responses empty, while endpoints such as drives
+    // expose the structured public error.
+    if let Err(denied) = require_vehicle_access(
+        &state,
+        &device,
+        vehicle_id,
+        VehicleVisibility::PublishedAndActive,
+    ) {
+        return denied.into_status_response();
     }
     let observations = match state.store.current_observations_for_vehicle(vehicle_id) {
         Ok(observations) => observations,
@@ -1411,6 +1410,10 @@ async fn current_vehicle(State(state): State<AppState>, uri: Uri, headers: Heade
 /// id. The router has already matched the route, so the shape is fixed.
 const VEHICLE_ID_SEGMENT: usize = 2;
 const SESSION_ID_SEGMENT: usize = 4;
+/// `/v1/vehicles/{vehicle_id}/sync/prepared-artefacts/{artifact_id}`.
+const PREPARED_ARTEFACT_ID_SEGMENT: usize = 5;
+/// `/v1/packs/sha256/{object_name}`.
+const PACK_OBJECT_NAME_SEGMENT: usize = 3;
 
 /// Percent-decode one raw path segment the way axum does (a `%` that does not
 /// start two hexadecimal digits stays literal). `None` when the decoded bytes
@@ -1601,19 +1604,21 @@ async fn rotate_device(State(state): State<AppState>, headers: HeaderMap) -> Res
     }
 }
 
-async fn manifest(
-    State(state): State<AppState>,
-    Path(vehicle_id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    if let Err(status) = require_authorized_device(&state, &headers) {
-        return device_auth_reject(status);
-    }
-    let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
-        return StatusCode::NOT_FOUND.into_response();
+async fn manifest(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
+    let device = match require_authorized_device(&state, &headers) {
+        Ok(device) => device,
+        Err(status) => return device_auth_reject(status),
     };
-    if let Err(response) = require_active_vehicle(&state, vehicle_id) {
-        return response;
+    let vehicle_id = match json_sync_route_vehicle(&uri) {
+        Ok(vehicle_id) => vehicle_id,
+        Err(response) => return response,
+    };
+    // Active only: a vehicle with no published full snapshot is answered below
+    // (empty 404 `no_full_snapshot`), not as an unknown vehicle.
+    if let Err(denied) =
+        require_vehicle_access(&state, &device, vehicle_id, VehicleVisibility::Active)
+    {
+        return denied.into_public_api_response();
     }
     match hub_sync_v1::bootstrap_selection(&headers) {
         hub_sync_v1::BootstrapSelection::Legacy => {}
@@ -1728,24 +1733,19 @@ struct SigningKeyRotation {
     retain_retired_keys: bool,
 }
 
-async fn signing_keys(
-    State(state): State<AppState>,
-    Path(vehicle_id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    if let Err(status) = require_authorized_device(&state, &headers) {
-        return device_auth_reject(status);
-    }
-    let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
+async fn signing_keys(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
+    let device = match require_authorized_device(&state, &headers) {
+        Ok(device) => device,
+        Err(status) => return device_auth_reject(status),
+    };
+    // Malformed, nil, unknown and ungranted vehicles are all the empty 404.
+    let Some(vehicle_id) = path_vehicle_id(&uri) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    match state.store.vehicle_is_active(vehicle_id) {
-        Ok(true) => {}
-        Ok(false) => return StatusCode::NOT_FOUND.into_response(),
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot check signing-key vehicle binding");
-            return StatusCode::SERVICE_UNAVAILABLE.into_response();
-        }
+    if let Err(denied) =
+        require_vehicle_access(&state, &device, vehicle_id, VehicleVisibility::Active)
+    {
+        return denied.into_status_response();
     }
     let Some(signing) = state.manifest_signing.as_deref() else {
         tracing::error!(%vehicle_id, "manifest signing key is unavailable");
@@ -1763,18 +1763,26 @@ async fn signing_keys(
 
 async fn prepared_artefact(
     State(state): State<AppState>,
-    Path((vehicle_id, artifact_id)): Path<(String, String)>,
+    uri: Uri,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(status) = require_authorized_device(&state, &headers) {
-        return device_auth_reject(status);
+    let device = match require_authorized_device(&state, &headers) {
+        Ok(device) => device,
+        Err(status) => return device_auth_reject(status),
+    };
+    let vehicle_id = match json_sync_route_vehicle(&uri) {
+        Ok(vehicle_id) => vehicle_id,
+        Err(response) => return response,
+    };
+    if let Err(denied) =
+        require_vehicle_access(&state, &device, vehicle_id, VehicleVisibility::Active)
+    {
+        return denied.into_public_api_response();
     }
-    let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
+    // An artefact id that is not valid UTF-8 names no artefact.
+    let Some(artifact_id) = raw_path_segment(&uri, PREPARED_ARTEFACT_ID_SEGMENT) else {
         return StatusCode::NOT_FOUND.into_response();
     };
-    if let Err(response) = require_active_vehicle(&state, vehicle_id) {
-        return response;
-    }
     let Some(cursor_key) = state.cursor_key.as_deref() else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
@@ -1894,19 +1902,19 @@ fn parse_schema_version(value: &str) -> Result<SchemaVersion, SchemaNegotiationE
     })
 }
 
-async fn schema_22_noop(
-    State(state): State<AppState>,
-    Path(vehicle_id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    if let Err(status) = require_authorized_device(&state, &headers) {
-        return device_auth_reject(status);
-    }
-    let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
-        return StatusCode::NOT_FOUND.into_response();
+async fn schema_22_noop(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
+    let device = match require_authorized_device(&state, &headers) {
+        Ok(device) => device,
+        Err(status) => return device_auth_reject(status),
     };
-    if let Err(response) = require_active_vehicle(&state, vehicle_id) {
-        return response;
+    let vehicle_id = match json_sync_route_vehicle(&uri) {
+        Ok(vehicle_id) => vehicle_id,
+        Err(response) => return response,
+    };
+    if let Err(denied) =
+        require_vehicle_access(&state, &device, vehicle_id, VehicleVisibility::Active)
+    {
+        return denied.into_public_api_response();
     }
     if negotiate_hub_projection_schema(&headers, HUB_PROJECTION_SCHEMA_V3).is_err() {
         return StatusCode::NOT_ACCEPTABLE.into_response();
@@ -1933,14 +1941,20 @@ fn unavailable_schema_22_noop() -> Response {
         .into_response()
 }
 
-async fn pack(
-    State(state): State<AppState>,
-    Path(object_name): Path<String>,
-    headers: HeaderMap,
-) -> Response {
+async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Response {
     let device = match require_authorized_device(&state, &headers) {
         Ok(device) => device,
         Err(status) => return device_auth_reject(status),
+    };
+    // Which vehicles' packs this request may be served. Every lookup below
+    // resolves a pack's owning vehicle inside its own query, so a pack of an
+    // ungranted vehicle is the empty 404 of an unknown digest, before any 406,
+    // 503 or stream-slot branch can tell the two apart.
+    let scope = state.vehicle_scope(&device);
+    // An object name that is not valid UTF-8 is malformed like any other: an
+    // empty 404 after the bearer check, never the framework's 400.
+    let Some(object_name) = raw_path_segment(&uri, PACK_OBJECT_NAME_SEGMENT) else {
+        return StatusCode::NOT_FOUND.into_response();
     };
     let Some(digest) = object_name.strip_suffix(".sqlite.zst") else {
         return StatusCode::NOT_FOUND.into_response();
@@ -1949,9 +1963,12 @@ async fn pack(
         return StatusCode::NOT_FOUND.into_response();
     };
     let mut delta_pack = false;
-    let (stored, verify_digest) = match state.store.pack_for_digest(digest) {
+    let (stored, verify_digest) = match state.store.pack_for_digest_in_scope(digest, scope) {
         Ok(Some(pack)) => (pack, false),
-        Ok(None) => match state.store.pending_physical_v3_pack_for_digest(digest) {
+        Ok(None) => match state
+            .store
+            .pending_physical_v3_pack_for_digest(digest, scope)
+        {
             Ok(Some(pack)) => (pack, true),
             Ok(None) => {
                 let now_ms = match current_epoch_ms() {
@@ -1960,7 +1977,7 @@ async fn pack(
                 };
                 match state
                     .store
-                    .physical_v3_delta_pack_for_digest_at(digest, now_ms)
+                    .physical_v3_delta_pack_for_digest_at(digest, now_ms, scope)
                 {
                     Ok(Some(pack)) => {
                         delta_pack = true;
@@ -1968,12 +1985,13 @@ async fn pack(
                     }
                     Ok(None) => {
                         let Some(cursor_key) = state.cursor_key.as_deref() else {
-                            return StatusCode::SERVICE_UNAVAILABLE.into_response();
+                            return prepared_pack_without_cursor_key(&state.store, digest, scope);
                         };
                         match crate::import::teslamate::prepared_map::current_pack(
                             &state.store,
                             cursor_key,
                             digest,
+                            scope,
                         ) {
                             Ok(Some(pack)) => (pack, true),
                             Ok(None) => return StatusCode::NOT_FOUND.into_response(),
@@ -2034,6 +2052,27 @@ async fn pack(
         },
     )
     .await
+}
+
+/// A Hub with no cursor key cannot verify a prepared pack's receipt, so the 503
+/// is for a digest the device may be served that has a catalogued month. Any
+/// other digest, an ungranted one included, is the empty 404 of an unknown
+/// digest: the grant decides before the missing key can tell them apart.
+fn prepared_pack_without_cursor_key(
+    store: &HubStore,
+    digest: Sha256Digest,
+    scope: VehicleScope,
+) -> Response {
+    match crate::import::teslamate::prepared_map::current_pack_candidate_exists(
+        store, digest, scope,
+    ) {
+        Ok(false) => StatusCode::NOT_FOUND.into_response(),
+        Ok(true) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
+        Err(error) => {
+            tracing::error!(%error, %digest, "cannot check prepared pack catalogue without a cursor key");
+            StatusCode::SERVICE_UNAVAILABLE.into_response()
+        }
+    }
 }
 
 fn authorize_device(

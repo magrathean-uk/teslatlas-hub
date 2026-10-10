@@ -271,8 +271,9 @@ impl HubStore {
         Self::open_read_only_with_mode(data_dir.as_ref(), true, false)
     }
 
-    /// Standalone Serve can migrate the known v66 current-cache shape to v67.
-    /// Return no store handle: consumers still require a fully migrated schema.
+    /// Standalone Serve can migrate the known v66 current-cache shape and the
+    /// v67 shape (before per-device vehicle grants) to v68. Return no store
+    /// handle: consumers still require a fully migrated schema.
     pub(crate) fn preflight_standalone_schema_read_only(data_dir: &Path) -> Result<(), StoreError> {
         Self::open_read_only_with_mode(data_dir, false, true).map(|_| ())
     }
@@ -308,7 +309,7 @@ impl HubStore {
         }
         let version = schema_version(&connection)?;
         let known_forward_upgrade =
-            standalone_migration_candidate && SCHEMA_VERSION == 67 && version == 66;
+            standalone_migration_candidate && SCHEMA_VERSION == 68 && matches!(version, 66 | 67);
         if version != SCHEMA_VERSION && !known_forward_upgrade {
             return Err(StoreError::UnsupportedSchema(version));
         }

@@ -4,7 +4,7 @@ use serde_json::json;
 
 use super::*;
 use crate::{
-    db::HubStore,
+    db::{HubStore, VehicleScope},
     teslamate_physical_fragments::tests::{
         registered_admission_binding, seed_roots, seed_updates, stage_limits,
     },
@@ -460,7 +460,7 @@ async fn production_caller_publishes_noops_and_rotates_under_one_gate() {
         .parse()
         .expect("valid digest");
     let stored = store
-        .physical_v3_delta_pack_for_digest_at(pack_digest, 2_001)
+        .physical_v3_delta_pack_for_digest_at(pack_digest, 2_001, VehicleScope::Unrestricted)
         .expect("delta pack catalogue")
         .expect("published delta pack");
     if let Some(output) = std::env::var_os("TESLATLAS_HUB_SYNTHETIC_DELTA_FIXTURE_DIR") {
@@ -548,6 +548,155 @@ async fn production_caller_publishes_noops_and_rotates_under_one_gate() {
 }
 
 #[tokio::test]
+async fn physical_delta_pack_is_found_only_for_a_device_granted_the_owning_vehicle() {
+    use crate::db::{PairingScope, SourceDescriptor, VehicleDescriptor};
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode, header},
+    };
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
+
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
+    let binding = registered_admission_binding(&store);
+    let cursor_key = CursorKey::from_bytes([0x52; 32]);
+    // The route reads the wall clock, so the heads are published now.
+    let now = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("wall clock")
+            .as_millis(),
+    )
+    .expect("bounded clock");
+    let first = publish_sealed_physical_v3_stage_at(
+        &store,
+        &cursor_key,
+        binding.clone(),
+        physical_stage(temporary.path(), "first", &[10]),
+        now,
+    )
+    .await
+    .expect("first public head");
+    let changed = publish_sealed_physical_v3_stage_at(
+        &store,
+        &cursor_key,
+        binding.clone(),
+        physical_stage(temporary.path(), "changed", &[10, 11]),
+        now + 1,
+    )
+    .await
+    .expect("rotated public head");
+    let (_, _, delta_json) = store
+        .physical_v3_delta_receipt_for_base_at(
+            binding.vehicle_id,
+            &first.admission.receipt_id,
+            &changed.admission.receipt_id,
+            now + 2,
+        )
+        .expect("delta catalogue")
+        .expect("immediate changed-set receipt");
+    let delta: serde_json::Value = serde_json::from_slice(&delta_json).expect("signed delta");
+    let digest: Sha256Digest = delta["chunks"][0]["pack"]["sha256"]
+        .as_str()
+        .expect("pack digest")
+        .parse()
+        .expect("valid digest");
+
+    // A second vehicle exists, with a device granted only that vehicle.
+    let other_source = store
+        .register_source(&SourceDescriptor::new("teslamate", "delta-other"), 1_000)
+        .expect("other source");
+    let other_vehicle = store
+        .register_vehicle(&VehicleDescriptor::new(other_source.source_id, "2"), 1_000)
+        .expect("other vehicle")
+        .vehicle_id;
+    let device = |vehicle: uuid::Uuid| {
+        let invitation = store
+            .create_pairing_with_scope(
+                "delta grants",
+                now - 1,
+                i64::MAX,
+                &PairingScope::Vehicles(vec![vehicle]),
+            )
+            .expect("scoped invitation");
+        let access = store
+            .claim_pairing(invitation.pairing_id, invitation.secret(), "client", now)
+            .expect("claim");
+        (access.device_id, access.access_token.as_bearer().to_owned())
+    };
+    let (owner_device, owner_bearer) = device(binding.vehicle_id);
+    let (other_device, other_bearer) = device(other_vehicle);
+
+    let lookup = |scope: VehicleScope| {
+        store
+            .physical_v3_delta_pack_for_digest_at(digest, now + 2, scope)
+            .expect("delta pack lookup")
+    };
+    assert!(lookup(VehicleScope::Unrestricted).is_some());
+    assert!(lookup(VehicleScope::Device(owner_device)).is_some());
+    assert!(
+        lookup(VehicleScope::Device(other_device)).is_none(),
+        "a device granted only another vehicle is not the pack's owner"
+    );
+    assert!(lookup(VehicleScope::Device(uuid::Uuid::new_v4())).is_none());
+
+    // The pack route: the owner streams the delta pack; a device granted only
+    // another vehicle gets the empty 404 of an unknown digest.
+    let app = crate::server::paired_router(store.clone(), &cursor_key);
+    let fetch = |digest: Sha256Digest, bearer: String| {
+        let app = app.clone();
+        async move {
+            let response = app
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/v1/packs/sha256/{digest}.sqlite.zst"))
+                        .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("pack response");
+            let status = response.status();
+            let content_type = response.headers().get(header::CONTENT_TYPE).cloned();
+            let body = response
+                .into_body()
+                .collect()
+                .await
+                .expect("body")
+                .to_bytes();
+            (status, content_type, body)
+        }
+    };
+    let (status, content_type, body) = fetch(digest, owner_bearer.clone()).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        content_type.expect("content type"),
+        "application/vnd.teslatlas.physical-delta+sqlite+zstd;version=1"
+    );
+    assert!(!body.is_empty());
+    let ungranted = fetch(digest, other_bearer.clone()).await;
+    let unknown = fetch(Sha256Digest::of_bytes(b"unknown delta"), other_bearer).await;
+    assert_eq!(ungranted.0, StatusCode::NOT_FOUND);
+    assert_eq!(
+        ungranted, unknown,
+        "an ungranted delta pack is an unknown one"
+    );
+
+    // De-granting the owner removes the pack on the next lookup and request.
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "DELETE FROM device_vehicle_grants WHERE device_id = ?1",
+            [owner_device.to_string()],
+        )
+        .expect("de-grant");
+    assert!(lookup(VehicleScope::Device(owner_device)).is_none());
+    assert_eq!(fetch(digest, owner_bearer).await.0, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
 async fn physical_delta_pack_is_backed_up_and_expires_with_its_retained_base() {
     let temporary = crate::private_tempdir().expect("private store root");
     let store = HubStore::initialize(temporary.path().join("hub")).expect("store");
@@ -594,7 +743,7 @@ async fn physical_delta_pack_is_backed_up_and_expires_with_its_retained_base() {
         .parse()
         .expect("valid digest");
     let original_pack = store
-        .physical_v3_delta_pack_for_digest_at(digest, now + 2)
+        .physical_v3_delta_pack_for_digest_at(digest, now + 2, VehicleScope::Unrestricted)
         .expect("pack lookup")
         .expect("current pack");
     let backup = temporary.path().join("backup");
@@ -604,7 +753,7 @@ async fn physical_delta_pack_is_backed_up_and_expires_with_its_retained_base() {
     let restored = HubStore::initialize(&backup).expect("restore complete backup");
     restored.quick_check().expect("restored integrity");
     let restored_pack = restored
-        .physical_v3_delta_pack_for_digest_at(digest, now + 2)
+        .physical_v3_delta_pack_for_digest_at(digest, now + 2, VehicleScope::Unrestricted)
         .expect("restored pack lookup")
         .expect("restored current pack");
     assert_eq!(
@@ -627,7 +776,7 @@ async fn physical_delta_pack_is_backed_up_and_expires_with_its_retained_base() {
     store.repair().expect("expired delta repair");
     assert!(
         store
-            .physical_v3_delta_pack_for_digest_at(digest, now + 2)
+            .physical_v3_delta_pack_for_digest_at(digest, now + 2, VehicleScope::Unrestricted)
             .expect("expired pack lookup")
             .is_none()
     );
@@ -729,11 +878,11 @@ fn physical_delta_multiple_packs_are_all_referenced_and_backed_up() {
     restored.quick_check().expect("restored integrity");
     for digest in digests {
         let source = store
-            .physical_v3_delta_pack_for_digest_at(digest, now + 1)
+            .physical_v3_delta_pack_for_digest_at(digest, now + 1, VehicleScope::Unrestricted)
             .expect("source pack lookup")
             .expect("source pack");
         let copied = restored
-            .physical_v3_delta_pack_for_digest_at(digest, now + 1)
+            .physical_v3_delta_pack_for_digest_at(digest, now + 1, VehicleScope::Unrestricted)
             .expect("restored pack lookup")
             .expect("restored pack");
         assert_eq!(

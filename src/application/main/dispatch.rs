@@ -942,24 +942,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             label,
             expires_in_seconds,
             json,
+            vehicles,
+            all_vehicles,
         } => {
-            let tls = config
-                .tls
-                .as_ref()
-                .ok_or("device pairing requires configured TLS")?;
             let mut stdout = std::io::stdout().lock();
-            let created_at_ms = current_epoch_ms()?;
-            execute_pairing_at(
+            pair_with_configured_tls(
                 &store,
-                PairingCommandInput {
-                    label: &label,
-                    expires_in_seconds,
-                    json,
-                    public_url: &tls.public_url,
-                    certificate_path: &tls.certificate_path,
-                    private_key_path: &tls.private_key_path,
-                    created_at_ms,
-                },
+                config.tls.as_ref(),
+                &label,
+                expires_in_seconds,
+                json,
+                pairing_scope_from_flags(vehicles, all_vehicles),
                 &mut stdout,
             )
             .await?;

@@ -71,6 +71,11 @@ only with the `interop-fixture` feature and use the exact private fixture root:
 /absolute/build/examples/interop_fixture --restore-dynamic /private/new-fixture
 ```
 
+A device is granted only the vehicles that are active when its invitation is
+claimed. A client that paired before `--expose-dynamic`, or while the dynamic
+vehicle was retired, is never granted it and sees a 404 for it, even after
+`--restore-dynamic`. Pair the client while the dynamic vehicle is exposed.
+
 Keep invitations, pairing URIs, bearer values, claim secrets, and opaque cursors
 out of logs and diagnostics. The adapter checks staged-file hashes, executable
 identity, process ownership, configuration binding, and fresh readiness before

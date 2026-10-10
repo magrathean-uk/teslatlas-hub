@@ -380,6 +380,28 @@ fn schema_58_upgrade_preserves_old_lineage_and_enforces_new_immutable_car_identi
                 payload_json TEXT NOT NULL,
                 PRIMARY KEY(vehicle_id, record_type)
              ) STRICT, WITHOUT ROWID;
+             -- The pairing tables as schema 58 had them (v4, rebuilt at v51);
+             -- the v68 step alters and reads them.
+             CREATE TABLE pairing_challenges (
+                pairing_id TEXT PRIMARY KEY NOT NULL,
+                label TEXT NOT NULL,
+                secret_sha256 BLOB NOT NULL CHECK(length(secret_sha256) = 32),
+                created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+                expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > created_at_ms),
+                CHECK(length(CAST(label AS BLOB)) BETWEEN 1 AND 128)
+             ) STRICT;
+             CREATE TABLE paired_devices (
+                device_id TEXT PRIMARY KEY NOT NULL,
+                display_name TEXT NOT NULL,
+                token_sha256 BLOB NOT NULL UNIQUE CHECK(length(token_sha256) = 32),
+                created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
+                expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > created_at_ms),
+                revoked_at_ms INTEGER,
+                last_authenticated_at_ms INTEGER,
+                CHECK(revoked_at_ms IS NULL OR revoked_at_ms >= created_at_ms),
+                CHECK(last_authenticated_at_ms IS NULL OR last_authenticated_at_ms >= created_at_ms),
+                CHECK(length(CAST(display_name AS BLOB)) BETWEEN 1 AND 128)
+             ) STRICT;
              PRAGMA user_version = 58;",
         )
         .unwrap();

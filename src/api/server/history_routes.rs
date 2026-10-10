@@ -3,6 +3,7 @@
 //! hub-http-v1 vehicle history routes: drives, positions, charges and charge samples.
 
 use super::*;
+use crate::db::VehicleVisibility;
 
 /// Route-specific wording of the 503 answers of one history route.
 struct PublicHistoryText {
@@ -37,9 +38,9 @@ const CHARGE_SAMPLE_HISTORY_TEXT: PublicHistoryText = PublicHistoryText {
 
 /// The access checks every vehicle-scoped JSON history route runs, in this
 /// order and before it reads the query: bearer, cursor key, vehicle id, then
-/// the vehicle being active AND published (the predicate of `/v1/vehicles`).
-/// A malformed, non-UTF-8, nil, unknown, retired or unpublished vehicle is
-/// the same 404 `vehicle_not_found`.
+/// the vehicle being active AND published (the predicate of `/v1/vehicles`)
+/// AND granted to the device. A malformed, non-UTF-8, nil, unknown, retired,
+/// unpublished or ungranted vehicle is the same 404 `vehicle_not_found`.
 #[allow(clippy::result_large_err)] // an axum Response is the handler error by design
 fn require_public_history_access<'a>(
     state: &'a AppState,
@@ -47,25 +48,24 @@ fn require_public_history_access<'a>(
     uri: &Uri,
     text: &PublicHistoryText,
 ) -> Result<(&'a CursorKey, Uuid), Response> {
-    if let Err(status) = require_authorized_device(state, headers) {
-        return Err(device_auth_reject(status));
-    }
+    let device = match require_authorized_device(state, headers) {
+        Ok(device) => device,
+        Err(status) => return Err(device_auth_reject(status)),
+    };
     let Some(cursor_key) = state.cursor_key.as_deref() else {
         return Err(service_unavailable(text.cursor_key_unavailable));
     };
     let Some(vehicle_id) = path_vehicle_id(uri) else {
         return Err(vehicle_not_found());
     };
-    match state.store.vehicle_is_published_and_active(vehicle_id) {
-        Ok(true) => Ok((cursor_key, vehicle_id)),
-        Ok(false) | Err(crate::db::StoreError::NilVehicleId) => Err(vehicle_not_found()),
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot check public vehicle visibility");
-            Err(service_unavailable(
-                "vehicle visibility is temporarily unavailable",
-            ))
-        }
-    }
+    require_vehicle_access(
+        state,
+        &device,
+        vehicle_id,
+        VehicleVisibility::PublishedAndActive,
+    )
+    .map_err(VehicleAccessDenied::into_public_api_response)?;
+    Ok((cursor_key, vehicle_id))
 }
 
 /// Parse and validate the query of one page route. Run only after the access
@@ -269,17 +269,9 @@ pub(super) async fn drive_positions(
     let Some(drive_id) = path_session_id(&uri) else {
         return drive_not_found();
     };
-    let query = match parse_page_query(
-        cursor_key,
-        PageKind::Positions,
-        vehicle_id,
-        drive_id,
-        parameters,
-    ) {
-        Ok(query) => query,
-        Err(response) => return response,
-    };
-    // The parent drive first: an unknown or unfinished drive is not an empty page.
+    // The parent drive first, before the query is read: an unknown or
+    // unfinished drive is `drive_not_found` whatever the query says, and is
+    // not an empty page.
     match state
         .store
         .materialised_closed_drive_for_vehicle(vehicle_id, drive_id)
@@ -291,6 +283,16 @@ pub(super) async fn drive_positions(
             return service_unavailable(POSITION_HISTORY_TEXT.unavailable);
         }
     }
+    let query = match parse_page_query(
+        cursor_key,
+        PageKind::Positions,
+        vehicle_id,
+        drive_id,
+        parameters,
+    ) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
     let rows = match state.store.drive_positions_window_page(
         vehicle_id,
         drive_id,
@@ -414,17 +416,9 @@ pub(super) async fn charge_samples(
     let Some(charge_id) = path_session_id(&uri) else {
         return charge_not_found();
     };
-    let query = match parse_page_query(
-        cursor_key,
-        PageKind::ChargeSamples,
-        vehicle_id,
-        charge_id,
-        parameters,
-    ) {
-        Ok(query) => query,
-        Err(response) => return response,
-    };
-    // The parent charge first: an unknown or unfinished charge is not an empty page.
+    // The parent charge first, before the query is read: an unknown or
+    // unfinished charge is `charge_not_found` whatever the query says, and is
+    // not an empty page.
     match state
         .store
         .materialised_charge_for_vehicle(vehicle_id, charge_id)
@@ -436,6 +430,16 @@ pub(super) async fn charge_samples(
             return service_unavailable(CHARGE_SAMPLE_HISTORY_TEXT.unavailable);
         }
     }
+    let query = match parse_page_query(
+        cursor_key,
+        PageKind::ChargeSamples,
+        vehicle_id,
+        charge_id,
+        parameters,
+    ) {
+        Ok(query) => query,
+        Err(response) => return response,
+    };
     let rows = match state.store.charge_samples_page(
         vehicle_id,
         charge_id,

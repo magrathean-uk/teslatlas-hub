@@ -2353,7 +2353,10 @@ fn physical_v3_rotation_retains_prior_across_restart_and_backup_but_stays_unserv
     for pack in &current.manifest.chunks {
         assert!(
             store
-                .pending_physical_v3_pack_for_digest(pack.sha256)
+                .pending_physical_v3_pack_for_digest(
+                    pack.sha256,
+                    crate::db::VehicleScope::Unrestricted
+                )
                 .expect("blocked pack lookup")
                 .is_none()
         );

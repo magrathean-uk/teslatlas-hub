@@ -15,6 +15,9 @@ use crate::{
     hub_pack::{GeofenceBillingType, ProjectionCharge, ProjectionChargeSample, ProjectionPosition},
 };
 
+#[path = "vehicle_grants.rs"]
+mod vehicle_grants;
+
 const KEY_BYTE: u8 = 71;
 
 fn vehicle_a() -> Uuid {
@@ -1733,18 +1736,48 @@ async fn the_vehicle_is_checked_before_the_query_is_read() {
         )
         .await;
     }
-    // A syntactically valid but unknown drive reads the query first (400),
-    // because the parent is looked up with the store query.
-    expect_error(
-        call(
-            &app,
-            &format!("/v1/vehicles/{}/drives/999/positions?limit=0", vehicle_a()),
+    // A syntactically valid but unknown or unfinished parent wins over the
+    // query (carry-over 12): the parent is looked up before the query is read,
+    // so a bad query cannot reveal which drives or charges exist.
+    for (base, code) in [
+        (
+            format!("/v1/vehicles/{}/drives/999/positions", vehicle_a()),
+            "drive_not_found",
+        ),
+        (
+            // Drive 15 is unfinished.
+            format!("/v1/vehicles/{}/drives/15/positions", vehicle_a()),
+            "drive_not_found",
+        ),
+        (
+            format!("/v1/vehicles/{}/charges/999/samples", vehicle_a()),
+            "charge_not_found",
+        ),
+        (
+            // Charge 25 is unfinished.
+            format!("/v1/vehicles/{}/charges/25/samples", vehicle_a()),
+            "charge_not_found",
+        ),
+    ] {
+        expect_error(
+            call(&app, &with_query(&base, "limit=0&from_ms=abc")).await,
+            StatusCode::NOT_FOUND,
+            code,
         )
-        .await,
-        StatusCode::BAD_REQUEST,
-        "invalid_limit",
-    )
-    .await;
+        .await;
+    }
+    // An existing parent reads the query as usual.
+    for base in [
+        format!("/v1/vehicles/{}/drives/16/positions", vehicle_a()),
+        format!("/v1/vehicles/{}/charges/26/samples", vehicle_a()),
+    ] {
+        expect_error(
+            call(&app, &with_query(&base, "limit=0")).await,
+            StatusCode::BAD_REQUEST,
+            "invalid_limit",
+        )
+        .await;
+    }
 }
 
 #[tokio::test]
@@ -1806,6 +1839,33 @@ async fn every_route_needs_the_cursor_key_before_anything_else() {
             assert_eq!(body["error"]["code"], "service_unavailable", "{uri}");
             assert_eq!(body["error"]["message"], message, "{uri}");
         }
+    }
+}
+
+#[tokio::test]
+async fn every_route_checks_the_bearer_before_the_cursor_key() {
+    let history = History::new();
+    // Device authentication on, no cursor key: without a bearer the answer is
+    // the 401 challenge on every history route, never the cursor-key 503.
+    let unsigned = router_with_access(history.store.clone(), false, true, false, None, None, None);
+    let vehicle = vehicle_a().to_string();
+    for uri in all_routes(&vehicle, "10", "20") {
+        for headers in [vec![], vec![("authorization", "Bearer not-a-valid-token")]] {
+            let response = call_with(&unsigned, &uri, &headers).await;
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{uri} {headers:?}"
+            );
+            assert_eq!(response.headers()[header::WWW_AUTHENTICATE], "Bearer");
+            assert!(body_bytes(response).await.is_empty(), "{uri}");
+        }
+    }
+    // With a valid bearer the cursor-key 503 is reached.
+    let bearer = format!("Bearer {}", bearer_for(&history.store));
+    for uri in all_routes(&vehicle, "10", "20") {
+        let response = call_with(&unsigned, &uri, &[("authorization", bearer.as_str())]).await;
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE, "{uri}");
     }
 }
 

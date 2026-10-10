@@ -2331,6 +2331,7 @@ async fn current_vehicle_serves_the_durable_v4_1_1_summary_without_raw_history()
             1,
         )
         .expect("current observation");
+    mark_vehicle_published(&store, vehicle.vehicle_id);
     let app = router(store.clone());
     let response = app
         .oneshot(
@@ -3133,9 +3134,12 @@ async fn physical_changes_since_does_not_wait_for_legacy_verification_admission(
         Duration::from_secs(2),
         hub_sync_v1::changes_since(
             State(state.clone()),
-            Path(vehicle.vehicle_id.to_string()),
             Request::builder()
                 .method("POST")
+                .uri(format!(
+                    "/v1/vehicles/{}/sync/changes-since",
+                    vehicle.vehicle_id
+                ))
                 .body(Body::from(serde_json::to_vec(&request).expect("request")))
                 .expect("HTTP request"),
         ),

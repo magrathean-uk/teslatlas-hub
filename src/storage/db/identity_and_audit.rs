@@ -26,11 +26,25 @@ impl HubStore {
     }
 
     /// Persist a fully prepared invitation immediately before its local
-    /// presentation. Only the secret digest crosses this boundary.
+    /// presentation. Only the secret digest crosses this boundary. The
+    /// invitation grants every vehicle that is active when it is claimed.
     pub fn persist_pairing(
         &self,
         label: &str,
         invitation: &PairingInvitation,
+    ) -> Result<(), StoreError> {
+        self.persist_pairing_with_scope(label, invitation, &PairingScope::AllVehicles)
+    }
+
+    /// Persist a prepared invitation together with the vehicles its device
+    /// will be granted, in one IMMEDIATE transaction. Named vehicles are
+    /// checked again here: one that is unknown or retired by now rejects the
+    /// whole invitation and nothing is stored, whatever an earlier check said.
+    pub fn persist_pairing_with_scope(
+        &self,
+        label: &str,
+        invitation: &PairingInvitation,
+        scope: &PairingScope,
     ) -> Result<(), StoreError> {
         validate_identity("pairing label", label, MAX_PAIRING_LABEL_BYTES)?;
         validate_timestamp("pairing created_at_ms", invitation.created_at_ms)?;
@@ -38,6 +52,16 @@ impl HubStore {
         if invitation.expires_at_ms <= invitation.created_at_ms {
             return Err(StoreError::InvalidPairingExpiry);
         }
+        let named = match scope {
+            PairingScope::AllVehicles => Vec::new(),
+            PairingScope::Vehicles(vehicles) => {
+                let named: std::collections::BTreeSet<Uuid> = vehicles.iter().copied().collect();
+                if named.is_empty() {
+                    return Err(StoreError::EmptyPairingScope);
+                }
+                named.into_iter().collect()
+            }
+        };
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -45,31 +69,73 @@ impl HubStore {
         transaction
             .execute(
                 "INSERT INTO pairing_challenges \
-                 (pairing_id, label, secret_sha256, created_at_ms, expires_at_ms) \
-                VALUES (?1, ?2, ?3, ?4, ?5)",
+                 (pairing_id, label, secret_sha256, created_at_ms, expires_at_ms, all_vehicles) \
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 params![
                     invitation.pairing_id.to_string(),
                     label,
                     invitation.secret.digest().as_slice(),
                     invitation.created_at_ms,
                     invitation.expires_at_ms,
+                    matches!(scope, PairingScope::AllVehicles),
                 ],
             )
             .map_err(StoreError::CreatePairing)?;
+        for vehicle_id in named {
+            // The retirement check and the insert share this IMMEDIATE
+            // transaction, so a vehicle retired after the CLI looked it up
+            // cannot be granted by a challenge that is already stored.
+            let active: bool = transaction
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM vehicles
+                                    WHERE vehicle_id = ?1 AND retired_at_ms IS NULL)",
+                    params![vehicle_id.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(StoreError::CreatePairing)?;
+            if !active {
+                return Err(StoreError::PairingVehicleUnavailable(vehicle_id));
+            }
+            transaction
+                .execute(
+                    "INSERT INTO pairing_challenge_vehicles (pairing_id, vehicle_id) \
+                     VALUES (?1, ?2)",
+                    params![invitation.pairing_id.to_string(), vehicle_id.to_string()],
+                )
+                .map_err(StoreError::CreatePairing)?;
+        }
         transaction.commit().map_err(StoreError::CreatePairing)?;
         Ok(())
     }
 
     /// Create and immediately persist an invitation for non-interactive
-    /// callers that do not have a presentation boundary.
+    /// callers that do not have a presentation boundary. It grants every
+    /// vehicle that is active when it is claimed.
     pub fn create_pairing(
         &self,
         label: &str,
         created_at_ms: i64,
         expires_at_ms: i64,
     ) -> Result<PairingInvitation, StoreError> {
+        self.create_pairing_with_scope(
+            label,
+            created_at_ms,
+            expires_at_ms,
+            &PairingScope::AllVehicles,
+        )
+    }
+
+    /// [`Self::create_pairing`] for an invitation that grants only the named
+    /// vehicles (or all of them, as [`PairingScope::AllVehicles`] says).
+    pub fn create_pairing_with_scope(
+        &self,
+        label: &str,
+        created_at_ms: i64,
+        expires_at_ms: i64,
+        scope: &PairingScope,
+    ) -> Result<PairingInvitation, StoreError> {
         let invitation = self.prepare_pairing(label, created_at_ms, expires_at_ms)?;
-        self.persist_pairing(label, &invitation)?;
+        self.persist_pairing_with_scope(label, &invitation, scope)?;
         Ok(invitation)
     }
 
@@ -132,15 +198,15 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        let challenge: Option<(Vec<u8>, i64)> = transaction
+        let challenge: Option<(Vec<u8>, i64, bool)> = transaction
             .query_row(
-                "SELECT secret_sha256, expires_at_ms FROM pairing_challenges WHERE pairing_id = ?1",
+                "SELECT secret_sha256, expires_at_ms, all_vehicles FROM pairing_challenges WHERE pairing_id = ?1",
                 params![pairing_id.to_string()],
-                |row| Ok((row.get(0)?, row.get(1)?)),
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()
             .map_err(StoreError::ClaimPairing)?;
-        let Some((stored_digest, expires_at_ms)) = challenge else {
+        let Some((stored_digest, expires_at_ms, all_vehicles)) = challenge else {
             return Err(StoreError::PairingRejected);
         };
         let valid_digest: [u8; PAIRING_SECRET_BYTES] = stored_digest
@@ -153,17 +219,39 @@ impl HubStore {
         let device_id = Uuid::new_v4();
         let access_token = DeviceAccessToken::generate()?;
         let expires_at_ms = claimed_at_ms.saturating_add(PAIRED_DEVICE_TOKEN_LIFETIME_MS);
+        let max_expires_at_ms = claimed_at_ms.saturating_add(PAIRED_DEVICE_MAX_LIFETIME_MS);
         transaction
             .execute(
                 "INSERT INTO paired_devices \
-                 (device_id, display_name, token_sha256, created_at_ms, expires_at_ms, revoked_at_ms, last_authenticated_at_ms) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL)",
+                 (device_id, display_name, token_sha256, created_at_ms, expires_at_ms, revoked_at_ms, last_authenticated_at_ms, max_expires_at_ms) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, NULL, NULL, ?6)",
                 params![
                     device_id.to_string(),
                     device_name,
                     access_token.digest().as_slice(),
                     claimed_at_ms,
                     expires_at_ms,
+                    max_expires_at_ms,
+                ],
+            )
+            .map_err(StoreError::ClaimPairing)?;
+        // Copy the invitation's scope into this device's grants before the
+        // challenge is deleted (the delete cascades into its vehicle rows). A
+        // vehicle retired since the invitation was written is skipped in both
+        // forms: all-vehicles means "every vehicle active right now".
+        transaction
+            .execute(
+                "INSERT INTO device_vehicle_grants (device_id, vehicle_id, granted_at_ms) \
+                 SELECT ?1, vehicle.vehicle_id, ?2 FROM vehicles AS vehicle \
+                  WHERE vehicle.retired_at_ms IS NULL \
+                    AND (?3 OR EXISTS (SELECT 1 FROM pairing_challenge_vehicles AS scoped \
+                                        WHERE scoped.pairing_id = ?4 \
+                                          AND scoped.vehicle_id = vehicle.vehicle_id))",
+                params![
+                    device_id.to_string(),
+                    claimed_at_ms,
+                    all_vehicles,
+                    pairing_id.to_string(),
                 ],
             )
             .map_err(StoreError::ClaimPairing)?;
@@ -332,6 +420,9 @@ impl HubStore {
         } else {
             prior_grace_until_ms.ok_or(StoreError::PairingRejected)?
         };
+        // `sealed_successor` (schema 68) stays NULL here: nothing seals a
+        // successor yet. Once a rotation does, the conflict arm below must set
+        // it as well, or a second rotation would keep the first one's.
         transaction
             .execute(
                 "INSERT INTO paired_device_token_grace(device_id, token_sha256, valid_until_ms)
@@ -409,10 +500,27 @@ impl HubStore {
         transaction.commit().map_err(StoreError::RevokeDevice)
     }
 
-    /// Return the vehicles this Hub has published. Pairing currently grants a
-    /// device access to this one owner-controlled Hub, not to arbitrary source
-    /// databases or credentials.
+    /// Return the vehicles this Hub has published, for the owner's own tools.
+    /// A paired device sees only the vehicles it is granted
+    /// ([`Self::published_vehicles_for_device`]).
     pub fn published_vehicles(&self) -> Result<Vec<PublishedVehicle>, StoreError> {
+        self.published_vehicles_in_scope(VehicleScope::Unrestricted)
+    }
+
+    /// The published vehicles one paired device is granted.
+    pub fn published_vehicles_for_device(
+        &self,
+        device_id: Uuid,
+    ) -> Result<Vec<PublishedVehicle>, StoreError> {
+        self.published_vehicles_in_scope(VehicleScope::Device(device_id))
+    }
+
+    /// Published vehicles (not retired, with a sync manifest) visible in
+    /// `scope`: every one, or the ones a device holds a grant for.
+    pub fn published_vehicles_in_scope(
+        &self,
+        scope: VehicleScope,
+    ) -> Result<Vec<PublishedVehicle>, StoreError> {
         let connection = self.open_read_only_connection()?;
         let mut statement = connection
             .prepare(
@@ -420,11 +528,14 @@ impl HubStore {
                  WHERE retired_at_ms IS NULL \
                    AND EXISTS (SELECT 1 FROM sync_manifests \
                                WHERE sync_manifests.vehicle_id = vehicles.vehicle_id) \
+                   AND (?1 IS NULL OR EXISTS (SELECT 1 FROM device_vehicle_grants AS grants \
+                                              WHERE grants.device_id = ?1 \
+                                                AND grants.vehicle_id = vehicles.vehicle_id)) \
                  ORDER BY last_seen_at_ms DESC, vehicle_id ASC",
             )
             .map_err(StoreError::Query)?;
         statement
-            .query_map([], |row| {
+            .query_map(params![scope.grant_device_param()], |row| {
                 let value: String = row.get(0)?;
                 let vehicle_id = Uuid::parse_str(&value).map_err(|error| {
                     rusqlite::Error::FromSqlConversionFailure(

@@ -45,8 +45,19 @@ The accepted binding does not add routes beyond those advertised by discovery.
 | `POST` | `/v1/internal/fleet-telemetry` | Private supervised Fleet Telemetry ingestion. |
 
 Pack objects are content-addressed and served only when an authorized manifest
-references the digest. Unknown, retired, orphaned, and unauthorized digests are
-rejected.
+references the digest and one of the vehicles that owns it is granted to the
+paired device. Unknown, expired, orphaned, unauthorized, and ungranted digests
+are rejected with the same empty 404.
+
+A paired device reads only the vehicles it is granted at pairing. Every
+vehicle-scoped route, the pack route included, answers an ungranted vehicle
+exactly as it answers an unknown one, and `GET /v1/vehicles` lists only the
+granted and published vehicles. Removing a grant applies to the next request on
+every route, packs included. Retiring a vehicle hides it from the
+vehicle-addressed routes and from `GET /v1/vehicles` at once, but a device that
+still holds the grant can fetch the vehicle's already catalogued packs by
+digest; removing the grant withdraws that access. The nil UUID is an unknown
+vehicle on every route; its value never causes a 503.
 
 ## Physical history and prepared maps
 
@@ -126,6 +137,11 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub \
 The displayed QR contains secret-bearing claim material. Do not screenshot,
 log, email, or reuse it. Revoke a paired device from the local CLI if a client
 is lost.
+
+`pair` needs the Hub stopped; `control pair` creates the same invitation while
+it serves. Add `--vehicle UUID` (repeatable) to grant only those vehicles, or
+`--all-vehicles` (the default) to grant every vehicle active when the
+invitation is claimed; the output names the scope.
 
 ## Errors and request IDs
 

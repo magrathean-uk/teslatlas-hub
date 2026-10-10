@@ -297,32 +297,29 @@ pub(super) fn bootstrap_manifest(
 
 pub(super) async fn changes_since(
     State(state): State<AppState>,
-    Path(vehicle_id): Path<String>,
     request: Request<Body>,
 ) -> Response {
-    if let Err(status) = require_authorized_device(&state, request.headers()) {
-        return device_auth_reject(status);
-    }
-    let Ok(vehicle_id) = Uuid::parse_str(&vehicle_id) else {
-        return sync_error_response(
+    let device = match require_authorized_device(&state, request.headers()) {
+        Ok(device) => device,
+        Err(status) => return device_auth_reject(status),
+    };
+    // A malformed, non-UTF-8, nil, unknown, retired or ungranted vehicle is
+    // one answer: the JSON `vehicle_not_found`.
+    let vehicle_not_available = || {
+        sync_error_response(
             StatusCode::NOT_FOUND,
             "vehicle_not_found",
             "Vehicle is not available to this pairing.",
             false,
-        );
+        )
     };
-    match state.store.vehicle_is_active(vehicle_id) {
-        Ok(true) => {}
-        Ok(false) => {
-            return sync_error_response(
-                StatusCode::NOT_FOUND,
-                "vehicle_not_found",
-                "Vehicle is not available to this pairing.",
-                false,
-            );
-        }
-        Err(error) => {
-            tracing::error!(%error, %vehicle_id, "cannot check changes-since vehicle binding");
+    let Some(vehicle_id) = path_vehicle_id(request.uri()) else {
+        return vehicle_not_available();
+    };
+    match require_vehicle_access(&state, &device, vehicle_id, VehicleVisibility::Active) {
+        Ok(()) => {}
+        Err(VehicleAccessDenied::NotFound) => return vehicle_not_available(),
+        Err(VehicleAccessDenied::Unavailable) => {
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     }

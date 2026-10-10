@@ -1644,7 +1644,10 @@ async fn hub_sync_physical_routes_do_not_serve_a_non_public_marker() {
     assert!(!crate::db::physical_v3_admission_is_public(&admission));
     assert!(
         store
-            .pending_physical_v3_pack_for_digest(admission.manifest.chunks[0].sha256)
+            .pending_physical_v3_pack_for_digest(
+                admission.manifest.chunks[0].sha256,
+                crate::db::VehicleScope::Unrestricted,
+            )
             .expect("non-public pack lookup")
             .is_none()
     );

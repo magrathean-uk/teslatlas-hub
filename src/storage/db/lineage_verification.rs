@@ -1060,18 +1060,35 @@ impl HubStore {
         Ok(())
     }
 
+    /// The pack a digest names, wherever the catalogue keeps it. Unrestricted:
+    /// for the owner's own tools. The HTTP route uses
+    /// [`Self::pack_for_digest_in_scope`].
     pub fn pack_for_digest(&self, digest: Sha256Digest) -> Result<Option<StoredPack>, StoreError> {
+        self.pack_for_digest_in_scope(digest, VehicleScope::Unrestricted)
+    }
+
+    /// [`Self::pack_for_digest`] for a request in `scope`. A pack is found only
+    /// when one of its owning vehicles is visible in that scope; ownership is
+    /// resolved inside each lookup's WHERE, before any LIMIT and before the
+    /// manifest validation that can answer 406, so an ungranted digest is
+    /// `Ok(None)`, exactly as an unknown one.
+    pub fn pack_for_digest_in_scope(
+        &self,
+        digest: Sha256Digest,
+        scope: VehicleScope,
+    ) -> Result<Option<StoredPack>, StoreError> {
         let connection = self.open_read_only_connection()?;
-        if let Some(pack) = self.active_pack_for_digest(&connection, digest)? {
+        if let Some(pack) = self.active_pack_for_digest(&connection, digest, scope)? {
             return Ok(Some(pack));
         }
-        self.retired_pack_for_digest_at(&connection, digest, retired_lineage_clock_ms()?)
+        self.retired_pack_for_digest_at(&connection, digest, retired_lineage_clock_ms()?, scope)
     }
 
     fn active_pack_for_digest(
         &self,
         connection: &Connection,
         digest: Sha256Digest,
+        scope: VehicleScope,
     ) -> Result<Option<StoredPack>, StoreError> {
         let entry = connection
             .query_row(
@@ -1079,8 +1096,11 @@ impl HubStore {
                    FROM sync_packs AS packs
                    JOIN sync_manifests AS manifests
                      ON manifests.snapshot_id = packs.snapshot_id
-                  WHERE packs.sha256 = ?1",
-                params![digest.to_string()],
+                  WHERE packs.sha256 = ?1
+                    AND (?2 IS NULL OR EXISTS (SELECT 1 FROM device_vehicle_grants AS grants
+                                                WHERE grants.device_id = ?2
+                                                  AND grants.vehicle_id = manifests.vehicle_id))",
+                params![digest.to_string(), scope.grant_device_param()],
                 |row| {
                     Ok((
                         row.get::<_, Vec<u8>>(0)?,
@@ -1104,6 +1124,7 @@ impl HubStore {
         connection: &Connection,
         digest: Sha256Digest,
         now_ms: i64,
+        scope: VehicleScope,
     ) -> Result<Option<StoredPack>, StoreError> {
         if now_ms < 0 {
             return Err(StoreError::LineageCatalogConflict);
@@ -1118,10 +1139,13 @@ impl HubStore {
                    ON lineage.vehicle_id = packs.vehicle_id
                   AND lineage.head_digest = packs.head_digest
                  WHERE packs.pack_digest = ?1 AND lineage.expires_at_ms > ?2
+                   AND (?3 IS NULL OR EXISTS (SELECT 1 FROM device_vehicle_grants AS grants
+                                               WHERE grants.device_id = ?3
+                                                 AND grants.vehicle_id = lineage.vehicle_id))
                  ORDER BY lineage.expires_at_ms DESC,
                           lineage.vehicle_id, lineage.head_digest
                  LIMIT 1",
-                params![digest.to_string(), now_ms],
+                params![digest.to_string(), now_ms, scope.grant_device_param()],
                 |row| {
                     Ok((
                         row.get(0)?,

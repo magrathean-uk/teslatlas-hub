@@ -28,7 +28,7 @@ use uuid::Uuid;
 use super::physical_delta_pack::verified_immutable_pack;
 
 use crate::{
-    db::{HubStore, PendingPhysicalV3Admission, StoredPack},
+    db::{HubStore, PendingPhysicalV3Admission, StoredPack, VehicleScope},
     hub_pack::ProjectionFixedNumericV2_2,
     manifest_signing::ManifestSigning,
     protocol::{CursorKey, Sha256Digest},
@@ -1214,27 +1214,62 @@ pub(crate) fn current_receipt(
     }
 }
 
+/// The months a prepared pack digest (`?1`) can be served for: the current
+/// public head of a vehicle visible in the scope (`?2`, NULL for every
+/// vehicle). One definition for the lookup and for the existence check, so the
+/// two cannot drift apart.
+macro_rules! prepared_pack_candidates {
+    () => {
+        "FROM prepared_map_months AS p
+         JOIN pending_physical_v3_admissions AS h
+           ON h.vehicle_id = p.vehicle_id AND h.receipt_id = p.input_receipt_id
+         WHERE p.pack_sha256 = ?1 AND h.serve_state = 'public_first'
+           AND h.snapshot_id = p.input_manifest_id AND h.head_sequence = p.input_sequence
+           AND (?2 IS NULL OR EXISTS (SELECT 1 FROM device_vehicle_grants AS grants
+                                       WHERE grants.device_id = ?2
+                                         AND grants.vehicle_id = p.vehicle_id))"
+    };
+}
+
+/// Whether a catalogued month of `scope` names `digest`, without verifying its
+/// receipt. A Hub with no cursor key cannot verify one, so the pack route
+/// answers 503 for a digest that has a candidate and the empty 404 of an
+/// unknown digest for one that has none (an ungranted digest included).
+pub(crate) fn current_pack_candidate_exists(
+    store: &HubStore,
+    digest: Sha256Digest,
+    scope: VehicleScope,
+) -> PreparedResult<bool> {
+    let connection = store.open()?;
+    Ok(connection.query_row(
+        concat!("SELECT EXISTS(SELECT 1 ", prepared_pack_candidates!(), ")"),
+        params![digest.to_string(), scope.grant_device_param()],
+        |row| row.get(0),
+    )?)
+}
+
 /// Authorize content-addressed prepared objects through the current signed
-/// receipt catalogue before the shared pack streamer opens any file.
+/// receipt catalogue before the shared pack streamer opens any file. Only a
+/// month of a vehicle visible in `scope` is a candidate: the owner predicate
+/// is in the query, so an ungranted digest is `None`, as for an unknown one.
 pub(crate) fn current_pack(
     store: &HubStore,
     cursor_key: &CursorKey,
     digest: Sha256Digest,
+    scope: VehicleScope,
 ) -> PreparedResult<Option<StoredPack>> {
     let connection = store.open()?;
-    let mut statement = connection.prepare(
+    let mut statement = connection.prepare(concat!(
         "SELECT p.artifact_id, p.vehicle_id, p.input_receipt_id, p.month, p.input_manifest_id,
                     p.input_sequence, p.source_digest, p.pack_sha256, p.compressed_bytes,
                     CASE WHEN length(p.receipt_json) <= 2097152 THEN p.receipt_json END
-         FROM prepared_map_months AS p
-         JOIN pending_physical_v3_admissions AS h
-           ON h.vehicle_id = p.vehicle_id AND h.receipt_id = p.input_receipt_id
-         WHERE p.pack_sha256 = ?1 AND h.serve_state = 'public_first'
-           AND h.snapshot_id = p.input_manifest_id AND h.head_sequence = p.input_sequence",
+         ",
+        prepared_pack_candidates!()
+    ))?;
+    let entries = statement.query_map(
+        params![digest.to_string(), scope.grant_device_param()],
+        |row| Ok((row.get::<_, String>(0)?, read_cached_month_offset(row)?)),
     )?;
-    let entries = statement.query_map([digest.to_string()], |row| {
-        Ok((row.get::<_, String>(0)?, read_cached_month_offset(row)?))
-    })?;
     let mut entry = None;
     for candidate in entries {
         let (id, cached) = candidate?;
@@ -1550,7 +1585,9 @@ mod tests {
                 .unwrap()
                 .parse()
                 .unwrap();
-            let pack = current_pack(&reopened, &key, pack_digest).unwrap().unwrap();
+            let pack = current_pack(&reopened, &key, pack_digest, VehicleScope::Unrestricted)
+                .unwrap()
+                .unwrap();
             let image = NamedTempFile::new_in(temporary.path()).unwrap();
             let raw = zstd::stream::decode_all(File::open(&pack.path).unwrap()).unwrap();
             fs::write(image.path(), raw).unwrap();
@@ -2397,7 +2434,9 @@ mod tests {
             .unwrap()
             .parse()
             .unwrap();
-        let pack = current_pack(&store, &key, digest).unwrap().unwrap();
+        let pack = current_pack(&store, &key, digest, VehicleScope::Unrestricted)
+            .unwrap()
+            .unwrap();
         let original_bytes = fs::read(&pack.path).unwrap();
         fs::remove_file(&pack.path).unwrap();
         let valid = month_stage(temporary.path(), &month, false, false);
@@ -2456,7 +2495,9 @@ mod tests {
             .unwrap()
             .parse()
             .unwrap();
-        let pack = current_pack(&store, &key, digest).unwrap().unwrap();
+        let pack = current_pack(&store, &key, digest, VehicleScope::Unrestricted)
+            .unwrap()
+            .unwrap();
         store
             .open()
             .unwrap()
@@ -2589,7 +2630,7 @@ mod tests {
             .expect("digest")
             .parse::<Sha256Digest>()
             .expect("sha256");
-        let stored = current_pack(&store, &key, digest)
+        let stored = current_pack(&store, &key, digest, VehicleScope::Unrestricted)
             .expect("pack lookup")
             .expect("pack");
         assert_eq!(
@@ -2728,7 +2769,11 @@ mod tests {
         let repaired_document: serde_json::Value =
             serde_json::from_slice(&repaired_receipt).unwrap();
         assert_eq!(repaired_document["pack"]["sha256"], digest.to_string());
-        assert!(current_pack(&reopened, &key, digest).unwrap().is_some());
+        assert!(
+            current_pack(&reopened, &key, digest, VehicleScope::Unrestricted)
+                .unwrap()
+                .is_some()
+        );
 
         let changed = publish_sealed_physical_v3_stage(
             &reopened,
@@ -2760,9 +2805,10 @@ mod tests {
             .unwrap()
             .parse::<Sha256Digest>()
             .unwrap();
-        let changed_pack = current_pack(&reopened, &key, changed_digest)
-            .unwrap()
-            .unwrap();
+        let changed_pack =
+            current_pack(&reopened, &key, changed_digest, VehicleScope::Unrestricted)
+                .unwrap()
+                .unwrap();
         reopened
             .repair()
             .expect("repair preserves current and retained prepared packs");

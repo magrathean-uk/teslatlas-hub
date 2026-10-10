@@ -704,9 +704,17 @@ fn seal_staged_catalogue(payload: &Path) -> Result<(), DataRecoveryError> {
     // recoverable data. Remove them before a copied catalogue is inventoried or
     // a restored catalogue is published. Installation/account/vehicle identity
     // and immutable sync lineage remain untouched.
+    // The grant tables go first and explicitly: the foreign keys would cascade
+    // from their parents, but the pairing authority must not depend on
+    // `foreign_keys` being on (the pragma is a no-op inside a transaction, so
+    // it precedes BEGIN).
     connection
         .execute_batch(
-            "BEGIN IMMEDIATE;
+            "PRAGMA foreign_keys = ON;
+             BEGIN IMMEDIATE;
+             DELETE FROM device_vehicle_grants;
+             DELETE FROM pairing_challenge_vehicles;
+             DELETE FROM paired_device_token_grace;
              DELETE FROM pairing_challenges;
              DELETE FROM paired_devices;
              DELETE FROM supervised_collector_lease;
@@ -1321,21 +1329,45 @@ fn open_immutable_catalogue(data: &Path) -> Result<Connection, DataRecoveryError
     .map_err(DataRecoveryError::CatalogueIdentity)
 }
 
+/// Pairing authority is host-local and never survives a backup or a restore:
+/// no challenge, device, rotation grace or vehicle grant. The two base tables
+/// exist in every schema a Current-format backup can have (from
+/// `MIN_RESTORABLE_SCHEMA_VERSION` on), so a catalogue missing one is rejected:
+/// its count fails. The tables a backup of an older schema lacks (rotation
+/// grace, then the two grant tables from v68) are counted only where they
+/// exist.
 fn validate_pairing_authority_absent(data: &Path) -> Result<(), DataRecoveryError> {
     let connection = open_immutable_catalogue(data)?;
-    let (challenge_count, device_count): (i64, i64) = connection
-        .query_row(
-            "SELECT
-                (SELECT COUNT(*) FROM pairing_challenges),
-                (SELECT COUNT(*) FROM paired_devices)",
-            [],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .map_err(DataRecoveryError::CatalogueIdentity)?;
-    if challenge_count != 0 || device_count != 0 {
-        return Err(invalid(
-            "current data-backup catalogue retains pairing authority",
-        ));
+    for (table, in_every_schema) in [
+        ("pairing_challenges", true),
+        ("paired_devices", true),
+        ("paired_device_token_grace", false),
+        ("device_vehicle_grants", false),
+        ("pairing_challenge_vehicles", false),
+    ] {
+        if !in_every_schema {
+            let present: bool = connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
+                    [table],
+                    |row| row.get(0),
+                )
+                .map_err(DataRecoveryError::CatalogueIdentity)?;
+            if !present {
+                continue;
+            }
+        }
+        // The names above are this function's own constants, never input.
+        let rows: i64 = connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .map_err(DataRecoveryError::CatalogueIdentity)?;
+        if rows != 0 {
+            return Err(invalid(
+                "current data-backup catalogue retains pairing authority",
+            ));
+        }
     }
     Ok(())
 }

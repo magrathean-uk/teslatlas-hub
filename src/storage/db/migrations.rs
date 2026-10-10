@@ -2353,6 +2353,71 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
             .map_err(StoreError::Migrate)?;
         version = 67;
     }
+
+    if version == 67 {
+        // Per-device vehicle scope (G2-3a) and the columns later G2-3 batches
+        // use. Never rebuild `vehicles`, `paired_devices` or
+        // `pairing_challenges` with foreign keys on after this step: a DROP of
+        // the parent cascades into the grants. Every statement is additive.
+        //
+        // Existing devices (revoked or not) keep exactly the access they had:
+        // one grant per vehicle that is active now. Vehicles registered later
+        // are never granted automatically. A challenge that exists now keeps
+        // the old behaviour (all vehicles active at claim time).
+        //
+        // The 180-day cap of an existing device counts from the later of its
+        // creation and this migration (decision 31): a device paired more than
+        // 180 days ago must not lose its bearer the moment the cap is first
+        // enforced. It saturates at i64::MAX for the v51 sentinel rows, whose
+        // creation time is within 180 days of it. SQLite's `now` is fixed for
+        // the whole statement, and the maximum is never below `created_at_ms`,
+        // so the column CHECK holds. The 15_552_000_000 here is this step's own
+        // historical 180 days, not `PAIRED_DEVICE_MAX_LIFETIME_MS`: a finished
+        // migration must not change when that constant does.
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                CREATE TABLE device_vehicle_grants (
+                    device_id TEXT NOT NULL
+                        REFERENCES paired_devices(device_id) ON DELETE CASCADE,
+                    vehicle_id TEXT NOT NULL
+                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    granted_at_ms INTEGER NOT NULL CHECK(granted_at_ms >= 0),
+                    PRIMARY KEY (device_id, vehicle_id)
+                ) STRICT, WITHOUT ROWID;
+                CREATE INDEX device_vehicle_grants_vehicle
+                    ON device_vehicle_grants(vehicle_id, device_id);
+                CREATE TABLE pairing_challenge_vehicles (
+                    pairing_id TEXT NOT NULL
+                        REFERENCES pairing_challenges(pairing_id) ON DELETE CASCADE,
+                    vehicle_id TEXT NOT NULL
+                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    PRIMARY KEY (pairing_id, vehicle_id)
+                ) STRICT, WITHOUT ROWID;
+                ALTER TABLE pairing_challenges ADD COLUMN all_vehicles INTEGER NOT NULL DEFAULT 0
+                    CHECK(all_vehicles IN (0, 1));
+                ALTER TABLE paired_devices ADD COLUMN max_expires_at_ms INTEGER
+                    CHECK(max_expires_at_ms IS NULL OR max_expires_at_ms >= created_at_ms);
+                ALTER TABLE paired_device_token_grace ADD COLUMN sealed_successor BLOB;
+                INSERT INTO device_vehicle_grants (device_id, vehicle_id, granted_at_ms)
+                    SELECT device.device_id, vehicle.vehicle_id, MAX(device.created_at_ms, 0)
+                      FROM paired_devices AS device
+                     CROSS JOIN vehicles AS vehicle
+                     WHERE vehicle.retired_at_ms IS NULL;
+                UPDATE pairing_challenges SET all_vehicles = 1;
+                UPDATE paired_devices
+                   SET max_expires_at_ms = CASE
+                       WHEN MAX(created_at_ms, CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))
+                            > 9223372036854775807 - 15552000000
+                       THEN 9223372036854775807
+                       ELSE MAX(created_at_ms, CAST(ROUND(unixepoch('now', 'subsec') * 1000) AS INTEGER))
+                            + 15552000000 END;
+                PRAGMA user_version = 68;
+                COMMIT;",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 68;
+    }
     if version == SCHEMA_VERSION {
         Ok(())
     } else {

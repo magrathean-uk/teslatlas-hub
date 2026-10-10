@@ -113,6 +113,7 @@ fn teslamate_current_migration_preserves_populated_v66_and_adds_truthful_provena
         .replacen("current_observations", "current_v66", 1)
         .replace(", 'teslamate_position_v1'", "");
     assert!(!old_schema.contains("teslamate_position_v1"));
+    remove_v68_grant_schema(&connection);
     connection
         .execute_batch(&format!(
             "BEGIN IMMEDIATE; {old_schema};
@@ -141,7 +142,7 @@ fn teslamate_current_migration_preserves_populated_v66_and_adds_truthful_provena
             .len(),
         2
     );
-    assert_eq!(schema_version(&upgraded.open().unwrap()).unwrap(), 67);
+    assert_eq!(schema_version(&upgraded.open().unwrap()).unwrap(), 68);
 }
 
 #[test]
@@ -275,7 +276,24 @@ fn remove_v55_fleet_schema(connection: &Connection) {
         .expect("remove v55 Fleet schema");
 }
 
+/// The v67 -> v68 migration's additions (grants, challenge vehicles, the
+/// all-vehicles flag, the lifetime cap and the sealed successor). It is the
+/// root of the downgrade chain: every older rewind runs it first, so a table
+/// dropped later never cascades into grants or grace rows.
+fn remove_v68_grant_schema(connection: &Connection) {
+    connection
+        .execute_batch(
+            "DROP TABLE device_vehicle_grants;
+             DROP TABLE pairing_challenge_vehicles;
+             ALTER TABLE pairing_challenges DROP COLUMN all_vehicles;
+             ALTER TABLE paired_devices DROP COLUMN max_expires_at_ms;
+             ALTER TABLE paired_device_token_grace DROP COLUMN sealed_successor;",
+        )
+        .expect("remove v68 grant schema");
+}
+
 fn remove_v66_delta_schema(connection: &Connection) {
+    remove_v68_grant_schema(connection);
     connection
         .execute_batch(
             "DROP TABLE physical_v3_delta_packs;
@@ -442,6 +460,216 @@ fn schema_60_upgrade_keeps_paired_bearers_and_adds_rotation_grace() {
             .expect("old bearer in grace after migration")
             .is_some()
     );
+}
+
+#[test]
+fn schema_67_upgrade_grants_active_vehicles_and_backfills_the_lifetime_cap() {
+    const CAP_MS: i64 = 15_552_000_000;
+    let temporary = crate::private_tempdir().expect("temporary database");
+    let store = HubStore::initialize(temporary.path()).expect("current store");
+    let source = store
+        .register_source(&SourceDescriptor::new("teslamate", "v68-upgrade"), 1)
+        .expect("source");
+    let active = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "eid:1"), 2)
+        .expect("active vehicle")
+        .vehicle_id;
+    let retired = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "eid:2"), 3)
+        .expect("retired vehicle")
+        .vehicle_id;
+    assert!(store.retire_vehicle(retired, 4).expect("retire"));
+
+    let claim = |name: &str, at_ms: i64| {
+        let invitation = store
+            .create_pairing(name, at_ms - 1, at_ms + 1_000)
+            .expect("invitation");
+        store
+            .claim_pairing(invitation.pairing_id, invitation.secret(), name, at_ms)
+            .expect("claim")
+    };
+    let live = claim("live phone", 10_000);
+    let revoked = claim("revoked phone", 20_000);
+    // Decision 31: the cap of an existing device counts from the later of its
+    // creation and the migration. A device paired 200 days ago would otherwise
+    // be over its cap before it is ever enforced; a device whose clock ran
+    // ahead (created after the migration) keeps `created + 180 d`.
+    const DAY_MS: i64 = 86_400_000;
+    let epoch_ms = || {
+        i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_millis(),
+        )
+        .expect("clock fits i64")
+    };
+    let long_ago_ms = epoch_ms() - 200 * DAY_MS;
+    let long_ago = claim("long-lived phone", long_ago_ms);
+    let ahead_ms = epoch_ms() + 400 * DAY_MS;
+    let ahead = claim("clock-ahead phone", ahead_ms);
+    store
+        .revoke_device_at(revoked.device_id, 21_000)
+        .expect("revoke");
+    // A rotation leaves one grace row, whose sealed successor must be NULL
+    // after the upgrade (the column is new).
+    let live_bearer = live.access_token.as_bearer().to_owned();
+    store.rotate_device(&live_bearer, 11_000).expect("rotate");
+    // A challenge that exists at migration time keeps the old behaviour.
+    let pending = store
+        .create_pairing("pending", 30_000, 40_000)
+        .expect("pending invitation");
+
+    let connection = store.open().expect("migration connection");
+    remove_v68_grant_schema(&connection);
+    // The v51 sentinel: created one below i64::MAX, expiring at i64::MAX.
+    connection
+        .execute(
+            "INSERT INTO paired_devices (device_id, display_name, token_sha256, created_at_ms, expires_at_ms)
+             VALUES ('sentinel-device', 'sentinel', randomblob(32), 9223372036854775806, 9223372036854775807)",
+            [],
+        )
+        .expect("sentinel device");
+    connection
+        .execute_batch("PRAGMA user_version = 67;")
+        .expect("restore schema 67 shape");
+
+    let before_ms = epoch_ms();
+    migrate(&connection).expect("migrate schema 67");
+    let after_ms = epoch_ms();
+    assert_eq!(schema_version(&connection).unwrap(), 68);
+
+    // Every device, revoked or not, holds a grant for each active vehicle and
+    // none for the retired one; granted_at_ms is the device's creation time.
+    let grants: Vec<(String, String, i64)> = connection
+        .prepare("SELECT device_id, vehicle_id, granted_at_ms FROM device_vehicle_grants ORDER BY device_id")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let mut expected = vec![
+        (live.device_id.to_string(), active.to_string(), 10_000),
+        (revoked.device_id.to_string(), active.to_string(), 20_000),
+        (
+            long_ago.device_id.to_string(),
+            active.to_string(),
+            long_ago_ms,
+        ),
+        (ahead.device_id.to_string(), active.to_string(), ahead_ms),
+        (
+            "sentinel-device".to_owned(),
+            active.to_string(),
+            9_223_372_036_854_775_806,
+        ),
+    ];
+    expected.sort();
+    assert_eq!(grants, expected);
+    assert!(
+        grants
+            .iter()
+            .all(|(_, vehicle, _)| *vehicle != retired.to_string())
+    );
+
+    let cap = |device: &str| -> Option<i64> {
+        connection
+            .query_row(
+                "SELECT max_expires_at_ms FROM paired_devices WHERE device_id = ?1",
+                [device],
+                |row| row.get(0),
+            )
+            .unwrap()
+    };
+    // Every device created before the migration gets the migration time plus
+    // 180 days, whatever its age.
+    for device in [live.device_id, revoked.device_id, long_ago.device_id] {
+        let capped = cap(&device.to_string()).expect("backfilled cap");
+        assert!(
+            (before_ms + CAP_MS..=after_ms + CAP_MS).contains(&capped),
+            "{device}: {capped} is not migration time + 180 days"
+        );
+    }
+    assert_eq!(
+        cap(&ahead.device_id.to_string()),
+        Some(ahead_ms + CAP_MS),
+        "a device created after the migration time keeps created + 180 days"
+    );
+    assert_eq!(
+        cap("sentinel-device"),
+        Some(i64::MAX),
+        "the sentinel row saturates"
+    );
+    let below_creation: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM paired_devices WHERE max_expires_at_ms < created_at_ms",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        below_creation, 0,
+        "the cap is never before the creation time"
+    );
+    let (graces, sealed): (i64, i64) = connection
+        .query_row(
+            "SELECT COUNT(*), COUNT(sealed_successor) FROM paired_device_token_grace",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        (graces, sealed),
+        (1, 0),
+        "pre-migration grace rows have no sealed successor"
+    );
+    let (all_vehicles, scoped): (i64, i64) = connection
+        .query_row(
+            "SELECT (SELECT all_vehicles FROM pairing_challenges WHERE pairing_id = ?1),
+                    (SELECT COUNT(*) FROM pairing_challenge_vehicles)",
+            [pending.pairing_id.to_string()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((all_vehicles, scoped), (1, 0));
+
+    // The upgraded store enforces what it granted; later vehicles are never
+    // granted automatically.
+    let device_scope = VehicleScope::Device(live.device_id);
+    assert!(
+        store
+            .vehicle_accessible(device_scope, active, VehicleVisibility::Active)
+            .unwrap()
+    );
+    assert!(
+        !store
+            .vehicle_accessible(device_scope, retired, VehicleVisibility::Active)
+            .unwrap()
+    );
+    let later = store
+        .register_vehicle(&VehicleDescriptor::new(source.source_id, "eid:3"), 50_000)
+        .expect("later vehicle")
+        .vehicle_id;
+    assert!(
+        !store
+            .vehicle_accessible(device_scope, later, VehicleVisibility::Active)
+            .unwrap()
+    );
+    assert!(
+        store
+            .vehicle_accessible(
+                VehicleScope::Device(revoked.device_id),
+                active,
+                VehicleVisibility::Active
+            )
+            .unwrap(),
+        "a revoked device keeps its grant rows (revocation is checked at authentication)"
+    );
+    let violations: i64 = connection
+        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(violations, 0);
 }
 
 #[test]
@@ -1206,6 +1434,7 @@ fn upgrades_populated_schema_65_to_delta_catalogue_without_changing_physical_hea
         .expect("populated prior physical head");
     drop(gate);
     let connection = store.open().expect("catalogue");
+    remove_v68_grant_schema(&connection);
     connection
         .execute_batch(
             "DROP TABLE physical_v3_delta_packs;

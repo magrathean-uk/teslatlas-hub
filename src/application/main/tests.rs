@@ -63,6 +63,9 @@ use teslatlas_hub::{
 };
 use uuid::Uuid;
 
+#[path = "pairing_scope_tests.rs"]
+mod pairing_scope_tests;
+
 #[test]
 fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
     let temporary = tempfile::tempdir().expect("temporary Hub");
@@ -2266,6 +2269,8 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         label: "test phone".to_owned(),
         expires_in_seconds: 900,
         json: false,
+        vehicles: Vec::new(),
+        all_vehicles: false,
     }));
     assert!(command_requires_user_hub_admission(&Command::Repair));
     assert!(command_requires_user_hub_admission(&Command::Backup {
@@ -2471,6 +2476,7 @@ async fn pairing_certificate_key_and_qr_failures_leave_no_invitation() {
             certificate_path: &missing,
             private_key_path: &private_key,
             created_at_ms: 1_000,
+            scope: teslatlas_hub::db::PairingScope::AllVehicles,
         },
         &mut *output,
     )
@@ -2500,6 +2506,7 @@ async fn pairing_certificate_key_and_qr_failures_leave_no_invitation() {
             certificate_path: &mismatched_certificate,
             private_key_path: &mismatched_key,
             created_at_ms: 1_000,
+            scope: teslatlas_hub::db::PairingScope::AllVehicles,
         },
         &mut NeverWriter,
     )
@@ -2525,6 +2532,7 @@ async fn pairing_certificate_key_and_qr_failures_leave_no_invitation() {
                 certificate_path: &certificate,
                 private_key_path: &private_key,
                 created_at_ms: 1_000,
+                scope: teslatlas_hub::db::PairingScope::AllVehicles,
             },
             &mut *output,
         )
@@ -2553,6 +2561,7 @@ async fn pairing_flush_failure_revokes_and_success_persists_once() {
             certificate_path: &certificate,
             private_key_path: &private_key,
             created_at_ms: 500,
+            scope: teslatlas_hub::db::PairingScope::AllVehicles,
         },
         &mut write_failure,
     )
@@ -2577,6 +2586,7 @@ async fn pairing_flush_failure_revokes_and_success_persists_once() {
             certificate_path: &certificate,
             private_key_path: &private_key,
             created_at_ms: 1_000,
+            scope: teslatlas_hub::db::PairingScope::AllVehicles,
         },
         &mut broken,
     )
@@ -2601,6 +2611,7 @@ async fn pairing_flush_failure_revokes_and_success_persists_once() {
             certificate_path: &certificate,
             private_key_path: &private_key,
             created_at_ms: 2_000,
+            scope: teslatlas_hub::db::PairingScope::AllVehicles,
         },
         &mut *output,
     )
@@ -2853,6 +2864,7 @@ fn default_pairing_presentation_includes_a_plain_link() {
         &uri,
         &invitation,
         900,
+        "Grants: every vehicle that is active when this invitation is claimed.",
     )
     .expect("terminal presentation");
     let text = std::str::from_utf8(&presentation).expect("terminal UTF-8");

@@ -39,6 +39,8 @@ enum PairingCommandError {
     InvalidExpiry,
     #[error("pairing presentation cannot be constructed")]
     Presentation,
+    #[error("pairing scope is invalid")]
+    Scope(#[source] Box<teslatlas_hub::db::StoreError>),
     #[error("pairing invitation cannot be persisted")]
     Persist(#[source] Box<teslatlas_hub::db::StoreError>),
     #[error("pairing invitation persistence failed and revocation could not be confirmed")]
@@ -64,6 +66,80 @@ struct PairingCommandInput<'a> {
     certificate_path: &'a Path,
     private_key_path: &'a Path,
     created_at_ms: i64,
+    scope: teslatlas_hub::db::PairingScope,
+}
+
+/// `pair` and `control pair`: one invitation against the configured TLS
+/// identity and public endpoint, written to `writer`. The two commands differ
+/// only in how they reach the store (`pair` under the instance lock after
+/// migrating, `control pair` through `open_existing` while the Hub serves).
+async fn pair_with_configured_tls<W: Write>(
+    store: &HubStore,
+    tls: Option<&teslatlas_hub::config::TlsListenerConfig>,
+    label: &str,
+    expires_in_seconds: u64,
+    json: bool,
+    scope: teslatlas_hub::db::PairingScope,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let tls = tls.ok_or("device pairing requires configured TLS")?;
+    let created_at_ms = current_epoch_ms()?;
+    execute_pairing_at(
+        store,
+        PairingCommandInput {
+            label,
+            expires_in_seconds,
+            json,
+            public_url: &tls.public_url,
+            certificate_path: &tls.certificate_path,
+            private_key_path: &tls.private_key_path,
+            created_at_ms,
+            scope,
+        },
+        writer,
+    )
+    .await?;
+    Ok(())
+}
+
+/// The scope the pairing flags ask for: the named vehicles, or (with
+/// `--all-vehicles` or no flag) every vehicle active when the invitation is
+/// claimed. clap rejects the two flags together.
+fn pairing_scope_from_flags(
+    vehicles: Vec<uuid::Uuid>,
+    all_vehicles: bool,
+) -> teslatlas_hub::db::PairingScope {
+    if all_vehicles || vehicles.is_empty() {
+        teslatlas_hub::db::PairingScope::AllVehicles
+    } else {
+        teslatlas_hub::db::PairingScope::Vehicles(vehicles)
+    }
+}
+
+/// The scope line of the text presentation. The invitation URI and the JSON
+/// payload never carry the scope.
+fn pairing_grants_text(named: Option<&[teslatlas_hub::db::PublishedVehicle]>) -> String {
+    let Some(vehicles) = named else {
+        return "Grants: every vehicle that is active when this invitation is claimed.".to_owned();
+    };
+    let names: Vec<String> = vehicles
+        .iter()
+        .map(|vehicle| {
+            vehicle
+                .display_name
+                .as_deref()
+                .filter(|name| !name.is_empty())
+                .map_or_else(
+                    || vehicle.vehicle_id.to_string(),
+                    |name| {
+                        name.chars()
+                            .map(|c| if c.is_control() { '?' } else { c })
+                            .collect()
+                    },
+                )
+        })
+        .collect();
+    format!("Grants: {}.", names.join(", "))
 }
 
 #[derive(serde::Serialize)]
@@ -115,6 +191,16 @@ async fn execute_pairing_at<W: Write>(
         .created_at_ms
         .checked_add(ttl_ms)
         .ok_or(PairingCommandError::InvalidExpiry)?;
+    // Named vehicles must exist and be active before any one-time secret is
+    // generated; persisting checks retirement again inside its transaction.
+    let named = match &input.scope {
+        teslatlas_hub::db::PairingScope::AllVehicles => None,
+        teslatlas_hub::db::PairingScope::Vehicles(vehicles) => Some(
+            store
+                .pairing_scope_vehicles(vehicles)
+                .map_err(|error| PairingCommandError::Scope(Box::new(error)))?,
+        ),
+    };
     let invitation = store
         .prepare_pairing(input.label, input.created_at_ms, expires_at_ms)
         .map_err(|error| PairingCommandError::Persist(Box::new(error)))?;
@@ -132,12 +218,13 @@ async fn execute_pairing_at<W: Write>(
         &pairing_uri,
         &invitation,
         input.expires_in_seconds,
+        &pairing_grants_text(named.as_deref()),
     )?;
     let pairing_id = invitation.pairing_id;
     persist_and_present_pairing(
         writer,
         &presentation,
-        || store.persist_pairing(input.label, &invitation),
+        || store.persist_pairing_with_scope(input.label, &invitation, &input.scope),
         || store.revoke_pairing(pairing_id),
     )
 }
@@ -149,6 +236,7 @@ fn build_pairing_presentation(
     pairing_uri: &str,
     invitation: &teslatlas_hub::db::PairingInvitation,
     expires_in_seconds: u64,
+    grants_text: &str,
 ) -> Result<zeroize::Zeroizing<Vec<u8>>, PairingCommandError> {
     let mut output = zeroize::Zeroizing::new(Vec::new());
     if json {
@@ -179,12 +267,13 @@ fn build_pairing_presentation(
             .try_reserve_exact(
                 qr.len()
                     .saturating_add(pairing_uri.len())
+                    .saturating_add(grants_text.len())
                     .saturating_add(128),
             )
             .map_err(|_| PairingCommandError::Presentation)?;
         write!(
             output,
-            "Scan with Teslatlas:\n{}\nPairing link: {pairing_uri}\nExpires in {expires_in_seconds} seconds.\n",
+            "Scan with Teslatlas:\n{}\nPairing link: {pairing_uri}\n{grants_text}\nExpires in {expires_in_seconds} seconds.\n",
             qr.as_str(),
         )
         .map_err(|_| PairingCommandError::Presentation)?;

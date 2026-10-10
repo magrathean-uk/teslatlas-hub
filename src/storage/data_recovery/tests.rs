@@ -241,6 +241,53 @@ fn pairing_authority_counts(data: &Path) -> (i64, i64) {
     (challenges, devices)
 }
 
+fn catalogue_has_table(connection: &Connection, table: &str) -> bool {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1)",
+            [table],
+            |row| row.get(0),
+        )
+        .expect("table existence")
+}
+
+/// Rows of the v68 pairing tables (grants, challenge vehicles) and the rotation
+/// grace table; zero for a table the catalogue's schema does not have.
+fn grant_authority_rows(data: &Path) -> (i64, i64, i64) {
+    let connection = open_immutable_catalogue(data).expect("grant authority catalogue");
+    let count = |table: &str| -> i64 {
+        if !catalogue_has_table(&connection, table) {
+            return 0;
+        }
+        connection
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
+            .expect("authority row count")
+    };
+    (
+        count("device_vehicle_grants"),
+        count("pairing_challenge_vehicles"),
+        count("paired_device_token_grace"),
+    )
+}
+
+/// Rewind a current catalogue to the v67 shape: the v68 tables and columns go.
+fn downgrade_catalogue_to_schema_67(connection: &Connection) {
+    connection
+        .execute_batch(
+            "BEGIN IMMEDIATE;
+             DROP TABLE device_vehicle_grants;
+             DROP TABLE pairing_challenge_vehicles;
+             ALTER TABLE pairing_challenges DROP COLUMN all_vehicles;
+             ALTER TABLE paired_devices DROP COLUMN max_expires_at_ms;
+             ALTER TABLE paired_device_token_grace DROP COLUMN sealed_successor;
+             PRAGMA user_version = 67;
+             COMMIT;",
+        )
+        .expect("rewind catalogue to schema 67");
+}
+
 fn reseal_backup_as_legacy_v3_with_pairing(backup: &Path, bearer: &str) {
     let catalogue = backup.join(CATALOGUE_MEMBER);
     let connection = Connection::open_with_flags(
@@ -248,12 +295,14 @@ fn reseal_backup_as_legacy_v3_with_pairing(backup: &Path, bearer: &str) {
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .expect("legacy catalogue fixture");
+    let pairing_id = Uuid::new_v4().to_string();
+    let device_id = Uuid::new_v4().to_string();
     connection
         .execute(
             "INSERT INTO pairing_challenges
              (pairing_id, label, secret_sha256, created_at_ms, expires_at_ms)
              VALUES (?1, 'legacy invitation', ?2, 1000, 10000)",
-            rusqlite::params![Uuid::new_v4().to_string(), vec![17_u8; 32]],
+            rusqlite::params![pairing_id, vec![17_u8; 32]],
         )
         .expect("legacy pairing challenge");
     connection
@@ -262,12 +311,50 @@ fn reseal_backup_as_legacy_v3_with_pairing(backup: &Path, bearer: &str) {
              (device_id, display_name, token_sha256, created_at_ms, expires_at_ms,
               revoked_at_ms, last_authenticated_at_ms)
              VALUES (?1, 'legacy device', ?2, 2000, 20000, NULL, 2001)",
-            rusqlite::params![
-                Uuid::new_v4().to_string(),
-                Sha256::digest(bearer.as_bytes()).to_vec()
-            ],
+            rusqlite::params![device_id, Sha256::digest(bearer.as_bytes()).to_vec()],
         )
         .expect("legacy paired device");
+    // Schema 68 and later also carry the device's grants, the challenge's
+    // vehicles and a rotation grace row; give each one row per fixture
+    // vehicle. An older catalogue has none of these tables.
+    if catalogue_has_table(&connection, "device_vehicle_grants") {
+        connection
+            .execute(
+                "INSERT INTO device_vehicle_grants (device_id, vehicle_id, granted_at_ms)
+                 SELECT ?1, vehicle_id, 2000 FROM vehicles",
+                [&device_id],
+            )
+            .expect("legacy device grants");
+        connection
+            .execute(
+                "INSERT INTO pairing_challenge_vehicles (pairing_id, vehicle_id)
+                 SELECT ?1, vehicle_id FROM vehicles",
+                [&pairing_id],
+            )
+            .expect("legacy challenge vehicles");
+        connection
+            .execute(
+                "INSERT INTO paired_device_token_grace (device_id, token_sha256, valid_until_ms)
+                 VALUES (?1, ?2, 99999)",
+                rusqlite::params![device_id, vec![29_u8; 32]],
+            )
+            .expect("legacy rotation grace");
+        // Rows whose parent is already gone (planted with foreign keys off):
+        // no cascade from `paired_devices`, `pairing_challenges` or `vehicles`
+        // can reach them, so only the restore's own explicit deletes do.
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = OFF;
+                 INSERT INTO device_vehicle_grants (device_id, vehicle_id, granted_at_ms)
+                     VALUES ('orphan-device', 'orphan-vehicle', 1);
+                 INSERT INTO pairing_challenge_vehicles (pairing_id, vehicle_id)
+                     VALUES ('orphan-pairing', 'orphan-vehicle');
+                 INSERT INTO paired_device_token_grace (device_id, token_sha256, valid_until_ms)
+                     VALUES ('orphan-device', zeroblob(32), 1);
+                 PRAGMA foreign_keys = ON;",
+            )
+            .expect("orphaned grant authority");
+    }
     drop(connection);
 
     let current_manifest_path = backup.join(MANIFEST_NAME);
@@ -314,10 +401,20 @@ fn reseal_backup_as_schema(backup: &Path, schema: i32) -> BackupManifest {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .expect("open historical catalogue fixture");
-        downgrade_catalogue_fixture(&connection, schema);
+        if schema == 67 {
+            downgrade_catalogue_to_schema_67(&connection);
+        } else {
+            downgrade_catalogue_fixture(&connection, schema);
+        }
         drop(connection);
     }
+    reseal_backup_manifest(backup, schema)
+}
 
+/// Re-seal the manifest, its catalogue member and the completion marker over
+/// the backup's catalogue as it is now, declaring `schema`.
+fn reseal_backup_manifest(backup: &Path, schema: i32) -> BackupManifest {
+    let catalogue = backup.join(CATALOGUE_MEMBER);
     let manifest_path = backup.join(MANIFEST_NAME);
     let mut manifest: BackupManifest =
         parse_canonical_json(&fs::read(&manifest_path).expect("manifest bytes"))
@@ -355,6 +452,12 @@ fn downgrade_catalogue_fixture(connection: &Connection, schema: i32) {
     connection
         .execute_batch(
             "BEGIN IMMEDIATE;
+             -- The v68 grant tables and columns go first, so that the
+             -- schema-68 migration would add them again.
+             DROP TABLE IF EXISTS device_vehicle_grants;
+             DROP TABLE IF EXISTS pairing_challenge_vehicles;
+             ALTER TABLE pairing_challenges DROP COLUMN all_vehicles;
+             ALTER TABLE paired_devices DROP COLUMN max_expires_at_ms;
              -- PhysicalV3 admission state was introduced after schema 54. A
              -- historical fixture must remove it before its user_version is
              -- rewound, otherwise the later schema-62 migration would try to
@@ -1052,6 +1155,189 @@ fn legacy_v3_backup_is_accepted_but_pairing_authority_is_revoked_before_publicat
             .is_none(),
         "legacy bearer authority must not survive restore publication"
     );
+}
+
+#[test]
+fn restore_removes_vehicle_grants_challenge_vehicles_and_rotation_grace() {
+    let (temporary, store) = create_fixture();
+    let source_data = store.database_path().parent().expect("source data root");
+    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(source_data)
+        .expect("source cursor key");
+    let lineage = publish_lineage_fixture(&store, &cursor_key);
+    let backup = temporary.path().join("grant-backup");
+    create_data_backup(&store, &backup).expect("create backup fixture");
+    reseal_backup_as_legacy_v3_with_pairing(&backup, "grant-bearer");
+    assert_eq!(
+        grant_authority_rows(&backup.join(DATA_DIRECTORY)),
+        (2, 2, 2),
+        "the legacy fixture carries a grant, a challenge vehicle and a grace row, \
+         each beside one orphan that no cascade reaches"
+    );
+    assert_eq!(
+        pairing_authority_counts(&backup.join(DATA_DIRECTORY)),
+        (1, 1)
+    );
+    let before = tree_snapshot(&backup);
+    verify_data_backup(&backup).expect("a legacy backup is accepted");
+    let restored = temporary.path().join("grant-restored");
+    restore_data_backup(&backup, &restored).expect("restore sanitizes the grant tables");
+    assert_eq!(tree_snapshot(&backup), before);
+    assert_eq!(grant_authority_rows(&restored), (0, 0, 0));
+    assert_eq!(pairing_authority_counts(&restored), (0, 0));
+    // The vehicle identity the grants pointed at survives; only the authority goes.
+    assert_eq!(
+        HubStore::open_immutable_read_only(&restored)
+            .expect("restored store")
+            .source_vehicle_key(lineage.vehicle_id)
+            .expect("restored vehicle"),
+        Some("recovery-vehicle".to_owned())
+    );
+}
+
+#[test]
+fn a_current_backup_that_retains_grant_authority_is_rejected() {
+    for (table, insert) in [
+        (
+            "device_vehicle_grants",
+            "INSERT INTO device_vehicle_grants VALUES ('orphan-device', 'orphan-vehicle', 1)",
+        ),
+        (
+            "pairing_challenge_vehicles",
+            "INSERT INTO pairing_challenge_vehicles VALUES ('orphan-pairing', 'orphan-vehicle')",
+        ),
+        (
+            "paired_device_token_grace",
+            "INSERT INTO paired_device_token_grace (device_id, token_sha256, valid_until_ms) VALUES ('orphan-device', zeroblob(32), 1)",
+        ),
+    ] {
+        let (temporary, store) = create_fixture();
+        let backup = temporary.path().join("retaining-backup");
+        create_data_backup(&store, &backup).expect("create backup fixture");
+        verify_data_backup(&backup).expect("the clean backup verifies");
+        // Plant the row without its parent (foreign keys off), then re-seal
+        // the manifest so only the retained authority is wrong.
+        let connection = Connection::open_with_flags(
+            backup.join(CATALOGUE_MEMBER),
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .expect("backup catalogue");
+        connection
+            .execute_batch(&format!("PRAGMA foreign_keys = OFF; {insert};"))
+            .unwrap_or_else(|error| panic!("plant {table}: {error}"));
+        connection
+            .pragma_update(None, "journal_mode", "DELETE")
+            .expect("sealed journal mode");
+        drop(connection);
+        reseal_backup_as_schema(&backup, SCHEMA_VERSION);
+        let error = verify_data_backup(&backup).expect_err("retained authority must be rejected");
+        assert!(
+            error.to_string().contains("retains pairing authority"),
+            "{table}: {error}"
+        );
+        let restored = temporary.path().join("never-restored");
+        assert!(restore_data_backup(&backup, &restored).is_err());
+        assert!(!restored.exists());
+    }
+}
+
+#[test]
+fn a_historical_backup_missing_a_base_pairing_table_is_rejected() {
+    // The grant tables and the rotation grace may be absent from an older
+    // backup, but `pairing_challenges` and `paired_devices` exist in every
+    // schema: a resealed v67 backup without one is not verifiable, and so
+    // cannot restore.
+    for missing in ["pairing_challenges", "paired_devices"] {
+        let (temporary, store) = create_fixture();
+        let backup = temporary.path().join("missing-base-table");
+        create_data_backup(&store, &backup).expect("create backup fixture");
+        reseal_backup_as_schema(&backup, 67);
+        verify_data_backup(&backup).expect("the intact v67 backup verifies");
+        let connection = Connection::open_with_flags(
+            backup.join(CATALOGUE_MEMBER),
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .expect("backup catalogue");
+        // Only this table is missing (foreign keys off, so its dependants are
+        // left as they are); the catalogue is otherwise a valid v67 one.
+        connection
+            .execute_batch(&format!("PRAGMA foreign_keys = OFF; DROP TABLE {missing};"))
+            .unwrap_or_else(|error| panic!("drop {missing}: {error}"));
+        connection
+            .pragma_update(None, "journal_mode", "DELETE")
+            .expect("sealed journal mode");
+        drop(connection);
+        reseal_backup_manifest(&backup, 67);
+        let error = verify_data_backup(&backup)
+            .expect_err("a catalogue without a base pairing table must be rejected");
+        assert!(
+            error.to_string().contains(missing),
+            "{missing}: the rejection names the missing table: {error}"
+        );
+        let restored = temporary.path().join("never-restored");
+        assert!(restore_data_backup(&backup, &restored).is_err());
+        assert!(!restored.exists());
+    }
+}
+
+#[test]
+fn schema_67_backups_verify_and_restore_with_the_grant_tables_created_empty() {
+    // A clean v67 backup (no grant tables) verifies without counting them.
+    let (temporary, store) = create_fixture();
+    let source_data = store.database_path().parent().expect("source data root");
+    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(source_data)
+        .expect("source cursor key");
+    let lineage = publish_lineage_fixture(&store, &cursor_key);
+    let installation_id = store.installation_id().expect("installation");
+    let clean = temporary.path().join("schema-67-backup");
+    create_data_backup(&store, &clean).expect("create backup fixture");
+    let manifest = reseal_backup_as_schema(&clean, 67);
+    assert_eq!(manifest.hub_schema, 67);
+    assert!(!catalogue_has_table(
+        &open_immutable_catalogue(&clean.join(DATA_DIRECTORY)).unwrap(),
+        "device_vehicle_grants"
+    ));
+    verify_data_backup(&clean).expect("a v67 backup verifies");
+    let restored = temporary.path().join("schema-67-restored");
+    restore_data_backup(&clean, &restored).expect("a v67 backup restores");
+    assert_eq!(
+        immutable_database_identity(&restored).unwrap(),
+        installation_id
+    );
+    let restored_store = HubStore::open_immutable_read_only(&restored).expect("restored store");
+    restored_store
+        .catalogue_check()
+        .expect("restored catalogue");
+    assert_eq!(grant_authority_rows(&restored), (0, 0, 0));
+    assert_eq!(pairing_authority_counts(&restored), (0, 0));
+    assert!(
+        catalogue_has_table(
+            &open_immutable_catalogue(&restored).unwrap(),
+            "device_vehicle_grants"
+        ),
+        "the restore migrated the catalogue to the grant schema"
+    );
+    assert_eq!(
+        restored_store
+            .source_vehicle_key(lineage.vehicle_id)
+            .expect("restored vehicle"),
+        Some("recovery-vehicle".to_owned())
+    );
+
+    // A v67 legacy-v3 generation that still carries a device: the migration
+    // backfills grants for it, and the restore must remove them again.
+    let legacy = temporary.path().join("schema-67-legacy-backup");
+    create_data_backup(&store, &legacy).expect("create legacy fixture base");
+    reseal_backup_as_schema(&legacy, 67);
+    reseal_backup_as_legacy_v3_with_pairing(&legacy, "schema-67-bearer");
+    assert_eq!(
+        pairing_authority_counts(&legacy.join(DATA_DIRECTORY)),
+        (1, 1)
+    );
+    verify_data_backup(&legacy).expect("a v67 legacy backup verifies");
+    let legacy_restored = temporary.path().join("schema-67-legacy-restored");
+    restore_data_backup(&legacy, &legacy_restored).expect("a v67 legacy backup restores");
+    assert_eq!(grant_authority_rows(&legacy_restored), (0, 0, 0));
+    assert_eq!(pairing_authority_counts(&legacy_restored), (0, 0));
 }
 
 #[test]

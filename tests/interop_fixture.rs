@@ -349,28 +349,9 @@ async fn dynamic_fixture_vehicle_retires_and_returns_with_stable_signed_state() 
         serde_json::from_slice(&signed_before.0).unwrap();
     let digest = manifest.chunks[0].sha256;
 
-    let retired = seed::retire_dynamic_vehicle(&root).unwrap();
-    assert_eq!(retired.status, "retired");
-    assert_eq!(
-        seed::retire_dynamic_vehicle(&root).unwrap().status,
-        "already-retired"
-    );
-    let restarted = HubStore::initialize(root.join("hub")).unwrap();
-    assert!(!restarted.vehicle_is_active(exposed.vehicle_id).unwrap());
-    assert_eq!(restarted.published_vehicles().unwrap().len(), 2);
-    assert_eq!(
-        teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
-            &restarted,
-            exposed.vehicle_id,
-            &key,
-        )
-        .unwrap(),
-        signed_before
-    );
-
     let invitation: Value =
         serde_json::from_slice(&std::fs::read(&prepared.invitation_path).unwrap()).unwrap();
-    let app = paired_router(restarted, &key);
+    let app = paired_router(store.clone(), &key);
     let claim = app
         .clone()
         .oneshot(
@@ -396,6 +377,35 @@ async fn dynamic_fixture_vehicle_retires_and_returns_with_stable_signed_state() 
     let claim: Value =
         serde_json::from_slice(&claim.into_body().collect().await.unwrap().to_bytes()).unwrap();
     let token = claim["access_token"].as_str().unwrap();
+    // The device is paired while the vehicle is active, so it is granted it:
+    // the grant is what keeps the retired vehicle's packs authorized below.
+    assert_eq!(
+        get(&app, "/v1/vehicles", token).await["vehicles"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+
+    let retired = seed::retire_dynamic_vehicle(&root).unwrap();
+    assert_eq!(retired.status, "retired");
+    assert_eq!(
+        seed::retire_dynamic_vehicle(&root).unwrap().status,
+        "already-retired"
+    );
+    let restarted = HubStore::initialize(root.join("hub")).unwrap();
+    assert!(!restarted.vehicle_is_active(exposed.vehicle_id).unwrap());
+    assert_eq!(restarted.published_vehicles().unwrap().len(), 2);
+    assert_eq!(
+        teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
+            &restarted,
+            exposed.vehicle_id,
+            &key,
+        )
+        .unwrap(),
+        signed_before
+    );
+
     assert_eq!(
         get(&app, "/v1/vehicles", token).await["vehicles"]
             .as_array()
@@ -439,6 +449,41 @@ async fn dynamic_fixture_vehicle_retires_and_returns_with_stable_signed_state() 
         200,
         "digest-addressed pack remains authorized"
     );
+    // A device paired while the vehicle is retired is never granted it, so
+    // the retired vehicle's pack is not authorized to that device.
+    let now_ms = i64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+    )
+    .unwrap();
+    let late_invitation = restarted
+        .create_pairing("late device", now_ms - 1, now_ms + 60_000)
+        .unwrap();
+    let late_access = restarted
+        .claim_pairing(
+            late_invitation.pairing_id,
+            late_invitation.secret(),
+            "late-device-test",
+            now_ms,
+        )
+        .unwrap();
+    let late_pack = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .uri(format!("/v1/packs/sha256/{digest}.sqlite.zst"))
+                .header(
+                    "authorization",
+                    format!("Bearer {}", late_access.access_token.as_bearer()),
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(late_pack.status(), 404);
 
     let restored = seed::restore_dynamic_vehicle(&root).unwrap();
     assert_eq!(restored.status, "restored");

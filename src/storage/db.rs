@@ -56,10 +56,15 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 67;
+pub const SCHEMA_VERSION: i32 = 68;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
+/// Absolute cap on how long one pairing may keep renewing its bearer, counted
+/// from the claim. The claim writes `claimed_at + this` into
+/// `paired_devices.max_expires_at_ms` through this one constant; the v68
+/// migration backfills existing devices with the same span.
+pub const PAIRED_DEVICE_MAX_LIFETIME_MS: i64 = 180 * 24 * 60 * 60 * 1_000;
 pub const PAIRED_DEVICE_ROTATION_GRACE_MS: i64 = 24 * 60 * 60 * 1_000;
 
 /// A supervised collector renews this durable lease from an independent task.
@@ -1313,6 +1318,7 @@ include!("db/live_sync.rs");
 include!("db/import_finalization.rs");
 include!("db/lineage_verification.rs");
 include!("db/identity_and_audit.rs");
+include!("db/device_grants.rs");
 include!("db/observations_and_lifecycle.rs");
 include!("db/edge_delivery.rs");
 include!("db/geofences_and_terrain.rs");

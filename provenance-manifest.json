@@ -653,6 +653,7 @@
         "packaging/macos-app/scripts/preinstall",
         "src/api/server/tests/drive_byte_budget.rs",
         "src/api/server/tests/public_history.rs",
+        "src/api/server/tests/vehicle_grants.rs",
         "src/collection/teslamate_current.rs",
         "src/collection/teslamate_current/tests.rs"
       ]

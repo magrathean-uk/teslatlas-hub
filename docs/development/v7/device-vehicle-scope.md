@@ -1,6 +1,6 @@
 # Design: per-device vehicle scope and credential lifetime
 
-Status: G2-0 design, 2026-10-08. Not implemented. Anchors: `hub@6ac8ef0` (`ID` = `src/storage/db/identity_and_audit.rs`, `MIG` = `src/storage/db/migrations.rs`, `SRV` = `src/api/server.rs`).
+Status: G2-0 design, 2026-10-08. Per-device vehicle grants (schema v68) are implemented in G2-3a, see "G2-3a as built" at the end; the credential lifetime sections (G2-3b) are not. Anchors: `hub@6ac8ef0` (`ID` = `src/storage/db/identity_and_audit.rs`, `MIG` = `src/storage/db/migrations.rs`, `SRV` = `src/api/server.rs`).
 
 ## Today
 
@@ -75,3 +75,15 @@ A "Paired devices" row in the Settings "Connections & data" card (`HubNavigation
 - Grace retry returns the identical successor; a second successor is never minted; pre-migration grace rows return 401.
 - Revoke route idempotent; revoked device fails on JSON, sync and pack routes.
 - Existing: `db/tests/catalogue_and_pairing.rs:569-762`, `server/tests.rs:2080, 2718, 3127` updated.
+
+## G2-3a as built
+
+The implementation follows the sections above, with these differences recorded by the G2-3 decisions:
+
+- The `vehicle_id` foreign keys of `device_vehicle_grants` and `pairing_challenge_vehicles` are `ON DELETE CASCADE`, not `RESTRICT`: placeholder cleanup deletes `vehicles` rows, and a grant for a deleted vehicle is simply gone (fail closed). Because of those cascades, **no later migration may rebuild (`DROP`) `vehicles`, `paired_devices` or `pairing_challenges` with foreign keys on**: the drop would cascade and empty the grants (and `paired_device_token_grace`). Use additive `ALTER TABLE` steps. The restore connection sets `PRAGMA foreign_keys = ON` explicitly and also deletes the grant tables, the grace table and the challenge vehicles before their parents, and `validate_pairing_authority_absent` counts each of them where the schema has it.
+- `pairing_challenges.all_vehicles` (0 or 1) records the default scope: an invitation either lists vehicles or grants every vehicle that is active at claim time. Both claim forms skip retired vehicles, and `persist_pairing_with_scope` checks retirement again inside its IMMEDIATE transaction. A vehicle added later is never auto-granted; a vehicle retired at claim time is not granted either, so a device paired during a retirement does not gain the vehicle on reactivation.
+- `require_vehicle_access(state, &device, vehicle_id, visibility)` takes a visibility: `PublishedAndActive` for `/v1/vehicles`, `/current` and the six history routes (the predicate of the vehicle list), `Active` for manifest, no-op, signing keys, prepared artefacts and changes-since (an active vehicle without a published full snapshot is the empty 404 `no_full_snapshot`, not an unknown vehicle). The nil UUID is `not found`: its value never causes a 503. The bypass for the loopback router is keyed on `require_device_auth == false` (the plain-loopback `serve` behind `LocalLoopbackAccess` and the test routers), not on development use.
+- Sync routes and the pack parse the vehicle (segment 2), the prepared-artefact id (segment 5) and the pack object name (segment 3) from the raw path after authentication. Manifest, no-op and prepared artefacts answer a malformed id with the empty 404 and the nil UUID with the JSON `vehicle_not_found`; signing keys answer both with the empty 404, changes-since both with the JSON error.
+- Pack ownership sits in each lookup's `WHERE`, before any `LIMIT`: `sync_packs` through `sync_manifests`, `sync_retired_lineage_packs`, `pending_physical_v3_packs` through the admission, `physical_v3_delta_packs` through the transition, and `prepared_map_months`. With no cursor key the prepared-pack lookup cannot verify a receipt, so the route asks the same candidate query whether a month exists in the device's scope: a candidate is the 503, anything else (an ungranted digest included) is the empty 404 of an unknown digest. Retirement is not a pack predicate: a device that still holds a grant keeps fetching the retired vehicle's catalogued packs, and only removing the grant withdraws them.
+- `pair --json` is byte-compatible: it has no `vehicles` or `allVehicles` member. The text output names the scope, and `control paired-devices` lists each device's `vehicles`. `control pair` (same flags) runs through `HubStore::open_existing`, without the instance lock.
+- The `max_expires_at_ms` column is written at claim (`claimed_at + 180 days`, one named constant) and backfilled by the migration with `max(created_at_ms, migration time) + 180 days`, saturating at `i64::MAX` (so a device paired more than 180 days before the upgrade is not over its cap the moment 3b first enforces it); nothing reads it yet. `paired_device_token_grace.sealed_successor` is added and unused until G2-3b.

@@ -54,7 +54,7 @@ appear in process arguments.
 | `restore-data` | Restore data into a new directory without credentials. |
 | `export-recovery-credentials` | Export keys into a separately encrypted recovery file. |
 | `restore-recovery-credentials` | Restore that key export into a matching data restore. |
-| `pair` | Create a short-lived, single-use device pairing invitation. |
+| `pair` | Create a short-lived, single-use device pairing invitation (stop the Hub first; use `control pair` while it runs). `--vehicle UUID` (repeatable) grants only those vehicles, `--all-vehicles` or no flag grants every vehicle active when the invitation is claimed. |
 
 ## Migration and interoperability
 
@@ -86,6 +86,28 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub \
 
 Do not run real vehicle commands during testing. Charging, climate, lock, wake,
 light, and horn actions affect physical property and third-party services.
+
+### Paired devices and their vehicles
+
+Every paired device reads only the vehicles it is granted. `control pair`
+creates an invitation while the Hub is serving (it takes short SQLite
+transactions and no instance lock, like `paired-devices` and `revoke-device`),
+and `control paired-devices` lists each device with its granted vehicle ids.
+
+```sh
+# One car only; repeat --vehicle for more. Unknown or retired ids are refused.
+sudo -u teslatlas -- /usr/bin/teslatlas-hub \
+  --config /etc/teslatlas-hub/config.toml control pair \
+  --vehicle 11111111-1111-4111-8111-111111111111
+# Every vehicle that is active when the invitation is claimed (the default).
+sudo -u teslatlas -- /usr/bin/teslatlas-hub \
+  --config /etc/teslatlas-hub/config.toml control pair --all-vehicles
+```
+
+The terminal output names the scope. The invitation link and QR never carry
+it, and a vehicle added to the Hub later is never granted to an existing
+device. A device with no grant sees no vehicle: every vehicle route answers it
+as it answers an unknown vehicle, and `GET /v1/vehicles` is empty.
 
 ## Legal and source
 

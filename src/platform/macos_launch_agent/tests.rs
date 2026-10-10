@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[test]
-fn standalone_preflight_allows_only_known_v66_forward_upgrade_without_writes() {
+fn standalone_preflight_allows_only_known_v66_and_v67_forward_upgrades_without_writes() {
     use crate::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
     let temporary = crate::private_tempdir().unwrap();
     let data_dir = temporary.path().join("state");
@@ -19,6 +19,25 @@ fn standalone_preflight_allows_only_known_v66_forward_upgrade_without_writes() {
         .current_observations_for_vehicle(vehicle.vehicle_id)
         .unwrap();
     let connection = store.open().unwrap();
+    // Rewind the v68 grant schema first: a v67 store is the shape the previous
+    // release left, and standalone Serve migrates it to v68 itself.
+    connection
+        .execute_batch(
+            "BEGIN IMMEDIATE;
+        DROP TABLE device_vehicle_grants; DROP TABLE pairing_challenge_vehicles;
+        ALTER TABLE pairing_challenges DROP COLUMN all_vehicles;
+        ALTER TABLE paired_devices DROP COLUMN max_expires_at_ms;
+        ALTER TABLE paired_device_token_grace DROP COLUMN sealed_successor;
+        PRAGMA user_version=67; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
+        )
+        .unwrap();
+    let v67_bytes = fs::read(config.database_path()).unwrap();
+    assert!(matches!(
+        HubStore::open_read_only(&data_dir),
+        Err(crate::db::StoreError::UnsupportedSchema(67))
+    ));
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
+    assert_eq!(fs::read(config.database_path()).unwrap(), v67_bytes);
     let schema: String = connection
         .query_row(
             "SELECT sql FROM sqlite_master WHERE name='current_observations'",
@@ -67,10 +86,10 @@ fn standalone_preflight_allows_only_known_v66_forward_upgrade_without_writes() {
         connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
             .unwrap(),
-        67
+        68
     );
     preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    for unsupported in [65_i32, 68] {
+    for unsupported in [65_i32, 69] {
         connection
             .pragma_update(None, "user_version", unsupported)
             .unwrap();

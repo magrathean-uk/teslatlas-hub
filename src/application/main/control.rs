@@ -74,6 +74,14 @@ fn control_target(
     Ok(vehicle_id)
 }
 
+/// The `control paired-devices` document: every device with the vehicles it is
+/// granted. It never contains bearer material.
+fn paired_devices_json(store: &HubStore) -> Result<String, Box<dyn std::error::Error>> {
+    Ok(serde_json::to_string(
+        &store.list_paired_devices_with_vehicles()?,
+    )?)
+}
+
 fn explicit_vehicle_action(
     command: &ControlCommand,
 ) -> Result<Option<LegacyVehicleAction>, Box<dyn std::error::Error>> {
@@ -220,7 +228,30 @@ async fn run_control(
     let store = HubStore::open_existing(&config.data_dir)?;
     match command {
         ControlCommand::PairedDevices => {
-            println!("{}", serde_json::to_string(&store.list_paired_devices()?)?);
+            println!("{}", paired_devices_json(&store)?);
+            return Ok(());
+        }
+        ControlCommand::Pair {
+            label,
+            expires_in_seconds,
+            json,
+            vehicles,
+            all_vehicles,
+        } => {
+            // Like the other control commands this takes short SQLite
+            // transactions and no instance lock, so pairing works while the
+            // Hub serves. The invitation is single-use and carries no scope.
+            let mut stdout = std::io::stdout().lock();
+            pair_with_configured_tls(
+                &store,
+                config.tls.as_ref(),
+                label,
+                *expires_in_seconds,
+                *json,
+                pairing_scope_from_flags(vehicles.clone(), *all_vehicles),
+                &mut stdout,
+            )
+            .await?;
             return Ok(());
         }
         ControlCommand::RevokeDevice { device_id } => {
@@ -263,6 +294,7 @@ async fn run_control(
     }
     match command {
         ControlCommand::PairedDevices
+        | ControlCommand::Pair { .. }
         | ControlCommand::RevokeDevice { .. }
         | ControlCommand::SignOut => {
             unreachable!("global controls returned before vehicle selection")

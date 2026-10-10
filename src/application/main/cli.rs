@@ -58,9 +58,27 @@ impl DevelopmentServeModeArgument {
 
 #[derive(Debug, Subcommand)]
 enum ControlCommand {
-    /// List paired devices without exposing bearer material.
+    /// List paired devices and the vehicles each may read, without exposing bearer material.
     #[command(name = "paired-devices")]
     PairedDevices,
+    /// Display one short-lived, single-use device pairing QR while the Hub is running.
+    Pair {
+        /// Human label shown only to the Hub owner, such as "Bolyki iPhone".
+        #[arg(long, default_value = "Teslatlas iPhone")]
+        label: String,
+        /// Lifetime before the invitation becomes unusable.
+        #[arg(long, default_value_t = 900)]
+        expires_in_seconds: u64,
+        /// Print the secret-bearing machine-readable payload for explicit debugging.
+        #[arg(long, hide = true)]
+        json: bool,
+        /// Grant the device only this vehicle (Hub vehicle UUID); repeat for several.
+        #[arg(long = "vehicle", value_name = "UUID", conflicts_with = "all_vehicles")]
+        vehicles: Vec<uuid::Uuid>,
+        /// Grant every vehicle that is active when the invitation is claimed (the default).
+        #[arg(long)]
+        all_vehicles: bool,
+    },
     /// Revoke one paired device bearer immediately.
     #[command(name = "revoke-device")]
     RevokeDevice { device_id: uuid::Uuid },
@@ -430,6 +448,12 @@ enum Command {
         /// Print the secret-bearing machine-readable payload for explicit debugging.
         #[arg(long, hide = true)]
         json: bool,
+        /// Grant the device only this vehicle (Hub vehicle UUID); repeat for several.
+        #[arg(long = "vehicle", value_name = "UUID", conflicts_with = "all_vehicles")]
+        vehicles: Vec<uuid::Uuid>,
+        /// Grant every vehicle that is active when the invitation is claimed (the default).
+        #[arg(long)]
+        all_vehicles: bool,
     },
     /// Validate database integrity, report quarantined sessions, and clean orphaned packs.
     Repair,

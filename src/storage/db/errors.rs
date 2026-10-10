@@ -343,6 +343,10 @@ pub enum StoreError {
     InvalidPairingExpiry,
     #[error("pairing invitation was rejected")]
     PairingRejected,
+    #[error("pairing scope names vehicle {0}, which is unknown or retired")]
+    PairingVehicleUnavailable(Uuid),
+    #[error("pairing scope names no vehicle")]
+    EmptyPairingScope,
     #[error("source id must not be nil")]
     NilSourceId,
     #[error("vehicle id must not be nil")]

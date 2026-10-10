@@ -653,6 +653,28 @@ fn live_delta_compaction_preserves_the_base_and_rebuilds_from_durable_journal_pa
         expires_at_ms,
         retired_at_ms + RETIRED_LINEAGE_PACK_RETENTION_MS
     );
+    // The retired-lineage pack lookup resolves the owning vehicle as well: a
+    // device granted this vehicle finds the pack, one granted none does not.
+    let owner_device = claim_with_scope(
+        &store,
+        &PairingScope::Vehicles(vec![vehicle.vehicle_id]),
+        "retired owner",
+        retired_at_ms + 1,
+    )
+    .device_id;
+    let stranger_device = claim_with_scope(
+        &store,
+        &PairingScope::AllVehicles,
+        "retired stranger",
+        retired_at_ms + 1,
+    )
+    .device_id;
+    retention_connection
+        .execute(
+            "DELETE FROM device_vehicle_grants WHERE device_id = ?1",
+            [stranger_device.to_string()],
+        )
+        .expect("de-grant the stranger");
     for delta in &before.deltas {
         assert!(
             store
@@ -660,11 +682,27 @@ fn live_delta_compaction_preserves_the_base_and_rebuilds_from_durable_journal_pa
                     &retention_connection,
                     delta.pack_digest,
                     retired_at_ms + 1,
+                    VehicleScope::Unrestricted,
                 )
                 .expect("retired pack authorization")
                 .is_some(),
             "each replaced pack remains authorized through its prior lineage"
         );
+        for (device, found) in [(owner_device, true), (stranger_device, false)] {
+            assert_eq!(
+                store
+                    .retired_pack_for_digest_at(
+                        &retention_connection,
+                        delta.pack_digest,
+                        retired_at_ms + 1,
+                        VehicleScope::Device(device),
+                    )
+                    .expect("scoped retired pack authorization")
+                    .is_some(),
+                found,
+                "a retired pack is found only through a granted owning vehicle"
+            );
+        }
     }
     drop(retention_connection);
     assert!(
@@ -739,16 +777,17 @@ fn live_delta_compaction_preserves_the_base_and_rebuilds_from_durable_journal_pa
     let retention_connection = reopened.open().expect("retention after restart");
     for delta in &before.deltas {
         assert!(
-                reopened
-                    .retired_pack_for_digest_at(
-                        &retention_connection,
-                        delta.pack_digest,
-                        expires_at_ms,
-                    )
-                    .expect("retired pack at exact expiry")
-                    .is_none(),
-                "authorization expires at the declared boundary"
-            );
+            reopened
+                .retired_pack_for_digest_at(
+                    &retention_connection,
+                    delta.pack_digest,
+                    expires_at_ms,
+                    VehicleScope::Unrestricted,
+                )
+                .expect("retired pack at exact expiry")
+                .is_none(),
+            "authorization expires at the declared boundary"
+        );
     }
     drop(retention_connection);
     reopened

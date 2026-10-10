@@ -844,9 +844,13 @@ impl HubStore {
     /// admission without adding it to the generic sync catalogue. The caller
     /// must still buffer and verify the bounded body before serving those exact
     /// immutable bytes.
+    ///
+    /// The owning vehicle is resolved inside the query: in a device scope a
+    /// head that no granted vehicle owns is `Ok(None)`, as for an unknown pack.
     pub(crate) fn pending_physical_v3_pack_for_digest(
         &self,
         digest: Sha256Digest,
+        scope: VehicleScope,
     ) -> Result<Option<StoredPack>, StoreError> {
         let connection = self.open_read_only_connection()?;
         let vehicle_id = connection
@@ -856,8 +860,11 @@ impl HubStore {
                    JOIN pending_physical_v3_admissions AS admission
                      ON admission.snapshot_id = pack.snapshot_id
                   WHERE pack.sha256 = ?1
-                    AND admission.serve_state = 'public_first'",
-                [digest.to_string()],
+                    AND admission.serve_state = 'public_first'
+                    AND (?2 IS NULL OR EXISTS (SELECT 1 FROM device_vehicle_grants AS grants
+                                                WHERE grants.device_id = ?2
+                                                  AND grants.vehicle_id = admission.vehicle_id))",
+                params![digest.to_string(), scope.grant_device_param()],
                 |row| row.get::<_, String>(0),
             )
             .optional()
@@ -1202,12 +1209,17 @@ impl HubStore {
             .map_err(StoreError::Query)
     }
 
+    /// The delta pack a digest names, served only to a scope that can see the
+    /// vehicle the transition belongs to; the owner predicate sits before the
+    /// LIMIT, so an ungranted digest is `Ok(None)`, as for an unknown one.
     pub(crate) fn physical_v3_delta_pack_for_digest_at(
         &self,
         digest: Sha256Digest,
         now_ms: i64,
+        scope: VehicleScope,
     ) -> Result<Option<StoredPack>, StoreError> {
-        let row: Option<(String, i64)> = self.open_read_only_connection()?
+        let row: Option<(String, i64)> = self
+            .open_read_only_connection()?
             .query_row(
                 "SELECT packs.relative_path,packs.compressed_bytes
                    FROM physical_v3_delta_packs AS packs
@@ -1219,13 +1231,18 @@ impl HubStore {
                      ON base.receipt_id=delta.base_receipt_id
                   WHERE packs.sha256=?1 AND target.serve_state='public_first'
                     AND base.expires_at_ms>?2
+                    AND (?3 IS NULL OR EXISTS (SELECT 1 FROM device_vehicle_grants AS grants
+                                                WHERE grants.device_id=?3
+                                                  AND grants.vehicle_id=delta.vehicle_id))
                   LIMIT 1",
-                params![digest.to_string(),now_ms],
-                |row| Ok((row.get(0)?,row.get(1)?)),
+                params![digest.to_string(), now_ms, scope.grant_device_param()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .optional()
             .map_err(StoreError::Query)?;
-        let Some((relative_path,bytes)) = row else { return Ok(None); };
+        let Some((relative_path, bytes)) = row else {
+            return Ok(None);
+        };
         if relative_path != format!("/v1/packs/sha256/{digest}.sqlite.zst")
             || !(1..=16_777_216).contains(&bytes)
         {
