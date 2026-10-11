@@ -1286,24 +1286,29 @@ impl HubStore {
         Ok(vehicle)
     }
 
+    /// The stored answer of one lookup: the row whose version-2 key binds
+    /// this endpoint, language and rounded coordinates, read whole from that
+    /// row. Rows written before the key bound a provider have a version-1 key
+    /// and no provider; they are not matched here.
     pub fn cached_address(
         &self,
+        binding: &AddressLookupBinding,
         point: crate::location::Wgs84Point,
     ) -> Result<Option<AddressCacheRecord>, StoreError> {
-        let key = address_lookup_key(point);
+        let key = address_lookup_key(binding, point);
         let connection = self.open()?;
         connection
             .query_row(
-                "SELECT a.osm_type, a.osm_id, a.display_name, a.name,
-                        a.latitude, a.longitude, a.house_number, a.road,
-                        a.neighbourhood, a.city, a.county, a.postcode,
-                        a.state, a.state_district, a.country, a.raw_json,
-                        l.latitude, l.longitude, l.looked_up_at_ms
-                 FROM address_lookup_cache l
-                 JOIN address_cache a
-                   ON a.osm_type = l.osm_type AND a.osm_id = l.osm_id
-                 WHERE l.lookup_key = ?1",
-                params![key],
+                "SELECT osm_type, osm_id, display_name, name,
+                        result_latitude, result_longitude, house_number, road,
+                        neighbourhood, city, county, postcode,
+                        state, state_district, country, raw_json,
+                        provider, endpoint, endpoint_host, language, licence,
+                        latitude, longitude, looked_up_at_ms
+                 FROM address_lookup_cache
+                 WHERE lookup_key = ?1 AND provider = ?2 AND endpoint = ?3
+                   AND language = ?4 AND display_name IS NOT NULL",
+                params![key, binding.provider, binding.endpoint, binding.language],
                 |row| {
                     Ok(AddressCacheRecord {
                         osm_type: row.get(0)?,
@@ -1322,9 +1327,16 @@ impl HubStore {
                         state_district: row.get(13)?,
                         country: row.get(14)?,
                         raw_json: row.get(15)?,
-                        lookup_latitude: row.get(16)?,
-                        lookup_longitude: row.get(17)?,
-                        looked_up_at_ms: row.get(18)?,
+                        binding: AddressLookupBinding {
+                            provider: row.get(16)?,
+                            endpoint: row.get(17)?,
+                            endpoint_host: row.get(18)?,
+                            language: row.get(19)?,
+                        },
+                        licence: row.get(20)?,
+                        lookup_latitude: row.get(21)?,
+                        lookup_longitude: row.get(22)?,
+                        looked_up_at_ms: row.get(23)?,
                     })
                 },
             )

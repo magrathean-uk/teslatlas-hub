@@ -231,7 +231,7 @@ fn has_exact_single_header(headers: &HeaderMap, name: &str, expected: &[u8]) -> 
     )
 }
 
-pub(super) fn bootstrap_manifest(
+pub(super) async fn bootstrap_manifest(
     state: &AppState,
     vehicle_id: Uuid,
     physical_only: bool,
@@ -269,6 +269,22 @@ pub(super) fn bootstrap_manifest(
     if physical_only {
         return unavailable_bootstrap_manifest();
     }
+    // Only this lineage tail verifies stored packs, so only it takes the
+    // sync-control slot and leaves the async runtime; the physical front half
+    // above never waits for it.
+    state
+        .sync_control_response(move |state| bootstrap_lineage_manifest(&state, vehicle_id))
+        .await
+}
+
+/// The schema-2.1 bootstrap answer for a vehicle with no admitted physical
+/// base. Verifies every stored lineage pack, so it must run off the async
+/// runtime.
+fn bootstrap_lineage_manifest(state: &AppState, vehicle_id: Uuid) -> Response {
+    let Some(signing) = state.manifest_signing.as_deref() else {
+        tracing::error!(%vehicle_id, "manifest signing key is unavailable");
+        return unavailable_bootstrap_manifest();
+    };
     let lineage = match state.store.lineage_manifest_for_vehicle(vehicle_id) {
         Ok(Some(lineage)) => lineage,
         Ok(None) => return unavailable_bootstrap_manifest(),

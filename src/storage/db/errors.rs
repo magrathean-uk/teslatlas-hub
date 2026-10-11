@@ -82,6 +82,8 @@ pub enum StoreError {
     AddressCacheWrite(rusqlite::Error),
     #[error("invalid address enrichment result")]
     InvalidAddressEnrichment,
+    #[error("invalid terrain tile digest record")]
+    InvalidTerrainTileDigest,
     #[error("cannot write address enrichment job: {0}")]
     AddressEnrichmentWrite(rusqlite::Error),
     #[error("cannot create Hub SQLite backup: {0}")]

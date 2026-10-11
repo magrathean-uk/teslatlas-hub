@@ -8,12 +8,15 @@
 
 use std::{
     fs::{File, Metadata},
-    os::unix::fs::{FileExt, MetadataExt},
+    os::{
+        fd::AsFd,
+        unix::fs::{FileExt, MetadataExt},
+    },
     path::Path,
     sync::Arc,
 };
 
-use rustix::fs::{Mode, OFlags, open};
+use rustix::fs::{Mode, OFlags, open, openat};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
@@ -147,23 +150,31 @@ enum HgtStorage {
     File(Arc<File>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The identity of one file as the filesystem reports it: device, inode,
+/// length and the modification and status-change times. A rewrite in place
+/// moves the status-change time even when the modification time is put back,
+/// so an unchanged identity is evidence that the same bytes are still there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct HgtFileIdentity {
     device: u64,
     inode: u64,
     length: u64,
     modified_seconds: i64,
     modified_nanoseconds: i64,
+    changed_seconds: i64,
+    changed_nanoseconds: i64,
 }
 
 impl HgtFileIdentity {
-    fn from_metadata(metadata: &Metadata) -> Self {
+    pub(crate) fn from_metadata(metadata: &Metadata) -> Self {
         Self {
             device: metadata.dev(),
             inode: metadata.ino(),
             length: metadata.len(),
             modified_seconds: metadata.mtime(),
             modified_nanoseconds: metadata.mtime_nsec(),
+            changed_seconds: metadata.ctime(),
+            changed_nanoseconds: metadata.ctime_nsec(),
         }
     }
 }
@@ -185,14 +196,34 @@ impl HgtTile {
     }
 
     pub fn open(name: &str, path: impl AsRef<Path>) -> Result<Self, TerrainError> {
-        let path = path.as_ref();
-        let descriptor = open(
-            path,
-            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
-            Mode::empty(),
-        )
-        .map_err(std::io::Error::from)?;
-        let file = File::from(descriptor);
+        let descriptor =
+            open(path.as_ref(), Self::read_flags(), Mode::empty()).map_err(std::io::Error::from)?;
+        Self::from_file(name, File::from(descriptor))
+    }
+
+    /// Open `file_name`, a single entry of the directory `directory` holds,
+    /// without following a symlink. The tile keeps the descriptor, so every
+    /// later read and hash is of the file that was opened here.
+    pub(crate) fn open_in(
+        name: &str,
+        directory: impl AsFd,
+        file_name: &str,
+    ) -> Result<Self, TerrainError> {
+        if file_name.is_empty() || file_name == "." || file_name == ".." || file_name.contains('/')
+        {
+            return Err(TerrainError::InvalidTileName);
+        }
+        let descriptor = openat(directory, file_name, Self::read_flags(), Mode::empty())
+            .map_err(std::io::Error::from)?;
+        Self::from_file(name, File::from(descriptor))
+    }
+
+    fn read_flags() -> OFlags {
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK
+    }
+
+    /// Adopt an already opened regular file of an exact HGT size.
+    pub(crate) fn from_file(name: &str, file: File) -> Result<Self, TerrainError> {
         let metadata = file.metadata()?;
         if !metadata.file_type().is_file() {
             return Err(TerrainError::InvalidHgtLength);

@@ -1,5 +1,81 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+/// The only reverse-geocoding provider family the Hub speaks to.
+pub const ADDRESS_LOOKUP_PROVIDER: &str = "nominatim";
+const MAX_ADDRESS_ENDPOINT_BYTES: usize = 2048;
+const MAX_ADDRESS_HOST_BYTES: usize = 255;
+const MAX_ADDRESS_LANGUAGE_BYTES: usize = 64;
+/// Longest provider licence text kept with a lookup row.
+pub const MAX_ADDRESS_LICENCE_BYTES: usize = 512;
+
+/// What a geocoder lookup is bound to besides its coordinates: the provider,
+/// the exact endpoint it was sent to and the requested language. Two lookups
+/// share a cache row only when all of these and the rounded coordinates agree,
+/// so a changed endpoint or language is a miss, never someone else's answer.
+///
+/// `endpoint` is the normalised request base `scheme://host:port/path` (default
+/// port made explicit, no user information, query or fragment); `endpoint_host`
+/// is its host, kept for provenance. Build one with [`Self::nominatim`]; a
+/// hand-assembled value that is not what that constructor would produce is
+/// refused when it is stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AddressLookupBinding {
+    pub provider: String,
+    pub endpoint: String,
+    pub endpoint_host: String,
+    pub language: String,
+}
+
+impl AddressLookupBinding {
+    pub fn nominatim(endpoint: &url::Url, language: &str) -> Result<Self, StoreError> {
+        let host = endpoint
+            .host_str()
+            .filter(|host| !host.is_empty() && host.len() <= MAX_ADDRESS_HOST_BYTES);
+        let port = endpoint.port_or_known_default();
+        let (Some(host), Some(port)) = (host, port) else {
+            return Err(StoreError::InvalidAddressCache);
+        };
+        if !matches!(endpoint.scheme(), "http" | "https")
+            || !endpoint.username().is_empty()
+            || endpoint.password().is_some()
+            || endpoint.query().is_some()
+            || endpoint.fragment().is_some()
+            || language.is_empty()
+            || language.len() > MAX_ADDRESS_LANGUAGE_BYTES
+            || language.chars().any(char::is_control)
+        {
+            return Err(StoreError::InvalidAddressCache);
+        }
+        let normalised = format!(
+            "{}://{}:{}{}",
+            endpoint.scheme(),
+            host,
+            port,
+            endpoint.path()
+        );
+        if normalised.len() > MAX_ADDRESS_ENDPOINT_BYTES {
+            return Err(StoreError::InvalidAddressCache);
+        }
+        Ok(Self {
+            provider: ADDRESS_LOOKUP_PROVIDER.to_owned(),
+            endpoint: normalised,
+            endpoint_host: host.to_owned(),
+            language: language.to_owned(),
+        })
+    }
+
+    fn is_canonical(&self) -> bool {
+        url::Url::parse(&self.endpoint)
+            .ok()
+            .and_then(|endpoint| Self::nominatim(&endpoint, &self.language).ok())
+            .is_some_and(|canonical| canonical == *self)
+    }
+}
+
+/// One geocoder lookup as stored: the coordinates asked for, the binding it
+/// was asked under, and the complete record the provider returned for it. The
+/// record is the lookup's own: a later lookup that reaches the same OSM
+/// identity with another name does not change it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AddressCacheRecord {
     pub osm_type: String,
@@ -18,6 +94,9 @@ pub struct AddressCacheRecord {
     pub state_district: Option<String>,
     pub country: Option<String>,
     pub raw_json: Option<String>,
+    pub binding: AddressLookupBinding,
+    /// The provider's `licence` member, when it sent a printable one.
+    pub licence: Option<String>,
     pub lookup_latitude: f64,
     pub lookup_longitude: f64,
     pub looked_up_at_ms: i64,
@@ -45,6 +124,15 @@ pub struct AddressEnrichmentCompletion {
 pub struct TerrainCandidate {
     pub vehicle_id: Uuid,
     pub position: ProjectionPosition,
+}
+
+/// The SHA-256 (lowercase hex) of a terrain tile exactly as the Hub downloaded
+/// and stored it. A cached `.hgt` file is trusted only while its digest equals
+/// this one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerrainTileDigest {
+    pub sha256: String,
+    pub recorded_at_ms: i64,
 }
 
 /// One opaque, single-use pairing invitation. The secret is intentionally not

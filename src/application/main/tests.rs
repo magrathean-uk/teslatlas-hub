@@ -384,6 +384,36 @@ fn teslamate_check_failures_are_redacted_and_actionable() {
 
 #[cfg(target_os = "macos")]
 #[test]
+fn teslamate_check_reports_an_exceeded_read_budget_plainly() {
+    use teslatlas_hub::teslamate_reader::SourceBudgetLimit;
+
+    for limit in [
+        SourceBudgetLimit::Rows,
+        SourceBudgetLimit::RowBytes,
+        SourceBudgetLimit::PageBytes,
+    ] {
+        let exceeded = TeslaMateReaderError::SourceReadBudgetExceeded {
+            table: "positions",
+            limit,
+            maximum: 67_108_864,
+        };
+        let (status, reason, observed, guidance) = teslamate_check_failure_details(&exceeded);
+        assert_eq!(status, "incompatible");
+        assert_eq!(reason, "source_read_budget_exceeded");
+        assert_eq!(observed, None);
+        // Not the connection-troubleshooting advice of an unknown error, and
+        // no table name or limit value.
+        assert!(guidance.contains("more rows or bytes"));
+        // Independence rule (a): a new Hub GUI string names no source project.
+        assert!(!guidance.to_ascii_lowercase().contains("teslamate"));
+        assert!(!guidance.contains("password-free"));
+        assert!(!guidance.contains("positions"));
+        assert!(!guidance.contains("67108864"));
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[test]
 fn teslamate_check_requires_honest_version_confirmation() {
     let unconfirmed = teslamate_version_confirmation(false);
     assert_eq!(unconfirmed.0, "confirmation_required");

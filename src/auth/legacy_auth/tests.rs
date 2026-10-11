@@ -8,10 +8,7 @@ use std::sync::{
 use axum::{
     Router,
     extract::State,
-    http::{
-        HeaderMap, StatusCode,
-        header::{ACCEPT, ACCEPT_LANGUAGE, USER_AGENT},
-    },
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::{get, post},
 };
@@ -109,7 +106,7 @@ fn derives_canonical_issuers_for_teslamate_opaque_access_tokens() {
 #[derive(Clone, Default)]
 struct MockState {
     bodies: Arc<Mutex<Vec<String>>>,
-    request_headers: Arc<Mutex<Vec<(String, String, String)>>>,
+    request_headers: Arc<Mutex<Vec<Vec<(String, String)>>>>,
     token_response: Arc<Mutex<(StatusCode, String)>>,
     unauthorized_count: Arc<Mutex<usize>>,
     token_request_count: Arc<AtomicUsize>,
@@ -122,6 +119,22 @@ struct MockState {
     redirect_capture_authorization: Arc<AtomicUsize>,
 }
 
+/// Every request header as a lower-case name and its value, sorted, with one
+/// entry per value, so a test can assert the exact set that reached the endpoint.
+fn header_pairs(headers: &HeaderMap) -> Vec<(String, String)> {
+    let mut pairs: Vec<(String, String)> = headers
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.as_str().to_owned(),
+                value.to_str().unwrap_or("<non-text>").to_owned(),
+            )
+        })
+        .collect();
+    pairs.sort();
+    pairs
+}
+
 async fn token_handler(
     State(state): State<MockState>,
     headers: HeaderMap,
@@ -129,23 +142,11 @@ async fn token_handler(
 ) -> impl IntoResponse {
     let attempt = state.token_request_count.fetch_add(1, Ordering::SeqCst);
     state.bodies.lock().unwrap().push(body);
-    state.request_headers.lock().unwrap().push((
-        headers
-            .get(USER_AGENT)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or_default()
-            .to_owned(),
-        headers
-            .get(ACCEPT)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or_default()
-            .to_owned(),
-        headers
-            .get(ACCEPT_LANGUAGE)
-            .and_then(|value| value.to_str().ok())
-            .unwrap_or_default()
-            .to_owned(),
-    ));
+    state
+        .request_headers
+        .lock()
+        .unwrap()
+        .push(header_pairs(&headers));
     if attempt == 0
         && let Some(blocker) = &state.block_first_token_request
     {
@@ -282,7 +283,7 @@ fn valid_response(access_token: &str, refresh_token: &str) -> String {
 }
 
 #[tokio::test]
-async fn posts_exact_teslamate_json_and_schedules_at_seventy_five_percent() {
+async fn posts_exact_json_and_schedules_at_seventy_five_percent() {
     let state = MockState {
         token_response: Arc::new(Mutex::new((
             StatusCode::OK,
@@ -313,13 +314,135 @@ async fn posts_exact_teslamate_json_and_schedules_at_seventy_five_percent() {
             "refresh_token": "old-refresh"
         })
     );
+}
+
+#[tokio::test]
+async fn refresh_request_sends_exactly_the_grant_headers_and_the_hub_user_agent() {
+    let state = MockState {
+        token_response: Arc::new(Mutex::new((
+            StatusCode::OK,
+            valid_response("new-access", "new-refresh"),
+        ))),
+        ..MockState::default()
+    };
+    let (issuer, _task) = mock_server(state.clone()).await;
+    let authority = format!(
+        "{}:{}",
+        issuer.host_str().unwrap(),
+        issuer.port().expect("loopback issuer has an explicit port")
+    );
+    let mut auth = LegacyAuth::for_test(issuer, "old-access", "old-refresh");
+    auth.refresh_now(
+        &Client::new(),
+        UNIX_EPOCH + Duration::from_secs(1_700_000_000),
+    )
+    .await
+    .unwrap();
+
+    let bodies = state.bodies.lock().unwrap();
+    assert_eq!(bodies.len(), 1);
+    let requests = state.request_headers.lock().unwrap();
+    assert_eq!(requests.len(), 1);
+    // The whole set, not a subset: the grant's own headers, the Hub's
+    // User-Agent, and the two the HTTP stack derives from the URL and body.
+    let expected_user_agent = format!("Teslatlas-Hub/{}", env!("CARGO_PKG_VERSION"));
     assert_eq!(
-        state.request_headers.lock().unwrap().as_slice(),
-        &[(
-            TESLAMATE_USER_AGENT.to_owned(),
-            TESLAMATE_ACCEPT.to_owned(),
-            TESLAMATE_ACCEPT_LANGUAGE.to_owned(),
-        )]
+        requests[0],
+        vec![
+            ("accept".to_owned(), "application/json".to_owned()),
+            ("content-length".to_owned(), bodies[0].len().to_string()),
+            ("content-type".to_owned(), "application/json".to_owned()),
+            ("host".to_owned(), authority),
+            ("user-agent".to_owned(), expected_user_agent.clone()),
+        ]
+    );
+    assert_eq!(HUB_USER_AGENT, expected_user_agent);
+    assert!(
+        !expected_user_agent.ends_with('/'),
+        "version must be present"
+    );
+}
+
+/// Names a refresh header must never carry. Matching is case-insensitive.
+const OTHER_PRODUCT_NAMES: [&str; 5] = [
+    "teslamate",
+    "teslafi",
+    "tessie",
+    "teslalogger",
+    "teslascope",
+];
+
+fn names_other_product(text: &str) -> Option<&'static str> {
+    let lowered = text.to_ascii_lowercase();
+    OTHER_PRODUCT_NAMES
+        .into_iter()
+        .find(|product| lowered.contains(product))
+}
+
+#[test]
+fn refresh_header_constants_name_no_other_product() {
+    let names: Vec<&str> = REFRESH_REQUEST_HEADERS
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect();
+    assert_eq!(names, ["content-type", "accept", "user-agent"]);
+    for (name, value) in REFRESH_REQUEST_HEADERS {
+        assert_eq!(names_other_product(name.as_str()), None, "{name}");
+        assert_eq!(names_other_product(value), None, "{name}: {value}");
+    }
+    assert_eq!(names_other_product(HUB_USER_AGENT), None);
+    // The detector itself must fire, in any letter case.
+    assert_eq!(names_other_product("TeSlAmAtE/1.0"), Some("teslamate"));
+    assert_eq!(names_other_product("Teslatlas-Hub/1.0"), None);
+}
+
+/// Strips whole-line comments so a source scan reads code only.
+fn code_without_comment_lines(source: &str) -> String {
+    source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn auth_sources_set_request_headers_only_through_the_refresh_table() {
+    let auth_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/auth");
+    let mut stack = vec![auth_dir];
+    let mut scanned = 0_usize;
+    let mut header_calls = Vec::new();
+    while let Some(directory) = stack.pop() {
+        for entry in std::fs::read_dir(&directory).unwrap() {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            if path.is_dir() {
+                if name != "tests" {
+                    stack.push(path);
+                }
+                continue;
+            }
+            if !name.ends_with(".rs") || name == "tests.rs" {
+                continue;
+            }
+            scanned += 1;
+            let source = code_without_comment_lines(&std::fs::read_to_string(&path).unwrap());
+            for needle in [".header(", ".headers(", ".user_agent(", "default_headers("] {
+                for (offset, _) in source.match_indices(needle) {
+                    let end = source[offset..]
+                        .find(';')
+                        .map_or(source.len(), |relative| offset + relative);
+                    let statement = &source[offset..end];
+                    assert_eq!(names_other_product(statement), None, "{name}: {statement}");
+                    header_calls.push((name.clone(), needle));
+                }
+            }
+        }
+    }
+    assert!(scanned >= 8, "the scan must see the auth sources");
+    // One call site sets headers, and it iterates the table checked above.
+    assert_eq!(
+        header_calls,
+        vec![("legacy_auth.rs".to_owned(), ".header(")]
     );
 }
 

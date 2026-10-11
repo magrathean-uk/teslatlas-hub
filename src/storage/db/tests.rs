@@ -18,3 +18,6 @@ include!("tests/live_sync.rs");
 include!("tests/import_generation.rs");
 include!("tests/schema22_and_lifecycle.rs");
 include!("tests/public_history_queries.rs");
+include!("tests/address_lookup_cache.rs");
+include!("tests/terrain_tile_digests.rs");
+include!("tests/lineage_digest_cache.rs");

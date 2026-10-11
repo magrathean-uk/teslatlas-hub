@@ -169,6 +169,12 @@ fn teslamate_check_failure_details(
             None,
             "TeslaMate must contain exactly one non-empty, bounded legacy OAuth token pair before migration. Repair or re-login to TeslaMate, then retry.",
         ),
+        TeslaMateReaderError::SourceReadBudgetExceeded { .. } => (
+            "incompatible",
+            "source_read_budget_exceeded",
+            None,
+            "The source database returned more rows or bytes than this Hub reads at once, so nothing was imported. Check that the source is an unmodified, supported source database, then retry.",
+        ),
         _ => (
             "unavailable",
             "source_unavailable",

@@ -142,7 +142,7 @@ fn teslamate_current_migration_preserves_populated_v66_and_adds_truthful_provena
             .len(),
         2
     );
-    assert_eq!(schema_version(&upgraded.open().unwrap()).unwrap(), 68);
+    assert_eq!(schema_version(&upgraded.open().unwrap()).unwrap(), 69);
 }
 
 #[test]
@@ -277,10 +277,15 @@ fn remove_v55_fleet_schema(connection: &Connection) {
 }
 
 /// The v67 -> v68 migration's additions (grants, challenge vehicles, the
-/// all-vehicles flag, the lifetime cap and the sealed successor). It is the
-/// root of the downgrade chain: every older rewind runs it first, so a table
-/// dropped later never cascades into grants or grace rows.
+/// all-vehicles flag, the lifetime cap and the sealed successor), after the
+/// v68 -> v69 additions (`REWIND_V69_SQL`). It is the root of the downgrade
+/// chain: every older rewind runs it first, so a table dropped later never
+/// cascades into grants or grace rows and migrating forward adds each column
+/// exactly once.
 fn remove_v68_grant_schema(connection: &Connection) {
+    connection
+        .execute_batch(REWIND_V69_SQL)
+        .expect("remove v69 address lookup schema");
     connection
         .execute_batch(
             "DROP TABLE device_vehicle_grants;
@@ -546,7 +551,7 @@ fn schema_67_upgrade_grants_active_vehicles_and_backfills_the_lifetime_cap() {
     let before_ms = epoch_ms();
     migrate(&connection).expect("migrate schema 67");
     let after_ms = epoch_ms();
-    assert_eq!(schema_version(&connection).unwrap(), 68);
+    assert_eq!(schema_version(&connection).unwrap(), 69);
 
     // Every device, revoked or not, holds a grant for each active vehicle and
     // none for the retired one; granted_at_ms is the device's creation time.

@@ -157,11 +157,13 @@ There is no public default endpoint. Configure a self-hosted or otherwise
 authorised Nominatim-compatible provider. Each uncached lookup sends the exact
 vehicle latitude/longitude, zoom 19, requested language, Hub user agent,
 operator IP address, and request metadata; the returned address and provider
-identifiers are cached locally. Operators must comply with the selected
-provider's attribution, database-right, caching, privacy, transfer, and rate
-rules. The public OpenStreetMap Foundation Nominatim service is not a default
-and its usage policy warns against personal-data submission and systematic or
-vehicle-tracking geocoding.
+identifiers are cached locally. A cached answer is reused only for the same
+endpoint, the same language and the same coordinates (rounded to six decimal
+places), so changing `endpoint` or `language` queries the provider again.
+Operators must comply with the selected provider's attribution, database-right,
+caching, privacy, transfer, and rate rules. The public OpenStreetMap Foundation
+Nominatim service is not a default and its usage policy warns against
+personal-data submission and systematic or vehicle-tracking geocoding.
 
 Terrain is disabled by default for source builds and packaged macOS and Debian
 installations. Enabling it opts into the provider egress and local cache below;
@@ -185,6 +187,24 @@ tile name derived by flooring latitude and longitude, so either provider learns
 the one-degree location tile containing the vehicle position. It does not send
 the precise coordinate as a query parameter. The ESA endpoint serves SRTMGL1
 elevation data; it is not the separate ESA WorldCover land-cover product.
+
+The cache directory must be an absolute path. The Hub creates it, and any
+missing parent directories below an existing one, with mode `0700`. It uses the
+directory only if it is not a symbolic link and is owned by the user that runs
+the Hub; an existing directory with a wider mode is tightened to `0700`, and on
+macOS any extended access-control list on it (including entries inherited from
+a parent) is removed. Every existing parent directory must be owned by that user or by root, and may be
+writable by its group or by others only when that user owns it (or root owns it
+with the sticky bit, as `/tmp` is). When the directory fails these checks,
+terrain enrichment stays off for that run and the Hub logs `untrusted_root`;
+collection and everything else continue. Move a root-owned or shared cache to a
+directory the Hub's user owns, or delete it and let the Hub create it.
+
+A cached tile is used only when its SHA-256 equals the digest the Hub recorded
+in its catalogue when it downloaded that tile. A tile with no record or a
+different digest is ignored, deleted and fetched again, so tiles cached by an
+earlier version, or copied in by hand, are downloaded once more the next time
+they are needed.
 
 To prevent all terrain-provider egress and terrain downloads, set:
 

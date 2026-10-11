@@ -10,7 +10,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use futures_util::StreamExt;
-use reqwest::Client;
+use reqwest::{
+    Client,
+    header::{ACCEPT, CONTENT_TYPE, HeaderName, USER_AGENT},
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
@@ -22,10 +25,16 @@ pub const REFRESH_RETRY_DELAY: Duration = Duration::from_secs(5 * 60);
 pub const STARTUP_REFRESH_RETRY_DELAY: Duration = Duration::from_secs(450);
 const AUTH_FUSE_FAILURES: usize = 5;
 const AUTH_FUSE_WINDOW: Duration = Duration::from_secs(10 * 60);
-const TESLAMATE_USER_AGENT: &str = "TeslaMate/4.1.0-dev";
-const TESLAMATE_ACCEPT: &str =
-    "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8";
-const TESLAMATE_ACCEPT_LANGUAGE: &str = "en-US,de-DE;q=0.5";
+/// Product token the Hub sends as `User-Agent` on its own outbound requests.
+pub(crate) const HUB_USER_AGENT: &str = concat!("Teslatlas-Hub/", env!("CARGO_PKG_VERSION"));
+/// Every header the token refresh sets. The refresh_token grant needs a content
+/// type for the JSON body it posts and an `Accept` for the JSON reply; the
+/// `User-Agent` names the Hub itself. Nothing else is added by hand.
+pub(crate) const REFRESH_REQUEST_HEADERS: [(HeaderName, &str); 3] = [
+    (CONTENT_TYPE, "application/json"),
+    (ACCEPT, "application/json"),
+    (USER_AGENT, HUB_USER_AGENT),
+];
 
 #[derive(Debug, Default)]
 pub(crate) struct LegacyAuthFuse {
@@ -419,13 +428,11 @@ impl LegacyAuth {
                 return self.failed_refresh(receipt_epoch, LegacyAuthError::InvalidResponse);
             }
         };
-        let request = client
-            .post(endpoint)
-            .header("content-type", "application/json")
-            .header("user-agent", TESLAMATE_USER_AGENT)
-            .header("accept", TESLAMATE_ACCEPT)
-            .header("accept-language", TESLAMATE_ACCEPT_LANGUAGE)
-            .body(body);
+        let mut request = client.post(endpoint);
+        for (name, value) in REFRESH_REQUEST_HEADERS {
+            request = request.header(name, value);
+        }
+        let request = request.body(body);
         assert_sensitive_access()?;
         let response = match request.send().await {
             Ok(response) => response,

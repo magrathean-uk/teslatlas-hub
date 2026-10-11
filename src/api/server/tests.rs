@@ -57,6 +57,9 @@ mod fleet_listener;
 #[path = "tests/hub_sync.rs"]
 mod hub_sync;
 
+#[path = "tests/lineage_manifest.rs"]
+mod lineage_manifest;
+
 #[path = "tests/catalogue.rs"]
 mod catalogue;
 

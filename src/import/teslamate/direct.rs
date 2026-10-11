@@ -51,8 +51,8 @@ use crate::{
         TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits, TeslaMateReaderError,
         TeslaMateSchemaInfo, binary_copy_sql, charge_copy_types, decode_binary_charge,
         decode_binary_position, open_exported_snapshot_lease, open_snapshot_capture_lane,
-        position_copy_types, read_addresses, read_car_and_car_settings_v2_2, read_cars,
-        read_charging_processes, read_drives, read_geofences,
+        position_copy_types, query_bounded, read_addresses, read_car_and_car_settings_v2_2,
+        read_cars, read_charging_processes, read_drives, read_geofences,
         read_legacy_token_ciphertexts_in_client, read_open_session, read_open_session_in_client,
         read_settings_v2_2, read_updates_v2_2, related_positions_binary_copy_sql,
     },
@@ -902,12 +902,14 @@ async fn read_direct_update_summary(
     let mut projected_updates = 0_u64;
     let mut skipped_incomplete_updates = 0_u64;
     loop {
-        let page = client
-            .query(
-                DIRECT_UPDATES_SQL,
-                &[&selected_car_id_i16, &last_id, &page_size],
-            )
-            .await?;
+        let page = query_bounded(
+            client,
+            DIRECT_UPDATES_SQL,
+            &[&selected_car_id_i16, &last_id, &page_size],
+            "updates",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = page.len();
         for row in page {
             let id: i32 = row.try_get("id")?;
@@ -989,12 +991,14 @@ async fn write_direct_update_fragments(
     let mut latest = None::<((i64, i64, i64), String)>;
     let mut accumulator = UpdateFragmentAccumulator::new(car.clone(), fragment_limits)?;
     loop {
-        let page = client
-            .query(
-                DIRECT_UPDATES_SQL,
-                &[&selected_car_id_i16, &last_id, &page_size],
-            )
-            .await?;
+        let page = query_bounded(
+            client,
+            DIRECT_UPDATES_SQL,
+            &[&selected_car_id_i16, &last_id, &page_size],
+            "updates",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = page.len();
         for row in page {
             let id: i32 = row.try_get("id")?;
@@ -1374,9 +1378,14 @@ LIMIT $3
     let mut states = Vec::new();
     let page_size = i64::from(limits.page_size);
     loop {
-        let page = client
-            .query(DIRECT_STATES_SQL, &[&selected_car_id, &last_id, &page_size])
-            .await?;
+        let page = query_bounded(
+            client,
+            DIRECT_STATES_SQL,
+            &[&selected_car_id, &last_id, &page_size],
+            "states",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = page.len();
         for row in page {
             let id: i32 = row.try_get("id")?;

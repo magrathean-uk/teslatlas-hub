@@ -159,8 +159,32 @@ fn insert_live_delta_span_in_transaction(
     Ok(())
 }
 
-fn address_lookup_key(point: crate::location::Wgs84Point) -> String {
-    format!("{:.6}:{:.6}", point.latitude, point.longitude)
+/// Version-2 key of an `address_lookup_cache` row:
+/// `v2:` + unpadded URL-safe base64 of the SHA-256 of four length-prefixed
+/// components in this order: the normalised endpoint, the language as sent,
+/// the latitude and the longitude, both formatted `{:.6}`. Each component is
+/// its byte length as eight big-endian bytes followed by its bytes, so no two
+/// different tuples can produce the same input. The key is 46 bytes, inside
+/// the column's 64-byte CHECK. Version-1 keys (`{lat:.6}:{lon:.6}`, written
+/// before the key bound a provider) are never produced again and are not read.
+fn address_lookup_key(
+    binding: &AddressLookupBinding,
+    point: crate::location::Wgs84Point,
+) -> String {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    let latitude = format!("{:.6}", point.latitude);
+    let longitude = format!("{:.6}", point.longitude);
+    let mut digest = Sha256::new();
+    for component in [
+        binding.endpoint.as_str(),
+        binding.language.as_str(),
+        latitude.as_str(),
+        longitude.as_str(),
+    ] {
+        digest.update((component.len() as u64).to_be_bytes());
+        digest.update(component.as_bytes());
+    }
+    format!("v2:{}", URL_SAFE_NO_PAD.encode(digest.finalize()))
 }
 
 fn advance_terrain_cursor(
@@ -452,6 +476,12 @@ fn validate_address_cache_record(record: &AddressCacheRecord) -> Result<(), Stor
         || !record.lookup_longitude.is_finite()
         || !(-180.0..=180.0).contains(&record.lookup_longitude)
         || record.looked_up_at_ms < 0
+        || !record.binding.is_canonical()
+        || record.licence.as_deref().is_some_and(|licence| {
+            licence.is_empty()
+                || licence.len() > MAX_ADDRESS_LICENCE_BYTES
+                || licence.chars().any(char::is_control)
+        })
     {
         return Err(StoreError::InvalidAddressCache);
     }
@@ -782,6 +812,11 @@ fn is_sha256_hex(value: &str) -> bool {
 
 fn sha256_file_hex(path: &Path) -> Result<String, StoreError> {
     let mut file = fs::File::open(path).map_err(StoreError::OpenBackupPack)?;
+    sha256_open_file_hex(&mut file)
+}
+
+/// The SHA-256 of everything `file` yields from its current position.
+fn sha256_open_file_hex(file: &mut fs::File) -> Result<String, StoreError> {
     let mut digest = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
     loop {

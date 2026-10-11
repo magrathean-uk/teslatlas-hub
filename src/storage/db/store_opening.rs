@@ -41,6 +41,8 @@ impl HubStore {
             projection_state_detach_fault: Arc::new(Mutex::new(false)),
             #[cfg(test)]
             credential_write_hook: Arc::new(Mutex::new(None)),
+            #[cfg(test)]
+            lineage_pack_hashes: Arc::new(Mutex::new(Vec::new())),
         };
         ensure_shared_sqlite_catalogue_file_with_repair(&store.database_path, false)?;
         let mut connection = store.open()?;
@@ -273,8 +275,10 @@ impl HubStore {
         Self::open_read_only_with_mode(data_dir.as_ref(), true, false)
     }
 
-    /// Standalone Serve can migrate the known v66 current-cache shape and the
-    /// v67 shape (before per-device vehicle grants) to v68. Return no store
+    /// Standalone Serve can migrate the known v66 current-cache shape, the v67
+    /// shape (before per-device vehicle grants) and the v68 shape (before
+    /// geocoder lookups were bound to their provider and terrain tile digests
+    /// were recorded) to v69. Return no store
     /// handle: consumers still require a fully migrated schema.
     pub(crate) fn preflight_standalone_schema_read_only(data_dir: &Path) -> Result<(), StoreError> {
         Self::open_read_only_with_mode(data_dir, false, true).map(|_| ())
@@ -303,6 +307,8 @@ impl HubStore {
             projection_state_detach_fault: Arc::new(Mutex::new(false)),
             #[cfg(test)]
             credential_write_hook: Arc::new(Mutex::new(None)),
+            #[cfg(test)]
+            lineage_pack_hashes: Arc::new(Mutex::new(Vec::new())),
         };
         let connection = store.open_read_only_connection()?;
         let application_id: i32 = connection
@@ -313,7 +319,7 @@ impl HubStore {
         }
         let version = schema_version(&connection)?;
         let known_forward_upgrade =
-            standalone_migration_candidate && SCHEMA_VERSION == 68 && matches!(version, 66 | 67);
+            standalone_migration_candidate && SCHEMA_VERSION == 69 && matches!(version, 66..=68);
         if version != SCHEMA_VERSION && !known_forward_upgrade {
             return Err(StoreError::UnsupportedSchema(version));
         }

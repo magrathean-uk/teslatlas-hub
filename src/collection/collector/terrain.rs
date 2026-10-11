@@ -37,6 +37,7 @@ fn spawn_terrain_worker(
             let options = crate::terrain_cache::TerrainCacheOptions::from_config(
                 &terrain_config,
                 &data_dir,
+                store.clone(),
             )
             .map_err(|error| {
                 tracing::warn!(error = %terrain_error_code(&error), "terrain worker unavailable");
@@ -46,6 +47,10 @@ fn spawn_terrain_worker(
                 tracing::warn!(error = %terrain_error_code(&error), "terrain worker unavailable");
                 CollectorError::TerrainWorkerStartup
             })?;
+            tracing::debug!(
+                cache_root = %lookup.root_path().display(),
+                "terrain cache root validated"
+            );
             Ok::<_, CollectorError>((store, lookup))
         })();
         let (store, lookup) = match initialized_worker {
@@ -241,6 +246,9 @@ fn terrain_error_code(error: &TerrainCacheError) -> &'static str {
         TerrainCacheError::Io(_) => "io",
         TerrainCacheError::InvalidConfig => "invalid_config",
         TerrainCacheError::EgressDenied => "egress_denied",
+        TerrainCacheError::UntrustedRoot(_) => "untrusted_root",
+        TerrainCacheError::Store(_) => "store",
+        TerrainCacheError::UnprovenTile => "unproven_tile",
         TerrainCacheError::InvalidTile(error) => match error {
             crate::terrain::TerrainError::NonFiniteCoordinate => "nonfinite_coordinate",
             crate::terrain::TerrainError::InvalidLatitude => "invalid_latitude",

@@ -119,15 +119,17 @@ async fn capture_raw_table_pages(
     let mut last_id = start_id.saturating_sub(1);
     let page_size = i64::from(limits.page_size);
     loop {
-        let page = match table {
+        let source_rows = match table {
             TeslaMateStageTable::Cars => {
                 let last_id = i16::try_from(last_id).expect("car cursor fits smallint");
-                client
-                    .query(
-                        projection(SourceTable::Cars).sql,
-                        &[&last_id, &page_size, &selected_car_id],
-                    )
-                    .await?
+                query_bounded(
+                    client,
+                    projection(SourceTable::Cars).sql,
+                    &[&last_id, &page_size, &selected_car_id],
+                    table.as_str(),
+                    limits.page_budget(),
+                )
+                .await?
             }
             TeslaMateStageTable::Geofences => {
                 let last_id = i32::try_from(last_id).map_err(|_| {
@@ -135,12 +137,14 @@ async fn capture_raw_table_pages(
                         table: table.as_str(),
                     }
                 })?;
-                client
-                    .query(
-                        GEOFENCE_GEOMETRY_SQL,
-                        &[&last_id, &page_size, &selected_car_id],
-                    )
-                    .await?
+                query_bounded(
+                    client,
+                    GEOFENCE_GEOMETRY_SQL,
+                    &[&last_id, &page_size, &selected_car_id],
+                    table.as_str(),
+                    limits.page_budget(),
+                )
+                .await?
             }
             _ => {
                 let last_id = i32::try_from(last_id).map_err(|_| {
@@ -155,27 +159,31 @@ async fn capture_raw_table_pages(
                                 table: table.as_str(),
                             }
                         })?;
-                        client
-                            .query(
-                                &ranged_projection_sql(stage_table_source(table)),
-                                &[&last_id, &page_size, &selected_car_id, &end_id],
-                            )
-                            .await?
+                        query_bounded(
+                            client,
+                            &ranged_projection_sql(stage_table_source(table)),
+                            &[&last_id, &page_size, &selected_car_id, &end_id],
+                            table.as_str(),
+                            limits.page_budget(),
+                        )
+                        .await?
                     }
                     None => {
-                        client
-                            .query(
-                                projection(stage_table_source(table)).sql,
-                                &[&last_id, &page_size, &selected_car_id],
-                            )
-                            .await?
+                        query_bounded(
+                            client,
+                            projection(stage_table_source(table)).sql,
+                            &[&last_id, &page_size, &selected_car_id],
+                            table.as_str(),
+                            limits.page_budget(),
+                        )
+                        .await?
                     }
                 }
             }
         };
-        let page_len = page.len();
-        let mut rows = Vec::with_capacity(page_len);
-        for row in page {
+        let page_len = source_rows.len();
+        let mut rows = Vec::with_capacity(source_rows.len());
+        for row in source_rows {
             let id = match table {
                 TeslaMateStageTable::Cars => i64::from(required_i16(&row, "cars", "id")?),
                 _ => i64::from(required_i32(&row, table.as_str(), "id")?),
@@ -452,15 +460,17 @@ async fn capture_smallint_pages<T: Serialize + Sync>(
     let mut captured_rows = 0_usize;
     let page_size = i64::from(limits.page_size);
     loop {
-        let page = client
-            .query(
-                projection(projection_descriptor.source_table).sql,
-                &[&last_id, &page_size, &selected_car_id],
-            )
-            .await?;
-        let page_len = page.len();
-        let mut decoded = Vec::with_capacity(page_len);
-        for row in page {
+        let rows = query_bounded(
+            client,
+            projection(projection_descriptor.source_table).sql,
+            &[&last_id, &page_size, &selected_car_id],
+            projection_descriptor.source_table.name(),
+            limits.page_budget(),
+        )
+        .await?;
+        let page_len = rows.len();
+        let mut decoded = Vec::with_capacity(rows.len());
+        for row in rows {
             let id = required_i16(&row, projection_descriptor.source_table.name(), "id")?;
             if id <= last_id {
                 return Err(TeslaMateReaderError::NonProgressingPage {
@@ -495,15 +505,17 @@ async fn capture_integer_pages<T: Serialize + Sync>(
     let mut captured_rows = 0_usize;
     let page_size = i64::from(limits.page_size);
     loop {
-        let page = client
-            .query(
-                projection(projection_descriptor.source_table).sql,
-                &[&last_id, &page_size, &selected_car_id],
-            )
-            .await?;
-        let page_len = page.len();
-        let mut decoded = Vec::with_capacity(page_len);
-        for row in page {
+        let rows = query_bounded(
+            client,
+            projection(projection_descriptor.source_table).sql,
+            &[&last_id, &page_size, &selected_car_id],
+            projection_descriptor.source_table.name(),
+            limits.page_budget(),
+        )
+        .await?;
+        let page_len = rows.len();
+        let mut decoded = Vec::with_capacity(rows.len());
+        for row in rows {
             let id = required_i32(&row, projection_descriptor.source_table.name(), "id")?;
             if id <= last_id {
                 return Err(TeslaMateReaderError::NonProgressingPage {
@@ -869,15 +881,17 @@ async fn capture_geofence_pages(
     let mut captured_rows = 0_usize;
     let page_size = i64::from(limits.page_size);
     loop {
-        let page = client
-            .query(
-                GEOFENCE_GEOMETRY_SQL,
-                &[&last_id, &page_size, &selected_car_id],
-            )
-            .await?;
-        let page_len = page.len();
-        let mut decoded = Vec::with_capacity(page_len);
-        for row in page {
+        let rows = query_bounded(
+            client,
+            GEOFENCE_GEOMETRY_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "geofences",
+            limits.page_budget(),
+        )
+        .await?;
+        let page_len = rows.len();
+        let mut decoded = Vec::with_capacity(rows.len());
+        for row in rows {
             let id = required_i32(&row, "geofences", "id")?;
             if id <= last_id {
                 return Err(TeslaMateReaderError::NonProgressingPage { table: "geofences" });

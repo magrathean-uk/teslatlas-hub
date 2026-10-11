@@ -9,9 +9,14 @@ pub(crate) async fn read_car_and_car_settings_v2_2(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<(TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2), TeslaMateReaderError> {
-    let rows = client
-        .query(CARS_AND_CAR_SETTINGS_V2_2_SQL, &[&selected_car_id])
-        .await?;
+    let rows = query_bounded(
+        client,
+        CARS_AND_CAR_SETTINGS_V2_2_SQL,
+        &[&selected_car_id],
+        "cars",
+        limits.singleton_budget(),
+    )
+    .await?;
     let row = rows
         .first()
         .ok_or(TeslaMateReaderError::SelectedCarMissing {
@@ -31,7 +36,14 @@ async fn read_car_v2_2(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<TeslaMateCarPhysicalV2_2, TeslaMateReaderError> {
-    let rows = client.query(CAR_V2_2_SQL, &[&selected_car_id]).await?;
+    let rows = query_bounded(
+        client,
+        CAR_V2_2_SQL,
+        &[&selected_car_id],
+        "cars",
+        limits.singleton_budget(),
+    )
+    .await?;
     let row = rows
         .first()
         .ok_or(TeslaMateReaderError::SelectedCarMissing {
@@ -54,7 +66,14 @@ async fn read_car_settings_v2_2(
     retained_rows: &mut usize,
 ) -> Result<TeslaMateCarSettingsPhysicalV2_2, TeslaMateReaderError> {
     require_positive_physical_id("car_settings", settings_id)?;
-    let rows = client.query(CAR_SETTINGS_V2_2_SQL, &[&settings_id]).await?;
+    let rows = query_bounded(
+        client,
+        CAR_SETTINGS_V2_2_SQL,
+        &[&settings_id],
+        "car_settings",
+        limits.singleton_budget(),
+    )
+    .await?;
     let row = rows
         .first()
         .ok_or(TeslaMateReaderError::CarSettingsMissing { settings_id })?;
@@ -76,7 +95,15 @@ pub(crate) async fn read_settings_v2_2(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<TeslaMateSettingsPhysicalV2_2, TeslaMateReaderError> {
-    let rows = client.query(SETTINGS_V2_2_SQL, &[]).await?;
+    // LIMIT 2: the second row is the lookahead that reports ambiguity.
+    let rows = query_bounded(
+        client,
+        SETTINGS_V2_2_SQL,
+        &[],
+        "settings",
+        limits.ambiguity_budget(),
+    )
+    .await?;
     let row = match rows.as_slice() {
         [] => return Err(TeslaMateReaderError::SettingsSingletonMissing),
         [row] => row,
@@ -98,9 +125,14 @@ pub(crate) async fn read_updates_v2_2(
     let mut last_id = None;
     let page_size = i64::from(limits.page_size);
     loop {
-        let rows = client
-            .query(UPDATES_V2_2_SQL, &[&last_id, &page_size, &selected_car_id])
-            .await?;
+        let rows = query_bounded(
+            client,
+            UPDATES_V2_2_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "updates",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = rows.len();
         for row in rows {
             let id = required_i32(&row, "updates", "id")?;
@@ -136,15 +168,20 @@ pub(crate) async fn read_updates(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<Vec<TeslaMateUpdate>, TeslaMateReaderError> {
-    let stream = client
-        .copy_out(&binary_copy_sql(SourceTable::Updates, selected_car_id))
-        .await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        update_copy_types()
-    ));
+    let mut rows = open_bounded_copy(
+        client,
+        &capped_binary_copy_sql(
+            SourceTable::Updates,
+            selected_car_id,
+            copy_row_limit(limits, *retained_rows),
+        ),
+        update_copy_types(),
+        "updates",
+        limits.copy_budget(),
+    )
+    .await?;
     let mut updates = Vec::new();
-    while let Some(row) = rows.as_mut().try_next().await? {
+    while let Some(row) = rows.next_row().await? {
         retain_row(retained_rows, limits.maximum_rows)?;
         let id: i32 = binary_cell(&row, 0, "updates", "id")?;
         let car_id: i16 = binary_cell(&row, 1, "updates", "car_id")?;
@@ -170,12 +207,14 @@ async fn read_states(
     let page_size = i64::from(limits.page_size);
     let mut states = Vec::new();
     loop {
-        let page = client
-            .query(
-                projection(SourceTable::States).sql,
-                &[&last_id, &page_size, &selected_car_id],
-            )
-            .await?;
+        let page = query_bounded(
+            client,
+            projection(SourceTable::States).sql,
+            &[&last_id, &page_size, &selected_car_id],
+            "states",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = page.len();
         for row in page {
             let id = required_i32(&row, "states", "id")?;

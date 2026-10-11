@@ -10,12 +10,63 @@ pub fn postgres_source_queries_allowed() -> bool {
     POSTGRES_SOURCE_QUERIES_ALLOWED.load(Ordering::SeqCst)
 }
 
+/// Largest raw size of one retained source row (the whole PostgreSQL DataRow
+/// body, or the summed field lengths of a COPY row), further capped by the
+/// page budget. The pinned TeslaMate schema has no column near this: the
+/// widest bounded text is `addresses.display_name varchar(512)`, the
+/// unbounded `cars` and `settings` texts are short names, and the legacy token
+/// ciphertexts are capped at 16 KiB by the length probe that precedes them.
+pub(crate) const MAX_SOURCE_ROW_BYTES: usize = 16 * 1024 * 1024;
+
+/// Ceiling of the byte budget for one page (or one whole collected read).
+pub(crate) const MAX_SOURCE_PAGE_BYTES: usize = 64 * 1024 * 1024;
+
+/// Floor of the byte budget for one page, so a small `maximum_stage_bytes`
+/// never undercuts a legitimate page.
+pub(crate) const MIN_SOURCE_PAGE_BYTES: usize = 1024 * 1024;
+
+/// How long a read that went over a budget waits for its cancel request to be
+/// delivered to the server before it reports the budget error anyway.
+pub(crate) const SOURCE_CANCEL_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// Resource caps for one read-only source snapshot. The bounds are checked
 /// before a row is retained, so a hostile or unexpectedly huge selected-car
 /// history cannot grow an import without limit. Every source query is scoped
 /// to that selected car before pagination. The staged producer retains the
 /// same query and validation contract without materialising this bounded
 /// capture as one history vector.
+///
+/// # Decode budgets
+///
+/// Every production PostgreSQL read under `import::teslamate` that collects
+/// rows into memory goes through one bounded reader (`query_bounded`, or the
+/// COPY equivalent `open_bounded_copy`). Rows are streamed and three budgets
+/// are checked, in this order, before a row is retained or decoded; the first
+/// excess ends the read with
+/// [`TeslaMateReaderError::SourceReadBudgetExceeded`] naming the table and the
+/// limit, never a value.
+///
+/// * Rows: the query's own `LIMIT`. A keyset page is `page_size` rows; the
+///   settings singleton and the token pair are `LIMIT 2` (one row plus the
+///   lookahead that detects ambiguity), the single-car reads `LIMIT 1`. A
+///   query without a `LIMIT` gets `LIMIT cap + 1` and fails at row cap + 1:
+///   4096 migration rows, 65536 schema-column rows and 4096 enum labels, and
+///   for the COPY readers the rows left under `maximum_rows`.
+/// * Bytes per row: `min(page budget, 16 MiB)`.
+/// * Bytes per page: `min(64 MiB, max(1 MiB, maximum_stage_bytes))`; the
+///   fixed-size probes and token reads, which have no limits value, use
+///   64 MiB. A COPY reader collects one table in a single pass, so that whole
+///   collection is one page.
+///
+/// Row sizes are measured with `Row::raw_size_bytes`, or for COPY rows from the
+/// field byte lengths. The driver buffers one DataRow before the reader sees
+/// it, so these budgets bound what is retained and the cumulative size of a
+/// read, not the transient buffer of the first oversized row. Dropping a
+/// stream does not stop the statement behind it (the driver keeps discarding
+/// its output), so on the first excess the read also sends the PostgreSQL
+/// cancel request of its connection before it reports the error. That request
+/// is best effort and its failure is logged, not reported; the output the
+/// server has already queued is still bounded by the query's `LIMIT`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TeslaMateReadLimits {
     pub connect_timeout: Duration,
@@ -42,6 +93,41 @@ impl Default for TeslaMateReadLimits {
 }
 
 impl TeslaMateReadLimits {
+    /// Byte budget for one page: `min(64 MiB, max(1 MiB, maximum_stage_bytes))`.
+    pub(crate) fn page_byte_budget(&self) -> usize {
+        usize::try_from(self.maximum_stage_bytes)
+            .unwrap_or(usize::MAX)
+            .clamp(MIN_SOURCE_PAGE_BYTES, MAX_SOURCE_PAGE_BYTES)
+    }
+
+    /// Budget of a read that returns at most `max_rows` rows.
+    pub(crate) fn budget_for_rows(&self, max_rows: usize) -> SourceReadBudget {
+        SourceReadBudget::new(max_rows, self.page_byte_budget())
+    }
+
+    /// Budget of a `LIMIT 1` read of one row.
+    pub(crate) fn singleton_budget(&self) -> SourceReadBudget {
+        self.budget_for_rows(1)
+    }
+
+    /// Budget of a `LIMIT 2` read: one row plus the lookahead row that lets the
+    /// caller report ambiguity, so a second row is not a budget error.
+    pub(crate) fn ambiguity_budget(&self) -> SourceReadBudget {
+        self.budget_for_rows(1).with_lookahead()
+    }
+
+    /// Budget of one keyset page of `LIMIT page_size`.
+    pub(crate) fn page_budget(&self) -> SourceReadBudget {
+        self.budget_for_rows(usize::try_from(self.page_size).unwrap_or(0).max(1))
+    }
+
+    /// Budget of a COPY reader, which collects one table in a single pass.
+    /// Its row count is capped separately by `retain_row` and the query's
+    /// `LIMIT`, so only the byte budgets apply here.
+    pub(crate) fn copy_budget(&self) -> SourceReadBudget {
+        self.budget_for_rows(usize::MAX)
+    }
+
     pub fn validate(self) -> Result<(), TeslaMateReaderError> {
         if self.connect_timeout.is_zero() {
             return Err(TeslaMateReaderError::InvalidConnectTimeout);

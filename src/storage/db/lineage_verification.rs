@@ -469,25 +469,34 @@ impl HubStore {
         pack: &TransportPack,
         verification: LineagePackVerification,
     ) -> Result<(), StoreError> {
-        self.verify_lineage_pack_metadata(pack)?;
+        // The name, kind and length checks run on every call, whatever this
+        // process has already hashed: a remembered digest vouches for content,
+        // not for the length the catalogue now records.
+        let listed = self.verify_lineage_pack_metadata(pack)?;
         if verification == LineagePackVerification::MetadataOnly {
+            return Ok(());
+        }
+        if lineage_digest_verified(&LineageDigestKey::new(&listed, pack.sha256)) {
             return Ok(());
         }
         let path = self
             .packs_dir
             .join("sha256")
             .join(format!("{}.sqlite.zst", pack.sha256));
-        if sha256_file_hex(&path)? != pack.sha256.to_string() {
-            return Err(StoreError::LineagePackDigestMismatch);
-        }
-        Ok(())
+        self.hash_lineage_pack(pack, &path)
     }
 
     fn verify_lineage_pack(&self, pack: &TransportPack) -> Result<(), StoreError> {
         self.verify_lineage_pack_for_mode(pack, LineagePackVerification::FullDigest)
     }
 
-    fn verify_lineage_pack_metadata(&self, pack: &TransportPack) -> Result<(), StoreError> {
+    /// The pack's name and file: canonical path, a regular file (not a link)
+    /// of the recorded length. Returns the file's metadata for the caller's
+    /// identity check.
+    fn verify_lineage_pack_metadata(
+        &self,
+        pack: &TransportPack,
+    ) -> Result<fs::Metadata, StoreError> {
         if pack.relative_path != TransportPack::canonical_relative_path(pack.sha256) {
             return Err(StoreError::LineagePackNotReady);
         }
@@ -499,7 +508,7 @@ impl HubStore {
         if !metadata.file_type().is_file() || metadata.len() != pack.compressed_bytes {
             return Err(StoreError::LineagePackNotReady);
         }
-        Ok(())
+        Ok(metadata)
     }
 
     fn verify_typed_delta_schema(connection: &Connection) -> Result<(), StoreError> {

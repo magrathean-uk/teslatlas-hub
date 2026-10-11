@@ -22,9 +22,15 @@ fn copy_statement_timeout_sql(timeout: Duration) -> String {
 async fn validate_source_schema(
     client: &Client,
 ) -> Result<TeslaMateSchemaInfo, TeslaMateReaderError> {
-    let migration_versions = client
-        .query(MIGRATION_VERSIONS_SQL, &[])
-        .await?
+    let migration_rows = query_bounded(
+        client,
+        MIGRATION_VERSIONS_SQL,
+        &[],
+        "schema_migrations",
+        SourceReadBudget::fixed(MAX_MIGRATION_PROBE_ROWS),
+    )
+    .await?;
+    let migration_versions = migration_rows
         .iter()
         .map(|row| row.try_get::<_, i64>("version"))
         .collect::<Result<Vec<_>, tokio_postgres::Error>>()?;
@@ -33,7 +39,14 @@ async fn validate_source_schema(
     }
     let migration = validate_migration_versions(&migration_versions)?;
 
-    let rows = client.query(SCHEMA_PROBE_SQL, &[]).await?;
+    let rows = query_bounded(
+        client,
+        SCHEMA_PROBE_SQL,
+        &[],
+        "schema_columns",
+        SourceReadBudget::fixed(MAX_SCHEMA_PROBE_ROWS),
+    )
+    .await?;
     let observed = rows
         .iter()
         .map(|row| {
@@ -48,7 +61,14 @@ async fn validate_source_schema(
         .collect::<Result<Vec<_>, tokio_postgres::Error>>()?;
     validate_observed_schema(&observed)?;
 
-    let enum_rows = client.query(ENUM_PROBE_SQL, &[]).await?;
+    let enum_rows = query_bounded(
+        client,
+        ENUM_PROBE_SQL,
+        &[],
+        "schema_enum_labels",
+        SourceReadBudget::fixed(MAX_ENUM_PROBE_ROWS),
+    )
+    .await?;
     let observed_enums = enum_rows
         .iter()
         .map(|row| {

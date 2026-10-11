@@ -2418,12 +2418,109 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
             .map_err(StoreError::Migrate)?;
         version = 68;
     }
+
+    if version == 68 {
+        // Geocoder lookups bound to their provider (G2-3e, decision 35). Each
+        // lookup row now carries its own provider, endpoint, language, licence
+        // and the complete record the provider returned, so a later response
+        // that reuses an OSM identity cannot rewrite what an earlier lookup
+        // was told (the shared `address_cache` row stays only as the
+        // identity the foreign key points at). The new key is `v2:` plus a
+        // 43-character digest, inside the existing 64-byte CHECK, so the table
+        // is not rebuilt. Every statement is additive and nothing is
+        // backfilled: rows written before this step keep their v1 keys
+        // (`{lat:.6}:{lon:.6}`) and NULL in every new column. That is the
+        // provider-unknown shape; no v2 lookup can ever produce a v1 key and
+        // the read path also requires a non-NULL provider, so they are kept
+        // for the addresses already enriched from them and never matched.
+        //
+        // Terrain tile digests (G2-3f, decisions 36 and 40) extend this same
+        // step. One row per tile records the SHA-256 the Hub computed when it
+        // downloaded that tile; a cached `.hgt` file is admitted only while
+        // its digest equals the row. Nothing is backfilled: tiles cached
+        // before this step have no row, so they are unproven and fetched
+        // again once. The table has no foreign key, so it is independent of
+        // the vehicle catalogue and of every earlier step. v70 is the next
+        // step.
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                ALTER TABLE address_lookup_cache ADD COLUMN provider TEXT
+                    CHECK(provider IS NULL OR provider = 'nominatim');
+                ALTER TABLE address_lookup_cache ADD COLUMN endpoint TEXT
+                    CHECK(endpoint IS NULL OR length(CAST(endpoint AS BLOB)) BETWEEN 1 AND 2048);
+                ALTER TABLE address_lookup_cache ADD COLUMN endpoint_host TEXT
+                    CHECK(endpoint_host IS NULL OR length(CAST(endpoint_host AS BLOB)) BETWEEN 1 AND 255);
+                ALTER TABLE address_lookup_cache ADD COLUMN language TEXT
+                    CHECK(language IS NULL OR length(CAST(language AS BLOB)) BETWEEN 1 AND 64);
+                ALTER TABLE address_lookup_cache ADD COLUMN licence TEXT
+                    CHECK(licence IS NULL OR length(CAST(licence AS BLOB)) BETWEEN 1 AND 512);
+                ALTER TABLE address_lookup_cache ADD COLUMN display_name TEXT
+                    CHECK(display_name IS NULL OR length(CAST(display_name AS BLOB)) BETWEEN 1 AND 256);
+                ALTER TABLE address_lookup_cache ADD COLUMN name TEXT
+                    CHECK(name IS NULL OR length(CAST(name AS BLOB)) <= 256);
+                ALTER TABLE address_lookup_cache ADD COLUMN result_latitude REAL
+                    CHECK(result_latitude IS NULL OR (result_latitude >= -90.0 AND result_latitude <= 90.0));
+                ALTER TABLE address_lookup_cache ADD COLUMN result_longitude REAL
+                    CHECK(result_longitude IS NULL OR (result_longitude >= -180.0 AND result_longitude <= 180.0));
+                ALTER TABLE address_lookup_cache ADD COLUMN house_number TEXT;
+                ALTER TABLE address_lookup_cache ADD COLUMN road TEXT;
+                ALTER TABLE address_lookup_cache ADD COLUMN neighbourhood TEXT;
+                ALTER TABLE address_lookup_cache ADD COLUMN city TEXT;
+                ALTER TABLE address_lookup_cache ADD COLUMN county TEXT;
+                ALTER TABLE address_lookup_cache ADD COLUMN postcode TEXT;
+                ALTER TABLE address_lookup_cache ADD COLUMN state TEXT;
+                ALTER TABLE address_lookup_cache ADD COLUMN state_district TEXT;
+                ALTER TABLE address_lookup_cache ADD COLUMN country TEXT;
+                ALTER TABLE address_lookup_cache ADD COLUMN raw_json TEXT
+                    CHECK(raw_json IS NULL OR json_valid(raw_json));
+                CREATE TABLE terrain_tile_digests (
+                    tile_name TEXT PRIMARY KEY NOT NULL
+                        CHECK(tile_name GLOB '[NS][0-9][0-9][EW][0-9][0-9][0-9]'),
+                    sha256 TEXT NOT NULL
+                        CHECK(length(sha256) = 64 AND sha256 NOT GLOB '*[^0-9a-f]*'),
+                    recorded_at_ms INTEGER NOT NULL CHECK(recorded_at_ms >= 0)
+                ) STRICT;
+                PRAGMA user_version = 69;
+                COMMIT;",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 69;
+    }
     if version == SCHEMA_VERSION {
         Ok(())
     } else {
         Err(StoreError::UnsupportedSchema(version))
     }
 }
+
+/// Test fixtures that rewind a current catalogue to an older shape run this
+/// first: it undoes everything the v69 step adds (G2-3e: the lookup columns;
+/// G2-3f: the terrain tile digest table). Every older rewind starts here, so
+/// migrating the rewound catalogue forward adds them again.
+#[cfg(test)]
+pub(crate) const REWIND_V69_SQL: &str = "
+    DROP TABLE IF EXISTS terrain_tile_digests;
+    ALTER TABLE address_lookup_cache DROP COLUMN provider;
+    ALTER TABLE address_lookup_cache DROP COLUMN endpoint;
+    ALTER TABLE address_lookup_cache DROP COLUMN endpoint_host;
+    ALTER TABLE address_lookup_cache DROP COLUMN language;
+    ALTER TABLE address_lookup_cache DROP COLUMN licence;
+    ALTER TABLE address_lookup_cache DROP COLUMN display_name;
+    ALTER TABLE address_lookup_cache DROP COLUMN name;
+    ALTER TABLE address_lookup_cache DROP COLUMN result_latitude;
+    ALTER TABLE address_lookup_cache DROP COLUMN result_longitude;
+    ALTER TABLE address_lookup_cache DROP COLUMN house_number;
+    ALTER TABLE address_lookup_cache DROP COLUMN road;
+    ALTER TABLE address_lookup_cache DROP COLUMN neighbourhood;
+    ALTER TABLE address_lookup_cache DROP COLUMN city;
+    ALTER TABLE address_lookup_cache DROP COLUMN county;
+    ALTER TABLE address_lookup_cache DROP COLUMN postcode;
+    ALTER TABLE address_lookup_cache DROP COLUMN state;
+    ALTER TABLE address_lookup_cache DROP COLUMN state_district;
+    ALTER TABLE address_lookup_cache DROP COLUMN country;
+    ALTER TABLE address_lookup_cache DROP COLUMN raw_json;
+";
 
 fn migrate_address_cache_metadata(connection: &Connection) -> Result<(), StoreError> {
     const COLUMNS: [(&str, &str); 12] = [

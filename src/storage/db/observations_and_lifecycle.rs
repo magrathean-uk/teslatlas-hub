@@ -1,8 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 impl HubStore {
+    /// Store one geocoder lookup under its own version-2 key.
+    ///
+    /// The lookup row keeps the complete record this response returned
+    /// (display name, name, address parts, raw JSON, licence) beside the
+    /// binding it was asked under, and a later lookup only ever rewrites a row
+    /// with the very same key. The shared `address_cache` row for the OSM
+    /// identity is written only when it is absent and is never updated: it is
+    /// the identity the foreign key points at, not something any lookup reads.
     pub fn put_address_cache(&self, record: &AddressCacheRecord) -> Result<(), StoreError> {
         validate_address_cache_record(record)?;
+        let key = address_lookup_key(
+            &record.binding,
+            crate::location::Wgs84Point {
+                latitude: record.lookup_latitude,
+                longitude: record.lookup_longitude,
+            },
+        );
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -15,21 +30,7 @@ impl HubStore {
                     state, state_district, country, raw_json
                  ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
                            ?12, ?13, ?14, ?15, ?16)
-                 ON CONFLICT(osm_type, osm_id) DO UPDATE SET
-                    display_name = excluded.display_name,
-                    name = excluded.name,
-                    latitude = excluded.latitude,
-                    longitude = excluded.longitude,
-                    house_number = excluded.house_number,
-                    road = excluded.road,
-                    neighbourhood = excluded.neighbourhood,
-                    city = excluded.city,
-                    county = excluded.county,
-                    postcode = excluded.postcode,
-                    state = excluded.state,
-                    state_district = excluded.state_district,
-                    country = excluded.country,
-                    raw_json = excluded.raw_json",
+                 ON CONFLICT(osm_type, osm_id) DO NOTHING",
                 params![
                     record.osm_type,
                     record.osm_id,
@@ -53,24 +54,65 @@ impl HubStore {
         transaction
             .execute(
                 "INSERT INTO address_lookup_cache(
-                    lookup_key, latitude, longitude, osm_type, osm_id, looked_up_at_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                    lookup_key, latitude, longitude, osm_type, osm_id, looked_up_at_ms,
+                    provider, endpoint, endpoint_host, language, licence,
+                    display_name, name, result_latitude, result_longitude,
+                    house_number, road, neighbourhood, city, county, postcode,
+                    state, state_district, country, raw_json
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                           ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22,
+                           ?23, ?24, ?25)
                  ON CONFLICT(lookup_key) DO UPDATE SET
                     latitude = excluded.latitude,
                     longitude = excluded.longitude,
                     osm_type = excluded.osm_type,
                     osm_id = excluded.osm_id,
-                    looked_up_at_ms = excluded.looked_up_at_ms",
+                    looked_up_at_ms = excluded.looked_up_at_ms,
+                    provider = excluded.provider,
+                    endpoint = excluded.endpoint,
+                    endpoint_host = excluded.endpoint_host,
+                    language = excluded.language,
+                    licence = excluded.licence,
+                    display_name = excluded.display_name,
+                    name = excluded.name,
+                    result_latitude = excluded.result_latitude,
+                    result_longitude = excluded.result_longitude,
+                    house_number = excluded.house_number,
+                    road = excluded.road,
+                    neighbourhood = excluded.neighbourhood,
+                    city = excluded.city,
+                    county = excluded.county,
+                    postcode = excluded.postcode,
+                    state = excluded.state,
+                    state_district = excluded.state_district,
+                    country = excluded.country,
+                    raw_json = excluded.raw_json",
                 params![
-                    address_lookup_key(crate::location::Wgs84Point {
-                        latitude: record.lookup_latitude,
-                        longitude: record.lookup_longitude,
-                    }),
+                    key,
                     record.lookup_latitude,
                     record.lookup_longitude,
                     record.osm_type,
                     record.osm_id,
                     record.looked_up_at_ms,
+                    record.binding.provider,
+                    record.binding.endpoint,
+                    record.binding.endpoint_host,
+                    record.binding.language,
+                    record.licence,
+                    record.display_name,
+                    record.name,
+                    record.latitude,
+                    record.longitude,
+                    record.house_number,
+                    record.road,
+                    record.neighbourhood,
+                    record.city,
+                    record.county,
+                    record.postcode,
+                    record.state,
+                    record.state_district,
+                    record.country,
+                    record.raw_json,
                 ],
             )
             .map_err(StoreError::AddressCacheWrite)?;

@@ -25,7 +25,9 @@ use url::Url;
 
 use crate::{
     config::{ConfigError, GeocoderConfig},
-    db::{AddressCacheRecord, HubStore, StoreError},
+    db::{
+        AddressCacheRecord, AddressLookupBinding, HubStore, MAX_ADDRESS_LICENCE_BYTES, StoreError,
+    },
     location::Wgs84Point,
 };
 
@@ -109,6 +111,9 @@ pub struct GeocodedAddress {
     pub state_district: Option<String>,
     pub country: Option<String>,
     pub raw_json: Option<String>,
+    /// The provider's `licence` member when it is printable text of at most
+    /// 512 bytes; anything else is dropped.
+    pub licence: Option<String>,
 }
 
 impl From<AddressCacheRecord> for GeocodedAddress {
@@ -130,6 +135,7 @@ impl From<AddressCacheRecord> for GeocodedAddress {
             state_district: record.state_district,
             country: record.country,
             raw_json: record.raw_json,
+            licence: record.licence,
         }
     }
 }
@@ -139,6 +145,10 @@ pub struct Geocoder {
     client: Client,
     endpoint: Url,
     language: String,
+    /// What every cached lookup of this geocoder is bound to: the provider,
+    /// this endpoint and this language. A different endpoint or language is a
+    /// different binding and never reads or rewrites this one's rows.
+    binding: AddressLookupBinding,
     limiter: SharedLimiter,
 }
 
@@ -177,6 +187,8 @@ impl Geocoder {
         let language = config
             .validated_language()
             .map_err(GeocoderError::InvalidConfig)?;
+        let binding = AddressLookupBinding::nominatim(&endpoint, &language)
+            .map_err(|_| GeocoderError::InvalidEndpoint)?;
 
         crate::crypto::install_default_provider();
         let client = Client::builder()
@@ -190,8 +202,15 @@ impl Geocoder {
             client,
             endpoint,
             language,
+            binding,
             limiter,
         })
+    }
+
+    /// The provider, endpoint and language this geocoder's cache rows are
+    /// bound to.
+    pub fn lookup_binding(&self) -> &AddressLookupBinding {
+        &self.binding
     }
 
     #[cfg(any(not(target_os = "macos"), test))]
@@ -268,7 +287,10 @@ impl Geocoder {
         looked_up_at_ms: i64,
         egress_guard: &G,
     ) -> Result<GeocodedAddress, GeocoderError> {
-        if let Some(cached) = store.cached_address(point).map_err(GeocoderError::Cache)? {
+        if let Some(cached) = store
+            .cached_address(&self.binding, point)
+            .map_err(GeocoderError::Cache)?
+        {
             return Ok(cached.into());
         }
 
@@ -291,6 +313,8 @@ impl Geocoder {
                 state_district: address.state_district.clone(),
                 country: address.country.clone(),
                 raw_json: address.raw_json.clone(),
+                binding: self.binding.clone(),
+                licence: address.licence.clone(),
                 lookup_latitude: point.latitude,
                 lookup_longitude: point.longitude,
                 looked_up_at_ms,
@@ -351,6 +375,7 @@ struct NominatimAddress {
     lat: Option<String>,
     lon: Option<String>,
     address: Option<NominatimAddressDetails>,
+    licence: Option<serde_json::Value>,
     error: Option<serde_json::Value>,
 }
 
@@ -406,6 +431,16 @@ fn parse_response(body: &[u8]) -> Result<GeocodedAddress, GeocoderError> {
             })
         })
         .and_then(|value| (!value.trim().is_empty()).then(|| value.trim().to_owned()));
+    let licence = raw
+        .licence
+        .as_ref()
+        .and_then(serde_json::Value::as_str)
+        .filter(|value| {
+            value.len() <= MAX_ADDRESS_LICENCE_BYTES && !value.chars().any(char::is_control)
+        })
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
     let latitude = raw.lat.and_then(|value| value.parse::<f64>().ok());
     let longitude = raw.lon.and_then(|value| value.parse::<f64>().ok());
     let details = raw.address.unwrap_or_default();
@@ -468,6 +503,7 @@ fn parse_response(body: &[u8]) -> Result<GeocodedAddress, GeocoderError> {
         state_district: details.first(&["state_district"]),
         country: details.first(&["country", "country_name"]),
         raw_json,
+        licence,
     })
 }
 
@@ -772,3 +808,7 @@ mod tests {
         server_task.abort();
     }
 }
+
+#[cfg(test)]
+#[path = "geocoder_cache_tests.rs"]
+mod cache_tests;

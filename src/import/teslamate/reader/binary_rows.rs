@@ -6,15 +6,20 @@ pub(crate) async fn read_cars(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<Vec<TeslaMateCar>, TeslaMateReaderError> {
-    let stream = client
-        .copy_out(&binary_copy_sql(SourceTable::Cars, selected_car_id))
-        .await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        car_copy_types()
-    ));
+    let mut rows = open_bounded_copy(
+        client,
+        &capped_binary_copy_sql(
+            SourceTable::Cars,
+            selected_car_id,
+            copy_row_limit(limits, *retained_rows),
+        ),
+        car_copy_types(),
+        "cars",
+        limits.copy_budget(),
+    )
+    .await?;
     let mut cars = Vec::new();
-    while let Some(row) = rows.as_mut().try_next().await? {
+    while let Some(row) = rows.next_row().await? {
         retain_row(retained_rows, limits.maximum_rows)?;
         cars.push(decode_binary_car(&row)?);
     }
@@ -176,15 +181,20 @@ pub(crate) async fn read_drives(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<Vec<TeslaMateDrive>, TeslaMateReaderError> {
-    let stream = client
-        .copy_out(&binary_copy_sql(SourceTable::Drives, selected_car_id))
-        .await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        drive_copy_types()
-    ));
+    let mut rows = open_bounded_copy(
+        client,
+        &capped_binary_copy_sql(
+            SourceTable::Drives,
+            selected_car_id,
+            copy_row_limit(limits, *retained_rows),
+        ),
+        drive_copy_types(),
+        "drives",
+        limits.copy_budget(),
+    )
+    .await?;
     let mut drives = Vec::new();
-    while let Some(row) = rows.as_mut().try_next().await? {
+    while let Some(row) = rows.next_row().await? {
         retain_row(retained_rows, limits.maximum_rows)?;
         drives.push(decode_binary_drive(&row)?);
     }
@@ -375,18 +385,16 @@ async fn read_positions(
         .try_get("position_count")?;
     let count = validate_materialized_history_position_count(count, maximum)?;
     let query_limit = i64::try_from(maximum.saturating_add(1)).unwrap_or(i64::MAX);
-    let stream = client
-        .copy_out(&bounded_position_binary_copy_sql(
-            selected_car_id,
-            query_limit,
-        ))
-        .await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        position_copy_types()
-    ));
+    let mut rows = open_bounded_copy(
+        client,
+        &bounded_position_binary_copy_sql(selected_car_id, query_limit),
+        position_copy_types(),
+        "positions",
+        limits.copy_budget(),
+    )
+    .await?;
     let mut positions = Vec::with_capacity(count);
-    while let Some(row) = rows.as_mut().try_next().await? {
+    while let Some(row) = rows.next_row().await? {
         if positions.len() >= maximum {
             return Err(
                 TeslaMateReaderError::MaterializedHistoryPositionLimitExceeded {
@@ -433,18 +441,20 @@ pub(crate) async fn read_charging_processes(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<Vec<TeslaMateChargingProcess>, TeslaMateReaderError> {
-    let stream = client
-        .copy_out(&binary_copy_sql(
+    let mut rows = open_bounded_copy(
+        client,
+        &capped_binary_copy_sql(
             SourceTable::ChargingProcesses,
             selected_car_id,
-        ))
-        .await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        charging_process_copy_types()
-    ));
+            copy_row_limit(limits, *retained_rows),
+        ),
+        charging_process_copy_types(),
+        "charging_processes",
+        limits.copy_budget(),
+    )
+    .await?;
     let mut processes = Vec::new();
-    while let Some(row) = rows.as_mut().try_next().await? {
+    while let Some(row) = rows.next_row().await? {
         retain_row(retained_rows, limits.maximum_rows)?;
         processes.push(decode_binary_charging_process(&row)?);
     }
@@ -559,15 +569,20 @@ async fn read_charges(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<Vec<TeslaMateCharge>, TeslaMateReaderError> {
-    let stream = client
-        .copy_out(&binary_copy_sql(SourceTable::Charges, selected_car_id))
-        .await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        charge_copy_types()
-    ));
+    let mut rows = open_bounded_copy(
+        client,
+        &capped_binary_copy_sql(
+            SourceTable::Charges,
+            selected_car_id,
+            copy_row_limit(limits, *retained_rows),
+        ),
+        charge_copy_types(),
+        "charges",
+        limits.copy_budget(),
+    )
+    .await?;
     let mut charges = Vec::new();
-    while let Some(row) = rows.as_mut().try_next().await? {
+    while let Some(row) = rows.next_row().await? {
         retain_row(retained_rows, limits.maximum_rows)?;
         charges.push(decode_binary_charge(&row)?);
     }
@@ -664,15 +679,20 @@ pub(crate) async fn read_addresses(
     limits: TeslaMateReadLimits,
     retained_rows: &mut usize,
 ) -> Result<Vec<TeslaMateAddress>, TeslaMateReaderError> {
-    let stream = client
-        .copy_out(&binary_copy_sql(SourceTable::Addresses, selected_car_id))
-        .await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        address_copy_types()
-    ));
+    let mut rows = open_bounded_copy(
+        client,
+        &capped_binary_copy_sql(
+            SourceTable::Addresses,
+            selected_car_id,
+            copy_row_limit(limits, *retained_rows),
+        ),
+        address_copy_types(),
+        "addresses",
+        limits.copy_budget(),
+    )
+    .await?;
     let mut addresses = Vec::new();
-    while let Some(row) = rows.as_mut().try_next().await? {
+    while let Some(row) = rows.next_row().await? {
         retain_row(retained_rows, limits.maximum_rows)?;
         let id: i32 = binary_cell(&row, 0, "addresses", "id")?;
         addresses.push(TeslaMateAddress {
@@ -700,12 +720,14 @@ pub(crate) async fn read_geofences(
     let mut last_id = 0_i32;
     let page_size = i64::from(limits.page_size);
     loop {
-        let rows = client
-            .query(
-                GEOFENCE_GEOMETRY_SQL,
-                &[&last_id, &page_size, &selected_car_id],
-            )
-            .await?;
+        let rows = query_bounded(
+            client,
+            GEOFENCE_GEOMETRY_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "geofences",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = rows.len();
         for row in rows {
             let id = required_i32(&row, "geofences", "id")?;

@@ -613,19 +613,6 @@
       ]
     },
     {
-      "id": "historical-archive-source-snapshot",
-      "class": "GENERATED",
-      "rationale": "A captured historical source archive contains the complete prior Hub source tree and its separate licence material.",
-      "paths": [
-        "docs/development/archive/2026-09-25-pre-programme/evidence/f6-arm64-container-runtime-2026-09-19-r2/files/source-archive.tar"
-      ],
-      "exception": {
-        "origin": "Historical container-runtime evidence captured the prior complete Hub source tree as a tar archive.",
-        "licensing": "The archive aggregates project source, third-party licence texts, and other classified material; each contained file retains its own applicable treatment.",
-        "release_treatment": "Retain as an immutable evidence artifact and do not treat the aggregate archive as a single-licence source file."
-      }
-    },
-    {
       "id": "macos-app-localisations",
       "class": "MAGRATHEAN-ORIGINAL",
       "rationale": "Localised string tables of the macOS control app, authored and maintained in this repository. This treatment does not prove chain of title.",
@@ -654,6 +641,7 @@
         "src/api/server/tests/device_credentials.rs",
         "src/api/server/tests/discovery.rs",
         "src/api/server/tests/drive_byte_budget.rs",
+        "src/api/server/tests/lineage_manifest.rs",
         "src/api/server/tests/public_history.rs",
         "src/api/server/tests/vehicle_grants.rs",
         "src/collection/teslamate_current.rs",

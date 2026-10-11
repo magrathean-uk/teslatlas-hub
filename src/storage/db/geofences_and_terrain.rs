@@ -1134,6 +1134,58 @@ impl HubStore {
         Ok(changed)
     }
 
+    /// The digest recorded when the Hub downloaded `tile_name` (G2-3f), if any.
+    /// Files without one are unproven and are never admitted.
+    pub fn terrain_tile_digest(
+        &self,
+        tile_name: &str,
+    ) -> Result<Option<TerrainTileDigest>, StoreError> {
+        let connection = self.open()?;
+        connection
+            .query_row(
+                "SELECT sha256, recorded_at_ms FROM terrain_tile_digests WHERE tile_name = ?1",
+                params![tile_name],
+                |row| {
+                    Ok(TerrainTileDigest {
+                        sha256: row.get(0)?,
+                        recorded_at_ms: row.get(1)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StoreError::Query)
+    }
+
+    /// Record the digest of a tile the Hub has just downloaded, replacing any
+    /// earlier one for the same tile. Only the download path calls this.
+    pub fn record_terrain_tile_digest(
+        &self,
+        tile_name: &str,
+        sha256: &str,
+        recorded_at_ms: i64,
+    ) -> Result<(), StoreError> {
+        if crate::terrain::TileId::parse(tile_name).is_err()
+            || sha256.len() != 64
+            || !sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            || recorded_at_ms < 0
+        {
+            return Err(StoreError::InvalidTerrainTileDigest);
+        }
+        let connection = self.open()?;
+        connection
+            .execute(
+                "INSERT INTO terrain_tile_digests(tile_name, sha256, recorded_at_ms)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(tile_name) DO UPDATE
+                 SET sha256 = excluded.sha256, recorded_at_ms = excluded.recorded_at_ms",
+                params![tile_name, sha256, recorded_at_ms],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        Ok(())
+    }
+
     pub fn publish_terrain_revision(
         &self,
         vehicle_id: Uuid,

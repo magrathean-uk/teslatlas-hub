@@ -146,6 +146,32 @@ fn complete_schema() -> Vec<ObservedColumn<'static>> {
 }
 
 #[test]
+fn collecting_probe_queries_end_in_limit_cap_plus_one() {
+    // The reader fails at the row after the cap, so the server must send at
+    // most cap + 1 rows: the cap in the SQL text and the constant must agree.
+    assert_eq!(MAX_MIGRATION_PROBE_ROWS, 4096);
+    assert_eq!(MAX_SCHEMA_PROBE_ROWS, 65_536);
+    assert_eq!(MAX_ENUM_PROBE_ROWS, 4096);
+    assert!(
+        MIGRATION_VERSIONS_SQL
+            .trim_end()
+            .ends_with(&format!("\nLIMIT {}", MAX_MIGRATION_PROBE_ROWS + 1))
+    );
+    assert!(
+        SCHEMA_PROBE_SQL
+            .trim_end()
+            .ends_with(&format!("\nLIMIT {}", MAX_SCHEMA_PROBE_ROWS + 1))
+    );
+    assert!(
+        ENUM_PROBE_SQL
+            .trim_end()
+            .ends_with(&format!("\nLIMIT {}", MAX_ENUM_PROBE_ROWS + 1))
+    );
+    // The pinned migration set is far below its cap.
+    const { assert!(TESLAMATE_V4_MIGRATION_COUNT < MAX_MIGRATION_PROBE_ROWS) };
+}
+
+#[test]
 fn all_queries_are_fixed_qualified_and_keyset_paginated() {
     assert!(MIGRATION_VERSION_SQL.contains("\"public\".\"schema_migrations\""));
     assert!(MIGRATION_VERSIONS_SQL.contains("\"public\".\"schema_migrations\""));

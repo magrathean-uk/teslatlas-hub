@@ -176,19 +176,16 @@ async fn read_open_position_branch(
     let remaining_rows = limits.maximum_rows.saturating_sub(*retained_rows);
     let allowed = remaining_open.min(remaining_rows);
     let query_limit = i64::try_from(allowed.saturating_add(1)).unwrap_or(i64::MAX);
-    let stream = client
-        .copy_out(&open_position_branch_copy_sql(
-            selected_car_id,
-            branch,
-            query_limit,
-        ))
-        .await?;
-    let mut rows = pin!(tokio_postgres::binary_copy::BinaryCopyOutStream::new(
-        stream,
-        position_copy_types()
-    ));
+    let mut rows = open_bounded_copy(
+        client,
+        &open_position_branch_copy_sql(selected_car_id, branch, query_limit),
+        position_copy_types(),
+        "positions",
+        limits.copy_budget(),
+    )
+    .await?;
     let mut positions = Vec::new();
-    while let Some(row) = rows.as_mut().try_next().await? {
+    while let Some(row) = rows.next_row().await? {
         if *materialized_positions >= MAX_MATERIALIZED_OPEN_POSITIONS {
             return Err(
                 TeslaMateReaderError::MaterializedOpenPositionLimitExceeded {
@@ -274,9 +271,14 @@ where
     let mut last_id = 0_i32;
     let mut result = Vec::new();
     loop {
-        let page = client
-            .query(&sql, &[&last_id, &page_size, &selected_car_id])
-            .await?;
+        let page = query_bounded(
+            client,
+            &sql,
+            &[&last_id, &page_size, &selected_car_id],
+            table.name(),
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = page.len();
         for row in page {
             let id = required_i32(&row, table.name(), "id")?;

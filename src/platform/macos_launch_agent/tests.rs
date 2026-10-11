@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[test]
-fn standalone_preflight_allows_only_known_v66_and_v67_forward_upgrades_without_writes() {
+fn standalone_preflight_allows_only_known_v66_to_v68_forward_upgrades_without_writes() {
     use crate::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
     let temporary = crate::private_tempdir().unwrap();
     let data_dir = temporary.path().join("state");
@@ -19,8 +19,22 @@ fn standalone_preflight_allows_only_known_v66_and_v67_forward_upgrades_without_w
         .current_observations_for_vehicle(vehicle.vehicle_id)
         .unwrap();
     let connection = store.open().unwrap();
-    // Rewind the v68 grant schema first: a v67 store is the shape the previous
-    // release left, and standalone Serve migrates it to v68 itself.
+    // Rewind the v69 geocoder lookup columns first: a v68 store is the shape
+    // the previous release left, and standalone Serve migrates it itself.
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {} PRAGMA user_version=68; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
+            crate::db::REWIND_V69_SQL
+        ))
+        .unwrap();
+    let v68_bytes = fs::read(config.database_path()).unwrap();
+    assert!(matches!(
+        HubStore::open_read_only(&data_dir),
+        Err(crate::db::StoreError::UnsupportedSchema(68))
+    ));
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
+    assert_eq!(fs::read(config.database_path()).unwrap(), v68_bytes);
+    // Then the v68 grant schema: a v67 store is the shape before that.
     connection
         .execute_batch(
             "BEGIN IMMEDIATE;
@@ -86,10 +100,10 @@ fn standalone_preflight_allows_only_known_v66_and_v67_forward_upgrades_without_w
         connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
             .unwrap(),
-        68
+        69
     );
     preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    for unsupported in [65_i32, 69] {
+    for unsupported in [65_i32, 70] {
         connection
             .pragma_update(None, "user_version", unsupported)
             .unwrap();

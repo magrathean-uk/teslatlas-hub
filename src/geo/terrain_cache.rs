@@ -1,20 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Bounded, restart-safe SRTM tile acquisition.
+//!
+//! The cache root is validated once as a private directory of the effective
+//! user (G2-3f) and held by descriptor: every read, temporary file, rename and
+//! removal names a single entry of that descriptor, so replacing a path
+//! component after validation cannot move the cache. A cached `.hgt` file is
+//! admitted only when its SHA-256 equals the digest the Hub recorded in its
+//! store when it downloaded the tile; a file without a matching record is
+//! unproven, is discarded and is fetched again. The tile that was hashed is
+//! the one sampled: callers get the opened descriptor, never a second open by
+//! path.
 
 use std::{
     collections::HashMap,
-    fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
-    path::{Path, PathBuf},
+    ffi::OsStr,
+    fs::File,
+    io::{self, Read, Seek, SeekFrom, Write},
+    path::Path,
     sync::{Arc, Mutex},
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use flate2::read::GzDecoder;
 use futures_util::StreamExt;
 use reqwest::{Client, redirect::Policy};
-use rustix::fs::{Mode, OFlags, open};
 use thiserror::Error;
 use tokio::{io::AsyncWriteExt, sync::Mutex as AsyncMutex, time::timeout};
 use url::Url;
@@ -22,7 +32,9 @@ use zip::ZipArchive;
 
 use crate::{
     config::TerrainConfig,
+    db::{HubStore, StoreError},
     geocoder::EgressGuard,
+    platform::private_directory::{self, PrivateDirectory, PrivateDirectoryError},
     terrain::{HgtFileIdentity, HgtTile, SRTM1_BYTES, SRTM3_BYTES, TerrainError, TileId},
 };
 
@@ -56,6 +68,18 @@ pub enum TerrainCacheError {
     InvalidTile(#[source] TerrainError),
     #[error("terrain egress admission is no longer valid")]
     EgressDenied,
+    #[error("terrain cache root is not a trusted private directory")]
+    UntrustedRoot(#[source] PrivateDirectoryError),
+    #[error("terrain tile digest store operation failed")]
+    Store(#[source] Box<StoreError>),
+    #[error("terrain tile has no matching recorded digest")]
+    UnprovenTile,
+}
+
+impl TerrainCacheError {
+    fn store(error: StoreError) -> Self {
+        Self::Store(Box::new(error))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +93,11 @@ pub struct TerrainLookupResult {
 
 #[derive(Clone)]
 pub struct TerrainCacheOptions {
-    pub root: PathBuf,
+    /// Absolute path of the cache root. It must be a private directory of the
+    /// effective user (see `TerrainCache::new`); a missing root is created.
+    pub root: std::path::PathBuf,
+    /// Where the digest of every downloaded tile is recorded and checked.
+    pub store: HubStore,
     pub min_free_bytes: u64,
     pub max_cache_bytes: u64,
     pub connect_timeout: Duration,
@@ -83,12 +111,17 @@ pub struct TerrainCacheOptions {
 }
 
 impl TerrainCacheOptions {
-    pub fn from_config(config: &TerrainConfig, data_dir: &Path) -> Result<Self, TerrainCacheError> {
+    pub fn from_config(
+        config: &TerrainConfig,
+        data_dir: &Path,
+        store: HubStore,
+    ) -> Result<Self, TerrainCacheError> {
         config
             .validate()
             .map_err(|_| TerrainCacheError::InvalidConfig)?;
         Ok(Self {
             root: config.resolved_cache_dir(data_dir),
+            store,
             min_free_bytes: config.min_free_bytes,
             max_cache_bytes: config.max_cache_bytes,
             connect_timeout: Duration::from_secs(config.connect_timeout_seconds),
@@ -105,13 +138,52 @@ impl TerrainCacheOptions {
 
 pub struct TerrainCache {
     options: TerrainCacheOptions,
+    root: Arc<PrivateDirectory>,
     client: Client,
     locks: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     quota_lock: AsyncMutex<()>,
     hashes: Mutex<HashMap<String, (HgtFileIdentity, String)>>,
 }
 
+/// A tile that passed admission: the opened file, the digest it matched and
+/// the identity it had when it was hashed.
+struct AdmittedTile {
+    tile: HgtTile,
+    identity: HgtFileIdentity,
+    sha256: String,
+    source: String,
+}
+
+impl AdmittedTile {
+    /// Fail when the admitted file was rewritten after it was hashed, so a
+    /// sample is never reported under a digest the bytes no longer have.
+    fn confirm_unchanged(&self) -> Result<(), TerrainCacheError> {
+        let current = self
+            .tile
+            .file_identity()
+            .map_err(TerrainCacheError::InvalidTile)?;
+        if current != Some(self.identity) {
+            return Err(TerrainCacheError::InvalidTile(TerrainError::Io(
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "terrain tile changed after admission",
+                ),
+            )));
+        }
+        Ok(())
+    }
+}
+
 impl TerrainCache {
+    /// Validate the cache root and open the cache.
+    ///
+    /// The root must be an absolute path whose final component is not a
+    /// symlink and is owned by the effective user; an existing root with a
+    /// wider mode than `0700` is tightened to it. Every existing ancestor must
+    /// be owned by root or the effective user and may be group- or
+    /// world-writable only when the effective user owns it (or root owns it
+    /// with the sticky bit). Missing components are created `0700`, one at a
+    /// time, below an ancestor that passed those rules.
     pub fn new(options: TerrainCacheOptions) -> Result<Self, TerrainCacheError> {
         if options.min_free_bytes == 0
             || options.max_cache_bytes < MAX_TILE_CACHE_BYTES
@@ -120,8 +192,11 @@ impl TerrainCache {
         {
             return Err(TerrainCacheError::InvalidConfig);
         }
-        fs::create_dir_all(&options.root).map_err(TerrainCacheError::Io)?;
-        cleanup_stale_temporary_files(&options.root, SystemTime::now())?;
+        let root = Arc::new(
+            private_directory::open_validated(&options.root, true)
+                .map_err(TerrainCacheError::UntrustedRoot)?,
+        );
+        cleanup_stale_temporary_files(&root, SystemTime::now())?;
         crate::crypto::install_default_provider();
         let client = Client::builder()
             .connect_timeout(options.connect_timeout)
@@ -132,6 +207,7 @@ impl TerrainCache {
             .map_err(TerrainCacheError::Network)?;
         Ok(Self {
             options,
+            root,
             client,
             locks: Mutex::new(HashMap::new()),
             quota_lock: AsyncMutex::new(()),
@@ -152,8 +228,7 @@ impl TerrainCache {
         tile: TileId,
         egress_guard: &G,
     ) -> Result<HgtTile, TerrainCacheError> {
-        self.ensure_tile(tile, egress_guard).await?;
-        HgtTile::open(&tile.name(), self.tile_path(tile)).map_err(TerrainCacheError::InvalidTile)
+        Ok(self.ensure_tile(tile, egress_guard).await?.tile)
     }
 
     #[cfg(any(not(target_os = "macos"), test))]
@@ -200,21 +275,30 @@ impl TerrainCache {
     ) -> Result<TerrainLookupResult, TerrainCacheError> {
         let tile = TileId::from_coordinates(latitude, longitude)
             .map_err(TerrainCacheError::InvalidTile)?;
-        let source = self.ensure_tile(tile, egress_guard).await?;
-        let path = self.tile_path(tile);
-        let hgt = HgtTile::open(&tile.name(), &path).map_err(TerrainCacheError::InvalidTile)?;
+        let admitted = self.ensure_tile(tile, egress_guard).await?;
+        // Sample the descriptor that was hashed, then confirm the file kept the
+        // identity it had when it was hashed.
+        let elevation_m = admitted
+            .tile
+            .elevation_at(latitude, longitude)
+            .map_err(TerrainCacheError::InvalidTile)?;
+        admitted.confirm_unchanged()?;
         Ok(TerrainLookupResult {
-            elevation_m: hgt
-                .elevation_at(latitude, longitude)
-                .map_err(TerrainCacheError::InvalidTile)?,
+            elevation_m,
             tile_name: tile.name(),
-            tile_hash: self.tile_hash(&tile.name(), &hgt)?,
-            dataset_source: source,
+            tile_hash: admitted.sha256,
+            dataset_source: admitted.source,
             dataset_version: crate::terrain::TERRAIN_DATASET_VERSION.to_owned(),
         })
     }
 
-    fn tile_hash(&self, name: &str, tile: &HgtTile) -> Result<String, TerrainCacheError> {
+    /// The tile's digest and the identity it was computed for. The digest of
+    /// an unchanged file identity is not computed twice.
+    fn tile_hash(
+        &self,
+        name: &str,
+        tile: &HgtTile,
+    ) -> Result<(HgtFileIdentity, String), TerrainCacheError> {
         let identity = tile
             .file_identity()
             .map_err(TerrainCacheError::InvalidTile)?
@@ -227,7 +311,7 @@ impl TerrainCache {
             if let Some((cached_identity, hash)) = hashes.get(name)
                 && *cached_identity == identity
             {
-                return Ok(hash.clone());
+                return Ok((identity, hash.clone()));
             }
         }
         let hash = tile.sha256_hex().map_err(TerrainCacheError::InvalidTile)?;
@@ -251,14 +335,54 @@ impl TerrainCache {
             hashes.clear();
         }
         hashes.insert(name.to_owned(), (identity, hash.clone()));
-        Ok(hash)
+        Ok((identity, hash))
+    }
+
+    /// Admit the cached tile when it exists and its digest equals the one the
+    /// Hub recorded at download. A file that is not a valid tile, has no
+    /// record, or does not match its record is unproven: it is discarded and
+    /// `None` says the tile must be fetched.
+    fn admit(&self, tile: TileId) -> Result<Option<AdmittedTile>, TerrainCacheError> {
+        let name = tile.name();
+        let file_name = tile_file(tile);
+        let hgt = match HgtTile::open_in(&name, self.root.as_ref(), &file_name) {
+            Ok(hgt) => hgt,
+            Err(TerrainError::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
+                return Ok(None);
+            }
+            Err(_) => {
+                self.discard_tile(tile);
+                return Ok(None);
+            }
+        };
+        let recorded = self
+            .options
+            .store
+            .terrain_tile_digest(&name)
+            .map_err(TerrainCacheError::store)?;
+        let Some(recorded) = recorded else {
+            self.discard_tile(tile);
+            return Ok(None);
+        };
+        let (identity, sha256) = self.tile_hash(&name, &hgt)?;
+        if sha256 != recorded.sha256 {
+            self.discard_tile(tile);
+            return Ok(None);
+        }
+        self.enforce_cache_quota(Some(&file_name), 0)?;
+        Ok(Some(AdmittedTile {
+            tile: hgt,
+            identity,
+            sha256,
+            source: self.read_source(tile),
+        }))
     }
 
     async fn ensure_tile<G: EgressGuard + ?Sized>(
         &self,
         tile: TileId,
         egress_guard: &G,
-    ) -> Result<String, TerrainCacheError> {
+    ) -> Result<AdmittedTile, TerrainCacheError> {
         let lock = {
             let mut locks = self
                 .locks
@@ -272,29 +396,24 @@ impl TerrainCache {
         let guard = lock.lock().await;
         let result = async {
             let _quota_guard = self.quota_lock.lock().await;
-            let path = self.tile_path(tile);
-            if path.exists() {
-                match HgtTile::open(&tile.name(), &path) {
-                    Ok(_) => {
-                        self.enforce_cache_quota(Some(&path), 0)?;
-                        return Ok(self.read_source(tile));
-                    }
-                    Err(_) => self.discard_tile(tile),
-                }
+            if let Some(admitted) = self.admit(tile)? {
+                return Ok(admitted);
             }
             self.ensure_space()?;
             self.enforce_cache_quota(None, MAX_TILE_CACHE_BYTES)?;
-            let source = match self.download(&tile, &path, true, egress_guard).await {
+            let source = match self.download(&tile, true, egress_guard).await {
                 Ok(source) => source,
                 // Admission failure is not a provider failure.  Do not use a
                 // second provider after the first final egress check denied it.
                 Err(TerrainCacheError::EgressDenied) => {
                     return Err(TerrainCacheError::EgressDenied);
                 }
-                Err(_) => self.download(&tile, &path, false, egress_guard).await?,
+                Err(_) => self.download(&tile, false, egress_guard).await?,
             };
-            write_source_atomic(&self.source_path(tile), source)?;
-            Ok(source.to_owned())
+            write_source_atomic(&self.root, &source_file(tile), source)?;
+            // The download recorded its digest before the tile was put in
+            // place, so admission now finds the record it needs.
+            self.admit(tile)?.ok_or(TerrainCacheError::UnprovenTile)
         };
         let result = result.await;
         drop(guard);
@@ -306,88 +425,97 @@ impl TerrainCache {
         result
     }
 
-    fn tile_path(&self, tile: TileId) -> PathBuf {
-        self.options.root.join(format!("{}.hgt", tile.name()))
+    /// The validated root, as resolved. Diagnostics and tests only: every
+    /// operation goes through the held descriptor.
+    pub(crate) fn root_path(&self) -> &Path {
+        self.root.path()
     }
 
-    fn source_path(&self, tile: TileId) -> PathBuf {
-        self.options.root.join(format!("{}.source", tile.name()))
+    #[cfg(test)]
+    fn tile_path(&self, tile: TileId) -> std::path::PathBuf {
+        self.root.path().join(tile_file(tile))
+    }
+
+    #[cfg(test)]
+    fn source_path(&self, tile: TileId) -> std::path::PathBuf {
+        self.root.path().join(source_file(tile))
     }
 
     fn read_source(&self, tile: TileId) -> String {
-        let path = self.source_path(tile);
-        open(
-            &path,
-            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
-            Mode::empty(),
-        )
-        .ok()
-        .map(File::from)
-        .filter(|file| {
-            file.metadata()
-                .is_ok_and(|metadata| metadata.is_file() && metadata.len() <= MAX_SOURCE_BYTES)
-        })
-        .and_then(|mut file| {
-            let mut bytes = Vec::new();
-            Read::by_ref(&mut file)
-                .take(MAX_SOURCE_BYTES + 1)
-                .read_to_end(&mut bytes)
-                .ok()
-                .filter(|_| bytes.len() as u64 <= MAX_SOURCE_BYTES)
-                .and_then(|_| String::from_utf8(bytes).ok())
-        })
-        .filter(|source| matches!(source.trim(), "aws" | "esa"))
-        .unwrap_or_else(|| "cache".to_owned())
+        self.root
+            .open_regular(&source_file(tile))
+            .ok()
+            .flatten()
+            .filter(|file| {
+                file.metadata()
+                    .is_ok_and(|metadata| metadata.len() <= MAX_SOURCE_BYTES)
+            })
+            .and_then(|mut file| {
+                let mut bytes = Vec::new();
+                Read::by_ref(&mut file)
+                    .take(MAX_SOURCE_BYTES + 1)
+                    .read_to_end(&mut bytes)
+                    .ok()
+                    .filter(|_| bytes.len() as u64 <= MAX_SOURCE_BYTES)
+                    .and_then(|_| String::from_utf8(bytes).ok())
+            })
+            .filter(|source| matches!(source.trim(), "aws" | "esa"))
+            .unwrap_or_else(|| "cache".to_owned())
     }
 
+    /// Evict the oldest complete tiles until `reserved_bytes` more fit under
+    /// the quota. `protected` is the file name of a tile that must stay.
     fn enforce_cache_quota(
         &self,
-        protected: Option<&Path>,
+        protected: Option<&str>,
         reserved_bytes: u64,
     ) -> Result<(), TerrainCacheError> {
         #[derive(Debug)]
         struct CachedTile {
-            hgt: PathBuf,
-            source: PathBuf,
+            hgt: String,
+            source: String,
             bytes: u64,
             modified: SystemTime,
         }
 
         let mut total = 0_u64;
         let mut tiles = Vec::new();
-        for entry in fs::read_dir(&self.options.root).map_err(TerrainCacheError::Io)? {
-            let entry = entry.map_err(TerrainCacheError::Io)?;
-            let path = entry.path();
-            if is_owned_temporary_name(&entry.file_name()) {
-                let metadata = match fs::symlink_metadata(&path) {
-                    Ok(metadata) if metadata.file_type().is_file() => metadata,
-                    Ok(_) => continue,
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-                    Err(error) => return Err(TerrainCacheError::Io(error)),
-                };
-                total = total.saturating_add(metadata.len());
+        for name in self.root.entry_names().map_err(TerrainCacheError::Io)? {
+            if is_owned_temporary_name(OsStr::new(&name)) {
+                if let Some(file) = self
+                    .root
+                    .open_regular(&name)
+                    .map_err(TerrainCacheError::Io)?
+                {
+                    let length = file.metadata().map_err(TerrainCacheError::Io)?.len();
+                    total = total.saturating_add(length);
+                }
                 continue;
             }
-            if path.extension().and_then(|value| value.to_str()) != Some("hgt") {
+            let Some(stem) = name.strip_suffix(".hgt").filter(|stem| !stem.is_empty()) else {
                 continue;
-            }
-            let metadata = match fs::symlink_metadata(&path) {
-                Ok(metadata) if metadata.file_type().is_file() => metadata,
-                Ok(_) => continue,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(TerrainCacheError::Io(error)),
             };
-            let source = path.with_extension("source");
-            let source_bytes = match fs::symlink_metadata(&source) {
-                Ok(metadata) if metadata.file_type().is_file() => metadata.len(),
-                Ok(_) => 0,
-                Err(error) if error.kind() == io::ErrorKind::NotFound => 0,
-                Err(error) => return Err(TerrainCacheError::Io(error)),
+            let Some(file) = self
+                .root
+                .open_regular(&name)
+                .map_err(TerrainCacheError::Io)?
+            else {
+                continue;
+            };
+            let metadata = file.metadata().map_err(TerrainCacheError::Io)?;
+            let source = format!("{stem}.source");
+            let source_bytes = match self
+                .root
+                .open_regular(&source)
+                .map_err(TerrainCacheError::Io)?
+            {
+                Some(file) => file.metadata().map_err(TerrainCacheError::Io)?.len(),
+                None => 0,
             };
             let bytes = metadata.len().saturating_add(source_bytes);
             total = total.saturating_add(bytes);
             tiles.push(CachedTile {
-                hgt: path,
+                hgt: name.clone(),
                 source,
                 bytes,
                 modified: metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH),
@@ -402,28 +530,19 @@ impl TerrainCache {
             if total.saturating_add(reserved_bytes) <= self.options.max_cache_bytes {
                 break;
             }
-            if protected.is_some_and(|path| path == tile.hgt) {
+            if protected.is_some_and(|name| name == tile.hgt) {
                 continue;
             }
-            match fs::remove_file(&tile.source) {
-                Ok(()) => {}
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                Err(error) => return Err(TerrainCacheError::Io(error)),
-            }
-            match fs::remove_file(&tile.hgt) {
-                Ok(()) => total = total.saturating_sub(tile.bytes),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    total = total.saturating_sub(tile.bytes);
-                }
-                Err(error) => return Err(TerrainCacheError::Io(error)),
-            }
+            self.root
+                .remove(&tile.source)
+                .map_err(TerrainCacheError::Io)?;
+            self.root.remove(&tile.hgt).map_err(TerrainCacheError::Io)?;
+            total = total.saturating_sub(tile.bytes);
         }
         if total.saturating_add(reserved_bytes) > self.options.max_cache_bytes {
             return Err(TerrainCacheError::CacheQuotaExceeded);
         }
-        if let Ok(directory) = File::open(&self.options.root) {
-            let _ = directory.sync_all();
-        }
+        let _ = self.root.sync();
         Ok(())
     }
 
@@ -440,11 +559,7 @@ impl TerrainCache {
             return Err(TerrainCacheError::InsufficientSpace);
         }
         #[cfg(not(test))]
-        let available = rustix::fs::statvfs(&self.options.root)
-            .map_err(|error| {
-                TerrainCacheError::Io(io::Error::from_raw_os_error(error.raw_os_error()))
-            })
-            .map(|stat| stat.f_bavail.saturating_mul(stat.f_frsize))?;
+        let available = self.root.available_bytes().map_err(TerrainCacheError::Io)?;
         #[cfg(not(test))]
         if available < required {
             return Err(TerrainCacheError::InsufficientSpace);
@@ -455,7 +570,6 @@ impl TerrainCache {
     async fn download<G: EgressGuard + ?Sized>(
         &self,
         tile: &TileId,
-        destination: &Path,
         aws: bool,
         egress_guard: &G,
     ) -> Result<&'static str, TerrainCacheError> {
@@ -507,10 +621,8 @@ impl TerrainCache {
         {
             return Err(TerrainCacheError::InvalidArchive);
         }
-        let (compressed, compressed_path) = create_private_temp(&self.options.root, "archive")?;
-        let archive_cleanup = TemporaryPathGuard {
-            path: compressed_path,
-        };
+        let (compressed, compressed_name) = create_private_temp(&self.root, "archive")?;
+        let _archive_cleanup = TemporaryEntry::new(Arc::clone(&self.root), compressed_name);
         let mut output = tokio::fs::File::from_std(compressed);
         let download_result = async {
             let mut total = 0_u64;
@@ -529,32 +641,72 @@ impl TerrainCache {
             output.sync_all().await.map_err(TerrainCacheError::Io)
         }
         .await;
-        drop(output);
+        // Decompress through the descriptor the archive was written through,
+        // never by reopening its name: whoever could replace that entry
+        // between the two would choose the bytes this Hub then records as
+        // trusted.
+        let archive = output.into_std().await;
         download_result?;
-        let result = decompress_to_hgt(&archive_cleanup.path, destination, aws, &name);
-        result.map(|_| if aws { "aws" } else { "esa" })
+        let staged = decompress_to_hgt(&self.root, archive, aws, &name)?;
+        self.commit_tile(*tile, staged)?;
+        Ok(if aws { "aws" } else { "esa" })
+    }
+
+    /// Put a downloaded tile in place. Its digest is recorded first: a crash
+    /// or a failed rename leaves a record for a tile that is not there, which
+    /// admits nothing, while the other order could leave a tile with no
+    /// record. The temporary file and the destination are entries of the same
+    /// validated directory, so the rename cannot leave it.
+    fn commit_tile(&self, tile: TileId, staged: StagedTile) -> Result<(), TerrainCacheError> {
+        self.options
+            .store
+            .record_terrain_tile_digest(&tile.name(), &staged.sha256, epoch_millis())
+            .map_err(TerrainCacheError::store)?;
+        self.root
+            .rename(staged.entry.name(), &tile_file(tile))
+            .map_err(TerrainCacheError::Io)?;
+        staged.entry.disarm();
+        let _ = self.root.sync();
+        Ok(())
     }
 
     fn discard_tile(&self, tile: TileId) {
-        let _ = fs::remove_file(self.source_path(tile));
-        let _ = fs::remove_file(self.tile_path(tile));
+        let _ = self.root.remove(&source_file(tile));
+        let _ = self.root.remove(&tile_file(tile));
     }
 }
 
-fn cleanup_stale_temporary_files(root: &Path, now: SystemTime) -> Result<(), TerrainCacheError> {
+fn tile_file(tile: TileId) -> String {
+    format!("{}.hgt", tile.name())
+}
+
+fn source_file(tile: TileId) -> String {
+    format!("{}.source", tile.name())
+}
+
+fn epoch_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .and_then(|elapsed| i64::try_from(elapsed.as_millis()).ok())
+        .unwrap_or(0)
+}
+
+fn cleanup_stale_temporary_files(
+    root: &PrivateDirectory,
+    now: SystemTime,
+) -> Result<(), TerrainCacheError> {
     let mut removed = false;
-    for entry in fs::read_dir(root).map_err(TerrainCacheError::Io)? {
-        let entry = entry.map_err(TerrainCacheError::Io)?;
-        if !is_owned_temporary_name(&entry.file_name()) {
+    for name in root.entry_names().map_err(TerrainCacheError::Io)? {
+        if !is_owned_temporary_name(OsStr::new(&name)) {
             continue;
         }
-        let metadata = match fs::symlink_metadata(entry.path()) {
-            Ok(metadata) if metadata.file_type().is_file() => metadata,
-            Ok(_) => continue,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(TerrainCacheError::Io(error)),
+        let Some(file) = root.open_regular(&name).map_err(TerrainCacheError::Io)? else {
+            continue;
         };
-        let stale = metadata
+        let stale = file
+            .metadata()
+            .map_err(TerrainCacheError::Io)?
             .modified()
             .ok()
             .and_then(|modified| now.duration_since(modified).ok())
@@ -562,16 +714,11 @@ fn cleanup_stale_temporary_files(root: &Path, now: SystemTime) -> Result<(), Ter
         if !stale {
             continue;
         }
-        match fs::remove_file(entry.path()) {
-            Ok(()) => removed = true,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(TerrainCacheError::Io(error)),
-        }
+        root.remove(&name).map_err(TerrainCacheError::Io)?;
+        removed = true;
     }
     if removed {
-        File::open(root)
-            .and_then(|directory| directory.sync_all())
-            .map_err(TerrainCacheError::Io)?;
+        root.sync().map_err(TerrainCacheError::Io)?;
     }
     Ok(())
 }
@@ -593,43 +740,65 @@ fn is_owned_temporary_name(name: &std::ffi::OsStr) -> bool {
         && parts.next().is_none()
 }
 
-fn write_source_atomic(path: &Path, source: &str) -> Result<(), TerrainCacheError> {
-    let parent = path.parent().ok_or(TerrainCacheError::InvalidConfig)?;
-    let (mut file, temporary) = create_private_temp(parent, "source")?;
+fn write_source_atomic(
+    root: &Arc<PrivateDirectory>,
+    name: &str,
+    source: &str,
+) -> Result<(), TerrainCacheError> {
+    let (mut file, temporary) = create_private_temp(root, "source")?;
+    let entry = TemporaryEntry::new(Arc::clone(root), temporary);
     file.write_all(source.as_bytes())
         .map_err(TerrainCacheError::Io)?;
     file.sync_all().map_err(TerrainCacheError::Io)?;
     drop(file);
-    fs::rename(temporary, path).map_err(TerrainCacheError::Io)
+    root.rename(entry.name(), name)
+        .map_err(TerrainCacheError::Io)?;
+    entry.disarm();
+    Ok(())
 }
 
-struct TemporaryPathGuard {
-    path: PathBuf,
+/// A temporary entry of the cache root, removed again unless it was renamed
+/// into place (`disarm`). It names the entry relative to the held directory.
+struct TemporaryEntry {
+    directory: Arc<PrivateDirectory>,
+    name: Option<String>,
 }
 
-impl Drop for TemporaryPathGuard {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+impl TemporaryEntry {
+    fn new(directory: Arc<PrivateDirectory>, name: String) -> Self {
+        Self {
+            directory,
+            name: Some(name),
+        }
+    }
+
+    fn name(&self) -> &str {
+        self.name.as_deref().unwrap_or_default()
+    }
+
+    fn disarm(mut self) {
+        self.name = None;
     }
 }
 
-fn create_private_temp(dir: &Path, label: &str) -> Result<(File, PathBuf), TerrainCacheError> {
+impl Drop for TemporaryEntry {
+    fn drop(&mut self) {
+        if let Some(name) = &self.name {
+            let _ = self.directory.remove(name);
+        }
+    }
+}
+
+/// Create a fresh `0600` temporary file inside the cache root and return it
+/// with its entry name.
+fn create_private_temp(
+    root: &PrivateDirectory,
+    label: &str,
+) -> Result<(File, String), TerrainCacheError> {
     for attempt in 0..16_u32 {
-        let path = dir.join(format!(".{label}.{}.{}.tmp", std::process::id(), attempt));
-        match OpenOptions::new()
-            .write(true)
-            .read(true)
-            .create_new(true)
-            .open(&path)
-        {
-            Ok(file) => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
-                }
-                return Ok((file, path));
-            }
+        let name = format!(".{label}.{}.{}.tmp", std::process::id(), attempt);
+        match root.create_exclusive(&name) {
+            Ok(file) => return Ok((file, name)),
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(TerrainCacheError::Io(error)),
         }
@@ -640,78 +809,68 @@ fn create_private_temp(dir: &Path, label: &str) -> Result<(File, PathBuf), Terra
     )))
 }
 
+/// A decompressed tile waiting in the cache root under a temporary name, with
+/// the SHA-256 of exactly the bytes that were stored.
+struct StagedTile {
+    entry: TemporaryEntry,
+    sha256: String,
+}
+
 fn decompress_to_hgt(
-    archive: &Path,
-    destination: &Path,
+    root: &Arc<PrivateDirectory>,
+    mut input: File,
     gzip: bool,
     expected_tile_name: &str,
-) -> Result<(), TerrainCacheError> {
-    let (mut output, temp_path) = create_private_temp(
-        destination
-            .parent()
-            .ok_or(TerrainCacheError::InvalidConfig)?,
-        "hgt",
-    )?;
-    let write_result = (|| -> Result<(), TerrainCacheError> {
-        if gzip {
-            let input = File::open(archive).map_err(TerrainCacheError::Io)?;
-            let mut decoder = GzDecoder::new(input);
-            copy_limited(&mut decoder, &mut output)?;
-        } else {
-            let input = File::open(archive).map_err(TerrainCacheError::Io)?;
-            let mut zip = ZipArchive::new(input).map_err(|_| TerrainCacheError::InvalidArchive)?;
-            let expected_entry = format!("{expected_tile_name}.hgt");
-            let mut found = false;
-            for index in 0..zip.len() {
-                let mut entry = zip
-                    .by_index(index)
-                    .map_err(|_| TerrainCacheError::InvalidArchive)?;
-                if entry.is_dir() {
-                    continue;
-                }
-                let enclosed = entry
-                    .enclosed_name()
-                    .ok_or(TerrainCacheError::InvalidArchive)?;
-                if enclosed.components().count() != 1
-                    || enclosed.as_os_str() != std::ffi::OsStr::new(&expected_entry)
-                    || entry.size() != SRTM3_BYTES && entry.size() != SRTM1_BYTES
-                {
-                    return Err(TerrainCacheError::InvalidArchive);
-                }
-                if found {
-                    return Err(TerrainCacheError::InvalidArchive);
-                }
-                found = true;
-                copy_limited(&mut entry, &mut output)?;
+) -> Result<StagedTile, TerrainCacheError> {
+    let (mut output, temporary) = create_private_temp(root, "hgt")?;
+    let entry = TemporaryEntry::new(Arc::clone(root), temporary);
+    input
+        .seek(SeekFrom::Start(0))
+        .map_err(TerrainCacheError::Io)?;
+    if gzip {
+        let mut decoder = GzDecoder::new(input);
+        copy_limited(&mut decoder, &mut output)?;
+    } else {
+        let mut zip = ZipArchive::new(input).map_err(|_| TerrainCacheError::InvalidArchive)?;
+        let expected_entry = format!("{expected_tile_name}.hgt");
+        let mut found = false;
+        for index in 0..zip.len() {
+            let mut member = zip
+                .by_index(index)
+                .map_err(|_| TerrainCacheError::InvalidArchive)?;
+            if member.is_dir() {
+                continue;
             }
-            if !found {
+            let enclosed = member
+                .enclosed_name()
+                .ok_or(TerrainCacheError::InvalidArchive)?;
+            if enclosed.components().count() != 1
+                || enclosed.as_os_str() != std::ffi::OsStr::new(&expected_entry)
+                || member.size() != SRTM3_BYTES && member.size() != SRTM1_BYTES
+            {
                 return Err(TerrainCacheError::InvalidArchive);
             }
+            if found {
+                return Err(TerrainCacheError::InvalidArchive);
+            }
+            found = true;
+            copy_limited(&mut member, &mut output)?;
         }
-        output.sync_all().map_err(TerrainCacheError::Io)
-    })();
-    drop(output);
-    let result = write_result.and_then(|()| {
-        let length = fs::metadata(&temp_path)
-            .map_err(TerrainCacheError::Io)?
-            .len();
-        if length != SRTM3_BYTES && length != SRTM1_BYTES {
+        if !found {
             return Err(TerrainCacheError::InvalidArchive);
         }
-        fs::rename(&temp_path, destination).map_err(TerrainCacheError::Io)?;
-        if let Ok(dir) = File::open(
-            destination
-                .parent()
-                .ok_or(TerrainCacheError::InvalidConfig)?,
-        ) {
-            let _ = dir.sync_all();
-        }
-        Ok(())
-    });
-    if result.is_err() {
-        let _ = fs::remove_file(&temp_path);
     }
-    result
+    output.sync_all().map_err(TerrainCacheError::Io)?;
+    // Hash what was stored: read the bytes back through the descriptor they
+    // were written through, which also proves the exact HGT length.
+    let stored = HgtTile::from_file(expected_tile_name, output).map_err(|error| match error {
+        TerrainError::InvalidHgtLength => TerrainCacheError::InvalidArchive,
+        other => TerrainCacheError::InvalidTile(other),
+    })?;
+    let sha256 = stored
+        .sha256_hex()
+        .map_err(TerrainCacheError::InvalidTile)?;
+    Ok(StagedTile { entry, sha256 })
 }
 
 fn copy_limited<R: Read, W: Write>(

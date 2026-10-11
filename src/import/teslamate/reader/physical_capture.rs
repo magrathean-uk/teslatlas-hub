@@ -322,14 +322,16 @@ async fn capture_physical_address_pages(
     let page_size = i64::from(limits.page_size);
     let mut last_id = None::<i32>;
     loop {
-        let rows = client
-            .query(
-                ADDRESSES_V2_2_SQL,
-                &[&last_id, &page_size, &selected_car_id],
-            )
-            .await?;
+        let rows = query_bounded(
+            client,
+            ADDRESSES_V2_2_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "addresses",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = rows.len();
-        let mut decoded = Vec::with_capacity(page_len);
+        let mut decoded = Vec::with_capacity(rows.len());
         for row in rows {
             let id = required_i32(&row, "addresses", "id")?;
             last_id = advance_signed_v2_2_cursor(last_id, id, "addresses")?;
@@ -354,14 +356,16 @@ async fn capture_physical_geofence_pages(
     let page_size = i64::from(limits.page_size);
     let mut last_id = None::<i32>;
     loop {
-        let rows = client
-            .query(
-                GEOFENCES_V2_2_SQL,
-                &[&last_id, &page_size, &selected_car_id],
-            )
-            .await?;
+        let rows = query_bounded(
+            client,
+            GEOFENCES_V2_2_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "geofences",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = rows.len();
-        let mut decoded = Vec::with_capacity(page_len);
+        let mut decoded = Vec::with_capacity(rows.len());
         for row in rows {
             let id = required_i32(&row, "geofences", "id")?;
             last_id = advance_signed_v2_2_cursor(last_id, id, "geofences")?;
@@ -386,11 +390,16 @@ async fn capture_physical_charge_pages(
     let page_size = i64::from(limits.page_size);
     let mut last_id = None::<i32>;
     loop {
-        let rows = client
-            .query(CHARGES_V2_2_SQL, &[&last_id, &page_size, &selected_car_id])
-            .await?;
+        let rows = query_bounded(
+            client,
+            CHARGES_V2_2_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "charges",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = rows.len();
-        let mut decoded = Vec::with_capacity(page_len);
+        let mut decoded = Vec::with_capacity(rows.len());
         for row in rows {
             let id = required_i32(&row, "charges", "id")?;
             last_id = advance_signed_v2_2_cursor(last_id, id, "charges")?;
@@ -415,14 +424,16 @@ async fn capture_physical_charging_process_pages(
     let page_size = i64::from(limits.page_size);
     let mut last_id = None::<i32>;
     loop {
-        let rows = client
-            .query(
-                CHARGING_PROCESSES_V2_2_SQL,
-                &[&last_id, &page_size, &selected_car_id],
-            )
-            .await?;
+        let rows = query_bounded(
+            client,
+            CHARGING_PROCESSES_V2_2_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "charging_processes",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = rows.len();
-        let mut decoded = Vec::with_capacity(page_len);
+        let mut decoded = Vec::with_capacity(rows.len());
         for row in rows {
             let id = required_i32(&row, "charging_processes", "id")?;
             last_id = advance_signed_v2_2_cursor(last_id, id, "charging_processes")?;
@@ -453,11 +464,16 @@ async fn capture_physical_drive_pages(
     let page_size = i64::from(limits.page_size);
     let mut last_id = None::<i32>;
     loop {
-        let rows = client
-            .query(DRIVES_V2_2_SQL, &[&last_id, &page_size, &selected_car_id])
-            .await?;
+        let rows = query_bounded(
+            client,
+            DRIVES_V2_2_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "drives",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = rows.len();
-        let mut decoded = Vec::with_capacity(page_len);
+        let mut decoded = Vec::with_capacity(rows.len());
         for row in rows {
             let id = required_i32(&row, "drives", "id")?;
             last_id = advance_signed_v2_2_cursor(last_id, id, "drives")?;
@@ -486,14 +502,16 @@ async fn capture_physical_position_pages(
     let page_size = i64::from(limits.page_size);
     let mut last_id = None::<i32>;
     loop {
-        let rows = client
-            .query(
-                POSITIONS_V2_2_SQL,
-                &[&last_id, &page_size, &selected_car_id],
-            )
-            .await?;
+        let rows = query_bounded(
+            client,
+            POSITIONS_V2_2_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "positions",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = rows.len();
-        let mut decoded = Vec::with_capacity(page_len);
+        let mut decoded = Vec::with_capacity(rows.len());
         for row in rows {
             let id = required_i32(&row, "positions", "id")?;
             last_id = advance_signed_v2_2_cursor(last_id, id, "positions")?;
@@ -522,11 +540,16 @@ async fn capture_physical_state_pages(
     let page_size = i64::from(limits.page_size);
     let mut last_id = None::<i32>;
     loop {
-        let rows = client
-            .query(STATES_V2_2_SQL, &[&last_id, &page_size, &selected_car_id])
-            .await?;
+        let rows = query_bounded(
+            client,
+            STATES_V2_2_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "states",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = rows.len();
-        let mut decoded = Vec::with_capacity(page_len);
+        let mut decoded = Vec::with_capacity(rows.len());
         for row in rows {
             let id = required_i32(&row, "states", "id")?;
             last_id = advance_signed_v2_2_cursor(last_id, id, "states")?;
@@ -555,11 +578,16 @@ async fn capture_physical_update_pages(
     let page_size = i64::from(limits.page_size);
     let mut last_id = None::<i32>;
     loop {
-        let rows = client
-            .query(UPDATES_V2_2_SQL, &[&last_id, &page_size, &selected_car_id])
-            .await?;
+        let rows = query_bounded(
+            client,
+            UPDATES_V2_2_SQL,
+            &[&last_id, &page_size, &selected_car_id],
+            "updates",
+            limits.page_budget(),
+        )
+        .await?;
         let page_len = rows.len();
-        let mut decoded = Vec::with_capacity(page_len);
+        let mut decoded = Vec::with_capacity(rows.len());
         for row in rows {
             let id = required_i32(&row, "updates", "id")?;
             last_id = advance_signed_v2_2_cursor(last_id, id, "updates")?;

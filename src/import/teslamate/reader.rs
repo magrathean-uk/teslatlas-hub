@@ -10,7 +10,7 @@
 use std::{
     io,
     path::Path,
-    pin::pin,
+    pin::Pin,
     sync::atomic::{AtomicBool, Ordering},
     time::Duration,
 };
@@ -24,10 +24,10 @@ use time::PrimitiveDateTime;
 use tokio::time::timeout;
 use tokio::{sync::mpsc, task::JoinSet};
 use tokio_postgres::{
-    Client, Config, NoTls, Row,
+    CancelToken, Client, Config, NoTls, Row,
     binary_copy::BinaryCopyOutRow,
     config::SslMode,
-    types::{FromSql, Type},
+    types::{FromSql, ToSql, Type},
 };
 use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroize;
@@ -52,11 +52,11 @@ use crate::{
         TeslaMateUpdatePhysicalV2_2,
     },
     teslamate_schema::{
-        ENUM_PROBE_SQL, MAX_VALIDATED_MIGRATION, MIGRATION_VERSIONS_SQL, MIN_SUPPORTED_MIGRATION,
-        SCHEMA_PROBE_SQL, SETTINGS_RELATIONSHIP_SQL, SourceTable,
-        TESLAMATE_V4_MIGRATION_SET_SHA256, TESLAMATE_V4_SOURCE_REVISION, projection,
-        validate_migration_versions, validate_observed_enums, validate_observed_schema,
-        validate_settings_relationship,
+        ENUM_PROBE_SQL, MAX_ENUM_PROBE_ROWS, MAX_MIGRATION_PROBE_ROWS, MAX_SCHEMA_PROBE_ROWS,
+        MAX_VALIDATED_MIGRATION, MIGRATION_VERSIONS_SQL, MIN_SUPPORTED_MIGRATION, SCHEMA_PROBE_SQL,
+        SETTINGS_RELATIONSHIP_SQL, SourceTable, TESLAMATE_V4_MIGRATION_SET_SHA256,
+        TESLAMATE_V4_SOURCE_REVISION, projection, validate_migration_versions,
+        validate_observed_enums, validate_observed_schema, validate_settings_relationship,
     },
     teslamate_stage::{
         TeslaMateStage, TeslaMateStageError, TeslaMateStageLimits, TeslaMateStageTable,
@@ -75,6 +75,7 @@ const MAX_MATERIALIZED_HISTORY_POSITIONS: usize = 100_000;
 const MAX_MATERIALIZED_OPEN_POSITIONS: usize = 100_000;
 
 include!("reader/diagnostics.rs");
+include!("reader/bounded.rs");
 include!("reader/connection.rs");
 include!("reader/credentials.rs");
 include!("reader/open_session.rs");
@@ -90,3 +91,7 @@ include!("reader/decoding.rs");
 #[cfg(test)]
 #[path = "reader/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "reader/bounded_tests.rs"]
+mod bounded_tests;

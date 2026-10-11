@@ -337,6 +337,28 @@ fn cell(
     }
 }
 
+/// Which decode budget a bounded source read ran into. The error carries the
+/// limit's name and size only, never a row value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceBudgetLimit {
+    /// More rows than the query's own row budget.
+    Rows,
+    /// One row larger than the per-row byte cap.
+    RowBytes,
+    /// More cumulative bytes than the per-page byte budget.
+    PageBytes,
+}
+
+impl std::fmt::Display for SourceBudgetLimit {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Rows => "row-count",
+            Self::RowBytes => "per-row byte",
+            Self::PageBytes => "per-page byte",
+        })
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum TeslaMateReaderError {
     #[error("TeslaMate migration failed: {primary}; staging cleanup failed ({cleanup})")]
@@ -437,6 +459,12 @@ pub enum TeslaMateReaderError {
     },
     #[error("TeslaMate source exceeds the {maximum} row import limit")]
     MaximumRowsExceeded { maximum: usize },
+    #[error("source {table} read exceeded its {limit} budget of {maximum}")]
+    SourceReadBudgetExceeded {
+        table: &'static str,
+        limit: SourceBudgetLimit,
+        maximum: usize,
+    },
     #[error(
         "TeslaMate compatibility history has {count} positions, exceeding the {maximum} materialization limit"
     )]

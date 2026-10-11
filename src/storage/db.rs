@@ -60,7 +60,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 68;
+pub const SCHEMA_VERSION: i32 = 69;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -352,6 +352,9 @@ pub struct HubStore {
     projection_state_detach_fault: Arc<Mutex<bool>>,
     #[cfg(test)]
     credential_write_hook: Arc<Mutex<Option<CredentialWriteHook>>>,
+    /// Digests of the lineage packs this store hashed, shared by its clones.
+    #[cfg(test)]
+    lineage_pack_hashes: Arc<Mutex<Vec<Sha256Digest>>>,
 }
 
 /// One collector-owned SQLite handle for high-rate stream writes. Each
@@ -1330,6 +1333,7 @@ include!("db/physical_v3_admission.rs");
 include!("db/live_sync.rs");
 include!("db/import_finalization.rs");
 include!("db/lineage_verification.rs");
+include!("db/lineage_digest_cache.rs");
 include!("db/identity_and_audit.rs");
 include!("db/device_credentials.rs");
 include!("db/device_grants.rs");

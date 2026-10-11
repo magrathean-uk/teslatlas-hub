@@ -1688,10 +1688,10 @@ async fn manifest(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -
     match hub_sync_v1::bootstrap_selection(&headers) {
         hub_sync_v1::BootstrapSelection::Legacy => {}
         hub_sync_v1::BootstrapSelection::Selected => {
-            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id, false);
+            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id, false).await;
         }
         hub_sync_v1::BootstrapSelection::Selected14 => {
-            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id, true);
+            return hub_sync_v1::bootstrap_manifest(&state, vehicle_id, true).await;
         }
         hub_sync_v1::BootstrapSelection::Unsupported => {
             return hub_sync_v1::unavailable_bootstrap_manifest();
@@ -1707,22 +1707,30 @@ async fn manifest(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -
         {
             return StatusCode::NOT_ACCEPTABLE.into_response();
         }
-        return match state.store.lineage_manifest_for_vehicle(vehicle_id) {
-            Ok(Some(lineage)) => {
-                match no_store_lineage_manifest(lineage, state.manifest_signing.as_deref()) {
-                    Ok(response) => response,
+        // Verifying the lineage hashes every pack the process has not yet
+        // proved, so it runs off the async runtime behind the bounded
+        // sync-control slot, like the other lineage-verifying routes.
+        return state
+            .sync_control_response(move |state| {
+                match state.store.lineage_manifest_for_vehicle(vehicle_id) {
+                    Ok(Some(lineage)) => {
+                        match no_store_lineage_manifest(lineage, state.manifest_signing.as_deref())
+                        {
+                            Ok(response) => response,
+                            Err(error) => {
+                                tracing::error!(%error, "cannot serialize v2 lineage manifest");
+                                StatusCode::SERVICE_UNAVAILABLE.into_response()
+                            }
+                        }
+                    }
+                    Ok(None) => StatusCode::NOT_ACCEPTABLE.into_response(),
                     Err(error) => {
-                        tracing::error!(%error, "cannot serialize v2 lineage manifest");
+                        tracing::error!(%error, "cannot load v2 lineage manifest");
                         StatusCode::SERVICE_UNAVAILABLE.into_response()
                     }
                 }
-            }
-            Ok(None) => StatusCode::NOT_ACCEPTABLE.into_response(),
-            Err(error) => {
-                tracing::error!(%error, "cannot load v2 lineage manifest");
-                StatusCode::SERVICE_UNAVAILABLE.into_response()
-            }
-        };
+            })
+            .await;
     }
     match state.store.manifest_for_vehicle(vehicle_id) {
         Ok(Some(manifest)) => {

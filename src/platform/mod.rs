@@ -9,4 +9,6 @@ pub mod linux_systemd;
 #[cfg(target_os = "macos")]
 pub mod macos_launch_agent;
 #[cfg(unix)]
+pub(crate) mod private_directory;
+#[cfg(unix)]
 pub(crate) mod user_lifetime_lock;

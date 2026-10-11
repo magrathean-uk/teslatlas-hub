@@ -402,12 +402,54 @@ fn schema_58_upgrade_preserves_old_lineage_and_enforces_new_immutable_car_identi
                 CHECK(last_authenticated_at_ms IS NULL OR last_authenticated_at_ms >= created_at_ms),
                 CHECK(length(CAST(display_name AS BLOB)) BETWEEN 1 AND 128)
              ) STRICT;
+             -- The geocoder cache as schema 58 had it; the v69 step adds the
+             -- provider columns to the lookup table and keeps its old rows.
+             CREATE TABLE address_cache (
+                osm_type TEXT NOT NULL,
+                osm_id INTEGER NOT NULL,
+                display_name TEXT NOT NULL,
+                name TEXT,
+                latitude REAL, longitude REAL, house_number TEXT, road TEXT,
+                neighbourhood TEXT, city TEXT, county TEXT, postcode TEXT,
+                state TEXT, state_district TEXT, country TEXT, raw_json TEXT,
+                PRIMARY KEY(osm_type, osm_id)
+             ) STRICT;
+             CREATE TABLE address_lookup_cache (
+                lookup_key TEXT PRIMARY KEY NOT NULL
+                    CHECK(length(CAST(lookup_key AS BLOB)) BETWEEN 1 AND 64),
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                osm_type TEXT NOT NULL,
+                osm_id INTEGER NOT NULL,
+                looked_up_at_ms INTEGER NOT NULL CHECK(looked_up_at_ms >= 0),
+                FOREIGN KEY(osm_type, osm_id) REFERENCES address_cache(osm_type, osm_id)
+             ) STRICT;
+             INSERT INTO address_cache(osm_type, osm_id, display_name)
+                 VALUES ('way', 42, 'Old Name');
+             INSERT INTO address_lookup_cache
+                 VALUES ('51.500000:-0.100000', 51.5, -0.1, 'way', 42, 111);
              PRAGMA user_version = 58;",
         )
         .unwrap();
 
     migrate(&connection).unwrap();
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT lookup_key, looked_up_at_ms, provider, display_name
+                 FROM address_lookup_cache",
+                [],
+                |row| Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                )),
+            )
+            .unwrap(),
+        ("51.500000:-0.100000".to_owned(), 111, None, None)
+    );
     assert_eq!(
         connection
             .query_row(

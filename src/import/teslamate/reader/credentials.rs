@@ -25,6 +25,12 @@ pub async fn read_legacy_token_ciphertexts(
     }
 }
 
+/// Budget of both private-token queries: `LIMIT 2`, one row plus the lookahead
+/// row that reports an ambiguous pair. They run without a `TeslaMateReadLimits`.
+fn legacy_token_budget() -> SourceReadBudget {
+    SourceReadBudget::fixed(1).with_lookahead()
+}
+
 /// Read the opaque legacy pair from the reviewed v4.2-compatible schema without
 /// changing the caller's transaction. `private.tokens` is part of the pinned
 /// source contract.
@@ -33,7 +39,8 @@ pub(crate) async fn read_legacy_token_ciphertexts_in_client(
 ) -> Result<TeslaMateLegacyTokenCiphertexts, TeslaMateReaderError> {
     inspect_legacy_token_pair_in_client(client).await?;
     let (_, query, relation) = exact_legacy_token_queries(true)?;
-    let rows = client.query(query, &[]).await?;
+    // LIMIT 2: the second row is the lookahead that reports ambiguity.
+    let rows = query_bounded(client, query, &[], relation, legacy_token_budget()).await?;
     if rows.is_empty() {
         return Err(TeslaMateReaderError::LegacyTokenPairMissing);
     }
@@ -61,7 +68,8 @@ async fn inspect_legacy_token_pair_in_client(
         .await?
         .try_get("private_tokens_exists")?;
     let (length_query, _, relation) = exact_legacy_token_queries(private_tokens_exists)?;
-    let length_rows = client.query(length_query, &[]).await?;
+    let length_rows =
+        query_bounded(client, length_query, &[], relation, legacy_token_budget()).await?;
     let lengths = length_rows
         .iter()
         .map(|row| {
@@ -266,6 +274,17 @@ pub(crate) fn snapshot_import_sql(snapshot_id: &str) -> Result<String, TeslaMate
 /// `i16` from the validated source domain.
 pub(crate) fn binary_copy_sql(table: SourceTable, selected_car_id: i16) -> String {
     let query = render_streaming_projection_query(table, selected_car_id);
+    format!("COPY ({query}) TO STDOUT WITH (FORMAT BINARY)")
+}
+
+/// Like [`binary_copy_sql`], but ending in `LIMIT limit` instead of `LIMIT ALL`,
+/// so a COPY reader that fails one row past its cap also stops the server there.
+pub(crate) fn capped_binary_copy_sql(
+    table: SourceTable,
+    selected_car_id: i16,
+    limit: i64,
+) -> String {
+    let query = render_bounded_projection_query(table, selected_car_id, limit);
     format!("COPY ({query}) TO STDOUT WITH (FORMAT BINARY)")
 }
 

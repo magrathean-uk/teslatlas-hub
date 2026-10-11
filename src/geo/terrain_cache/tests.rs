@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use std::{
-    fs::FileTimes,
+    fs::{self, FileTimes},
+    path::PathBuf,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
@@ -12,10 +13,33 @@ use axum::{
     response::Response,
     routing::any,
 };
+use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 
 use super::*;
 use crate::{geocoder::EgressGuardError, terrain::SRTM3_SIDE};
+
+#[path = "trust_tests.rs"]
+mod trust;
+
+/// A Hub store in its own private data directory, so a cache test never
+/// touches the real user's directories.
+fn test_store() -> (tempfile::TempDir, HubStore) {
+    let data = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(data.path()).unwrap();
+    (data, store)
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    hex::encode(Sha256::digest(bytes))
+}
+
+/// Record the digest the Hub would have stored when it downloaded `bytes`.
+fn record_digest(store: &HubStore, tile: TileId, bytes: &[u8]) {
+    store
+        .record_terrain_tile_digest(&tile.name(), &sha256_hex(bytes), 1)
+        .unwrap();
+}
 
 #[derive(Clone)]
 struct RevocableEgressGuard(Arc<AtomicBool>);
@@ -44,9 +68,10 @@ fn zip_bytes() -> Vec<u8> {
     output.into_inner()
 }
 
-fn options(root: &Path, endpoint: &str) -> TerrainCacheOptions {
+fn options(root: &Path, endpoint: &str, store: &HubStore) -> TerrainCacheOptions {
     TerrainCacheOptions {
         root: root.to_owned(),
+        store: store.clone(),
         min_free_bytes: 1,
         max_cache_bytes: 512 * 1024 * 1024,
         connect_timeout: Duration::from_secs(2),
@@ -87,9 +112,11 @@ where
 #[tokio::test]
 async fn cache_hit_does_not_use_network() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
     fs::write(dir.path().join(format!("{}.hgt", tile.name())), hgt_bytes()).unwrap();
-    let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+    record_digest(&store, tile, &hgt_bytes());
+    let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/", &store)).unwrap();
     assert_eq!(cache.get(tile).await.unwrap().side(), SRTM3_SIDE);
     assert!(cache.locks.lock().unwrap().is_empty());
 }
@@ -97,11 +124,12 @@ async fn cache_hit_does_not_use_network() {
 #[test]
 fn cache_quota_evicts_the_oldest_complete_tile_before_a_download() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let old = TileId::from_coordinates(51.5, -0.1).unwrap();
     let new = TileId::from_coordinates(52.5, -0.1).unwrap();
     write_cached_tile(dir.path(), old, 1);
     write_cached_tile(dir.path(), new, 2);
-    let mut opts = options(dir.path(), "http://127.0.0.1:1/");
+    let mut opts = options(dir.path(), "http://127.0.0.1:1/", &store);
     opts.max_cache_bytes = MAX_TILE_CACHE_BYTES + SRTM3_BYTES + 3;
     let cache = TerrainCache::new(opts).unwrap();
 
@@ -118,10 +146,12 @@ fn cache_quota_evicts_the_oldest_complete_tile_before_a_download() {
 #[tokio::test]
 async fn active_lookup_returns_cached_provenance_without_network() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
     fs::write(dir.path().join(format!("{}.hgt", tile.name())), hgt_bytes()).unwrap();
     fs::write(dir.path().join(format!("{}.source", tile.name())), "aws").unwrap();
-    let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+    record_digest(&store, tile, &hgt_bytes());
+    let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/", &store)).unwrap();
     let result = cache
         .lookup(51.5, -0.1, Duration::from_secs(1))
         .await
@@ -133,7 +163,7 @@ async fn active_lookup_returns_cached_provenance_without_network() {
         result.dataset_version,
         crate::terrain::TERRAIN_DATASET_VERSION
     );
-    assert_eq!(result.tile_hash.len(), 64);
+    assert_eq!(result.tile_hash, sha256_hex(&hgt_bytes()));
     assert_eq!(cache.hashes.lock().unwrap().len(), 1);
 
     let repeated = cache
@@ -145,34 +175,43 @@ async fn active_lookup_returns_cached_provenance_without_network() {
 }
 
 #[tokio::test]
-async fn cached_hash_is_invalidated_by_atomic_tile_replacement() {
+async fn a_tile_replaced_atomically_after_admission_is_unproven_and_fetched_again() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
     let path = dir.path().join(format!("{}.hgt", tile.name()));
     fs::write(&path, hgt_bytes()).unwrap();
-    let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+    record_digest(&store, tile, &hgt_bytes());
+    let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/", &store)).unwrap();
     let first = cache
         .lookup(51.5, -0.1, Duration::from_secs(1))
         .await
         .unwrap();
+    assert_eq!(first.tile_hash, sha256_hex(&hgt_bytes()));
 
     let replacement = dir.path().join("replacement.hgt");
     let mut bytes = hgt_bytes();
     bytes[0] = 1;
     fs::write(&replacement, bytes).unwrap();
     fs::rename(replacement, &path).unwrap();
-    let second = cache
-        .lookup(51.5, -0.1, Duration::from_secs(1))
-        .await
-        .unwrap();
 
-    assert_ne!(second.tile_hash, first.tile_hash);
+    // The new file has another identity, so it is hashed again, does not match
+    // the recorded digest, and is discarded; with no provider reachable the
+    // lookup fails instead of reporting the replacement's hash.
+    assert!(
+        cache
+            .lookup(51.5, -0.1, Duration::from_secs(1))
+            .await
+            .is_err()
+    );
+    assert!(!path.exists());
     assert_eq!(cache.hashes.lock().unwrap().len(), 1);
 }
 
 #[test]
 fn source_marker_fifo_is_ignored_without_blocking() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
     let source = dir.path().join(format!("{}.source", tile.name()));
     assert!(
@@ -182,7 +221,7 @@ fn source_marker_fifo_is_ignored_without_blocking() {
             .expect("run mkfifo")
             .success()
     );
-    let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+    let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/", &store)).unwrap();
 
     let started = std::time::Instant::now();
     assert_eq!(cache.read_source(tile), "cache");
@@ -200,6 +239,7 @@ fn production_sources_are_https_only() {
 #[test]
 fn startup_removes_only_stale_owned_temporary_files() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let stale = dir.path().join(".archive.123.0.tmp");
     let fresh = dir.path().join(".hgt.123.1.tmp");
     let unrelated = dir.path().join("notes.tmp");
@@ -213,7 +253,7 @@ fn startup_removes_only_stale_owned_temporary_files() {
         .set_times(FileTimes::new().set_modified(SystemTime::UNIX_EPOCH))
         .unwrap();
 
-    TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+    TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/", &store)).unwrap();
 
     assert!(!stale.exists());
     assert!(fresh.exists());
@@ -223,8 +263,9 @@ fn startup_removes_only_stale_owned_temporary_files() {
 #[test]
 fn cache_quota_counts_fresh_temporary_files() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     fs::write(dir.path().join(".source.123.0.tmp"), b"x").unwrap();
-    let mut opts = options(dir.path(), "http://127.0.0.1:1/");
+    let mut opts = options(dir.path(), "http://127.0.0.1:1/", &store);
     opts.max_cache_bytes = MAX_TILE_CACHE_BYTES;
     let cache = TerrainCache::new(opts).unwrap();
 
@@ -237,7 +278,8 @@ fn cache_quota_counts_fresh_temporary_files() {
 #[tokio::test]
 async fn active_lookup_enforces_budget() {
     let dir = tempdir().unwrap();
-    let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/")).unwrap();
+    let (_data, store) = test_store();
+    let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/", &store)).unwrap();
     assert!(matches!(
         cache.lookup(f64::NAN, -0.1, Duration::ZERO).await,
         Err(TerrainCacheError::Timeout)
@@ -284,8 +326,9 @@ async fn wait_for_partial_archive(root: &Path) {
 #[tokio::test]
 async fn lookup_timeout_removes_in_progress_archive() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let (endpoint, server_task) = server(|_| stalled_archive_response()).await;
-    let cache = Arc::new(TerrainCache::new(options(dir.path(), &endpoint)).unwrap());
+    let cache = Arc::new(TerrainCache::new(options(dir.path(), &endpoint, &store)).unwrap());
     let lookup_cache = Arc::clone(&cache);
     let lookup = tokio::spawn(async move {
         lookup_cache
@@ -306,6 +349,7 @@ async fn lookup_timeout_removes_in_progress_archive() {
 #[tokio::test]
 async fn cancelled_downloads_do_not_exhaust_archive_names() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let complete = Arc::new(AtomicBool::new(false));
     let requests = Arc::new(AtomicUsize::new(0));
     let complete_for_server = Arc::clone(&complete);
@@ -324,7 +368,7 @@ async fn cancelled_downloads_do_not_exhaust_archive_names() {
         }
     })
     .await;
-    let cache = Arc::new(TerrainCache::new(options(dir.path(), &endpoint)).unwrap());
+    let cache = Arc::new(TerrainCache::new(options(dir.path(), &endpoint, &store)).unwrap());
 
     for _ in 0..20 {
         let lookup_cache = Arc::clone(&cache);
@@ -352,6 +396,7 @@ async fn cancelled_downloads_do_not_exhaust_archive_names() {
 #[tokio::test]
 async fn aws_failure_falls_back_to_esa_and_concurrent_requests_share_lock() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let count = Arc::new(AtomicUsize::new(0));
     let count_for_server = Arc::clone(&count);
     let (endpoint, task) = server(move |uri| {
@@ -366,7 +411,7 @@ async fn aws_failure_falls_back_to_esa_and_concurrent_requests_share_lock() {
         }
     })
     .await;
-    let mut opts = options(dir.path(), &endpoint);
+    let mut opts = options(dir.path(), &endpoint, &store);
     opts.esa_base = endpoint.clone();
     let cache = Arc::new(TerrainCache::new(opts).unwrap());
     let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
@@ -380,6 +425,7 @@ async fn aws_failure_falls_back_to_esa_and_concurrent_requests_share_lock() {
 #[tokio::test]
 async fn revoked_before_esa_fallback_blocks_second_provider_request() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let requests = Arc::new(AtomicUsize::new(0));
     let admitted = Arc::new(AtomicBool::new(true));
     let requests_for_server = Arc::clone(&requests);
@@ -397,7 +443,7 @@ async fn revoked_before_esa_fallback_blocks_second_provider_request() {
         }
     })
     .await;
-    let mut opts = options(dir.path(), &endpoint);
+    let mut opts = options(dir.path(), &endpoint, &store);
     opts.esa_base = endpoint;
     let cache = TerrainCache::new(opts).unwrap();
     let guard = RevocableEgressGuard(admitted);
@@ -414,6 +460,7 @@ async fn revoked_before_esa_fallback_blocks_second_provider_request() {
 #[tokio::test]
 async fn provider_redirect_is_not_followed_without_a_second_guard() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let redirected_requests = Arc::new(AtomicUsize::new(0));
     let redirected_requests_for_server = Arc::clone(&redirected_requests);
     let (redirected_endpoint, redirected_task) = server(move |_| {
@@ -429,7 +476,7 @@ async fn provider_redirect_is_not_followed_without_a_second_guard() {
             .unwrap()
     })
     .await;
-    let cache = TerrainCache::new(options(dir.path(), &redirecting_endpoint)).unwrap();
+    let cache = TerrainCache::new(options(dir.path(), &redirecting_endpoint, &store)).unwrap();
     let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
 
     assert!(matches!(
@@ -444,8 +491,9 @@ async fn provider_redirect_is_not_followed_without_a_second_guard() {
 #[tokio::test]
 async fn corrupt_zip_and_low_space_are_rejected() {
     let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
     let (endpoint, task) = server(|_| Response::new(Body::from(b"not-a-zip".to_vec()))).await;
-    let cache = TerrainCache::new(options(dir.path(), &endpoint)).unwrap();
+    let cache = TerrainCache::new(options(dir.path(), &endpoint, &store)).unwrap();
     let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
     assert!(matches!(
         cache.get(tile).await,
@@ -453,7 +501,7 @@ async fn corrupt_zip_and_low_space_are_rejected() {
     ));
     task.abort();
 
-    let mut low = options(dir.path(), "http://127.0.0.1:1/");
+    let mut low = options(dir.path(), "http://127.0.0.1:1/", &store);
     low.free_space_override = Some(0);
     let cache = TerrainCache::new(low).unwrap();
     assert!(matches!(

@@ -66,11 +66,21 @@ FROM "public"."schema_migrations" AS "migration"
 
 /// Read every installed migration version in canonical order. The importer
 /// hashes these values locally; no optional PostgreSQL extension is required.
+///
+/// The pinned set is [`TESLAMATE_V4_MIGRATION_COUNT`] rows. The query carries
+/// `LIMIT` [`MAX_MIGRATION_PROBE_ROWS`] + 1, so the server never sends more
+/// than one row past the cap and the reader fails at that row.
 pub const MIGRATION_VERSIONS_SQL: &str = r#"
 SELECT "migration"."version"::bigint AS "version"
 FROM "public"."schema_migrations" AS "migration"
 ORDER BY "migration"."version" ASC
+LIMIT 4097
 "#;
+
+/// Row cap of the migration-version probe. It only guards allocation: a source
+/// with any other count than the pinned one is rejected by version validation.
+/// [`MIGRATION_VERSIONS_SQL`] carries this value plus one as its `LIMIT`.
+pub const MAX_MIGRATION_PROBE_ROWS: usize = 4096;
 
 /// Describe every column in the source telemetry tables through PostgreSQL's
 /// system catalogues. This is a metadata-only query; it cannot change source
@@ -109,7 +119,13 @@ WHERE "namespace"."nspname" = 'public'
   AND "attribute"."attnum" > 0
   AND NOT "attribute"."attisdropped"
 ORDER BY "relation"."relname", "attribute"."attnum"
+LIMIT 65537
 "#;
+
+/// Row cap of the column-description probe ([`SCHEMA_PROBE_SQL`], which carries
+/// this value plus one as its `LIMIT`). The eleven probed tables have a few
+/// hundred columns, so this only guards allocation.
+pub const MAX_SCHEMA_PROBE_ROWS: usize = 65_536;
 
 /// Read the exact enum labels required by the pinned physical schema. Label
 /// order is semantically significant to PostgreSQL enum comparison, so the
@@ -135,7 +151,13 @@ WHERE "type"."typname" = ANY (
 )
   AND "namespace"."nspname" = 'public'
 ORDER BY "type"."typname" ASC, "enum"."enumsortorder" ASC
+LIMIT 4097
 "#;
+
+/// Row cap of the enum-label probe ([`ENUM_PROBE_SQL`], which carries this
+/// value plus one as its `LIMIT`). The six probed enums have a few dozen labels
+/// in total, so this only guards allocation.
+pub const MAX_ENUM_PROBE_ROWS: usize = 4096;
 
 /// The current source is expected to have exactly one global settings row and
 /// every current car must reference a car-settings row. It is a fixed metadata
