@@ -63,6 +63,8 @@ use teslatlas_hub::{
 };
 use uuid::Uuid;
 
+#[path = "charge_cost_cli_tests.rs"]
+mod charge_cost_cli_tests;
 #[path = "pairing_scope_tests.rs"]
 mod pairing_scope_tests;
 

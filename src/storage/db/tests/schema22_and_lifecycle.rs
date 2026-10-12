@@ -610,7 +610,9 @@ fn imported_home_work_geofences_match_live_endpoints_after_restart() {
         start_date_ms: 3_000,
         end_date_ms: Some(4_000),
         charge_energy_added: Some(1.0),
-        charge_energy_used_kwh: None,
+        // An AC row is priced on its inlet energy only (C2 R42), so the fixture
+        // carries one; the counter alone would give no cost.
+        charge_energy_used_kwh: Some(1.0),
         start_ideal_range_km: None,
         end_ideal_range_km: None,
         cost: None,
@@ -727,77 +729,6 @@ fn imported_home_work_geofences_match_live_endpoints_after_restart() {
     assert_eq!(history.charges[0].cost_per_unit, Some(0.30));
     assert_eq!(history.charges[0].session_fee, Some(2.0));
     assert_eq!(history.charges[0].cost, Some(2.3));
-}
-
-#[test]
-fn lifecycle_commit_recomputes_charge_energy_from_all_durable_samples() {
-    let temp = crate::private_tempdir().expect("tempdir");
-    let store = HubStore::initialize(temp.path()).expect("store");
-    let (_, vehicle) = test_registered_vehicle(&store);
-    let start = 1_800_000_000_000;
-    let sample = |observation_id, observed_at_ms, charge_state| crate::lifecycle::LifecycleSample {
-        observation_id,
-        observed_at_ms,
-        vehicle_state: "online".to_owned(),
-        payload: serde_json::json!({
-            "record_type": "owner_api_vehicle_data_v1",
-            "source_vehicle_id": "9",
-            "vehicle_data": {"charge_state": charge_state},
-        }),
-    };
-    let step = crate::lifecycle::apply_samples(
-        crate::lifecycle::OpenSessionState::new(),
-        1,
-        &[
-            sample(
-                1,
-                start,
-                serde_json::json!({
-                    "charging_state": "Charging",
-                    "timestamp": start,
-                    "charger_power": 1.0
-                }),
-            ),
-            sample(
-                2,
-                start + 3_600_000,
-                serde_json::json!({
-                    "charging_state": "Charging",
-                    "timestamp": start + 3_600_000,
-                    "charger_power": 6.0,
-                    "charger_phases": 1
-                }),
-            ),
-            sample(
-                3,
-                start + 7_200_000,
-                serde_json::json!({
-                    "charging_state": "Complete",
-                    "timestamp": start + 7_200_000,
-                    "charger_power": 0.0
-                }),
-            ),
-        ],
-    )
-    .expect("closed charge");
-    let encoded = step.state.encode().expect("encode state");
-    let mut delta = step.delta;
-    delta.charges[0].charge_energy_used_kwh = Some(999.0);
-    store
-        .commit_lifecycle_delta(&LifecycleCommit {
-            vehicle_id: vehicle.vehicle_id,
-            car_id: 1,
-            open_session_json: &encoded,
-            last_observation_id: 3,
-            quarantined: false,
-            updated_at_ms: start + 7_200_000,
-            delta: &delta,
-        })
-        .expect("commit lifecycle");
-    let history = store
-        .materialised_history(vehicle.vehicle_id)
-        .expect("materialised history");
-    assert_eq!(history.charges[0].charge_energy_used_kwh, Some(6.0));
 }
 
 #[test]
@@ -1530,7 +1461,7 @@ fn sync_mutations_are_durable_monotonic_and_coalescible() {
 }
 
 #[test]
-fn native_controls_update_settings_geofences_charge_cost_and_gpx_pages() {
+fn native_controls_update_settings_geofences_and_gpx_pages() {
     let temp = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(temp.path()).expect("store");
     let (_, vehicle) = test_registered_vehicle(&store);
@@ -1659,35 +1590,6 @@ fn native_controls_update_settings_geofences_charge_cost_and_gpx_pages() {
         tpms_pressure_rl: None,
         tpms_pressure_rr: None,
     };
-    let charge = crate::hub_pack::ProjectionCharge {
-        id: 9,
-        car_id: 1,
-        start_date_ms: 1_700_000_000_000,
-        end_date_ms: Some(1_700_000_001_000),
-        charge_energy_added: Some(10.0),
-        charge_energy_used_kwh: Some(11.0),
-        start_ideal_range_km: None,
-        end_ideal_range_km: None,
-        cost: None,
-        fast_charger_type: None,
-        billing_type: None,
-        cost_per_unit: None,
-        session_fee: None,
-        start_latitude: Some(47.5),
-        start_longitude: Some(19.0),
-        start_battery_level: None,
-        end_battery_level: None,
-        duration_min: Some(10),
-        address: None,
-        location_name: None,
-        geofence: None,
-        is_dc: None,
-        charge_rate_km_per_hour: None,
-        max_charger_power_kw: None,
-        outside_temp_avg: None,
-        start_rated_range_km: None,
-        end_rated_range_km: None,
-    };
     let connection = store.open().unwrap();
     connection
         .execute(
@@ -1716,16 +1618,6 @@ fn native_controls_update_settings_geofences_charge_cost_and_gpx_pages() {
             )
             .unwrap();
     }
-    connection
-        .execute(
-            "INSERT INTO materialised_charges(vehicle_id, charge_id, car_id, charge_json)
-                 VALUES (?1, 9, 1, ?2)",
-            params![
-                vehicle.vehicle_id.to_string(),
-                serde_json::to_string(&charge).unwrap()
-            ],
-        )
-        .unwrap();
     drop(connection);
 
     let page = store
@@ -1771,43 +1663,6 @@ fn native_controls_update_settings_geofences_charge_cost_and_gpx_pages() {
             .as_deref(),
         Some("Tariff")
     );
-    assert_eq!(
-        store
-            .recalculate_missing_charge_costs(vehicle.vehicle_id, active_geofence.id)
-            .expect("recalculate matching charge"),
-        1
-    );
-    assert_eq!(
-        store
-            .set_charge_cost(vehicle.vehicle_id, 9, 4.25)
-            .expect("set charge cost")
-            .cost,
-        Some(4.25)
-    );
-    assert_eq!(
-        store
-            .set_charge_cost_rate(
-                vehicle.vehicle_id,
-                9,
-                0.5,
-                crate::hub_pack::GeofenceBillingType::PerKwh,
-            )
-            .expect("set per-kWh cost")
-            .cost,
-        Some(5.5)
-    );
-    assert_eq!(
-        store
-            .set_charge_cost_rate(
-                vehicle.vehicle_id,
-                9,
-                0.25,
-                crate::hub_pack::GeofenceBillingType::PerMinute,
-            )
-            .expect("set per-minute cost")
-            .cost,
-        Some(2.5)
-    );
     store
         .delete_geofence(vehicle.vehicle_id, active_geofence.id)
         .expect("delete active geofence");
@@ -1818,87 +1673,5 @@ fn native_controls_update_settings_geofences_charge_cost_and_gpx_pages() {
             .unwrap()
             .start_geofence,
         None
-    );
-}
-
-#[test]
-fn rated_range_charge_consensus_updates_live_car_efficiency() {
-    let temp = crate::private_tempdir().expect("tempdir");
-    let store = HubStore::initialize(temp.path()).expect("store");
-    let (_, vehicle) = test_registered_vehicle(&store);
-    let car = ProjectionCar {
-        id: 1,
-        name: "Efficiency car".into(),
-        model: "3".into(),
-        vin: None,
-        source_eid: None,
-        source_vid: None,
-        trim_badging: None,
-        marketing_name: None,
-        exterior_color: None,
-        wheel_type: None,
-        spoiler_type: None,
-        firmware_version: None,
-        efficiency_wh_per_km: None,
-        settings: ProjectionCarSettings::default(),
-    };
-    store
-        .persist_materialised_car_if_absent(vehicle.vehicle_id, &car)
-        .expect("materialised car");
-    let charge = |id| crate::hub_pack::ProjectionCharge {
-        id,
-        car_id: 1,
-        start_date_ms: 1_700_000_000_000 + id * 100_000,
-        end_date_ms: Some(1_700_000_050_000 + id * 100_000),
-        charge_energy_added: Some(10.0),
-        charge_energy_used_kwh: Some(11.0),
-        start_ideal_range_km: Some(100.0),
-        end_ideal_range_km: Some(140.0),
-        cost: None,
-        fast_charger_type: None,
-        billing_type: None,
-        cost_per_unit: None,
-        session_fee: None,
-        start_latitude: None,
-        start_longitude: None,
-        start_battery_level: Some(40),
-        end_battery_level: Some(80),
-        duration_min: Some(30),
-        address: None,
-        location_name: None,
-        geofence: None,
-        is_dc: None,
-        charge_rate_km_per_hour: None,
-        max_charger_power_kw: None,
-        outside_temp_avg: None,
-        start_rated_range_km: Some(100.0),
-        end_rated_range_km: Some(150.0),
-    };
-    let mut connection = store.open().expect("open");
-    for id in 1..=8 {
-        let row = charge(id);
-        connection
-            .execute(
-                "INSERT INTO materialised_charges(vehicle_id, charge_id, car_id, charge_json)
-                     VALUES (?1, ?2, 1, ?3)",
-                params![
-                    vehicle.vehicle_id.to_string(),
-                    id,
-                    serde_json::to_string(&row).unwrap()
-                ],
-            )
-            .expect("charge");
-    }
-    let transaction = connection.transaction().expect("transaction");
-    recompute_car_efficiency(&transaction, vehicle.vehicle_id, 1).expect("efficiency");
-    transaction.commit().expect("commit");
-
-    assert_eq!(
-        store
-            .materialised_car_for_vehicle(vehicle.vehicle_id)
-            .unwrap()
-            .unwrap()
-            .efficiency_wh_per_km,
-        Some(200.0)
     );
 }

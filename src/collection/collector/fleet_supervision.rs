@@ -143,10 +143,11 @@ where
                                 .into_iter()
                                 .filter(|vehicle| !events.iter().any(|event| event.id == vehicle.id))
                                 .collect::<Vec<_>>();
-                            persist_unchanged_discoveries(
+                            persist_unchanged_discoveries_with_timeout(
                                 store,
                                 &unchanged,
                                 CollectorProvider::Fleet,
+                                cadence.offline_drive_timeout,
                             )
                             .await?;
                         }
@@ -202,10 +203,11 @@ where
                                 .into_iter()
                                 .filter(|vehicle| !events.iter().any(|event| event.id == vehicle.id))
                                 .collect::<Vec<_>>();
-                            persist_unchanged_discoveries(
+                            persist_unchanged_discoveries_with_timeout(
                                 store,
                                 &unchanged,
                                 CollectorProvider::Fleet,
+                                cadence.offline_drive_timeout,
                             )
                             .await?;
                         }

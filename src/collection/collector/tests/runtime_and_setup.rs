@@ -1304,7 +1304,7 @@ async fn disabled_geocoder_leaves_pending_jobs_untouched() {
 #[test]
 fn invalid_or_future_source_times_fall_back_to_receipt_time() {
     let received_at_ms = 1_800_000_000_000;
-    for timestamp in [1_i64, received_at_ms + FUTURE_TIMESTAMP_SKEW_MS + 1] {
+    for timestamp in [1_i64, received_at_ms + K_SKEW_MS + 1] {
         let snapshot = VehicleData::for_test(9, json!({"drive_state": {"timestamp": timestamp}}));
         assert_eq!(
             observation_timestamp(&snapshot, received_at_ms),

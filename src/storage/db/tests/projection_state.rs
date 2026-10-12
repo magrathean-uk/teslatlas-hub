@@ -119,8 +119,24 @@ fn direct_materialised_base(
     ProjectionCar,
     LineageManifestV2,
 ) {
+    direct_materialised_base_with_firmware(store, drives, None)
+}
+
+/// As `direct_materialised_base`, with the installed version the import left
+/// on the car row (the newest imported update's version).
+fn direct_materialised_base_with_firmware(
+    store: &HubStore,
+    drives: &[ProjectionDrive],
+    firmware_version: Option<&str>,
+) -> (
+    VehicleRecord,
+    ProjectionBinding,
+    ProjectionCar,
+    LineageManifestV2,
+) {
     let (vehicle, binding, manifest) = v2_base_manifest(store);
-    let car = import_delta_test_car(binding.selected_car_id);
+    let mut car = import_delta_test_car(binding.selected_car_id);
+    car.firmware_version = firmware_version.map(str::to_owned);
     let run_id = store
         .begin_import_generation(
             binding.account_id,

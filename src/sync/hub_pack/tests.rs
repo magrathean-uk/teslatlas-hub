@@ -14,3 +14,4 @@ include!("tests/writer_basics.rs");
 include!("tests/schema22_core.rs");
 include!("tests/schema22_contracts.rs");
 include!("tests/deltas.rs");
+include!("tests/lifecycle_float_bits.rs");

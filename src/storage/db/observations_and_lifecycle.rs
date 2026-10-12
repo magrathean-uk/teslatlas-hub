@@ -332,14 +332,39 @@ impl HubStore {
         result
     }
 
+    /// Last accepted reachability of a vehicle, `online`, `asleep` or
+    /// `offline`, from its persisted lifecycle state (C1 R7, R77). `None` when
+    /// the vehicle has no state or no reachability has been accepted yet.
+    pub(crate) fn lifecycle_last_reach(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<Option<String>, StoreError> {
+        let Some(record) = self.load_lifecycle_state(vehicle_id)? else {
+            return Ok(None);
+        };
+        crate::lifecycle::OpenSessionState::decode(&record.open_session_json)
+            .map(|state| state.last_reach)
+            .map_err(|_| StoreError::InvalidLifecycleSession)
+    }
+
     /// Record a successful configured-vehicle discovery as current presence.
-    /// This deliberately does not append a lifecycle event or reproject history:
-    /// unchanged provider success is freshness evidence, not a state change.
+    ///
+    /// A discovery whose state equals the vehicle's persisted `last_reach` is
+    /// freshness evidence only: it goes to `current_observations` and never
+    /// reaches the lifecycle. A discovery that differs is delivered to the
+    /// lifecycle (stored in `raw_observations` and projected) in the same
+    /// transaction, so a reachability change the unit has not yet seen is never
+    /// lost, for example asleep, a wake seen only through the stream or
+    /// `vehicle_data`, then asleep again (C1 R77, section 7 item 8). Only the
+    /// three Tesla reachability texts are delivered; any other state text gives
+    /// the unit no evidence and would otherwise be stored on every poll.
+    /// Returns whether the discovery was delivered.
     pub(crate) fn record_current_discovery(
         &self,
         input: &ObservationInput,
         received_at_ms: i64,
-    ) -> Result<(), StoreError> {
+        offline_drive_timeout: std::time::Duration,
+    ) -> Result<bool, StoreError> {
         input.validate()?;
         validate_timestamp("discovery received_at_ms", received_at_ms)?;
         let record_type = input.payload.get("record_type").and_then(Value::as_str);
@@ -363,6 +388,24 @@ impl HubStore {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
         ensure_vehicle_belongs_to_source(&transaction, input.vehicle_id, input.source_id)?;
+        let discovered = observation_vehicle_state(&input.payload);
+        if matches!(discovered.as_str(), "online" | "asleep" | "offline")
+            && let Some(record) = load_lifecycle_state_in_transaction(&transaction, input.vehicle_id)?
+        {
+            let state = crate::lifecycle::OpenSessionState::decode(&record.open_session_json)
+                .map_err(|_| StoreError::InvalidLifecycleSession)?;
+            if state.last_reach.as_deref() != Some(discovered.as_str()) && record.car_id > 0 {
+                self.accept_owner_observation_and_lifecycle_in_transaction(
+                    &transaction,
+                    input,
+                    received_at_ms,
+                    record.car_id,
+                    offline_drive_timeout,
+                )?;
+                transaction.commit().map_err(StoreError::AppendObservation)?;
+                return Ok(true);
+            }
+        }
         transaction.execute(
             "INSERT INTO current_observations(
                 vehicle_id,record_type,observation_id,source_id,
@@ -371,7 +414,8 @@ impl HubStore {
                 ?1,?2,
                 MAX(
                     COALESCE((SELECT MAX(observation_id) FROM raw_observations),0),
-                    COALESCE((SELECT MAX(observation_id) FROM current_observations),0)
+                    COALESCE((SELECT MAX(observation_id) FROM current_observations),0),
+                    COALESCE((SELECT MAX(last_observation_id) FROM vehicle_lifecycle_state),0)
                 )+1,
                 ?3,?4,?5,?6,?7
              ) ON CONFLICT(vehicle_id,record_type) DO UPDATE SET
@@ -390,7 +434,8 @@ impl HubStore {
                 digest.as_bytes().as_slice(), payload,
             ],
         ).map_err(StoreError::AppendObservation)?;
-        transaction.commit().map_err(StoreError::AppendObservation)
+        transaction.commit().map_err(StoreError::AppendObservation)?;
+        Ok(false)
     }
 
     pub(crate) fn accept_stream_observation_and_lifecycle(
@@ -480,29 +525,7 @@ impl HubStore {
                 .map_err(StoreError::LifecycleProjection)?;
             state = step.state;
             quarantined |= step.quarantined;
-            delta.drives.extend(step.delta.drives);
-            for discarded_drive_id in &step.delta.discarded_drive_ids {
-                delta
-                    .open_drive_positions
-                    .retain(|position| position.drive_id != Some(*discarded_drive_id));
-            }
-            delta
-                .discarded_drive_ids
-                .extend(step.delta.discarded_drive_ids);
-            delta.positions.extend(step.delta.positions);
-            delta.charges.extend(step.delta.charges);
-            delta.charge_samples.extend(step.delta.charge_samples);
-            delta.states.extend(step.delta.states);
-            delta.updates.extend(step.delta.updates);
-            delta
-                .charge_start_coordinates
-                .extend(step.delta.charge_start_coordinates);
-            delta
-                .open_drive_positions
-                .extend(step.delta.open_drive_positions);
-            delta
-                .open_charge_samples
-                .extend(step.delta.open_charge_samples);
+            crate::lifecycle::merge_step_delta(&mut delta, step.delta);
         }
         if let Some(open) = state.open_drive.as_mut() {
             open.positions.clear();
@@ -629,29 +652,7 @@ impl HubStore {
             .map_err(StoreError::LifecycleProjection)?;
             state = step.state;
             quarantined |= step.quarantined;
-            delta.drives.extend(step.delta.drives);
-            for discarded_drive_id in &step.delta.discarded_drive_ids {
-                delta
-                    .open_drive_positions
-                    .retain(|position| position.drive_id != Some(*discarded_drive_id));
-            }
-            delta
-                .discarded_drive_ids
-                .extend(step.delta.discarded_drive_ids);
-            delta.positions.extend(step.delta.positions);
-            delta.charges.extend(step.delta.charges);
-            delta.charge_samples.extend(step.delta.charge_samples);
-            delta.states.extend(step.delta.states);
-            delta.updates.extend(step.delta.updates);
-            delta
-                .charge_start_coordinates
-                .extend(step.delta.charge_start_coordinates);
-            delta
-                .open_drive_positions
-                .extend(step.delta.open_drive_positions);
-            delta
-                .open_charge_samples
-                .extend(step.delta.open_charge_samples);
+            crate::lifecycle::merge_step_delta(&mut delta, step.delta);
         }
         if let Some(open) = state.open_drive.as_mut() {
             open.positions.clear();
@@ -662,24 +663,25 @@ impl HubStore {
         let encoded = state
             .encode()
             .map_err(|_| StoreError::InvalidLifecycleSession)?;
-        Self::commit_lifecycle_delta_in_transaction(
-            transaction,
-            &LifecycleCommit {
-                vehicle_id: input.vehicle_id,
-                car_id,
-                open_session_json: &encoded,
-                last_observation_id: state.last_observation_id,
-                quarantined,
-                updated_at_ms: received_at_ms,
-                delta: &delta,
-            },
-        )?;
+        let (positions_materialised, charge_samples_materialised) =
+            Self::commit_lifecycle_delta_in_transaction(
+                transaction,
+                &LifecycleCommit {
+                    vehicle_id: input.vehicle_id,
+                    car_id,
+                    open_session_json: &encoded,
+                    last_observation_id: state.last_observation_id,
+                    quarantined,
+                    updated_at_ms: received_at_ms,
+                    delta: &delta,
+                },
+            )?;
         Ok(OwnerObservationResult {
             append: appended,
             drives_closed: delta.drives.len(),
             charges_closed: delta.charges.len(),
-            positions_materialised: delta.positions.len(),
-            charge_samples_materialised: delta.charge_samples.len(),
+            positions_materialised,
+            charge_samples_materialised,
             lifecycle_quarantined: quarantined,
         })
     }
@@ -1276,6 +1278,11 @@ impl HubStore {
             .collect()
     }
 
+    /// Set the cost of one materialised charge to the total the owner gives
+    /// (C2 R53 `total`): `cost = round2(cost)`, the tariff copy unchanged. A
+    /// total may be negative (a credit); it must fit the pack's scale-2 fixed
+    /// numeric (R55 (c)). Allowed on every materialised row, imported ones
+    /// included, and it replaces any earlier cost. Returns the stored row.
     pub fn set_charge_cost(
         &self,
         vehicle_id: Uuid,
@@ -1285,6 +1292,11 @@ impl HubStore {
         self.set_charge_cost_input(vehicle_id, charge_id, cost, None)
     }
 
+    /// Set the cost of one materialised charge from a unit price the owner
+    /// gives (C2 R53 `per_kwh` and `per_minute`). The tariff copy becomes
+    /// `(billing_type, round4(rate), no fee)` and the cost is the R44 cost on
+    /// that copy with no free charging and no fence fee, because the owner's
+    /// entry is the complete price. Returns the stored row.
     pub fn set_charge_cost_rate(
         &self,
         vehicle_id: Uuid,
@@ -1295,6 +1307,14 @@ impl HubStore {
         self.set_charge_cost_input(vehicle_id, charge_id, rate, Some(billing_type))
     }
 
+    /// The shared path of the two manual setters (C2 R53 to R55), in the order
+    /// R54 gives: a nil vehicle id, a charge id below one, a value that is not
+    /// finite or is outside its range, a charge that is not materialised, a
+    /// rate with no basis to price, a computed cost outside the pack's range.
+    /// On any error nothing is written. On success one `IMMEDIATE`
+    /// transaction updates the row, adds one `charge` sync mutation and marks
+    /// the export dirty; entering the value the row already holds writes
+    /// nothing and still returns the row (R6).
     fn set_charge_cost_input(
         &self,
         vehicle_id: Uuid,
@@ -1308,69 +1328,128 @@ impl HubStore {
         if charge_id <= 0 {
             return Err(StoreError::InvalidChargeId);
         }
-        if !value.is_finite() || !(0.0..=1_000_000_000.0).contains(&value) {
-            return Err(StoreError::InvalidChargeCost);
+        // R55 (b) and (c), decided before any storage is touched.
+        let entered = match billing_type {
+            Some(_) => {
+                let rate = round_manual_amount(value, MANUAL_RATE_DECIMALS);
+                if !rate.is_some_and(|rate| (0.0..=MANUAL_RATE_MAX).contains(&rate)) {
+                    return Err(StoreError::InvalidChargeCost);
+                }
+                rate
+            }
+            None => {
+                let total = round_manual_amount(value, MANUAL_TOTAL_DECIMALS);
+                if !total.is_some_and(crate::lifecycle::cost_fits_pack_scale) {
+                    return Err(StoreError::InvalidChargeCost);
+                }
+                total
+            }
         }
+        .ok_or(StoreError::InvalidChargeCost)?;
+
+        let vehicle_key = vehicle_id.to_string();
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        let charge_json = transaction
+        let stored: Option<String> = transaction
             .query_row(
                 "SELECT charge_json FROM materialised_charges
                  WHERE vehicle_id = ?1 AND charge_id = ?2",
-                params![vehicle_id.to_string(), charge_id],
-                |row| row.get::<_, String>(0),
+                params![vehicle_key, charge_id],
+                |row| row.get(0),
             )
             .optional()
-            .map_err(StoreError::Query)?
-            .ok_or(StoreError::UnknownCharge(charge_id))?;
-        let mut charge: crate::hub_pack::ProjectionCharge =
-            serde_json::from_str(&charge_json).map_err(StoreError::DeserializeLifecycleRow)?;
-        let cost = match billing_type {
-            None => value,
-            Some(billing_type) => crate::lifecycle::calculate_charge_cost(
-                charge.fast_charger_type.as_deref(),
-                false,
-                charge.charge_energy_added,
-                charge.charge_energy_used_kwh,
-                charge.duration_min,
-                Some(crate::lifecycle::ChargeTariff {
+            .map_err(StoreError::Query)?;
+        let stored: crate::hub_pack::ProjectionCharge = serde_json::from_str(
+            &stored.ok_or(StoreError::UnknownCharge(charge_id))?,
+        )
+        .map_err(StoreError::DeserializeLifecycleRow)?;
+        let mut row = stored.clone();
+        match billing_type {
+            None => row.cost = Some(entered),
+            Some(billing_type) => {
+                let tariff = crate::lifecycle::ChargeTariff {
                     billing_type,
-                    cost_per_unit: Some(value),
+                    cost_per_unit: Some(entered),
                     session_fee: None,
-                }),
-            )
-            .ok_or(StoreError::ChargeCostBasisUnavailable {
-                charge_id,
-                mode: billing_type.as_str(),
-            })?,
-        };
-        if charge.cost == Some(cost) {
-            transaction.commit().map_err(StoreError::Query)?;
-            return Ok(charge);
+                };
+                // Only a per-minute cost reads the span, so only then are the
+                // stored samples loaded (R43a).
+                let span_observed = match billing_type {
+                    crate::hub_pack::GeofenceBillingType::PerMinute => {
+                        crate::lifecycle::charge_span_observed(
+                            &row,
+                            &load_materialised_charge_samples(&transaction, vehicle_id, charge_id)?,
+                        )
+                    }
+                    crate::hub_pack::GeofenceBillingType::PerKwh => true,
+                };
+                let context = crate::lifecycle::ChargeCostContext {
+                    free_supercharging: false,
+                    span_observed,
+                };
+                let Some(cost) =
+                    crate::lifecycle::calculate_charge_cost(&row, Some(tariff), context)
+                else {
+                    // No cost has two reasons: nothing to price (R42, R43), or
+                    // a price out of the pack's range (R55 (c)). A free rate
+                    // over the same row tells them apart: it is priced
+                    // whenever there is a basis, whatever the rate.
+                    let free = crate::lifecycle::ChargeTariff {
+                        cost_per_unit: Some(0.0),
+                        ..tariff
+                    };
+                    return Err(
+                        if crate::lifecycle::calculate_charge_cost(&row, Some(free), context)
+                            .is_none()
+                        {
+                            StoreError::ChargeCostBasisUnavailable {
+                                charge_id,
+                                mode: billing_type.as_str(),
+                            }
+                        } else {
+                            StoreError::InvalidChargeCost
+                        },
+                    );
+                };
+                row.billing_type = Some(billing_type);
+                row.cost_per_unit = Some(entered);
+                row.session_fee = None;
+                row.cost = Some(cost);
+            }
         }
-        charge.cost = Some(cost);
-        let payload = serde_json::to_string(&charge).map_err(StoreError::SerializeLifecycleRow)?;
-        transaction
-            .execute(
-                "UPDATE materialised_charges SET charge_json = ?3
-                 WHERE vehicle_id = ?1 AND charge_id = ?2",
-                params![vehicle_id.to_string(), charge_id, payload],
-            )
-            .map_err(StoreError::LifecycleWrite)?;
-        record_sync_mutation_in_transaction(
-            &transaction,
-            vehicle_id,
-            "charge",
+        let changed = row != stored;
+        if changed {
+            let charge_json =
+                serde_json::to_string(&row).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    "UPDATE materialised_charges SET charge_json = ?3
+                     WHERE vehicle_id = ?1 AND charge_id = ?2",
+                    params![vehicle_key, charge_id, charge_json],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+            record_sync_mutation_in_transaction(
+                &transaction,
+                vehicle_id,
+                "charge",
+                charge_id,
+                row.car_id,
+                "upsert",
+                &charge_json,
+            )?;
+            mark_export_dirty_in_transaction(&transaction, vehicle_id)?;
+        }
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        // R59: the vehicle id, the charge id and the outcome only (R7).
+        tracing::info!(
+            vehicle_id = %vehicle_id,
             charge_id,
-            charge.car_id,
-            "upsert",
-            &payload,
-        )?;
-        mark_export_dirty_in_transaction(&transaction, vehicle_id)?;
-        transaction.commit().map_err(StoreError::Query)?;
-        Ok(charge)
+            changed,
+            "manual charge cost stored"
+        );
+        Ok(row)
     }
 
     pub fn geofence_name_at(
@@ -1576,6 +1655,16 @@ impl HubStore {
         Ok(())
     }
 
+    /// The vehicle's import watermarks as id floors (C1 R84): per id space the
+    /// largest `max_source_row_id` of any source, 0 when there is none.
+    pub(crate) fn lifecycle_watermark_id_floors(
+        &self,
+        vehicle_id: Uuid,
+    ) -> Result<crate::lifecycle::IdFloors, StoreError> {
+        let connection = self.open()?;
+        watermark_id_floors(&connection, vehicle_id)
+    }
+
     /// Atomically retain an imported open-session snapshot outside the bounded
     /// lifecycle blob. Repeating the same source snapshot is a no-op.
     pub fn seed_imported_open_session(
@@ -1682,11 +1771,15 @@ impl HubStore {
                 params![source, vehicle],
             )
             .map_err(StoreError::LifecycleWrite)?;
+        // The `charging_processes` watermark is kept: the upsert below only
+        // raises it, because a reseed must never lower the vehicle's import
+        // bound W(V) (C2 R5), which would turn imported charge rows into Hub
+        // rows that a fill or the efficiency median may then use.
         transaction
             .execute(
                 "DELETE FROM lifecycle_source_watermarks
-                 WHERE source_id = ?1 AND vehicle_id = ?2",
-                params![source, vehicle],
+                 WHERE source_id = ?1 AND vehicle_id = ?2 AND domain <> ?3",
+                params![source, vehicle, CHARGING_PROCESSES_DOMAIN],
             )
             .map_err(StoreError::LifecycleWrite)?;
         let mut inserted = 0;
@@ -1827,8 +1920,12 @@ impl HubStore {
                         source_id, vehicle_id, domain, max_source_row_id, max_timestamp_ms
                      ) VALUES (?1, ?2, ?3, ?4, ?5)
                      ON CONFLICT(source_id, vehicle_id, domain) DO UPDATE SET
-                        max_source_row_id = MAX(max_source_row_id, excluded.max_source_row_id),
-                        max_timestamp_ms = MAX(max_timestamp_ms, excluded.max_timestamp_ms)",
+                        max_source_row_id = COALESCE(
+                            MAX(max_source_row_id, excluded.max_source_row_id),
+                            max_source_row_id, excluded.max_source_row_id),
+                        max_timestamp_ms = COALESCE(
+                            MAX(max_timestamp_ms, excluded.max_timestamp_ms),
+                            max_timestamp_ms, excluded.max_timestamp_ms)",
                     params![
                         source,
                         vehicle,
@@ -1839,6 +1936,9 @@ impl HubStore {
                 )
                 .map_err(StoreError::LifecycleWrite)?;
         }
+        let mut seeded = seeded;
+        raise_id_cursors_above_watermarks(&transaction, vehicle_id, &mut seeded)?;
+        seed_imported_version_from_updates(&transaction, vehicle_id, &mut seeded)?;
         let json = seeded
             .encode()
             .map_err(|_| StoreError::InvalidLifecycleSession)?;
@@ -2021,4 +2121,35 @@ fn validate_public_page_arguments(
         return Err(StoreError::InvalidPublicPageQuery("cursor"));
     }
     Ok(cursor.unwrap_or(unbounded))
+}
+
+/// Decimals of a manual unit price (C2 R55 (b)): the scale of a Hub-saved
+/// fence price (C8 section 1.1), so one rate policy holds on a fence and on a
+/// charge.
+const MANUAL_RATE_DECIMALS: i32 = 4;
+
+/// Largest manual unit price (C2 R55 (b)), the upper bound of a Hub-saved fence
+/// price (C8 R8): a typing slip of a whole order of magnitude is refused
+/// rather than stored as a price.
+const MANUAL_RATE_MAX: f64 = 99_999.999_9;
+
+/// Decimals of a manual total (C2 R55 (c)): the scale of the cost column
+/// (R4), so the stored value does not change on a pack round trip.
+const MANUAL_TOTAL_DECIMALS: i32 = 2;
+
+/// Round `value` half away from zero to `decimals` places, with a result of
+/// `-0.0` written `0.0` (C2 R55 (b) and (c)). `None` when the value or the
+/// scaled value is not finite, so an overflowing entry is refused instead of
+/// being stored as infinity.
+fn round_manual_amount(value: f64, decimals: i32) -> Option<f64> {
+    if !value.is_finite() {
+        return None;
+    }
+    let scale = 10_f64.powi(decimals);
+    let scaled = value * scale;
+    if !scaled.is_finite() {
+        return None;
+    }
+    let rounded = scaled.round() / scale;
+    Some(if rounded == 0.0 { 0.0 } else { rounded })
 }

@@ -261,10 +261,15 @@ fn promote_imported_open_session_in_transaction(
             params![source, vehicle],
         )
         .map_err(StoreError::LifecycleWrite)?;
+    // The `charging_processes` watermark is kept: the upsert below only
+    // raises it, because a replacement or promotion must never lower the
+    // vehicle's import bound W(V) (C2 R5), which would turn imported charge
+    // rows into Hub rows that a fill or the efficiency median may then use.
     transaction
         .execute(
-            "DELETE FROM lifecycle_source_watermarks WHERE source_id=?1 AND vehicle_id=?2",
-            params![source, vehicle],
+            "DELETE FROM lifecycle_source_watermarks
+             WHERE source_id=?1 AND vehicle_id=?2 AND domain<>?3",
+            params![source, vehicle, CHARGING_PROCESSES_DOMAIN],
         )
         .map_err(StoreError::LifecycleWrite)?;
     let mut inserted = 0;
@@ -377,11 +382,14 @@ fn promote_imported_open_session_in_transaction(
         transaction.execute(
             "INSERT INTO lifecycle_source_watermarks(source_id, vehicle_id, domain, max_source_row_id, max_timestamp_ms)
              VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(source_id, vehicle_id, domain) DO UPDATE SET
-             max_source_row_id=MAX(max_source_row_id, excluded.max_source_row_id),
-             max_timestamp_ms=MAX(max_timestamp_ms, excluded.max_timestamp_ms)",
+             max_source_row_id=COALESCE(MAX(max_source_row_id, excluded.max_source_row_id), max_source_row_id, excluded.max_source_row_id),
+             max_timestamp_ms=COALESCE(MAX(max_timestamp_ms, excluded.max_timestamp_ms), max_timestamp_ms, excluded.max_timestamp_ms)",
             params![source, vehicle, domain, watermark.max_id, watermark.max_timestamp_ms],
         ).map_err(StoreError::LifecycleWrite)?;
     }
+    let mut seeded = seeded;
+    raise_id_cursors_above_watermarks(transaction, vehicle_id, &mut seeded)?;
+    seed_imported_version_from_updates(transaction, vehicle_id, &mut seeded)?;
     let json = seeded
         .encode()
         .map_err(|_| StoreError::InvalidLifecycleSession)?;

@@ -56,6 +56,71 @@ impl DevelopmentServeModeArgument {
     }
 }
 
+/// What `set-charge-cost --cost` means (C2 R53). The three names reuse the
+/// `--billing-type` vocabulary (`per_kwh`, `per_minute`) plus `total`, because
+/// the commonest manual case is copying a total from a receipt, so a unit
+/// price must be named to be used and is never mistaken for a total.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum ChargeCostMode {
+    /// The session's total cost.
+    #[value(name = "total")]
+    Total,
+    /// A price per kWh.
+    #[value(name = "per_kwh")]
+    PerKwh,
+    /// A price per minute of connected time.
+    #[value(name = "per_minute")]
+    PerMinute,
+}
+
+/// A `--mode` value as the owner typed it: the mode and, when the value was a
+/// deprecated alias of one release ago, that alias (C2 R53a), so the command
+/// can say so once on stderr.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ChargeCostModeChoice {
+    mode: ChargeCostMode,
+    deprecated_alias: Option<String>,
+}
+
+/// The old `set-charge-cost --mode` values that still work for one release, each
+/// naming a total, a per-kWh rate or a per-minute rate (C2 R53a). The values of
+/// the previous release are the dirty side's to supply (C2 section 12 item 9)
+/// and the clean inputs do not state them, so the table is empty until the
+/// coordinator provides them; each line added here is accepted with a
+/// deprecation line on stderr and the same store call as its new mode. An old
+/// value that is not listed is a usage error. Reason: an invocation that named
+/// a mode of the old release must not silently break, and one that relied on
+/// an unlisted default must not silently store its number as a total, which is
+/// why `--mode` is required in this release.
+const DEPRECATED_CHARGE_COST_MODES: &[(&str, ChargeCostMode)] = &[];
+
+/// Parse a `--mode` value: the three names, then the deprecated aliases of
+/// `aliases`. Anything else is a usage error that names the three modes, so
+/// no store call is made (C2 R53, R53a).
+fn parse_charge_cost_mode_in(
+    value: &str,
+    aliases: &[(&str, ChargeCostMode)],
+) -> Result<ChargeCostModeChoice, String> {
+    if let Ok(mode) = ChargeCostMode::from_str(value, false) {
+        return Ok(ChargeCostModeChoice {
+            mode,
+            deprecated_alias: None,
+        });
+    }
+    aliases
+        .iter()
+        .find(|(alias, _)| *alias == value)
+        .map(|(alias, mode)| ChargeCostModeChoice {
+            mode: *mode,
+            deprecated_alias: Some((*alias).to_owned()),
+        })
+        .ok_or_else(|| format!("unknown mode `{value}`: use total, per_kwh or per_minute"))
+}
+
+fn parse_charge_cost_mode(value: &str) -> Result<ChargeCostModeChoice, String> {
+    parse_charge_cost_mode_in(value, DEPRECATED_CHARGE_COST_MODES)
+}
+
 #[derive(Debug, Subcommand)]
 enum ControlCommand {
     /// List paired devices and the vehicles each may read, without exposing bearer material.
@@ -186,7 +251,10 @@ enum ControlCommand {
         cost_per_unit: Option<f64>,
         #[arg(long)]
         session_fee: Option<f64>,
-        /// Fill missing costs for matching historical charges after saving.
+        /// After saving the fence, price the past Hub charges that started in
+        /// it and have no cost yet, with this fence's tariff (C2 R49, R50).
+        /// Charges that already have a cost, and imported charges, are never
+        /// changed. Without this flag no past charge is touched.
         #[arg(long)]
         recalculate_missing_costs: bool,
     },
@@ -196,15 +264,25 @@ enum ControlCommand {
         #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
         id: i64,
     },
-    /// Replace the total cost of one completed charging session.
+    /// Set the cost of one completed charging session (C2 R52, R53): the
+    /// total, or a price per kWh or per minute from which the Hub works the
+    /// total out.
     #[command(name = "set-charge-cost")]
     SetChargeCost {
         #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
         charge_id: i64,
-        #[arg(long)]
+        /// The total cost, or the price per kWh or per minute, as `--mode` says.
+        #[arg(long, allow_negative_numbers = true)]
         cost: f64,
-        #[arg(long, default_value = "total")]
-        mode: String,
+        /// What `--cost` means: `total`, `per_kwh` or `per_minute`. Required in
+        /// this release (C2 R53a); `total` becomes the default in the next.
+        #[arg(
+            long,
+            required = true,
+            value_name = "total|per_kwh|per_minute",
+            value_parser = parse_charge_cost_mode
+        )]
+        mode: ChargeCostModeChoice,
     },
     /// Write one completed drive as TeslaMate-compatible GPX to stdout.
     #[command(name = "export-gpx")]

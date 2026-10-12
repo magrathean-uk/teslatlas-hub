@@ -225,6 +225,127 @@ const CONTROL_PAIR_VEHICLE_ID_USAGE: &str = "--vehicle-id does not apply to `con
     selects the car of a vehicle command. Scope the invitation with `control pair --vehicle <UUID>` \
     (repeatable) or `--all-vehicles`";
 
+impl ChargeCostMode {
+    /// The name the owner types (C2 R53).
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Total => "total",
+            Self::PerKwh => "per_kwh",
+            Self::PerMinute => "per_minute",
+        }
+    }
+}
+
+/// The one deprecation line of an old `--mode` value (C2 R53a).
+fn deprecated_charge_cost_mode_line(alias: &str, mode: ChargeCostMode) -> String {
+    format!(
+        "teslatlas-hub: --mode {alias} is deprecated and will stop working in the next \
+         release; use --mode {}",
+        mode.as_str()
+    )
+}
+
+/// The store call each mode makes (C2 R53): `total` sets the total; the two
+/// rate modes set a unit price and let the Hub work the total out.
+fn set_charge_cost_by_mode(
+    store: &HubStore,
+    vehicle_id: uuid::Uuid,
+    charge_id: i64,
+    value: f64,
+    mode: ChargeCostMode,
+) -> Result<teslatlas_hub::hub_pack::ProjectionCharge, StoreError> {
+    match mode {
+        ChargeCostMode::Total => store.set_charge_cost(vehicle_id, charge_id, value),
+        ChargeCostMode::PerKwh => {
+            store.set_charge_cost_rate(vehicle_id, charge_id, value, GeofenceBillingType::PerKwh)
+        }
+        ChargeCostMode::PerMinute => {
+            store.set_charge_cost_rate(vehicle_id, charge_id, value, GeofenceBillingType::PerMinute)
+        }
+    }
+}
+
+/// `control set-charge-cost` after the vehicle is chosen: the deprecation line
+/// of an old mode value goes to `diagnostics` first (once, before the store
+/// call), then the store call, then the document the command prints (C2 R54):
+/// `{"status": "updated", "vehicleId": ..., "charge": <row>}`.
+fn run_set_charge_cost(
+    store: &HubStore,
+    vehicle_id: uuid::Uuid,
+    charge_id: i64,
+    value: f64,
+    choice: &ChargeCostModeChoice,
+    diagnostics: &mut dyn Write,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    if let Some(alias) = &choice.deprecated_alias {
+        writeln!(
+            diagnostics,
+            "{}",
+            deprecated_charge_cost_mode_line(alias, choice.mode)
+        )?;
+    }
+    let charge = set_charge_cost_by_mode(store, vehicle_id, charge_id, value, choice.mode)?;
+    Ok(serde_json::json!({
+        "status": "updated",
+        "vehicleId": vehicle_id,
+        "charge": charge,
+    }))
+}
+
+/// `control set-geofence` after the vehicle is chosen: save the fence, then,
+/// only when `--recalculate-missing-costs` is set, fill the unknown costs of
+/// the Hub's own charges that started inside it (C2 R49, R50). The document
+/// carries the number of rows priced as `recalculatedChargeCosts` (0 without
+/// the flag).
+fn run_set_geofence(
+    store: &HubStore,
+    vehicle_id: uuid::Uuid,
+    command: &ControlCommand,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let ControlCommand::SetGeofence {
+        id,
+        name,
+        latitude,
+        longitude,
+        radius_m,
+        billing_type,
+        cost_per_unit,
+        session_fee,
+        recalculate_missing_costs,
+    } = command
+    else {
+        return Err("not a set-geofence command".into());
+    };
+    let billing_type = billing_type
+        .parse::<GeofenceBillingType>()
+        .map_err(|_| "--billing-type must be per_kwh or per_minute")?;
+    let geofence = store.save_geofence(
+        vehicle_id,
+        *id,
+        teslatlas_hub::teslamate_projection::TeslaMateGeofence {
+            id: id.unwrap_or_default(),
+            name: name.clone(),
+            latitude: Some(*latitude),
+            longitude: Some(*longitude),
+            radius_m: Some(*radius_m),
+            billing_type: Some(billing_type),
+            cost_per_unit: *cost_per_unit,
+            session_fee: *session_fee,
+        },
+    )?;
+    let recalculated_charge_costs = if *recalculate_missing_costs {
+        store.recalculate_missing_charge_costs(vehicle_id, geofence.id)?
+    } else {
+        0
+    };
+    Ok(serde_json::json!({
+        "status": "updated",
+        "vehicleId": vehicle_id,
+        "geofence": geofence,
+        "recalculatedChargeCosts": recalculated_charge_costs,
+    }))
+}
+
 async fn run_control(
     config_path: &Path,
     requested_vehicle_id: Option<uuid::Uuid>,
@@ -396,48 +517,8 @@ async fn run_control(
                 })
             );
         }
-        ControlCommand::SetGeofence {
-            id,
-            name,
-            latitude,
-            longitude,
-            radius_m,
-            billing_type,
-            cost_per_unit,
-            session_fee,
-            recalculate_missing_costs,
-        } => {
-            let billing_type = billing_type
-                .parse::<GeofenceBillingType>()
-                .map_err(|_| "--billing-type must be per_kwh or per_minute")?;
-            let geofence = store.save_geofence(
-                vehicle_id,
-                *id,
-                teslatlas_hub::teslamate_projection::TeslaMateGeofence {
-                    id: id.unwrap_or_default(),
-                    name: name.clone(),
-                    latitude: Some(*latitude),
-                    longitude: Some(*longitude),
-                    radius_m: Some(*radius_m),
-                    billing_type: Some(billing_type),
-                    cost_per_unit: *cost_per_unit,
-                    session_fee: *session_fee,
-                },
-            )?;
-            let recalculated_charge_costs = if *recalculate_missing_costs {
-                store.recalculate_missing_charge_costs(vehicle_id, geofence.id)?
-            } else {
-                0
-            };
-            println!(
-                "{}",
-                serde_json::json!({
-                    "status": "updated",
-                    "vehicleId": vehicle_id,
-                    "geofence": geofence,
-                    "recalculatedChargeCosts": recalculated_charge_costs,
-                })
-            );
+        ControlCommand::SetGeofence { .. } => {
+            println!("{}", run_set_geofence(&store, vehicle_id, command)?);
         }
         ControlCommand::DeleteGeofence { id } => {
             store.delete_geofence(vehicle_id, *id)?;
@@ -455,30 +536,15 @@ async fn run_control(
             cost,
             mode,
         } => {
-            let charge = match mode.as_str() {
-                "total" => store.set_charge_cost(vehicle_id, *charge_id, *cost)?,
-                "per_kwh" => store.set_charge_cost_rate(
-                    vehicle_id,
-                    *charge_id,
-                    *cost,
-                    GeofenceBillingType::PerKwh,
-                )?,
-                "per_minute" => store.set_charge_cost_rate(
-                    vehicle_id,
-                    *charge_id,
-                    *cost,
-                    GeofenceBillingType::PerMinute,
-                )?,
-                _ => return Err("--mode must be total, per_kwh, or per_minute".into()),
-            };
-            println!(
-                "{}",
-                serde_json::json!({
-                    "status": "updated",
-                    "vehicleId": vehicle_id,
-                    "charge": charge,
-                })
-            );
+            let document = run_set_charge_cost(
+                &store,
+                vehicle_id,
+                *charge_id,
+                *cost,
+                mode,
+                &mut std::io::stderr(),
+            )?;
+            println!("{document}");
         }
         ControlCommand::ExportGpx { drive_id } => {
             let stdout = std::io::stdout();

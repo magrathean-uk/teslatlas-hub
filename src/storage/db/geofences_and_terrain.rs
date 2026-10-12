@@ -157,6 +157,33 @@ impl HubStore {
         Ok(())
     }
 
+    /// Fill the missing costs of the Hub charges that started inside one fence,
+    /// when the owner asks for it (C2 R49 to R51). Returns the number of rows
+    /// changed.
+    ///
+    /// Everything runs in one `IMMEDIATE` transaction. The errors come first
+    /// and in this order: a nil vehicle id, a fence id below one, a fence the
+    /// vehicle does not have. Then the walk takes the vehicle's charge rows in
+    /// charge-id order, one bounded page at a time, and fills a row iff all of
+    /// these hold:
+    ///
+    /// - its cost is unknown (a known cost, computed, imported or entered by
+    ///   hand, is never replaced: R47, R48);
+    /// - it is a Hub row, not an imported one (R5, R51);
+    /// - its start coordinates are known and the one geofence rule over all of
+    ///   the vehicle's fences picks this very fence, so a smaller overlapping
+    ///   fence keeps its sessions as it does at close (C1 R57);
+    /// - the fence's tariff is complete and valid (R40);
+    /// - the cost over that tariff, with the session fee waived when the row
+    ///   continues its plug-in (R44a), is known (R44).
+    ///
+    /// A filled row takes the cost and the tariff copy together, so it never
+    /// disagrees with its own tariff fields. The fence's current tariff is
+    /// used because the owner has just saved it and asked for it to price the
+    /// missing costs; the car's current `free_supercharging` is used because
+    /// the historic value is not recorded. Each change is one `upsert` of a
+    /// `charge` sync mutation, and the export is marked dirty once. A second
+    /// identical call changes nothing and returns 0.
     pub fn recalculate_missing_charge_costs(
         &self,
         vehicle_id: Uuid,
@@ -172,78 +199,28 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        let fence = geofence_fence_by_id(&transaction, vehicle_id, source_geofence_id)?
+        let target = geofence_fence_by_id(&transaction, vehicle_id, source_geofence_id)?
             .ok_or(StoreError::UnknownGeofence(source_geofence_id))?;
-        let tariff = fence
-            .billing_type
-            .map(|billing_type| crate::lifecycle::ChargeTariff {
-                billing_type,
-                cost_per_unit: fence.cost_per_unit,
-                session_fee: fence.session_fee,
-            });
-        let mut updated = 0_u64;
-        let mut after_id = 0_i64;
-        loop {
-            let page = materialised_charge_page(&transaction, vehicle_id, after_id)?;
-            let Some(last) = page.last().map(|(id, _)| *id) else {
-                break;
-            };
-            after_id = last;
-            for (charge_id, charge_json) in page {
-                let mut charge: crate::hub_pack::ProjectionCharge =
-                    serde_json::from_str(&charge_json)
-                        .map_err(StoreError::DeserializeLifecycleRow)?;
-                if charge.cost.is_some()
-                    || !matches!(
-                        (charge.start_latitude, charge.start_longitude),
-                        (Some(latitude), Some(longitude))
-                            if crate::lifecycle::match_geofence(
-                                latitude,
-                                longitude,
-                                std::slice::from_ref(&fence),
-                            )
-                            .is_some()
-                    )
-                {
-                    continue;
-                }
-                let Some(cost) = crate::lifecycle::calculate_charge_cost(
-                    charge.fast_charger_type.as_deref(),
-                    false,
-                    charge.charge_energy_added,
-                    charge.charge_energy_used_kwh,
-                    charge.duration_min,
-                    tariff,
-                ) else {
-                    continue;
-                };
-                charge.cost = Some(cost);
-                let payload =
-                    serde_json::to_string(&charge).map_err(StoreError::SerializeLifecycleRow)?;
-                transaction
-                    .execute(
-                        "UPDATE materialised_charges SET charge_json = ?3
-                         WHERE vehicle_id = ?1 AND charge_id = ?2",
-                        params![vehicle_id.to_string(), charge_id, payload],
-                    )
-                    .map_err(StoreError::LifecycleWrite)?;
-                record_sync_mutation_in_transaction(
-                    &transaction,
-                    vehicle_id,
-                    "charge",
-                    charge_id,
-                    charge.car_id,
-                    "upsert",
-                    &payload,
-                )?;
-                updated += 1;
+        let tariff = crate::lifecycle::ChargeTariff::of_fence(&target);
+        let changed = match tariff {
+            Some(tariff) => {
+                fill_missing_charge_costs_in_transaction(&transaction, vehicle_id, &target, tariff)?
             }
-        }
-        if updated > 0 {
+            // A fence without a usable tariff prices nothing (R40).
+            None => 0,
+        };
+        if changed > 0 {
             mark_export_dirty_in_transaction(&transaction, vehicle_id)?;
         }
         transaction.commit().map_err(StoreError::LifecycleWrite)?;
-        Ok(updated)
+        // R59: the vehicle id, the count and the outcome only; never the fence
+        // name or any coordinate (R7).
+        tracing::info!(
+            vehicle_id = %vehicle_id,
+            filled = changed,
+            "missing charge costs filled"
+        );
+        Ok(changed)
     }
 
     /// Preserve imported geofence labels and geometry as a durable, append-only
@@ -373,10 +350,13 @@ impl HubStore {
             .expect("projection-state detach fault lock") = true;
     }
 
+    /// Write one lifecycle commit and return how many positions and charge
+    /// samples it materialised, counting the open children of closed and
+    /// discarded sessions it pulled from `lifecycle_open_rows` (C1 R11, R48).
     fn commit_lifecycle_delta_in_transaction(
         transaction: &Transaction<'_>,
         commit: &LifecycleCommit<'_>,
-    ) -> Result<(), StoreError> {
+    ) -> Result<(usize, usize), StoreError> {
         let mut delta = commit.delta.clone();
         let session = crate::lifecycle::OpenSessionState::decode(commit.open_session_json)
             .map_err(|_| StoreError::InvalidLifecycleSession)?;
@@ -416,19 +396,55 @@ impl HubStore {
         }
         // When a drive/charge closes without a full in-memory child buffer
         // (incremental path), pull durable open children once for materialization.
+        //
+        // Child placement (C1 R48, R48a): a closed drive keeps the children
+        // dated at or before its end; those dated later (the stationary tail a
+        // lack-of-evidence close cuts off) and every child of a discarded drive
+        // are materialised as standalone positions (`drive_id` NULL) instead of
+        // being kept under the drive or deleted. The Hub stores positions
+        // losslessly and the observations behind them are pruned after commit.
+        let mut placed_position_ids = delta
+            .positions
+            .iter()
+            .map(|position| position.id)
+            .collect::<std::collections::HashSet<_>>();
+        for position in &mut delta.positions {
+            if let Some(drive_id) = position.drive_id
+                && (delta.discarded_drive_ids.contains(&drive_id)
+                    || delta
+                        .drives
+                        .iter()
+                        .any(|drive| drive.id == drive_id && position.date_ms > drive.end_date_ms))
+            {
+                position.drive_id = None;
+            }
+        }
+        let mut standalone_children = Vec::new();
         for drive in &delta.drives {
             let open_positions =
                 load_open_positions_for_parent(transaction, &vehicle_key, drive.id)?;
-            for position in open_positions {
-                if !delta
-                    .positions
-                    .iter()
-                    .any(|existing| existing.id == position.id)
-                {
-                    delta.positions.push(position);
+            for mut position in open_positions {
+                if !placed_position_ids.insert(position.id) {
+                    continue;
                 }
+                if position.date_ms > drive.end_date_ms {
+                    position.drive_id = None;
+                }
+                standalone_children.push(position);
             }
         }
+        for drive_id in &delta.discarded_drive_ids {
+            let open_positions =
+                load_open_positions_for_parent(transaction, &vehicle_key, *drive_id)?;
+            for mut position in open_positions {
+                if !placed_position_ids.insert(position.id) {
+                    continue;
+                }
+                position.drive_id = None;
+                standalone_children.push(position);
+            }
+        }
+        delta.positions.extend(standalone_children);
         for charge in &delta.charges {
             let open_samples =
                 load_open_charge_samples_for_parent(transaction, &vehicle_key, charge.id)?;
@@ -443,19 +459,29 @@ impl HubStore {
             }
         }
         let fences = load_geofence_fences(transaction, commit.vehicle_id)?;
-        crate::lifecycle::apply_geofence_labels(&mut delta, &fences);
-        let free_supercharging = transaction
-            .query_row(
-                "SELECT free_supercharging FROM car_settings
-                 WHERE vehicle_id = ?1 AND car_id = ?2",
-                params![commit.vehicle_id.to_string(), commit.car_id],
-                |row| row.get::<_, i64>(0),
-            )
-            .optional()
-            .map_err(StoreError::LifecycleWrite)?
-            .unwrap_or(0)
-            != 0;
-
+        // Only closed drives carry labels, so a delta without drives needs no
+        // matching pass (C1 R59).
+        //
+        // The unit emits drives without labels, so for live rows every label is
+        // set here. A row that already carries a label (an imported or
+        // externally supplied row) keeps it: relabelling after a fence change
+        // is the job of `relabel_materialised_locations_in_transaction`.
+        if !delta.drives.is_empty() {
+            let existing = delta
+                .drives
+                .iter()
+                .map(|drive| (drive.start_geofence.clone(), drive.end_geofence.clone()))
+                .collect::<Vec<_>>();
+            crate::lifecycle::apply_geofence_labels(&mut delta, &fences);
+            for (drive, (start, end)) in delta.drives.iter_mut().zip(existing) {
+                if start.is_some() {
+                    drive.start_geofence = start;
+                }
+                if end.is_some() {
+                    drive.end_geofence = end;
+                }
+            }
+        }
         if let Some(patch) = session.car_metadata.as_ref() {
             let existing_json: Option<String> = transaction
                 .query_row(
@@ -660,87 +686,7 @@ impl HubStore {
                 &position_json,
             )?;
         }
-        for charge in &delta.charges {
-            let mut charge = charge.clone();
-            let charge_samples = delta
-                .charge_samples
-                .iter()
-                .filter(|sample| sample.charge_process_id == charge.id)
-                .cloned()
-                .collect::<Vec<_>>();
-            if let Some(energy_used_kwh) =
-                crate::lifecycle::calculate_energy_used_kwh(&charge_samples)
-            {
-                charge.charge_energy_used_kwh = Some(energy_used_kwh);
-            }
-            let start_fence = delta
-                .charge_start_coordinates
-                .iter()
-                .find(|(id, _, _)| *id == charge.id)
-                .and_then(|(_, latitude, longitude)| {
-                    crate::lifecycle::match_geofence(*latitude, *longitude, &fences)
-                });
-            if charge.geofence.is_none() {
-                charge.geofence = start_fence.map(|fence| fence.name.clone());
-            }
-            if charge.billing_type.is_none() {
-                charge.billing_type = start_fence.and_then(|fence| fence.billing_type);
-            }
-            if charge.cost_per_unit.is_none() {
-                charge.cost_per_unit = start_fence.and_then(|fence| fence.cost_per_unit);
-            }
-            if charge.session_fee.is_none() {
-                charge.session_fee = start_fence.and_then(|fence| fence.session_fee);
-            }
-            if charge.cost.is_none() {
-                charge.cost = crate::lifecycle::calculate_charge_cost(
-                    charge.fast_charger_type.as_deref(),
-                    free_supercharging,
-                    charge.charge_energy_added,
-                    charge.charge_energy_used_kwh,
-                    charge.duration_min,
-                    start_fence.and_then(|fence| {
-                        fence
-                            .billing_type
-                            .map(|billing_type| crate::lifecycle::ChargeTariff {
-                                billing_type,
-                                cost_per_unit: fence.cost_per_unit,
-                                session_fee: fence.session_fee,
-                            })
-                    }),
-                );
-            }
-            let charge_json =
-                serde_json::to_string(&charge).map_err(StoreError::SerializeLifecycleRow)?;
-            transaction
-                .execute(
-                    "INSERT INTO materialised_charges(
-                        vehicle_id, charge_id, car_id, charge_json
-                    ) VALUES (?1, ?2, ?3, ?4)
-                    ON CONFLICT(vehicle_id, charge_id) DO UPDATE SET
-                        car_id = excluded.car_id,
-                        charge_json = excluded.charge_json",
-                    params![
-                        commit.vehicle_id.to_string(),
-                        charge.id,
-                        commit.car_id,
-                        charge_json
-                    ],
-                )
-                .map_err(StoreError::LifecycleWrite)?;
-            record_sync_mutation_in_transaction(
-                transaction,
-                commit.vehicle_id,
-                "charge",
-                charge.id,
-                commit.car_id,
-                "upsert",
-                &charge_json,
-            )?;
-        }
-        if !delta.charges.is_empty() {
-            recompute_car_efficiency(transaction, commit.vehicle_id, commit.car_id)?;
-        }
+        close_charges_in_transaction(transaction, commit)?;
         for sample in &delta.charge_samples {
             let sample_json =
                 serde_json::to_string(sample).map_err(StoreError::SerializeLifecycleRow)?;
@@ -769,6 +715,12 @@ impl HubStore {
                 "upsert",
                 &sample_json,
             )?;
+        }
+        // R67: once per commit that closes at least one charge, after the
+        // closing rows and their samples are materialised, because the
+        // session figure reads the samples; the commit's own session counts.
+        if !delta.charges.is_empty() {
+            recompute_car_efficiency(transaction, commit.vehicle_id, commit.car_id)?;
         }
 
         for drive in &delta.drives {
@@ -895,7 +847,7 @@ impl HubStore {
         enqueue_address_jobs(transaction, commit.vehicle_id, &delta)?;
         prune_processed_observations(transaction, commit.vehicle_id, commit.last_observation_id)?;
 
-        Ok(())
+        Ok((delta.positions.len(), delta.charge_samples.len()))
     }
 
     /// Load completed history used when publishing a phone snapshot.
@@ -1391,4 +1343,228 @@ impl HubStore {
             freed_bytes,
         })
     }
+}
+
+/// The close sequence of C2 R46, run inside the lifecycle commit's
+/// transaction for every charge in `commit.delta.charges`, in delta order.
+///
+/// 1. The row's samples: its stored open samples plus the delta's own, by id,
+///    in sample order (`timestamp_ms`, then id).
+/// 2. Label and tariff copy from the start-coordinates entry of the delta, by
+///    the one geofence rule over the vehicle's fences (C1 R72): the label is
+///    the fence name; the copy is the fence's tariff when complete and valid
+///    ([`ChargeTariff::of_fence`]), with the session fee waived when the row
+///    continues the previous row's plug-in (R44a). No entry, no match, or an
+///    unusable tariff leaves the copy empty, and with no match the label too.
+/// 3. `free_supercharging` of the car's settings, read once per commit; no
+///    row, or a row of another car, means false, because a missing setting is
+///    not an entitlement.
+/// 4. The cost. A stored row with the same `(vehicle_id, charge_id)` and a
+///    known cost keeps that cost and its tariff copy (R47: no field tells a
+///    manual or imported cost from a computed one). Otherwise the cost is
+///    [`calculate_charge_cost`] over the row's own copy and the context. The
+///    stored row is matched by its key; its `car_id` column does not matter,
+///    because a cost already stored must not be lost.
+/// 5. The upsert and one `charge` sync mutation, skipped when the stored JSON
+///    already equals the new JSON (R6), so a replay adds no mutation.
+///
+/// Energies are taken as `finalize_charge` produced them (R26). The car's
+/// efficiency is recomputed by the caller once the closed charges' samples are
+/// materialised too (R67), because the figure reads those samples. Nothing
+/// here logs; the only identifiers that could be reported are ids (R7).
+fn close_charges_in_transaction(
+    transaction: &Transaction<'_>,
+    commit: &LifecycleCommit<'_>,
+) -> Result<(), StoreError> {
+    if commit.delta.charges.is_empty() {
+        return Ok(());
+    }
+    let vehicle_key = commit.vehicle_id.to_string();
+    let fences = load_geofence_fences(transaction, commit.vehicle_id)?;
+    let free_supercharging = match load_car_settings_row(transaction, commit.vehicle_id)? {
+        Some((car_id, settings)) if car_id == commit.car_id => settings.free_supercharging,
+        _ => false,
+    };
+    for charge in &commit.delta.charges {
+        let mut row = charge.clone();
+        let mut samples = commit
+            .delta
+            .charge_samples
+            .iter()
+            .filter(|sample| sample.charge_process_id == row.id)
+            .cloned()
+            .collect::<Vec<_>>();
+        for stored in load_open_charge_samples_for_parent(transaction, &vehicle_key, row.id)? {
+            if !samples.iter().any(|sample| sample.id == stored.id) {
+                samples.push(stored);
+            }
+        }
+        samples.sort_by_key(|sample| (sample.timestamp_ms, sample.id));
+
+        let fence = commit
+            .delta
+            .charge_start_coordinates
+            .iter()
+            .find(|(id, _, _)| *id == row.id)
+            .and_then(|(_, latitude, longitude)| {
+                crate::lifecycle::match_geofence(*latitude, *longitude, &fences)
+            });
+        row.geofence = fence.map(|fence| fence.name.clone());
+        let continues = crate::lifecycle::charge_continues_plug_in(&row, &samples);
+        let tariff = fence
+            .and_then(crate::lifecycle::ChargeTariff::of_fence)
+            .map(|tariff| if continues { tariff.waive_fee() } else { tariff });
+        row.billing_type = tariff.map(|tariff| tariff.billing_type);
+        row.cost_per_unit = tariff.and_then(|tariff| tariff.cost_per_unit);
+        row.session_fee = tariff.and_then(|tariff| tariff.session_fee);
+
+        let stored_json: Option<String> = transaction
+            .query_row(
+                "SELECT charge_json FROM materialised_charges
+                 WHERE vehicle_id = ?1 AND charge_id = ?2",
+                params![vehicle_key, row.id],
+                |stored| stored.get(0),
+            )
+            .optional()
+            .map_err(StoreError::LifecycleWrite)?;
+        let stored_row = stored_json
+            .as_deref()
+            .map(serde_json::from_str::<crate::hub_pack::ProjectionCharge>)
+            .transpose()
+            .map_err(StoreError::DeserializeLifecycleRow)?;
+        match stored_row.filter(|stored| stored.cost.is_some()) {
+            Some(stored) => {
+                row.cost = stored.cost;
+                row.billing_type = stored.billing_type;
+                row.cost_per_unit = stored.cost_per_unit;
+                row.session_fee = stored.session_fee;
+            }
+            None => {
+                let context = crate::lifecycle::ChargeCostContext {
+                    free_supercharging,
+                    span_observed: crate::lifecycle::charge_span_observed(&row, &samples),
+                };
+                row.cost = crate::lifecycle::calculate_charge_cost(
+                    &row,
+                    crate::lifecycle::ChargeTariff::of_charge(&row),
+                    context,
+                );
+            }
+        }
+
+        let charge_json =
+            serde_json::to_string(&row).map_err(StoreError::SerializeLifecycleRow)?;
+        if stored_json.as_deref() == Some(charge_json.as_str()) {
+            continue;
+        }
+        transaction
+            .execute(
+                "INSERT INTO materialised_charges(
+                    vehicle_id, charge_id, car_id, charge_json
+                ) VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT(vehicle_id, charge_id) DO UPDATE SET
+                    car_id = excluded.car_id,
+                    charge_json = excluded.charge_json",
+                params![vehicle_key, row.id, commit.car_id, charge_json],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        record_sync_mutation_in_transaction(
+            transaction,
+            commit.vehicle_id,
+            "charge",
+            row.id,
+            commit.car_id,
+            "upsert",
+            &charge_json,
+        )?;
+    }
+    Ok(())
+}
+
+/// The walk of the retroactive fill (C2 R50): fill every unknown cost of a Hub
+/// charge whose start the one geofence rule puts in `target`, with `tariff`
+/// (the target's complete and valid tariff). Returns the rows changed.
+///
+/// The walk takes the vehicle's charge rows by id, a bounded page at a time,
+/// and checks the cheap conditions before it loads a row's samples: only a row
+/// that passes them can need the continuation and span checks (R43a, R44a),
+/// which read the stored samples.
+fn fill_missing_charge_costs_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    target: &crate::lifecycle::GeofenceFence,
+    tariff: crate::lifecycle::ChargeTariff,
+) -> Result<u64, StoreError> {
+    let fences = load_geofence_fences(transaction, vehicle_id)?;
+    let bound = charge_import_bound(transaction, vehicle_id)?;
+    let settings = load_car_settings_row(transaction, vehicle_id)?;
+    let vehicle_key = vehicle_id.to_string();
+    let mut changed = 0_u64;
+    let mut after_id = 0_i64;
+    loop {
+        let page = materialised_charge_page(transaction, vehicle_id, after_id)?;
+        let Some(last) = page.last().map(|(id, _)| *id) else {
+            break;
+        };
+        after_id = last;
+        for (charge_id, charge_json) in page {
+            let mut row: crate::hub_pack::ProjectionCharge =
+                serde_json::from_str(&charge_json).map_err(StoreError::DeserializeLifecycleRow)?;
+            if row.cost.is_some() || bound.is_imported(charge_id) {
+                continue;
+            }
+            let (Some(latitude), Some(longitude)) = (row.start_latitude, row.start_longitude)
+            else {
+                continue;
+            };
+            let in_target = crate::lifecycle::match_geofence(latitude, longitude, &fences)
+                .is_some_and(|fence| fence.source_geofence_id == target.source_geofence_id);
+            if !in_target {
+                continue;
+            }
+            let samples = load_materialised_charge_samples(transaction, vehicle_id, charge_id)?;
+            let tariff = if crate::lifecycle::charge_continues_plug_in(&row, &samples) {
+                tariff.waive_fee()
+            } else {
+                tariff
+            };
+            // The setting belongs to one car (R46 step 3): a row of another
+            // car is not entitled by it.
+            let free_supercharging = settings.as_ref().is_some_and(|(car_id, settings)| {
+                *car_id == row.car_id && settings.free_supercharging
+            });
+            let context = crate::lifecycle::ChargeCostContext {
+                free_supercharging,
+                span_observed: crate::lifecycle::charge_span_observed(&row, &samples),
+            };
+            let Some(cost) = crate::lifecycle::calculate_charge_cost(&row, Some(tariff), context)
+            else {
+                continue;
+            };
+            row.cost = Some(cost);
+            row.billing_type = Some(tariff.billing_type);
+            row.cost_per_unit = tariff.cost_per_unit;
+            row.session_fee = tariff.session_fee;
+            let filled_json =
+                serde_json::to_string(&row).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    "UPDATE materialised_charges SET charge_json = ?3
+                     WHERE vehicle_id = ?1 AND charge_id = ?2",
+                    params![vehicle_key, charge_id, filled_json],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+            record_sync_mutation_in_transaction(
+                transaction,
+                vehicle_id,
+                "charge",
+                charge_id,
+                row.car_id,
+                "upsert",
+                &filled_json,
+            )?;
+            changed += 1;
+        }
+    }
+    Ok(changed)
 }

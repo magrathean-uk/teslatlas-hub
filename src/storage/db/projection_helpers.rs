@@ -267,104 +267,218 @@ fn upsert_terrain_provenance(
     Ok(())
 }
 
+/// The source kind the importer registers, the only kind whose
+/// `charging_processes` watermark marks charge rows as imported (C2 R5).
+const IMPORT_SOURCE_KIND: &str = "teslamate";
+
+/// The `lifecycle_source_watermarks.domain` the imported-session seeding
+/// writes for the imported charge rows of a vehicle (C2 R5, section 12 item
+/// 6): the source table name.
+const CHARGING_PROCESSES_DOMAIN: &str = "charging_processes";
+
+/// Which charge rows of one vehicle are imported (C2 R5): those with
+/// `charge_id <= max_imported_charge_id`, the vehicle's `W(V)`; zero means
+/// none. Every other row is a Hub row.
+///
+/// The test is per row, as C9 R6 is for positions, because one vehicle holds
+/// imported and live rows together (seeding links the live vehicle to the
+/// import source and the imported open process continues live in it), so the
+/// vehicle's own source says nothing about a row. The id alone is exact
+/// because C1 R10 with amendment A5 allocates every live charge id above
+/// `W(V)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ChargeImportBound {
+    max_imported_charge_id: i64,
+}
+
+impl ChargeImportBound {
+    /// True when the charge row with this id was imported (C2 R5).
+    fn is_imported(&self, charge_id: i64) -> bool {
+        charge_id <= self.max_imported_charge_id
+    }
+}
+
+/// `W(V)` of C2 R5: the largest `max_source_row_id` over the vehicle's
+/// `charging_processes` watermarks of sources of the import kind, 0 when there
+/// is none. Reads only `sources` and `lifecycle_source_watermarks`: neither
+/// the vehicle's own source nor the lifecycle state blob is consulted, because
+/// a vehicle's source says nothing about one row and missing lifecycle state
+/// must not turn into "everything is Hub-collected".
+fn charge_import_bound(
+    connection: &Connection,
+    vehicle_id: Uuid,
+) -> Result<ChargeImportBound, StoreError> {
+    let largest: Option<i64> = connection
+        .query_row(
+            "SELECT MAX(w.max_source_row_id)
+             FROM lifecycle_source_watermarks w
+             JOIN sources s ON s.source_id = w.source_id
+             WHERE w.vehicle_id = ?1 AND s.source_kind = ?2 AND w.domain = ?3",
+            params![
+                vehicle_id.to_string(),
+                IMPORT_SOURCE_KIND,
+                CHARGING_PROCESSES_DOMAIN
+            ],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)?;
+    Ok(ChargeImportBound {
+        max_imported_charge_id: largest.unwrap_or(0).max(0),
+    })
+}
+
+/// Most newest charge rows one efficiency recomputation reads (C2 R63). 200
+/// rows leave room for road trips with many DC stops, whose rows are read and
+/// skipped, while bounding the work of every charge close.
+const K_EFF_SCAN_ROWS: i64 = 200;
+
+/// Most candidate sessions one efficiency recomputation uses (C2 R63). 20
+/// sessions follow a firmware change of the car's range constant within weeks
+/// of daily charging or months of weekly charging, while bounding the number
+/// of sample sets loaded at every close.
+const K_EFF_CANDIDATES: usize = 20;
+
+/// One candidate session's samples for the efficiency figure, in sample order,
+/// or `None` when any stored sample does not decode (C2 R63: the session then
+/// gives no figure). SQL errors still fail.
+fn load_efficiency_samples(
+    connection: &Connection,
+    vehicle_id: Uuid,
+    charge_id: i64,
+) -> Result<Option<Vec<crate::hub_pack::ProjectionChargeSample>>, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT sample_json FROM materialised_charge_samples
+             WHERE vehicle_id = ?1 AND charge_id = ?2",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map(params![vehicle_id.to_string(), charge_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(StoreError::Query)?;
+    let mut samples = Vec::new();
+    for row in rows {
+        let json = row.map_err(StoreError::Query)?;
+        match serde_json::from_str::<crate::hub_pack::ProjectionChargeSample>(&json) {
+            Ok(sample) => samples.push(sample),
+            Err(_) => return Ok(None),
+        }
+    }
+    samples.sort_by_key(|sample| (sample.timestamp_ms, sample.id));
+    Ok(Some(samples))
+}
+
+/// Recompute the car's efficiency from its closed Hub charges (C2 R63 to R67)
+/// and write it only when it changes.
+///
+/// 1. The newest [`K_EFF_SCAN_ROWS`] rows of `materialised_charges` for
+///    `(vehicle_id, car_id)`, by charge id descending. A row is a candidate
+///    when it is a Hub row (R5: not at or below the import bound), closed and
+///    `is_dc == Some(false)`; the scan stops after [`K_EFF_CANDIDATES`]
+///    candidates. A DC or unknown kind is excluded because the battery-side
+///    energy of a DC session overstates stored energy by several per cent
+///    (current 10 to 30 times AC, resistive loss with its square), and an
+///    unknown kind is excluded rather than guessed.
+/// 2. Each candidate's samples go through
+///    [`crate::lifecycle::session_efficiency_wh_per_km`].
+/// 3. [`crate::lifecycle::car_efficiency_from_figures`] gives the car value, or
+///    nothing below three figures, in which case the stored value (imported,
+///    earlier or `None`) stays (R65, R68).
+/// 4. R66: the car row of `(vehicle_id, car_id)`, when it exists and holds a
+///    different value, gets the new `car_json` and one `car` sync mutation;
+///    otherwise nothing is written. With no car row nothing is done.
+///
+/// A row or sample that does not decode is skipped, counted and logged once
+/// as a count (R7, R63): one undecodable stored row must not roll back every
+/// later charge close and block intake for the vehicle on every retry. SQL
+/// errors still fail. The result is a pure function of stored rows and
+/// samples (R69), so a second call, a replay or a restart gives the same
+/// `car_json` and no second mutation. Called at a close (R67, after the
+/// closing rows and samples are materialised) and by any path that deletes or
+/// corrects a charge or its samples (R67a).
 fn recompute_car_efficiency(
     transaction: &Transaction<'_>,
     vehicle_id: Uuid,
     car_id: i64,
 ) -> Result<(), StoreError> {
-    let mut statement = transaction
-        .prepare(
-            "SELECT charge_json FROM materialised_charges
-             WHERE vehicle_id = ?1 AND car_id = ?2 ORDER BY charge_id",
-        )
-        .map_err(StoreError::LifecycleWrite)?;
-    let charges = statement
-        .query_map(params![vehicle_id.to_string(), car_id], |row| {
-            row.get::<_, String>(0)
-        })
-        .map_err(StoreError::LifecycleWrite)?;
-    let specifications = [(5_u32, 8_usize), (4, 5), (3, 3), (2, 2)];
-    let mut groups = [
-        HashMap::<i64, usize>::new(),
-        HashMap::new(),
-        HashMap::new(),
-        HashMap::new(),
-    ];
-    for value in charges {
-        let value = value.map_err(StoreError::LifecycleWrite)?;
-        let charge: crate::hub_pack::ProjectionCharge =
-            serde_json::from_str(&value).map_err(StoreError::DeserializeLifecycleRow)?;
-        let (Some(duration_min), Some(end_battery_level), Some(start_range), Some(end_range)) = (
-            charge.duration_min,
-            charge.end_battery_level,
-            charge.start_rated_range_km,
-            charge.end_rated_range_km,
-        ) else {
-            continue;
-        };
-        let Some(energy_added) = charge.charge_energy_added else {
-            continue;
-        };
-        let range_added = end_range - start_range;
-        if duration_min <= 10
-            || end_battery_level > 95
-            || energy_added <= 0.0
-            || !energy_added.is_finite()
-            || !range_added.is_finite()
-            || range_added == 0.0
-        {
-            continue;
-        }
-        let factor = energy_added / range_added;
-        if !factor.is_finite() || factor <= 0.0 {
-            continue;
-        }
-        for ((precision, _), counts) in specifications.iter().zip(&mut groups) {
-            let scale = 10_i64.pow(*precision) as f64;
-            let key = (factor * scale).round() as i64;
-            *counts.entry(key).or_default() += 1;
-        }
-    }
-    let mut selected = None;
-    for ((precision, threshold), groups) in specifications.into_iter().zip(groups) {
-        let scale = 10_i64.pow(precision) as f64;
-        selected = groups
-            .into_iter()
-            .filter(|(_, count)| *count >= threshold)
-            .max_by(|left, right| left.1.cmp(&right.1).then_with(|| right.0.cmp(&left.0)))
-            .map(|(factor, _)| factor as f64 / scale);
-        if selected.is_some() {
-            break;
-        }
-    }
-    let Some(efficiency_kwh_per_km) = selected else {
-        return Ok(());
-    };
-    let efficiency = efficiency_kwh_per_km * 1_000.0;
-    let current: Option<String> = transaction
+    let vehicle_key = vehicle_id.to_string();
+    let car_json: Option<String> = transaction
         .query_row(
             "SELECT car_json FROM materialised_cars
              WHERE vehicle_id = ?1 AND car_id = ?2",
-            params![vehicle_id.to_string(), car_id],
+            params![vehicle_key, car_id],
             |row| row.get(0),
         )
         .optional()
-        .map_err(StoreError::LifecycleWrite)?;
-    let Some(current) = current else {
+        .map_err(StoreError::Query)?;
+    let Some(car_json) = car_json else {
         return Ok(());
     };
-    let mut car: ProjectionCar =
-        serde_json::from_str(&current).map_err(StoreError::DeserializeLifecycleRow)?;
-    if car.efficiency_wh_per_km == Some(efficiency) {
+    let bound = charge_import_bound(transaction, vehicle_id)?;
+    let mut statement = transaction
+        .prepare(
+            "SELECT charge_id, charge_json FROM materialised_charges
+             WHERE vehicle_id = ?1 AND car_id = ?2
+             ORDER BY charge_id DESC LIMIT ?3",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map(params![vehicle_key, car_id, K_EFF_SCAN_ROWS], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(StoreError::Query)?;
+    let mut figures = Vec::new();
+    let mut candidates = 0_usize;
+    let mut skipped = 0_u64;
+    for row in rows {
+        let (charge_id, charge_json) = row.map_err(StoreError::Query)?;
+        if bound.is_imported(charge_id) {
+            continue;
+        }
+        let Ok(charge) = serde_json::from_str::<crate::hub_pack::ProjectionCharge>(&charge_json)
+        else {
+            skipped += 1;
+            continue;
+        };
+        if charge.end_date_ms.is_none() || charge.is_dc != Some(false) {
+            continue;
+        }
+        candidates += 1;
+        match load_efficiency_samples(transaction, vehicle_id, charge_id)? {
+            Some(samples) => {
+                figures.extend(crate::lifecycle::session_efficiency_wh_per_km(&samples));
+            }
+            None => skipped += 1,
+        }
+        if candidates >= K_EFF_CANDIDATES {
+            break;
+        }
+    }
+    drop(statement);
+    if skipped > 0 {
+        // R7: the vehicle id and a count only.
+        tracing::warn!(
+            vehicle_id = %vehicle_id,
+            skipped,
+            "undecodable charge rows or samples skipped by the efficiency recomputation"
+        );
+    }
+    let Some(value) = crate::lifecycle::car_efficiency_from_figures(&figures) else {
+        return Ok(());
+    };
+    let mut car: crate::hub_pack::ProjectionCar =
+        serde_json::from_str(&car_json).map_err(StoreError::DeserializeLifecycleRow)?;
+    if car.efficiency_wh_per_km == Some(value) {
         return Ok(());
     }
-    car.efficiency_wh_per_km = Some(efficiency);
-    let payload = serde_json::to_string(&car).map_err(StoreError::SerializeLifecycleRow)?;
+    car.efficiency_wh_per_km = Some(value);
+    let car_json = serde_json::to_string(&car).map_err(StoreError::SerializeLifecycleRow)?;
     transaction
         .execute(
             "UPDATE materialised_cars SET car_json = ?3
              WHERE vehicle_id = ?1 AND car_id = ?2",
-            params![vehicle_id.to_string(), car_id, payload],
+            params![vehicle_key, car_id, car_json],
         )
         .map_err(StoreError::LifecycleWrite)?;
     record_sync_mutation_in_transaction(
@@ -374,11 +488,20 @@ fn recompute_car_efficiency(
         car_id,
         car_id,
         "upsert",
-        &payload,
-    )?;
-    Ok(())
+        &car_json,
+    )
 }
 
+/// Recompute a drive's ascent and descent after terrain elevation arrives later
+/// (C1 R52, R85).
+///
+/// It calls the one shared function, [`crate::lifecycle::elevation_totals`],
+/// over the drive's materialised positions in `(date_ms, id)` order, the order
+/// the live fold emits them in. It writes only that drive's
+/// `materialised_drives` row, and only `ascent`, `descent` and `drive_json`
+/// (the stored row JSON with only its `ascent` and `descent` members
+/// replaced). It writes no other column, row or table and records no
+/// `sync_mutations` row: its caller records the change.
 fn recompute_terrain_drive(
     transaction: &Transaction<'_>,
     vehicle_id: &str,
@@ -387,20 +510,23 @@ fn recompute_terrain_drive(
     let mut statement = transaction
         .prepare(
             "SELECT position_json FROM materialised_positions
-             WHERE vehicle_id = ?1 AND drive_id = ?2
-             ORDER BY position_id ASC",
+             WHERE vehicle_id = ?1 AND drive_id = ?2",
         )
         .map_err(StoreError::LifecycleWrite)?;
     let rows = statement
         .query_map(params![vehicle_id, drive_id], |row| row.get::<_, String>(0))
         .map_err(StoreError::LifecycleWrite)?;
-    let positions: Vec<ProjectionPosition> = rows
+    let mut positions: Vec<ProjectionPosition> = rows
         .map(|row| {
             let json = row.map_err(StoreError::LifecycleWrite)?;
             serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)
         })
         .collect::<Result<_, _>>()?;
-    let (ascent, descent) = terrain_elevation_totals(&positions);
+    // The shared walk reads the positions in `(date_ms, id)` order, the order
+    // the live fold emits them in (C1 R51, R52); the table has no date column.
+    positions.sort_by_key(|position| (position.date_ms, position.id));
+    let (ascent, descent) =
+        crate::lifecycle::elevation_totals(positions.iter().map(|position| position.elevation));
     let drive_json: String = transaction
         .query_row(
             "SELECT drive_json FROM materialised_drives
@@ -411,8 +537,8 @@ fn recompute_terrain_drive(
         .map_err(StoreError::Query)?;
     let mut drive: ProjectionDrive =
         serde_json::from_str(&drive_json).map_err(StoreError::DeserializeLifecycleRow)?;
-    drive.ascent = Some(ascent);
-    drive.descent = Some(descent);
+    drive.ascent = ascent;
+    drive.descent = descent;
     let drive_json = serde_json::to_string(&drive).map_err(StoreError::SerializeLifecycleRow)?;
     transaction
         .execute(
@@ -422,27 +548,6 @@ fn recompute_terrain_drive(
         )
         .map_err(StoreError::LifecycleWrite)?;
     Ok(())
-}
-
-fn terrain_elevation_totals(positions: &[ProjectionPosition]) -> (i64, i64) {
-    let mut previous = None;
-    let mut ascent = 0_i64;
-    let mut descent = 0_i64;
-    for elevation in positions.iter().filter_map(|position| position.elevation) {
-        if let Some(previous_elevation) = previous {
-            let delta = elevation - previous_elevation;
-            if delta > 0 {
-                ascent = ascent.saturating_add(delta);
-            } else if delta < 0 {
-                descent = descent.saturating_add(delta.unsigned_abs() as i64);
-            }
-        }
-        previous = Some(elevation);
-    }
-    (
-        if ascent >= 32_768 { 0 } else { ascent },
-        if descent >= 32_768 { 0 } else { descent },
-    )
 }
 
 fn validate_address_cache_record(record: &AddressCacheRecord) -> Result<(), StoreError> {
@@ -494,13 +599,141 @@ fn invalid_address_text(value: Option<&str>) -> bool {
     })
 }
 
+/// The largest `max_source_row_id` of each import domain over every
+/// `lifecycle_source_watermarks` row of the vehicle, whichever source wrote it
+/// (C1 R84); NULL counts as 0. Rows of every source count, not only the
+/// import kind: a cursor that is too high only skips unused values, while one
+/// that is too low aliases rows.
+fn watermark_id_floors(
+    connection: &Connection,
+    vehicle_id: Uuid,
+) -> Result<crate::lifecycle::IdFloors, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT domain, MAX(COALESCE(max_source_row_id, 0))
+             FROM lifecycle_source_watermarks
+             WHERE vehicle_id = ?1 GROUP BY domain",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map(params![vehicle_id.to_string()], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .map_err(StoreError::Query)?;
+    let mut floors = crate::lifecycle::IdFloors::default();
+    for row in rows {
+        let (domain, largest) = row.map_err(StoreError::Query)?;
+        match domain.as_str() {
+            "drives" => floors.drives = largest,
+            "positions" => floors.positions = largest,
+            "charging_processes" => floors.charges = largest,
+            "charges" => floors.charge_samples = largest,
+            "states" => floors.states = largest,
+            "updates" => floors.updates = largest,
+            _ => {}
+        }
+    }
+    Ok(floors)
+}
+
+/// Raise a state's id cursors above the vehicle's import watermarks as they
+/// stand in this transaction (C1 R84 point (b)). It runs whether or not the
+/// state was seeded before.
+fn raise_id_cursors_above_watermarks(
+    connection: &Connection,
+    vehicle_id: Uuid,
+    state: &mut crate::lifecycle::OpenSessionState,
+) -> Result<(), StoreError> {
+    let floors = watermark_id_floors(connection, vehicle_id)?;
+    state.raise_id_cursors(&floors);
+    Ok(())
+}
+
+/// Seed the installed version of a freshly seeded lifecycle state from the
+/// newest imported update that has a comparable version (C1 R14, section 7
+/// item 9), so an update installed between the source's last record and live
+/// collection is recorded instead of silently adopted.
+fn seed_imported_version_from_updates(
+    connection: &Connection,
+    vehicle_id: Uuid,
+    state: &mut crate::lifecycle::OpenSessionState,
+) -> Result<(), StoreError> {
+    if state.last_car_version.is_some() {
+        return Ok(());
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT update_json FROM materialised_updates
+             WHERE vehicle_id = ?1 ORDER BY update_id ASC",
+        )
+        .map_err(StoreError::Query)?;
+    let rows = statement
+        .query_map(params![vehicle_id.to_string()], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(StoreError::Query)?;
+    let mut updates = Vec::new();
+    for row in rows {
+        let json = row.map_err(StoreError::Query)?;
+        updates.push(
+            serde_json::from_str::<crate::hub_pack::ProjectionUpdate>(&json)
+                .map_err(|_| StoreError::InvalidLifecycleSession)?,
+        );
+    }
+    crate::lifecycle::seed_version_from_updates(state, &updates);
+    if state.last_car_version.is_some() {
+        return Ok(());
+    }
+    // Import finalisation materialises the car and its drives, and leaves the
+    // newest imported update's version on the car row; the update rows stay in
+    // the import projection and its packs, which this seed cannot read. The
+    // newest imported drive's end bounds when the source last saw the car.
+    let version = imported_car_firmware(connection, vehicle_id)?;
+    if version.is_none() {
+        return Ok(());
+    }
+    let known_since_ms: Option<i64> = connection
+        .query_row(
+            "SELECT MAX(json_extract(drive_json, '$.end_date_ms'))
+             FROM materialised_drives WHERE vehicle_id = ?1",
+            params![vehicle_id.to_string()],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)?;
+    crate::lifecycle::seed_version_from_car_row(state, version.as_deref(), known_since_ms);
+    Ok(())
+}
+
+/// The `firmware_version` of the vehicle's materialised car row, when it has
+/// one.
+fn imported_car_firmware(
+    connection: &Connection,
+    vehicle_id: Uuid,
+) -> Result<Option<String>, StoreError> {
+    let car_json: Option<String> = connection
+        .query_row(
+            "SELECT car_json FROM materialised_cars WHERE vehicle_id = ?1",
+            params![vehicle_id.to_string()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StoreError::Query)?;
+    Ok(car_json
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(&json).ok())
+        .and_then(|car| {
+            car.get("firmware_version")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        }))
+}
+
 fn load_geofence_fences(
     connection: &Connection,
     vehicle_id: Uuid,
 ) -> Result<Vec<crate::lifecycle::GeofenceFence>, StoreError> {
     let mut statement = connection
         .prepare(
-            "SELECT name, latitude, longitude, radius_m, billing_type,
+            "SELECT source_geofence_id, name, latitude, longitude, radius_m, billing_type,
                     cost_per_unit, session_fee
              FROM geofences WHERE vehicle_id = ?1 ORDER BY source_geofence_id",
         )
@@ -508,19 +741,20 @@ fn load_geofence_fences(
     let rows = statement
         .query_map(params![vehicle_id.to_string()], |row| {
             Ok(crate::lifecycle::GeofenceFence {
-                name: row.get(0)?,
-                latitude: row.get(1)?,
-                longitude: row.get(2)?,
-                radius_m: row.get(3)?,
+                source_geofence_id: row.get(0)?,
+                name: row.get(1)?,
+                latitude: row.get(2)?,
+                longitude: row.get(3)?,
+                radius_m: row.get(4)?,
                 billing_type: row
-                    .get::<_, Option<String>>(4)?
+                    .get::<_, Option<String>>(5)?
                     .map(|value| match value.as_str() {
                         "per_kwh" => crate::hub_pack::GeofenceBillingType::PerKwh,
                         "per_minute" => crate::hub_pack::GeofenceBillingType::PerMinute,
                         _ => crate::hub_pack::GeofenceBillingType::PerKwh,
                     }),
-                cost_per_unit: row.get(5)?,
-                session_fee: row.get(6)?,
+                cost_per_unit: row.get(6)?,
+                session_fee: row.get(7)?,
             })
         })
         .map_err(StoreError::Query)?;
@@ -534,21 +768,22 @@ fn geofence_fence_by_id(
 ) -> Result<Option<crate::lifecycle::GeofenceFence>, StoreError> {
     connection
         .query_row(
-            "SELECT name, latitude, longitude, radius_m, billing_type,
+            "SELECT source_geofence_id, name, latitude, longitude, radius_m, billing_type,
                     cost_per_unit, session_fee
              FROM geofences WHERE vehicle_id = ?1 AND source_geofence_id = ?2",
             params![vehicle_id.to_string(), source_geofence_id],
             |row| {
                 Ok(crate::lifecycle::GeofenceFence {
-                    name: row.get(0)?,
-                    latitude: row.get(1)?,
-                    longitude: row.get(2)?,
-                    radius_m: row.get(3)?,
+                    source_geofence_id: row.get(0)?,
+                    name: row.get(1)?,
+                    latitude: row.get(2)?,
+                    longitude: row.get(3)?,
+                    radius_m: row.get(4)?,
                     billing_type: row
-                        .get::<_, Option<String>>(4)?
+                        .get::<_, Option<String>>(5)?
                         .and_then(|value| value.parse().ok()),
-                    cost_per_unit: row.get(5)?,
-                    session_fee: row.get(6)?,
+                    cost_per_unit: row.get(6)?,
+                    session_fee: row.get(7)?,
                 })
             },
         )
@@ -575,6 +810,38 @@ fn materialised_charge_page(
         .map_err(StoreError::Query)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(StoreError::Query)
+}
+
+/// The stored samples of one materialised charge, in sample order
+/// (`timestamp_ms`, then id), as the continuation and span checks read them
+/// (C2 R43a, R44a, R50, R54). Reads `materialised_charge_samples` through the
+/// `(vehicle_id, charge_id)` index. A row that does not decode is an error
+/// here: a fill or a manual entry must not price a row from a partial view of
+/// its samples.
+fn load_materialised_charge_samples(
+    connection: &Connection,
+    vehicle_id: Uuid,
+    charge_id: i64,
+) -> Result<Vec<crate::hub_pack::ProjectionChargeSample>, StoreError> {
+    let mut statement = connection
+        .prepare(
+            "SELECT sample_json FROM materialised_charge_samples
+             WHERE vehicle_id = ?1 AND charge_id = ?2",
+        )
+        .map_err(StoreError::Query)?;
+    let mut samples = statement
+        .query_map(params![vehicle_id.to_string(), charge_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .map_err(StoreError::Query)?
+        .map(|row| {
+            let json = row.map_err(StoreError::Query)?;
+            serde_json::from_str::<crate::hub_pack::ProjectionChargeSample>(&json)
+                .map_err(StoreError::DeserializeLifecycleRow)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    samples.sort_by_key(|sample| (sample.timestamp_ms, sample.id));
+    Ok(samples)
 }
 
 fn materialised_drive_page(

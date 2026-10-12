@@ -3,6 +3,9 @@
 use crate::fleet_telemetry::{FleetTelemetryAccumulator, FleetTelemetryError};
 
 const EDGE_SOURCE_RECORD_TYPE: &str = "fleet_api_vehicle_data_v1";
+/// Value of the `provider_feed` marker that makes an edge observation a sparse
+/// source (C1 R32, R76, section 7 item 4).
+const EDGE_PROVIDER_FEED: &str = "fleet_telemetry";
 const EDGE_ID_MAX_BYTES: usize = 128;
 
 fn projection_input_is_unsupported(error: &FleetTelemetryError) -> bool {
@@ -473,6 +476,10 @@ impl HubStore {
                                     "record_type": EDGE_SOURCE_RECORD_TYPE,
                                     "source_vehicle_id": source_vehicle_eid.to_string(),
                                     "source_vehicle_state": source_state,
+                                    // Fleet Telemetry signals are sparse: an absent key is
+                                    // no statement and its version may be the available
+                                    // one (C1 R32, R76). G2-6 retires this marker.
+                                    "provider_feed": EDGE_PROVIDER_FEED,
                                     "provider_raw_json": {"response": snapshot.owner_data},
                                 }),
                             };

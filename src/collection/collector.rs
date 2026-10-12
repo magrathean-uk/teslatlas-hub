@@ -62,8 +62,7 @@ use crate::{
     },
     legacy_auth::{LegacyAuth, LegacyAuthError, LegacyAuthFuse},
     lifecycle::{
-        LifecycleError, LifecycleSample, OpenSessionState, apply_sample, force_close_for_service,
-        stream_observation_payload,
+        LifecycleError, LifecycleSample, OpenSessionState, apply_sample, stream_observation_payload,
     },
     location::Wgs84Point,
     owner_api::{
@@ -87,8 +86,9 @@ const OWNER_API_SOURCE_KIND: &str = "owner_api_compat";
 const OWNER_API_SOURCE_KEY: &str = "local_installation_v1";
 const FLEET_API_SOURCE_KIND: &str = "fleet_api_compat";
 const FLEET_API_SOURCE_KEY: &str = "local_installation_v1";
-const EARLIEST_PLAUSIBLE_TIMESTAMP_MS: i64 = 946_684_800_000; // 2000-01-01 UTC
-const FUTURE_TIMESTAMP_SKEW_MS: i64 = 5 * 60 * 1000;
+// Plausibility bounds of an observation time. The lifecycle projection owns the
+// values and their reasons (C1 R5), so intake and projection use one rule.
+use crate::lifecycle::{K_EARLIEST_MS, K_SKEW_MS};
 const STREAM_SOURCE_KIND: &str = OWNER_API_SOURCE_KIND;
 const STREAM_SOURCE_KEY: &str = OWNER_API_SOURCE_KEY;
 const FLEET_TELEMETRY_CONFIG_LIFETIME_SECONDS: u64 = 30 * 24 * 60 * 60;

@@ -215,7 +215,9 @@ fn fleet_atomic_collection_closes_located_drive_after_restart_without_duplicates
     )
     .expect("close Fleet drive");
     assert_eq!(report.drives_closed, 1);
-    assert_eq!(report.positions_materialised, 2);
+    // The closing commit materialises the drive's three positions: two from
+    // earlier commits and the closing one (R11).
+    assert_eq!(report.positions_materialised, 3);
     assert_eq!(report.lifecycle_quarantines, 0);
 
     let duplicate = persist_collection_atomic_for_provider(
@@ -256,7 +258,7 @@ fn fleet_atomic_collection_closes_located_drive_after_restart_without_duplicates
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .expect("position counts");
-    assert_eq!(position_counts, (4, 3));
+    assert_eq!(position_counts, (3, 3));
 }
 
 #[test]
@@ -299,7 +301,7 @@ fn fleet_atomic_collection_discards_one_position_drive_without_open_row_leak() {
             "speed": null,
             "timestamp": t0 + 60_000
         },
-        "vehicle_state": {"odometer": 1000.1}
+        "vehicle_state": {"odometer": 1000.05}
     }));
     let report = persist_collection_atomic_for_provider(
         &store,
@@ -329,7 +331,8 @@ fn fleet_atomic_collection_discards_one_position_drive_without_open_row_leak() {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .expect("completed row counts");
-    assert_eq!(completed, (0, 0));
+    // R48: the discarded drive's position is kept as a standalone row.
+    assert_eq!(completed, (0, 1));
 }
 
 #[test]
@@ -360,7 +363,7 @@ fn non_atomic_batch_discards_short_drive_without_rows_after_restart() {
                         "speed": 0,
                         "timestamp": t0 + 60_000
                     },
-                    "vehicle_state": {"odometer": 1000.1}
+                    "vehicle_state": {"odometer": 1000.05}
                 }),
             ),
         ],
@@ -392,7 +395,8 @@ fn non_atomic_batch_discards_short_drive_without_rows_after_restart() {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .expect("completed row counts");
-    assert_eq!(completed, (0, 0));
+    // R48: the discarded drive's position is kept as a standalone row.
+    assert_eq!(completed, (0, 1));
 }
 
 #[test]
@@ -1307,14 +1311,10 @@ fn live_publication_includes_v2_state_and_update_history() {
         .expect("states rows")
         .map(|row| row.expect("state row"))
         .collect();
-    assert_eq!(
-        states,
-        vec![
-            (1, "online".to_owned(), t0, Some(t1)),
-            (2, "asleep".to_owned(), t1, Some(t2)),
-            (3, "online".to_owned(), t2, None),
-        ]
-    );
+    // C1 R7: a `vehicle_data` answer with a fresh group is evidence that the
+    // car is connected and online, whatever the vehicle list's envelope says,
+    // so the asleep envelope of the second collection opens no asleep interval.
+    assert_eq!(states, vec![(1, "online".to_owned(), t0, None)]);
     let update: (i64, i64, i64, String) = connection
         .query_row(
             "SELECT id, start_date_ms, end_date_ms, version FROM updates",
@@ -1461,7 +1461,9 @@ fn synthetic_drive_and_charge_survive_mid_session_restart() {
     assert_eq!(history.drives.len(), 1);
     assert_eq!(history.charges.len(), 1);
     assert_eq!(history.charges[0].end_battery_level, Some(80));
-    assert_eq!(history.charges[0].charge_energy_added, Some(11.0));
+    // R61a: the snapshot behind the charge was taken after a drive, so the
+    // counter is new from zero: 12.0 - 0.0.
+    assert_eq!(history.charges[0].charge_energy_added, Some(12.0));
 
     let publication_gate = store
         .try_acquire_publication_gate()
@@ -1479,4 +1481,138 @@ fn synthetic_drive_and_charge_survive_mid_session_restart() {
         .expect("manifest")
         .expect("published");
     assert!(manifest.total_rows > 1);
+}
+
+#[test]
+fn service_refusal_is_appended_as_a_hub_lifecycle_event() {
+    // C1 R15, section 7 item 3b: the refusal enters the projection as a stored
+    // observation instead of a direct state change, so replay stays exact.
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let closed_at_ms = 1_800_000_000_000_i64;
+    force_close_vehicle_for_service(&store, VehicleId::from_test(9), closed_at_ms)
+        .expect("service refusal");
+    let vehicle_id = store
+        .open()
+        .expect("database")
+        .query_row("SELECT vehicle_id FROM vehicles", [], |row| {
+            row.get::<_, String>(0)
+        })
+        .expect("vehicle id")
+        .parse::<Uuid>()
+        .expect("stored UUID");
+    let record = store
+        .load_lifecycle_state(vehicle_id)
+        .expect("lifecycle query")
+        .expect("lifecycle state");
+    let state = OpenSessionState::decode(&record.open_session_json).expect("state");
+    assert_eq!(state.service_mode, Some(true));
+    assert!(state.service_mode_refused);
+    assert!(state.last_observation_id > 0);
+    // The event does not claim a reachability or an observation time.
+    assert_eq!(state.last_reach, None);
+    assert_eq!(state.last_observed_at_ms, None);
+    assert!(!record.quarantined);
+    // Repeating the same refusal at the same Hub time is a new observation (the
+    // processed raw row of the first is pruned, so nothing remembers it, and
+    // the id comes from a sequence that survives pruning): it advances only the
+    // cursor, because the refusal is idempotent.
+    force_close_vehicle_for_service(&store, VehicleId::from_test(9), closed_at_ms)
+        .expect("repeated refusal");
+    let again = store
+        .load_lifecycle_state(vehicle_id)
+        .expect("lifecycle query")
+        .expect("lifecycle state");
+    assert_eq!(again.last_observation_id, record.last_observation_id + 1);
+    let mut repeated = OpenSessionState::decode(&again.open_session_json).expect("state");
+    repeated.last_observation_id = state.last_observation_id;
+    assert_eq!(repeated, state);
+}
+
+/// ST93 (d), C1 R84: a vehicle whose lifecycle state is new, as after a
+/// quarantined blob, but whose import watermarks lie above its materialised
+/// and catalogue maxima. The collector's first projection allocates every live
+/// id above them.
+#[test]
+fn st93_the_collector_seed_allocates_live_ids_above_the_import_watermarks() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let t0 = 1_800_000_500_000_i64;
+    let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
+    let snapshot = |shift: &str, speed: i64, latitude: f64, at: i64, odometer: f64| {
+        VehicleData::for_test(
+            9,
+            json!({
+                "drive_state": {"shift_state": shift, "speed": speed, "latitude": latitude,
+                                "longitude": 19.0, "timestamp": at},
+                "vehicle_state": {"odometer": odometer},
+                "charge_state": {"battery_level": 70, "battery_range": 200.0}
+            }),
+        )
+    };
+    // The collector keeps one snapshot per vehicle and collection.
+    let collection = |shift: &str, speed: i64, latitude: f64, at: i64, odometer: f64| {
+        ManualCollection {
+            vehicles: vec![vehicle.clone()],
+            snapshots: vec![snapshot(shift, speed, latitude, at, odometer)],
+            failures: vec![],
+        }
+    };
+    let drive = collection("D", 25, 47.0, t0, 1000.0);
+    persist_collection(&store, &drive, t0).expect("persist the drive");
+    let (vehicle_id, source_id): (String, String) = store
+        .open()
+        .expect("db")
+        .query_row("SELECT vehicle_id, source_id FROM vehicles", [], |row| {
+            Ok((row.get(0)?, row.get(1)?))
+        })
+        .expect("registered vehicle");
+    // The import's rows are not materialised, so only the watermarks bound the
+    // ids: drives 40, positions 800, charging processes 50, states 30.
+    for (domain, largest) in [
+        ("drives", 40_i64),
+        ("positions", 800),
+        ("charging_processes", 50),
+        ("charges", 900),
+        ("states", 30),
+        ("updates", 12),
+    ] {
+        store
+            .open()
+            .expect("db")
+            .execute(
+                "INSERT INTO lifecycle_source_watermarks(
+                    source_id, vehicle_id, domain, max_source_row_id, max_timestamp_ms
+                 ) VALUES (?1, ?2, ?3, ?4, NULL)",
+                rusqlite::params![source_id, vehicle_id, domain, largest],
+            )
+            .expect("watermark");
+    }
+    assert!(
+        store
+            .load_lifecycle_state(vehicle_id.parse().expect("uuid"))
+            .expect("state")
+            .is_none(),
+        "the state is new"
+    );
+    materialise_lifecycle_for_collection(&store, &drive, t0).expect("materialise");
+    let mut closed = 0;
+    for (shift, speed, at, odometer) in [("D", 30, t0 + 60_000, 1001.0), ("P", 0, t0 + 120_000, 1001.0)] {
+        let next = collection(shift, speed, 47.01, at, odometer);
+        persist_collection(&store, &next, at).expect("persist");
+        closed += materialise_lifecycle_for_collection(&store, &next, at)
+            .expect("materialise")
+            .drives_closed;
+    }
+    assert_eq!(closed, 1);
+    let history = store
+        .materialised_history(vehicle_id.parse().expect("uuid"))
+        .expect("history");
+    assert_eq!(history.drives.iter().map(|d| d.id).collect::<Vec<_>>(), vec![41]);
+    assert!(
+        !history.positions.is_empty() && history.positions.iter().all(|p| p.id > 800),
+        "{:?}",
+        history.positions.iter().map(|p| p.id).collect::<Vec<_>>()
+    );
+    assert!(history.states.iter().all(|state| state.id > 30));
 }

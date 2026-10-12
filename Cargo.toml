@@ -52,7 +52,9 @@ rustix = { version = "1.1.4", features = ["fs", "process"] }
 rusqlite = { version = "0.40.2", features = ["backup", "bundled"] }
 rustls = { version = "0.23.43", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `float_roundtrip` makes parsing exact, so the f64 accumulators of the open
+# charge survive a persisted-blob round trip bit for bit (C2 R2a, T19).
+serde_json = { version = "1", features = ["float_roundtrip"] }
 # Signed and hashed bytes depend on this exact canonical form; upgrade deliberately.
 serde_jcs = "=0.2.0"
 # Edge record IDs and persisted envelope hashes use the original ordering contract.

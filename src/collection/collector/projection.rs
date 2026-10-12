@@ -37,6 +37,14 @@ async fn persist_discovery_events_with_timeout(
         let mut live_settings = vehicle.settings.clone();
         live_settings.suspend_min_resolved = false;
         store.upsert_car_settings(registered.vehicle_id, pack_car_id, &live_settings)?;
+        // A discovery is delivered to the lifecycle unless it equals the
+        // vehicle's persisted last reachability, not merely the previous
+        // discovery (C1 R77, section 7 item 8).
+        if store.lifecycle_last_reach(registered.vehicle_id)?.as_deref()
+            == Some(vehicle.state.as_str())
+        {
+            continue;
+        }
         store.accept_owner_observation_and_lifecycle_with_offline_timeout(
             &ObservationInput {
                 source_id: source.source_id,
@@ -68,10 +76,26 @@ async fn persist_discovery_events_with_timeout(
 // A successful inventory response is current presence evidence even when it
 // produces no scheduler event. Do not re-run lifecycle or compatibility
 // publication for these unchanged vehicles.
+#[cfg(test)]
 async fn persist_unchanged_discoveries(
     store: &HubStore,
     vehicles: &[Vehicle],
     provider: CollectorProvider,
+) -> Result<(), CollectorError> {
+    persist_unchanged_discoveries_with_timeout(
+        store,
+        vehicles,
+        provider,
+        crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT,
+    )
+    .await
+}
+
+async fn persist_unchanged_discoveries_with_timeout(
+    store: &HubStore,
+    vehicles: &[Vehicle],
+    provider: CollectorProvider,
+    offline_drive_timeout: Duration,
 ) -> Result<(), CollectorError> {
     if vehicles.is_empty() {
         return Ok(());
@@ -93,6 +117,7 @@ async fn persist_unchanged_discoveries(
                 payload: discovery_payload(vehicle, provider),
             },
             observed_at_ms,
+            offline_drive_timeout,
         )?;
     }
     Ok(())
@@ -457,29 +482,7 @@ fn materialise_vehicle_lifecycle(
             .filter(|position| position.drive_id.is_none())
             .count();
         report.charge_samples_materialised += 0; // closed-session samples counted below
-        total_delta.drives.extend(step.delta.drives);
-        for discarded_drive_id in &step.delta.discarded_drive_ids {
-            total_delta
-                .open_drive_positions
-                .retain(|position| position.drive_id != Some(*discarded_drive_id));
-        }
-        total_delta
-            .discarded_drive_ids
-            .extend(step.delta.discarded_drive_ids);
-        total_delta.positions.extend(step.delta.positions);
-        total_delta.charges.extend(step.delta.charges);
-        total_delta.charge_samples.extend(step.delta.charge_samples);
-        total_delta.states.extend(step.delta.states);
-        total_delta.updates.extend(step.delta.updates);
-        total_delta
-            .charge_start_coordinates
-            .extend(step.delta.charge_start_coordinates);
-        total_delta
-            .open_drive_positions
-            .extend(step.delta.open_drive_positions);
-        total_delta
-            .open_charge_samples
-            .extend(step.delta.open_charge_samples);
+        crate::lifecycle::merge_step_delta(&mut total_delta, step.delta);
     }
 
     if let Some(open) = state.open_drive.as_mut() {
@@ -572,23 +575,51 @@ fn force_close_vehicle_for_service_provider(
     )?;
     let pack_car_id =
         projection_car_id_for_vehicle(store, registered.vehicle_id, source_vehicle_id.get())?;
-    let existing = store.load_lifecycle_state(registered.vehicle_id)?;
-    let state = match existing.as_ref() {
-        Some(record) => OpenSessionState::decode(&record.open_session_json)
-            .map_err(CollectorError::Lifecycle)?,
-        None => OpenSessionState::new(),
-    };
-    let step = force_close_for_service(state, pack_car_id, closed_at_ms)?;
-    let encoded = step.state.encode().map_err(CollectorError::Lifecycle)?;
-    store.commit_lifecycle_delta(&crate::db::LifecycleCommit {
-        vehicle_id: registered.vehicle_id,
-        car_id: pack_car_id,
-        open_session_json: &encoded,
-        last_observation_id: step.state.last_observation_id,
-        quarantined: existing.as_ref().is_some_and(|record| record.quarantined),
-        updated_at_ms: closed_at_ms,
-        delta: &step.delta,
-    })?;
+    // The refusal is a decision of the collector's own clock, so it enters the
+    // projection as a stored observation and replay stays exact (C1 R15).
+    append_hub_lifecycle_event(
+        store,
+        source.source_id,
+        registered.vehicle_id,
+        pack_car_id,
+        closed_at_ms,
+        HUB_EVENT_SERVICE_REFUSED,
+        crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT,
+    )
+}
+
+/// `event` value of the Hub lifecycle event for a vehicle that Tesla refused as
+/// "in service" (C1 R15, R25).
+const HUB_EVENT_SERVICE_REFUSED: &str = "service_refused";
+
+/// Append one `hub_lifecycle_event_v1` observation through the ordinary intake
+/// (`raw_observations`, then the projection), like a discovery (C1 R15,
+/// section 7 item 3b). `observed_at_ms` is the Hub wall-clock time of the
+/// decision; the projection never takes an end time from it, only the last
+/// evidence of the session.
+fn append_hub_lifecycle_event(
+    store: &HubStore,
+    source_id: Uuid,
+    vehicle_id: Uuid,
+    pack_car_id: i64,
+    observed_at_ms: i64,
+    event: &str,
+    offline_drive_timeout: Duration,
+) -> Result<(), CollectorError> {
+    store.accept_owner_observation_and_lifecycle_with_offline_timeout(
+        &ObservationInput {
+            source_id,
+            vehicle_id,
+            observed_at_ms,
+            payload: serde_json::json!({
+                "record_type": "hub_lifecycle_event_v1",
+                "event": event,
+            }),
+        },
+        observed_at_ms,
+        pack_car_id,
+        offline_drive_timeout,
+    )?;
     Ok(())
 }
 
@@ -885,6 +916,10 @@ fn seed_lifecycle_ids_from_materialised(
     state.next_update_id = state
         .next_update_id
         .max(max_update.saturating_add(1).max(1));
+    // Imported rows need not be materialised or catalogued under these keys,
+    // so the import watermarks of every source also bound the cursors
+    // (C1 R84 point (a)); the maxima above are kept.
+    state.raise_id_cursors(&store.lifecycle_watermark_id_floors(vehicle_id)?);
     state.id_cursors_seeded = true;
     Ok(())
 }
@@ -956,13 +991,13 @@ fn observation_timestamp(snapshot: &VehicleData, received_at_ms: i64) -> i64 {
             .and_then(|drive_state| drive_state.get("timestamp")),
         fields.get("timestamp"),
     ];
-    let maximum = received_at_ms.saturating_add(FUTURE_TIMESTAMP_SKEW_MS);
+    let maximum = received_at_ms.saturating_add(K_SKEW_MS);
     candidates
         .into_iter()
         .flatten()
         .filter_map(Value::as_i64)
         .find(|timestamp| {
-            (*timestamp >= EARLIEST_PLAUSIBLE_TIMESTAMP_MS) && (*timestamp <= maximum)
+            (*timestamp >= K_EARLIEST_MS) && (*timestamp <= maximum)
         })
         .unwrap_or(received_at_ms)
 }

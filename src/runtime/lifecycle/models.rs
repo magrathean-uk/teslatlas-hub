@@ -45,9 +45,8 @@ pub struct OpenSessionState {
     pub last_stationary_position_at_ms: Option<i64>,
     pub phase: VehiclePhase,
     pub open_drive: Option<OpenDrive>,
-    /// Durable bookend retained when an offline drive times out before the
-    /// first authoritative online sample can prove a TeslaMate-style
-    /// gained-range charge.
+    /// Persisted member kept so existing state blobs still decode; the C1
+    /// replacement defines whether and how it is used.
     #[serde(default)]
     pub pending_gained_range_charge: Option<GainedRangeChargeSeed>,
     pub open_charge: Option<OpenCharge>,
@@ -87,6 +86,74 @@ pub struct OpenSessionState {
     pub last_position_tpms_pressure_rl: Option<f64>,
     #[serde(default)]
     pub last_position_tpms_pressure_rr: Option<f64>,
+    /// Last known values of the parked car (C1 R69). Needed by the energy
+    /// baseline (R61a) and the after-gap charge (R70); cleared when a drive
+    /// opens (R41).
+    #[serde(default)]
+    pub parked_snapshot: Option<ParkedSnapshot>,
+    /// Newest comparable installed version text seen on a full source (R31).
+    #[serde(default)]
+    pub last_car_version: Option<String>,
+    /// Vehicle-group time at which `last_car_version` was last seen (R31):
+    /// the lower bound of the start of an update missed while unobserved.
+    #[serde(default)]
+    pub last_car_version_at_ms: Option<i64>,
+    /// Coordinates of the last standalone or drive-end position (R53), the
+    /// reference for the "moved" trigger of standalone positions.
+    #[serde(default)]
+    pub last_standalone_latitude: Option<f64>,
+    #[serde(default)]
+    pub last_standalone_longitude: Option<f64>,
+    /// Last accepted reachability, `online`, `asleep` or `offline` (R7). It is
+    /// the reference of discovery delivery (R77) and of the phase (R21).
+    #[serde(default)]
+    pub last_reach: Option<String>,
+    /// Watermarks of the position, battery, climate and odometer fact
+    /// families (R6). The other families keep the retained group watermarks.
+    #[serde(default)]
+    pub last_position_fact_ms: Option<i64>,
+    #[serde(default)]
+    pub last_battery_fact_ms: Option<i64>,
+    #[serde(default)]
+    pub last_climate_fact_ms: Option<i64>,
+    #[serde(default)]
+    pub last_odometer_fact_ms: Option<i64>,
+    /// `service_mode` was set by a `service_refused` Hub event and not by a
+    /// vehicle statement, so any later full-source answer can clear it (R25).
+    #[serde(default)]
+    pub service_mode_refused: bool,
+}
+
+/// Last known values of the parked car before a gap (C1 R69).
+///
+/// All fields are plain facts of the car at `seen_at_ms`; `at_ms` is the latest
+/// time up to which the charged energy is accounted for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ParkedSnapshot {
+    #[serde(default)]
+    pub at_ms: Option<i64>,
+    #[serde(default)]
+    pub seen_at_ms: i64,
+    #[serde(default)]
+    pub battery_level: Option<i64>,
+    #[serde(default)]
+    pub ideal_range_km: Option<f64>,
+    #[serde(default)]
+    pub rated_range_km: Option<f64>,
+    #[serde(default)]
+    pub odometer_km: Option<f64>,
+    #[serde(default)]
+    pub odometer_coarse: bool,
+    #[serde(default)]
+    pub latitude: Option<f64>,
+    #[serde(default)]
+    pub longitude: Option<f64>,
+    #[serde(default)]
+    pub energy_added_kwh: Option<f64>,
+    #[serde(default)]
+    pub after_drive: bool,
+    #[serde(default)]
+    pub unplugged: bool,
 }
 
 /// Bounded reference to normalized imported open-session rows. Child rows stay
@@ -156,6 +223,39 @@ impl OpenSessionState {
             return Err(LifecycleError::CorruptSession);
         }
         Ok(state)
+    }
+}
+
+/// The largest id already in use in each id space of one vehicle (R84): the
+/// larger of the materialised maximum and the import watermark of the matching
+/// `lifecycle_source_watermarks` domain. Zero means none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct IdFloors {
+    pub drives: i64,
+    pub positions: i64,
+    pub charges: i64,
+    pub charge_samples: i64,
+    pub states: i64,
+    pub updates: i64,
+}
+
+impl OpenSessionState {
+    /// Raise every `next_*_id` to at least `floor + 1`, saturating at
+    /// `i64::MAX`, and never lower one (R84). The next allocation is then the
+    /// first id above every key in use. Ids already allocated are not
+    /// renumbered. Reason: an id at or below an imported key would alias two
+    /// rows on the pages that serve imported rows, and would make a live
+    /// charge look imported (C2 R5); a cursor that is too high only skips
+    /// unused values.
+    pub(crate) fn raise_id_cursors(&mut self, used: &IdFloors) {
+        let raise =
+            |next: &mut i64, floor: i64| *next = (*next).max(floor.max(0).saturating_add(1));
+        raise(&mut self.next_drive_id, used.drives);
+        raise(&mut self.next_position_id, used.positions);
+        raise(&mut self.next_charge_id, used.charges);
+        raise(&mut self.next_charge_sample_id, used.charge_samples);
+        raise(&mut self.next_state_id, used.states);
+        raise(&mut self.next_update_id, used.updates);
     }
 }
 
@@ -349,6 +449,12 @@ fn open_drive_from_source(row: &TeslaMateDrive, positions: &[TeslaMatePosition])
         saw_offline: false,
         last_charge_energy_added: None,
         last_ideal_range_km: row.end_ideal_range_km.or(row.start_ideal_range_km),
+        last_folded_at_ms: None,
+        last_motion_at_ms: None,
+        max_displacement_m: 0.0,
+        elevation_count: 0,
+        odometer_coarse: false,
+        still_checkpoint: None,
         positions: Vec::new(),
     };
 
@@ -366,10 +472,6 @@ fn open_drive_from_source(row: &TeslaMateDrive, positions: &[TeslaMatePosition])
             open.speed_max = Some(open.speed_max.map_or(speed, |max| max.max(speed)));
         }
         observe_drive_position(&mut open, &position);
-        if let Some(temp) = position.outside_temp {
-            open.outside_temp_sum += temp;
-            open.outside_temp_count = open.outside_temp_count.saturating_add(1);
-        }
     }
     open.first_odometer = row.start_km.or(open.first_odometer);
     open.last_odometer = row.end_km.or(open.last_odometer);
@@ -416,6 +518,15 @@ fn open_charge_from_source(
         energy_used_kwh: None,
         last_sample_timestamp_ms: None,
         last_sample_power_kw: None,
+        energy_added_carry_kwh: 0.0,
+        prev_energy_added_kwh: None,
+        ratio_used_kwh: 0.0,
+        ratio_added_kwh: 0.0,
+        fully_powered: false,
+        pre_sample_kwh: None,
+        phase_count: None,
+        last_odometer_km: None,
+        last_odometer_coarse: None,
         samples: Vec::new(),
     };
 
@@ -428,12 +539,6 @@ fn open_charge_from_source(
             open.start_ideal_range_km = open.start_ideal_range_km.or(sample.ideal_range_km);
             open.start_rated_range_km = open.start_rated_range_km.or(sample.rated_range_km);
         }
-        if let Some(energy) = sample.charge_energy_added_kwh {
-            open.first_energy_added.get_or_insert(energy);
-            open.max_energy_added =
-                Some(open.max_energy_added.map_or(energy, |max| max.max(energy)));
-            open.last_energy_added = Some(energy);
-        }
         open.last_battery_level = sample.battery_level.or(open.last_battery_level);
         open.last_ideal_range_km = sample.ideal_range_km.or(open.last_ideal_range_km);
         open.last_rated_range_km = sample.rated_range_km.or(open.last_rated_range_km);
@@ -443,24 +548,17 @@ fn open_charge_from_source(
                     .map_or(power, |max| max.max(power)),
             );
         }
-        if let Some(is_dc) = sample.fast_charger_present {
-            open.is_dc = Some(open.is_dc.unwrap_or(false) || is_dc);
-        }
-        if sample.fast_charger_type.is_some() {
-            open.fast_charger_type = sample.fast_charger_type.clone();
-        }
+        // `is_dc` and `fast_charger_type` are written only by
+        // `observe_charge_sample` (C2 R9 S2, R31, R32), called below.
         if let Some(temp) = sample.outside_temp_c {
             open.outside_temp_sum += temp;
             open.outside_temp_count = open.outside_temp_count.saturating_add(1);
         }
         observe_charge_sample(&mut open, &sample);
     }
-    open.energy_used_kwh = row.charge_energy_used_kwh.or(open.energy_used_kwh);
-    if open.first_energy_added.is_none() {
-        open.first_energy_added = row.charge_energy_added;
-        open.max_energy_added = row.charge_energy_added;
-        open.last_energy_added = row.charge_energy_added;
-    }
+    // The energy fields are only the fold of the imported samples above (C2
+    // R14): the imported process row's own energy columns are never read, so a
+    // seeded session and a live one follow one rule.
     if let Some(average) = row.outside_temp_avg {
         let count = open.outside_temp_count.max(1);
         open.outside_temp_sum = average * f64::from(count);
@@ -513,6 +611,9 @@ pub fn imported_position(row: &TeslaMatePosition) -> ProjectionPosition {
     }
 }
 
+/// Phase of the vehicle (C1 R20). `Suspended` is never produced; it stays in
+/// the enum so stored blobs that contain it decode, and is read as `Online`
+/// through [`VehiclePhase::effective`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum VehiclePhase {
@@ -525,6 +626,44 @@ pub enum VehiclePhase {
     Driving,
     Charging,
     Updating,
+}
+
+impl VehiclePhase {
+    /// The phase as the unit reads it: `Suspended` is the logical state
+    /// `online` (R20, R23), every other phase is itself.
+    pub fn effective(self) -> Self {
+        match self {
+            Self::Suspended => Self::Online,
+            other => other,
+        }
+    }
+}
+
+impl OpenDrive {
+    /// Time of the latest folded observation; old blobs fall back to the last
+    /// stored position, then the start (C1 R12).
+    pub(crate) fn effective_last_folded_ms(&self) -> i64 {
+        self.last_folded_at_ms
+            .or(self.last_position_date_ms)
+            .unwrap_or(self.start_date_ms)
+    }
+
+    /// Time of the latest Motion fold; same fallback as the fold time (R12).
+    pub(crate) fn effective_last_motion_ms(&self) -> i64 {
+        self.last_motion_at_ms
+            .or(self.last_position_date_ms)
+            .unwrap_or(self.start_date_ms)
+    }
+
+    /// Number of elevations in the walk; an old blob with a reference but no
+    /// count has seen one value (R12).
+    pub(crate) fn effective_elevation_count(&self) -> u32 {
+        if self.elevation_count == 0 && self.last_elevation.is_some() {
+            1
+        } else {
+            self.elevation_count
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -575,20 +714,40 @@ pub struct OpenDrive {
     pub elevation_descent: i64,
     #[serde(default)]
     pub last_elevation: Option<i64>,
-    /// TeslaMate only synthesizes an offline charge after a drive has gone
-    /// through `{:driving, {:offline, last}, _}`. Persist that fact so an
-    /// online GPS gap cannot invent the same charge.
+    /// Persisted member kept so existing state blobs still decode; the C1
+    /// replacement defines whether and how it is used.
     #[serde(default)]
     pub saw_offline: bool,
-    /// Last Owner/Fleet `charge_energy_added` observed while this drive was
-    /// open. Stream frames omit the field. Used as TeslaMate's "last" bookend
-    /// for a gained-range synthetic charge.
+    /// Persisted member kept so existing state blobs still decode; the C1
+    /// replacement defines whether and how it is used.
     #[serde(default)]
     pub last_charge_energy_added: Option<f64>,
-    /// Last ideal range from any sample, including those without odometer.
-    /// TeslaMate compares `last_response.charge_state.ideal_battery_range`.
+    /// Persisted member kept so existing state blobs still decode; the C1
+    /// replacement defines whether and how it is used.
     #[serde(default)]
     pub last_ideal_range_km: Option<f64>,
+    /// Time of the latest folded observation (R42). Absent in old blobs: read
+    /// `last_position_date_ms`, else the start (R12).
+    #[serde(default)]
+    pub last_folded_at_ms: Option<i64>,
+    /// Time of the latest Motion fold (R42, R44). Same fallback as above.
+    #[serde(default)]
+    pub last_motion_at_ms: Option<i64>,
+    /// Greatest great-circle distance from the start coordinates, in metres (R47).
+    #[serde(default)]
+    pub max_displacement_m: f64,
+    /// Number of valid elevations stepped into the walk (R51). Absent in old
+    /// blobs: 1 when `last_elevation` is set, else 0.
+    #[serde(default)]
+    pub elevation_count: u32,
+    /// An odometer folded into this drive came from a stream or sparse source
+    /// and may be too coarse to decide the keep rule (R47).
+    #[serde(default)]
+    pub odometer_coarse: bool,
+    /// Copy of the drive (without positions and without its own checkpoint)
+    /// taken at the first still fold after the last motion (R44).
+    #[serde(default)]
+    pub still_checkpoint: Option<Box<OpenDrive>>,
     /// In-memory child buffer for pure unit tests and single-batch close. The
     /// durable db path clears this before encoding and never rehydrates the full
     /// history into active state on every observation.
@@ -633,6 +792,45 @@ pub struct OpenCharge {
     pub last_sample_timestamp_ms: Option<i64>,
     #[serde(default)]
     pub last_sample_power_kw: Option<f64>,
+    /// Energy of the finished counter segments, in kWh: `k` of C2 R11. Each
+    /// counter restart adds the segment that ended. Zero in every live session,
+    /// where the counter never falls (C1 R66 closes the session first).
+    #[serde(default)]
+    pub energy_added_carry_kwh: f64,
+    /// The previous sample's usable counter, or `None` when it had none (C2
+    /// R18). Decides whether an interval is counted for the ratio sums.
+    #[serde(default)]
+    pub prev_energy_added_kwh: Option<f64>,
+    /// `U_r`: inlet energy over the powered, counted intervals, in kWh (C2
+    /// R18).
+    #[serde(default)]
+    pub ratio_used_kwh: f64,
+    /// `A_r`: counter energy over the same intervals, in kWh (C2 R18).
+    #[serde(default)]
+    pub ratio_added_kwh: f64,
+    /// Every interval of the session so far was powered (C2 R18). Absent in
+    /// old blobs, which decode as `false`, so an upgraded session never claims
+    /// a gap-free integral it did not measure (C2 R25).
+    #[serde(default)]
+    pub fully_powered: bool,
+    /// Battery energy that arrived before the first sample, `c - b` of the
+    /// first sample, in kWh (C2 R18, R19 row 3). `None` when the first sample
+    /// had no usable counter.
+    #[serde(default)]
+    pub pre_sample_kwh: Option<f64>,
+    /// The latest phase count a sample itself fixed (C2 R36).
+    #[serde(default)]
+    pub phase_count: Option<i64>,
+    /// Latest known odometer while the charge is open, in km (R62, R65).
+    #[serde(default)]
+    pub last_odometer_km: Option<f64>,
+    /// Whether `last_odometer_km` came from a source that rounds the odometer
+    /// to whole miles (a stream frame or a sparse source), as `Some(true)`, or
+    /// from a full source, as `Some(false)` (R47, R69). `None` is unknown (a
+    /// blob written before this field existed, or an imported charge) and is
+    /// treated as coarse.
+    #[serde(default)]
+    pub last_odometer_coarse: Option<bool>,
     /// In-memory child buffer (see OpenDrive::positions).
     #[serde(default)]
     pub samples: Vec<ProjectionChargeSample>,
@@ -678,8 +876,13 @@ pub struct LifecycleDelta {
     pub open_charge_samples: Vec<ProjectionChargeSample>,
 }
 
+/// One geofence as the labelling rule reads it (C1 R57, R58).
 #[derive(Debug, Clone, PartialEq)]
 pub struct GeofenceFence {
+    /// Immutable catalogue id (`geofences.source_geofence_id`). It is the last
+    /// tie-break of the overlap rule, so the chosen fence does not depend on
+    /// slice order and stays stable across relabels (R57).
+    pub source_geofence_id: i64,
     pub name: String,
     pub latitude: f64,
     pub longitude: f64,
@@ -689,27 +892,27 @@ pub struct GeofenceFence {
     pub session_fee: Option<f64>,
 }
 
+/// Set the start and end geofence labels of every closed drive in `delta` from
+/// its stored (already rounded) coordinates (C1 R59). A drive without
+/// coordinates, or whose coordinates match no fence, gets `None`.
+///
+/// The label is a pure function of the stored coordinates and the fences, so
+/// relabelling the same rows with the same fences gives the same labels
+/// (idempotent relabel).
 pub fn apply_geofence_labels(delta: &mut LifecycleDelta, fences: &[GeofenceFence]) {
     for drive in &mut delta.drives {
-        if drive.start_geofence.is_none() {
-            drive.start_geofence = match (drive.start_latitude, drive.start_longitude) {
-                (Some(latitude), Some(longitude)) => {
-                    match_geofence_name(latitude, longitude, fences)
-                }
-                _ => None,
-            };
-        }
-        if drive.end_geofence.is_none() {
-            drive.end_geofence = match (drive.end_latitude, drive.end_longitude) {
-                (Some(latitude), Some(longitude)) => {
-                    match_geofence_name(latitude, longitude, fences)
-                }
-                _ => None,
-            };
-        }
+        drive.start_geofence = match (drive.start_latitude, drive.start_longitude) {
+            (Some(latitude), Some(longitude)) => match_geofence_name(latitude, longitude, fences),
+            _ => None,
+        };
+        drive.end_geofence = match (drive.end_latitude, drive.end_longitude) {
+            (Some(latitude), Some(longitude)) => match_geofence_name(latitude, longitude, fences),
+            _ => None,
+        };
     }
 }
 
+/// Name of the fence [`match_geofence`] chooses for the point, if any (C1 R59).
 pub fn match_geofence_name(
     latitude: f64,
     longitude: f64,
@@ -718,21 +921,111 @@ pub fn match_geofence_name(
     match_geofence(latitude, longitude, fences).map(|fence| fence.name.clone())
 }
 
+/// The one geofence rule (C1 R55 to R58), used at every label site.
+///
+/// - Distance: [`crate::location::great_circle_distance_m`] from the point to
+///   the fence centre (R55).
+/// - Boundary: a point is inside iff that distance is at most `radius_m`,
+///   inclusive and with no epsilon, so a point exactly on the boundary is
+///   inside and every site decides the same way (R56). "Within r metres"
+///   includes r; an epsilon would make the rule differ by site.
+/// - Overlap: among the fences that contain the point, the smallest radius
+///   wins (a smaller fence inside a larger one is the more specific place,
+///   such as a garage inside a home area), then the smallest distance to the
+///   centre (the nearer centre is the more likely intended place), then the
+///   smallest `source_geofence_id` (immutable, so the result does not depend on
+///   slice order). Comparisons use `f64::total_cmp` (R57).
+/// - Invalid input: a point that is not a valid WGS84 point matches nothing; a
+///   fence whose centre is not a valid point, or whose radius is not finite or
+///   is not positive, is skipped (R58). A deleted fence is absent from the
+///   slice and so matches nothing.
 pub fn match_geofence(
     latitude: f64,
     longitude: f64,
     fences: &[GeofenceFence],
 ) -> Option<&GeofenceFence> {
+    let point = crate::location::Wgs84Point::new(latitude, longitude).ok()?;
     fences
         .iter()
+        .filter(|fence| fence.radius_m.is_finite() && fence.radius_m > 0.0)
         .filter_map(|fence| {
-            let distance = haversine_m(latitude, longitude, fence.latitude, fence.longitude);
-            (distance <= fence.radius_m).then_some((distance, fence))
+            let centre = crate::location::Wgs84Point::new(fence.latitude, fence.longitude).ok()?;
+            let distance = crate::location::great_circle_distance_m(point, centre);
+            (distance <= fence.radius_m).then_some((fence, distance))
         })
-        .min_by(|left, right| left.0.total_cmp(&right.0))
-        .map(|(_, fence)| fence)
+        .min_by(|(left, left_distance), (right, right_distance)| {
+            left.radius_m
+                .total_cmp(&right.radius_m)
+                .then_with(|| left_distance.total_cmp(right_distance))
+                .then_with(|| left.source_geofence_id.cmp(&right.source_geofence_id))
+        })
+        .map(|(fence, _)| fence)
 }
 
+/// What a Tesla `FastCharger` type name says about the charge point (C2 R31).
+///
+/// `Supercharger` is Tesla's own DC network. `OtherDc` is a third-party DC
+/// family (CHAdeMO, GB/T, Combo). `TeslaAc` is Tesla's own AC equipment
+/// protocol (the "single wire CAN" names of wall and mobile connectors).
+/// `NoInformation` is a name that says nothing (absent, empty, `<invalid>`,
+/// `Unknown`, `SNA`, `Other`). `Unrecognised` is any other text, kept so a
+/// name added by a later Tesla release still becomes the session's type
+/// (R32) without being mistaken for evidence of AC or DC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FastChargerKind {
+    Supercharger,
+    OtherDc,
+    TeslaAc,
+    NoInformation,
+    Unrecognised,
+}
+
+/// Prefix of the Fleet Telemetry enum names (`FastChargerSupercharger`); the
+/// Owner API sends the plain names. Stripping at most one, case-insensitively,
+/// lets both spellings classify alike, the rule C1 R40a uses for Tesla enums
+/// (C2 R31).
+const FAST_CHARGER_PREFIX: &str = "FastCharger";
+
+/// Classify a charger type text (C2 R31). The text is trimmed, at most one
+/// leading `FastCharger` prefix is removed (ASCII case-insensitive) and the
+/// rest is compared ASCII case-insensitively with Tesla's enum names. A text
+/// that is only the prefix leaves an empty rest, which is the "empty" case of
+/// no information.
+pub(crate) fn fast_charger_kind(fast_charger_type: Option<&str>) -> FastChargerKind {
+    let Some(text) = fast_charger_type else {
+        return FastChargerKind::NoInformation;
+    };
+    let text = text.trim();
+    let rest = match text.get(..FAST_CHARGER_PREFIX.len()) {
+        Some(head) if head.eq_ignore_ascii_case(FAST_CHARGER_PREFIX) => {
+            &text[FAST_CHARGER_PREFIX.len()..]
+        }
+        _ => text,
+    };
+    let is = |name: &str| rest.eq_ignore_ascii_case(name);
+    if is("Supercharger") {
+        FastChargerKind::Supercharger
+    } else if is("CHAdeMO") || is("GB") || is("Combo") {
+        FastChargerKind::OtherDc
+    } else if is("ACSingleWireCAN") || is("MCSingleWireCAN") {
+        FastChargerKind::TeslaAc
+    } else if rest.is_empty() || is("<invalid>") || is("Unknown") || is("SNA") || is("Other") {
+        FastChargerKind::NoInformation
+    } else {
+        FastChargerKind::Unrecognised
+    }
+}
+
+/// True when the type names a Tesla Supercharger (C2 R31, R41). Tesla's brand
+/// on an AC wall connector or a CCS site does not make it one, so only the
+/// `Supercharger` name counts.
+pub(crate) fn is_supercharger(fast_charger_type: Option<&str>) -> bool {
+    fast_charger_kind(fast_charger_type) == FastChargerKind::Supercharger
+}
+
+/// The tariff a charge is priced with: the billing type, the unit price and
+/// an optional session fee (C2 R40). On a stored row it is the copy taken when
+/// the session closed, so a later fence edit does not rewrite history (R48).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ChargeTariff {
     pub billing_type: GeofenceBillingType,
@@ -740,135 +1033,196 @@ pub struct ChargeTariff {
     pub session_fee: Option<f64>,
 }
 
+impl ChargeTariff {
+    /// The tariff recorded on a charge row (C2 R40): present iff the row names
+    /// a billing type. The values are checked by [`calculate_charge_cost`]
+    /// (R44), so a copy with a missing or negative price reads as an unknown
+    /// cost there rather than here.
+    pub fn of_charge(charge: &ProjectionCharge) -> Option<ChargeTariff> {
+        Some(ChargeTariff {
+            billing_type: charge.billing_type?,
+            cost_per_unit: charge.cost_per_unit,
+            session_fee: charge.session_fee,
+        })
+    }
+
+    /// The tariff of a fence, only when it is complete and valid (C2 R40): a
+    /// billing type, a finite unit price of at least zero, and a session fee
+    /// that is absent or finite and at least zero.
+    ///
+    /// A fence with a type and no price, with a fee and no type, or with a
+    /// negative price or fee gives `None`, so a row never reads as if a price
+    /// existed and a sign error in a fence constant never lowers a cost
+    /// silently.
+    pub fn of_fence(fence: &GeofenceFence) -> Option<ChargeTariff> {
+        let billing_type = fence.billing_type?;
+        let rate = fence.cost_per_unit?;
+        if !rate.is_finite() || rate < 0.0 {
+            return None;
+        }
+        if fence
+            .session_fee
+            .is_some_and(|fee| !fee.is_finite() || fee < 0.0)
+        {
+            return None;
+        }
+        Some(ChargeTariff {
+            billing_type,
+            cost_per_unit: Some(rate),
+            session_fee: fence.session_fee,
+        })
+    }
+
+    /// The same tariff with the session fee waived (C2 R44a): `Some(0.0)` when
+    /// there was a fee, `None` when there was none. Used for a row that
+    /// continues the previous row's plug-in, so the flat fee for one
+    /// connection is charged once.
+    pub fn waive_fee(self) -> ChargeTariff {
+        ChargeTariff {
+            session_fee: self.session_fee.map(|_| 0.0),
+            ..self
+        }
+    }
+}
+
+/// What the cost of a charge needs besides the row and its tariff (C2 R44).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChargeCostContext {
+    /// The car setting `free_supercharging` (R41).
+    pub free_supercharging: bool,
+    /// The row's start and end are observed, not bounds (R43a); only a
+    /// per-minute cost reads it.
+    pub span_observed: bool,
+}
+
+/// One minute in milliseconds, the divisor of the per-minute basis (C2 R43).
+const MS_PER_MINUTE: f64 = 60_000.0;
+
+/// Largest magnitude of a cost in hundredths, the range of the pack's scale-2
+/// fixed numeric `cost_e2` (C2 R55 (c)): the pack writer is the binding
+/// constraint for range, so a stored cost must never make pack writing fail.
+const COST_E2_LIMIT: f64 = 99_999_999_999_999.0;
+
+/// True when a cost, once rounded to two decimals, fits the pack's `cost_e2`
+/// column (C2 R55 (c)). A non-finite value does not.
+pub(crate) fn cost_fits_pack_scale(cost: f64) -> bool {
+    let hundredths = (cost * 100.0).round();
+    hundredths.is_finite() && hundredths.abs() <= COST_E2_LIMIT
+}
+
+/// The cost of one closed charge (C2 R44), `None` when it cannot be known.
+///
+/// 1. Free charging (R41): the car setting is on and the row's charger type
+///    is a Supercharger: `Some(0.0)`, whatever the tariff.
+/// 2. No tariff: `None` (an unknown price, not a zero price).
+/// 3. A unit price that is absent, not finite or negative: `None`.
+/// 4. A session fee that is not finite or negative: `None`; an absent fee is
+///    no fee.
+/// 5. The units: for a per-kWh tariff the energy basis of R42 (DC: the counter
+///    with the integrated energy as fallback; AC or unknown: the integrated
+///    inlet energy only); for a per-minute tariff the connected minutes of R43
+///    when the span is observed. No units: `None`.
+/// 6. `units * rate + fee`, rounded once to two decimals, or `None` when the
+///    result does not fit the pack's scale (R55 (c)).
 pub fn calculate_charge_cost(
-    fast_charger_type: Option<&str>,
-    free_supercharging: bool,
-    charge_energy_added: Option<f64>,
-    charge_energy_used_kwh: Option<f64>,
-    duration_min: Option<i64>,
+    charge: &ProjectionCharge,
     tariff: Option<ChargeTariff>,
+    context: ChargeCostContext,
 ) -> Option<f64> {
-    if free_supercharging && fast_charger_type.is_some_and(|value| value.starts_with("Tesla")) {
+    if context.free_supercharging && is_supercharger(charge.fast_charger_type.as_deref()) {
         return Some(0.0);
     }
     let tariff = tariff?;
-    let fee = tariff
-        .session_fee
-        .filter(|value| value.is_finite())
-        .unwrap_or(0.0);
-    match tariff.billing_type {
+    let rate = tariff
+        .cost_per_unit
+        .filter(|rate| rate.is_finite() && *rate >= 0.0)?;
+    let fee = tariff.session_fee.unwrap_or(0.0);
+    if !fee.is_finite() || fee < 0.0 {
+        return None;
+    }
+    let units = match tariff.billing_type {
         GeofenceBillingType::PerKwh => {
-            let energy = [charge_energy_added, charge_energy_used_kwh]
-                .into_iter()
-                .flatten()
-                .filter(|value| value.is_finite() && *value >= 0.0)
-                .reduce(f64::max)?;
-            let variable = tariff
-                .cost_per_unit
-                .filter(|value| value.is_finite())
-                .map_or(0.0, |rate| energy * rate);
-            (variable.is_finite()
-                && (variable != 0.0
-                    || tariff.cost_per_unit.is_some()
-                    || tariff.session_fee.is_some()))
-            .then_some(variable + fee)
+            let added = finite_reading(charge.charge_energy_added);
+            let used = finite_reading(charge.charge_energy_used_kwh);
+            match charge.is_dc {
+                Some(true) => added.or(used),
+                Some(false) | None => used,
+            }
         }
         GeofenceBillingType::PerMinute => {
-            let minutes = duration_min.filter(|value| *value >= 0)? as f64;
-            let rate = tariff.cost_per_unit.filter(|value| value.is_finite())?;
-            let cost = minutes * rate + fee;
-            cost.is_finite().then_some(cost)
+            let end = charge.end_date_ms?;
+            if end < charge.start_date_ms || !context.span_observed {
+                return None;
+            }
+            Some((end - charge.start_date_ms) as f64 / MS_PER_MINUTE)
         }
     }
+    // A stored energy is never negative (R3); a negative one is a fault and
+    // must not lower a cost (R55 (a)).
+    .filter(|units| *units >= 0.0)?;
+    let cost = round2(units * rate + fee);
+    cost_fits_pack_scale(cost).then_some(cost)
 }
 
-#[cfg(test)]
-mod tariff_tests {
-    use super::*;
-
-    fn per_kwh(rate: Option<f64>, fee: Option<f64>) -> ChargeTariff {
-        ChargeTariff {
-            billing_type: GeofenceBillingType::PerKwh,
-            cost_per_unit: rate,
-            session_fee: fee,
+/// True when the stored times of a charge are observed, not bounds (C2 R43a).
+/// `samples` are the row's samples in sample order (`timestamp_ms`, then id).
+///
+/// With no samples the row's times are its own record (an imported row, for
+/// example), so true. Otherwise false iff the first sample is more than
+/// [`K_INT_MAX_MS`] after the start, or the last two samples are further apart
+/// than that, or the end is more than that after the last sample. Those are
+/// the unobserved stretches at either end (an after-gap start, a gap-closed
+/// end); a shorter one is ordinary polling granularity, and a gap in the
+/// middle that later samples close is connected time. Only stored rows and
+/// samples are read, so close, fill and manual entry agree (R6).
+pub(crate) fn charge_span_observed(
+    charge: &ProjectionCharge,
+    samples: &[ProjectionChargeSample],
+) -> bool {
+    let (Some(first), Some(last)) = (samples.first(), samples.last()) else {
+        return true;
+    };
+    if first.timestamp_ms.saturating_sub(charge.start_date_ms) > K_INT_MAX_MS {
+        return false;
+    }
+    if samples.len() >= 2 {
+        let previous = &samples[samples.len() - 2];
+        if last.timestamp_ms.saturating_sub(previous.timestamp_ms) > K_INT_MAX_MS {
+            return false;
         }
     }
-
-    #[test]
-    fn cost_precedence_and_nulls_match_teslamate() {
-        assert_eq!(
-            calculate_charge_cost(
-                Some("Tesla Supercharger"),
-                true,
-                Some(10.0),
-                Some(12.0),
-                Some(30),
-                Some(per_kwh(Some(0.30), Some(2.0))),
-            ),
-            Some(0.0)
-        );
-        assert_eq!(
-            calculate_charge_cost(
-                None,
-                false,
-                Some(10.0),
-                Some(12.0),
-                Some(30),
-                Some(per_kwh(Some(0.30), Some(2.0))),
-            ),
-            Some(5.6)
-        );
-        assert_eq!(
-            calculate_charge_cost(
-                None,
-                false,
-                Some(-1.0),
-                Some(10.0),
-                Some(30),
-                Some(per_kwh(Some(0.30), None)),
-            ),
-            Some(3.0)
-        );
-        assert_eq!(
-            calculate_charge_cost(
-                None,
-                false,
-                None,
-                None,
-                Some(30),
-                Some(per_kwh(Some(0.30), Some(2.0))),
-            ),
-            None
-        );
-        assert_eq!(
-            calculate_charge_cost(
-                None,
-                false,
-                None,
-                None,
-                Some(30),
-                Some(ChargeTariff {
-                    billing_type: GeofenceBillingType::PerMinute,
-                    cost_per_unit: Some(0.10),
-                    session_fee: Some(2.0),
-                }),
-            ),
-            Some(5.0)
-        );
-        assert_eq!(
-            calculate_charge_cost(None, false, Some(10.0), None, Some(30), None),
-            None
-        );
+    if let Some(end) = charge.end_date_ms
+        && end.saturating_sub(last.timestamp_ms) > K_INT_MAX_MS
+    {
+        return false;
     }
+    true
 }
 
-fn haversine_m(latitude_a: f64, longitude_a: f64, latitude_b: f64, longitude_b: f64) -> f64 {
-    let radius = 6_371_000.0;
-    let lat = (latitude_b - latitude_a).to_radians();
-    let lon = (longitude_b - longitude_a).to_radians();
-    let a = (lat / 2.0).sin().powi(2)
-        + latitude_a.to_radians().cos() * latitude_b.to_radians().cos() * (lon / 2.0).sin().powi(2);
-    radius * 2.0 * a.sqrt().asin()
+/// True when a Hub row continues the previous row's plug-in (C2 R44a): its
+/// energy added is known and the largest usable counter among its samples
+/// exceeds it by at least [`K_ENERGY_EPS_KWH`].
+///
+/// In a live session `E = m - b`, so `m - E` is the baseline, and the test
+/// holds exactly when the baseline was non-zero and kept (a top-up after
+/// `Complete` with no unplug, drive or movement; the second row of a
+/// continuity split). A baseline lowered to zero, an unknown counter or a
+/// restart carry makes it false, and the session fee is then charged as for
+/// any session.
+pub(crate) fn charge_continues_plug_in(
+    charge: &ProjectionCharge,
+    samples: &[ProjectionChargeSample],
+) -> bool {
+    let Some(added) = finite_reading(charge.charge_energy_added) else {
+        return false;
+    };
+    let largest = samples
+        .iter()
+        .filter_map(usable_energy_counter)
+        .fold(None, |best: Option<f64>, counter| {
+            Some(best.map_or(counter, |best| best.max(counter)))
+        });
+    largest.is_some_and(|largest| largest - added >= K_ENERGY_EPS_KWH)
 }
 
 #[derive(Debug, Clone, PartialEq)]

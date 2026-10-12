@@ -614,8 +614,8 @@ fn persist_stream_update_with_projection(
     mut context: Option<(&mut StreamContext, Duration)>,
 ) -> Result<bool, CollectorError> {
     let received_at_ms = current_epoch_millis()?;
-    let maximum = received_at_ms.saturating_add(FUTURE_TIMESTAMP_SKEW_MS);
-    if update.timestamp_ms < EARLIEST_PLAUSIBLE_TIMESTAMP_MS || update.timestamp_ms > maximum {
+    let maximum = received_at_ms.saturating_add(K_SKEW_MS);
+    if update.timestamp_ms < K_EARLIEST_MS || update.timestamp_ms > maximum {
         tracing::debug!(
             vehicle_id = vehicle_id.get(),
             reason = "clock_or_future_timestamp",

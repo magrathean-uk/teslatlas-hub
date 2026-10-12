@@ -67,7 +67,11 @@ fn real_discovery_event_replaces_current_only_success_at_same_millisecond() {
         }),
     };
     store
-        .record_current_discovery(&current_only, 10_000)
+        .record_current_discovery(
+            &current_only,
+            10_000,
+            crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT,
+        )
         .expect("current-only success");
     let state_change = ObservationInput {
         payload: serde_json::json!({

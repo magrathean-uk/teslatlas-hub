@@ -1485,6 +1485,8 @@ async fn actual_edge_mtls_delivery_replay_and_reenqueue_are_durable() {
         .iter()
         .find(|observation| observation.payload["record_type"] == "fleet_api_vehicle_data_v1")
         .expect("Edge current observation");
+    // C1 R32, R76: an edge observation is a sparse source.
+    assert_eq!(edge_observation.payload["provider_feed"], "fleet_telemetry");
     assert_eq!(
         edge_observation.payload["provider_raw_json"]["response"]["charge_state"]["usable_battery_level"],
         81

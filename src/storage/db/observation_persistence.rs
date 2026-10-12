@@ -34,7 +34,8 @@ impl HubStore {
                 received_at_ms, payload_sha256, payload_json
              ) VALUES (?1, 'teslamate_position_v1',
                 MAX(COALESCE((SELECT MAX(observation_id) FROM raw_observations),0),
-                    COALESCE((SELECT MAX(observation_id) FROM current_observations),0))+1,
+                    COALESCE((SELECT MAX(observation_id) FROM current_observations),0),
+                    COALESCE((SELECT MAX(last_observation_id) FROM vehicle_lifecycle_state),0))+1,
                 ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(vehicle_id, record_type) DO UPDATE SET
                 observation_id=excluded.observation_id, source_id=excluded.source_id,
@@ -143,6 +144,8 @@ fn append_observation_in_transaction(
                          SELECT observation_id FROM raw_observations
                          UNION ALL
                          SELECT observation_id FROM current_observations
+                         UNION ALL
+                         SELECT last_observation_id FROM vehicle_lifecycle_state
                      )
                  ), 0) + 1,
                  ?1, ?2, ?3, ?4, ?5, ?6
@@ -394,9 +397,26 @@ fn load_open_charge_samples_for_parent(
     let mut samples = Vec::new();
     for row in rows {
         let json = row.map_err(StoreError::Query)?;
-        samples.push(serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)?);
+        samples.push(parse_open_charge_sample(&json)?);
     }
     Ok(samples)
+}
+
+/// One stored open charge sample. A live sample is stored as a
+/// `ProjectionChargeSample`; an imported open session's seeded samples are
+/// stored as the imported `TeslaMateCharge` row (the seed copies them as they
+/// arrive), so that shape is read too and projected, as the import does. Both
+/// give the same `ProjectionChargeSample`, so the close sequence of an
+/// imported open process (C2 R5 exception b, T63) sees its imported samples.
+fn parse_open_charge_sample(
+    json: &str,
+) -> Result<crate::hub_pack::ProjectionChargeSample, StoreError> {
+    match serde_json::from_str(json) {
+        Ok(sample) => Ok(sample),
+        Err(error) => serde_json::from_str::<crate::teslamate_projection::TeslaMateCharge>(json)
+            .map(|imported| crate::teslamate_projection::project_charge_sample(&imported))
+            .map_err(|_| StoreError::DeserializeLifecycleRow(error)),
+    }
 }
 
 // Full open-child rehydrate was removed from the hot observation path.

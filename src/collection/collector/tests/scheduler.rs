@@ -529,6 +529,7 @@ fn unchanged_successful_discovery_refreshes_current_only() {
                 }),
             },
             first_time,
+            crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT,
         )
         .expect("out-of-order retry");
     let still_current = store

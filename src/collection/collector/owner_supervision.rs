@@ -208,10 +208,11 @@ where
                                 .into_iter()
                                 .filter(|vehicle| !events.iter().any(|event| event.id == vehicle.id))
                                 .collect::<Vec<_>>();
-                            persist_unchanged_discoveries(
+                            persist_unchanged_discoveries_with_timeout(
                                 store,
                                 &unchanged,
                                 CollectorProvider::Legacy,
+                                cadence.offline_drive_timeout,
                             )
                             .await?;
                             for vehicle in scheduler.vehicles() {
@@ -277,10 +278,11 @@ where
                                 .into_iter()
                                 .find(|vehicle| vehicle.id == vehicle_id)
                             {
-                                persist_unchanged_discoveries(
+                                persist_unchanged_discoveries_with_timeout(
                                     store,
                                     &[vehicle],
                                     CollectorProvider::Legacy,
+                                    cadence.offline_drive_timeout,
                                 )
                                 .await?;
                             }

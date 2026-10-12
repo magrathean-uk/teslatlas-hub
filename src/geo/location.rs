@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Pure WGS84 geofence validation and matching.
-//!
-//! This module deliberately has no persistence, lifecycle, or network
-//! concerns. Distances use the Earth radius used by PostgreSQL's
-//! `earthdistance` extension and are returned in metres.
+//! WGS84 point type, location errors and the one great-circle distance every
+//! lifecycle distance, boundary and overlap rule uses (C1 R55).
 
 use std::fmt;
-
-/// Earth radius used by PostgreSQL `earthdistance`, in metres.
-pub const EARTH_RADIUS_METRES: f64 = 6_378_168.0;
 
 /// TeslaMate-compatible upper bound. TeslaMate requires the radius to be
 /// strictly less than five kilometres.
 pub const MAX_GEOFENCE_RADIUS_METRES: f64 = 5_000.0;
+
+/// Mean Earth radius R1 in metres, the IUGG value 6,371,008.8 m (C1 R55).
+///
+/// The spherical model is accurate enough on the scales the Hub measures,
+/// metres to kilometres: its error against the WGS84 ellipsoid is below 0.5 %,
+/// which is under a metre at 100 m and below GNSS accuracy. One radius keeps
+/// every site (drive keep rule, standalone-position movement, parked-car
+/// movement, geofence boundary) on the same number.
+pub const MEAN_EARTH_RADIUS_M: f64 = 6_371_008.8;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Wgs84Point {
@@ -36,95 +39,24 @@ impl Wgs84Point {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Geofence {
-    pub id: i64,
-    pub name: String,
-    pub latitude: f64,
-    pub longitude: f64,
-    pub radius_metres: f64,
-}
-
-impl Geofence {
-    pub fn new(
-        id: i64,
-        name: impl Into<String>,
-        latitude: f64,
-        longitude: f64,
-        radius_metres: f64,
-    ) -> Result<Self, LocationError> {
-        if id <= 0 {
-            return Err(LocationError::InvalidId);
-        }
-        let name = name.into();
-        if name.trim().is_empty() {
-            return Err(LocationError::EmptyName);
-        }
-        let centre = Wgs84Point::new(latitude, longitude)?;
-        if !radius_metres.is_finite()
-            || radius_metres <= 0.0
-            || radius_metres >= MAX_GEOFENCE_RADIUS_METRES
-        {
-            return Err(LocationError::InvalidRadius);
-        }
-        Ok(Self {
-            id,
-            name: name.trim().to_owned(),
-            latitude: centre.latitude,
-            longitude: centre.longitude,
-            radius_metres,
-        })
-    }
-
-    pub fn centre(&self) -> Wgs84Point {
-        Wgs84Point {
-            latitude: self.latitude,
-            longitude: self.longitude,
-        }
-    }
-
-    pub fn distance_metres(&self, point: Wgs84Point) -> f64 {
-        great_circle_distance_metres(self.centre(), point)
-    }
-
-    /// TeslaMate uses strict containment: a point exactly on the circle is
-    /// outside the fence.
-    pub fn contains(&self, point: Wgs84Point) -> bool {
-        self.distance_metres(point) < self.radius_metres
-    }
-}
-
-/// Return the containing fence nearest to the point's centre.
+/// Great-circle distance between two points in metres (C1 R55): the haversine
+/// formula on a sphere of radius [`MEAN_EARTH_RADIUS_M`].
 ///
-/// The stable positive ID resolves equal-distance ties. Input fences are
-/// assumed to have been created through [`Geofence::new`].
-pub fn nearest_containing<'a>(
-    point: Wgs84Point,
-    fences: impl IntoIterator<Item = &'a Geofence>,
-) -> Option<&'a Geofence> {
-    fences
-        .into_iter()
-        .filter_map(|fence| {
-            let distance = fence.distance_metres(point);
-            fence.contains(point).then_some((fence, distance))
-        })
-        .min_by(|(left, left_distance), (right, right_distance)| {
-            left_distance
-                .total_cmp(right_distance)
-                .then_with(|| left.id.cmp(&right.id))
-        })
-        .map(|(fence, _)| fence)
-}
-
-fn great_circle_distance_metres(a: Wgs84Point, b: Wgs84Point) -> f64 {
-    let latitude_delta = (b.latitude - a.latitude).to_radians();
-    let longitude_delta = (b.longitude - a.longitude).to_radians();
-    let a_latitude = (latitude_delta / 2.0).sin();
-    let a_longitude = (longitude_delta / 2.0).sin();
-    let cosine_product = a.latitude.to_radians().cos() * b.latitude.to_radians().cos();
-    let haversine =
-        (a_latitude * a_latitude + cosine_product * a_longitude * a_longitude).clamp(0.0, 1.0);
-    EARTH_RADIUS_METRES * 2.0 * haversine.sqrt().atan2((1.0 - haversine).sqrt())
+/// `h = sin^2(dphi/2) + cos(phi_a) cos(phi_b) sin^2(dlambda/2)`, clamped to
+/// `[0, 1]`, then `d = 2 R asin(sqrt(h))`. Haversine stays accurate at short
+/// distances, where the spherical law of cosines loses precision. The
+/// `sin^2(dlambda/2)` term is periodic in longitude, so the antimeridian needs
+/// no special case, and at the poles `cos(phi) = 0` removes longitude.
+pub fn great_circle_distance_m(a: Wgs84Point, b: Wgs84Point) -> f64 {
+    let phi_a = a.latitude.to_radians();
+    let phi_b = b.latitude.to_radians();
+    let delta_phi = (b.latitude - a.latitude).to_radians();
+    let delta_lambda = (b.longitude - a.longitude).to_radians();
+    let half_phi = (delta_phi / 2.0).sin();
+    let half_lambda = (delta_lambda / 2.0).sin();
+    let h = (half_phi * half_phi + phi_a.cos() * phi_b.cos() * half_lambda * half_lambda)
+        .clamp(0.0, 1.0);
+    2.0 * MEAN_EARTH_RADIUS_M * h.sqrt().asin()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,57 +87,8 @@ impl std::error::Error for LocationError {}
 mod tests {
     use super::*;
 
-    fn point(latitude: f64, longitude: f64) -> Wgs84Point {
-        Wgs84Point::new(latitude, longitude).unwrap()
-    }
-
-    fn fence(id: i64, latitude: f64, longitude: f64, radius_metres: f64) -> Geofence {
-        Geofence::new(
-            id,
-            format!("fence-{id}"),
-            latitude,
-            longitude,
-            radius_metres,
-        )
-        .unwrap()
-    }
-
     #[test]
-    fn exact_boundary_is_outside_and_just_inside_is_inside() {
-        let probe = point(0.0, 0.01);
-        let radius = great_circle_distance_metres(point(0.0, 0.0), probe);
-        let boundary = fence(1, 0.0, 0.0, radius);
-        assert!(!boundary.contains(probe));
-
-        let inside = point(0.0, 0.01 - 0.000001);
-        assert!(boundary.contains(inside));
-    }
-
-    #[test]
-    fn antimeridian_distance_wraps_correctly() {
-        let fence = fence(1, 0.0, 179.999, 500.0);
-        assert!(fence.contains(point(0.0, -179.999)));
-        assert!(fence.distance_metres(point(0.0, -179.999)) < 250.0);
-    }
-
-    #[test]
-    fn polar_distance_is_valid() {
-        let fence = fence(1, 90.0, 0.0, 200.0);
-        assert!(fence.contains(point(89.999, 123.0)));
-        assert!(!fence.contains(point(89.997, 123.0)));
-    }
-
-    #[test]
-    fn overlapping_fences_choose_nearest_then_stable_id() {
-        let fences = [fence(20, 0.0, 0.001, 400.0), fence(10, 0.0, -0.001, 400.0)];
-        assert_eq!(nearest_containing(point(0.0, 0.0), &fences).unwrap().id, 10);
-
-        let tied = [fence(20, 0.0, 0.001, 400.0), fence(10, 0.0, 0.001, 400.0)];
-        assert_eq!(nearest_containing(point(0.0, 0.0), &tied).unwrap().id, 10);
-    }
-
-    #[test]
-    fn invalid_points_and_fences_are_rejected() {
+    fn invalid_points_are_rejected() {
         assert_eq!(
             Wgs84Point::new(f64::NAN, 0.0),
             Err(LocationError::InvalidLatitude)
@@ -222,21 +105,33 @@ mod tests {
             Wgs84Point::new(0.0, 181.0),
             Err(LocationError::InvalidLongitude)
         );
-        assert_eq!(
-            Geofence::new(0, "bad", 0.0, 0.0, 10.0),
-            Err(LocationError::InvalidId)
-        );
-        assert_eq!(
-            Geofence::new(1, "  ", 0.0, 0.0, 10.0),
-            Err(LocationError::EmptyName)
-        );
-        assert_eq!(
-            Geofence::new(1, "bad", 0.0, 0.0, f64::NAN),
-            Err(LocationError::InvalidRadius)
-        );
-        assert_eq!(
-            Geofence::new(1, "bad", 0.0, 0.0, 5_000.0),
-            Err(LocationError::InvalidRadius)
-        );
+    }
+
+    fn point(latitude: f64, longitude: f64) -> Wgs84Point {
+        Wgs84Point::new(latitude, longitude).expect("valid point")
+    }
+
+    #[test]
+    fn distance_of_one_millidegree_of_latitude_is_111_195_metres() {
+        let distance = great_circle_distance_m(point(10.0, 20.0), point(10.001, 20.0));
+        assert!((distance - 111.195).abs() < 0.001, "{distance}");
+    }
+
+    #[test]
+    fn distance_is_symmetric_and_zero_for_the_same_point() {
+        let a = point(51.5, -0.1);
+        let b = point(48.85, 2.35);
+        assert_eq!(great_circle_distance_m(a, b), great_circle_distance_m(b, a));
+        assert_eq!(great_circle_distance_m(a, a), 0.0);
+    }
+
+    #[test]
+    fn distance_wraps_at_the_antimeridian_and_ignores_longitude_at_the_poles() {
+        let across = great_circle_distance_m(point(0.0, 179.9999), point(0.0, -179.9999));
+        assert!((across - 22.239).abs() < 0.01, "{across}");
+        let at_pole = great_circle_distance_m(point(90.0, 0.0), point(90.0, 135.0));
+        assert!(at_pole.abs() < 1e-6, "{at_pole}");
+        let half_circle = great_circle_distance_m(point(0.0, 0.0), point(0.0, 180.0));
+        assert!((half_circle - std::f64::consts::PI * MEAN_EARTH_RADIUS_M).abs() < 1e-6);
     }
 }

@@ -428,8 +428,13 @@ const fn default_sleeping_poll_seconds() -> u64 {
     30
 }
 
+/// The silence tolerance `T_gap` of the lifecycle fold. It equals
+/// `lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT` (C1 section 5) and the energy
+/// fold's `K_INT_MAX_MS` (C2 section 7), so that a session the lifecycle keeps
+/// continuous is also one whose intervals the energy integral bridges; a test
+/// pins the three together.
 const fn default_offline_drive_timeout_seconds() -> u64 {
-    15 * 60
+    10 * 60
 }
 
 const fn default_idle_suspend_after_seconds() -> u64 {
