@@ -137,8 +137,6 @@ CASE_IDS = [
     'cursor-vehicle-binding', 'cursor-scope-binding', 'cursor-window-binding', 'page-byte-cap', 'ungranted-vehicle-404',
     'ungranted-vehicles-list', 'ungranted-pack-404', 'revoke-then-401', 'revoke-again-401', 'rotation-grace-same-successor',
     'rotation-after-grace-401', 'discovery-profile']
-# Digest line of the unchanged 1.1.0 tree; pinned while that tree exists so a regenerated 1.1.0 cannot pass.
-HUB_HTTP_110_DIGEST = '47278485e4962aaa3ae177a3fc916281191b0d066edd1b40aad73fdad20b0f85'
 SENTENCE = 'A retry of rotate with the prior bearer during the grace window returns the same successor; it never issues a different token.'
 
 
@@ -204,12 +202,6 @@ class GeneratorTests(Scratch):
         self.assertEqual(raw, b'{\n  "a": "x\\u0000\\u001f\\u007f\\u0080\\u0085\\u009f\xc2\xa0\xc3\xa9\xe2\x80\xa8\xf0\x9f\x9a\x97"\n}\n')
         self.assertEqual(json.loads(raw), value)  # the escape and the character are the same JSON string
         self.assertEqual(self.generator.json_text({'b': 1, 'a': [1.5]}), json.dumps({'b': 1, 'a': [1.5]}, ensure_ascii=False, sort_keys=True, indent=2).encode() + b'\n')
-
-    @unittest.skipUnless((ROOT / 'tools/build_hub_http_profile.py').is_file(), 'the 1.1.0 generator is retired')
-    def test_the_1_1_0_generator_is_still_byte_identical(self):
-        result = run_script(ROOT / 'tools/build_hub_http_profile.py', '--check')
-        self.assertEqual(result.returncode, 0, result.stderr.decode())
-        self.assertEqual(result.stdout.decode().strip(), 'hub-http-v1@1.1.0 sha256=' + HUB_HTTP_110_DIGEST)
 
     def test_generator_is_self_contained_standard_library_only(self):
         import ast
@@ -692,8 +684,6 @@ class ProfileContentTests(unittest.TestCase):
         self.assertEqual(regression['routes'], ['GET /v1/vehicles/{vehicle_id}/sync/manifest', 'GET /v1/vehicles/{vehicle_id}/sync/noop',
                                                 'GET /v1/packs/sha256/{object_name}'])
         self.assertNotIn('{digest}', json.dumps(load('cases.json')) + json.dumps(regression) + json.dumps(self.profile))
-        previous = json.loads((ROOT / 'profiles/hub-http-v1/1.1.0/sync-regression.json').read_text())
-        self.assertEqual(regression['routes'], previous['routes'])
         self.assertNotIn('empty 404 identical to not-found', regression['access'])
         # the sync-regression appendix says the same as profile.json: asserted for the manifest and no-op, not inherited
         self.assertIn('each keeps the 404 the Hub gives an unknown vehicle today', regression['access'])
@@ -2111,12 +2101,14 @@ class OfflineConformanceTests(Scratch):
         self.assertFalse(summary['complete'])
 
     def test_the_runner_refuses_to_mix_profiles_or_take_an_adapter(self):
-        for arguments in (('--profile', PROFILE_ID, '--profile', 'hub-http-v1@1.1.0'),
-                          ('--profile', PROFILE_ID, '--adapter', str(ROOT / 'conformance/adapters/actual-hub'))):
-            with self.subTest(arguments):
-                result = run_script(ROOT / 'conformance/runner.py', *arguments, '--json')
-                self.assertEqual(result.returncode, 2, result.stdout.decode())
-                self.assertIn(b'"error"', result.stdout)
+        with tempfile.TemporaryDirectory() as directory:
+            dummy_adapter = Path(directory) / 'dummy_adapter'  # never executed: the runner refuses it
+            for arguments in (('--profile', PROFILE_ID, '--profile', 'hub-http-v1@1.1.0'),
+                              ('--profile', PROFILE_ID, '--adapter', str(dummy_adapter))):
+                with self.subTest(arguments):
+                    result = run_script(ROOT / 'conformance/runner.py', *arguments, '--json')
+                    self.assertEqual(result.returncode, 2, result.stdout.decode())
+                    self.assertIn(b'"error"', result.stdout)
 
     def test_a_bad_descriptor_path_fails_without_echoing_it(self):
         secret_path = '/nonexistent/synthetic-secret-descriptor.json'
@@ -3430,7 +3422,7 @@ class NativeBreakageTests(NativeTests, Scratch):
 # The real HTTPS transport, against a TLS listener on the loopback address
 # ---------------------------------------------------------------------------
 def make_certificate(root, name):
-    """A self-signed certificate for 127.0.0.1 (the recipe of test_hub_matrix) and its key; returns both paths."""
+    """A self-signed certificate for 127.0.0.1 and its key; returns both paths."""
     config = root / (name + '.cnf')
     config.write_text('[req]\nprompt=no\ndistinguished_name=dn\nx509_extensions=v3\n[dn]\nCN=127.0.0.1\n[v3]\nbasicConstraints=critical,CA:TRUE\n'
                       'keyUsage=critical,digitalSignature,keyCertSign\nsubjectKeyIdentifier=hash\nsubjectAltName=IP:127.0.0.1\n', encoding='utf-8')
@@ -4044,8 +4036,12 @@ class DocumentationTests(unittest.TestCase):
         text = (ROOT / 'README.md').read_text()
         self.assertIn('hub-http-v1@1.2.0', text)
         self.assertIn('profiles/hub-http-v1/1.2.0/', text)
-        self.assertIn('a Hub that does not serve it yet serves `1.1.0`.', ' '.join(text.split()))
-        self.assertNotIn('a Hub that does not yet serves', ' '.join(text.split()))
+        flat = ' '.join(text.split())
+        self.assertIn('A Hub built from the current source names `hub-http-v1@1.2.0` in its discovery document; '
+                      'the earlier `1.0.0` and `1.1.0` profiles were retired and are no longer in this package.', flat)
+        self.assertNotIn('profiles/hub-http-v1/1.1.0', text)
+        self.assertNotIn('serves `1.1.0`', flat)
+        self.assertNotIn('a Hub that does not yet serves', flat)
 
     def test_generators_readme_names_the_int64_format_and_the_413_of_a_claim(self):
         text = ' '.join((ROOT / 'generators/README.md').read_text().split())
@@ -4068,6 +4064,8 @@ class DocumentationTests(unittest.TestCase):
     def test_current_hub_reference_has_a_1_2_0_section(self):
         text = (ROOT / 'docs/reference/current-hub.md').read_text()
         self.assertIn('hub-http-v1@1.2.0', text)
+        self.assertNotIn('profiles/hub-http-v1/1.1.0', text)  # the retired directory is neither linked nor read
+        self.assertNotIn('compatibility.md', text)
         for phrase in ('/v1/device/revoke', 'max_lifetime', 'tqp1', 'query.charges', 'query.positions', 'query.charge.samples', 'auth.revoke',
                        'conformance/run --profile hub-http-v1@1.2.0', 'number'):
             self.assertIn(phrase, text)
@@ -4167,22 +4165,44 @@ class DocumentationTests(unittest.TestCase):
         self.assertNotIn('every one of the 49 cases', flat)
         self.assertNotIn('(the extractor\'s "Failed to buffer the request body")', flat)  # the text carries the inner error
 
-    def test_current_hub_reference_says_the_1_1_0_walkthrough_does_not_fit_a_1_2_0_hub(self):
-        flat = ' '.join((ROOT / 'docs/reference/current-hub.md').read_text().split())
+    def test_current_hub_walkthrough_targets_1_2_0(self):
+        text = (ROOT / 'docs/reference/current-hub.md').read_text()
+        flat = ' '.join(text.split())
         for phrase in (
-                # the introduction: which profile a Hub built from the current source names, and where the 1.1.0 walkthrough applies
+                # the introduction: the profile a Hub built from the current source names, its directory and its validator
                 'A Hub built from the current source names `hub-http-v1@1.2.0` in its discovery document',
-                'applies as written only to a Hub whose discovery has no `profile` member; its discovery check rejects a `1.2.0` Hub',
-                # the 1.2.0 section no longer says the 1.1.0 text stays true for discovery
-                'stays true for the routes `1.2.0` keeps, except discovery, which the Discovery paragraph below replaces',
-                # the profile choice and the first walkthrough block
-                'A Hub whose discovery names `hub-http-v1@1.2.0` has a `profile` member',
-                'so it exits on a Hub whose discovery names `hub-http-v1@1.2.0`',
-                'the `1.1.0` schema rejects the `profile` member and the token set',
-                'validate with `$PWD/profiles/hub-http-v1/1.2.0` instead'):
+                'the contract in [`profiles/hub-http-v1/1.2.0/`](../../profiles/hub-http-v1/1.2.0/)',
+                'checked-in `conformance.hub_http_12` validator',
+                # the four predecessor references of the 1.2.0 section
+                'a Hub whose discovery has no `profile` field is not covered by this guide',
+                'The walkthrough after this section targets `1.2.0`; this section describes what `1.2.0` changes from its predecessor',
+                'and the predecessor\'s "unobserved `413`" advice does not apply to `1.2.0`',
+                '(see the claim walkthrough below)',
+                # the profile choice, the discovery block and the profile identity
+                'target `hub-http-v1@1.2.0`: use them with a Hub whose discovery names `hub-http-v1@1.2.0`',
+                'The block below validates against `hub-http-v1@1.2.0`, so it exits on a Hub whose discovery does not match that profile',
+                'The profile identity is `hub-http-v1@1.2.0`.'):
             self.assertIn(phrase, flat)
-        # the discovery block reports the profile it was given, so the same block serves both directories
-        self.assertIn('raise SystemExit(f"discovery does not match {profile.parent.name}@{profile.name}")', (ROOT / 'docs/reference/current-hub.md').read_text())
+        for phrase in ('a Hub whose discovery has no `profile` field serves', 'Everything below this section describes', 'the `1.1.0` text',
+                       'rejects the `profile` member and the token set', 'validate with `$PWD/profiles/hub-http-v1/1.2.0` instead',
+                       'The profile identity remains', 'there is no public revoke route', 'in `1.1.0`) charge-query route'):
+            self.assertNotIn(phrase, flat)
+        # the walkthrough reads the retained profile through the 1.2.0 validator and no other directory or module
+        walkthrough = text[text.index('## Choose the profile'):]
+        profile_variable = 'TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.2.0"'
+        self.assertEqual(walkthrough.count('TESLATLAS_PROFILE='), walkthrough.count(profile_variable))
+        self.assertEqual(walkthrough.count(profile_variable), 7)
+        self.assertEqual(walkthrough.count('from conformance import hub_http_12\n'), 7)
+        self.assertNotRegex(text, r'profiles/hub-http-v1/1\.[01]\.0')
+        self.assertNotRegex(text, r'import hub_http\b(?!_)')
+        self.assertNotRegex(text, r'\bhub_http\.')
+        self.assertIn('hub_http_12.validate_raw(', walkthrough)
+        self.assertIn('hub_http_12.strict_json(', walkthrough)
+        for kind in ('"invitation"', '"claim"', '"drives"', '"rotate"'):
+            self.assertIn(kind, walkthrough)
+        self.assertNotIn('hub-http-v1@1.1.0', walkthrough)
+        # the discovery block reports the profile it was given
+        self.assertIn('raise SystemExit(f"discovery does not match {profile.parent.name}@{profile.name}")', walkthrough)
 
     def test_the_documents_name_the_same_page_limits_as_the_profile(self):
         text = (ROOT / 'docs/reference/current-hub.md').read_text()

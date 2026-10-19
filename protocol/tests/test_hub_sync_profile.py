@@ -75,15 +75,6 @@ class HubSyncProfileTests(unittest.TestCase):
                 },
             },
         )
-        frozen_profiles = {
-            "1.0.0": "875c42ffceab748e4d81b6356fdbe698e8b107a8c47c9abf33ad131f2fd34c7b",
-            "1.1.0": "0a6db376b69071f79bed3f437a7ae564ffa6378fec2b944340eb0b5306d63e3a",
-            "1.2.0": "331920326476ffe8d3e382181a73937d478c613793c3cc5c0a7e2db14e091ed5",
-        }
-        for version, digest in frozen_profiles.items():
-            with self.subTest(version=version):
-                frozen = ROOT / f"profiles/hub-sync-v1/{version}/SHA256SUMS"
-                self.assertEqual(hashlib.sha256(frozen.read_bytes()).hexdigest(), digest)
 
     def test_schemas_and_openapi_are_independently_valid(self):
         for name in ("changes-since-request.schema.json", "changed-set-receipt.schema.json", "rebase-hint.schema.json", "sync-manifest.schema.json", "noop.schema.json", "prepared-artefact.schema.json", "signing-keys.schema.json", "sync-error.schema.json", "status-tables.schema.json"):

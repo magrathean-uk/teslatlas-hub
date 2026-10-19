@@ -47,20 +47,6 @@ SDKs, Home Assistant integration, Edge, release notes, and any later
 authorized source tag. A source tag adds only a `v` prefix. The current
 source-only policy does not publish the locally verified packages.
 
-The three numeric components fit Cargo's version syntax, but their meaning is
-calendar-based rather than a semantic-version compatibility promise. Update
-`Cargo.toml`, the root package entry in `Cargo.lock`, macOS product-version
-metadata, installer inputs, ecosystem component manifests, affected tests, and
-current documentation together. Hub's Cargo package version is the cohort
-authority; use `scripts/sync-ecosystem-versions.py` to check or apply the
-allowlisted fields from the workspace root.
-
-When `--apply` moves an unbound candidate to a new product version, it clears
-the exact source commit, artifact and test-receipt bindings from the older
-candidate. It never changes an artifact's recorded version or hash to make old
-bytes appear rebuilt. A candidate already bound to an exact source commit is
-immutable and blocks a cohort transition.
-
 Do not rewrite historical release notes or historical fixtures merely because
 they contain an older version.
 

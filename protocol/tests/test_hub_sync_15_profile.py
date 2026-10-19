@@ -1857,6 +1857,9 @@ class LiveOverlayProfileTests(unittest.TestCase):
         # The statement is true of the committed discovery profiles, which this profile does not edit.
         for identity in capability["discovery_profiles_without_the_token"]:
             with self.subTest(discovery_profile=identity):
+                if identity == "hub-http-v1@1.1.0":
+                    # The tree was retired in P2; the digest-bound identity text above stays under D-P4.
+                    continue
                 family, _, version = identity.partition("@")
                 document = json.loads((ROOT / "profiles" / family / version / "profile.json").read_text())
                 self.assertEqual(document["profile_id"], identity)

@@ -9,10 +9,11 @@ must discover support instead of assuming that an endpoint exists. Product
 `2026.36.2` has an accepted bounded `hub-http-v1@1.0.0` binding with manifest
 SHA-256
 `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
-The richer external specification and event stream remain separate surfaces.
 The accepted binding does not add routes beyond those advertised by discovery.
 That record is historical: discovery now names the profile the Hub serves,
-`hub-http-v1@1.2.0` (see Discovery below).
+`hub-http-v1@1.2.0` (see Discovery below). The root `teslatlas-v1` contract,
+with its separate specification and event stream, and the `hub-http-v1` 1.0.0
+and 1.1.0 profiles have been retired and are no longer part of the protocol package.
 
 ## Transport and authentication
 

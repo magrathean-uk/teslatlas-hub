@@ -15,16 +15,16 @@ edge receivers, and future third-party integrations. The protocol is
 implementable from this repository alone: a client does not need Hub Rust or
 proprietary Teslatlas source.
 
-It carries four distinct contract families with different identities:
+It carries three distinct contract families with different identities:
 
 - Current-Hub HTTP: `hub-http-v1@1.2.0`, documented in
   [`docs/reference/current-hub.md`](docs/reference/current-hub.md). It adds
   JSON pages for charges, charge samples and drive positions, address and
   elevation provenance, device vehicle grants, same-successor rotation retries,
   a bounded credential lifetime and self-revocation to the discovery, pairing,
-  vehicle, current and drives reads of the candidate `hub-http-v1@1.1.0`
-  profile, which the same guide still describes. A Hub that serves it names the
-  profile in discovery; a Hub that does not serve it yet serves `1.1.0`.
+  vehicle, current and drives reads. A Hub built from the current source names
+  `hub-http-v1@1.2.0` in its discovery document; the earlier `1.0.0` and `1.1.0`
+  profiles were retired and are no longer in this package.
 - Candidate Hub changes-since: `hub-sync-v1@1.4.0`, documented in
   [`docs/reference/hub-sync.md`](docs/reference/hub-sync.md). It defines
   schema 2.2 PhysicalV3 bootstrap checkpoints, bounded signed changed sets,
@@ -34,11 +34,6 @@ It carries four distinct contract families with different identities:
   The candidate `hub-sync-v1@1.5.0` adds a live overlay (`base_live_sequence`,
   `live_sequence`, the `sync.live` capability) to a PhysicalV3 head; no Hub
   serves it yet.
-- Rich semantic HTTP and event profiles: `1.0.0`, `1.1.0`, and `1.2.0`. The
-  local conformance gate covers the current minor and its two predecessors.
-  Their walkthrough is
-  [`docs/guides/client-quickstart.md`](docs/guides/client-quickstart.md) and
-  includes version negotiation, SSE, commands, and metadata.
 - Edge delivery: `profiles/edge-delivery-v2/2.0.0/`, with its own pull and
   acknowledgement contract.
 
@@ -55,7 +50,7 @@ App source, or private deployment knowledge. `MUST`, `MUST NOT`, `REQUIRED`,
 and RFC 8174 when written in uppercase.
 
 Machine-readable artifacts are the wire authority. Prose explains intent but
-must not contradict schemas, OpenAPI, the SSE JSON contract, profiles, or
+must not contradict schemas, OpenAPI, profiles, or
 conformance cases; an unresolved conflict blocks release. A contract change
 updates every affected artifact, example, fixture, profile, generated output,
 and test, with the local gate as the release check.
@@ -67,19 +62,10 @@ or deployment instructions.
 
 ## Features
 
-- `openapi/teslatlas-v1.openapi.json` — self-contained OpenAPI 3.1.1 rich query API.
-- `schemas/` — canonical JSON Schema 2020-12 contracts.
-- `events/teslatlas-v1.sse.json` — SSE framing, replay, and event catalogue.
-- `examples/` — redacted valid and deliberately invalid wire examples.
-- `fixtures/v1/` — deterministic normal, duplicate, delayed, missing, and
-  reordered observation scenarios.
-- `compatibility/` — the current and previous two minor profiles.
 - `profiles/hub-http-v1/1.2.0/` — current-Hub HTTP schemas, OpenAPI 3.1.0,
   examples, cases, and content hash. Distribute the complete directory because
   its OpenAPI references adjacent schema files. Offline checks run with
   `./conformance/run --profile hub-http-v1@1.2.0`.
-- `profiles/hub-http-v1/1.1.0/` — the candidate predecessor, with the same
-  layout and the 24-hour rotation grace.
 - `profiles/hub-sync-v1/1.5.0/` — candidate live overlay on a PhysicalV3 head:
   `base_live_sequence`, one-step live changed sets, a live no-op, a signed
   rebase for any superseded or expired head, and an in-place upgrade of a 1.4
@@ -93,7 +79,8 @@ or deployment instructions.
   sequence/gap, acknowledgement, and durable-consumer disposition contract.
 - `generators/` — documented `openapi-generator` recipes for
   `profiles/hub-http-v1/1.2.0/openapi.json`; no generated code is committed.
-- `conformance/` — JSONL adapter protocol, executable cases, and runner.
+- `conformance/` — the `hub-sync-v1@1.3.0` fixture cases, the offline and native
+  checks of `hub-http-v1@1.2.0`, and the runner.
 
 ## Getting started
 
@@ -106,18 +93,10 @@ uv sync --locked
 ./tools/check
 ```
 
-The gate validates generated profiles, every JSON Schema, OpenAPI, SSE
-example, valid and invalid example, deterministic fixture, conformance
-vector, and all three compatibility profiles. It then runs the unit suite and
-bundled conformance adapter. This is local contract evidence, not
-installed-Hub, product, real-data, or release acceptance. It uses no hosted
-CI.
-
-To build and verify the deterministic, unpublished source bundle, follow
-[`docs/guides/developer-bundle.md`](docs/guides/developer-bundle.md). The
-bundle includes the exact dependency lock and public contract resources but
-does not claim a service, release, cold-cache offline dependency install, or
-downstream product acceptance.
+The gate checks that each retained generator reproduces its profile byte for
+byte, runs the unit suite, and runs the 65 `hub-sync-v1@1.3.0` fixture cases.
+This is local contract evidence, not installed-Hub, product, real-data, or
+release acceptance. It uses no hosted CI.
 
 ## Documentation
 
@@ -127,16 +106,9 @@ downstream product acceptance.
 - [Generated-client recipes](generators/README.md)
 - [Hub changes-since contract](docs/reference/hub-sync.md)
 - [Docker checker and read-only smoke](docs/guides/docker.md)
-- [Deterministic developer bundle](docs/guides/developer-bundle.md)
-- [Compatibility record](docs/reference/compatibility.md)
 - [Verification status](docs/reference/verification.md)
-- [Rich-profile client walkthrough](docs/guides/client-quickstart.md)
-- [Rich-profile HTTP contract](docs/reference/http.md)
-- [Canonical data model](docs/reference/data-model.md)
-- [Event stream](docs/reference/events.md)
-- [Commands and metadata](docs/reference/commands-and-metadata.md)
 - [Conformance](docs/guides/conformance.md)
-- [Normative references](docs/reference/standards.md)
+- [Standards the profiles rely on](docs/reference/standards.md)
 
 Read [CONTRIBUTING](.github/CONTRIBUTING.md) before changing a contract. Use
 [SUPPORT](.github/SUPPORT.md) for questions and [SECURITY](.github/SECURITY.md)

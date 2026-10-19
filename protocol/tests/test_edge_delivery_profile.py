@@ -68,18 +68,13 @@ class EdgeDeliveryProfileTests(unittest.TestCase):
             (PROFILE / "consumer-disposition.schema.json").read_text()
         )
 
-    def test_bundle_is_deterministic_and_does_not_mutate_current_hub_profile(self):
+    def test_bundle_is_deterministic(self):
         result = subprocess.run(
             [sys.executable, str(ROOT / "tools/build_edge_delivery_profile.py"), "--check"],
             capture_output=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr.decode())
         self.assertEqual(self.profile["profile_id"], PROFILE_ID)
-        current_hub_manifest = ROOT / "profiles/hub-http-v1/1.1.0/SHA256SUMS"
-        self.assertEqual(
-            hashlib.sha256(current_hub_manifest.read_bytes()).hexdigest(),
-            "47278485e4962aaa3ae177a3fc916281191b0d066edd1b40aad73fdad20b0f85",
-        )
 
     def test_literal_stable_and_legacy_ids_match_independent_hashes(self):
         identity = self.vectors["identity"]

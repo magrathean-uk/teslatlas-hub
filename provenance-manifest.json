@@ -470,14 +470,6 @@
       ]
     },
     {
-      "id": "ecosystem-compatibility-contracts",
-      "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Repository-maintained ecosystem release record.",
-      "paths": [
-        "docs/compatibility/ecosystem-release.json"
-      ]
-    },
-    {
       "id": "ecosystem-interop-harness",
       "class": "MAGRATHEAN-ORIGINAL",
       "rationale": "Repository-maintained synthetic Hub fixture, launcher, smoke check and focused tests.",

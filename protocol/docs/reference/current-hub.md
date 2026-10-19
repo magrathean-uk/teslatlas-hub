@@ -5,45 +5,32 @@ Hub. Run the shell blocks in one session, in order, with the private directory
 and validated endpoint produced by the earlier blocks. A Hub built from the
 current source names `hub-http-v1@1.2.0` in its discovery document and is held to
 the contract in [`profiles/hub-http-v1/1.2.0/`](../../profiles/hub-http-v1/1.2.0/);
-the `hub-http-v1@1.2.0` section below says what that profile changes. The
-walkthrough after that section is written against `hub-http-v1@1.1.0` in
-[`profiles/hub-http-v1/1.1.0/`](../../profiles/hub-http-v1/1.1.0/) and applies as
-written only to a Hub whose discovery has no `profile` member; its discovery
-check rejects a `1.2.0` Hub (see "Discover and pair a client safely"). Copy the whole
+the `hub-http-v1@1.2.0` section below says what that profile changes, and the
+walkthrough after that section is written against it. Copy the whole
 directory when distributing a contract: its OpenAPI 3.1.0 document resolves
 schemas from the adjacent profile files.
 
 Run the command examples from the Protocol repository root. They use the
-checked-in `conformance.hub_http` validator and write all response material to
+checked-in `conformance.hub_http_12` validator and write all response material to
 the private directory created for the session.
 
 The profile is source-neutral and does not require Hub source or an SDK. It is
-separate from the richer semantic profiles (`1.0.0`, `1.1.0`, and
-`1.2.0`) and from the Edge delivery profile. It has no protocol-version
-request header, SSE stream, vehicle command route, or metadata CRUD. It has no
-public charge-query route in `hub-http-v1@1.1.0`; `hub-http-v1@1.2.0` adds
-charge, charge-sample and position pages (see below).
-
-`hub-http-v1@1.1.0` is a candidate successor to the frozen
-`hub-http-v1@1.0.0` profile. It defines the paired-bearer grace and schema 2.2
-no-op-unavailable behavior in this guide. G3 r2 admits only the exact frozen
-`1.0.0` manifest and its G4, G5, and G6 synthetic runtime receipts; it does not
-admit this distinct `1.1.0` manifest. Fresh Hub evidence is required before
-claiming runtime acceptance for `1.1.0`. See
-[`docs/compatibility.md`](compatibility.md) and
-[`docs/verification.md`](verification.md) for the accepted `1.0.0` boundary.
+separate from the Edge delivery profile. It has no protocol-version
+request header, SSE stream, vehicle command route, or metadata CRUD. It serves
+vehicle, current-state, drive, charge, charge-sample and position pages (see
+below).
 
 ## hub-http-v1@1.2.0
 
 `hub-http-v1@1.2.0` is the successor of `1.1.0` (`previous_profile`; the `1.1.0`
 manifest is not pinned) and has profile status `served`. Use it when discovery returns
-`"profile": "hub-http-v1@1.2.0"`; a Hub whose discovery has no `profile` field serves
-`1.1.0`. Its contract is the directory
+`"profile": "hub-http-v1@1.2.0"`; a Hub whose discovery has no `profile` field is not
+covered by this guide. Its contract is the directory
 [`profiles/hub-http-v1/1.2.0/`](../../profiles/hub-http-v1/1.2.0/): `profile.json`
 (routes, limits, rules), `openapi.json`, the schemas, `cases.json`, `examples/` and
-`SHA256SUMS`. Copy the whole directory. Everything below this section describes
-`1.1.0` and stays true for the routes `1.2.0` keeps, except discovery, which the
-Discovery paragraph below replaces; this section lists what `1.2.0` changes.
+`SHA256SUMS`. Copy the whole directory. The walkthrough after this section targets
+`1.2.0`; this section describes what `1.2.0` changes from its predecessor, including
+discovery, which the Discovery paragraph below replaces.
 Generate clients with [`generators/README.md`](../../generators/README.md).
 
 The additive policy: clients ignore unknown object fields and unknown capability
@@ -190,8 +177,8 @@ as rotate does.
 A larger body with a JSON `Content-Type` (`application/json` or any `application/*+json`) is `413` with a bounded `text/plain` body (axum's "Failed to buffer the
 request body: length limit exceeded"), and the claim is not attempted; a missing `Content-Type`, or one that is not a JSON media type
 (neither `application/json` nor `application/*+json`), is `415` whatever the size, because the extractor checks it before it reads the body. `413` is therefore part of the claim route's status
-set in `1.2.0` (`200`, `400`, `401`, `404`, `413`, `415`, `422`, `503`), and the "unobserved `413`"
-advice in the `1.1.0` text below does not apply to `1.2.0`. The revoke route has no such status:
+set in `1.2.0` (`200`, `400`, `401`, `404`, `413`, `415`, `422`, `503`), and the predecessor's "unobserved `413`"
+advice does not apply to `1.2.0`. The revoke route has no such status:
 no layer of the Hub rejects an over-limit body it does not read, and a revoke handler must not read
 it through an extractor that would answer `413`.
 
@@ -209,7 +196,7 @@ A client that takes the name from free text, such as the Home Assistant integrat
 discovery route and the `hub-sync-v1` routes, with `503` and an empty body (no content type) once
 its 15 second handler budget is spent; the budget includes the wait for one of the 32 in-flight
 request slots. Treat an empty `503` on any route except the claim as a transient outage and retry later. A claim is never retried
-automatically (see the `1.1.0` text on the claim below): the invitation is single use, and a claim that ended in an empty `503` may
+automatically (see the claim walkthrough below): the invitation is single use, and a claim that ended in an empty `503` may
 already have consumed it. A route that lists a JSON `503` (`service_unavailable` on discovery, the page and the item routes,
 `not_ready` on `/readyz`) can therefore also answer an empty one, and `/healthz` lists `503` for
 this reason alone.
@@ -310,22 +297,18 @@ is a new major profile.
 
 ## Choose the profile
 
-This section and the walkthrough that follows describe `1.1.0`, the profile of a
-Hub whose discovery has no `profile` member. A Hub whose discovery names
-`hub-http-v1@1.2.0` has a `profile` member and advertises the tokens of the
-Discovery paragraph of the `hub-http-v1@1.2.0` section (two to eight, by
-configuration), not only the two sets below.
+This section and the walkthrough that follows target `hub-http-v1@1.2.0`: use them
+with a Hub whose discovery names `hub-http-v1@1.2.0` in its `profile` member.
 
 Use this profile when discovery returns `protocol: "teslatlas-sync"`,
-`protocol_major: 1`, and `api_versions: ["1.0"]`. A Hub advertises either
-the reduced capability set
-`["query.vehicles", "query.current"]` or the full set
-`["query.vehicles", "query.current", "query.drives", "sync.packs"]`.
-Require `query.drives` before attempting the drives route. `sync.packs` is a
-delivery capability; it does not add a query endpoint.
+`protocol_major: 1`, `api_versions: ["1.0"]` and `profile: "hub-http-v1@1.2.0"`.
+A Hub advertises the capability tokens of the Discovery paragraph of the
+`hub-http-v1@1.2.0` section (two to eight, by configuration). Require the token
+of a route before attempting it, for example `query.drives` before the drives
+route. `sync.packs` is a delivery capability; it does not add a query endpoint.
 
 The `version` field is the Hub product version (for example `2026.36.2`),
-not a wire revision. The profile identity remains `hub-http-v1@1.1.0`.
+not a wire revision. The profile identity is `hub-http-v1@1.2.0`.
 
 ## Routes
 
@@ -334,27 +317,25 @@ not a wire revision. The profile identity remains `hub-http-v1@1.1.0`.
 | `GET /.well-known/teslatlas-hub` | none | discovery JSON (`200`) | `503` JSON error |
 | `GET /healthz` | none | health JSON (`200`) | — |
 | `GET /readyz` | none | `{"status":"ready"}` (`200`) | `503` readiness JSON |
-| `POST /v1/pairings/{pairing_id}/claim` | none | claim JSON (`200`) | `400`, `401`, `404`, `415`, `422`, `503` |
+| `POST /v1/pairings/{pairing_id}/claim` | none | claim JSON (`200`) | `400`, `401`, `404`, `413`, `415`, `422`, `503` |
 | `GET /v1/vehicles` | bearer | vehicle list (`200`) | `401`, `503` |
 | `GET /v1/vehicles/{vehicle_id}/current` | bearer | current observation (`200`) | `401`, `404`, `503` |
 | `GET /v1/vehicles/{vehicle_id}/drives` | bearer | drive page (`200`) | `304`, `400`, `401`, `404`, `503` |
 | `POST /v1/device/rotate` | bearer | replacement claim (`200`) | `401`, `404`, `503` |
 
-The machine-readable schemas and `openapi.json` define the exact fields and
-status handling. The examples in the profile are deliberately redacted and
-must not be used as credentials.
+The `hub-http-v1@1.2.0` section above lists the further routes (single drive, drive
+positions, charges, charge, charge samples and revoke). The machine-readable schemas
+and `openapi.json` define the exact fields and status handling. The examples in the
+profile are deliberately redacted and must not be used as credentials.
 
 ## Discover and pair a client safely
 
-Discovery is unauthenticated and has no rich-profile version header. Obtain the
+Discovery is unauthenticated and has no protocol-version request header. Obtain the
 Hub origin from the owner or deployment configuration; do not copy an endpoint
 from another Hub. Save the response privately and validate it against the
 profile before choosing capabilities. The block below validates against
-`hub-http-v1@1.1.0`, so it exits on a Hub whose discovery names
-`hub-http-v1@1.2.0` (a Hub built from the current source): the `1.1.0` schema
-rejects the `profile` member and the token set. Against such a Hub, validate with
-`$PWD/profiles/hub-http-v1/1.2.0` instead, as the `hub-http-v1@1.2.0` section
-above describes:
+`hub-http-v1@1.2.0`, so it exits on a Hub whose discovery does not match that
+profile:
 
 ~~~sh
 set -eu
@@ -381,7 +362,7 @@ curl --silent --show-error --config /dev/null \
   "$hub_endpoint/.well-known/teslatlas-hub"
 TESLATLAS_DISCOVERY="$private_dir/discovery.json" \
 TESLATLAS_DISCOVERY_HEADERS="$private_dir/discovery.headers" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" \
+TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.2.0" \
 python3 - <<'PY'
 import json
 import os
@@ -414,7 +395,7 @@ PY
 
 If the client does not use `jsonschema`, apply the same JSON Schema 2020-12
 validation with its chosen library before trusting discovery. A Hub may
-advertise the reduced capability set; do not request drives unless
+advertise a reduced capability set; do not request drives unless
 `query.drives` is present.
 
 Pairing is an owner operation. Ask the Hub owner to run the configured CLI and
@@ -456,7 +437,7 @@ certificate.
 TESLATLAS_HUB_CA="$private_dir/ca.pem" \
 TESLATLAS_INVITATION="$private_dir/invitation.json" \
 TESLATLAS_CLAIM_RESPONSE="$private_dir/claim.json" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" \
+TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.2.0" \
 TESLATLAS_DEVICE_NAME="My current-Hub client" \
 python3 - <<'PY'
 import hashlib
@@ -468,7 +449,7 @@ from http.client import HTTPSConnection
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlsplit
 from jsonschema import Draft202012Validator, FormatChecker
-from conformance import hub_http
+from conformance import hub_http_12
 
 
 def fail(message):
@@ -477,10 +458,10 @@ def fail(message):
 
 invitation_bytes = Path(os.environ["TESLATLAS_INVITATION"]).read_bytes()
 try:
-    invitation = hub_http.strict_json(invitation_bytes)
+    invitation = hub_http_12.strict_json(invitation_bytes)
 except (UnicodeError, ValueError):
     fail("invitation is not strict JSON")
-if hub_http.validate_raw(
+if hub_http_12.validate_raw(
     os.environ["TESLATLAS_PROFILE"], "invitation", 200,
     {"content-type": "application/json"}, invitation_bytes,
 ):
@@ -539,7 +520,7 @@ if status != 200 or len(body) > 1048576:
 if content_type.split(";", 1)[0].strip() != "application/json":
     fail("claim response has an invalid content type")
 try:
-    value = hub_http.strict_json(body)
+    value = hub_http_12.strict_json(body)
 except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
     fail("claim response is not valid JSON")
 schema = json.loads((Path(os.environ["TESLATLAS_PROFILE"]) / "auth.schema.json").read_bytes())
@@ -559,11 +540,9 @@ invitation through the owner flow. A successful claim returns
 mode-600 file and treat the bearer as a secret.
 
 The serialized UTF-8 claim body MUST be at most 4,096 bytes. This is the
-profile's client bound; the exact status and body a Hub emits for an
-over-limit request still require runtime observation. Do not rely on an
-unobserved `413` representation or retry an over-limit claim with the same
-invitation. (`hub-http-v1@1.2.0` specifies the answer: `413` with a bounded
-`text/plain` body, see Claim size in the `1.2.0` section.)
+profile's client bound; a Hub answers an over-limit request with `413` and a
+bounded `text/plain` body (see Claim size in the `1.2.0` section). Do not retry
+an over-limit claim with the same invitation.
 
 ## Read resources
 
@@ -575,15 +554,15 @@ set -eu
 umask 077
 TESLATLAS_CLAIM_RESPONSE="$private_dir/claim.json" \
 TESLATLAS_AUTH_HEADER="$private_dir/authorization.header" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" \
+TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.2.0" \
 python3 - <<'PY'
 import os
 from pathlib import Path
-from conformance import hub_http
+from conformance import hub_http_12
 
 claim_bytes = Path(os.environ["TESLATLAS_CLAIM_RESPONSE"]).read_bytes()
-claim = hub_http.strict_json(claim_bytes)
-if hub_http.validate_raw(
+claim = hub_http_12.strict_json(claim_bytes)
+if hub_http_12.validate_raw(
     os.environ["TESLATLAS_PROFILE"], "claim", 200,
     {"content-type": "application/json"}, claim_bytes,
 ):
@@ -598,10 +577,10 @@ PY
 
 validate_resource() {
   RESOURCE_BODY="$1" RESOURCE_HEADERS="$2" RESOURCE_KIND="$3" \
-  TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" python3 - <<'PY'
+  TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.2.0" python3 - <<'PY'
 import os
 from pathlib import Path
-from conformance import hub_http
+from conformance import hub_http_12
 
 body_path = Path(os.environ["RESOURCE_BODY"])
 header_lines = Path(os.environ["RESOURCE_HEADERS"]).read_text(encoding="iso-8859-1").splitlines()
@@ -613,19 +592,19 @@ for line in header_lines[1:]:
     if ":" in line:
         key, value = line.split(":", 1)
         headers[key.strip()] = value.strip()
-if status != 200 or hub_http.validate_raw(
+if status != 200 or hub_http_12.validate_raw(
     os.environ["TESLATLAS_PROFILE"], os.environ["RESOURCE_KIND"], status,
     headers, body_path.read_bytes()
 ):
-    raise SystemExit("resource response does not match hub-http-v1@1.1.0")
+    raise SystemExit("resource response does not match hub-http-v1@1.2.0")
 PY
 }
 
 endpoint="$(TESLATLAS_INVITATION="$private_dir/invitation.json" python3 - <<'PY'
 import os
 from pathlib import Path
-from conformance import hub_http
-print(hub_http.strict_json(Path(os.environ["TESLATLAS_INVITATION"]).read_bytes())["endpoint"].rstrip("/"))
+from conformance import hub_http_12
+print(hub_http_12.strict_json(Path(os.environ["TESLATLAS_INVITATION"]).read_bytes())["endpoint"].rstrip("/"))
 PY
 )"
 curl --silent --show-error --get \
@@ -716,11 +695,11 @@ while [ "$page" -lt "$max_pages" ]; do
   DRIVE_PAGE="$output" DRIVE_HEADERS="$headers" CURSOR_FILE="$cursor_file" \
   SEEN_CURSORS="$seen_cursors" \
   NEXT_CURSOR_FILE="$private_dir/next.cursor" \
-  TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" python3 - <<'PY'
+  TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.2.0" python3 - <<'PY'
 import json
 import os
 from pathlib import Path
-from conformance import hub_http
+from conformance import hub_http_12
 
 body_path = Path(os.environ["DRIVE_PAGE"])
 header_lines = Path(os.environ["DRIVE_HEADERS"]).read_text(encoding="iso-8859-1").splitlines()
@@ -732,12 +711,12 @@ for line in header_lines[1:]:
     if ":" in line:
         key, value = line.split(":", 1)
         headers[key.strip()] = value.strip()
-problems = hub_http.validate_raw(
+problems = hub_http_12.validate_raw(
     os.environ["TESLATLAS_PROFILE"], "drives", status, headers, body_path.read_bytes()
 )
 if problems:
-    raise SystemExit("drive response does not match hub-http-v1@1.1.0")
-value = hub_http.strict_json(body_path.read_bytes())
+    raise SystemExit("drive response does not match hub-http-v1@1.2.0")
+value = hub_http_12.strict_json(body_path.read_bytes())
 next_cursor = value["next_cursor"]
 next_path = Path(os.environ["NEXT_CURSOR_FILE"])
 if next_cursor is None:
@@ -790,10 +769,10 @@ curl --silent --show-error --get \
   "$endpoint/v1/vehicles/$vehicle_id/drives"
 DRIVE_PAGE="$private_dir/drives-conditional.json" \
 DRIVE_HEADERS="$private_dir/drives-conditional.headers" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" python3 - <<'PY'
+TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.2.0" python3 - <<'PY'
 import os
 from pathlib import Path
-from conformance import hub_http
+from conformance import hub_http_12
 
 body = Path(os.environ["DRIVE_PAGE"]).read_bytes()
 lines = Path(os.environ["DRIVE_HEADERS"]).read_text(encoding="iso-8859-1").splitlines()
@@ -805,7 +784,7 @@ for line in lines[1:]:
     if ":" in line:
         key, value = line.split(":", 1)
         headers[key.strip()] = value.strip()
-if status != 304 or hub_http.validate_raw(
+if status != 304 or hub_http_12.validate_raw(
     os.environ["TESLATLAS_PROFILE"], "drives", status, headers, body
 ):
     raise SystemExit("conditional drive response does not match the 304 profile")
@@ -855,10 +834,10 @@ chmod 600 "$private_dir/authorization.old"
 ROTATED_CLAIM="$private_dir/rotated-claim.json" \
 ROTATED_HEADERS="$private_dir/rotated-claim.headers" \
 AUTH_HEADER="$private_dir/authorization.header" \
-TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.1.0" python3 - <<'PY'
+TESLATLAS_PROFILE="$PWD/profiles/hub-http-v1/1.2.0" python3 - <<'PY'
 import os
 from pathlib import Path
-from conformance import hub_http
+from conformance import hub_http_12
 
 body_path = Path(os.environ["ROTATED_CLAIM"])
 header_lines = Path(os.environ["ROTATED_HEADERS"]).read_text(encoding="iso-8859-1").splitlines()
@@ -871,11 +850,11 @@ for line in header_lines[1:]:
         key, value = line.split(":", 1)
         headers[key.strip()] = value.strip()
 body = body_path.read_bytes()
-if status != 200 or hub_http.validate_raw(
+if status != 200 or hub_http_12.validate_raw(
     os.environ["TESLATLAS_PROFILE"], "rotate", status, headers, body
 ):
     raise SystemExit("rotation response does not match auth.schema.json")
-value = hub_http.strict_json(body)
+value = hub_http_12.strict_json(body)
 token = value["access_token"]
 if not isinstance(token, str) or len(token) != 64:
     raise SystemExit("rotation response has an invalid bearer")
@@ -912,8 +891,9 @@ response is an error and must leave the old header untouched; on `200`, run the
 same strict `auth.schema.json` validation used for claim responses, write the
 new header to a mode-600 temporary path, then atomically rename it over the old
 header. The old bearer must be treated as expired after the 24-hour grace
-window. Owner revocation and re-pairing are lifecycle operations outside this
-HTTP profile; there is no public revoke route.
+window. A paired device ends its own pairing with `POST /v1/device/revoke` when
+`auth.revoke` is advertised (see the `1.2.0` section); owner revocation and
+re-pairing are lifecycle operations outside this HTTP profile.
 
 ## Errors and unsupported surfaces
 
@@ -925,18 +905,18 @@ Do not retry it. A `503` may indicate an unavailable service, but a claim that
 timed out still requires a fresh owner invitation before another attempt.
 
 The current-Hub profile intentionally has no public SSE/events endpoint,
-command submission, metadata CRUD, snapshot revision, or (in `1.1.0`) charge-query route.
-Do not send rich-profile headers such as `Teslatlas-Protocol-Version` and do
+command submission, metadata CRUD or snapshot revision.
+Do not send protocol-version headers such as `Teslatlas-Protocol-Version` and do
 not infer unsupported routes from discovery. The sync appendix documents pack
 delivery checks separately from these HTTP query semantics. A schema 2.2
 no-op that is unavailable returns an unsigned, empty `406` with
 `Cache-Control: no-store`; it is never a signed `503` or an invented snapshot.
 
 For the full route schemas, examples, and conformance vectors, use the profile
-directory and [`docs/conformance.md`](../guides/conformance.md). The native acceptance
-adapter requires a private fixture descriptor and a same-host owned Hub; a
-reference adapter or a successful schema check is not installed-product
-acceptance.
+directory and [`docs/conformance.md`](../guides/conformance.md). Native acceptance
+(`conformance/run --profile hub-http-v1@1.2.0`) requires a private fixture
+descriptor and a same-host owned Hub; a successful schema check is not
+installed-product acceptance.
 
 Installed-v2 evidence publication currently fails closed. Its actor cannot
 truthfully assert its own completed exit while still awaiting a close

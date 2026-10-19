@@ -22,14 +22,8 @@ RUN uv sync --locked --group dev --no-install-project \
 
 COPY conformance ./conformance
 COPY profiles ./profiles
-COPY schemas ./schemas
-COPY events ./events
-COPY examples ./examples
-COPY fixtures ./fixtures
 COPY tests ./tests
 COPY tools ./tools
-COPY openapi ./openapi
-COPY compatibility ./compatibility
 COPY docs ./docs
 COPY Dockerfile VERSION LICENSE NOTICE README.md ./
 

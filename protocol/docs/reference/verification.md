@@ -4,36 +4,28 @@ This page records the current bounded evidence for product `2026.36.2`. It
 distinguishes accepted source/runtime journeys from installation, publication,
 real-data, and full-platform claims that have not been accepted.
 
-Neither a published profile nor a passing reference adapter establishes that a
+Neither a published profile nor a passing conformance run establishes that a
 current installed Hub, SDK, or App implements it.
 
 ## Profile status
 
+The table separates what a Hub serves from what a runtime has accepted. A serving
+state describes the retained profile files and the Hub source; it is not an
+installed-Hub, App or SDK acceptance.
+
 | Contract | Recorded position |
 | --- | --- |
-| Rich semantic HTTP and events | The local gate covers `1.0.0`, `1.1.0`, and `1.2.0`. |
-| Current-Hub HTTP `hub-http-v1@1.0.0` | Historical accepted binding retained below and in [`compatibility/hub.json`](../../compatibility/hub.json). |
-| Current-Hub HTTP `hub-http-v1@1.1.0` | Candidate successor; the earlier acceptance record does not admit it. |
-| Hub sync `hub-sync-v1@1.3.0` | Candidate changes-since contract with 64 deterministic conformance cases; Hub and App runtime admission remains open. |
+| Current-Hub HTTP `hub-http-v1@1.2.0` | Served. A fresh native conformance run through the interop smoke passed 61 of 61 cases, complete, from the G2-2 P1 commit: native 61/61, receipt `receipt-conformance-1.2.0-<P1 sha>.md` (PROVISIONAL until R-P runs). The offline profile checks run in `./tools/check`. |
+| Hub sync `hub-sync-v1@1.3.0` | Served (candidate contract). 65 deterministic conformance cases run in `./tools/check` and `./conformance/run`. Hub and App runtime admission is separate and remains open. |
+| Hub sync `hub-sync-v1@1.4.0` | Served through its selector (candidate contract). Its profile files are retained and digest-bound; the unit suites run in `./tools/check` and the conformance runner does not run it. Hub and App runtime admission is separate and remains open. |
+| Hub sync `hub-sync-v1@1.5.0` | Candidate, not served: no Hub serves the live overlay yet. Its profile files are retained and digest-bound; the unit suites run in `./tools/check`. No runtime acceptance is claimed. |
 | Edge delivery `edge-delivery-v2@2.0.0` | Separate delivery contract with bounded historical synthetic evidence. |
 
 ## Canonical bindings
 
 | Contract | Revision | Manifest SHA-256 |
 | --- | --- | --- |
-| Current-Hub HTTP, G3 r2 accepted | `hub-http-v1@1.0.0` | `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926` |
-| Current-Hub HTTP, candidate | `hub-http-v1@1.1.0` | `47278485e4962aaa3ae177a3fc916281191b0d066edd1b40aad73fdad20b0f85` |
-| Edge delivery | `edge-delivery-v2@2.0.0` | `e304fb6ebe074ee2e71d35b1f52d408f87fa1f0624b8ebcdba2ca2eb1fced224` |
-
-G3 r2 admitted and read back the five active compatibility records for
-`hub-http-v1@1.0.0`; it does not admit the `1.1.0` candidate. The receipt
-is
-[`g3-compatibility-admission-2026-09-19-r2.json`](../development/g3-compatibility-admission-2026-09-19-r2.json)
-(SHA-256
-`5df27073463ca985f409332a043b5f46aa753ba4b1b65fe214bc434521ef1865`).
-The focused six-case checker proved active-product-only operation, idempotence,
-fail-closed receipt/profile identity checks, divergence rejection, exact
-readback, and byte identity of the TypeScript vendored Protocol record.
+| Current-Hub HTTP | `hub-http-v1@1.2.0` | `7aa26deeaa9052bc77e0a6f58b89422fa21ef0ec2fd53cec1adab0361db5f7e1` |
 
 ## Accepted bounded evidence
 
@@ -51,11 +43,9 @@ receipts.
 
 | Check | Evidence produced | Limit |
 | --- | --- | --- |
-| `./tools/check` | Generated-artifact consistency, unit checks, and reference conformance cases | No installed or remote product acceptance |
-| Reference adapter | Agreement between the runner and embedded vectors | No independently implemented server is exercised |
-| Actual-Hub adapter | Behavior of the owned Hub described by the supplied private descriptor | Limited to the exact source, artifacts, host, cases, and receipts |
+| `./tools/check` | Retained-generator consistency, unit checks, and the 65 `hub-sync-v1@1.3.0` fixture cases | No installed or remote product acceptance |
+| `./conformance/run --profile hub-http-v1@1.2.0 --config <descriptor>` | Behavior of the owned Hub described by the supplied private descriptor | Limited to the exact source, artifacts, host, cases, and receipts |
 | `tools/check-current-hub` | Bounded read-only remote-wire smoke, held to `hub-http-v1@1.2.0` (discovery must name it) | No pairing, lifecycle, native process provenance, or complete-history proof |
-| Developer bundle verification | Archive structure, membership, and content integrity | No runtime or installation evidence |
 | Docker gate | Checks inside the exact built image | No container-to-Hub or installed-service acceptance by itself |
 
 ## What remains unaccepted
@@ -67,8 +57,6 @@ receipts.
   production, or public-ingress acceptance is claimed.
 - Declared minimum OS floors and a full platform matrix were not exercised.
 - x86, x86_64, amd64, and Intel targets remain outside the active scope.
-- The compatibility admission does not state that source was published or
-  tagged.
 
 Run local schema and conformance checks when changing contract bytes, but do
 not treat those checks as substitutes for the accepted runtime receipts above.

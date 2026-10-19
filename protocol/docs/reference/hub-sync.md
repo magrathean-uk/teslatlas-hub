@@ -196,7 +196,8 @@ the committed 1.4 positive pack digest as a placeholder, and pack-level live rul
 are exercised by conformance that derives a live pack at run time.
 
 [`hub-sync-v1@1.3.0`](../../profiles/hub-sync-v1/1.3.0/) is the candidate,
-source-neutral successor to retained `hub-sync-v1@1.0.0`, `1.1.0`, and `1.2.0` candidates. It
+source-neutral successor to the `hub-sync-v1@1.0.0`, `1.1.0`, and `1.2.0`
+candidates, which were retired and are no longer in this package. It
 has no exact Hub product-version pin. A client selects its bootstrap
 representation with both `x-teslatlas-sync-profile: hub-sync-v1@1.3.0` and
 `x-teslatlas-supported-schemas: 2.1,2.2`. The schema header by itself remains
@@ -267,8 +268,8 @@ outer manifest has the only signature.
 
 Every JSON control response is limited to 2 MiB (2,097,152 encoded bytes)
 before parsing. Pack byte responses use the separate 16 MiB compressed pack
-limit. A schema 2.2 manifest or rebase may contain at most 1,771 chunks, and a
-the retained `1.2.0` prepared artefact may contain at most 497 route spans in
+limit. A schema 2.2 manifest or rebase may contain at most 1,771 chunks, and the
+retired `1.2.0` prepared artefact could contain at most 497 route spans in
 addition to 120 map months. These maxima keep their largest compact JSON forms
 inside 2 MiB.
 
@@ -308,7 +309,7 @@ range validation failures use `invalid_schema_range`; the unknown receipt uses
 failure remains the unsigned empty `401`; compaction remains the signed `409`
 rebase flow.
 
-`1.2.0` retains its published `map_months_and_routes` receipt unchanged.
+The retired `1.2.0` published its `map_months_and_routes` receipt unchanged.
 
 Candidate `1.3.0` replaces that prepared payload for newly negotiated 1.3
 clients with the map-month-only `teslatlas-prepared-v1` contract. The signed
