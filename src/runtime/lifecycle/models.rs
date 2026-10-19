@@ -811,8 +811,10 @@ pub struct OpenCharge {
     #[serde(default)]
     pub last_sample_power_kw: Option<f64>,
     /// Energy of the finished counter segments, in kWh: `k` of C2 R11. Each
-    /// counter restart adds the segment that ended. Zero in every live session,
-    /// where the counter never falls (C1 R66 closes the session first).
+    /// counter restart (`counter_restarted`, C2 R76: a fall beyond the dip
+    /// tolerance) adds the segment that ended. Zero in every live session,
+    /// where C1 R66 closes the session at a restart before the fold sees it; a
+    /// dip changes nothing here.
     #[serde(default)]
     pub energy_added_carry_kwh: f64,
     /// The previous sample's usable counter, or `None` when it had none (C2

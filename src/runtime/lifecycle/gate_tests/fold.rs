@@ -22,6 +22,11 @@ pub(crate) const K_GATE_TYPE_TEXTS: usize = 8;
 /// statistic of gate G1 (C2 section 11.1 G1: at least 3 kW).
 const K_GATE_PHASE_MIN_VA: f64 = 3_000.0;
 
+/// One counter step, in kWh, added to the physical bound of gate G4
+/// (C2 section 11.1 G4 (b), C2 R76 (g)): the bound is
+/// `(P + K_PHASE_ABS_KW) * dt / 3,600,000 + 0.01` kWh.
+pub(super) const K_GATE_COUNTER_STEP_KWH: f64 = 0.01;
+
 /// One usable counter reading (C2 R74 (b)): its time, the counter and the
 /// sample's usable power, `None` when it has none.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -62,6 +67,23 @@ pub(crate) struct ChargeGateFacts {
     pub second_counter: Option<CounterPoint>,
     pub last_counter: Option<CounterPoint>,
     pub recovered_decreases: u64,
+    /// Usable counters below the previous usable counter that C2 R76's test
+    /// reads as a dip (`counter_restarted` false).
+    pub tolerated_dips: u64,
+    /// Those it reads as a restart (`counter_restarted` true).
+    pub restart_reads: u64,
+    /// `recovered_decreases`' pending rule with the pending value set only at
+    /// a restart read.
+    pub recovered_restarts: u64,
+    /// Restart reads whose new counter exceeds the physical bound of G4 (b):
+    /// `(p_max + K_PHASE_ABS_KW) * dt / 3,600,000 + 0.01` kWh, `dt` the time
+    /// from the sample of the previous usable counter and `p_max` the larger
+    /// usable power of those two samples.
+    pub restart_reads_above_bound: u64,
+    /// Restart reads with no usable power on either of the two samples.
+    pub restart_reads_unbounded: u64,
+    /// The largest usable counter of the session.
+    pub largest_counter_kwh: Option<f64>,
     pub outside_temp_mean_c: Option<f64>,
     // Filled by `finish`.
     pub is_dc: Option<bool>,
@@ -72,6 +94,9 @@ pub(crate) struct ChargeGateFacts {
     pub fully_powered: bool,
     pub energy: ChargeEnergyTotals,
     pub efficiency_wh_per_km: Option<f64>,
+    /// The final decline `m - l` of C2 R76 (i): the segment maximum less the
+    /// last usable counter, 0.0 when the last usable counter is the maximum.
+    pub final_decline_kwh: f64,
 }
 
 impl ChargeGateFacts {
@@ -102,6 +127,12 @@ impl ChargeGateFacts {
             second_counter: None,
             last_counter: None,
             recovered_decreases: 0,
+            tolerated_dips: 0,
+            restart_reads: 0,
+            recovered_restarts: 0,
+            restart_reads_above_bound: 0,
+            restart_reads_unbounded: 0,
+            largest_counter_kwh: None,
             outside_temp_mean_c: None,
             is_dc: None,
             session_type: None,
@@ -114,6 +145,7 @@ impl ChargeGateFacts {
                 used_kwh: None,
             },
             efficiency_wh_per_km: None,
+            final_decline_kwh: 0.0,
         }
     }
 }
@@ -149,8 +181,8 @@ pub(crate) struct ChargeGateFold {
     efficiency: EfficiencyFold,
     facts: ChargeGateFacts,
     previous_ms: Option<i64>,
-    previous_counter: Option<f64>,
     pending_decrease: Option<f64>,
+    pending_restart: Option<f64>,
     temp_sum: f64,
     temp_count: u64,
 }
@@ -162,8 +194,8 @@ impl ChargeGateFold {
             efficiency: EfficiencyFold::new(),
             facts: ChargeGateFacts::empty(),
             previous_ms: None,
-            previous_counter: None,
             pending_decrease: None,
+            pending_restart: None,
             temp_sum: 0.0,
             temp_count: 0,
         }
@@ -197,6 +229,11 @@ impl ChargeGateFold {
         facts.fully_powered = self.scratch.fully_powered;
         facts.energy = charge_energy_totals(&self.scratch);
         facts.efficiency_wh_per_km = self.efficiency.finish();
+        facts.final_decline_kwh = self
+            .scratch
+            .max_energy_added
+            .zip(self.scratch.last_energy_added)
+            .map_or(0.0, |(maximum, last)| (maximum - last).max(0.0));
         facts
     }
 
@@ -301,10 +338,18 @@ impl ChargeGateFold {
         }
     }
 
-    /// Usable counters: the first, second and last, and the decreases that
-    /// recover (C2 R74 (b)): a pending value is set at a decrease below the
-    /// previous usable counter, and the next usable counter at or above it
-    /// counts one recovery.
+    /// Usable counters: the first, second and last, the largest, and the
+    /// decreases below the previous usable counter (C2 R74 (b), C2 R76 (g)).
+    ///
+    /// A decrease is a dip or a restart by C2 R76's one test
+    /// (`counter_restarted`). `recovered_decreases` keeps a pending value set at
+    /// any decrease, and the next usable counter at or above it counts one
+    /// recovery; `recovered_restarts` is the same rule with the pending value
+    /// set only at a restart read. A restart read is also held against the
+    /// physical bound of what a restarted counter can show after the time
+    /// since the previous usable counter: above it, the fall was a glitch or a
+    /// decline the tolerance missed; with no usable power on either sample,
+    /// the bound cannot be computed and the read is left undecided.
     fn observe_counter(&mut self, sample: &ProjectionChargeSample) {
         let Some(counter) = usable_energy_counter(sample) else {
             return;
@@ -315,6 +360,7 @@ impl ChargeGateFold {
             power_kw: usable_charger_power_kw(sample),
         };
         let facts = &mut self.facts;
+        let previous = facts.last_counter;
         facts.usable_counters += 1;
         match facts.usable_counters {
             1 => facts.first_counter = Some(point),
@@ -322,17 +368,46 @@ impl ChargeGateFold {
             _ => {}
         }
         facts.last_counter = Some(point);
+        facts.largest_counter_kwh = Some(
+            facts
+                .largest_counter_kwh
+                .map_or(counter, |largest| largest.max(counter)),
+        );
         if let Some(pending) = self.pending_decrease.take()
             && counter >= pending
         {
             facts.recovered_decreases += 1;
         }
-        if self
-            .previous_counter
-            .is_some_and(|previous| counter < previous)
+        if let Some(pending) = self.pending_restart.take()
+            && counter >= pending
         {
-            self.pending_decrease = self.previous_counter;
+            facts.recovered_restarts += 1;
         }
-        self.previous_counter = Some(counter);
+        let Some(previous) = previous.filter(|previous| counter < previous.counter_kwh) else {
+            return;
+        };
+        self.pending_decrease = Some(previous.counter_kwh);
+        if !counter_restarted(previous.counter_kwh, counter) {
+            facts.tolerated_dips += 1;
+            return;
+        }
+        facts.restart_reads += 1;
+        self.pending_restart = Some(previous.counter_kwh);
+        let strongest = previous
+            .power_kw
+            .into_iter()
+            .chain(point.power_kw)
+            .reduce(f64::max);
+        match strongest {
+            None => facts.restart_reads_unbounded += 1,
+            Some(power) => {
+                let dt_ms = point.timestamp_ms.saturating_sub(previous.timestamp_ms);
+                let bound = (power + K_PHASE_ABS_KW) * (dt_ms as f64) / MS_PER_HOUR
+                    + K_GATE_COUNTER_STEP_KWH;
+                if counter > bound {
+                    facts.restart_reads_above_bound += 1;
+                }
+            }
+        }
     }
 }

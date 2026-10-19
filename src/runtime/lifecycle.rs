@@ -92,3 +92,11 @@ pub(crate) mod lead_checkpoint_tests;
 #[cfg(test)]
 #[path = "lifecycle/gate_tests.rs"]
 mod gate_tests;
+
+#[cfg(test)]
+#[path = "lifecycle/b3_c2_a_tests.rs"]
+mod b3_c2_a;
+
+#[cfg(test)]
+#[path = "lifecycle/b3_c1_a_tests.rs"]
+mod b3_c1_a;

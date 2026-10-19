@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! HG2 spec tests (C2 section 17.1, C2 R75 (c); C2 T72 to C2 T76): the pure gate
-//! report under its baseline semantics. Synthetic data only. Sessions are those
-//! of car 1; a session's start time orders it.
+//! HG2 spec tests (C2 section 17.1, C2 R75 (c); C2 T72 to C2 T76): the pure gate report.
+//! They were written against the baseline semantics and keep their results
+//! under C2-A's counter rule (C2 R76: C2 T73 (a) to (f) keep theirs because each
+//! first counter there is a restart against the earlier session's last); the
+//! amended G4 counts are tested in `c2_a_tests.rs`. Synthetic data only.
+//! Sessions are those of car 1; a session's start time orders it.
 
 use super::report::{
     ChargeGateReport, ProcessGateFacts, QuarterFigures, SessionClass, SiteClass, SiteOperator,

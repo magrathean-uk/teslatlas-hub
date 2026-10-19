@@ -223,8 +223,10 @@ fn movement_between(earlier_km: Option<f64>, later_km: Option<f64>) -> Movement 
 /// (field meaning; measurement ST-G4 confirms it before release). The baseline
 /// is 0.0, so the whole counter is new energy, when any of these proves that a
 /// new Tesla session began or that nothing is known about the old one: there
-/// is no snapshot; the snapshot's counter is unknown; the counter now is below
-/// the snapshot's; the snapshot was taken after a drive (a plugged car cannot
+/// is no snapshot; the snapshot's counter is unknown; the counter now is a
+/// restart against the snapshot's (`counter_restarted`, C2 R76: a fall beyond
+/// the tolerance, so a dip below the snapshot's value is still the same
+/// session, C1 R91); the snapshot was taken after a drive (a plugged car cannot
 /// be driven); the cable was out (`unplugged`); or the car moved against the
 /// snapshot. Without such proof the counter may still be the one the snapshot
 /// saw (a top-up after `Complete`, or a session continued after a close), so
@@ -241,9 +243,9 @@ fn charge_energy_baseline(
     let Some(known) = snapshot.energy_added_kwh.filter(|value| value.is_finite()) else {
         return 0.0;
     };
-    let lower = counter_kwh.is_some_and(|now| now < known);
+    let restarted = counter_kwh.is_some_and(|now| counter_restarted(known, now));
     let moved = movement_between(snapshot.odometer_km, odometer_km) == Movement::Moved;
-    if lower || snapshot.after_drive || snapshot.unplugged || moved {
+    if restarted || snapshot.after_drive || snapshot.unplugged || moved {
         0.0
     } else {
         known
@@ -269,7 +271,10 @@ struct AfterGapCharge {
 ///
 /// 1. the class is Hold, `Complete`, or `Disconnected` with the car unmoved
 ///    against `S`; Active is left to R61;
-/// 2. the counter is known now, above 0, and differs from `S`'s;
+/// 2. the counter is known now, above 0, and either rose beyond the tolerance
+///    of C2 R76 or restarted against `S`'s (`counter_restarted` in either
+///    direction, C1 R91): neither a dip nor its recovery is proof that energy
+///    flowed;
 /// 3. the battery level is higher than `S`'s, or, when either level is
 ///    unknown, the rated range is higher.
 ///
@@ -301,9 +306,9 @@ fn after_gap_charge(
         ChargeEvidence::Disconnected => unmoved,
         ChargeEvidence::Active | ChargeEvidence::None => false,
     };
-    let counter_new = parsed
-        .charge_energy_added
-        .is_some_and(|now| now > 0.0 && now != known);
+    let counter_new = parsed.charge_energy_added.is_some_and(|now| {
+        now > 0.0 && (counter_restarted(now, known) || counter_restarted(known, now))
+    });
     let level_higher = match (parsed.battery_level, snapshot.battery_level) {
         (Some(now), Some(before)) => now > before,
         _ => matches!(

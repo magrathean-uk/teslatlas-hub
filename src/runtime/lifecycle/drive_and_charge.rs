@@ -451,6 +451,26 @@ pub(crate) const K_INT_MAX_MS: i64 = 600_000;
 /// it is float noise between equal stored values, not energy.
 const K_ENERGY_EPS_KWH: f64 = 0.005;
 
+/// The largest fall of Tesla's per-session counter that is still one session,
+/// in kWh (C2 R76 (b), shared with C1 R91): the top of the measured cluster of
+/// within-session falls (at least 374 of 392 at most 0.05 kWh, every one that
+/// recovered at the next reading within it). A fall within it is a *dip*, a
+/// reading glitch or a lasting decline of the one session; a fall beyond it
+/// (with [`K_ENERGY_EPS_KWH`]) is a *restart*, a new Tesla session.
+pub(crate) const K_COUNTER_DIP_KWH: f64 = 0.05;
+
+/// Whether the counter fell from `previous_kwh` to `current_kwh` by more than
+/// a dip (C2 R76 (b)): true iff `(previous - current) > (K_COUNTER_DIP_KWH +
+/// K_ENERGY_EPS_KWH)`, computed in that order. The only test by which either
+/// unit reads a lower counter as a new Tesla session: the counter fold (C2 R11)
+/// and the interval rule (C2 R18), and C1 R61a, C1 R65, C1 R66 and C1 R70, all
+/// call it (C1 R91). Adding the epsilon makes two stored values five counter
+/// steps apart a dip and six steps apart a restart, whatever their binary
+/// representation.
+pub(crate) fn counter_restarted(previous_kwh: f64, current_kwh: f64) -> bool {
+    (previous_kwh - current_kwh) > (K_COUNTER_DIP_KWH + K_ENERGY_EPS_KWH)
+}
+
 /// Largest battery energy that may precede the first sample and still be
 /// counted at ratio 1, in kWh (C2 R19 row 3). The count understates the inlet
 /// energy by `e0 * (q - 1)`; with `q <= 1.25`, the upper end of the AC
@@ -497,27 +517,44 @@ fn usable_energy_counter(sample: &ProjectionChargeSample) -> Option<f64> {
     finite_reading(sample.charge_energy_added_kwh).filter(|counter| *counter >= 0.0)
 }
 
-/// Fold one usable counter value into the segment fields (C2 R11, table 8.1).
+/// Fold one usable counter value into the segment fields (C2 R11, table 8.1,
+/// as C2 R76 (c) restates it).
 ///
-/// A first value with no baseline starts at zero: no earlier row holds any
-/// part of the counter. A value below the preset baseline is a new Tesla
-/// session (the same proof C1 R61a uses), so the baseline becomes zero. A
-/// value below the segment maximum is a restart: the finished segment's
-/// energy goes into the carry and the whole new value is new energy.
+/// With `b` the baseline (0.0 when none was preset), `m` the segment maximum,
+/// `l` the previous usable counter and `k` the carry, whether a lower counter
+/// is a new Tesla session is decided by [`counter_restarted`] alone:
+///
+/// - no maximum yet: a first value that is a restart against the preset `b`
+///   lowers it to 0.0 and starts the segment at `c`; otherwise the segment
+///   starts at `b.max(c)`, so a dip below a preset adds no energy;
+/// - `c >= m`: the maximum follows;
+/// - below `m` and a restart against `l` (the previous usable counter; `m` for
+///   a blob without `l`, C2 R25): the finished segment's energy `m - b` goes into
+///   the carry, and the whole new value is new energy;
+/// - below `m` and a dip: nothing changes, so a dip neither adds nor removes
+///   energy, and successive dips that each stay within the tolerance are not a
+///   restart.
+///
+/// The last usable counter `l` is written after every row.
 fn fold_energy_counter(open: &mut OpenCharge, counter: f64) {
     let mut baseline = open.first_energy_added.unwrap_or(0.0);
     match open.max_energy_added {
         None => {
-            if counter < baseline {
+            if counter_restarted(baseline, counter) {
                 baseline = 0.0;
+                open.max_energy_added = Some(counter);
+            } else {
+                open.max_energy_added = Some(baseline.max(counter));
             }
-            open.max_energy_added = Some(counter);
         }
         Some(max) if counter >= max => open.max_energy_added = Some(counter),
         Some(max) => {
-            open.energy_added_carry_kwh += max - baseline;
-            baseline = 0.0;
-            open.max_energy_added = Some(counter);
+            let previous = open.last_energy_added.unwrap_or(max);
+            if counter_restarted(previous, counter) {
+                open.energy_added_carry_kwh += max - baseline;
+                baseline = 0.0;
+                open.max_energy_added = Some(counter);
+            }
         }
     }
     open.first_energy_added = Some(baseline);
@@ -533,9 +570,11 @@ fn fold_energy_counter(open: &mut OpenCharge, counter: f64) {
 /// inlet sum. The trapezoid is exact for a linear change (DC taper, ramp-up),
 /// has zero expected error for a step at an unknown time inside the interval,
 /// is symmetric in time and needs only the previous sample. A powered interval
-/// whose counters are both usable and did not fall also feeds the ratio sums;
-/// a counter restart interval is left out because its battery energy
-/// straddles two sessions.
+/// whose counters are both usable and are not a restart ([`counter_restarted`],
+/// C2 R76 (d)) also feeds the ratio sums, with the counter's signed change,
+/// negative for a dip: a run of counted intervals then adds to `A_r` exactly
+/// the counter's net change over them. A restart interval is left out because
+/// its battery energy straddles two sessions; a dip is not a second session.
 fn fold_charge_interval(
     open: &mut OpenCharge,
     dt_ms: i64,
@@ -556,7 +595,7 @@ fn fold_charge_interval(
     let used = (before + now) / 2.0 * (dt_ms as f64) / MS_PER_HOUR;
     open.energy_used_kwh = Some(open.energy_used_kwh.unwrap_or(0.0) + used);
     if let (Some(previous), Some(counter)) = (open.prev_energy_added_kwh, counter)
-        && counter >= previous
+        && !counter_restarted(previous, counter)
     {
         open.ratio_used_kwh += used;
         open.ratio_added_kwh += counter - previous;
@@ -589,8 +628,12 @@ fn observe_charge_sample(open: &mut OpenCharge, sample: &ProjectionChargeSample)
     if first {
         open.energy_used_kwh = Some(0.0);
         open.fully_powered = true;
+        // C2 R18: `m - b` after C2 R11, which is `c - b` except when the first
+        // counter is a dip below the preset, where it is 0.0 and not negative.
         let baseline = open.first_energy_added.unwrap_or(0.0);
-        open.pre_sample_kwh = counter.map(|counter| counter - baseline);
+        open.pre_sample_kwh = counter
+            .and(open.max_energy_added)
+            .map(|maximum| maximum - baseline);
     } else if let Some(previous_ms) = open.last_sample_timestamp_ms {
         let dt_ms = sample.timestamp_ms.saturating_sub(previous_ms);
         fold_charge_interval(open, dt_ms, power.power_kw, counter);
@@ -811,16 +854,22 @@ fn observe_charge_aggregate(open: &mut OpenCharge, sample: &ParsedSample) {
 /// accumulators alone, so close needs no sample list.
 ///
 /// `E = k + (m - b)` is the counter's own measurement across every segment
-/// (R13). The energy used is chosen by the first matching row:
+/// (C2 R13); it keeps the maximum through a dip (C2 R76 (e)). The energy used is
+/// chosen by the first matching row:
 /// 1. no counter: the integral, only when every interval was measured;
 /// 2. nothing reached the battery: zero for a single sample (it spans no
 ///    observed time), else the integral when gap-free (a gap may hide grid
 ///    draw the counter does not see, such as battery heating);
 /// 3. a gap-free integral with at most [`K_PRE_SAMPLE_KWH`] before the first
 ///    sample: the integral plus that energy at ratio 1;
-/// 4. at least [`K_RATIO_MIN_KWH`] counted: `E * U_r / A_r`, the session's own
-///    measured ratio applied to the energy whose power was not observed;
-/// 5. otherwise unknown.
+/// 4. at least [`K_RATIO_MIN_KWH`] counted and a positive net change
+///    `E_n = k + (l - b)` (`l` the last usable counter, `m` for a blob without
+///    one): `(E_n * U_r) / A_r`, the session's own measured ratio applied to
+///    the net energy whose power was not observed. The counted intervals carry
+///    the counter's signed changes (C2 R76 (d)), so `A_r` is the net change over
+///    them and the factor that extends their ratio to the whole session is the
+///    net change too (C2 R76 (i));
+/// 5. otherwise unknown, a session whose net change is not positive included.
 ///
 /// An AC session whose result falls below [`K_AC_FLOOR`] of `E` is a
 /// systematic power error and is not published (R20); DC and unknown kinds
@@ -845,7 +894,7 @@ pub(crate) fn charge_energy_totals(open: &OpenCharge) -> ChargeEnergyTotals {
                 None
             }
         }
-        Some(energy) => {
+        Some(_) => {
             let before_first = open
                 .pre_sample_kwh
                 .filter(|before| *before <= K_PRE_SAMPLE_KWH);
@@ -853,10 +902,18 @@ pub(crate) fn charge_energy_totals(open: &OpenCharge) -> ChargeEnergyTotals {
                 integral
                     .zip(before_first)
                     .map(|(integral, before)| integral + before)
-            } else if open.ratio_added_kwh >= K_RATIO_MIN_KWH {
-                Some((energy * open.ratio_used_kwh) / open.ratio_added_kwh)
             } else {
-                None
+                let net = open.energy_added_carry_kwh
+                    + (open
+                        .last_energy_added
+                        .or(open.max_energy_added)
+                        .unwrap_or(0.0)
+                        - open.first_energy_added.unwrap_or(0.0));
+                if open.ratio_added_kwh >= K_RATIO_MIN_KWH && net > 0.0 {
+                    Some((net * open.ratio_used_kwh) / open.ratio_added_kwh)
+                } else {
+                    None
+                }
             }
         }
     };
@@ -1895,14 +1952,16 @@ fn anchors_charge_sample(state: &OpenSessionState, observation: &Observation<'_>
 /// Whether an open charge continues across a gap longer than `T_gap` (C1 R65).
 ///
 /// All three must hold: the class is Active, Hold or End; the counter is known
-/// now and was known before, and did not fall; and the car is unmoved, that is
-/// this observation carries an odometer, the charge knows its last one, and the
-/// reading rose by less than [`K_DMIN_KM`] (a fall from mixed-source rounding
-/// counts as unmoved). Within one Tesla session the counter does not fall
-/// (R61a), and an unmoved odometer shows the car stayed where it was plugged,
-/// so the observation is consistent with one plug-in across any connectivity or
-/// Hub gap. It does not prove it: an unplug and replug at the same spot during
-/// the gap whose new counter already exceeds the old value cannot be told apart
+/// now and was known before, and did not restart (`counter_restarted`, C1 R91:
+/// a fall beyond C2 R76's tolerance; a dip is still the same session); and the
+/// car is unmoved, that is this observation carries an odometer, the charge
+/// knows its last one, and the reading rose by less than [`K_DMIN_KM`] (a fall
+/// from mixed-source rounding counts as unmoved). Within one Tesla session the
+/// counter does not fall by more than the tolerance (C1 R61a), and an unmoved
+/// odometer shows the car stayed where it was plugged, so the observation is
+/// consistent with one plug-in across any connectivity or Hub gap. It does not
+/// prove it: an unplug and replug at the same spot during the gap whose new
+/// counter is no longer a restart against the old value cannot be told apart
 /// (known limit 1). The last known counter and odometer are compared, not only
 /// the last sample's, so a sample without a counter or a stream frame does not
 /// break the comparison.
@@ -1910,7 +1969,7 @@ fn charge_continues_across_gap(open: &OpenCharge, observation: &Observation<'_>)
     let parsed = observation.parsed;
     let counter_held = matches!(
         (parsed.charge_energy_added, open.last_energy_added),
-        (Some(now), Some(last)) if now >= last
+        (Some(now), Some(last)) if !counter_restarted(last, now)
     );
     observation.charge != ChargeEvidence::None
         && counter_held
@@ -1923,14 +1982,15 @@ fn charge_continues_across_gap(open: &OpenCharge, observation: &Observation<'_>)
 /// Triggers, in order: reach `asleep` (R26); service mode (R25, including the
 /// `service_refused` event); Motion drive evidence that survived R22, because
 /// a car cannot drive with the cable connected; for a sample-anchoring
-/// observation, a counter below the open session's (R66, a new Tesla session
-/// began); and a sample-anchoring observation after a gap that fails
-/// continuity (R65). An observation without a sample-anchoring charge fact (a
-/// discovery, a stream frame, drive-only data, a `no_data` event) closes a
-/// charge only by the first three triggers, however late it comes: a charge,
-/// unlike a drive, can be shown continuous by its next sample, and a wake-up
-/// discovery or a battery-only frame arriving before that sample must not cut
-/// a no-signal garage charge in two.
+/// observation, a counter that restarted against the open session's last one
+/// (`counter_restarted`, C1 R66, C1 R91: a new Tesla session began; a dip is not a
+/// restart and follows the other rows); and a sample-anchoring observation
+/// after a gap that fails continuity (C1 R65). An observation without a
+/// sample-anchoring charge fact (a discovery, a stream frame, drive-only data,
+/// a `no_data` event) closes a charge only by the first three triggers,
+/// however late it comes: a charge, unlike a drive, can be shown continuous by
+/// its next sample, and a wake-up discovery or a battery-only frame arriving
+/// before that sample must not cut a no-signal garage charge in two.
 fn charge_close_step(
     state: &mut OpenSessionState,
     observation: &Observation<'_>,
@@ -1947,7 +2007,7 @@ fn charge_close_step(
         || (anchors_charge_sample(state, observation) && {
             let counter_fell = matches!(
                 (parsed.charge_energy_added, open.last_energy_added),
-                (Some(now), Some(last)) if now < last
+                (Some(now), Some(last)) if counter_restarted(last, now)
             );
             let gap = parsed
                 .charge_timestamp_ms

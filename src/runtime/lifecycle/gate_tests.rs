@@ -8,7 +8,8 @@
 //!
 //! The children are `fold` (C2 R74 (b)), `report` (C2 R75 (c)) and `reader` (C2 R75 (a)
 //! and (b)); `support` holds the sample builders the tests share; `b3_hg1`,
-//! `b3_hg2` and `b3_hg3` are the spec tests of the three parts. The ignored
+//! `b3_hg2` and `b3_hg3` are the spec tests of the three parts, and `b3_c2_a`
+//! the gate-level tests of C2 R76 (C2 T79, C2 T83 (d), C2 T84). The ignored
 //! runner `g2_10_historical_charge_gates` is registered here, apart from the
 //! ordinary tests.
 
@@ -28,6 +29,8 @@ mod report;
 #[path = "gate_tests/support.rs"]
 mod support;
 
+#[path = "gate_tests/c2_a_tests.rs"]
+mod b3_c2_a;
 #[path = "gate_tests/hg1_tests.rs"]
 mod b3_hg1;
 #[path = "gate_tests/hg2_tests.rs"]
@@ -120,7 +123,7 @@ fn run_historical_gates(dir: &Path) -> Result<Vec<PathBuf>, GateReadError> {
         );
         let document = json!({
             "measurement": "g2_10_historical_charge_gates",
-            "fold": "baseline fold (C2 sections 11 and 17 before the B3 amendments); the amended G4 and C1 ST-G4 are not claimed",
+            "fold": "C2-A fold (C2 sections 11 and 17 with C2 R76: counter tolerance, signed intervals, final declines); C2-B and C2-C amendments and C1 ST-G4 are not claimed",
             "export": export,
             "report": report.to_json(),
         });

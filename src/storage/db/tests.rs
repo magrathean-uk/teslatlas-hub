@@ -33,3 +33,8 @@ include!("tests/receiver_and_retirement.rs");
 include!("tests/auth_state.rs");
 include!("tests/legacy_attempt_close.rs");
 include!("tests/r3_fix_round.rs");
+
+#[path = "tests/b3_c1_a.rs"]
+mod b3_c1_a;
+#[path = "tests/b3_c2_a.rs"]
+mod b3_c2_a;

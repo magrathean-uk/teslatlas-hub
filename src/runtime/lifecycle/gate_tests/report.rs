@@ -3,20 +3,23 @@
 //! The pure gate report (C2 R75 (c), C2 section 11): one car's session facts in,
 //! each gate's selection, statistics and pass out. Test builds only.
 //!
-//! This is the baseline semantics (C2 sections 11 and 17, before the B3
-//! amendments): G4 reads every decrease of a usable counter as in C2 R74, G6 (c)
-//! tests the session type against the operator, and the owner's answer is
-//! asked once per distinct session type value. A pass is `None` while a
-//! minimum is not met or a needed owner answer is missing, and G2's is `None`
-//! too while its median part is open (no known warm session) and the floor
-//! holds.
+//! Semantics (C2 sections 11 and 17 with C2 R76): G4 counts the recovered
+//! restarts, the boundary glitches (a first counter that is a restart against
+//! the earlier session's last), the restart reads above their physical bound
+//! and those that cannot be bounded, and reports the dips tolerated, the
+//! over-count left and the final declines; G6 (c) tests the session type
+//! against the operator, and the owner's answer is asked once per distinct
+//! session type value. A pass is `None` while a minimum is not met or a needed
+//! owner answer is missing, and G2's is `None` too while its median part is
+//! open (no known warm session) and the floor holds. C2-B and C2-C amend G6
+//! further.
 
 use std::collections::HashMap;
 
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
-use super::fold::ChargeGateFacts;
+use super::fold::{ChargeGateFacts, K_GATE_COUNTER_STEP_KWH};
 use super::*;
 
 const MS_PER_DAY: i64 = 86_400_000;
@@ -39,9 +42,10 @@ const G3_BAND: (f64, f64) = (0.97, 1.03);
 /// G4 minimum: sessions with at least this many usable counters.
 const G4_MIN_SESSIONS: usize = 20;
 const G4_MIN_COUNTERS: u64 = 10;
-/// Counter step added to the boundary bound, in kWh (section 11.1 G4 (b)).
-const G4_COUNTER_STEP_KWH: f64 = 0.01;
-/// G5 windows (section 11.1 G5).
+/// The over-count that is reported: the energy added exceeds the session's
+/// largest usable counter by more than this, in kWh (C2 R76 (g)).
+const G4_OVERCOUNT_KWH: f64 = 0.5;
+/// G5 windows (C2 section 11.1 G5).
 const G5_SPREAD_FIGURES: usize = 20;
 const G5_MIN_FIGURES: usize = 10;
 const G5_MIN_SPAN_DAYS: i64 = 28;
@@ -144,10 +148,45 @@ pub(crate) struct G3Report {
     pub pass: Option<bool>,
 }
 
+/// The final declines of C2 R76 (i): sessions whose last usable counter lies
+/// below their maximum, `m - l` over them, and their share of all energy added.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DeclineReport {
+    /// Sessions with `m - l > 0`.
+    pub sessions: usize,
+    pub median: Option<f64>,
+    pub p95: Option<f64>,
+    pub maximum: Option<f64>,
+    pub total_kwh: f64,
+    /// `total_kwh` over the total `added_kwh` of all the car's sessions; above
+    /// 0.01 it reopens C2 R76 (i).
+    pub decline_share: Option<f64>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct G4Report {
     pub sessions_with_counters: usize,
+    /// Every decrease of a usable counter that recovers at the next reading,
+    /// dips included.
     pub recovered_decreases: u64,
+    pub tolerated_dips: u64,
+    pub restart_reads: u64,
+    /// G4 (a): restart reads that recover at the next reading.
+    pub recovered_restarts: u64,
+    pub recovered_restart_sessions: Vec<i64>,
+    /// G4 (d): restart reads whose counter exceeds its physical bound.
+    pub restart_reads_above_bound: u64,
+    pub above_bound_sessions: Vec<i64>,
+    /// G4 (e): restart reads with no usable power to bound them.
+    pub restart_reads_unbounded: u64,
+    pub unbounded_sessions: Vec<i64>,
+    /// The remaining over-count, reported and not gating: sessions whose
+    /// energy added exceeds the largest usable counter by more than 0.5 kWh,
+    /// and that excess summed.
+    pub overcounted_sessions: usize,
+    pub overcounted_session_ids: Vec<i64>,
+    pub overcount_kwh: f64,
+    pub declines: DeclineReport,
     pub consecutive_pairs: usize,
     /// Pairs whose later first sample is within `K_INT_MAX_MS` of the earlier
     /// last sample.
@@ -460,15 +499,60 @@ fn g3(sessions: &[(&ProcessGateFacts, SessionClass)]) -> G3Report {
     }
 }
 
+/// The ids of the sessions whose facts satisfy `has`, in start order.
+fn sessions_with(
+    sessions: &[(&ProcessGateFacts, SessionClass)],
+    has: impl Fn(&ChargeGateFacts) -> bool,
+) -> Vec<i64> {
+    sessions
+        .iter()
+        .filter(|(session, _)| has(&session.facts))
+        .map(|(session, _)| session.process_id)
+        .collect()
+}
+
+/// C2 R76 (i)'s statistics over the sessions with `m - l > 0` (G5's interpolation
+/// rule), and their total over the total energy added of every session.
+fn declines(sessions: &[(&ProcessGateFacts, SessionClass)]) -> DeclineReport {
+    let mut figures = sessions
+        .iter()
+        .map(|(session, _)| session.facts.final_decline_kwh)
+        .filter(|decline| *decline > 0.0)
+        .collect::<Vec<_>>();
+    figures.sort_by(f64::total_cmp);
+    let total = figures.iter().fold(0.0_f64, |sum, figure| sum + figure);
+    let added = sessions
+        .iter()
+        .filter_map(|(session, _)| session.facts.energy.added_kwh)
+        .fold(0.0_f64, |sum, added| sum + added);
+    let at = |quantile: f64| interpolated(&figures, (figures.len() as f64 - 1.0) * quantile);
+    DeclineReport {
+        sessions: figures.len(),
+        median: at(0.5),
+        p95: at(0.95),
+        maximum: figures.last().copied(),
+        total_kwh: total,
+        decline_share: (added > 0.0).then(|| total / added),
+    }
+}
+
+/// G4 (C2 section 11.1 with C2 R76 (g)): (a) restart reads that recover, (b) boundary
+/// glitches, (c) undecided boundary pairs, (d) restart reads above their
+/// physical bound, (e) restart reads with no power to bound them. Passes when
+/// (a) to (e) are all zero, with at least 20 sessions of at least 10 usable
+/// counters.
 fn g4(sessions: &[(&ProcessGateFacts, SessionClass)]) -> G4Report {
     let with_counters = sessions
         .iter()
         .filter(|(s, _)| s.facts.usable_counters >= G4_MIN_COUNTERS)
         .count();
-    let recovered: u64 = sessions
-        .iter()
-        .map(|(s, _)| s.facts.recovered_decreases)
-        .sum();
+    let total = |count: fn(&ChargeGateFacts) -> u64| -> u64 {
+        sessions.iter().map(|(s, _)| count(&s.facts)).sum()
+    };
+    let recovered = total(|facts| facts.recovered_decreases);
+    let recovered_restarts = total(|facts| facts.recovered_restarts);
+    let above_bound = total(|facts| facts.restart_reads_above_bound);
+    let unbounded = total(|facts| facts.restart_reads_unbounded);
     let mut within_bound = 0;
     let mut glitches = Vec::new();
     let mut undecided = Vec::new();
@@ -490,7 +574,11 @@ fn g4(sessions: &[(&ProcessGateFacts, SessionClass)]) -> G4Report {
         ) else {
             continue;
         };
-        if !(first.counter_kwh < last.counter_kwh && second.counter_kwh >= last.counter_kwh) {
+        // (b): the later session's first usable counter is a restart against
+        // the earlier session's last, and the next one reaches it again.
+        if !(counter_restarted(last.counter_kwh, first.counter_kwh)
+            && second.counter_kwh >= last.counter_kwh)
+        {
             continue;
         }
         let ids = (earlier.process_id, later.process_id);
@@ -499,21 +587,48 @@ fn g4(sessions: &[(&ProcessGateFacts, SessionClass)]) -> G4Report {
             (a, b) => {
                 let power = a.into_iter().chain(b).fold(f64::MIN, f64::max);
                 let dt_ms = second.timestamp_ms.saturating_sub(first.timestamp_ms);
-                let bound =
-                    (power + K_PHASE_ABS_KW) * (dt_ms as f64) / MS_PER_HOUR + G4_COUNTER_STEP_KWH;
+                let bound = (power + K_PHASE_ABS_KW) * (dt_ms as f64) / MS_PER_HOUR
+                    + K_GATE_COUNTER_STEP_KWH;
                 if second.counter_kwh - first.counter_kwh > bound {
                     glitches.push(ids);
                 }
             }
         }
     }
+    let overcount = |facts: &ChargeGateFacts| -> Option<f64> {
+        let excess = facts.energy.added_kwh? - facts.largest_counter_kwh?;
+        (excess > G4_OVERCOUNT_KWH).then_some(excess)
+    };
+    let overcounted_session_ids = sessions_with(sessions, |facts| overcount(facts).is_some());
+    let overcount_kwh = sessions
+        .iter()
+        .filter_map(|(session, _)| overcount(&session.facts))
+        .fold(0.0_f64, |sum, excess| sum + excess);
     let enough = with_counters >= G4_MIN_SESSIONS;
     G4Report {
         sessions_with_counters: with_counters,
         recovered_decreases: recovered,
+        tolerated_dips: total(|facts| facts.tolerated_dips),
+        restart_reads: total(|facts| facts.restart_reads),
+        recovered_restarts,
+        recovered_restart_sessions: sessions_with(sessions, |facts| facts.recovered_restarts > 0),
+        restart_reads_above_bound: above_bound,
+        above_bound_sessions: sessions_with(sessions, |facts| facts.restart_reads_above_bound > 0),
+        restart_reads_unbounded: unbounded,
+        unbounded_sessions: sessions_with(sessions, |facts| facts.restart_reads_unbounded > 0),
+        overcounted_sessions: overcounted_session_ids.len(),
+        overcounted_session_ids,
+        overcount_kwh,
+        declines: declines(sessions),
         consecutive_pairs: sessions.len().saturating_sub(1),
         pairs_within_bound: within_bound,
-        pass: enough.then_some(recovered == 0 && glitches.is_empty() && undecided.is_empty()),
+        pass: enough.then_some(
+            recovered_restarts == 0
+                && glitches.is_empty()
+                && undecided.is_empty()
+                && above_bound == 0
+                && unbounded == 0,
+        ),
         boundary_glitches: glitches,
         undecided,
     }
@@ -960,6 +1075,25 @@ impl ChargeGateReport {
             "g4": {
                 "sessions_with_counters": self.g4.sessions_with_counters,
                 "recovered_decreases": self.g4.recovered_decreases,
+                "tolerated_dips": self.g4.tolerated_dips,
+                "restart_reads": self.g4.restart_reads,
+                "recovered_restarts": self.g4.recovered_restarts,
+                "recovered_restart_sessions": self.g4.recovered_restart_sessions,
+                "restart_reads_above_bound": self.g4.restart_reads_above_bound,
+                "above_bound_sessions": self.g4.above_bound_sessions,
+                "restart_reads_unbounded": self.g4.restart_reads_unbounded,
+                "unbounded_sessions": self.g4.unbounded_sessions,
+                "overcounted_sessions": self.g4.overcounted_sessions,
+                "overcounted_session_ids": self.g4.overcounted_session_ids,
+                "overcount_kwh": self.g4.overcount_kwh,
+                "final_declines": {
+                    "sessions": self.g4.declines.sessions,
+                    "median": self.g4.declines.median,
+                    "p95": self.g4.declines.p95,
+                    "maximum": self.g4.declines.maximum,
+                    "total_kwh": self.g4.declines.total_kwh,
+                    "decline_share": self.g4.declines.decline_share,
+                },
                 "consecutive_pairs": self.g4.consecutive_pairs,
                 "pairs_within_bound": self.g4.pairs_within_bound,
                 "boundary_glitches": pairs(&self.g4.boundary_glitches),
