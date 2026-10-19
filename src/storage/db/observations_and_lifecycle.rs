@@ -1848,17 +1848,11 @@ impl HubStore {
                 params![source, vehicle],
             )
             .map_err(StoreError::LifecycleWrite)?;
-        // The `charging_processes` watermark is kept: the upsert below only
-        // raises it, because a reseed must never lower the vehicle's import
-        // bound W(V) (C2 R5), which would turn imported charge rows into Hub
-        // rows that a fill or the efficiency median may then use.
-        transaction
-            .execute(
-                "DELETE FROM lifecycle_source_watermarks
-                 WHERE source_id = ?1 AND vehicle_id = ?2 AND domain <> ?3",
-                params![source, vehicle, CHARGING_PROCESSES_DOMAIN],
-            )
-            .map_err(StoreError::LifecycleWrite)?;
+        // No watermark row of any domain is deleted (C2 R80 (b)): the writer
+        // below only raises each pair, because a reseed must never lower how far
+        // an imported class reaches, which would turn imported rows into Hub
+        // rows (for `charging_processes`, C2 R5's import bound W(V), which a
+        // fill or the efficiency median would then use).
         let mut inserted = 0;
         if let Some(row) = &session.drive {
             inserted += insert_open_row(
@@ -1982,37 +1976,17 @@ impl HubStore {
                 .map_err(StoreError::LifecycleWrite)?;
         }
 
-        let watermarks = [
-            ("drives", session.watermarks.drives),
-            ("positions", session.watermarks.positions),
-            ("charging_processes", session.watermarks.charging_processes),
-            ("charges", session.watermarks.charges),
-            ("states", session.watermarks.states),
-            ("updates", session.watermarks.updates),
-        ];
-        for (domain, watermark) in watermarks {
-            transaction
-                .execute(
-                    "INSERT INTO lifecycle_source_watermarks(
-                        source_id, vehicle_id, domain, max_source_row_id, max_timestamp_ms
-                     ) VALUES (?1, ?2, ?3, ?4, ?5)
-                     ON CONFLICT(source_id, vehicle_id, domain) DO UPDATE SET
-                        max_source_row_id = COALESCE(
-                            MAX(max_source_row_id, excluded.max_source_row_id),
-                            max_source_row_id, excluded.max_source_row_id),
-                        max_timestamp_ms = COALESCE(
-                            MAX(max_timestamp_ms, excluded.max_timestamp_ms),
-                            max_timestamp_ms, excluded.max_timestamp_ms)",
-                    params![
-                        source,
-                        vehicle,
-                        domain,
-                        watermark.max_id,
-                        watermark.max_timestamp_ms
-                    ],
-                )
-                .map_err(StoreError::LifecycleWrite)?;
-        }
+        // C2 R80 (g) step 1: the six pairs through the one writer. Step 2 (C1
+        // R84 (b)'s cursor raise) follows below; step 3 (C9 R58's boundary
+        // re-arm when the writer reports `Positions`) joins once C9 Part C has
+        // landed.
+        let watermarks = snapshot_watermark_pairs(&session.watermarks);
+        let _changed_domains = raise_source_watermarks_in_transaction(
+            &transaction,
+            source_id,
+            vehicle_id,
+            &watermarks,
+        )?;
         let mut seeded = seeded;
         raise_id_cursors_above_watermarks(&transaction, vehicle_id, &mut seeded)?;
         seed_imported_version_from_updates(&transaction, vehicle_id, &mut seeded)?;
@@ -2231,39 +2205,22 @@ fn round_manual_amount(value: f64, decimals: i32) -> Option<f64> {
     Some(if rounded == 0.0 { 0.0 } else { rounded })
 }
 
-/// The larger of two known watermark values, the known one when only one is
-/// known, `None` when neither is (C2 R73): the value the raise-only
-/// `charging_processes` upsert stores.
-fn raise_only_value(stored: Option<i64>, snapshot: Option<i64>) -> Option<i64> {
-    match (stored, snapshot) {
-        (Some(stored), Some(snapshot)) => Some(stored.max(snapshot)),
-        (stored, snapshot) => stored.or(snapshot),
-    }
-}
-
 /// Whether the stored imported open session already equals the snapshot as the
-/// seed would leave it (C2 R73). The seed replaces every watermark domain but
-/// `charging_processes` by the snapshot's and stores the raise-only merge of
-/// the stored and the snapshot's `charging_processes` watermark (R5: no rewrite
-/// lowers the vehicle's import bound). The stored session is therefore
-/// unchanged when its open rows and its other watermarks equal the snapshot's
-/// and its `charging_processes` watermark already equals that merge, so a
-/// snapshot whose charge maximum or charge time is absent or not above the
-/// stored value is a no-op when repeated. `stored` is left with the snapshot's
-/// own `charging_processes` watermark, which the caller no longer uses.
+/// seed would leave it (C2 R80 (d), refining R73). The seed stores the
+/// raise-only merge of the stored and the snapshot's pair in every watermark
+/// domain (C2 R80 (b)); the stored session is therefore unchanged when its open
+/// rows equal the snapshot's and every domain's stored pair already equals that
+/// merge. A snapshot whose pair in a domain is absent or not above the stored
+/// pair in either field is a no-op when repeated. `stored` is left with the
+/// snapshot's own watermarks, which the caller no longer uses.
 fn imported_open_session_is_unchanged(
     stored: &mut crate::teslamate_projection::TeslaMateOpenSession,
     snapshot: &crate::teslamate_projection::TeslaMateOpenSession,
 ) -> bool {
-    let kept = stored.watermarks.charging_processes;
-    let incoming = snapshot.watermarks.charging_processes;
-    let merged = crate::teslamate_projection::TeslaMateSourceWatermark {
-        max_id: raise_only_value(kept.max_id, incoming.max_id),
-        max_timestamp_ms: raise_only_value(kept.max_timestamp_ms, incoming.max_timestamp_ms),
-    };
-    if kept != merged {
+    let merged = merged_snapshot_watermarks(&stored.watermarks, &snapshot.watermarks);
+    if stored.watermarks != merged {
         return false;
     }
-    stored.watermarks.charging_processes = incoming;
+    stored.watermarks = snapshot.watermarks.clone();
     *stored == *snapshot
 }

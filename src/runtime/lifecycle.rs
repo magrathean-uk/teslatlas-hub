@@ -51,6 +51,7 @@ pub(crate) const DEFAULT_OFFLINE_DRIVE_TIMEOUT: Duration = Duration::from_secs(1
 include!("lifecycle/models.rs");
 include!("lifecycle/projection.rs");
 include!("lifecycle/drive_and_charge.rs");
+include!("lifecycle/imported_charge_aggregates.rs");
 include!("lifecycle/state_and_updates.rs");
 
 #[cfg(test)]
@@ -104,3 +105,7 @@ mod b3_c1_a;
 #[cfg(test)]
 #[path = "lifecycle/b3_c2_b_tests.rs"]
 mod b3_c2_b;
+
+#[cfg(test)]
+#[path = "lifecycle/b3_c2_c_tests.rs"]
+mod b3_c2_c;

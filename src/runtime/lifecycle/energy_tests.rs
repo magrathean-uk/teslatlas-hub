@@ -846,28 +846,30 @@ fn r2a_the_hub_manifest_enables_float_roundtrip_for_itself() {
 #[test]
 fn r27_the_aggregate_observer_keeps_last_max_and_mean() {
     let mut open = OpenCharge::empty(1, 1, T0);
-    let parsed =
-        |level: Option<i64>, ideal: Option<f64>, rated: Option<f64>, power, temp| ParsedSample {
-            battery_level: level,
-            ideal_range_km: ideal,
-            rated_range_km: rated,
-            charger_power_kw: power,
-            outside_temp: temp,
-            ..ParsedSample::default()
-        };
+    // The observer folds a charge-sample row (C2 R81 (e)): the row's five inputs
+    // are copied unchanged from the parsed observation.
+    let row = |level: Option<i64>, ideal: Option<f64>, rated: Option<f64>, power, temp| {
+        let mut sample = b(0).s();
+        sample.battery_level = level;
+        sample.ideal_range_km = ideal;
+        sample.rated_range_km = rated;
+        sample.charger_power_kw = power;
+        sample.outside_temp_c = temp;
+        sample
+    };
     observe_charge_aggregate(
         &mut open,
-        &parsed(Some(50), Some(200.0), Some(190.0), Some(7.0), Some(10.0)),
+        &row(Some(50), Some(200.0), Some(190.0), Some(7.0), Some(10.0)),
     );
     observe_charge_aggregate(
         &mut open,
-        &parsed(None, None, Some(195.5), Some(11.0), Some(12.0)),
+        &row(None, None, Some(195.5), Some(11.0), Some(12.0)),
     );
     observe_charge_aggregate(
         &mut open,
-        &parsed(Some(55), Some(210.0), None, Some(-1.0), None),
+        &row(Some(55), Some(210.0), None, Some(-1.0), None),
     );
-    observe_charge_aggregate(&mut open, &parsed(None, None, None, None, Some(f64::NAN)));
+    observe_charge_aggregate(&mut open, &row(None, None, None, None, Some(f64::NAN)));
     assert_eq!(open.last_battery_level, Some(55));
     assert_eq!(open.last_ideal_range_km, Some(210.0));
     assert_eq!(open.last_rated_range_km, Some(195.5));
@@ -877,11 +879,11 @@ fn r27_the_aggregate_observer_keeps_last_max_and_mean() {
     assert_eq!(open.outside_temp_count, 2);
     // Nothing known leaves everything as it was.
     let mut untouched = OpenCharge::empty(1, 1, T0);
-    observe_charge_aggregate(&mut untouched, &ParsedSample::default());
+    observe_charge_aggregate(&mut untouched, &row(None, None, None, None, None));
     assert_eq!(untouched, OpenCharge::empty(1, 1, T0));
     // The counts saturate.
     open.outside_temp_count = u32::MAX;
-    observe_charge_aggregate(&mut open, &parsed(None, None, None, None, Some(1.0)));
+    observe_charge_aggregate(&mut open, &row(None, None, None, None, Some(1.0)));
     assert_eq!(open.outside_temp_count, u32::MAX);
 }
 
@@ -890,12 +892,8 @@ fn r27_the_aggregate_observer_never_touches_the_energy_fields() {
     let mut open = OpenCharge::empty(1, 1, T0);
     open.first_energy_added = Some(20.0);
     let before = open.clone();
-    let parsed = ParsedSample {
-        charge_energy_added: Some(21.0),
-        charger_power_kw: Some(7.0),
-        ..ParsedSample::default()
-    };
-    observe_charge_aggregate(&mut open, &parsed);
+    let sample = b(0).c(21.0).power(7.0).s();
+    observe_charge_aggregate(&mut open, &sample);
     assert_eq!(open.first_energy_added, before.first_energy_added);
     assert_eq!(open.max_energy_added, None);
     assert_eq!(open.last_energy_added, None);

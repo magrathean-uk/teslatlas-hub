@@ -1605,6 +1605,7 @@ include!("db/migrations.rs");
 include!("db/catalogue_maintenance.rs");
 include!("db/observation_persistence.rs");
 include!("db/projection_helpers.rs");
+include!("db/source_watermarks.rs");
 include!("db/errors.rs");
 include!("db/access_models.rs");
 include!("db/import_state.rs");

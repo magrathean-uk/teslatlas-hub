@@ -261,17 +261,10 @@ fn promote_imported_open_session_in_transaction(
             params![source, vehicle],
         )
         .map_err(StoreError::LifecycleWrite)?;
-    // The `charging_processes` watermark is kept: the upsert below only
-    // raises it, because a replacement or promotion must never lower the
-    // vehicle's import bound W(V) (C2 R5), which would turn imported charge
-    // rows into Hub rows that a fill or the efficiency median may then use.
-    transaction
-        .execute(
-            "DELETE FROM lifecycle_source_watermarks
-             WHERE source_id=?1 AND vehicle_id=?2 AND domain<>?3",
-            params![source, vehicle, CHARGING_PROCESSES_DOMAIN],
-        )
-        .map_err(StoreError::LifecycleWrite)?;
+    // No watermark row of any domain is deleted (C2 R80 (b)): the writer below
+    // only raises each pair, because a replacement or promotion must never
+    // lower how far an imported class reaches (for `charging_processes`, C2
+    // R5's import bound W(V)).
     let mut inserted = 0;
     if let Some(row) = &session.drive {
         inserted += insert_open_row(
@@ -370,23 +363,13 @@ fn promote_imported_open_session_in_transaction(
                 position.tpms_pressure_fl, position.tpms_pressure_fr, position.tpms_pressure_rl, position.tpms_pressure_rr],
         ).map_err(StoreError::LifecycleWrite)?;
     }
-    let watermarks = [
-        ("drives", session.watermarks.drives),
-        ("positions", session.watermarks.positions),
-        ("charging_processes", session.watermarks.charging_processes),
-        ("charges", session.watermarks.charges),
-        ("states", session.watermarks.states),
-        ("updates", session.watermarks.updates),
-    ];
-    for (domain, watermark) in watermarks {
-        transaction.execute(
-            "INSERT INTO lifecycle_source_watermarks(source_id, vehicle_id, domain, max_source_row_id, max_timestamp_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5) ON CONFLICT(source_id, vehicle_id, domain) DO UPDATE SET
-             max_source_row_id=COALESCE(MAX(max_source_row_id, excluded.max_source_row_id), max_source_row_id, excluded.max_source_row_id),
-             max_timestamp_ms=COALESCE(MAX(max_timestamp_ms, excluded.max_timestamp_ms), max_timestamp_ms, excluded.max_timestamp_ms)",
-            params![source, vehicle, domain, watermark.max_id, watermark.max_timestamp_ms],
-        ).map_err(StoreError::LifecycleWrite)?;
-    }
+    // C2 R80 (g) step 1: the six pairs through the one writer (a promotion has
+    // no no-op test, C2 R80 (d)). Step 2 (C1 R84 (b), R90: the cursor raise over
+    // every source's rows) follows below; step 3 (C9 R58's boundary re-arm when
+    // the writer reports `Positions`) joins once C9 Part C has landed.
+    let watermarks = snapshot_watermark_pairs(&session.watermarks);
+    let _changed_domains =
+        raise_source_watermarks_in_transaction(transaction, source_id, vehicle_id, &watermarks)?;
     let mut seeded = seeded;
     raise_id_cursors_above_watermarks(transaction, vehicle_id, &mut seeded)?;
     seed_imported_version_from_updates(transaction, vehicle_id, &mut seeded)?;

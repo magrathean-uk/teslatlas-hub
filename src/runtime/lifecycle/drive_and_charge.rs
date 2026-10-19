@@ -613,7 +613,8 @@ fn fold_charge_interval(
 /// and no previous time, which also keeps an old blob from being taken for a
 /// new session, R25) starts the integral at zero and records the battery
 /// energy that arrived before it. This is the one writer of `is_dc` and
-/// `fast_charger_type` (seam S2) and of `last_energy_added` (S4), and it
+/// `fast_charger_type` (seam S2, through the one shared step
+/// [`fold_charge_session_kind`], C2 R81 (b)) and of `last_energy_added` (S4), and it
 /// writes `last_sample_timestamp_ms` itself (S5) so the seeded fold and the
 /// slice fold work without C1's step.
 fn observe_charge_sample(open: &mut OpenCharge, sample: &ProjectionChargeSample) {
@@ -622,8 +623,7 @@ fn observe_charge_sample(open: &mut OpenCharge, sample: &ProjectionChargeSample)
     if let Some(counter) = counter {
         fold_energy_counter(open, counter);
     }
-    open.is_dc = session_kind_after(open.is_dc, sample_kind_evidence(sample));
-    open.fast_charger_type = session_charger_type_after(open.fast_charger_type.take(), sample);
+    fold_charge_session_kind(&mut open.is_dc, &mut open.fast_charger_type, sample);
     let power = sample_grid_power_kw(sample, open.is_dc, open.phase_count);
     if first {
         open.energy_used_kwh = Some(0.0);
@@ -824,30 +824,24 @@ fn finalize_charge(
     })
 }
 
-/// Fold the display values of one parsed observation into the open charge
-/// (C2 R27, seam S3). The only writer of these fields; C1 reads them for the
-/// closed row's end values and averages and for its snapshot (C1 R69).
+/// Fold the display values of one charge-sample row into the open charge (C2
+/// R27, seam S3) through the one shared step
+/// ([`fold_charge_display_aggregates`]). The only live writer of these fields;
+/// C1 reads them for the closed row's end values and averages and for its
+/// snapshot (C1 R69).
 ///
 /// Battery level and the two ranges keep the last known value; the maximum
 /// charger power is the largest known non-negative reading; each known
 /// outside temperature joins the sum and the count, whose quotient is the
-/// arithmetic mean of the folded values. The parsed values are already at the
-/// column scale (C1 R36) and equal what the sample row carries (C1 R6a), so
-/// nothing is folded twice. The charge analogue of C1 R42 and R49 for drives.
-fn observe_charge_aggregate(open: &mut OpenCharge, sample: &ParsedSample) {
-    open.last_battery_level = sample.battery_level.or(open.last_battery_level);
-    open.last_ideal_range_km = finite_reading(sample.ideal_range_km).or(open.last_ideal_range_km);
-    open.last_rated_range_km = finite_reading(sample.rated_range_km).or(open.last_rated_range_km);
-    if let Some(power) = finite_reading(sample.charger_power_kw).filter(|power| *power >= 0.0) {
-        open.max_charger_power_kw = Some(
-            open.max_charger_power_kw
-                .map_or(power, |maximum| maximum.max(power)),
-        );
-    }
-    if let Some(temperature) = finite_reading(sample.outside_temp) {
-        open.outside_temp_sum += temperature;
-        open.outside_temp_count = open.outside_temp_count.saturating_add(1);
-    }
+/// arithmetic mean of the folded values. The row's five inputs are copied
+/// unchanged from the parsed observation (C1 R36, R6a) at the column scale, so
+/// nothing is folded twice and the seed's fold over imported sample rows gives
+/// the same aggregates for the same samples. The charge analogue of C1 R42 and
+/// R49 for drives.
+fn observe_charge_aggregate(open: &mut OpenCharge, sample: &ProjectionChargeSample) {
+    let mut aggregates = ChargeDisplayAggregates::of_open(open);
+    fold_charge_display_aggregates(&mut aggregates, sample);
+    aggregates.store_into(open);
 }
 
 /// Energy added and energy used of an open charge (C2 R19, R20), from its
@@ -2304,7 +2298,7 @@ fn charge_sample_step(
         let id = allocate_charge_sample_id(state)?;
         let sample = charge_sample_from(id, charge_id, parsed);
         if let Some(open) = state.open_charge.as_mut() {
-            observe_charge_aggregate(open, parsed);
+            observe_charge_aggregate(open, &sample);
             observe_charge_sample(open, &sample);
             open.last_sample_timestamp_ms = Some(sample.timestamp_ms);
         }

@@ -512,9 +512,9 @@ fn open_charge_from_source(
         first_energy_added: None,
         max_energy_added: None,
         last_energy_added: None,
-        last_battery_level: row.end_battery_level.or(row.start_battery_level),
-        last_ideal_range_km: row.end_ideal_range_km.or(row.start_ideal_range_km),
-        last_rated_range_km: row.end_rated_range_km.or(row.start_rated_range_km),
+        last_battery_level: None,
+        last_ideal_range_km: None,
+        last_rated_range_km: None,
         sample_count: 0,
         energy_used_kwh: None,
         last_sample_timestamp_ms: None,
@@ -531,6 +531,17 @@ fn open_charge_from_source(
         samples: Vec::new(),
     };
 
+    // C2 R81 (e), seed clause. The display aggregates start from the process
+    // row's own last values (its end values, else its start values; no maximum
+    // power; a zero sum and count), then fold every sample in sample order
+    // through the one shared step with the live filters, so a negative or
+    // non-finite power and a non-finite value are dropped as they are live.
+    let mut aggregates = ChargeDisplayAggregates {
+        last_battery_level: row.end_battery_level.or(row.start_battery_level),
+        last_ideal_range_km: row.end_ideal_range_km.or(row.start_ideal_range_km),
+        last_rated_range_km: row.end_rated_range_km.or(row.start_rated_range_km),
+        ..ChargeDisplayAggregates::default()
+    };
     let mut ordered = samples.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|sample| (sample.date_ms, sample.id));
     for sample in ordered {
@@ -540,31 +551,23 @@ fn open_charge_from_source(
             open.start_ideal_range_km = open.start_ideal_range_km.or(sample.ideal_range_km);
             open.start_rated_range_km = open.start_rated_range_km.or(sample.rated_range_km);
         }
-        open.last_battery_level = sample.battery_level.or(open.last_battery_level);
-        open.last_ideal_range_km = sample.ideal_range_km.or(open.last_ideal_range_km);
-        open.last_rated_range_km = sample.rated_range_km.or(open.last_rated_range_km);
-        if let Some(power) = sample.charger_power_kw {
-            open.max_charger_power_kw = Some(
-                open.max_charger_power_kw
-                    .map_or(power, |max| max.max(power)),
-            );
-        }
+        fold_charge_display_aggregates(&mut aggregates, &sample);
         // `is_dc` and `fast_charger_type` are written only by
         // `observe_charge_sample` (C2 R9 S2, R31, R32), called below.
-        if let Some(temp) = sample.outside_temp_c {
-            open.outside_temp_sum += temp;
-            open.outside_temp_count = open.outside_temp_count.saturating_add(1);
-        }
         observe_charge_sample(&mut open, &sample);
     }
+    // The temperature override of the seed clause: a process row that carries an
+    // outside-temperature average sets the count to at least one and the sum to
+    // average times count, so the mean reads as the row's average.
+    if let Some(average) = row.outside_temp_avg {
+        let count = aggregates.outside_temp_count.max(1);
+        aggregates.outside_temp_sum = average * f64::from(count);
+        aggregates.outside_temp_count = count;
+    }
+    aggregates.store_into(&mut open);
     // The energy fields are only the fold of the imported samples above (C2
     // R14): the imported process row's own energy columns are never read, so a
     // seeded session and a live one follow one rule.
-    if let Some(average) = row.outside_temp_avg {
-        let count = open.outside_temp_count.max(1);
-        open.outside_temp_sum = average * f64::from(count);
-        open.outside_temp_count = count;
-    }
     open
 }
 

@@ -271,11 +271,6 @@ fn upsert_terrain_provenance(
 /// `charging_processes` watermark marks charge rows as imported (C2 R5).
 const IMPORT_SOURCE_KIND: &str = "teslamate";
 
-/// The `lifecycle_source_watermarks.domain` the imported-session seeding
-/// writes for the imported charge rows of a vehicle (C2 R5, section 12 item
-/// 6): the source table name.
-const CHARGING_PROCESSES_DOMAIN: &str = "charging_processes";
-
 /// Which charge rows of one vehicle are imported (C2 R5): those with
 /// `charge_id <= max_imported_charge_id`, the vehicle's `W(V)`; zero means
 /// none. Every other row is a Hub row.
@@ -317,7 +312,7 @@ fn charge_import_bound(
             params![
                 vehicle_id.to_string(),
                 IMPORT_SOURCE_KIND,
-                CHARGING_PROCESSES_DOMAIN
+                WatermarkDomain::ChargingProcesses.as_str()
             ],
             |row| row.get(0),
         )
