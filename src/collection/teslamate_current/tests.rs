@@ -67,18 +67,25 @@ fn teslamate_current_preserves_source_timestamp_native_km_and_sparse_projection(
     let observations = store
         .current_observations_for_vehicle(vehicle.vehicle_id)
         .unwrap();
-    let summary =
-        build_current_vehicle_summary(vehicle.vehicle_id, &observations, None, None, None);
+    let summary = build_current_vehicle_summary(
+        vehicle.vehicle_id,
+        &observations,
+        None,
+        None,
+        None,
+        1_010_000,
+        600_000,
+    );
     assert_eq!(summary.observed_at_ms, Some(1_000_000));
     assert_eq!(summary.battery_level, Some(73));
     assert_eq!(summary.ideal_battery_range_km, Some(301.25));
     assert_eq!(summary.est_battery_range_km, Some(271.75));
-    assert_eq!(summary.rated_battery_range_km, Some(284.5));
-    assert_eq!(summary.odometer, Some(102_400.75));
+    assert_eq!(summary.battery_range_km, Some(284.5));
+    assert_eq!(summary.odometer_km, Some(102_400.75));
     assert_eq!(summary.latitude, None);
     assert_eq!(summary.longitude, None);
     assert_eq!(summary.charging_state, None);
-    assert_eq!(summary.since, None);
+    assert_eq!(summary.state_since_ms, None);
     let mut old = input.clone();
     old.observed_at_ms -= 10;
     assert!(!store.record_teslamate_current(&old, 1_050_000).unwrap());

@@ -152,7 +152,8 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
 
     let read_only = HubStore::open_read_only(temporary.path()).expect("read-only store");
     assert_eq!(
-        current_vehicle_status_fields(&read_only, observed.vehicle_id).expect("observed status"),
+        current_vehicle_status_fields(&read_only, observed.vehicle_id, 2_001, 600_000)
+            .expect("observed status"),
         CurrentVehicleStatusFields {
             activity_state: Some("online".into()),
             battery_level: Some(81),
@@ -161,7 +162,8 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
         }
     );
     assert_eq!(
-        current_vehicle_status_fields(&read_only, missing.vehicle_id).expect("missing status"),
+        current_vehicle_status_fields(&read_only, missing.vehicle_id, 2_001, 600_000)
+            .expect("missing status"),
         CurrentVehicleStatusFields {
             activity_state: None,
             battery_level: None,
@@ -174,7 +176,8 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
         (asleep.vehicle_id, "asleep"),
     ] {
         assert_eq!(
-            current_vehicle_status_fields(&read_only, vehicle_id).expect("discovery status"),
+            current_vehicle_status_fields(&read_only, vehicle_id, 2_001, 600_000)
+                .expect("discovery status"),
             CurrentVehicleStatusFields {
                 activity_state: Some(state.into()),
                 battery_level: None,

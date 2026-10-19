@@ -488,6 +488,9 @@ async fn plain_server_supervisor_shutdown_gracefully_awaits_listener_stop() {
 #[path = "tests/loopback_access.rs"]
 mod loopback_access;
 
+#[path = "tests/b3_c6_s1.rs"]
+mod b3_c6_s1;
+
 #[tokio::test]
 async fn native_readiness_binds_the_loaded_config_contract_digest() {
     let temporary = crate::private_tempdir().expect("temporary store");
@@ -2042,11 +2045,16 @@ async fn current_vehicle_serves_the_durable_v4_1_1_summary_without_raw_history()
     );
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let current: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert_eq!(current["display_name"], "Rusty");
     assert_eq!(current["battery_level"], 80);
-    assert_eq!(current["download_perc"], 42);
-    assert_eq!(current["service_mode"], true);
-    assert_eq!(current["car"]["marketing_name"], "RWD");
+    // C6-S1 interim. The observation is dated 2 s after the epoch, so the
+    // transient update progress is stale against the Hub's clock (C6 R28 (c));
+    // before the C6 summary it was served. The display name, the service flag
+    // and the stored car view are C6-S2's fields: C6-S2 restores "Rusty", true
+    // and the car view.
+    assert!(current["download_perc"].is_null());
+    assert!(current["display_name"].is_null());
+    assert!(current["service_mode"].is_null());
+    assert!(current["car"].is_null());
     assert_eq!(
         store
             .open()

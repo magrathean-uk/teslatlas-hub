@@ -147,13 +147,17 @@ fn scrub_assert_nothing_stored_or_served(
         None,
         None,
         None,
+        0,
+        600_000,
     );
     assert_eq!(summary.battery_level, Some(80));
-    assert_eq!(summary.charging_state.as_deref(), Some("Charging"));
+    // C6-S1 interim: the charging state and the update status are C6-S2's
+    // fields (`Some("Charging")` and `Some("available")` before the C6 summary).
+    assert_eq!(summary.charging_state.as_deref(), None);
     assert_eq!(summary.display_name, None);
-    assert_eq!(summary.version, None);
-    assert_eq!(summary.update_version, None);
-    assert_eq!(summary.update_status.as_deref(), Some("available"));
+    assert_eq!(summary.software_version, None);
+    assert_eq!(summary.software_update_version, None);
+    assert_eq!(summary.software_update_status.as_deref(), None);
     let served = serde_json::to_string(&summary).expect("summary JSON");
     for secret in secrets {
         assert!(
@@ -645,10 +649,14 @@ fn scrub_assert_discovered_state(
         None,
         lifecycle.as_ref(),
         None,
+        0,
+        600_000,
     );
+    // The activity vocabulary has no `unknown` word: an unknown state is null
+    // (C6 R29).
     assert_eq!(
-        summary.state.as_deref(),
-        Some(expected_current),
+        summary.activity_state.map(|state| state.as_str()),
+        (expected_current != SCRUB_UNKNOWN_STATE).then_some(expected_current),
         "current state of {source_vehicle_key}"
     );
     let stored = serde_json::to_string(&discovery.payload).expect("payload JSON");
@@ -906,7 +914,11 @@ async fn unscrubbed_state_reflection_would_be_stored_so_the_state_scan_is_meanin
         None,
         None,
         None,
+        0,
+        600_000,
     );
-    assert_eq!(summary.state.as_deref(), Some(SCRUB_LEGACY_ACCESS));
+    // The summary serves only its own activity vocabulary, never the provider's
+    // text (C6 R29); the raw-database scan below is the positive control.
+    assert_eq!(summary.activity_state, None);
     assert!(scrub_database_bytes_contain(&store, SCRUB_LEGACY_ACCESS));
 }

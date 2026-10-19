@@ -387,6 +387,11 @@ pub struct AppState {
     /// (`[pairing] device_max_lifetime_days`); the default until
     /// [`AppState::with_device_max_lifetime_ms`] sets the configured one.
     device_max_lifetime_ms: i64,
+    /// The configured `[collector] offline_drive_timeout_seconds` in
+    /// milliseconds, the staleness bound of the current summary's transient
+    /// fields (C6 R71); C1's default until
+    /// [`AppState::with_offline_drive_timeout_ms`] sets the configured one.
+    offline_drive_timeout_ms: i64,
     manifest_signing: Option<Arc<ManifestSigning>>,
     cursor_key: Option<Arc<CursorKey>>,
     native_config_digest: Option<Sha256Digest>,
@@ -590,6 +595,9 @@ impl AppState {
             require_device_auth,
             pairing_claim_enabled,
             device_max_lifetime_ms: PAIRED_DEVICE_MAX_LIFETIME_MS,
+            offline_drive_timeout_ms: crate::current_state::offline_drive_timeout_ms(
+                crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT.as_secs(),
+            ),
             manifest_signing: manifest_signing.map(Arc::new),
             cursor_key: cursor_key.map(Arc::new),
             native_config_digest,
@@ -628,6 +636,13 @@ impl AppState {
     /// The lifetime cap claimed devices get, in milliseconds.
     fn with_device_max_lifetime_ms(mut self, device_max_lifetime_ms: i64) -> Self {
         self.device_max_lifetime_ms = device_max_lifetime_ms;
+        self
+    }
+
+    /// The configured silence tolerance of the current summary, in
+    /// milliseconds (C6 R71).
+    fn with_offline_drive_timeout_ms(mut self, offline_drive_timeout_ms: i64) -> Self {
+        self.offline_drive_timeout_ms = offline_drive_timeout_ms;
         self
     }
 
@@ -864,6 +879,9 @@ fn tls_router_for_config(
             None,
         )
         .with_device_max_lifetime_ms(config.pairing.device_max_lifetime_ms())
+        .with_offline_drive_timeout_ms(crate::current_state::offline_drive_timeout_ms(
+            config.collector.offline_drive_timeout_seconds,
+        ))
         .with_readiness_mode(crate::config::collector_mode(&config.collector)),
         CorsPolicy::for_config(config),
     )
@@ -1287,6 +1305,11 @@ where
                             Some(native_config_digest),
                             fleet_telemetry,
                         )
+                        .with_offline_drive_timeout_ms(
+                            crate::current_state::offline_drive_timeout_ms(
+                                config.collector.offline_drive_timeout_seconds,
+                            ),
+                        )
                         .with_readiness_mode(crate::config::collector_mode(&config.collector)),
                         CorsPolicy::for_config(config),
                     )
@@ -1506,15 +1529,21 @@ async fn current_vehicle(State(state): State<AppState>, uri: Uri, headers: Heade
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
+    let Ok(now_ms) = current_epoch_ms() else {
+        tracing::error!(%vehicle_id, "cannot read the clock for the current vehicle summary");
+        return StatusCode::SERVICE_UNAVAILABLE.into_response();
+    };
     let mut summary = crate::current_state::build_current_vehicle_summary(
         vehicle_id,
         &observations,
         car,
         lifecycle.as_ref(),
         None,
+        now_ms,
+        state.offline_drive_timeout_ms,
     );
     if let (Some(latitude), Some(longitude)) = (summary.latitude, summary.longitude) {
-        summary.geofence = match state
+        summary.geofence_name = match state
             .store
             .geofence_name_at(vehicle_id, latitude, longitude)
         {

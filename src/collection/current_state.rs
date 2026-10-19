@@ -1,445 +1,527 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+//! The current-vehicle summary (C6 Part S1, with Part S2's fields still to
+//! come): one pure function of the stored current rows, the stored car, the
+//! lifecycle record, a geofence label, the Hub's clock and the configured
+//! silence tolerance (C6 R21). Statements, merge, field readers and
+//! transient visibility are in `summary_fields`.
+
 use serde::Serialize;
-use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use crate::{
     db::{LifecycleStateRecord, ObservationRecord},
-    hub_pack::{ProjectionCar, normalize_tesla_model_code},
-    lifecycle::OpenSessionState,
+    hub_pack::ProjectionCar,
+    lifecycle::{miles_to_km, miles_to_km_rounded, mph_to_kmh, round_to_precision},
 };
 
+mod summary_fields;
+use summary_fields::{
+    Class, Fields, Statements, Visibility, accepted_rows, activity_state, exact_integer,
+    lifecycle_view, newest_observed_at_ms, number, shift_state, state_since_ms,
+};
+
+/// The activity vocabulary of the summary (C6 R29).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ActivityState {
+    Online,
+    Asleep,
+    Offline,
+    Driving,
+    Charging,
+    Updating,
+}
+
+impl ActivityState {
+    /// The lowercase vocabulary word.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Online => "online",
+            Self::Asleep => "asleep",
+            Self::Offline => "offline",
+            Self::Driving => "driving",
+            Self::Charging => "charging",
+            Self::Updating => "updating",
+        }
+    }
+}
+
+/// The settings view of the stored car under its served names (C6 R49).
+/// Filled by C6-S2 with the car view.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CurrentCarSettingsView {
+    pub collection_enabled: bool,
+    pub streaming_enabled: bool,
+    pub sleep_window_min: i64,
+    pub sleep_after_idle_min: i64,
+    pub sleep_window_min_resolved: bool,
+    pub sleep_requires_locked: bool,
+    pub supercharging_free: bool,
+    pub battery_lfp: bool,
+}
+
+/// The stored car as the summary shows it (C6 R40, R48). Filled by C6-S2.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct CurrentCarView {
+    pub id: i64,
+    pub name: String,
+    pub vin: Option<String>,
+    pub model_code: Option<String>,
+    /// The stored model text, served under the alias `car.model` (C6 R50).
+    #[serde(skip)]
+    pub stored_model_text: String,
+    pub model_name: Option<&'static str>,
+    pub model_year: Option<i32>,
+    pub trim_badging: Option<String>,
+    pub variant_name: Option<String>,
+    pub exterior_color: Option<String>,
+    pub wheel_type: Option<String>,
+    pub spoiler_type: Option<String>,
+    pub firmware_version: Option<String>,
+    pub api_vehicle_id: Option<i64>,
+    pub stream_vehicle_id: Option<i64>,
+    pub efficiency_wh_per_km: Option<f64>,
+    pub settings: CurrentCarSettingsView,
+}
+
+/// The summary. Every field is one key of the published contract and is
+/// emitted as JSON null when unknown (C6 R42). Fields are held under their
+/// 1.3.0 names (C6 R47); until C6-C1 writes the hand-made serialiser with the
+/// aliases (C6 R50), the derived `Serialize` below keeps serving the 1.2.0 key
+/// names and shape, so the HTTP body stays a valid 1.2.0 body in between. The
+/// keys that 1.2.0 has no name for are skipped.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CurrentVehicleSummary {
     pub vehicle_id: Uuid,
     pub observed_at_ms: Option<i64>,
-    pub car: Option<ProjectionCar>,
+    #[serde(rename = "state")]
+    pub activity_state: Option<ActivityState>,
+    #[serde(rename = "since")]
+    pub state_since_ms: Option<i64>,
+    #[serde(rename = "healthy")]
+    pub processing_healthy: Option<bool>,
+    #[serde(rename = "geofence")]
+    pub geofence_name: Option<String>,
+    // Descriptor and car view: C6-S2.
     pub display_name: Option<String>,
-    pub state: Option<String>,
-    pub since: Option<i64>,
-    pub healthy: Option<bool>,
-    pub latitude: Option<f64>,
-    pub longitude: Option<f64>,
-    pub heading: Option<f64>,
-    pub battery_level: Option<i64>,
-    pub charging_state: Option<String>,
-    pub usable_battery_level: Option<i64>,
-    pub ideal_battery_range_km: Option<f64>,
-    pub est_battery_range_km: Option<f64>,
-    pub rated_battery_range_km: Option<f64>,
-    pub charge_energy_added: Option<f64>,
-    pub speed: Option<i64>,
-    pub outside_temp: Option<f64>,
-    pub inside_temp: Option<f64>,
-    pub is_climate_on: Option<bool>,
-    pub is_preconditioning: Option<bool>,
-    pub locked: Option<bool>,
-    pub sentry_mode: Option<bool>,
-    pub plugged_in: Option<bool>,
-    pub scheduled_charging_start_time: Option<i64>,
-    pub charge_limit_soc: Option<i64>,
-    pub charger_power: Option<f64>,
-    pub windows_open: Option<bool>,
-    pub driver_front_window_open: Option<bool>,
-    pub driver_rear_window_open: Option<bool>,
-    pub passenger_front_window_open: Option<bool>,
-    pub passenger_rear_window_open: Option<bool>,
-    pub doors_open: Option<bool>,
-    pub driver_front_door_open: Option<bool>,
-    pub driver_rear_door_open: Option<bool>,
-    pub passenger_front_door_open: Option<bool>,
-    pub passenger_rear_door_open: Option<bool>,
-    pub odometer: Option<f64>,
-    pub shift_state: Option<String>,
-    pub charge_port_door_open: Option<bool>,
-    pub time_to_full_charge: Option<f64>,
-    pub charger_phases: Option<i64>,
-    pub charger_actual_current: Option<f64>,
-    pub charger_voltage: Option<f64>,
-    pub version: Option<String>,
-    pub update_available: Option<bool>,
-    pub update_version: Option<String>,
-    pub update_status: Option<String>,
-    pub is_user_present: Option<bool>,
-    pub geofence: Option<String>,
-    pub model: Option<String>,
+    #[serde(rename = "model")]
+    pub model_code: Option<String>,
+    #[serde(skip)]
+    pub model_name: Option<&'static str>,
+    #[serde(skip)]
+    pub model_year: Option<i32>,
     pub trim_badging: Option<String>,
     pub exterior_color: Option<String>,
     pub wheel_type: Option<String>,
     pub spoiler_type: Option<String>,
-    pub trunk_open: Option<bool>,
-    pub frunk_open: Option<bool>,
+    pub car: Option<CurrentCarView>,
+    // Drive state.
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub heading: Option<f64>,
     pub elevation: Option<f64>,
+    #[serde(rename = "speed")]
+    pub speed_kmh: Option<i64>,
     pub power: Option<f64>,
+    pub shift_state: Option<String>,
+    pub active_route_destination: Option<String>,
+    pub active_route_latitude: Option<f64>,
+    pub active_route_longitude: Option<f64>,
+    #[serde(skip)]
+    pub active_route_km_to_arrival: Option<f64>,
+    /// Tesla's miles value, the alias value of C6 R50.
+    #[serde(rename = "active_route_miles_to_arrival")]
+    pub active_route_miles_to_arrival_raw: Option<f64>,
+    pub active_route_minutes_to_arrival: Option<f64>,
+    pub active_route_traffic_minutes_delay: Option<f64>,
+    pub active_route_energy_at_arrival: Option<f64>,
+    // Charge state.
+    pub battery_level: Option<i64>,
+    pub usable_battery_level: Option<i64>,
+    #[serde(rename = "rated_battery_range_km")]
+    pub battery_range_km: Option<f64>,
+    pub ideal_battery_range_km: Option<f64>,
+    pub est_battery_range_km: Option<f64>,
+    pub charge_limit_soc: Option<i64>,
+    pub charge_energy_added: Option<f64>,
     pub charge_current_request: Option<i64>,
     pub charge_current_request_max: Option<i64>,
-    pub tpms_pressure_fl: Option<f64>,
-    pub tpms_pressure_fr: Option<f64>,
-    pub tpms_pressure_rl: Option<f64>,
-    pub tpms_pressure_rr: Option<f64>,
+    pub scheduled_charging_start_time: Option<i64>,
+    pub charge_port_door_open: Option<bool>,
+    // C6-S2.
+    pub charging_state: Option<String>,
+    #[serde(rename = "plugged_in")]
+    pub charge_cable_connected: Option<bool>,
+    pub charger_power: Option<f64>,
+    pub charger_voltage: Option<f64>,
+    pub charger_actual_current: Option<f64>,
+    pub charger_phases: Option<i64>,
+    pub time_to_full_charge: Option<f64>,
+    // Climate state.
+    pub inside_temp: Option<f64>,
+    pub outside_temp: Option<f64>,
+    pub is_climate_on: Option<bool>,
+    pub is_preconditioning: Option<bool>,
+    pub climate_keeper_mode: Option<String>,
+    // Vehicle state.
+    #[serde(rename = "odometer")]
+    pub odometer_km: Option<f64>,
+    pub locked: Option<bool>,
     pub tpms_soft_warning_fl: Option<bool>,
     pub tpms_soft_warning_fr: Option<bool>,
     pub tpms_soft_warning_rl: Option<bool>,
     pub tpms_soft_warning_rr: Option<bool>,
-    pub climate_keeper_mode: Option<String>,
-    pub active_route_destination: Option<String>,
-    pub active_route_latitude: Option<f64>,
-    pub active_route_longitude: Option<f64>,
-    pub active_route_energy_at_arrival: Option<f64>,
-    pub active_route_miles_to_arrival: Option<f64>,
-    pub active_route_minutes_to_arrival: Option<f64>,
-    pub active_route_traffic_minutes_delay: Option<f64>,
+    pub sentry_mode: Option<bool>,
+    pub is_user_present: Option<bool>,
     pub center_display_state: Option<i64>,
-    pub service_mode: Option<bool>,
-    pub sun_roof_state: Option<String>,
-    pub sun_roof_installed: Option<bool>,
     pub sun_roof_percent_open: Option<i64>,
-    pub download_perc: Option<i64>,
-    pub install_perc: Option<i64>,
+    pub sun_roof_state: Option<String>,
+    pub tpms_pressure_fl: Option<f64>,
+    pub tpms_pressure_fr: Option<f64>,
+    pub tpms_pressure_rl: Option<f64>,
+    pub tpms_pressure_rr: Option<f64>,
+    pub sun_roof_installed: Option<bool>,
+    // Doors, windows and trunks: C6-S2.
+    #[serde(rename = "doors_open")]
+    pub any_door_open: Option<bool>,
+    #[serde(rename = "driver_front_door_open")]
+    pub door_driver_front_open: Option<bool>,
+    #[serde(rename = "driver_rear_door_open")]
+    pub door_driver_rear_open: Option<bool>,
+    #[serde(rename = "passenger_front_door_open")]
+    pub door_passenger_front_open: Option<bool>,
+    #[serde(rename = "passenger_rear_door_open")]
+    pub door_passenger_rear_open: Option<bool>,
+    #[serde(rename = "windows_open")]
+    pub any_window_open: Option<bool>,
+    #[serde(rename = "driver_front_window_open")]
+    pub window_driver_front_open: Option<bool>,
+    #[serde(rename = "driver_rear_window_open")]
+    pub window_driver_rear_open: Option<bool>,
+    #[serde(rename = "passenger_front_window_open")]
+    pub window_passenger_front_open: Option<bool>,
+    #[serde(rename = "passenger_rear_window_open")]
+    pub window_passenger_rear_open: Option<bool>,
+    #[serde(rename = "frunk_open")]
+    pub front_trunk_open: Option<bool>,
+    #[serde(rename = "trunk_open")]
+    pub rear_trunk_open: Option<bool>,
+    // Software and service: C6-S2, except the two progress values.
+    #[serde(rename = "version")]
+    pub software_version: Option<String>,
+    #[serde(rename = "update_available")]
+    pub software_update_available: Option<bool>,
+    #[serde(rename = "update_status")]
+    pub software_update_status: Option<String>,
+    #[serde(rename = "update_version")]
+    pub software_update_version: Option<String>,
+    #[serde(rename = "download_perc")]
+    pub software_update_download_perc: Option<i64>,
+    #[serde(rename = "install_perc")]
+    pub software_update_install_perc: Option<i64>,
+    pub service_mode: Option<bool>,
 }
 
+/// The configured silence tolerance, `[collector] offline_drive_timeout_seconds`,
+/// as the `transient_max_age_ms` argument of
+/// [`build_current_vehicle_summary`] (C6 R21, R71): seconds times 1,000,
+/// saturating. Every caller that holds the configuration converts through this
+/// one function.
+pub fn offline_drive_timeout_ms(offline_drive_timeout_seconds: u64) -> i64 {
+    i64::try_from(offline_drive_timeout_seconds)
+        .unwrap_or(i64::MAX)
+        .saturating_mul(1_000)
+}
+
+/// Build the current summary of one vehicle (C6 R21). Pure: it reads no clock,
+/// storage, configuration or randomness and logs nothing, and its output does
+/// not depend on the order of `observations`. `now_ms` is the Hub's wall clock;
+/// `transient_max_age_ms` is the configured `T_gap` (a value of 0 or less reads
+/// as the default, C1's `DEFAULT_OFFLINE_DRIVE_TIMEOUT`). `car` is read by C6-S2.
+/// The label in `geofence` is kept only for a known coordinate pair (C6 R41).
 pub fn build_current_vehicle_summary(
     vehicle_id: Uuid,
     observations: &[ObservationRecord],
-    car: Option<ProjectionCar>,
+    _car: Option<ProjectionCar>,
     lifecycle: Option<&LifecycleStateRecord>,
     geofence: Option<String>,
+    now_ms: i64,
+    transient_max_age_ms: i64,
 ) -> CurrentVehicleSummary {
-    // A TeslaMate position is one sparse, coherent sample in native km units.
-    // Never give older provider fields the timestamp of this newer source row.
-    if let Some(latest) = observations
-        .iter()
-        .max_by_key(|record| (record.observed_at_ms, record.observation_id))
-        && latest.payload.get("record_type").and_then(Value::as_str)
-            == Some("teslamate_position_v1")
-    {
-        let mut summary = build_current_vehicle_summary(vehicle_id, &[], car, None, None);
-        summary.observed_at_ms = Some(latest.observed_at_ms);
-        summary.healthy = None;
-        let fields = latest.payload.as_object();
-        summary.battery_level = integer(fields, "battery_level");
-        summary.ideal_battery_range_km = number(fields, "ideal_battery_range_km");
-        summary.est_battery_range_km = number(fields, "est_battery_range_km");
-        summary.rated_battery_range_km = number(fields, "rated_battery_range_km");
-        summary.odometer = number(fields, "odometer_km");
-        return summary;
-    }
-    let owner = latest_observation_of_types(
-        observations,
-        &["owner_api_vehicle_data_v1", "fleet_api_vehicle_data_v1"],
+    let rows = accepted_rows(vehicle_id, observations);
+    let statements = Statements::collect(&rows);
+    let lifecycle = lifecycle_view(lifecycle);
+    let activity = activity_state(lifecycle.state.as_ref(), &rows);
+    let observed_at_ms = newest_observed_at_ms(&rows);
+    let fields = Fields::new(
+        &statements,
+        Visibility::new(
+            activity,
+            lifecycle.state.as_ref(),
+            observed_at_ms,
+            now_ms,
+            transient_max_age_ms,
+        ),
     );
-    let stream = observation(observations, "tesla_stream_update_v1");
-    let discovery = latest_observation_of_types(
-        observations,
-        &["owner_api_discovery_v1", "fleet_api_discovery_v1"],
+    let (persistent, transient) = (Class::Persistent, Class::Transient);
+
+    let coordinates = fields.pair(persistent, "drive_state.latitude", "drive_state.longitude");
+    let route = fields.pair(
+        transient,
+        "drive_state.active_route_latitude",
+        "drive_state.active_route_longitude",
     );
-    // Discovery proves current presence/state, but cannot refresh older owner
-    // or stream telemetry. Keep the projected car identity independently.
-    let owner = owner.filter(|record| {
-        discovery.is_none_or(|discovery| record.observed_at_ms >= discovery.observed_at_ms)
-    });
-    let stream = stream.filter(|record| {
-        discovery.is_none_or(|discovery| record.observed_at_ms >= discovery.observed_at_ms)
-    });
-    let mut vehicle_data = owner
-        .and_then(|record| provider_vehicle_data(&record.payload))
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    if stream.is_some_and(|stream| {
-        owner.is_none_or(|owner| stream.observed_at_ms >= owner.observed_at_ms)
-    }) && let Some(fields) = stream
-        .and_then(|record| record.payload.get("fields"))
-        .and_then(Value::as_object)
-    {
-        merge_non_null_objects(&mut vehicle_data, fields);
-    }
-
-    let drive = object(Some(&vehicle_data), "drive_state");
-    let charge = object(Some(&vehicle_data), "charge_state");
-    let climate = object(Some(&vehicle_data), "climate_state");
-    let vehicle = object(Some(&vehicle_data), "vehicle_state");
-    let config = object(Some(&vehicle_data), "vehicle_config");
-    let update = vehicle.and_then(|value| object(Some(value), "software_update"));
-    let open =
-        lifecycle.and_then(|record| OpenSessionState::decode(&record.open_session_json).ok());
-    let lifecycle_is_current = discovery.is_none_or(|discovery| {
-        lifecycle
-            .zip(open.as_ref())
-            .and_then(|(record, state)| {
-                state
-                    .last_observed_at_ms
-                    .map(|observed_at_ms| (record.last_observation_id, observed_at_ms))
-            })
-            .is_some_and(|(observation_id, observed_at_ms)| {
-                (observed_at_ms, observation_id)
-                    >= (discovery.observed_at_ms, discovery.observation_id)
-            })
-    });
-    let newest = observations
-        .iter()
-        .max_by_key(|record| (record.observed_at_ms, record.observation_id));
-    let source_state = newest
-        .or(owner)
-        .or(discovery)
-        .and_then(|record| text(record.payload.as_object(), "source_vehicle_state"));
-    let state = open
-        .as_ref()
-        .filter(|_| lifecycle_is_current)
-        .and_then(|state| state.open_state.as_ref().map(|state| state.state.clone()))
-        .or(source_state)
-        .or_else(|| Some("unavailable".to_owned()));
-    let since = open
-        .as_ref()
-        .filter(|_| lifecycle_is_current)
-        .and_then(|state| state.open_state.as_ref().map(|state| state.start_date_ms));
-
-    let windows = ["fd_window", "rd_window", "fp_window", "rp_window"]
-        .map(|field| open_indicator(vehicle, field));
-    let doors = ["df", "dr", "pf", "pr"].map(|field| open_indicator(vehicle, field));
-    let charging_state = text(charge, "charging_state");
-    let software_status = text(update, "status");
-    let raw_model = text(config, "car_type");
-    let model = car
-        .as_ref()
-        .map(|car| car.model.clone())
-        .or_else(|| raw_model.as_deref().map(normalize_tesla_model_code));
-    let display_name = owner
-        .and_then(|record| text(record.payload.as_object(), "display_name"))
-        .or_else(|| text(Some(&vehicle_data), "display_name"))
-        .or_else(|| car.as_ref().map(|car| car.name.clone()));
-    let car_version = text(vehicle, "car_version");
-    let update_version = text(update, "version").and_then(first_word);
-    let latitude = number(drive, "latitude").or_else(|| number(drive, "est_lat"));
-    let longitude = number(drive, "longitude").or_else(|| number(drive, "est_lng"));
+    // Rated, ideal and estimated range: Tesla's miles, or the import source's
+    // kilometres, at two decimals (C6 R27).
+    let range_km = |candidates: [&str; 2]| {
+        fields.with(persistent, &candidates, |statement| {
+            let value = number(statement.value)?;
+            let km = if statement.is_import() {
+                round_to_precision(value, 2)
+            } else {
+                miles_to_km_rounded(value, 2)
+            };
+            (0.0..=9_999.99).contains(&km).then_some(km + 0.0)
+        })
+    };
+    let temperature = |candidate: &str| fields.scaled(transient, candidate, 1, -999.9..=999.9);
+    let pressure = |candidate: &str| fields.scaled(persistent, candidate, 1, 0.0..=999.9);
+    let non_negative = 0.0..=f64::MAX;
 
     CurrentVehicleSummary {
         vehicle_id,
-        observed_at_ms: newest.map(|record| record.observed_at_ms),
-        car: car.clone(),
-        display_name,
-        state,
-        since,
-        healthy: Some(lifecycle.is_some_and(|record| !record.quarantined)),
-        latitude,
-        longitude,
-        heading: number(drive, "heading").or_else(|| number(drive, "est_heading")),
-        battery_level: integer(charge, "battery_level"),
-        charging_state: charging_state.clone(),
-        usable_battery_level: integer(charge, "usable_battery_level"),
-        ideal_battery_range_km: miles_to_km(number(charge, "ideal_battery_range")),
-        est_battery_range_km: miles_to_km(number(charge, "est_battery_range")),
-        rated_battery_range_km: miles_to_km(number(charge, "battery_range")),
-        charge_energy_added: number(charge, "charge_energy_added"),
-        speed: number(drive, "speed").map(mph_to_kmh),
-        outside_temp: number(climate, "outside_temp"),
-        inside_temp: number(climate, "inside_temp"),
-        is_climate_on: boolean(climate, "is_climate_on"),
-        is_preconditioning: boolean(climate, "is_preconditioning"),
-        locked: boolean(vehicle, "locked"),
-        sentry_mode: boolean(vehicle, "sentry_mode"),
-        plugged_in: charging_state.as_deref().map(|state| {
-            !state.eq_ignore_ascii_case("disconnected") && !state.eq_ignore_ascii_case("unplugged")
+        observed_at_ms,
+        activity_state: activity,
+        state_since_ms: state_since_ms(activity, lifecycle.state.as_ref()),
+        processing_healthy: lifecycle.processing_healthy,
+        geofence_name: coordinates.and(geofence),
+        display_name: None,
+        model_code: None,
+        model_name: None,
+        model_year: None,
+        trim_badging: None,
+        exterior_color: None,
+        wheel_type: None,
+        spoiler_type: None,
+        car: None,
+        latitude: coordinates.map(|(latitude, _)| latitude),
+        longitude: coordinates.map(|(_, longitude)| longitude),
+        heading: fields.plain(persistent, "drive_state.heading", 0.0..=360.0),
+        elevation: fields.elevation(),
+        speed_kmh: fields.with(transient, &["drive_state.speed"], |statement| {
+            let kmh = mph_to_kmh(number(statement.value)?);
+            (0..=32_767).contains(&kmh).then_some(kmh)
         }),
-        scheduled_charging_start_time: integer(charge, "scheduled_charging_start_time"),
-        charge_limit_soc: integer(charge, "charge_limit_soc"),
-        charger_power: number(charge, "charger_power"),
-        windows_open: all_known_any_open(windows),
-        driver_front_window_open: windows[0],
-        driver_rear_window_open: windows[1],
-        passenger_front_window_open: windows[2],
-        passenger_rear_window_open: windows[3],
-        doors_open: all_known_any_open(doors),
-        driver_front_door_open: doors[0],
-        driver_rear_door_open: doors[1],
-        passenger_front_door_open: doors[2],
-        passenger_rear_door_open: doors[3],
-        odometer: miles_to_km(number(vehicle, "odometer")),
-        shift_state: text(drive, "shift_state"),
-        charge_port_door_open: boolean(charge, "charge_port_door_open"),
-        time_to_full_charge: number(charge, "time_to_full_charge"),
-        charger_phases: integer(charge, "charger_phases").filter(|phases| *phases > 0),
-        charger_actual_current: number(charge, "charger_actual_current"),
-        charger_voltage: number(charge, "charger_voltage"),
-        version: car_version.and_then(first_word),
-        update_available: software_status.as_deref().map(|status| {
-            matches!(
-                status,
-                "available" | "downloading" | "downloading_wifi_wait" | "scheduled" | "installing"
-            )
+        power: fields.int_number(transient, "drive_state.power", -32_768, 32_767),
+        shift_state: fields.with(transient, &["drive_state.shift_state"], |statement| {
+            shift_state(statement.value)
         }),
-        update_version,
-        update_status: software_status,
-        is_user_present: boolean(vehicle, "is_user_present"),
-        geofence,
-        model,
-        trim_badging: car
-            .as_ref()
-            .and_then(|car| car.trim_badging.clone())
-            .or_else(|| text(config, "trim_badging")),
-        exterior_color: car
-            .as_ref()
-            .and_then(|car| car.exterior_color.clone())
-            .or_else(|| text(config, "exterior_color")),
-        wheel_type: car
-            .as_ref()
-            .and_then(|car| car.wheel_type.clone())
-            .or_else(|| text(config, "wheel_type")),
-        spoiler_type: car
-            .as_ref()
-            .and_then(|car| car.spoiler_type.clone())
-            .or_else(|| text(config, "spoiler_type")),
-        trunk_open: open_indicator(vehicle, "rt"),
-        frunk_open: open_indicator(vehicle, "ft"),
-        elevation: number(drive, "native_location_elevation")
-            .or_else(|| number(drive, "elevation")),
-        power: number(drive, "power"),
-        charge_current_request: integer(charge, "charge_current_request"),
-        charge_current_request_max: integer(charge, "charge_current_request_max"),
-        tpms_pressure_fl: number(vehicle, "tpms_pressure_fl"),
-        tpms_pressure_fr: number(vehicle, "tpms_pressure_fr"),
-        tpms_pressure_rl: number(vehicle, "tpms_pressure_rl"),
-        tpms_pressure_rr: number(vehicle, "tpms_pressure_rr"),
-        tpms_soft_warning_fl: boolean(vehicle, "tpms_soft_warning_fl"),
-        tpms_soft_warning_fr: boolean(vehicle, "tpms_soft_warning_fr"),
-        tpms_soft_warning_rl: boolean(vehicle, "tpms_soft_warning_rl"),
-        tpms_soft_warning_rr: boolean(vehicle, "tpms_soft_warning_rr"),
-        climate_keeper_mode: text(climate, "climate_keeper_mode"),
-        active_route_destination: text(drive, "active_route_destination"),
-        active_route_latitude: number(drive, "active_route_latitude"),
-        active_route_longitude: number(drive, "active_route_longitude"),
-        active_route_energy_at_arrival: number(drive, "active_route_energy_at_arrival"),
-        active_route_miles_to_arrival: number(drive, "active_route_miles_to_arrival"),
-        active_route_minutes_to_arrival: number(drive, "active_route_minutes_to_arrival"),
-        active_route_traffic_minutes_delay: number(drive, "active_route_traffic_minutes_delay"),
-        center_display_state: integer(vehicle, "center_display_state"),
-        service_mode: boolean(vehicle, "service_mode")
-            .or_else(|| open.as_ref().and_then(|state| state.service_mode)),
-        sun_roof_state: text(vehicle, "sun_roof_state"),
-        sun_roof_installed: integer(config, "sun_roof_installed").map(|value| value > 0),
-        sun_roof_percent_open: integer(vehicle, "sun_roof_percent_open"),
-        download_perc: integer(update, "download_perc"),
-        install_perc: integer(update, "install_perc"),
+        active_route_destination: fields.text(transient, "drive_state.active_route_destination"),
+        active_route_latitude: route.map(|(latitude, _)| latitude),
+        active_route_longitude: route.map(|(_, longitude)| longitude),
+        active_route_km_to_arrival: fields.with(
+            transient,
+            &["drive_state.active_route_miles_to_arrival"],
+            |statement| {
+                let miles = number(statement.value).filter(|miles| *miles >= 0.0)?;
+                // A finite input can still overflow the conversion (C6 R27).
+                let km = miles_to_km_rounded(miles, 2);
+                km.is_finite().then_some(km)
+            },
+        ),
+        active_route_miles_to_arrival_raw: fields.plain(
+            transient,
+            "drive_state.active_route_miles_to_arrival",
+            non_negative.clone(),
+        ),
+        active_route_minutes_to_arrival: fields.plain(
+            transient,
+            "drive_state.active_route_minutes_to_arrival",
+            non_negative.clone(),
+        ),
+        active_route_traffic_minutes_delay: fields.plain(
+            transient,
+            "drive_state.active_route_traffic_minutes_delay",
+            non_negative.clone(),
+        ),
+        active_route_energy_at_arrival: fields.plain(
+            transient,
+            "drive_state.active_route_energy_at_arrival",
+            f64::MIN..=f64::MAX,
+        ),
+        battery_level: fields.with(
+            persistent,
+            &[
+                "charge_state.battery_level",
+                "import_position.battery_level",
+            ],
+            |statement| summary_fields::integer(statement.value, 0, 100),
+        ),
+        usable_battery_level: fields.int(persistent, "charge_state.usable_battery_level", 0, 100),
+        battery_range_km: range_km([
+            "charge_state.battery_range",
+            "import_position.rated_battery_range_km",
+        ]),
+        ideal_battery_range_km: range_km([
+            "charge_state.ideal_battery_range",
+            "import_position.ideal_battery_range_km",
+        ]),
+        est_battery_range_km: range_km([
+            "charge_state.est_battery_range",
+            "import_position.est_battery_range_km",
+        ]),
+        charge_limit_soc: fields.int(persistent, "charge_state.charge_limit_soc", 0, 100),
+        charge_energy_added: fields.scaled(
+            persistent,
+            "charge_state.charge_energy_added",
+            2,
+            0.0..=999_999.99,
+        ),
+        charge_current_request: fields.int(
+            persistent,
+            "charge_state.charge_current_request",
+            0,
+            i64::MAX,
+        ),
+        charge_current_request_max: fields.int(
+            persistent,
+            "charge_state.charge_current_request_max",
+            0,
+            i64::MAX,
+        ),
+        scheduled_charging_start_time: fields.int(
+            persistent,
+            "charge_state.scheduled_charging_start_time",
+            0,
+            i64::MAX,
+        ),
+        charge_port_door_open: fields.flag(persistent, "charge_state.charge_port_door_open"),
+        charging_state: None,
+        charge_cable_connected: None,
+        charger_power: fields.int_number(transient, "charge_state.charger_power", -32_768, 32_767),
+        charger_voltage: fields.int_number(
+            transient,
+            "charge_state.charger_voltage",
+            -32_768,
+            32_767,
+        ),
+        charger_actual_current: fields.int_number(
+            transient,
+            "charge_state.charger_actual_current",
+            -32_768,
+            32_767,
+        ),
+        charger_phases: fields.int(transient, "charge_state.charger_phases", 0, 32_767),
+        time_to_full_charge: fields.plain(
+            transient,
+            "charge_state.time_to_full_charge",
+            non_negative,
+        ),
+        inside_temp: temperature("climate_state.inside_temp"),
+        outside_temp: temperature("climate_state.outside_temp"),
+        is_climate_on: fields.flag(transient, "climate_state.is_climate_on"),
+        is_preconditioning: fields.flag(transient, "climate_state.is_preconditioning"),
+        climate_keeper_mode: fields.text(transient, "climate_state.climate_keeper_mode"),
+        odometer_km: fields.with(
+            persistent,
+            &["vehicle_state.odometer", "import_position.odometer_km"],
+            |statement| {
+                let value = number(statement.value)?;
+                let km = if statement.is_import() {
+                    value
+                } else {
+                    miles_to_km(value)
+                };
+                (km.is_finite() && km >= 0.0).then_some(km + 0.0)
+            },
+        ),
+        locked: fields.flag(persistent, "vehicle_state.locked"),
+        tpms_soft_warning_fl: fields.flag(persistent, "vehicle_state.tpms_soft_warning_fl"),
+        tpms_soft_warning_fr: fields.flag(persistent, "vehicle_state.tpms_soft_warning_fr"),
+        tpms_soft_warning_rl: fields.flag(persistent, "vehicle_state.tpms_soft_warning_rl"),
+        tpms_soft_warning_rr: fields.flag(persistent, "vehicle_state.tpms_soft_warning_rr"),
+        sentry_mode: fields.flag(transient, "vehicle_state.sentry_mode"),
+        is_user_present: fields.flag(transient, "vehicle_state.is_user_present"),
+        center_display_state: fields.with(
+            transient,
+            &["vehicle_state.center_display_state"],
+            |statement| {
+                let code = exact_integer(statement.value)?;
+                (0.0..i64::MAX as f64)
+                    .contains(&code)
+                    .then_some(code as i64)
+            },
+        ),
+        sun_roof_percent_open: fields.int(
+            persistent,
+            "vehicle_state.sun_roof_percent_open",
+            0,
+            100,
+        ),
+        sun_roof_state: fields.text(persistent, "vehicle_state.sun_roof_state"),
+        tpms_pressure_fl: pressure("vehicle_state.tpms_pressure_fl"),
+        tpms_pressure_fr: pressure("vehicle_state.tpms_pressure_fr"),
+        tpms_pressure_rl: pressure("vehicle_state.tpms_pressure_rl"),
+        tpms_pressure_rr: pressure("vehicle_state.tpms_pressure_rr"),
+        // A boolean as given; Tesla's equipment code reads 0 as absent and any
+        // other exact integer as fitted (C6 R27).
+        sun_roof_installed: fields.with(
+            persistent,
+            &["vehicle_config.sun_roof_installed"],
+            |statement| match statement.value.as_bool() {
+                Some(fitted) => Some(fitted),
+                None => exact_integer(statement.value).map(|code| code != 0.0),
+            },
+        ),
+        any_door_open: None,
+        door_driver_front_open: None,
+        door_driver_rear_open: None,
+        door_passenger_front_open: None,
+        door_passenger_rear_open: None,
+        any_window_open: None,
+        window_driver_front_open: None,
+        window_driver_rear_open: None,
+        window_passenger_front_open: None,
+        window_passenger_rear_open: None,
+        front_trunk_open: None,
+        rear_trunk_open: None,
+        software_version: None,
+        software_update_available: None,
+        software_update_status: None,
+        software_update_version: None,
+        software_update_download_perc: fields.int(
+            transient,
+            "vehicle_state.software_update.download_perc",
+            0,
+            100,
+        ),
+        software_update_install_perc: fields.int(
+            transient,
+            "vehicle_state.software_update.install_perc",
+            0,
+            100,
+        ),
+        service_mode: None,
     }
-}
-
-fn observation<'a>(
-    observations: &'a [ObservationRecord],
-    record_type: &str,
-) -> Option<&'a ObservationRecord> {
-    observations.iter().find(|record| {
-        record.payload.get("record_type").and_then(Value::as_str) == Some(record_type)
-    })
-}
-
-fn latest_observation_of_types<'a>(
-    observations: &'a [ObservationRecord],
-    record_types: &[&str],
-) -> Option<&'a ObservationRecord> {
-    observations
-        .iter()
-        .filter(|record| {
-            record
-                .payload
-                .get("record_type")
-                .and_then(Value::as_str)
-                .is_some_and(|record_type| record_types.contains(&record_type))
-        })
-        .max_by_key(|record| (record.observed_at_ms, record.observation_id))
-}
-
-fn provider_vehicle_data(payload: &Value) -> Option<&Value> {
-    payload.get("vehicle_data").or_else(|| {
-        payload
-            .get("provider_raw_json")
-            .and_then(|raw| raw.get("response"))
-    })
-}
-
-fn merge_non_null_objects(target: &mut Map<String, Value>, source: &Map<String, Value>) {
-    for (key, value) in source {
-        if value.is_null() {
-            continue;
-        }
-        if let (Some(target), Some(source)) = (
-            target.get_mut(key).and_then(Value::as_object_mut),
-            value.as_object(),
-        ) {
-            merge_non_null_objects(target, source);
-        } else {
-            target.insert(key.clone(), value.clone());
-        }
-    }
-}
-
-fn object<'a>(map: Option<&'a Map<String, Value>>, key: &str) -> Option<&'a Map<String, Value>> {
-    map.and_then(|map| map.get(key)).and_then(Value::as_object)
-}
-
-fn text(map: Option<&Map<String, Value>>, key: &str) -> Option<String> {
-    map.and_then(|map| map.get(key))
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty() && value.len() <= 512)
-        .map(str::to_owned)
-}
-
-fn number(map: Option<&Map<String, Value>>, key: &str) -> Option<f64> {
-    map.and_then(|map| map.get(key))
-        .and_then(Value::as_f64)
-        .filter(|value| value.is_finite())
-}
-
-fn integer(map: Option<&Map<String, Value>>, key: &str) -> Option<i64> {
-    let value = map.and_then(|map| map.get(key))?;
-    // The stream delivers fractional values as JSON numbers (C4 R16, R48), and an
-    // integer column reads any finite number rounded to the nearest whole value.
-    value
-        .as_i64()
-        .or_else(|| value.as_u64().and_then(|value| i64::try_from(value).ok()))
-        .or_else(|| {
-            let rounded = value.as_f64()?.round();
-            (rounded.is_finite() && rounded >= i64::MIN as f64 && rounded < i64::MAX as f64)
-                .then_some(rounded as i64)
-        })
-}
-
-fn boolean(map: Option<&Map<String, Value>>, key: &str) -> Option<bool> {
-    map.and_then(|map| map.get(key)).and_then(Value::as_bool)
-}
-
-fn open_indicator(map: Option<&Map<String, Value>>, key: &str) -> Option<bool> {
-    number(map, key).map(|value| value > 0.0)
-}
-
-fn all_known_any_open(values: [Option<bool>; 4]) -> Option<bool> {
-    values
-        .iter()
-        .all(Option::is_some)
-        .then(|| values.into_iter().flatten().any(|value| value))
-}
-
-fn miles_to_km(value: Option<f64>) -> Option<f64> {
-    value.map(|value| (value * 1.609_344 * 100.0).round() / 100.0)
-}
-
-fn mph_to_kmh(value: f64) -> i64 {
-    (value / 0.621_371_192_237_33).round() as i64
-}
-
-fn first_word(value: String) -> Option<String> {
-    value.split_whitespace().next().map(str::to_owned)
 }
 
 #[cfg(test)]
+#[path = "current_state/b3_c6_s1_tests.rs"]
+mod b3_c6_s1;
+
+#[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use uuid::Uuid;
 
-    use super::*;
-    use crate::{db::ObservationRecord, protocol::Sha256Digest};
+    use super::ObservationRecord;
+    use crate::protocol::Sha256Digest;
 
-    fn record(id: i64, observed_at_ms: i64, payload: Value) -> ObservationRecord {
+    pub(super) fn record(
+        id: i64,
+        observed_at_ms: i64,
+        payload: serde_json::Value,
+    ) -> ObservationRecord {
         ObservationRecord {
             observation_id: id,
             source_id: Uuid::from_u128(1),
@@ -449,334 +531,5 @@ mod tests {
             payload_sha256: Sha256Digest::of_bytes(b"test"),
             payload,
         }
-    }
-
-    #[test]
-    fn v4_1_1_summary_maps_owner_fields_and_non_null_stream_overlay() {
-        let owner = record(
-            1,
-            1_000,
-            json!({
-                "record_type": "owner_api_vehicle_data_v1",
-                "source_vehicle_state": "online",
-                "vehicle_data": {
-                    "drive_state": {"latitude": 1.0, "longitude": 2.0, "speed": 10},
-                    "charge_state": {"battery_level": 80, "charger_phases": 0},
-                    "climate_state": {"inside_temp": 21.0},
-                    "vehicle_state": {
-                        "fd_window": 0, "rd_window": 0, "fp_window": 1, "rp_window": 0,
-                        "df": 0, "dr": 0, "pf": 0, "pr": 0,
-                        "software_update": {"status": "downloading", "download_perc": 42},
-                        "tpms_soft_warning_fl": true,
-                        "sun_roof_percent_open": 5,
-                        "service_mode": true
-                    },
-                    "vehicle_config": {"car_type": "model3", "sun_roof_installed": 1}
-                }
-            }),
-        );
-        let stream = record(
-            2,
-            2_000,
-            json!({
-                "record_type": "tesla_stream_update_v1",
-                "source_vehicle_state": "online",
-                "fields": {
-                    "drive_state": {"latitude": 3.0, "longitude": null, "power": 12.0},
-                    "charge_state": {"battery_level": 79}
-                }
-            }),
-        );
-        let summary = build_current_vehicle_summary(
-            Uuid::from_u128(2),
-            &[owner, stream],
-            None,
-            None,
-            Some("Home".to_owned()),
-        );
-        assert_eq!(summary.latitude, Some(3.0));
-        assert_eq!(summary.longitude, Some(2.0));
-        assert_eq!(summary.battery_level, Some(79));
-        assert_eq!(summary.windows_open, Some(true));
-        assert_eq!(summary.doors_open, Some(false));
-        assert_eq!(summary.charger_phases, None);
-        assert_eq!(summary.download_perc, Some(42));
-        assert_eq!(summary.tpms_soft_warning_fl, Some(true));
-        assert_eq!(summary.sun_roof_installed, Some(true));
-        assert_eq!(summary.sun_roof_percent_open, Some(5));
-        assert_eq!(summary.service_mode, Some(true));
-        assert_eq!(summary.geofence.as_deref(), Some("Home"));
-    }
-
-    #[test]
-    fn stream_range_overlays_owner_ideal_battery_range() {
-        let owner = record(
-            1,
-            1_000,
-            json!({
-                "record_type": "owner_api_vehicle_data_v1",
-                "source_vehicle_state": "online",
-                "vehicle_data": {
-                    "charge_state": {"battery_level": 80, "ideal_battery_range": 250.0}
-                }
-            }),
-        );
-        let stream = record(
-            2,
-            2_000,
-            crate::lifecycle::stream_observation_payload(&crate::tesla_stream::StreamUpdate {
-                tag: "9".into(),
-                timestamp_ms: 2_000,
-                speed: Some(10.0),
-                odometer: Some(100.0),
-                soc: Some(79.0),
-                elevation: Some(10.0),
-                est_heading: None,
-                est_lat: Some(1.0),
-                est_lng: Some(2.0),
-                power: Some(5),
-                shift_state: Some("D".into()),
-                range: Some(200.0),
-                est_range: Some(190.0),
-                heading: Some(90.0),
-            }),
-        );
-        let summary =
-            build_current_vehicle_summary(Uuid::from_u128(2), &[owner, stream], None, None, None);
-        assert_eq!(summary.battery_level, Some(79));
-        assert_eq!(summary.ideal_battery_range_km, Some(321.87));
-    }
-
-    /// The integer reader takes any finite number and rounds it to the nearest
-    /// whole value (C4 R16, R48): the stream delivers fractions, so a truncating
-    /// reader would read 79.6 % as 79, and a reader without the range guard
-    /// would wrap an enormous number.
-    #[test]
-    fn the_integer_reader_rounds_fractions_and_refuses_what_does_not_fit() {
-        let read = |value: Value| {
-            let map = json!({ "k": value });
-            integer(map.as_object(), "k")
-        };
-        assert_eq!(read(json!(79)), Some(79));
-        assert_eq!(read(json!(79.6)), Some(80));
-        assert_eq!(read(json!(79.4)), Some(79));
-        assert_eq!(read(json!(-79.6)), Some(-80));
-        assert_eq!(read(json!(-0.4)), Some(0));
-        assert_eq!(read(json!(1e300)), None);
-        assert_eq!(read(json!(-1e300)), None);
-        assert_eq!(read(json!(9.3e18)), None);
-        assert_eq!(read(json!(18_446_744_073_709_551_615_u64)), None);
-        assert_eq!(read(json!("80")), None);
-        assert_eq!(read(Value::Null), None);
-    }
-
-    #[test]
-    fn fleet_provider_raw_response_builds_the_same_current_summary() {
-        let stale_owner = record(
-            1,
-            1_000,
-            json!({
-                "record_type": "owner_api_vehicle_data_v1",
-                "vehicle_data": {"charge_state": {"battery_level": 10}}
-            }),
-        );
-        let fleet = record(
-            2,
-            2_000,
-            json!({
-                "record_type": "fleet_api_vehicle_data_v1",
-                "source_vehicle_state": "online",
-                "provider_raw_json": {
-                    "response": {
-                        "drive_state": {"latitude": 47.0, "longitude": 19.0},
-                        "charge_state": {"battery_level": 81}
-                    },
-                    "provider_trace": "kept"
-                }
-            }),
-        );
-
-        let summary = build_current_vehicle_summary(
-            Uuid::from_u128(2),
-            &[stale_owner, fleet],
-            None,
-            None,
-            None,
-        );
-        assert_eq!(summary.latitude, Some(47.0));
-        assert_eq!(summary.longitude, Some(19.0));
-        assert_eq!(summary.battery_level, Some(81));
-        assert_eq!(summary.plugged_in, None);
-    }
-
-    #[test]
-    fn newer_discovery_updates_presence_without_redating_old_telemetry() {
-        let owner = record(
-            1,
-            1_000,
-            json!({
-                "record_type": "owner_api_vehicle_data_v1",
-                "source_vehicle_state": "online",
-                "vehicle_data": {
-                    "drive_state": {"latitude": 47.0, "longitude": 19.0},
-                    "charge_state": {"battery_level": 80}
-                }
-            }),
-        );
-        let stream = record(
-            2,
-            1_500,
-            json!({
-                "record_type": "tesla_stream_update_v1",
-                "source_vehicle_state": "online",
-                "fields": {"charge_state": {"battery_level": 79}}
-            }),
-        );
-        let discovery = record(
-            3,
-            2_000,
-            json!({
-                "record_type": "owner_api_discovery_v1",
-                "source_vehicle_state": "asleep"
-            }),
-        );
-        let car = ProjectionCar {
-            id: 9,
-            name: "Stored car".into(),
-            model: "Model 3".into(),
-            vin: None,
-            source_eid: None,
-            source_vid: None,
-            trim_badging: None,
-            marketing_name: None,
-            exterior_color: None,
-            wheel_type: None,
-            spoiler_type: None,
-            firmware_version: None,
-            efficiency_wh_per_km: None,
-            settings: Default::default(),
-        };
-        let mut open = OpenSessionState::new();
-        open.last_observed_at_ms = Some(1_500);
-        open.open_state = Some(crate::lifecycle::OpenState {
-            id: 1,
-            car_id: 9,
-            state: "online".into(),
-            start_date_ms: 1_000,
-        });
-        let lifecycle = LifecycleStateRecord {
-            vehicle_id: Uuid::from_u128(2),
-            car_id: 9,
-            last_observation_id: 2,
-            open_session_json: open.encode().expect("lifecycle encoding"),
-            quarantined: false,
-            updated_at_ms: 1_500,
-        };
-        let summary = build_current_vehicle_summary(
-            Uuid::from_u128(2),
-            &[owner, stream, discovery],
-            Some(car),
-            Some(&lifecycle),
-            None,
-        );
-        assert_eq!(summary.observed_at_ms, Some(2_000));
-        assert_eq!(summary.state.as_deref(), Some("asleep"));
-        assert_eq!(summary.since, None);
-        assert_eq!(summary.display_name.as_deref(), Some("Stored car"));
-        assert_eq!(summary.battery_level, None);
-        assert_eq!(summary.latitude, None);
-        assert_eq!(summary.longitude, None);
-        assert_eq!(summary.car.as_ref().map(|car| car.id), Some(9));
-    }
-
-    #[test]
-    fn same_millisecond_current_only_discovery_supersedes_earlier_lifecycle() {
-        let discovery = record(
-            3,
-            2_000,
-            json!({
-                "record_type": "owner_api_discovery_v1",
-                "source_vehicle_state": "asleep"
-            }),
-        );
-        let mut open = OpenSessionState::new();
-        open.last_observed_at_ms = Some(2_000);
-        open.open_state = Some(crate::lifecycle::OpenState {
-            id: 1,
-            car_id: 9,
-            state: "online".into(),
-            start_date_ms: 1_000,
-        });
-        let lifecycle = LifecycleStateRecord {
-            vehicle_id: Uuid::from_u128(2),
-            car_id: 9,
-            last_observation_id: 2,
-            open_session_json: open.encode().expect("lifecycle encoding"),
-            quarantined: false,
-            updated_at_ms: 2_000,
-        };
-        let summary = build_current_vehicle_summary(
-            Uuid::from_u128(2),
-            &[discovery],
-            None,
-            Some(&lifecycle),
-            None,
-        );
-        assert_eq!(summary.observed_at_ms, Some(2_000));
-        assert_eq!(summary.state.as_deref(), Some("asleep"));
-        assert_eq!(summary.since, None);
-    }
-
-    #[test]
-    fn plugged_in_requires_charging_state_and_ignores_bare_charge_state() {
-        let stream = record(
-            1,
-            1_000,
-            json!({
-                "record_type": "tesla_stream_update_v1",
-                "source_vehicle_state": "online",
-                "fields": {
-                    "charge_state": {"battery_level": 80, "ideal_battery_range": 200}
-                }
-            }),
-        );
-        let stream_summary =
-            build_current_vehicle_summary(Uuid::from_u128(2), &[stream], None, None, None);
-        assert_eq!(stream_summary.plugged_in, None);
-        assert_eq!(stream_summary.battery_level, Some(80));
-
-        let charging = record(
-            2,
-            2_000,
-            json!({
-                "record_type": "owner_api_vehicle_data_v1",
-                "source_vehicle_state": "online",
-                "vehicle_data": {
-                    "charge_state": {"charging_state": "Charging", "battery_level": 50}
-                }
-            }),
-        );
-        assert_eq!(
-            build_current_vehicle_summary(Uuid::from_u128(2), &[charging], None, None, None)
-                .plugged_in,
-            Some(true)
-        );
-
-        let disconnected = record(
-            3,
-            3_000,
-            json!({
-                "record_type": "owner_api_vehicle_data_v1",
-                "source_vehicle_state": "online",
-                "vehicle_data": {
-                    "charge_state": {"charging_state": "Disconnected", "battery_level": 50}
-                }
-            }),
-        );
-        assert_eq!(
-            build_current_vehicle_summary(Uuid::from_u128(2), &[disconnected], None, None, None)
-                .plugged_in,
-            Some(false)
-        );
     }
 }

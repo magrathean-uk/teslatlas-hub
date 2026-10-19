@@ -11,20 +11,31 @@ struct CurrentVehicleStatusFields {
 fn current_vehicle_status_fields(
     store: &HubStore,
     vehicle_id: uuid::Uuid,
+    now_ms: i64,
+    transient_max_age_ms: i64,
 ) -> Result<CurrentVehicleStatusFields, StoreError> {
     let observations = store.current_observations_for_vehicle(vehicle_id)?;
     let lifecycle = store.load_lifecycle_state(vehicle_id)?;
-    let mut summary =
-        build_current_vehicle_summary(vehicle_id, &observations, None, lifecycle.as_ref(), None);
+    let mut summary = build_current_vehicle_summary(
+        vehicle_id,
+        &observations,
+        None,
+        lifecycle.as_ref(),
+        None,
+        now_ms,
+        transient_max_age_ms,
+    );
     if let (Some(latitude), Some(longitude)) = (summary.latitude, summary.longitude) {
-        summary.geofence = store.geofence_name_at(vehicle_id, latitude, longitude)?;
+        summary.geofence_name = store.geofence_name_at(vehicle_id, latitude, longitude)?;
     }
     Ok(CurrentVehicleStatusFields {
+        // The summary's activity vocabulary is the one C6 R29 defines: it never
+        // holds `unavailable`, so no text filter applies.
         activity_state: summary
-            .state
-            .filter(|state| !state.eq_ignore_ascii_case("unavailable")),
+            .activity_state
+            .map(|state| state.as_str().to_owned()),
         battery_level: summary.battery_level,
-        location_name: summary.geofence,
+        location_name: summary.geofence_name,
         // Current observations are durable history. They prove cached telemetry,
         // not a live vehicle or provider connection.
         telemetry_status: if summary.observed_at_ms.is_some() {
@@ -54,7 +65,14 @@ fn build_status_report(
         let binding = store.v2_projection_binding(vehicle.vehicle_id)?;
         let latest =
             store.latest_current_observation_metadata_for_vehicle(vehicle.vehicle_id)?;
-        let current = current_vehicle_status_fields(store, vehicle.vehicle_id)?;
+        let current = current_vehicle_status_fields(
+            store,
+            vehicle.vehicle_id,
+            now_ms,
+            teslatlas_hub::current_state::offline_drive_timeout_ms(
+                config.collector.offline_drive_timeout_seconds,
+            ),
+        )?;
         let tesla_eid = configured.iter().find_map(|(vehicle_id, eid, _)| {
             (*vehicle_id == vehicle.vehicle_id).then_some(*eid)
         });
