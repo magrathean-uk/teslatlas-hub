@@ -88,3 +88,7 @@ mod efficiency_tests;
 #[cfg(test)]
 #[path = "lifecycle/lead_checkpoint_tests.rs"]
 pub(crate) mod lead_checkpoint_tests;
+
+#[cfg(test)]
+#[path = "lifecycle/gate_tests.rs"]
+mod gate_tests;

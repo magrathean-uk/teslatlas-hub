@@ -1153,37 +1153,65 @@ fn phase_power_kw(phases: i64, voltage: f64, current: f64) -> f64 {
     phases as f64 * voltage * current / 1000.0
 }
 
-/// The phase counts 1 to 3 whose power agrees with the reported power (C2
-/// R34), in ascending order.
-struct ConsistentPhases {
-    counts: [i64; 3],
-    len: usize,
+/// The phase counts 1 to 3 whose power agrees with the reported power (C2 R34
+/// and C2 R74 (a)): one flag per count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PhaseSet {
+    pub one: bool,
+    pub two: bool,
+    pub three: bool,
 }
 
-impl ConsistentPhases {
-    fn new(voltage: f64, current: f64, reported_kw: f64) -> Self {
-        let mut set = ConsistentPhases {
-            counts: [0; 3],
-            len: 0,
-        };
-        for phases in 1..=3_i64 {
-            let predicted = phase_power_kw(phases, voltage, current);
-            if (predicted - reported_kw).abs() <= K_PHASE_ABS_KW + K_PHASE_REL * predicted {
-                set.counts[set.len] = phases;
-                set.len += 1;
-            }
-        }
-        set
+impl PhaseSet {
+    /// How many counts agree: 0 to 3.
+    pub(crate) fn len(&self) -> usize {
+        usize::from(self.one) + usize::from(self.two) + usize::from(self.three)
     }
 
-    fn contains(&self, phases: i64) -> bool {
-        self.counts[..self.len].contains(&phases)
+    pub(crate) fn contains(&self, phases: i64) -> bool {
+        match phases {
+            1 => self.one,
+            2 => self.two,
+            3 => self.three,
+            _ => false,
+        }
     }
 
     /// The only member, when there is exactly one.
-    fn only(&self) -> Option<i64> {
-        (self.len == 1).then_some(self.counts[0])
+    pub(crate) fn only(&self) -> Option<i64> {
+        if self.len() != 1 {
+            return None;
+        }
+        (1..=3_i64).find(|phases| self.contains(*phases))
     }
+}
+
+/// The set of phase counts whose power agrees with the reported power (C2 R34,
+/// C2 R74 (a)): `Some` iff the reported power is usable (C2 R33 step 1) and the
+/// voltage and current describe a per-phase AC input (C2 R33 step 3: `V` within
+/// `K_V_MIN..=K_V_MAX`, `I` above zero and at most `K_I_MAX`); otherwise
+/// `None`. The one place the set is computed: the power selection (C2 R35), the
+/// AC test of the kind evidence (C2 R31) and the gate statistic (C2 R74 (b)) all
+/// read it from here.
+pub(crate) fn phase_consistency_set(sample: &ProjectionChargeSample) -> Option<PhaseSet> {
+    let reported_kw = usable_charger_power_kw(sample)?;
+    let (voltage, current) = per_phase_ac_inputs(sample)?;
+    let mut set = PhaseSet {
+        one: false,
+        two: false,
+        three: false,
+    };
+    for phases in 1..=3_i64 {
+        let predicted = phase_power_kw(phases, voltage, current);
+        if (predicted - reported_kw).abs() <= K_PHASE_ABS_KW + K_PHASE_REL * predicted {
+            match phases {
+                1 => set.one = true,
+                2 => set.two = true,
+                _ => set.three = true,
+            }
+        }
+    }
+    Some(set)
 }
 
 /// What one sample says about the kind of the session (C2 R31, R39):
@@ -1209,13 +1237,8 @@ pub(crate) fn sample_kind_evidence(sample: &ProjectionChargeSample) -> Option<bo
     let flow = power.filter(|power| *power >= K_AC_EVIDENCE_MIN_KW);
     let ac = kind == FastChargerKind::TeslaAc
         || (sample.fast_charger_present == Some(false) && flow.is_some())
-        || flow
-            .zip(per_phase_ac_inputs(sample))
-            .is_some_and(|(reported, (voltage, current))| {
-                ConsistentPhases::new(voltage, current, reported)
-                    .only()
-                    .is_some()
-            });
+        || (flow.is_some()
+            && phase_consistency_set(sample).is_some_and(|set| set.only().is_some()));
     ac.then_some(false)
 }
 
@@ -1285,8 +1308,7 @@ pub(crate) fn sample_grid_power_kw(
     let session = session_phase_count.filter(|phases| (1..=3).contains(phases));
     // (count, whether the sample itself fixed it)
     let chosen = match reported {
-        Some(reported) => {
-            let consistent = ConsistentPhases::new(voltage, current, reported);
+        Some(_) => phase_consistency_set(sample).and_then(|consistent| {
             if let Some(only) = consistent.only() {
                 Some((only, true))
             } else if let Some(label) = label.filter(|label| consistent.contains(*label)) {
@@ -1296,7 +1318,7 @@ pub(crate) fn sample_grid_power_kw(
                     .filter(|session| consistent.contains(*session))
                     .map(|session| (session, false))
             }
-        }
+        }),
         None => label
             .map(|label| (label, true))
             .or_else(|| session.map(|session| (session, false))),

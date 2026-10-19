@@ -641,7 +641,14 @@
         "src/api/server/tests/server_limits.rs",
         "src/api/server/tests/vehicle_grants.rs",
         "src/collection/teslamate_current.rs",
-        "src/collection/teslamate_current/tests.rs"
+        "src/collection/teslamate_current/tests.rs",
+        "src/runtime/lifecycle/gate_tests/fold.rs",
+        "src/runtime/lifecycle/gate_tests/hg1_tests.rs",
+        "src/runtime/lifecycle/gate_tests/hg2_tests.rs",
+        "src/runtime/lifecycle/gate_tests/hg3_tests.rs",
+        "src/runtime/lifecycle/gate_tests/reader.rs",
+        "src/runtime/lifecycle/gate_tests/report.rs",
+        "src/runtime/lifecycle/gate_tests/support.rs"
       ]
     },
     {
