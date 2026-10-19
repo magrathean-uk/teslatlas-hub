@@ -38,3 +38,5 @@ include!("tests/r3_fix_round.rs");
 mod b3_c1_a;
 #[path = "tests/b3_c2_a.rs"]
 mod b3_c2_a;
+#[path = "tests/b3_c2_b.rs"]
+mod b3_c2_b;

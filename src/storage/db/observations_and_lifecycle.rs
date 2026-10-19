@@ -1457,8 +1457,11 @@ impl HubStore {
                     }
                     crate::hub_pack::GeofenceBillingType::PerKwh => true,
                 };
+                // The owner's entry is the complete price and excludes free
+                // charging, so no brand evidence is folded (C2 R53, C2 R78 (d)).
                 let context = crate::lifecycle::ChargeCostContext {
                     free_supercharging: false,
+                    brand_is_tesla: false,
                     span_observed,
                 };
                 let Some(cost) =

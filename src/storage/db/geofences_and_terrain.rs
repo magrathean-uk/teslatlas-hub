@@ -1493,8 +1493,8 @@ impl HubStore {
 ///
 /// 1. The row's samples: its stored open samples plus the delta's own, by id,
 ///    folded in constant space into the facts the cost rules read (the first
-///    sample, the last two in sample order, the largest counter), never held
-///    or sorted as a list.
+///    sample, the last two in sample order, the largest counter, and the two
+///    brand flags of C2 R78 (d)), never held or sorted as a list.
 /// 2. Label and tariff copy from the start-coordinates entry of the delta, by
 ///    the one geofence rule over the vehicle's fences (C1 R72): the label is
 ///    the fence name; the copy is the fence's tariff when complete and valid
@@ -1507,7 +1507,8 @@ impl HubStore {
 /// 4. The cost. A stored row with the same `(vehicle_id, charge_id)` and a
 ///    known cost keeps that cost and its tariff copy (R47: no field tells a
 ///    manual or imported cost from a computed one). Otherwise the cost is
-///    [`calculate_charge_cost`] over the row's own copy and the context. The
+///    [`calculate_charge_cost`] over the row's own copy and the context, whose
+///    `brand_is_tesla` is read from the folded facts. The
 ///    stored row is matched by its key; its `car_id` column does not matter,
 ///    because a cost already stored must not be lost.
 /// 5. The upsert and one `charge` sync mutation, skipped when the stored JSON
@@ -1532,11 +1533,14 @@ fn close_charges_in_transaction(
     };
     for charge in &commit.delta.charges {
         let mut row = charge.clone();
-        // The cost rules read four facts of the samples, so they are folded in
-        // constant space: the delta's own samples first, then the stored open
-        // samples one row at a time, skipping the ones the delta carries again
-        // (by id, in a set the size of the delta). The close of a long charge
-        // therefore holds no sample list and sorts nothing (C2 R46 step 1).
+        // The cost rules read the facts of every sample of the charge (the
+        // span, the plug-in continuation and the brand evidence, C2 R46 step 4,
+        // C2 R78 (d)), so they are folded in constant space: the delta's own
+        // samples first, then the stored open samples one row at a time,
+        // skipping the ones the delta carries again (by id, in a set the size
+        // of the delta). Each sample is offered once, whichever of the two
+        // holds it, and the close of a long charge holds no sample list and
+        // sorts nothing (C2 R46 step 1).
         let mut facts = crate::lifecycle::ChargeSampleFacts::default();
         let mut carried_by_delta = std::collections::HashSet::new();
         for sample in commit
@@ -1598,6 +1602,7 @@ fn close_charges_in_transaction(
             None => {
                 let context = crate::lifecycle::ChargeCostContext {
                     free_supercharging,
+                    brand_is_tesla: facts.brand_is_tesla(),
                     span_observed: crate::lifecycle::charge_span_observed_from(&row, &facts),
                 };
                 row.cost = crate::lifecycle::calculate_charge_cost(
@@ -1643,8 +1648,8 @@ fn close_charges_in_transaction(
 ///
 /// The walk takes the vehicle's charge rows by id, a bounded page at a time,
 /// and checks the cheap conditions before it loads a row's samples: only a row
-/// that passes them can need the continuation and span checks (R43a, R44a),
-/// which read the stored samples.
+/// that passes them can need the continuation, span and brand checks (C2
+/// R43a, C2 R44a, C2 R78 (d)), which read every stored sample, one row at a time.
 fn fill_missing_charge_costs_in_transaction(
     transaction: &Transaction<'_>,
     vehicle_id: Uuid,
@@ -1691,6 +1696,7 @@ fn fill_missing_charge_costs_in_transaction(
             });
             let context = crate::lifecycle::ChargeCostContext {
                 free_supercharging,
+                brand_is_tesla: facts.brand_is_tesla(),
                 span_observed: crate::lifecycle::charge_span_observed_from(&row, &facts),
             };
             let Some(cost) = crate::lifecycle::calculate_charge_cost(&row, Some(tariff), context)

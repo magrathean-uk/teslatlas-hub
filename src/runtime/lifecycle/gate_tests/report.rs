@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
 
-use super::fold::{ChargeGateFacts, K_GATE_COUNTER_STEP_KWH};
+use super::fold::{ChargeGateFacts, K_GATE_COUNTER_STEP_KWH, RestartRead};
 use super::*;
 
 const MS_PER_DAY: i64 = 86_400_000;
@@ -180,6 +180,11 @@ pub(crate) struct G4Report {
     /// G4 (e): restart reads with no usable power to bound them.
     pub restart_reads_unbounded: u64,
     pub unbounded_sessions: Vec<i64>,
+    /// Every kept restart read with its session, in session start order
+    /// (at most `K_GATE_RESTART_ROWS` per session).
+    pub restart_rows: Vec<(i64, RestartRead)>,
+    /// Restart reads of all sessions beyond the kept rows.
+    pub restart_rows_overflow: u64,
     /// The remaining over-count, reported and not gating: sessions whose
     /// energy added exceeds the largest usable counter by more than 0.5 kWh,
     /// and that excess summed.
@@ -244,6 +249,16 @@ pub(crate) struct ClassSessionType {
     pub sessions: usize,
 }
 
+/// One session that stands for a pair of session type value and brand class
+/// (C2 R78 (e)) and needs the owner's answer.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct OwnerExample {
+    pub process_id: i64,
+    pub session_type: Option<String>,
+    /// `None` when the brand names no operator, or names both.
+    pub brand_class: Option<SiteOperator>,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct G6Report {
     pub census: Vec<CensusEntry>,
@@ -251,14 +266,28 @@ pub(crate) struct G6Report {
     pub class_session_types: Vec<ClassSessionType>,
     /// AC-selected sessions failing (b).
     pub ac_failures: Vec<i64>,
-    /// DC-selected sessions failing (c).
+    /// DC-selected sessions failing (c), among them a Tesla-site session typed
+    /// Tesla AC whatever its brand says (C2 R78 (e)).
     pub dc_failures: Vec<i64>,
     pub tesla_sites: usize,
+    /// Tesla-site sessions whose session type is None and that C2 R41 does not
+    /// free (counted, not failing; C2 R78 (e)).
     pub tesla_sites_without_type: usize,
+    /// Tesla-site sessions whose brand carries none, as an owner answer named
+    /// the site, and that C2 R41 does not free (counted, not failing; C2 R78
+    /// (e)). A session typed `Supercharger` is freed by clause (i) and is not
+    /// counted.
+    pub tesla_sites_without_brand: usize,
     pub tesla_sites_typed_supercharger: usize,
-    /// The first session of each distinct session type value that needs an
-    /// owner answer and has none.
+    /// Tesla-site sessions free-eligible by C2 R41, clause (i) or (ii),
+    /// evaluated as if `free_supercharging` were true.
+    pub tesla_sites_free_eligible: usize,
+    /// The first session of each distinct pair of session type value and brand
+    /// class (Tesla, other or none) that needs an owner answer and has none
+    /// (C2 R78 (e)).
     pub needs_owner: Vec<i64>,
+    /// The same examples with the pair each one stands for, in the same order.
+    pub needs_owner_pairs: Vec<OwnerExample>,
     pub a_pass: bool,
     pub b_pass: bool,
     pub c_pass: Option<bool>,
@@ -616,6 +645,17 @@ fn g4(sessions: &[(&ProcessGateFacts, SessionClass)]) -> G4Report {
         above_bound_sessions: sessions_with(sessions, |facts| facts.restart_reads_above_bound > 0),
         restart_reads_unbounded: unbounded,
         unbounded_sessions: sessions_with(sessions, |facts| facts.restart_reads_unbounded > 0),
+        restart_rows: sessions
+            .iter()
+            .flat_map(|(session, _)| {
+                session
+                    .facts
+                    .restart_rows
+                    .iter()
+                    .map(|read| (session.process_id, *read))
+            })
+            .collect(),
+        restart_rows_overflow: total(|facts| facts.restart_rows_overflow),
         overcounted_sessions: overcounted_session_ids.len(),
         overcounted_session_ids,
         overcount_kwh,
@@ -764,6 +804,9 @@ fn brand_operator(facts: &ChargeGateFacts) -> Option<SiteOperator> {
 /// Whether the owner's answer decides the session's operator: the brand names
 /// none, or it disagrees with the session type (C2 R32: a Tesla brand with a
 /// type of kind other DC, another brand with a type of kind Supercharger).
+/// One answer decides the sessions that share the pair of session type value and
+/// brand class, not the type alone (C2 R78 (e)): the brand already tells apart
+/// what one example must not decide.
 fn needs_answer(facts: &ChargeGateFacts) -> bool {
     matches!(
         (
@@ -843,64 +886,101 @@ fn g6(
         .map(|(session, _)| session.process_id)
         .collect::<Vec<_>>();
     let b_pass = ac_failures.is_empty();
-    // (c) The operator of each DC-selected session. One answer per distinct
-    // session type value decides every session of that value that needs one.
+    // (c) The operator of each DC-selected session. One answer per distinct pair
+    // of session type value and brand class (C2 R78 (e)) decides every session
+    // of that pair that needs one.
     let answers = operator_answers.iter().copied().collect::<HashMap<_, _>>();
     let dc = sessions
         .iter()
         .filter(|(_, class)| *class == SessionClass::DcSelected)
         .map(|(session, _)| *session)
         .collect::<Vec<_>>();
-    let mut group_answer: Vec<(Option<String>, Option<SiteOperator>)> = Vec::new();
+    type Pair = (Option<String>, Option<SiteOperator>);
+    let pair =
+        |facts: &ChargeGateFacts| -> Pair { (facts.session_type.clone(), brand_operator(facts)) };
+    let mut group_answer: Vec<(Pair, Option<SiteOperator>)> = Vec::new();
     let mut needs_owner = Vec::new();
+    let mut needs_owner_pairs = Vec::new();
     for session in dc.iter().filter(|s| needs_answer(&s.facts)) {
-        let value = &session.facts.session_type;
-        if !group_answer.iter().any(|(seen, _)| seen == value) {
+        let key = pair(&session.facts);
+        if !group_answer.iter().any(|(seen, _)| *seen == key) {
             let answer = dc
                 .iter()
-                .filter(|other| needs_answer(&other.facts) && other.facts.session_type == *value)
+                .filter(|other| needs_answer(&other.facts) && pair(&other.facts) == key)
                 .find_map(|other| answers.get(&other.process_id).copied());
             if answer.is_none() {
                 needs_owner.push(session.process_id);
+                needs_owner_pairs.push(OwnerExample {
+                    process_id: session.process_id,
+                    session_type: key.0.clone(),
+                    brand_class: key.1,
+                });
             }
-            group_answer.push((value.clone(), answer));
+            group_answer.push((key, answer));
         }
     }
     let operator = |session: &ProcessGateFacts| -> Option<SiteOperator> {
         if needs_answer(&session.facts) {
+            let key = pair(&session.facts);
             group_answer
                 .iter()
-                .find(|(value, _)| *value == session.facts.session_type)
+                .find(|(seen, _)| *seen == key)
                 .and_then(|(_, answer)| *answer)
         } else {
             brand_operator(&session.facts)
         }
     };
     let mut dc_failures = Vec::new();
-    let (mut tesla_sites, mut without_type, mut typed_supercharger) = (0, 0, 0);
+    let (mut tesla_sites, mut without_type, mut without_brand) = (0, 0, 0);
+    let (mut typed_supercharger, mut free_eligible) = (0, 0);
     let mut other_sites = 0;
     for session in &dc {
-        let kind = fast_charger_kind(session.facts.session_type.as_deref());
+        let facts = &session.facts;
+        // C2 R41 (i) or (ii), evaluated as if `free_supercharging` were true,
+        // by the rule the close and the fill ship (C2 R78 (e)).
+        let eligible = free_supercharging_site(
+            facts.session_type.as_deref(),
+            facts.is_dc,
+            brand_operator(facts) == Some(SiteOperator::Tesla),
+        );
         match operator(session) {
             Some(SiteOperator::Tesla) => {
                 tesla_sites += 1;
-                match kind {
-                    FastChargerKind::Supercharger => typed_supercharger += 1,
-                    FastChargerKind::NoInformation => without_type += 1,
-                    _ => dc_failures.push(session.process_id),
+                // A Tesla AC type still fails, as before (C2 R78 (e)): it is
+                // rejected before the two exceptions below, so a brand that
+                // carries none cannot hide it.
+                let tesla_ac =
+                    fast_charger_kind(facts.session_type.as_deref()) == FastChargerKind::TeslaAc;
+                let untyped = facts.session_type.is_none();
+                let unbranded = brand_operator(facts).is_none();
+                // Exceptions to "every Tesla-site session is free-eligible"
+                // (C2 R78 (e)): a session clause (i) frees is not one.
+                if untyped && !eligible && !tesla_ac {
+                    without_type += 1;
+                }
+                if unbranded && !eligible && !tesla_ac {
+                    without_brand += 1;
+                }
+                if is_supercharger(facts.session_type.as_deref()) {
+                    typed_supercharger += 1;
+                }
+                if eligible {
+                    free_eligible += 1;
+                } else if tesla_ac || (!untyped && !unbranded) {
+                    dc_failures.push(session.process_id);
                 }
             }
             Some(SiteOperator::Other) => {
                 other_sites += 1;
-                if kind == FastChargerKind::Supercharger {
+                if eligible {
                     dc_failures.push(session.process_id);
                 }
             }
             None => {}
         }
     }
-    // A Tesla site must show the Supercharger name at least once.
-    let c_holds = dc_failures.is_empty() && (tesla_sites == 0 || typed_supercharger > 0);
+    // A Tesla site must be free-eligible at least once.
+    let c_holds = dc_failures.is_empty() && (tesla_sites == 0 || free_eligible > 0);
     let c_pass = needs_owner.is_empty().then_some(c_holds);
     let mut not_observed = Vec::new();
     if tesla_sites == 0 {
@@ -915,6 +995,10 @@ fn g6(
     {
         not_observed.push(SiteClass::Ac);
     }
+    // The pass follows the owner's answer: while a listed example has no answer
+    // it stays open (`None`) whatever (a) and (b) say (C2 R75 (c), O2 and R78
+    // (f): "G6's rule that its pass stays open while a listed example has no
+    // answer is unchanged"); `a_pass` and `b_pass` are reported beside it.
     let pass = c_pass.map(|c| a_pass && b_pass && c);
     (
         G6Report {
@@ -925,8 +1009,11 @@ fn g6(
             dc_failures,
             tesla_sites,
             tesla_sites_without_type: without_type,
+            tesla_sites_without_brand: without_brand,
             tesla_sites_typed_supercharger: typed_supercharger,
+            tesla_sites_free_eligible: free_eligible,
             needs_owner,
+            needs_owner_pairs,
             a_pass,
             b_pass,
             c_pass,
@@ -974,6 +1061,14 @@ pub(crate) fn charge_gate_report(
             .map(|(process, _)| process.process_id)
             .collect(),
         classes_not_observed,
+    }
+}
+
+fn brand_class_label(class: Option<SiteOperator>) -> &'static str {
+    match class {
+        Some(SiteOperator::Tesla) => "tesla",
+        Some(SiteOperator::Other) => "other",
+        None => "none",
     }
 }
 
@@ -1083,6 +1178,21 @@ impl ChargeGateReport {
                 "above_bound_sessions": self.g4.above_bound_sessions,
                 "restart_reads_unbounded": self.g4.restart_reads_unbounded,
                 "unbounded_sessions": self.g4.unbounded_sessions,
+                "restart_rows": self.g4.restart_rows.iter()
+                    .map(|(process_id, read)| json!({
+                        "process_id": process_id,
+                        "previous_ms": read.previous.timestamp_ms,
+                        "previous_counter_kwh": read.previous.counter_kwh,
+                        "previous_power_kw": read.previous.power_kw,
+                        "ms": read.current.timestamp_ms,
+                        "counter_kwh": read.current.counter_kwh,
+                        "power_kw": read.current.power_kw,
+                        "p_max_kw": read.power_kw,
+                        "bound_kwh": read.bound_kwh,
+                        "above_bound": read.above_bound(),
+                    }))
+                    .collect::<Vec<_>>(),
+                "restart_rows_overflow": self.g4.restart_rows_overflow,
                 "overcounted_sessions": self.g4.overcounted_sessions,
                 "overcounted_session_ids": self.g4.overcounted_session_ids,
                 "overcount_kwh": self.g4.overcount_kwh,
@@ -1142,8 +1252,17 @@ impl ChargeGateReport {
                 "dc_failures": self.g6.dc_failures,
                 "tesla_sites": self.g6.tesla_sites,
                 "tesla_sites_without_type": self.g6.tesla_sites_without_type,
+                "tesla_sites_without_brand": self.g6.tesla_sites_without_brand,
                 "tesla_sites_typed_supercharger": self.g6.tesla_sites_typed_supercharger,
+                "tesla_sites_free_eligible": self.g6.tesla_sites_free_eligible,
                 "needs_owner": self.g6.needs_owner,
+                "needs_owner_pairs": self.g6.needs_owner_pairs.iter()
+                    .map(|example| json!({
+                        "process_id": example.process_id,
+                        "session_type": example.session_type,
+                        "brand_class": brand_class_label(example.brand_class),
+                    }))
+                    .collect::<Vec<_>>(),
                 "a_pass": self.g6.a_pass,
                 "b_pass": self.g6.b_pass,
                 "c_pass": self.g6.c_pass,

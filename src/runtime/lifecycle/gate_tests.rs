@@ -9,7 +9,8 @@
 //! The children are `fold` (C2 R74 (b)), `report` (C2 R75 (c)) and `reader` (C2 R75 (a)
 //! and (b)); `support` holds the sample builders the tests share; `b3_hg1`,
 //! `b3_hg2` and `b3_hg3` are the spec tests of the three parts, and `b3_c2_a`
-//! the gate-level tests of C2 R76 (C2 T79, C2 T83 (d), C2 T84). The ignored
+//! the gate-level tests of C2 R76 (C2 T79, C2 T83 (d), C2 T84); `b3_c2_b` the
+//! gate-level test of C2 R78 (C2 T82). The ignored
 //! runner `g2_10_historical_charge_gates` is registered here, apart from the
 //! ordinary tests.
 
@@ -31,6 +32,8 @@ mod support;
 
 #[path = "gate_tests/c2_a_tests.rs"]
 mod b3_c2_a;
+#[path = "gate_tests/c2_b_tests.rs"]
+mod b3_c2_b;
 #[path = "gate_tests/hg1_tests.rs"]
 mod b3_hg1;
 #[path = "gate_tests/hg2_tests.rs"]

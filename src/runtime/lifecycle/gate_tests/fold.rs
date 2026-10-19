@@ -6,7 +6,9 @@
 //!
 //! The fold calls the Hub's own functions instead of restating them: C2 R26's
 //! scratch `OpenCharge` (baseline `None`) is folded by `observe_charge_sample`,
-//! and an `EfficiencyFold` (C2 R71) gives the figure. What the Hub does not
+//! an `EfficiencyFold` (C2 R71) gives the figure, and the brand flags come from
+//! the production `ChargeSampleFacts` fold (C2 R78 (d)), so gate G6 measures the
+//! rule the close and the fill ship. What the Hub does not
 //! publish (timing, power, phase, counter and temperature facts) is kept in
 //! fixed size: at most [`K_GATE_TYPE_TEXTS`] type texts and an overflow count,
 //! whatever the session's length (C2 R74 (c)). The fold reads nothing but its
@@ -27,6 +29,11 @@ const K_GATE_PHASE_MIN_VA: f64 = 3_000.0;
 /// `(P + K_PHASE_ABS_KW) * dt / 3,600,000 + 0.01` kWh.
 pub(super) const K_GATE_COUNTER_STEP_KWH: f64 = 0.01;
 
+/// Most restart reads one session keeps with their evidence, so the facts stay
+/// of fixed size (C2 R74 (c)); the reads beyond it are counted in
+/// `restart_rows_overflow`.
+pub(crate) const K_GATE_RESTART_ROWS: usize = 8;
+
 /// One usable counter reading (C2 R74 (b)): its time, the counter and the
 /// sample's usable power, `None` when it has none.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -34,6 +41,27 @@ pub(crate) struct CounterPoint {
     pub timestamp_ms: i64,
     pub counter_kwh: f64,
     pub power_kw: Option<f64>,
+}
+
+/// One restart read with the evidence of G4 (d) and (e): the usable counter
+/// before the fall, the usable counter after it, the larger usable power of the
+/// two samples and the physical bound of the new counter (`None` when neither
+/// sample has a usable power).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct RestartRead {
+    pub previous: CounterPoint,
+    pub current: CounterPoint,
+    pub power_kw: Option<f64>,
+    pub bound_kwh: Option<f64>,
+}
+
+impl RestartRead {
+    /// Whether the new counter exceeds its bound (G4 (d)); false when the bound
+    /// cannot be computed (G4 (e)).
+    pub(crate) fn above_bound(&self) -> bool {
+        self.bound_kwh
+            .is_some_and(|bound| self.current.counter_kwh > bound)
+    }
 }
 
 /// One session's gate facts (C2 R74 (b)).
@@ -82,6 +110,11 @@ pub(crate) struct ChargeGateFacts {
     pub restart_reads_above_bound: u64,
     /// Restart reads with no usable power on either of the two samples.
     pub restart_reads_unbounded: u64,
+    /// The first `K_GATE_RESTART_ROWS` restart reads, in sample order, each
+    /// with its bound (the amended receipt's per-restart evidence).
+    pub restart_rows: Vec<RestartRead>,
+    /// Restart reads beyond `K_GATE_RESTART_ROWS`.
+    pub restart_rows_overflow: u64,
     /// The largest usable counter of the session.
     pub largest_counter_kwh: Option<f64>,
     pub outside_temp_mean_c: Option<f64>,
@@ -132,6 +165,8 @@ impl ChargeGateFacts {
             recovered_restarts: 0,
             restart_reads_above_bound: 0,
             restart_reads_unbounded: 0,
+            restart_rows: Vec::new(),
+            restart_rows_overflow: 0,
             largest_counter_kwh: None,
             outside_temp_mean_c: None,
             is_dc: None,
@@ -150,35 +185,13 @@ impl ChargeGateFacts {
     }
 }
 
-/// What one sample's brand says (C2 R78 (c), the rule gate G6 uses): the brand
-/// is trimmed and compared ASCII case-insensitively. `Tesla` is Tesla; absent,
-/// empty, `<invalid>`, `Unknown` and `SNA` carry no brand; any other text is
-/// another operator's brand.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SampleBrand {
-    Tesla,
-    Other,
-    NoBrand,
-}
-
-fn sample_brand(sample: &ProjectionChargeSample) -> SampleBrand {
-    let Some(text) = sample.fast_charger_brand.as_deref().map(str::trim) else {
-        return SampleBrand::NoBrand;
-    };
-    let is = |name: &str| text.eq_ignore_ascii_case(name);
-    if is("Tesla") {
-        SampleBrand::Tesla
-    } else if text.is_empty() || is("<invalid>") || is("Unknown") || is("SNA") {
-        SampleBrand::NoBrand
-    } else {
-        SampleBrand::Other
-    }
-}
-
 /// The incremental gate fold of one session (C2 R74 (b)).
 pub(crate) struct ChargeGateFold {
     scratch: OpenCharge,
     efficiency: EfficiencyFold,
+    /// The production fold of the cost facts; read here only for its brand
+    /// flags (C2 R78 (d)).
+    cost_facts: ChargeSampleFacts,
     facts: ChargeGateFacts,
     previous_ms: Option<i64>,
     pending_decrease: Option<f64>,
@@ -192,6 +205,7 @@ impl ChargeGateFold {
         Self {
             scratch: OpenCharge::empty(0, 0, 0),
             efficiency: EfficiencyFold::new(),
+            cost_facts: ChargeSampleFacts::default(),
             facts: ChargeGateFacts::empty(),
             previous_ms: None,
             pending_decrease: None,
@@ -213,6 +227,7 @@ impl ChargeGateFold {
             self.temp_count += 1;
         }
         observe_charge_sample(&mut self.scratch, sample);
+        self.cost_facts.observe(sample);
         self.efficiency.observe(sample);
     }
 
@@ -221,6 +236,8 @@ impl ChargeGateFold {
         let mut facts = self.facts.clone();
         facts.outside_temp_mean_c =
             (self.temp_count > 0).then(|| self.temp_sum / self.temp_count as f64);
+        facts.tesla_brand = self.cost_facts.tesla_brand;
+        facts.other_brand = self.cost_facts.other_brand;
         facts.is_dc = self.scratch.is_dc;
         facts.session_type = self.scratch.fast_charger_type.clone();
         facts.used_powered_kwh = self.scratch.energy_used_kwh;
@@ -278,8 +295,9 @@ impl ChargeGateFold {
         }
     }
 
-    /// DC-named samples, the distinct trimmed type texts (at most eight, with
-    /// an overflow count) and the brand flags.
+    /// DC-named samples and the distinct trimmed type texts (at most eight, with
+    /// an overflow count). The brand flags are the production fold's, set by
+    /// [`ChargeGateFold::finish`].
     fn observe_type_and_brand(&mut self, sample: &ProjectionChargeSample) {
         let facts = &mut self.facts;
         if matches!(
@@ -301,11 +319,6 @@ impl ChargeGateFold {
             } else {
                 facts.type_values_overflow += 1;
             }
-        }
-        match sample_brand(sample) {
-            SampleBrand::Tesla => facts.tesla_brand = true,
-            SampleBrand::Other => facts.other_brand = true,
-            SampleBrand::NoBrand => {}
         }
     }
 
@@ -398,16 +411,25 @@ impl ChargeGateFold {
             .into_iter()
             .chain(point.power_kw)
             .reduce(f64::max);
-        match strongest {
+        let bound_kwh = strongest.map(|power| {
+            let dt_ms = point.timestamp_ms.saturating_sub(previous.timestamp_ms);
+            (power + K_PHASE_ABS_KW) * (dt_ms as f64) / MS_PER_HOUR + K_GATE_COUNTER_STEP_KWH
+        });
+        let read = RestartRead {
+            previous,
+            current: point,
+            power_kw: strongest,
+            bound_kwh,
+        };
+        match bound_kwh {
             None => facts.restart_reads_unbounded += 1,
-            Some(power) => {
-                let dt_ms = point.timestamp_ms.saturating_sub(previous.timestamp_ms);
-                let bound = (power + K_PHASE_ABS_KW) * (dt_ms as f64) / MS_PER_HOUR
-                    + K_GATE_COUNTER_STEP_KWH;
-                if counter > bound {
-                    facts.restart_reads_above_bound += 1;
-                }
-            }
+            Some(_) if read.above_bound() => facts.restart_reads_above_bound += 1,
+            Some(_) => {}
+        }
+        if facts.restart_rows.len() < K_GATE_RESTART_ROWS {
+            facts.restart_rows.push(read);
+        } else {
+            facts.restart_rows_overflow += 1;
         }
     }
 }

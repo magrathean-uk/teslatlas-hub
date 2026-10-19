@@ -71,6 +71,7 @@ fn per_minute(rate: Option<f64>, fee: Option<f64>) -> Option<ChargeTariff> {
 fn context(free: bool, span_observed: bool) -> ChargeCostContext {
     ChargeCostContext {
         free_supercharging: free,
+        brand_is_tesla: false,
         span_observed,
     }
 }
@@ -123,11 +124,11 @@ fn t30_the_cost_table() {
             Some(4.50),
         ),
         (
-            "DC falls back to the integrated energy",
+            "DC without a counter has no per-kWh cost: the integral does not stand in (C2 R77)",
             row(Some(8.00), None, Some(true)),
             per_kwh(Some(0.50), None),
             context(false, true),
-            Some(4.00),
+            None,
         ),
         (
             "unknown kind takes the AC rule",

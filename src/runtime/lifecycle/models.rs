@@ -988,7 +988,8 @@ pub fn match_geofence(
 /// family (CHAdeMO, GB/T, Combo). `TeslaAc` is Tesla's own AC equipment
 /// protocol (the "single wire CAN" names of wall and mobile connectors).
 /// `NoInformation` is a name that says nothing (absent, empty, `<invalid>`,
-/// `Unknown`, `SNA`, `Other`). `Unrecognised` is any other text, kept so a
+/// `Unknown`, `SNA`, `Other`, and the maker's own name `Tesla`, C2 R78 (b)).
+/// `Unrecognised` is any other text, kept so a
 /// name added by a later Tesla release still becomes the session's type
 /// (R32) without being mistaken for evidence of AC or DC.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1010,7 +1011,9 @@ const FAST_CHARGER_PREFIX: &str = "FastCharger";
 /// leading `FastCharger` prefix is removed (ASCII case-insensitive) and the
 /// rest is compared ASCII case-insensitively with Tesla's enum names. A text
 /// that is only the prefix leaves an empty rest, which is the "empty" case of
-/// no information.
+/// no information. `Tesla` (so also `FastChargerTesla` and `tesla`) names the
+/// maker, not a connector family or a current type: Tesla makes AC and DC
+/// equipment, so the text says nothing about either (C2 R78 (b)).
 pub(crate) fn fast_charger_kind(fast_charger_type: Option<&str>) -> FastChargerKind {
     let Some(text) = fast_charger_type else {
         return FastChargerKind::NoInformation;
@@ -1029,18 +1032,56 @@ pub(crate) fn fast_charger_kind(fast_charger_type: Option<&str>) -> FastChargerK
         FastChargerKind::OtherDc
     } else if is("ACSingleWireCAN") || is("MCSingleWireCAN") {
         FastChargerKind::TeslaAc
-    } else if rest.is_empty() || is("<invalid>") || is("Unknown") || is("SNA") || is("Other") {
+    } else if rest.is_empty()
+        || is("<invalid>")
+        || is("Unknown")
+        || is("SNA")
+        || is("Other")
+        || is("Tesla")
+    {
         FastChargerKind::NoInformation
     } else {
         FastChargerKind::Unrecognised
     }
 }
 
-/// True when the type names a Tesla Supercharger (C2 R31, R41). Tesla's brand
-/// on an AC wall connector or a CCS site does not make it one, so only the
-/// `Supercharger` name counts.
+/// True when the type names a Tesla Supercharger (C2 R31, R41 (i)). Only the
+/// `Supercharger` name counts; the brand evidence of a DC session typed as
+/// another DC family is [`is_free_supercharging_site`]'s second clause.
 pub(crate) fn is_supercharger(fast_charger_type: Option<&str>) -> bool {
     fast_charger_kind(fast_charger_type) == FastChargerKind::Supercharger
+}
+
+/// True when the session is at a Tesla Supercharger for free-charging purposes
+/// (C2 R41, R78 (c) and (d)): (i) the row's type is a Supercharger; or (ii) the
+/// row is a DC session (`is_dc == Some(true)`) whose type is of kind other DC
+/// and whose samples carry the brand `Tesla` and no other brand
+/// (`brand_is_tesla`, from [`ChargeSampleFacts::brand_is_tesla`]). A DC session
+/// without a type, or with no brand, is not freed: the operator is unknown, and
+/// a missed free session stays visible and correctable by manual entry, while a
+/// wrongly freed one would hide a paid session. Tesla's brand on an AC
+/// connector does not make a Supercharger either, which (ii)'s DC requirement
+/// keeps.
+pub(crate) fn is_free_supercharging_site(charge: &ProjectionCharge, brand_is_tesla: bool) -> bool {
+    free_supercharging_site(
+        charge.fast_charger_type.as_deref(),
+        charge.is_dc,
+        brand_is_tesla,
+    )
+}
+
+/// [`is_free_supercharging_site`] over the three facts it reads, so the
+/// historical gate report (which holds a session's facts, not a row) applies the
+/// very rule the close and the fill ship (C2 R78 (e)).
+pub(crate) fn free_supercharging_site(
+    fast_charger_type: Option<&str>,
+    is_dc: Option<bool>,
+    brand_is_tesla: bool,
+) -> bool {
+    is_supercharger(fast_charger_type)
+        || (is_dc == Some(true)
+            && brand_is_tesla
+            && fast_charger_kind(fast_charger_type) == FastChargerKind::OtherDc)
 }
 
 /// The tariff a charge is priced with: the billing type, the unit price and
@@ -1110,6 +1151,11 @@ impl ChargeTariff {
 pub struct ChargeCostContext {
     /// The car setting `free_supercharging` (R41).
     pub free_supercharging: bool,
+    /// Some sample of the charge carries the brand `Tesla` and none another
+    /// (C2 R78 (d)): [`ChargeSampleFacts::brand_is_tesla`] of the facts the
+    /// close or fill already folds. Manual entry sets it false without folding:
+    /// its rate modes exclude free charging (C2 R53).
+    pub brand_is_tesla: bool,
     /// The row's start and end are observed, not bounds (R43a); only a
     /// per-minute cost reads it.
     pub span_observed: bool,
@@ -1132,15 +1178,18 @@ pub(crate) fn cost_fits_pack_scale(cost: f64) -> bool {
 
 /// The cost of one closed charge (C2 R44), `None` when it cannot be known.
 ///
-/// 1. Free charging (R41): the car setting is on and the row's charger type
-///    is a Supercharger: `Some(0.0)`, whatever the tariff.
+/// 1. Free charging (C2 R41, C2 R78 (c)): the car setting is on and the session is at
+///    a Tesla Supercharger ([`is_free_supercharging_site`]: the row's charger
+///    type is a Supercharger, or it is a DC session of another DC type whose
+///    samples carry the brand Tesla and no other): `Some(0.0)`, whatever the
+///    tariff.
 /// 2. No tariff: `None` (an unknown price, not a zero price).
 /// 3. A unit price that is absent, not finite or negative: `None`.
 /// 4. A session fee that is not finite or negative: `None`; an absent fee is
 ///    no fee.
 /// 5. The units: for a per-kWh tariff the energy basis of R42 (DC: the counter
-///    with the integrated energy as fallback; AC or unknown: the integrated
-///    inlet energy only); for a per-minute tariff the connected minutes of R43
+///    only, with no integrated-energy fallback, C2 R77; AC or unknown: the
+///    integrated inlet energy only); for a per-minute tariff the connected minutes of C2 R43
 ///    when the span is observed. No units: `None`.
 /// 6. `units * rate + fee`, rounded once to two decimals, or `None` when the
 ///    result does not fit the pack's scale (R55 (c)).
@@ -1149,7 +1198,7 @@ pub fn calculate_charge_cost(
     tariff: Option<ChargeTariff>,
     context: ChargeCostContext,
 ) -> Option<f64> {
-    if context.free_supercharging && is_supercharger(charge.fast_charger_type.as_deref()) {
+    if context.free_supercharging && is_free_supercharging_site(charge, context.brand_is_tesla) {
         return Some(0.0);
     }
     let tariff = tariff?;
@@ -1162,11 +1211,13 @@ pub fn calculate_charge_cost(
     }
     let units = match tariff.billing_type {
         GeofenceBillingType::PerKwh => {
-            let added = finite_reading(charge.charge_energy_added);
-            let used = finite_reading(charge.charge_energy_used_kwh);
+            // The counter is Tesla's exact battery-side figure; the integral of
+            // the reported DC power is not the same quantity and neither stands
+            // in for the other, so a DC session without a usable counter has no
+            // per-kWh cost (C2 R77).
             match charge.is_dc {
-                Some(true) => added.or(used),
-                Some(false) | None => used,
+                Some(true) => finite_reading(charge.charge_energy_added),
+                Some(false) | None => finite_reading(charge.charge_energy_used_kwh),
             }
         }
         GeofenceBillingType::PerMinute => {
@@ -1184,9 +1235,10 @@ pub fn calculate_charge_cost(
     cost_fits_pack_scale(cost).then_some(cost)
 }
 
-/// The facts the cost rules read from a charge's samples (C2 R43a, R44a), kept in
-/// constant space: the first sample, the last two in sample order (`timestamp_ms`,
-/// then id) and the largest usable energy counter. A close or a fill folds the
+/// The facts the cost rules read from a charge's samples (C2 R43a, R44a, R78 (d)),
+/// kept in constant space: the first sample, the last two in sample order
+/// (`timestamp_ms`, then id), the largest usable energy counter and the two brand
+/// flags. A close or a fill folds the
 /// stored samples into it one at a time, in any order, so the memory of the step
 /// does not grow with the length of the charge, and it needs no sorted copy of the
 /// samples. The result is the one the rules give over the sorted slice.
@@ -1199,6 +1251,36 @@ pub(crate) struct ChargeSampleFacts {
     /// `(timestamp_ms, id)` of the last sample.
     last: Option<(i64, i64)>,
     largest_counter: Option<f64>,
+    /// Some sample's `fast_charger_brand` reads `Tesla` (C2 R78 (c)).
+    tesla_brand: bool,
+    /// Some sample carries a brand that is neither `Tesla` nor on the no-brand
+    /// list (C2 R78 (c)).
+    other_brand: bool,
+}
+
+/// What one sample's `fast_charger_brand` says (C2 R78 (c)): the text is trimmed
+/// and compared ASCII case-insensitively. `Tesla` is Tesla; an absent or empty
+/// text, `<invalid>`, `Unknown` and `SNA` carry no brand; any other text is
+/// another operator's brand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SampleBrand {
+    Tesla,
+    Other,
+    NoBrand,
+}
+
+fn sample_brand(sample: &ProjectionChargeSample) -> SampleBrand {
+    let Some(text) = sample.fast_charger_brand.as_deref().map(str::trim) else {
+        return SampleBrand::NoBrand;
+    };
+    let is = |name: &str| text.eq_ignore_ascii_case(name);
+    if is("Tesla") {
+        SampleBrand::Tesla
+    } else if text.is_empty() || is("<invalid>") || is("Unknown") || is("SNA") {
+        SampleBrand::NoBrand
+    } else {
+        SampleBrand::Other
+    }
 }
 
 impl ChargeSampleFacts {
@@ -1227,6 +1309,18 @@ impl ChargeSampleFacts {
                     .map_or(counter, |best| best.max(counter)),
             );
         }
+        match sample_brand(sample) {
+            SampleBrand::Tesla => self.tesla_brand = true,
+            SampleBrand::Other => self.other_brand = true,
+            SampleBrand::NoBrand => {}
+        }
+    }
+
+    /// True iff some sample's brand reads `Tesla` and none carries another brand
+    /// (C2 R78 (d)): the evidence R41 (ii) needs, over every sample the fold has
+    /// seen, whichever order they were offered in.
+    pub(crate) fn brand_is_tesla(&self) -> bool {
+        self.tesla_brand && !self.other_brand
     }
 
     /// The facts of a slice of samples, in any order.
@@ -1238,6 +1332,14 @@ impl ChargeSampleFacts {
         }
         facts
     }
+}
+
+/// The brand rule over a slice of samples (C2 R78 (d), T81 (d)): a test
+/// convenience over the production fold ([`ChargeSampleFacts`]), so the rule has
+/// one body.
+#[cfg(test)]
+pub(crate) fn charge_brand_is_tesla(samples: &[ProjectionChargeSample]) -> bool {
+    ChargeSampleFacts::of(samples).brand_is_tesla()
 }
 
 /// True when the stored times of a charge are observed, not bounds (C2 R43a).

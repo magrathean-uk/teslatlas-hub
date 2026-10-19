@@ -100,3 +100,7 @@ mod b3_c2_a;
 #[cfg(test)]
 #[path = "lifecycle/b3_c1_a_tests.rs"]
 mod b3_c1_a;
+
+#[cfg(test)]
+#[path = "lifecycle/b3_c2_b_tests.rs"]
+mod b3_c2_b;

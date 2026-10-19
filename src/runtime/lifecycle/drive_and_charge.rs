@@ -874,8 +874,10 @@ fn observe_charge_aggregate(open: &mut OpenCharge, sample: &ParsedSample) {
 /// An AC session whose result falls below [`K_AC_FLOOR`] of `E` is a
 /// systematic power error and is not published (R20); DC and unknown kinds
 /// have no floor, and nothing is capped above, because cold-weather heating
-/// can draw far more than the battery stores. Both outputs are rounded once,
-/// here (R4).
+/// can draw far more than the battery stores. The published energy used of a DC
+/// session is the integral of the DC power the source reports and prices
+/// nothing: the per-kWh cost of a DC session reads the counter only (C2 R77).
+/// Both outputs are rounded once, here (R4).
 pub(crate) fn charge_energy_totals(open: &OpenCharge) -> ChargeEnergyTotals {
     let energy = open.max_energy_added.map(|maximum| {
         open.energy_added_carry_kwh + (maximum - open.first_energy_added.unwrap_or(0.0))

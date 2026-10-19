@@ -1130,6 +1130,7 @@ fn t46_range_limits_of_totals_rates_and_computed_costs() {
             }),
             crate::lifecycle::ChargeCostContext {
                 free_supercharging: false,
+                brand_is_tesla: false,
                 span_observed: true,
             },
         ),

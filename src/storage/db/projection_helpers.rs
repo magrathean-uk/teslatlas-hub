@@ -938,7 +938,7 @@ fn materialised_charge_page(
         .map_err(StoreError::Query)
 }
 
-/// The cost-rule facts of a stored charge's samples (C2 R43a, R44a), as the
+/// The cost-rule facts of a stored charge's samples (C2 R43a, R44a, R78 (d)), as the
 /// fill (R50) and manual entry (R54) read them: `materialised_charge_samples`
 /// through the `(vehicle_id, charge_id)` index, folded one row at a time in any
 /// order, so the memory of the step does not grow with the length of the

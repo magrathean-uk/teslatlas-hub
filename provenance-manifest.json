@@ -643,6 +643,7 @@
         "src/collection/teslamate_current.rs",
         "src/collection/teslamate_current/tests.rs",
         "src/runtime/lifecycle/gate_tests/c2_a_tests.rs",
+        "src/runtime/lifecycle/gate_tests/c2_b_tests.rs",
         "src/runtime/lifecycle/gate_tests/fold.rs",
         "src/runtime/lifecycle/gate_tests/hg1_tests.rs",
         "src/runtime/lifecycle/gate_tests/hg2_tests.rs",
