@@ -5,12 +5,32 @@ import AppKit
 /// Dock Quit and the application menu both enter NSApplication.terminate(_:).
 /// Handle sheets here, before AppKit can silently defer termination for them.
 final class HubApplication: NSApplication {
+    /// The decision shared by the application menu's Quit and the Dock's: windows and the
+    /// application controller's lifecycle owner, in that one place (R-E1F6-16).
+    static func mayTerminate(windows: [NSWindow], controller: HubController?) -> Bool {
+        AppDelegate.finishSheetsBeforeQuit(in: windows,
+                                           lifecycle: controller?.lifecycleCapabilities ?? .idle)
+    }
+
+    /// What the alert of a refused Quit says. A child process that failed but cannot be shown gone
+    /// holds the owner (and so refuses Quit, and a logout or restart of the Mac) until it exits: that
+    /// state has its own words (F7-4).
+    static func quitRefusalText(for lifecycle: HubLifecycleCapabilities) -> (title: String, detail: String) {
+        if lifecycle.childHeld {
+            return (HubL10n.text("hub.lifecycle.quit_held_title", fallback: "Hub is waiting for a helper process"),
+                    HubL10n.text("hub.lifecycle.quit_held_detail", fallback: "Hub is waiting for a stuck helper process to exit, so it cannot quit yet. Wait a moment, then try again. Quitting the app does not stop the background Hub service."))
+        }
+        return (HubL10n.text("hub.AppDelegate.12.1", fallback: "Hub is finishing an operation"),
+         HubL10n.text("hub.AppDelegate.13.2", fallback: "Wait for the current setup, service, vehicle, or diagnostics operation to finish, then quit. Quitting the app does not stop the background Hub service."))
+    }
+
     override func terminate(_ sender: Any?) {
-        guard AppDelegate.finishSheetsBeforeQuit(in: windows) else {
-            activate(ignoringOtherApps: true)
+        guard Self.mayTerminate(windows: windows, controller: (delegate as? AppDelegate)?.hubController) else {
+            HubApplicationActivation.activate()
             let alert = NSAlert()
-            alert.messageText = HubL10n.text("hub.AppDelegate.12.1", fallback: "Hub is finishing an operation")
-            alert.informativeText = HubL10n.text("hub.AppDelegate.13.2", fallback: "Wait for the current setup, service, vehicle, or diagnostics operation to finish, then quit. Quitting the app does not stop the background Hub service.")
+            let text = Self.quitRefusalText(for: (delegate as? AppDelegate)?.hubController?.lifecycleCapabilities ?? .idle)
+            alert.messageText = text.title
+            alert.informativeText = text.detail
             alert.addButton(withTitle: HubL10n.text("hub.AppDelegate.14.3", fallback: "OK"))
             _ = HubUIPresentation.response(to: alert)
             return
@@ -22,20 +42,36 @@ final class HubApplication: NSApplication {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private static let windowMenuTag = 104
     private var mainWindowController: MainWindowController?
-    private var hubController: HubController!
+    /// The application controller. Tests may set it to reach `applicationShouldTerminate`
+    /// without replacing global application state.
+    var hubController: HubController!
     private let keyWindow: () -> NSWindow?
+    private let replyToTerminate: (Bool) -> Void
+    private let terminateApplication: (Any?) -> Void
+    private let applicationWindows: ((NSApplication) -> [NSWindow])?
 
-    init(keyWindow: @escaping () -> NSWindow? = { NSApp.keyWindow }) {
+    init(keyWindow: @escaping () -> NSWindow? = { NSApp.keyWindow },
+         replyToTerminate: @escaping (Bool) -> Void = HubProductionEffects.terminationReply(),
+         terminateApplication: @escaping (Any?) -> Void = { NSApp.terminate($0) },
+         applicationWindows: ((NSApplication) -> [NSWindow])? = nil) {
         self.keyWindow = keyWindow
+        self.replyToTerminate = replyToTerminate
+        self.terminateApplication = terminateApplication
+        self.applicationWindows = applicationWindows
         super.init()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        HubStatusProcessLifecycle.shared.shutdown()
+        if let hubController {
+            hubController.completeClosing()
+        } else {
+            HubStatusProcessLifecycle.shared.shutdown()
+        }
         DevelopmentEventLog.drainAll()
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        HubApplicationActivation.yieldFocus()
         NSApp.mainMenu = Self.makeMainMenu(actionTarget: self)
         NSApp.windowsMenu = NSApp.mainMenu?.item(withTag: Self.windowMenuTag)?.submenu
     }
@@ -198,18 +234,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc func quitApplication(_ sender: Any?) {
-        NSApp.terminate(sender)
+        terminateApplication(sender)
     }
 
     /// NSApplication's standard termination can be suppressed by an attached
     /// sheet. End idle sheets explicitly; don't interrupt an owned operation.
-    static func finishSheetsBeforeQuit(in windows: [NSWindow]) -> Bool {
-        guard !HubController.diagnosticsPreventQuit else { return false }
+    static func finishSheetsBeforeQuit(in windows: [NSWindow],
+                                       lifecycle: HubLifecycleCapabilities) -> Bool {
+        // The lifecycle owner first: a foreground owner refuses whether or not a window
+        // shows it (sign-out, diagnostics from a closed Logs page, account work...).
+        guard !lifecycle.preventsQuit else { return false }
         guard !windows.contains(where: {
             ($0.delegate as? OnboardingWindowController)?.operationPreventsQuit == true
                 || ($0.windowController as? MainWindowController)?.operationPreventsQuit == true
                 || ($0.windowController as? DiagnosticsWindowController)?.operationInProgress == true
-                || ($0.windowController as? ServiceDetailsWindowController)?.mutationInProgress == true
         }) else { return false }
         func depth(_ window: NSWindow) -> Int {
             var count = 0
@@ -226,6 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        HubApplicationActivation.yieldFocus()
         guard !HubUIPresentation.isSilentTestHost else { return }
         do {
             hubController = try HubController.applicationController()
@@ -239,13 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             NSApp.terminate(nil)
             return
         }
-        if !hubController.previewMode {
-            let staleImports = TeslaMateServerImporter.cleanupStaleTemporaryDirectories()
-            if staleImports > 0 {
-                HubAppLog.shared.record("temporary_files.removed", category: "teslamate_import",
-                                        fields: ["directories": String(staleImports)])
-            }
-        }
+        hubController.runStartupCleanup()
         let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString")
             as? String ?? "development"
         let appBuild = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion")
@@ -254,6 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             "app_build": appBuild,
             "app_version": appVersion
         ])
+        hubController.reconcileLaunchAgent()
         let showOnboardingImmediately = hubController.shouldShowOnboardingBeforeInitialRefresh
         showDashboard(makeVisible: !showOnboardingImmediately) { [weak self] snapshot in
             guard let self else { return }
@@ -276,11 +310,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        !HubController.diagnosticsPreventQuit
+        !(hubController?.lifecycleCapabilities.preventsQuit ?? false)
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        Self.finishSheetsBeforeQuit(in: sender.windows) ? .terminateNow : .terminateCancel
+        let lifecycle = hubController?.lifecycleCapabilities ?? .idle
+        var reply = Self.terminationReply(windows: applicationWindows?(sender) ?? sender.windows, lifecycle: lifecycle,
+                                          restartDutyOutstanding: hubController?.restartDutyOutstanding ?? false)
+        guard reply != .terminateCancel else { return reply }
+        // Accepted: the lifecycle closes to new admissions before anything is settled. The decision to
+        // close is taken by the authority, under its own lock, because the snapshot above may be stale:
+        // a foreground owner admitted since refuses the Quit, a background owner admitted since is
+        // awaited.
+        switch hubController?.beginClosing() {
+        case .refused?:
+            return .terminateCancel
+        case .entered(ownerHeld: true)?:
+            reply = .terminateLater
+        default:
+            break
+        }
+        if reply == .terminateLater {
+            // One reply, on the main queue after this method has returned `.terminateLater`,
+            // once background reconciliation and any restart owed have been settled.
+            let once = HubCompletionOnce<Void> { [replyToTerminate] _ in
+                DispatchQueue.main.async { replyToTerminate(true) }
+            }
+            hubController?.whenLifecycleSettled { once.complete(()) }
+        }
+        return reply
+    }
+
+    /// The lifecycle owner and the existing operation and sheet guards first (a pending
+    /// operation cancels the quit); then background work or an outstanding restart duty
+    /// defers it; otherwise it proceeds.
+    static func terminationReply(windows: [NSWindow],
+                                 lifecycle: HubLifecycleCapabilities,
+                                 restartDutyOutstanding: Bool) -> NSApplication.TerminateReply {
+        guard finishSheetsBeforeQuit(in: windows, lifecycle: lifecycle) else { return .terminateCancel }
+        let backgroundOwned = lifecycle.owner?.isBackground == true
+        return (restartDutyOutstanding || backgroundOwned) ? .terminateLater : .terminateNow
     }
 
     @objc func showLogs(_ sender: Any?) {
@@ -399,6 +468,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         guard makeVisible else { return }
         mainWindowController?.showWindow(nil)
         mainWindowController?.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        HubApplicationActivation.activate()
     }
 }

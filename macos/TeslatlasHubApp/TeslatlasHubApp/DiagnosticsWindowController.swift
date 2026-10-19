@@ -25,6 +25,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
     private weak var embeddedPage: NSView?
     private var embeddedBody: NSView?
     private(set) var operationInProgress = false
+    private var lifecycleObservation: HubLifecycleAuthority.Observation?
 
     init(controller: HubController,
          onDismiss: @escaping () -> Void = {},
@@ -49,6 +50,17 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
             window?.toolbarStyle = .expanded
         }
         showInitialSummary()
+        // Whether Run is offered follows the lifecycle owner (R-E1F6-15).
+        lifecycleObservation = controller.observeLifecycle { [weak self] _ in
+            self?.updateRunAvailability()
+        }
+        updateRunAvailability()
+    }
+
+    /// Run is available when this window is idle and no other owner holds the lifecycle.
+    private func updateRunAvailability() {
+        guard !controller.previewMode else { return }
+        runButton.isEnabled = !operationInProgress && controller.lifecycleCapabilities.isIdle
     }
 
     @available(*, unavailable)
@@ -233,7 +245,7 @@ final class DiagnosticsWindowController: NSWindowController, NSWindowDelegate {
                 self.statusDetail.setAccessibilityValue(self.statusDetail.stringValue)
                 HubAccessibility.announce(self.statusDetail.stringValue,
                                           from: self.embeddedPage ?? self.statusDetail)
-                self.runButton.isEnabled = true
+                self.updateRunAvailability()
                 self.copyButton.isEnabled = !safeReport.isEmpty
                 self.saveButton.isEnabled = !safeReport.isEmpty
             }

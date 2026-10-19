@@ -30,8 +30,6 @@ final class HubPreviewCatalogTests: XCTestCase {
                 "TESLATLAS_HUB_PREVIEW_SCENE": scene.rawValue
             ],
             commandRunner: operations,
-            installedCommandRunner: operations,
-            installer: operations,
             serviceRunner: operations)
 
             XCTAssertTrue(controller.previewMode, scene.rawValue)
@@ -57,22 +55,55 @@ final class HubPreviewCatalogTests: XCTestCase {
     }
 
     func testPreviewControllerRejectsOperationalServiceMutation() {
-        let expectation = expectation(description: "preview rejected mutation")
+        let removal = expectation(description: "preview rejected removal")
+        let deletion = expectation(description: "preview rejected deletion")
         let controller = HubController(environment: [
             "TESLATLAS_HUB_PREVIEW_SCENE": HubPreviewScene.dashboard.rawValue
         ])
 
-        controller.installService { result in
+        controller.removeBackgroundService { result in
             guard case let .failure(error) = result else {
-                XCTFail("preview unexpectedly allowed installation")
-                expectation.fulfill()
+                XCTFail("preview unexpectedly allowed removal")
+                removal.fulfill()
                 return
             }
             XCTAssertEqual(error.localizedDescription,
                            HubActionError.preview.localizedDescription)
-            expectation.fulfill()
+            removal.fulfill()
         }
-        wait(for: [expectation], timeout: 1)
+        controller.deleteHubAndData { result in
+            guard case let .failure(error) = result else {
+                XCTFail("preview unexpectedly allowed deletion")
+                deletion.fulfill()
+                return
+            }
+            XCTAssertEqual(error.localizedDescription,
+                           HubActionError.preview.localizedDescription)
+            deletion.fulfill()
+        }
+        wait(for: [removal, deletion], timeout: 1)
+    }
+
+    func testPreviewRecorderRefusesRecoveryAndDelete() {
+        let recorder = HubPreviewOperationRecorder()
+        var recovery: Result<String, Error>?
+        var deletion: Result<HubDataRemovalReport, Error>?
+        let owner = makeLifecycleToken()
+        recorder.recoverAfterPause(owner: owner) { recovery = $0 }
+        recorder.releaseRestartRecord(owner: owner)
+        recorder.deleteHubAndData(owner: owner) { deletion = $0 }
+        guard case let .failure(recoveryError)? = recovery,
+              case let .failure(deletionError)? = deletion else {
+            XCTFail("the preview recorder must refuse recovery and deletion")
+            return
+        }
+        XCTAssertEqual(recoveryError.localizedDescription, HubActionError.preview.localizedDescription)
+        XCTAssertEqual(deletionError.localizedDescription, HubActionError.preview.localizedDescription)
+        XCTAssertEqual(recorder.calls, [.recoverAfterPause, .releaseRestartRecord, .deleteHubAndData])
+        XCTAssertFalse(recorder.restartDutyOutstanding)
+        var settled = false
+        recorder.whenRestartDutySettled { settled = true }
+        XCTAssertTrue(settled, "the preview settles immediately")
     }
 
     private func assertInertFixture(_ snapshot: HubSnapshot,
@@ -113,33 +144,51 @@ final class HubPreviewCatalogTests: XCTestCase {
     }
 }
 
-final class HubPreviewOperationRecorder: HubServiceControlling, HubInstalling {
+final class HubPreviewOperationRecorder: HubServiceControlling, HubCommandRunning {
     enum Call: Equatable {
         case command
         case serviceLoadState
-        case install
-        case uninstall
+        case recoverAfterPause
+        case releaseRestartRecord
+        case deleteHubAndData
     }
 
     private(set) var calls: [Call] = []
+
+    /// Preview has no outstanding duty and settles at once.
+    var restartDutyOutstanding: Bool { false }
+
+    func whenRestartDutySettled(_ callback: @escaping () -> Void) { callback() }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         calls.append(.command)
         completion(.failure(HubActionError.preview))
     }
+    func run(arguments: [String], owner: HubLifecycleToken,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        run(arguments: arguments, completion: completion)
+    }
+    func restartRecordHeld(by owner: HubLifecycleToken) -> Bool { false }
 
     func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
         calls.append(.serviceLoadState)
         completion(.unloaded)
     }
 
-    func install(completion: @escaping (Result<String, Error>) -> Void) {
-        calls.append(.install)
+    func recoverAfterPause(owner: HubLifecycleToken, completion: @escaping (Result<String, Error>) -> Void) {
+        calls.append(.recoverAfterPause)
         completion(.failure(HubActionError.preview))
     }
 
-    func uninstall(deleteData: Bool, completion: @escaping (Result<String, Error>) -> Void) {
-        calls.append(.uninstall)
+    func releaseRestartRecord(owner: HubLifecycleToken) {
+        calls.append(.releaseRestartRecord)
+    }
+
+
+    func reconcile(owner: HubLifecycleToken, ensure: @escaping () throws -> HubLaunchAgentChange,
+                   completion: @escaping (HubReconcileOutcome) -> Void) { completion(.completed) }
+    func deleteHubAndData(owner: HubLifecycleToken, completion: @escaping (Result<HubDataRemovalReport, Error>) -> Void) {
+        calls.append(.deleteHubAndData)
         completion(.failure(HubActionError.preview))
     }
 }

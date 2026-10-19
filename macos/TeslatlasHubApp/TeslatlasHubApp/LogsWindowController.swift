@@ -23,6 +23,7 @@ final class LogsWindowController: NSWindowController {
     private let saveButton = HubActionButton(title: HubL10n.text("hub.LogsWindowController.23.1718", fallback: "Save…"), target: nil, action: nil)
     private var latestText = ""
     private var operationInProgress = false
+    private var lifecycleObservation: HubLifecycleAuthority.Observation?
     private weak var embeddedPage: NSView?
     private var embeddedBody: NSView?
 
@@ -50,6 +51,17 @@ final class LogsWindowController: NSWindowController {
         } else {
             refresh()
         }
+        // Run Diagnostics follows the lifecycle owner (R-E1F6-15); closing or leaving this
+        // page never ends a diagnostics run that has started.
+        lifecycleObservation = controller.observeLifecycle { [weak self] _ in
+            self?.updateDiagnosticsAvailability()
+        }
+        updateDiagnosticsAvailability()
+    }
+
+    private func updateDiagnosticsAvailability() {
+        guard !controller.previewMode else { return }
+        diagnosticsItem.isEnabled = !operationInProgress && controller.lifecycleCapabilities.isIdle
     }
 
     @available(*, unavailable)
@@ -264,7 +276,8 @@ final class LogsWindowController: NSWindowController {
 
     private func setActionsEnabled(_ enabled: Bool) {
         refreshItem.isEnabled = !operationInProgress || enabled
-        diagnosticsItem.isEnabled = !operationInProgress || enabled
+        diagnosticsItem.isEnabled = (!operationInProgress || enabled)
+            && (controller.previewMode || controller.lifecycleCapabilities.isIdle)
         copyButton.isEnabled = enabled
         saveButton.isEnabled = enabled
     }

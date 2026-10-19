@@ -14,11 +14,11 @@ struct HubDiagnosticRow: Equatable {
 }
 
 enum HubDiagnosticsPresentation {
-    static func rows(from report: String) -> [HubDiagnosticRow] {
-        report.components(separatedBy: "\n\n").compactMap(parseSection)
+    static func rows(from report: String, bundle: Bundle = .main) -> [HubDiagnosticRow] {
+        report.components(separatedBy: "\n\n").compactMap { parseSection($0, bundle: bundle) }
     }
 
-    private static func parseSection(_ section: String) -> HubDiagnosticRow? {
+    private static func parseSection(_ section: String, bundle: Bundle) -> HubDiagnosticRow? {
         let lines = section.components(separatedBy: .newlines)
         guard let heading = lines.first?.trimmingCharacters(in: .whitespaces),
               heading.hasPrefix("== "), heading.hasSuffix(" ==") else { return nil }
@@ -35,7 +35,7 @@ enum HubDiagnosticsPresentation {
         }
         let detail = summarizedDetail(from: detailLines)
 
-        return HubDiagnosticRow(title: displayTitle(for: title), detail: detail,
+        return HubDiagnosticRow(title: displayTitle(for: title, bundle: bundle), detail: detail,
                                 outcome: isFailed ? .failed : .passed)
     }
 
@@ -78,18 +78,20 @@ enum HubDiagnosticsPresentation {
         return HubL10n.text("hub.HubDiagnosticsPresentation.51.1418", fallback: "Structured report available in raw details.")
     }
 
-    private static func displayTitle(for rawTitle: String) -> String {
+    private static func displayTitle(for rawTitle: String, bundle: Bundle) -> String {
         let normalized = rawTitle.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         let prefix = normalized.split(separator: " —", maxSplits: 1, omittingEmptySubsequences: true).first ?? ""
         switch prefix.lowercased() {
-        case "doctor": return HubL10n.text("hub.DiagnosticsWindowController.371.242", fallback: "Environment doctor")
-        case "preflight": return HubL10n.text("hub.HubDiagnosticsPresentation.preflight_label", fallback: "Preflight")
-        case "status": return HubL10n.text("hub.HubDiagnosticsPresentation.status_label", fallback: "Status")
-        case "recent logs": return HubL10n.text("hub.DiagnosticsWindowController.377.254", fallback: "Recent logs")
-        case "service pause": return HubL10n.text("hub.HubDiagnosticsPresentation.81.1444", fallback: "Service pause")
-        case "service state check": return HubL10n.text("hub.HubDiagnosticsPresentation.82.1446", fallback: "Service state check")
-        case "service resume": return HubL10n.text("hub.HubDiagnosticsPresentation.83.1448", fallback: "Service resume")
-        case "support metadata": return HubL10n.text("hub.HubDiagnosticsPresentation.84.1450", fallback: "Support metadata")
+        case "doctor": return HubL10n.text("hub.DiagnosticsWindowController.371.242", fallback: "Environment doctor", bundle: bundle)
+        case "preflight": return HubL10n.text("hub.HubDiagnosticsPresentation.preflight_label", fallback: "Preflight", bundle: bundle)
+        case "status": return HubL10n.text("hub.HubDiagnosticsPresentation.status_label", fallback: "Status", bundle: bundle)
+        case "recent logs": return HubL10n.text("hub.DiagnosticsWindowController.377.254", fallback: "Recent logs", bundle: bundle)
+        case "service recovery":
+            return HubL10n.text("hub.HubDiagnosticsPresentation.service_recovery", fallback: "Service recovery", bundle: bundle)
+        case "service pause": return HubL10n.text("hub.HubDiagnosticsPresentation.81.1444", fallback: "Service pause", bundle: bundle)
+        case "service state check": return HubL10n.text("hub.HubDiagnosticsPresentation.82.1446", fallback: "Service state check", bundle: bundle)
+        case "service resume": return HubL10n.text("hub.HubDiagnosticsPresentation.83.1448", fallback: "Service resume", bundle: bundle)
+        case "support metadata": return HubL10n.text("hub.HubDiagnosticsPresentation.84.1450", fallback: "Support metadata", bundle: bundle)
         default:
             guard let first = normalized.first else { return normalized }
             return first.uppercased() + normalized.dropFirst()

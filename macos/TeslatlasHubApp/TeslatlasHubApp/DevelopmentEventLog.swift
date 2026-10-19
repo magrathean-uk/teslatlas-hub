@@ -2,6 +2,15 @@
 import Foundation
 import Darwin
 
+/// The leaf rule applied by the descriptor-anchored directory walk. The private
+/// leaf is the development rule (a 0700 directory of the current user); the
+/// LaunchAgents leaf is the per-user rule of the production LaunchAgent writer
+/// (a directory of the current user that is not writable by group or others).
+enum HubDirectoryPolicy {
+    case privateLeaf
+    case launchAgentsLeaf
+}
+
 /// Only typed, non-sensitive evidence enters this development-only journal.
 final class DevelopmentEventLog {
     enum Kind: String { case command, control, preflight }
@@ -45,7 +54,9 @@ final class DevelopmentEventLog {
     func completion(kind: Kind, action: Action, operation: UUID, started: UInt64, result: Result<String, Error>) {
         var outcome: Outcome = .complete
         var code: Int32?
-        if case let .failure(error) = result {
+        if case let .failure(failure) = result {
+            // F7-6: a command that could not be stopped is recorded by the failure underneath.
+            let error = HubActionError.settingQuiescenceAside(failure)
             outcome = .failed
             if case HubActionError.commandTimedOut = error { outcome = .timeout }
             if case let HubActionError.commandExited(status, _) = error { code = status }
@@ -73,6 +84,7 @@ final class DevelopmentEventLog {
     }
     static func validateDirectoryReadOnly(_ directory: URL,
                                          allowOwnedGroupWritableAncestors: Bool = true,
+                                         policy: HubDirectoryPolicy = .privateLeaf,
                                          afterOpeningComponent: ((String) -> Void)? = nil) throws -> Int32 {
         guard directory.path.hasPrefix("/"), directory.standardizedFileURL.path == directory.path else { throw POSIXError(.EPERM) }
         let components = directory.pathComponents.dropFirst()
@@ -84,7 +96,8 @@ final class DevelopmentEventLog {
                 var entry = stat()
                 guard fstat(descriptor, &entry) == 0,
                       admitsDirectoryEntry(entry, leaf: leaf,
-                                           allowOwnedGroupWritableAncestors: allowOwnedGroupWritableAncestors) else { throw POSIXError(.EPERM) }
+                                           allowOwnedGroupWritableAncestors: allowOwnedGroupWritableAncestors,
+                                           policy: policy) else { throw POSIXError(.EPERM) }
             }
             try validate(components.isEmpty)
             var opened = ""
@@ -104,12 +117,20 @@ final class DevelopmentEventLog {
         }
     }
     static func admitsDirectoryEntry(_ entry: stat, leaf: Bool,
-                                     allowOwnedGroupWritableAncestors: Bool) -> Bool {
-        entry.st_mode & S_IFMT == S_IFDIR
+                                     allowOwnedGroupWritableAncestors: Bool,
+                                     policy: HubDirectoryPolicy = .privateLeaf) -> Bool {
+        let leafAdmitted: Bool
+        switch policy {
+        case .privateLeaf:
+            leafAdmitted = entry.st_uid == getuid() && entry.st_mode & 0o777 == 0o700
+        case .launchAgentsLeaf:
+            leafAdmitted = entry.st_uid == getuid() && entry.st_mode & 0o022 == 0
+        }
+        return entry.st_mode & S_IFMT == S_IFDIR
             && (entry.st_uid == 0 || entry.st_uid == getuid())
             && entry.st_mode & 0o002 == 0
             && (entry.st_mode & 0o020 == 0 || (allowOwnedGroupWritableAncestors && entry.st_uid == getuid() && entry.st_gid == getgid()))
-            && (!leaf || (entry.st_uid == getuid() && entry.st_mode & 0o777 == 0o700))
+            && (!leaf || leafAdmitted)
     }
     private func append(_ payload: Data) throws {
         let dir = try Self.validateDirectoryReadOnly(directory)

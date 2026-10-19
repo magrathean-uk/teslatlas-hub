@@ -78,4 +78,32 @@ final class HubDiagnosticsPresentationTests: XCTestCase {
             HubDiagnosticRow(title: "Recent logs", detail: "[INFO] Hub collection resumed", outcome: .passed)
         ])
     }
+
+    private func localizedBundle(_ strings: [String: String]) throws -> (Bundle, URL) {
+        let folder = HubTestScratch.directory
+            .appendingPathComponent("hub-diagnostics-l10n-\(UUID().uuidString)", isDirectory: true)
+        let english = folder.appendingPathComponent("en.lproj", isDirectory: true)
+        try FileManager.default.createDirectory(at: english, withIntermediateDirectories: true)
+        let text = strings.map { "\"\($0.key)\" = \"\($0.value)\";" }.joined(separator: "\n") + "\n"
+        try text.write(to: english.appendingPathComponent("Localizable.strings"), atomically: true, encoding: .utf8)
+        return (try XCTUnwrap(Bundle(url: folder)), folder)
+    }
+
+    func testServiceRecoveryLabelIsLocalisedAndTheReportTokenIsKept() throws {
+        let (bundle, folder) = try localizedBundle(["hub.HubDiagnosticsPresentation.service_recovery": "Reprise du service"])
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let report = "== service recovery (failed) ==\nThe restart could not be confirmed.\n\n== service recovery ==\nThe Hub was started again."
+        let rows = HubDiagnosticsPresentation.rows(from: report, bundle: bundle)
+        XCTAssertEqual(rows.map(\.title), ["Reprise du service", "Reprise du service"])
+        XCTAssertEqual(rows.map(\.outcome), [.failed, .passed], "the report tokens still parse")
+        XCTAssertEqual(HubDiagnosticsPresentation.rows(from: report).map(\.title), ["Service recovery", "Service recovery"],
+                       "without a translation the English label is shown")
+    }
+
+    func testServiceDiagnosticLinePrefixIsLocalised() throws {
+        let (bundle, folder) = try localizedBundle(["hub.service.diagnostic_line": "Service : %1$@"])
+        defer { try? FileManager.default.removeItem(at: folder) }
+        XCTAssertEqual(HubController.serviceDiagnosticLine("Move the app", bundle: bundle), "Service : Move the app")
+        XCTAssertEqual(HubController.serviceDiagnosticLine("Move the app"), "Service: Move the app")
+    }
 }

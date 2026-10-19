@@ -114,8 +114,6 @@ final class HubVisualSnapshotTests: XCTestCase {
             "TESLATLAS_HUB_TEST_MODE": "1"
         ],
         commandRunner: operations,
-        installedCommandRunner: operations,
-        installer: operations,
         serviceRunner: operations,
         initialSnapshot: snapshot)
         let owner: NSWindowController

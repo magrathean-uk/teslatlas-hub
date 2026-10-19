@@ -124,6 +124,9 @@ final class HubUtilityWindowTests: XCTestCase {
             environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"], initialSnapshot: .previewRunning
         ))
         defer { main.close() }
+        // The toolbar's navigation view joins the window on its first layout; an inactive
+        // accessory test host (R-E1F6-21) does not run that layout before the test body.
+        main.window?.layoutIfNeeded()
         main.selectMainSection(.activity)
         main.showEmbeddedLogs()
         let back = try XCTUnwrap(descendants(main.window?.contentView).compactMap { $0 as? NSButton }
@@ -232,7 +235,7 @@ final class HubUtilityWindowTests: XCTestCase {
             defer { setup.close(); main.close() }
             setup.setBusy(busy)
             XCTAssertNil(sheet.sheetParent)
-            XCTAssertEqual(AppDelegate.finishSheetsBeforeQuit(in: [sheet]), !busy)
+            XCTAssertEqual(AppDelegate.finishSheetsBeforeQuit(in: [sheet], lifecycle: .idle), !busy)
             XCTAssertEqual(main.activeModalKind, .onboarding)
         }
         let delegate = AppDelegate()

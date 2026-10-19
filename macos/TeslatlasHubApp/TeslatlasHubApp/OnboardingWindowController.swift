@@ -230,6 +230,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private let migrationPasswordFile = NSTextField(string: "")
     private let migrationKeyFile = NSTextField(string: "")
     private var migrationSession: TeslaMateServerImportSession?
+    private var migrationPreparation: HubMigrationPreparation?
+    private var accountSignIn: HubAccountSignIn?
+    private var lifecycleObservation: HubLifecycleAuthority.Observation?
     private var connectedMigrationIdentity: String?
     private var onboardingContainer: HubOnboardingContainerView!
     private var onboardingToolbar: HubOnboardingToolbar?
@@ -340,6 +343,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         if shouldAutoVerify {
             DispatchQueue.main.async { [weak self] in self?.runVerification() }
         }
+        lifecycleObservation = controller.observeLifecycle { [weak self] _ in self?.updateFooter() }
     }
 
     private static func previewState(route: String?) -> HubOnboardingState? {
@@ -390,10 +394,19 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
 
     func windowWillClose(_ notification: Notification) {
         resetMigrationProgress()
-        migrationSession?.close()
+        closeMigrationSession()
         guard !didNotifyDismiss else { return }
         didNotifyDismiss = true
         onDismiss()
+    }
+
+    /// The prepared session and any preparation still running belong to the controller:
+    /// a window going away cancels its interest and the controller closes what remains.
+    private func closeMigrationSession() {
+        migrationPreparation?.cancel()
+        migrationPreparation = nil
+        if let session = migrationSession { controller.closeMigrationSession(session) }
+        migrationSession = nil
     }
 
     static func routeChangeAllowed(busy: Bool,
@@ -415,8 +428,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         errorMessage = nil
         compatibility = nil
         migrationVersionAcknowledgement.state = .off
-        migrationSession?.close()
-        migrationSession = nil
+        closeMigrationSession()
         connectedMigrationIdentity = nil
         checks = []
         verificationFinished = false
@@ -1310,8 +1322,15 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         return footer
     }
 
+    /// Another owner holds the lifecycle (diagnostics from Logs, background reconciliation)
+    /// while this window is idle: the buttons that would start work wait for it.
+    private var lifecycleHeldElsewhere: Bool {
+        !busy && authWindow == nil && !controller.previewMode && !controller.lifecycleCapabilities.isIdle
+    }
+
     private func updateFooter() {
-        let blocked = interactionBlocked
+        let formBlocked = interactionBlocked
+        let blocked = interactionBlocked || lifecycleHeldElsewhere
         let focused = focusedOperation != nil
         let importing = focusedOperation == .importing
         cancelButton.isHidden = dismissalPolicy != .accountManagement
@@ -1320,9 +1339,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             || state.route == .finish
             || (state.route == .verify && state.path == .newInstallation)
             || importing
-        backButton.isEnabled = !blocked
+        backButton.isEnabled = !formBlocked
         footerLogsButton?.isHidden = state.route != .verify || !verificationFinished
-        footerLogsButton?.isEnabled = !blocked
+        footerLogsButton?.isEnabled = !formBlocked
         continueButton.isHidden = importing
         // The focused operation body owns its status copy. Keep the footer's
         // control label stable so shared chrome does not repeat that status.
@@ -1372,7 +1391,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationConnectButton = state.route == .migration ? continueButton : nil
         migrationConnectButton?.isEnabled = continueButton.isEnabled
         for case let control as NSControl in migrationKeyViews {
-            control.isEnabled = !blocked
+            control.isEnabled = !formBlocked
         }
         if let migrationConnectButton {
             migrationConnectButton.title = busyOperation == .connecting
@@ -1443,7 +1462,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
         if !closesWindowOnCancel {
             resetMigrationProgress()
-            migrationSession?.close()
+            closeMigrationSession()
             guard !didNotifyDismiss else { return }
             didNotifyDismiss = true
             onDismiss()
@@ -1553,11 +1572,20 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             authWindow?.window?.makeKeyAndOrderFront(nil)
             return
         }
+        // The account context is the controller's, and exists before authentication begins.
+        let signIn: HubAccountSignIn
+        switch controller.beginLegacySignIn() {
+        case let .success(context): signIn = context
+        case let .failure(error):
+            showInlineError(error.localizedDescription)
+            return
+        }
+        accountSignIn = signIn
         HubAppLog.shared.record("authentication.started", category: "account",
                                 fields: ["provider": "legacy"])
         do {
             let auth = try TeslaAuthWindowController { [weak self] result in
-                guard let self else { return }
+                guard let self else { signIn.cancel(); return }
                 self.authWindow = nil
                 self.updateWindowCloseAvailability()
                 self.updateFooter()
@@ -1566,10 +1594,13 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                     HubAppLog.shared.record("authentication.completed", category: "account",
                                             fields: ["provider": "legacy"])
                     self.setBusy(true, operation: .setup)
-                    self.controller.configureTeslaAccount(tokens: tokens) { [weak self] setup in
+                    signIn.configure(tokens: tokens) { [weak self] setup in
+                        self?.accountSignIn = nil
                         self?.setupFinished(setup)
                     }
                 case let .failure(error):
+                    signIn.cancel()
+                    self.accountSignIn = nil
                     if error as? TeslaAuthError == .cancelled {
                         HubAppLog.shared.record("authentication.cancelled", category: "account",
                                                 fields: ["provider": "legacy"])
@@ -1589,6 +1620,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             auth.showWindow(nil)
             auth.window?.makeKeyAndOrderFront(nil)
         } catch {
+            signIn.cancel()
+            accountSignIn = nil
             HubAppLog.shared.record("authentication.failed", category: "account", level: "ERROR",
                                     fields: [
                                         "provider": "legacy",
@@ -1621,8 +1654,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     @objc private func localHistorySelectionChanged() {
-        migrationSession?.close()
-        migrationSession = nil
+        closeMigrationSession()
         compatibility = nil
         connectedMigrationIdentity = nil
         migrationVersionAcknowledgement.state = .off
@@ -1676,8 +1708,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationDiagnostic = nil
         errorMessage = nil
         migrationVersionAcknowledgement.state = .off
-        migrationSession?.close()
-        migrationSession = nil
+        closeMigrationSession()
         connectedMigrationIdentity = nil
         let authentication: TeslaMateSSHAuthentication
         if migrationAuthentication.indexOfSelectedItem == 0 {
@@ -1686,12 +1717,18 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         } else {
             authentication = .password(migrationSSHPassword.stringValue)
         }
-        TeslaMateServerImporter.connect(host: host,
-                                        user: user,
-                                        port: port,
-                                        authentication: authentication,
-                                        usePasswordlessSudo: migrationUseSudo.state == .on) { [weak self] result in
-            guard let self else { return }
+        migrationPreparation = controller.connectMigrationServer(
+            host: host,
+            user: user,
+            port: port,
+            authentication: authentication,
+            usePasswordlessSudo: migrationUseSudo.state == .on) { [weak self, controller] result in
+            guard let self else {
+                // No window is left to use the connection: the controller closes it.
+                if case let .success(session) = result { controller.closeMigrationSession(session) }
+                return
+            }
+            self.migrationPreparation = nil
             switch result {
             case let .success(session):
                 self.migrationDiagnostic = nil
@@ -1708,6 +1745,11 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                         level: "ERROR",
                                         fields: ["error_code": HubAppLog.errorCode(error)])
                 self.setBusy(false)
+                if case HubActionError.lifecycleRefused = error {
+                    // Not a connection problem: the Hub was busy and nothing was started.
+                    self.showInlineError(error.localizedDescription)
+                    return
+                }
                 self.compatibility = nil
                 self.errorMessage = nil
                 self.migrationDiagnostic = TeslaMateServerImporter.connectionDiagnostic(
@@ -1755,8 +1797,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 HubAppLog.shared.record("compatibility.failed", category: "teslamate_import",
                                         level: "ERROR",
                                         fields: ["error_code": HubAppLog.errorCode(error)])
-                session.close()
-                self.migrationSession = nil
+                self.closeMigrationSession()
                 self.connectedMigrationIdentity = nil
                 self.compatibility = HubTeslaMateCompatibility(compatible: false,
                                                                message: error.localizedDescription,
@@ -1781,8 +1822,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         guard connectedMigrationIdentity == currentMigrationIdentity else {
             HubAppLog.shared.record("import.rejected", category: "teslamate_import",
                                     level: "WARN", fields: ["reason": "settings_changed"])
-            session.close()
-            migrationSession = nil
+            closeMigrationSession()
             connectedMigrationIdentity = nil
             compatibility = nil
             showInlineError(HubL10n.text("hub.OnboardingWindowController.1750.2137", fallback: "Server settings changed. Connect to the TeslaMate server again before importing."))
@@ -1797,11 +1837,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                          acknowledgeV42CompatibleSchema: versionAccepted,
                                          progress: { [weak self] update in
                                              self?.updateMigrationProgress(update)
-                                         }) { [weak self] result in
-            session.close()
-            self?.migrationSession = nil
-            self?.connectedMigrationIdentity = nil
-            self?.setupFinished(result)
+                                         }) { [weak self, controller] result in
+            // The import is over: the controller closes the session whether or not a window
+            // is still there to hear of it.
+            controller.closeMigrationSession(session)
+            guard let self else { return }
+            if self.migrationSession === session { self.migrationSession = nil }
+            self.connectedMigrationIdentity = nil
+            self.setupFinished(result)
         }
     }
 
@@ -1858,6 +1901,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                     self.checks = checks
                     self.errorMessage = checks.allSatisfy(\.passed) ? nil : HubL10n.text("hub.OnboardingWindowController.1820.2143", fallback: "One or more checks need attention.")
                 case let .failure(error):
+                    if case HubActionError.lifecycleRefused(.busy(.reconcile)) = error {
+                        // Launch-time reconciliation is short and runs by itself: verification
+                        // waits for it instead of reporting a failure.
+                        self.controller.lifecycle.whenIdle {
+                            DispatchQueue.main.async { [weak self] in self?.runVerification() }
+                        }
+                        return
+                    }
                     self.checks = []
                     self.errorMessage = error.localizedDescription
                 }
@@ -1958,8 +2009,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         errorMessage = nil
         migrationDiagnostic = nil
         migrationVersionAcknowledgement.state = .off
-        migrationSession?.close()
-        migrationSession = nil
+        closeMigrationSession()
         connectedMigrationIdentity = nil
         render()
     }
@@ -1981,8 +2031,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     @objc private func changeMigrationServer() {
-        migrationSession?.close()
-        migrationSession = nil
+        closeMigrationSession()
         connectedMigrationIdentity = nil
         compatibility = nil
         migrationVersionAcknowledgement.state = .off

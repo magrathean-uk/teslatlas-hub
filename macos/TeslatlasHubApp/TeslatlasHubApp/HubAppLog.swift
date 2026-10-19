@@ -4,6 +4,43 @@ import Foundation
 import OSLog
 import Darwin
 
+/// The one definition of "this process is an XCTest host", and the real-home
+/// guard that destructive production effects share (D-E16): AppKit tests launch
+/// the production app as their host, so its effects must never reach the owner's
+/// real home, preferences domain or launchd domain.
+enum HubTestHost {
+    static func isXCTest(environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestBundlePath"] != nil
+            || environment["XCInjectBundleInto"] != nil
+    }
+
+    /// The real home, lexically standardised. Pure: no file-system access.
+    static func defaultRealHome() -> URL {
+        URL(fileURLWithPath: lexicalPath(NSHomeDirectory()), isDirectory: true)
+    }
+
+    /// True when a destructive effect aimed at `home` must be refused: the process
+    /// is an XCTest host and `home` is the real home. Paths are compared as
+    /// standardised strings; symbolic links are never resolved.
+    static func refusesHome(_ home: URL, realHome: URL,
+                            environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
+        isXCTest(environment: environment)
+            && lexicalPath(home.path) == lexicalPath(realHome.path)
+    }
+
+    /// Removes `.` and empty components and resolves `..` lexically.
+    static func lexicalPath(_ path: String) -> String {
+        var parts: [Substring] = []
+        for part in path.split(separator: "/", omittingEmptySubsequences: true) {
+            if part == "." { continue }
+            if part == ".." { _ = parts.popLast(); continue }
+            parts.append(part)
+        }
+        return "/" + parts.joined(separator: "/")
+    }
+}
+
 protocol HubAppLogging: AnyObject {
     func record(_ name: String,
                 category: String,
@@ -21,6 +58,7 @@ final class HubAppLog: HubAppLogging {
     private static let maximumLineBytes = 16 * 1024
     private static let maximumUnifiedLogBytes = 512
     private let lock = NSLock()
+    private var suspended = false
     private let fileURL: URL
     private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "eu.teslatlas.hub.app",
                                 category: "diagnostics")
@@ -38,12 +76,12 @@ final class HubAppLog: HubAppLogging {
                               homeDirectory: URL,
                               temporaryDirectory: URL,
                               processIdentifier: Int32) -> URL {
-        let isTesting = environment["XCTestConfigurationFilePath"] != nil
-            || environment["XCTestBundlePath"] != nil
-            || environment["XCInjectBundleInto"] != nil
-        if isTesting {
+        if HubTestHost.isXCTest(environment: environment) {
+            // Inside the one folder the test scripts clean (`teslatlas-hub-tests` in the per-user
+            // temporary directory), one subfolder per host process: nothing is left beside it.
             return temporaryDirectory
-                .appendingPathComponent("TeslatlasHubTests-\(processIdentifier)", isDirectory: true)
+                .appendingPathComponent("teslatlas-hub-tests", isDirectory: true)
+                .appendingPathComponent("host-\(processIdentifier)", isDirectory: true)
                 .appendingPathComponent("app.log")
         }
         return homeDirectory.appendingPathComponent("Library/Logs/Teslatlas Hub/app.log")
@@ -75,7 +113,17 @@ final class HubAppLog: HubAppLogging {
 
         lock.lock()
         defer { lock.unlock() }
+        guard !suspended else { return }
         append(line)
+    }
+
+    /// After this call the process writes no further records to its log file. Delete
+    /// Hub and Data calls it immediately before it removes the logs folder, which
+    /// holds the file, so nothing recreates the folder afterwards.
+    func suspend() {
+        lock.lock()
+        suspended = true
+        lock.unlock()
     }
 
     func recentText(maximumBytes: Int = 256 * 1024) -> String {
@@ -104,10 +152,11 @@ final class HubAppLog: HubAppLogging {
             switch error {
             case .preview: return "preview_read_only"
             case .missingResource: return "missing_resource"
-            case .untrustedInstaller: return "untrusted_installer"
             case .commandFailed: return "command_failed"
             case let .commandExited(status, _): return "command_exited_\(status)"
             case .commandTimedOut: return "command_timed_out"
+            case .commandNotQuiescent: return "command_not_quiescent"
+            case let .lifecycleRefused(refusal): return "lifecycle_" + HubController.refusalCode(refusal)
             }
         }
         let foundationError = error as NSError

@@ -5,5 +5,6 @@ import AppKit
 let application = HubApplication.shared
 let applicationDelegate = AppDelegate()
 application.delegate = applicationDelegate
-application.setActivationPolicy(.regular)
+application.setActivationPolicy(HubApplicationActivation.launchPolicy())
+HubApplicationActivation.installFocusYield()
 application.run()

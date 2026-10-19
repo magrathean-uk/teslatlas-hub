@@ -13,7 +13,6 @@ final class OnboardingHubControllerTests: XCTestCase {
             HubActionError.commandExited(1, "SSH failed: \(secret)")
         ))
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: OnboardingService(),
                                        homeDirectory: home,
                                        serviceInstalledOverride: false)
@@ -93,7 +92,6 @@ final class OnboardingHubControllerTests: XCTestCase {
             )
         ))
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: OnboardingService(),
                                        homeDirectory: home,
                                        serviceInstalledOverride: false)
@@ -225,8 +223,6 @@ final class OnboardingHubControllerTests: XCTestCase {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let controller = HubController(commandRunner: OnboardingRunner(),
-                                       installedCommandRunner: OnboardingRunner(),
-                                       installer: OnboardingInstaller(),
                                        serviceRunner: OnboardingService(),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -261,8 +257,6 @@ final class OnboardingHubControllerTests: XCTestCase {
             )
             let controller = HubController(
                 commandRunner: OnboardingRunner(),
-                installedCommandRunner: OnboardingRunner(),
-                installer: OnboardingInstaller(),
                 serviceRunner: OnboardingService(),
                 homeDirectory: home,
                 serviceInstalledOverride: true,
@@ -289,8 +283,7 @@ final class OnboardingHubControllerTests: XCTestCase {
             .success(Self.historyReadyPreflight), .success(Self.historyReadyPreflight),
             .failure(HubActionError.commandFailed("collection enabled"))
         ])
-        let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
-                                       installer: OnboardingInstaller(events: events),
+        let controller = HubController(commandRunner: runner,
                                        serviceRunner: OnboardingService(events: events),
                                        homeDirectory: home, serviceInstalledOverride: false)
         let imported = expectation(description: "history imported")
@@ -352,7 +345,7 @@ final class OnboardingHubControllerTests: XCTestCase {
             .success(Self.historyReadyPreflight),
             .failure(HubActionError.commandFailed("collection enabled"))
         ])
-        let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
                                        serviceRunner: OnboardingService(events: events),
                                        homeDirectory: home, serviceInstalledOverride: false)
         let verified = expectation(description: "history checked while collection is off")
@@ -383,7 +376,7 @@ final class OnboardingHubControllerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try prepareAwaitingHistoryOnlyHandover(in: home)
         let runner = OnboardingRunner(backgroundPreflight: true)
-        let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
                                        serviceRunner: OnboardingService(),
                                        homeDirectory: home, serviceInstalledOverride: false)
         let verified = expectation(description: "history verification completed on main thread")
@@ -414,8 +407,6 @@ final class OnboardingHubControllerTests: XCTestCase {
         ])
         let service = OnboardingService(events: events)
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: OnboardingInstaller(events: events),
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -511,7 +502,6 @@ final class OnboardingHubControllerTests: XCTestCase {
         ])
         let controller = HubController(
             commandRunner: runner,
-            installedCommandRunner: runner,
             serviceRunner: OnboardingService(events: events),
             homeDirectory: home,
             serviceInstalledOverride: true,
@@ -571,7 +561,6 @@ final class OnboardingHubControllerTests: XCTestCase {
         ])
         let controller = HubController(
             commandRunner: runner,
-            installedCommandRunner: runner,
             serviceRunner: OnboardingService(events: events),
             homeDirectory: home,
             serviceInstalledOverride: true,
@@ -619,7 +608,6 @@ final class OnboardingHubControllerTests: XCTestCase {
         let service = OnboardingService(events: events, holdStartCompletions: true)
         let controller = HubController(
             commandRunner: runner,
-            installedCommandRunner: runner,
             serviceRunner: service,
             homeDirectory: home,
             serviceInstalledOverride: true,
@@ -673,7 +661,6 @@ final class OnboardingHubControllerTests: XCTestCase {
         ])
         let controller = HubController(
             commandRunner: runner,
-            installedCommandRunner: runner,
             serviceRunner: OnboardingService(events: events),
             homeDirectory: home,
             serviceInstalledOverride: true,
@@ -721,7 +708,6 @@ final class OnboardingHubControllerTests: XCTestCase {
             ])
             let controller = HubController(
                 commandRunner: runner,
-                installedCommandRunner: runner,
                 serviceRunner: OnboardingService(events: events),
                 homeDirectory: home,
                 serviceInstalledOverride: true,
@@ -774,7 +760,6 @@ final class OnboardingHubControllerTests: XCTestCase {
         ])
         let controller = HubController(
             commandRunner: runner,
-            installedCommandRunner: runner,
             serviceRunner: OnboardingService(events: events),
             homeDirectory: home,
             serviceInstalledOverride: true,
@@ -813,7 +798,6 @@ final class OnboardingHubControllerTests: XCTestCase {
         ])
         let controller = HubController(
             commandRunner: runner,
-            installedCommandRunner: runner,
             serviceRunner: OnboardingService(events: events),
             homeDirectory: home,
             serviceInstalledOverride: true,
@@ -841,7 +825,6 @@ final class OnboardingHubControllerTests: XCTestCase {
             #"{"event":"migration_progress","completedRows":7,"totalRows":10,"phase":"copy_positions"}"#
         ])
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: OnboardingService(),
                                        homeDirectory: home,
                                        serviceInstalledOverride: false)
@@ -876,7 +859,6 @@ final class OnboardingHubControllerTests: XCTestCase {
             #"{"event":"migration_progress","completedRows":9,"totalRows":10,"phase":"copy_positions"}"#
         ])
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: OnboardingService(),
                                        homeDirectory: home,
                                        serviceInstalledOverride: false)
@@ -902,7 +884,6 @@ final class OnboardingHubControllerTests: XCTestCase {
         let events = OnboardingEvents()
         let runner = OnboardingRunner(events: events)
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: OnboardingService(events: events),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -934,7 +915,6 @@ final class OnboardingHubControllerTests: XCTestCase {
             migrationResult: .success("{\"status\":\"ok\"}")
         )
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: OnboardingService(events: events),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -965,7 +945,7 @@ final class OnboardingHubControllerTests: XCTestCase {
     }
 
     private func temporaryHome() throws -> URL {
-        let home = FileManager.default.temporaryDirectory
+        let home = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-onboarding-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: false)
         return home
@@ -1144,23 +1124,6 @@ private final class OnboardingRunner: HubCommandRunning {
     }
 }
 
-private final class OnboardingInstaller: HubInstalling {
-    private let events: OnboardingEvents?
-
-    init(events: OnboardingEvents? = nil) {
-        self.events = events
-    }
-
-    func install(completion: @escaping (Result<String, Error>) -> Void) {
-        events?.append("install")
-        completion(.success(""))
-    }
-
-    func uninstall(deleteData: Bool, completion: @escaping (Result<String, Error>) -> Void) {
-        completion(.success(""))
-    }
-}
-
 private final class OnboardingService: HubServiceControlling {
     private let events: OnboardingEvents?
     private let holdStartCompletions: Bool
@@ -1184,6 +1147,11 @@ private final class OnboardingService: HubServiceControlling {
         }
         completion(.success(""))
     }
+    func run(arguments: [String], owner: HubLifecycleToken,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        run(arguments: arguments, completion: completion)
+    }
+    func restartRecordHeld(by owner: HubLifecycleToken) -> Bool { false }
 
     func completeHeldStarts(with result: Result<String, Error>) {
         let completions = heldStartCompletions
@@ -1193,5 +1161,28 @@ private final class OnboardingService: HubServiceControlling {
 
     func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
         completion(.unloaded)
+    }
+
+    // New lifecycle requirements, implemented explicitly (no protocol-extension defaults).
+    private(set) var recoverCalls = 0
+    private(set) var releaseCalls = 0
+    private(set) var deleteCalls = 0
+    var restartDutyOutstanding: Bool { false }
+    func whenRestartDutySettled(_ callback: @escaping () -> Void) { callback() }
+    func recoverAfterPause(owner: HubLifecycleToken, completion: @escaping (Result<String, Error>) -> Void) {
+        events?.append("service:recover")
+        recoverCalls += 1
+        completion(.success(""))
+    }
+    func releaseRestartRecord(owner: HubLifecycleToken) {
+        events?.append("service:release")
+        releaseCalls += 1
+    }
+
+    func reconcile(owner: HubLifecycleToken, ensure: @escaping () throws -> HubLaunchAgentChange,
+                   completion: @escaping (HubReconcileOutcome) -> Void) { completion(.completed) }
+    func deleteHubAndData(owner: HubLifecycleToken, completion: @escaping (Result<HubDataRemovalReport, Error>) -> Void) {
+        deleteCalls += 1
+        completion(.failure(HubActionError.preview))
     }
 }

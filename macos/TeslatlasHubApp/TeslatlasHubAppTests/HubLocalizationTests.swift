@@ -18,7 +18,7 @@ final class HubLocalizationTests: XCTestCase {
         }
         let englishKeys = Set(try table(english, "Localizable.strings").keys)
         let pluralKeys = Set(try table(english, "Localizable.stringsdict").keys)
-        XCTAssertEqual(englishKeys.count, 633)
+        XCTAssertEqual(englishKeys.count, 608)
         XCTAssertEqual(pluralKeys.count, 6)
         for language in languages {
             let directory = resources.appendingPathComponent("\(language).lproj")
@@ -84,7 +84,7 @@ final class HubLocalizationTests: XCTestCase {
     }
 
     func testMissingAndInvalidFormatsFallBackSafely() throws {
-        let folder = FileManager.default.temporaryDirectory
+        let folder = HubTestScratch.directory
             .appendingPathComponent("hub-localization-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let english = folder.appendingPathComponent("en.lproj", isDirectory: true)
@@ -119,7 +119,7 @@ final class HubLocalizationTests: XCTestCase {
     }
 
     func testPluralUsesBundleLocaleAndDenominatorWhenArgumentsAreReordered() throws {
-        let folder = FileManager.default.temporaryDirectory
+        let folder = HubTestScratch.directory
             .appendingPathComponent("hub-plurals-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: folder) }
         let french = folder.appendingPathComponent("fr.lproj", isDirectory: true)

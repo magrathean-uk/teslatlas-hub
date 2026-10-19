@@ -807,20 +807,24 @@ enum HubAppearanceMode: String, Equatable {
 }
 
 struct HubAppearancePreference {
-    private let defaults: UserDefaults
-    private let key: String
+    private let store: (String) -> Void
     private(set) var mode: HubAppearanceMode
 
     init(defaults: UserDefaults = .standard, key: String = "TeslatlasHubAppearance") {
-        self.defaults = defaults
-        self.key = key
+        store = { defaults.set($0, forKey: key) }
         mode = defaults.string(forKey: key).flatMap(HubAppearanceMode.init(rawValue:)) ?? .system
+    }
+
+    /// A preference whose stored value and write are the caller's (tests keep it off disk).
+    init(stored: String?, write: @escaping (String) -> Void) {
+        store = write
+        mode = stored.flatMap(HubAppearanceMode.init(rawValue:)) ?? .system
     }
 
     @discardableResult
     mutating func toggle(currentIsDark: Bool) -> HubAppearanceMode {
         mode = currentIsDark ? .light : .dark
-        defaults.set(mode.rawValue, forKey: key)
+        store(mode.rawValue)
         return mode
     }
 

@@ -171,14 +171,34 @@ enum TeslaMateServerImporter {
     private static let maximumTunnelDiagnosticBytes = 64 * 1024
     private static let ssh = URL(fileURLWithPath: "/usr/bin/ssh")
 
+    /// What one stale-directory cleanup did: the count removed, the eligible directories
+    /// whose removal failed, and a failure to scan the temporary root at all.
+    struct StaleTemporaryCleanup: Equatable {
+        struct Failure: Equatable {
+            let path: String
+            let reason: String
+        }
+
+        var removed = 0
+        var failures: [Failure] = []
+        var scanFailure: Failure?
+    }
+
+    /// The count only; `cleanupStaleTemporaryDirectoriesReporting` carries the failures.
+    @discardableResult
+    static func cleanupStaleTemporaryDirectories(in root: URL = temporaryRoot) -> Int {
+        cleanupStaleTemporaryDirectoriesReporting(in: root).removed
+    }
+
     /// Remove secret-bearing import directories left by a previous crashed app.
     /// Only exact UUID names, real directories, and the current user's inodes
-    /// are admitted; similarly named files and symlinks are left untouched.
-    @discardableResult
-    static func cleanupStaleTemporaryDirectories(
-        in root: URL = temporaryRoot
-    ) -> Int {
+    /// are admitted; similarly named files and symlinks are left untouched. A directory
+    /// that is held by another process is not eligible and is not a failure; an eligible
+    /// directory that could not be removed, and a root that could not be scanned, are
+    /// returned for the caller to report.
+    static func cleanupStaleTemporaryDirectoriesReporting(in root: URL = temporaryRoot) -> StaleTemporaryCleanup {
         let manager = FileManager.default
+        var result = StaleTemporaryCleanup()
         let entries: [URL]
         do {
             entries = try manager.contentsOfDirectory(
@@ -190,9 +210,9 @@ enum TeslaMateServerImporter {
             HubAppLog.shared.record("temporary_files.scan_failed",
                                     category: "teslamate_import", level: "WARN",
                                     fields: ["error_code": HubAppLog.errorCode(error)])
-            return 0
+            result.scanFailure = .init(path: root.path, reason: failureText(error))
+            return result
         }
-        var removed = 0
         for entry in entries {
             let name = entry.lastPathComponent
             let prefix = [temporaryDirectoryPrefix, legacyTemporaryDirectoryPrefix]
@@ -212,15 +232,27 @@ enum TeslaMateServerImporter {
                   current.st_mode & S_IFMT == S_IFDIR else { continue }
             do {
                 try manager.removeItem(at: entry)
-                removed += 1
+                result.removed += 1
             } catch {
                 HubAppLog.shared.record("temporary_files.cleanup_failed",
                                         category: "teslamate_import", level: "WARN",
                                         fields: ["error_code": HubAppLog.errorCode(error)])
+                result.failures.append(.init(path: entry.path, reason: failureText(error)))
                 continue
             }
         }
-        return removed
+        return result
+    }
+
+    /// The system's own words for the failure (errno text) where there are any.
+    private static func failureText(_ error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain { return String(cString: strerror(Int32(nsError.code))) }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError,
+           underlying.domain == NSPOSIXErrorDomain {
+            return String(cString: strerror(Int32(underlying.code)))
+        }
+        return error.localizedDescription
     }
 
     private struct SSHConnectionResources {
@@ -328,11 +360,33 @@ printf 'image=%s\n' "$(encode "$tm_image")"
 printf 'label_version=%s\n' "$(encode "$tm_label_version")"
 """#
 
+    /// What the discovery launches (F8-5): the ssh arguments, the script fed to it, its environment and the
+    /// completion. Production runs `/usr/bin/ssh` through the process executor; a test feeds a failure through
+    /// the real completion closure below without opening a connection.
+    typealias DiscoveryRunner = (
+        _ arguments: [String],
+        _ standardInput: String,
+        _ environment: [String: String],
+        _ completion: @escaping (Result<String, Error>) -> Void
+    ) -> Void
+
+    static let sshDiscoveryRunner: DiscoveryRunner = { arguments, standardInput, environment, completion in
+        HubProcessExecutor.run(executable: ssh,
+                               arguments: arguments,
+                               stdin: standardInput,
+                               environment: environment,
+                               maximumOutputBytes: 64 * 1024,
+                               timeout: 30,
+                               completion: completion)
+    }
+
     static func connect(host: String,
                         user: String,
                         port: Int,
                         authentication: TeslaMateSSHAuthentication,
                         usePasswordlessSudo: Bool,
+                        temporaryRoot: URL = temporaryRoot,
+                        runDiscovery: DiscoveryRunner = sshDiscoveryRunner,
                         completion: @escaping (Result<TeslaMateServerImportSession, Error>) -> Void) {
         let authenticationName: String
         switch authentication {
@@ -359,7 +413,7 @@ printf 'label_version=%s\n' "$(encode "$tm_label_version")"
         }
         let resources: SSHConnectionResources
         do {
-            resources = try prepareConnectionResources(authentication: authentication)
+            resources = try prepareConnectionResources(authentication: authentication, in: temporaryRoot)
         } catch {
             HubAppLog.shared.record("ssh.credentials.rejected", category: "teslamate_import",
                                     level: "WARN",
@@ -376,12 +430,9 @@ printf 'label_version=%s\n' "$(encode "$tm_label_version")"
             "-p", String(port),
             destination
         ]
-        HubProcessExecutor.run(executable: ssh,
-                               arguments: common + ["env", "TESLATLAS_USE_SUDO=\(usePasswordlessSudo ? 1 : 0)", "sh", "-s"],
-                               stdin: discoveryScript,
-                               environment: resources.environment,
-                               maximumOutputBytes: 64 * 1024,
-                               timeout: 30) { result in
+        runDiscovery(common + ["env", "TESLATLAS_USE_SUDO=\(usePasswordlessSudo ? 1 : 0)", "sh", "-s"],
+                     discoveryScript,
+                     resources.environment) { result in
             switch result {
             case let .failure(error):
                 let reason = discoveryFailureReason(error)
@@ -395,7 +446,7 @@ printf 'label_version=%s\n' "$(encode "$tm_label_version")"
                 removeTemporaryDirectory(resources.temporaryDirectory,
                                          context: "discovery_failed")
                 DispatchQueue.main.async {
-                    completion(.failure(diagnostic(reason: reason, method: resources.method)))
+                    completion(.failure(discoveryFailure(error, diagnostic: diagnostic(reason: reason, method: resources.method))))
                 }
             case let .success(output):
                 do {
@@ -425,10 +476,11 @@ printf 'label_version=%s\n' "$(encode "$tm_label_version")"
     }
 
     private static func prepareConnectionResources(
-        authentication: TeslaMateSSHAuthentication
+        authentication: TeslaMateSSHAuthentication,
+        in root: URL
     ) throws -> SSHConnectionResources {
         let manager = FileManager.default
-        let directoryOwner = try TeslaMateImportDirectoryOwner.create(in: temporaryRoot)
+        let directoryOwner = try TeslaMateImportDirectoryOwner.create(in: root)
         let directory = directoryOwner.directory
         do {
             switch authentication {
@@ -724,6 +776,7 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         for error: Error,
         authentication: TeslaMateSSHAuthentication
     ) -> TeslaMateSSHDiagnostic {
+        let error = HubActionError.settingQuiescenceAside(error)
         if let diagnostic = error as? TeslaMateSSHDiagnostic { return diagnostic }
         let reason = discoveryFailureReason(error)
         return diagnostic(reason: reason, method: method(for: authentication))
@@ -932,6 +985,12 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
         }
     }
 
+    /// The error the discovery reports (F7-2): the diagnostic, carrying the quiescence of an SSH process
+    /// that could not be shown gone, so that the owner of the preparation stays held until it is.
+    static func discoveryFailure(_ error: Error, diagnostic: TeslaMateSSHDiagnostic) -> Error {
+        HubActionError.keepingQuiescence(of: error, in: diagnostic)
+    }
+
     static func discoveryFailureReason(_ error: Error) -> String {
         guard let actionError = error as? HubActionError else { return "process_start_failed" }
         switch actionError {
@@ -957,14 +1016,16 @@ exec /bin/cat "$TESLATLAS_SSH_PASSWORD_FILE"
             }
         case .commandTimedOut:
             return "timed_out"
+        case .commandNotQuiescent:
+            return "process_not_stopped"
         case .commandFailed:
             return "process_failed"
         case .missingResource:
             return "missing_resource"
-        case .untrustedInstaller:
-            return "untrusted_installer"
         case .preview:
             return "preview_read_only"
+        case .lifecycleRefused:
+            return "hub_busy"
         }
     }
 

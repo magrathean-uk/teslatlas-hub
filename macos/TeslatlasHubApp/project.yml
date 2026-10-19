@@ -54,6 +54,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: eu.teslatlas.hub.app.tests
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSPrincipalClass: HubTestBundleMain
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Teslatlas Hub.app/Contents/MacOS/Teslatlas Hub"
         BUNDLE_LOADER: "$(TEST_HOST)"
 

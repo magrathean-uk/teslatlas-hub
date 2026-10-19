@@ -20,7 +20,7 @@ final class HubControllerTests: XCTestCase {
                 "doctor": .failure(HubActionError.commandFailed("hub catalogue changed during the immutable diagnostic check"))
             ])
             let events = EventRecorder()
-            let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
+            let controller = HubController(commandRunner: runner,
                 serviceRunner: ScriptedService(events: events, loadState: .loaded),
                 homeDirectory: home, serviceInstalledOverride: true)
             let done = expectation(description: "live checks complete")
@@ -56,9 +56,11 @@ final class HubControllerTests: XCTestCase {
         let controller = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         let windowController = MainWindowController(controller: controller)
         XCTAssertEqual(windowController.window?.title, "Teslatlas Hub")
-        XCTAssertEqual(windowController.window?.contentLayoutRect.size,
-                       NSSize(width: HubMetrics.windowSize.width,
-                              height: HubMetrics.windowSize.height + 32))
+        // The window's native size is its frame (the design snapshots render the whole frame).
+        // `contentLayoutRect` also depends on whether the host application is active (an
+        // active host lays the unified toolbar over the content, an inactive accessory test
+        // host, R-E1F6-21, insets the content view), so the frame is the stable quantity.
+        assertNativeMainWindowFrame(windowController.window?.frame.size)
         XCTAssertEqual(windowController.window?.contentMinSize, NSSize(width: 820, height: 590))
     }
 
@@ -84,112 +86,45 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(production.snapshot.health, .needsInstall)
     }
 
-    func testServiceDetailsUpdateButtonInstallsCurrentPackage() throws {
-        let installer = RecordingInstaller()
-        let controller = HubController(commandRunner: CountingRunner(),
-                                       installedCommandRunner: CountingRunner(),
-                                       installer: installer,
-                                       serviceRunner: ScriptedService(events: EventRecorder()),
-                                       serviceInstalledOverride: true)
-        let changed = expectation(description: "service package updated")
-        let details = ServiceDetailsWindowController(snapshot: .previewRunning,
-                                                     controller: controller,
-                                                     onChanged: { changed.fulfill() })
-        let button = try XCTUnwrap(buttons(in: details.window?.contentView)
-            .first { $0.title == "Update Service…" })
-        XCTAssertNotNil(button.target)
-        XCTAssertNotNil(button.action)
-        button.performClick(nil)
-        wait(for: [changed], timeout: 2)
-        XCTAssertEqual(installer.installCalls, 1)
-    }
-
     func testServiceDetailsRejectsMutationWhenOwnerGateIsClosed() throws {
-        let installer = RecordingInstaller()
+        let calls = LifecycleCallRecorder()
         let controller = HubController(commandRunner: CountingRunner(),
-                                       installedCommandRunner: CountingRunner(),
-                                       installer: installer,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        serviceInstalledOverride: true)
         let details = ServiceDetailsWindowController(
             snapshot: .previewRunning,
             controller: controller,
-            mutationAllowed: { false },
-            onChanged: { XCTFail("blocked mutation reported a change") }
+            lifecycleActions: calls.actions,
+            mutationAllowed: { false }
         )
-        let update = try XCTUnwrap(buttons(in: details.window?.contentView)
-            .first { $0.title == "Update Service…" })
-        update.performClick(nil)
-        XCTAssertEqual(installer.installCalls, 0)
+        for identifier in ["hub.service.start-stop", "hub.service.restart",
+                           "hub.service.remove", "hub.service.delete-data"] {
+            let button = try XCTUnwrap(buttons(in: details.window?.contentView)
+                .first { $0.identifier?.rawValue == identifier }, identifier)
+            button.performClick(nil)
+        }
+        XCTAssertEqual(calls.names, [], "a closed owner gate must reach no lifecycle action")
 
         details.setMutationsEnabled(false)
-        for title in ["Update Service…", "Uninstall Hub…"] {
+        for identifier in ["hub.service.start-stop", "hub.service.restart",
+                           "hub.service.remove", "hub.service.delete-data"] {
             let button = try XCTUnwrap(buttons(in: details.window?.contentView)
-                .first { $0.title == title })
-            XCTAssertFalse(button.isEnabled)
+                .first { $0.identifier?.rawValue == identifier }, identifier)
+            XCTAssertFalse(button.isEnabled, identifier)
         }
-    }
-
-    func testPendingServiceDetailsMutationBlocksCloseAndPrimaryModalReplacementUntilCompletion() throws {
-        // Catches a pending operation losing its owner and leaving the dashboard mutation gate locked.
-        let installer = PendingInstaller()
-        let controller = HubController(
-            commandRunner: CountingRunner(),
-            installedCommandRunner: CountingRunner(),
-            installer: installer,
-            serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
-            serviceInstalledOverride: true,
-            initialSnapshot: .previewRunning
-        )
-        let initialStatus = expectation(description: "initial status settled before service mutation")
-        let dashboard = MainWindowController(controller: controller) { _ in initialStatus.fulfill() }
-        dashboard.showWindow(nil)
-        wait(for: [initialStatus], timeout: 1)
-        let details = try XCTUnwrap(dashboard.showServiceDetails())
-        let update = try XCTUnwrap(buttons(in: details.window?.contentView)
-            .first { $0.title == "Update Service…" })
-        let close = try XCTUnwrap(details.window?.standardWindowButton(.closeButton))
-
-        update.performClick(nil)
-
-        XCTAssertEqual(installer.installCalls, 1)
-        let pending = try XCTUnwrap(descendantViews(in: try XCTUnwrap(details.window?.contentView)).first {
-            $0.identifier?.rawValue == "hub.service.pending"
-        })
-        XCTAssertFalse(pending.isHidden)
-        XCTAssertTrue(labels(in: pending).contains { $0.stringValue == "Updating Hub…" })
-        XCTAssertEqual(pending.accessibilityLabel(), "Updating Hub…")
-        XCTAssertFalse(close.isEnabled)
-        XCTAssertFalse(details.windowShouldClose(try XCTUnwrap(details.window)))
-        XCTAssertNil(dashboard.showDiagnostics())
-        XCTAssertTrue(dashboard.operationPreventsQuit)
-        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: [try XCTUnwrap(dashboard.window)]))
-        dashboard.window?.performClose(nil)
-        XCTAssertTrue(dashboard.window?.isVisible == true)
-
-        installer.completeInstall(.success(""))
-        let restored = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in close.isEnabled }, object: nil)
-        wait(for: [restored], timeout: 2)
-        XCTAssertTrue(pending.isHidden)
-        XCTAssertFalse(dashboard.operationPreventsQuit)
-        XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: [try XCTUnwrap(dashboard.window)]))
-        let diagnostics = dashboard.showDiagnostics()
-        XCTAssertNotNil(diagnostics)
-        diagnostics?.window?.performClose(nil)
     }
 
     func testServiceDetailsShowsLifecycleTransitionFeedbackForEveryCommand() throws {
         let details = ServiceDetailsWindowController(
             snapshot: .previewRunning,
             controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
-            lifecycleActions: .init(start: {}, stop: {}, restart: {}),
-            onChanged: {}
+            lifecycleActions: .init(start: {}, stop: {}, restart: {})
         )
         let pending = try XCTUnwrap(descendantViews(in: try XCTUnwrap(details.window?.contentView)).first {
             $0.identifier?.rawValue == "hub.service.pending"
         })
 
-        for transition: HubServiceTransition in [.starting, .stopping, .restarting] {
+        for transition: HubServiceTransition in [.starting, .stopping, .restarting, .removing, .deleting] {
             details.setServiceTransition(transition)
             XCTAssertFalse(pending.isHidden)
             XCTAssertEqual(pending.accessibilityLabel(), transition.title)
@@ -197,90 +132,6 @@ final class HubControllerTests: XCTestCase {
         }
         details.setServiceTransition(nil)
         XCTAssertTrue(pending.isHidden)
-    }
-
-    func testConfirmedDeleteDataActionUsesDeleteDataAndDismissesAfterUnlocking() throws {
-        // Catches the direct danger action using the keep-data path or dismissing before its lock is cleared.
-        let installer = PendingInstaller()
-        let controller = HubController(
-            commandRunner: CountingRunner(),
-            installedCommandRunner: CountingRunner(),
-            installer: installer,
-            serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
-            serviceInstalledOverride: true,
-            initialSnapshot: .previewRunning
-        )
-        var events: [String] = []
-        let changed = expectation(description: "delete-data refresh requested")
-        let dismissed = expectation(description: "delete-data details dismissed")
-        let details = ServiceDetailsWindowController(
-            snapshot: .previewRunning,
-            controller: controller,
-            onMutationStateChanged: { pending in events.append(pending ? "locked" : "unlocked") },
-            onChanged: {
-                events.append("changed")
-                changed.fulfill()
-            },
-            onDismiss: {
-                events.append("dismissed")
-                dismissed.fulfill()
-            }
-        )
-        let delete = try XCTUnwrap(buttons(in: details.window?.contentView).first {
-            $0.identifier?.rawValue == "hub.service.delete-data"
-        })
-        let close = try XCTUnwrap(details.window?.standardWindowButton(.closeButton))
-
-        delete.performClick(nil)
-
-        XCTAssertEqual(installer.deleteDataChoices, [true])
-        XCTAssertEqual(events, ["locked"])
-        XCTAssertFalse(close.isEnabled)
-
-        installer.completeUninstall(.success(""))
-        wait(for: [changed, dismissed], timeout: 1)
-        XCTAssertEqual(events, ["locked", "unlocked", "changed", "dismissed"])
-    }
-
-    func testDeleteDataFailureRestoresTheSharedMutationGate() throws {
-        // Catches a failed destructive action leaving the sheet locked after its error is dismissed.
-        let installer = PendingInstaller()
-        let controller = HubController(
-            commandRunner: CountingRunner(),
-            installedCommandRunner: CountingRunner(),
-            installer: installer,
-            serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
-            serviceInstalledOverride: true,
-            initialSnapshot: .previewRunning
-        )
-        var events: [String] = []
-        var presentedErrors: [String] = []
-        let unlocked = expectation(description: "delete-data failure unlocked")
-        let details = ServiceDetailsWindowController(
-            snapshot: .previewRunning,
-            controller: controller,
-            onMutationStateChanged: { pending in
-                events.append(pending ? "locked" : "unlocked")
-                if !pending { unlocked.fulfill() }
-            },
-            onChanged: { XCTFail("failed delete-data action refreshed details") },
-            errorPresenter: { error in presentedErrors.append(error.localizedDescription) }
-        )
-        let delete = try XCTUnwrap(buttons(in: details.window?.contentView).first {
-            $0.identifier?.rawValue == "hub.service.delete-data"
-        })
-        let close = try XCTUnwrap(details.window?.standardWindowButton(.closeButton))
-
-        delete.performClick(nil)
-        XCTAssertEqual(installer.deleteDataChoices, [true])
-        XCTAssertFalse(close.isEnabled)
-
-        installer.completeUninstall(.failure(HubActionError.commandFailed("uninstall failed")))
-        wait(for: [unlocked], timeout: 1)
-
-        XCTAssertEqual(events, ["locked", "unlocked"])
-        XCTAssertEqual(presentedErrors, ["uninstall failed"])
-        XCTAssertTrue(close.isEnabled)
     }
 
     func testServiceDetailsUseRealSnapshotAndProvider() {
@@ -303,20 +154,60 @@ final class HubControllerTests: XCTestCase {
         XCTAssertFalse(rows.contains { $0.value.contains("@") })
     }
 
-    func testServiceDetailsRetainUpdateAndBothUninstallOutcomes() throws {
-        // Catches losing a maintenance or irreversible deletion path in the redesign.
-        let controller = ServiceDetailsWindowController(
+    func testServiceDetailsRetainLifecycleControlsRemoveAndDelete() throws {
+        // Catches losing a lifecycle or irreversible deletion path in the redesign.
+        let calls = LifecycleCallRecorder()
+        let controller = HubController(commandRunner: CountingRunner(),
+                                       serviceRunner: ScriptedService(events: EventRecorder()),
+                                       serviceInstalledOverride: true)
+        let details = ServiceDetailsWindowController(
             snapshot: .previewRunning,
-            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
-            onChanged: {}
+            controller: controller,
+            lifecycleActions: calls.actions,
+            confirmationPresenter: { alert, _ in calls.confirmations.append(alert.messageText); return .alertSecondButtonReturn }
         )
 
-        let titles = buttons(in: controller.window?.contentView).map(\.title)
+        let titles = buttons(in: details.window?.contentView).map(\.title)
 
-        XCTAssertTrue(titles.contains("Update Service…"))
-        XCTAssertTrue(titles.contains("Uninstall Hub…"))
-        XCTAssertEqual(ServiceDetailsWindowController.deleteDataConfirmation().buttons.map(\.title),
-                       ["Cancel", "Delete Data and Uninstall"])
+        XCTAssertTrue(titles.contains("Stop Hub…"))
+        XCTAssertTrue(titles.contains("Restart Hub"))
+        XCTAssertTrue(titles.contains("Remove Background Service…"))
+        XCTAssertTrue(titles.contains("Delete Hub and Data…"))
+        XCTAssertFalse(titles.contains("Update Service…"))
+        XCTAssertFalse(titles.contains("Uninstall Hub…"))
+        let remove = try XCTUnwrap(buttons(in: details.window?.contentView)
+            .first { $0.identifier?.rawValue == "hub.service.remove" })
+        remove.performClick(nil)
+        let delete = try XCTUnwrap(buttons(in: details.window?.contentView)
+            .first { $0.identifier?.rawValue == "hub.service.delete-data" })
+        delete.performClick(nil)
+        XCTAssertEqual(calls.names, ["remove", "deleteHubAndData"])
+        XCTAssertEqual(calls.confirmations, ["Remove the background service?"],
+                       "the main window owns the two Delete confirmations")
+    }
+
+    func testRemoveConfirmationDefaultsToCancel() throws {
+        let alert = ServiceDetailsWindowController.removeConfirmation()
+        XCTAssertEqual(alert.messageText, "Remove the background service?")
+        XCTAssertEqual(alert.informativeText,
+                       "Teslatlas Hub stops and no longer starts at login. Your Hub data, configuration and logs stay. Start Hub sets it up again.")
+        XCTAssertEqual(alert.buttons.map(\.title), ["Cancel", "Remove"])
+        XCTAssertEqual(alert.buttons[0].keyEquivalent, "\r")
+        XCTAssertEqual(alert.buttons[1].keyEquivalent, "")
+
+        // Cancelling calls nothing.
+        let calls = LifecycleCallRecorder()
+        let details = ServiceDetailsWindowController(
+            snapshot: .previewRunning,
+            controller: HubController(commandRunner: CountingRunner(),
+                                      serviceRunner: ScriptedService(events: EventRecorder()),
+                                      serviceInstalledOverride: true),
+            lifecycleActions: calls.actions,
+            confirmationPresenter: { _, silent in silent }
+        )
+        try XCTUnwrap(buttons(in: details.window?.contentView)
+            .first { $0.identifier?.rawValue == "hub.service.remove" }).performClick(nil)
+        XCTAssertEqual(calls.names, [])
     }
 
     func testSettingsBackgroundServiceExposesRunningLifecycleControlsWithConfirmation() throws {
@@ -357,8 +248,7 @@ final class HubControllerTests: XCTestCase {
         // Catches using a standalone detail window or an unidentifiable destructive action.
         let details = ServiceDetailsWindowController(
             snapshot: .previewRunning,
-            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]),
-            onChanged: {}
+            controller: HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"])
         )
 
         XCTAssertEqual(details.window?.contentRect(forFrameRect: details.window!.frame).size,
@@ -424,8 +314,11 @@ final class HubControllerTests: XCTestCase {
             if case .failure = result { failures += 1 }
             if failures == 8 { expectation.fulfill() }
         }
-        controller.installService(completion: done)
-        controller.uninstallService(deleteData: false, completion: done)
+        controller.removeBackgroundService(completion: done)
+        controller.deleteHubAndData { result in
+            if case .failure = result { failures += 1 }
+            if failures == 8 { expectation.fulfill() }
+        }
         controller.importTeslaMate(source: "postgres://example", carID: "1", passwordFile: "/tmp/password", encryptionKeyFile: "/tmp/encryption", acknowledgeV42CompatibleSchema: true, completion: done)
         controller.configureTeslaAccount(tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh"), completion: done)
         controller.performVehicleControl(.climateStart, completion: done)
@@ -434,17 +327,6 @@ final class HubControllerTests: XCTestCase {
         controller.signOutTeslaAccount(completion: done)
         wait(for: [expectation], timeout: 1)
         XCTAssertEqual(runner.calls, 0)
-    }
-
-    func testServicePlanBootstrapsOnlyWhenUnloaded() {
-        let loaded = LaunchctlServiceController.commandPlan(action: .restart, loaded: true, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist")
-        XCTAssertEqual(loaded, [["bootout", "gui/1/com.teslatlas.hub"], ["bootstrap", "gui/1", "/tmp/hub.plist"]])
-        let unloaded = LaunchctlServiceController.commandPlan(action: .restart, loaded: false, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist")
-        XCTAssertEqual(unloaded, [["bootstrap", "gui/1", "/tmp/hub.plist"]])
-        XCTAssertEqual(LaunchctlServiceController.commandPlan(action: .start, loaded: false, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist"), [["bootstrap", "gui/1", "/tmp/hub.plist"]])
-        XCTAssertEqual(LaunchctlServiceController.commandPlan(action: .start, loaded: true, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist"), [["kickstart", "gui/1/com.teslatlas.hub"]])
-        XCTAssertEqual(LaunchctlServiceController.commandPlan(action: .stop, loaded: true, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist"), [["bootout", "gui/1/com.teslatlas.hub"]])
-        XCTAssertEqual(LaunchctlServiceController.commandPlan(action: .stop, loaded: false, domain: "gui/1", service: "gui/1/com.teslatlas.hub", plist: "/tmp/hub.plist"), [])
     }
 
     func testLaunchctlOnlyClassifiesTheExactMissingServiceFailureAsUnloaded() {
@@ -463,7 +345,7 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testPreviewIgnoresARealMigrationHandoverMarker() throws {
-        let home = FileManager.default.temporaryDirectory
+        let home = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-preview-marker-\(UUID().uuidString)", isDirectory: true)
         let state = home.appendingPathComponent("Library/Application Support/Teslatlas Hub", isDirectory: true)
         try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
@@ -478,7 +360,7 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testMigrationHandoverFIFOIsFailClosedWithoutBlocking() throws {
-        let home = FileManager.default.temporaryDirectory
+        let home = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-marker-fifo-\(UUID().uuidString)", isDirectory: true)
         let state = home.appendingPathComponent("Library/Application Support/Teslatlas Hub", isDirectory: true)
         try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
@@ -500,12 +382,11 @@ final class HubControllerTests: XCTestCase {
             "preflight": .success("{\"status\":\"ready\",\"provider\":\"fleet\"}"),
             "status": .success("{\"status\":\"ok\",\"provider\":\"fleet\",\"credentials\":{\"present\":true}}")
         ])
-        let home = FileManager.default.temporaryDirectory
+        let home = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-diagnostics-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        homeDirectory: home,
                                        serviceInstalledOverride: false)
@@ -541,7 +422,6 @@ final class HubControllerTests: XCTestCase {
         ])
         let events = EventRecorder()
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: events, loadState: .loaded),
                                        serviceInstalledOverride: false)
         let finished = expectation(description: "running Hub diagnostics finished")
@@ -550,7 +430,7 @@ final class HubControllerTests: XCTestCase {
             finished.fulfill()
         }
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["service:stop", "service:start"])
+        XCTAssertEqual(events.values, ["service:pause", "service:start"])
         XCTAssertEqual(runner.commands, ["doctor", "preflight", "status"])
     }
 
@@ -562,7 +442,6 @@ final class HubControllerTests: XCTestCase {
         ])
         let events = EventRecorder()
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: events, loadState: .unloaded),
                                        serviceInstalledOverride: false)
         let finished = expectation(description: "stopped Hub diagnostics finished")
@@ -586,7 +465,6 @@ final class HubControllerTests: XCTestCase {
     func testOpeningDiagnosticsDoesNotRunTheExpensiveChecks() {
         let runner = CountingRunner()
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        serviceInstalledOverride: false)
         let diagnostics = DiagnosticsWindowController(controller: controller)
@@ -601,7 +479,6 @@ final class HubControllerTests: XCTestCase {
         let runner = PendingCommandRunner()
         let service = PendingServiceRunner(loadState: .loaded)
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: service,
                                        serviceInstalledOverride: false,
                                        initialSnapshot: .previewRunning)
@@ -620,11 +497,11 @@ final class HubControllerTests: XCTestCase {
 
         run.performClick(nil)
 
-        XCTAssertEqual(service.arguments, [["service", "stop"]])
+        XCTAssertEqual(service.arguments, [["service", "pause"]])
         XCTAssertTrue(dashboard.operationPreventsQuit)
         XCTAssertFalse(back.isEnabled)
         XCTAssertFalse(overview.isEnabled)
-        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: [try XCTUnwrap(dashboard.window)]))
+        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: [try XCTUnwrap(dashboard.window)], lifecycle: .idle))
 
         let mainWindow = try XCTUnwrap(dashboard.window)
         let appDelegate = AppDelegate(keyWindow: { mainWindow })
@@ -652,7 +529,7 @@ final class HubControllerTests: XCTestCase {
         wait(for: [unlocked], timeout: 2)
         XCTAssertTrue(back.isEnabled)
         XCTAssertTrue(overview.isEnabled)
-        XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: [try XCTUnwrap(dashboard.window)]))
+        XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: [try XCTUnwrap(dashboard.window)], lifecycle: .idle))
         XCTAssertTrue(appDelegate.validateMenuItem(closeItem))
         XCTAssertTrue(descendantViews(in: root).compactMap { $0 as? NSTextView }.contains {
             $0.string.contains("Hub collection resumed.")
@@ -669,22 +546,22 @@ final class HubControllerTests: XCTestCase {
         let runner = PendingCommandRunner()
         let service = PendingServiceRunner(loadState: .loaded)
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: false)
         var logs: LogsWindowController? = LogsWindowController(controller: controller)
         let delegate = AppDelegate()
+        delegate.hubController = controller
         let item = try XCTUnwrap(logs?.secondaryActionsMenu.items.first { $0.title == "Run Diagnostics" })
         let initialLogs = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             item.isEnabled
         }, object: nil)
         wait(for: [initialLogs], timeout: 2)
-        XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: []))
+        XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: [], lifecycle: controller.lifecycleCapabilities))
         XCTAssertTrue(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
         XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(item.action), to: item.target, from: item))
-        XCTAssertEqual(service.arguments, [["service", "stop"]])
-        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: []))
+        XCTAssertEqual(service.arguments, [["service", "pause"]])
+        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: [], lifecycle: controller.lifecycleCapabilities))
         XCTAssertFalse(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApp), .terminateCancel)
 
@@ -700,9 +577,9 @@ final class HubControllerTests: XCTestCase {
         }, object: nil)
         wait(for: [awaitingResume], timeout: 2)
         XCTAssertEqual(service.arguments.last, ["service", "start"])
-        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: []))
+        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: [], lifecycle: controller.lifecycleCapabilities))
         service.complete(.success(""))
-        XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: []))
+        XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: [], lifecycle: controller.lifecycleCapabilities))
         XCTAssertTrue(delegate.applicationShouldTerminateAfterLastWindowClosed(NSApp))
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApp), .terminateNow)
     }
@@ -725,7 +602,6 @@ final class HubControllerTests: XCTestCase {
             "status": .success("{\"status\":\"ok\"}")
         ])
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        serviceInstalledOverride: false)
         let diagnostics = DiagnosticsWindowController(controller: controller)
@@ -767,7 +643,6 @@ final class HubControllerTests: XCTestCase {
             "status": .success("{\"status\":\"ok\"}")
         ])
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        homeDirectory: home,
                                        serviceInstalledOverride: false)
@@ -882,7 +757,7 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testDiagnosticsAndLogsShareRoutesRedactLocationNamesAndGeofences() throws {
-        let outputFolder = FileManager.default.temporaryDirectory
+        let outputFolder = HubTestScratch.directory
             .appendingPathComponent("hub-redaction-routes-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: outputFolder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: outputFolder) }
@@ -894,7 +769,6 @@ final class HubControllerTests: XCTestCase {
             "status": .success("geofenceName=School Run; mode=live")
         ])
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        serviceInstalledOverride: false)
         let diagnostics = DiagnosticsWindowController(
@@ -991,8 +865,8 @@ final class HubControllerTests: XCTestCase {
         let installed = RecordingCommandRunner(result: .success("""
         {"status":"ok","version":"9.9.9","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"vehicle":null,"legacyCredentials":{"present":false}}
         """))
-        let controller = HubController(commandRunner: embedded,
-                                       installedCommandRunner: installed,
+        let controller = HubController(
+                                       commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "installed status loaded")
@@ -1007,7 +881,7 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(embedded.arguments, [])
-        XCTAssertEqual(installed.arguments, [["--config", NSHomeDirectory() + "/Library/Application Support/Teslatlas Hub/config.toml", "status"]])
+        XCTAssertEqual(installed.arguments, [["--config", HubTestScratch.realHomePath + "/Library/Application Support/Teslatlas Hub/config.toml", "status"]])
     }
 
     private static let collectionAttentionLabels: [(code: String, label: String)] = [
@@ -1044,7 +918,7 @@ final class HubControllerTests: XCTestCase {
         func snapshot(for json: String) -> HubSnapshot {
             let installed = RecordingCommandRunner(result: .success(json))
             let controller = HubController(
-                installedCommandRunner: installed,
+                commandRunner: installed,
                 serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
                 serviceInstalledOverride: true)
             let finished = expectation(description: "status loaded")
@@ -1107,7 +981,7 @@ final class HubControllerTests: XCTestCase {
             "doctor": .success(#"{"status":"ok","collector":{"collectionAttention":"collector_cap_reached","readiness":"ready","running":false,"lease":null,"cadenceError":null}}"#)
         ])
         let events = EventRecorder()
-        let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
             serviceRunner: ScriptedService(events: events, loadState: .unloaded),
             homeDirectory: home, serviceInstalledOverride: true)
         let done = expectation(description: "stopped verification complete")
@@ -1129,7 +1003,7 @@ final class HubControllerTests: XCTestCase {
         let installed = RecordingCommandRunner(result: .success("""
         {"status":"ok","version":"9.9.9","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """))
-        let controller = HubController(installedCommandRunner: installed,
+        let controller = HubController(commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .unloaded),
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "stopped status loaded")
@@ -1150,7 +1024,7 @@ final class HubControllerTests: XCTestCase {
         let installed = RecordingCommandRunner(result: .success("""
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}
         """))
-        let controller = HubController(installedCommandRunner: installed,
+        let controller = HubController(commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .unloaded),
                                        serviceInstalledOverride: true)
         let settled = expectation(description: "stopped dashboard settled")
@@ -1180,7 +1054,7 @@ final class HubControllerTests: XCTestCase {
         let installed = RecordingCommandRunner(result: .success("""
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicle":null,"vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true},"legacyCredentials":{"present":false},"fleetCredentials":{"present":true}}
         """))
-        let controller = HubController(installedCommandRunner: installed,
+        let controller = HubController(commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "multi-vehicle status loaded")
@@ -1205,7 +1079,7 @@ final class HubControllerTests: XCTestCase {
         let installed = RecordingCommandRunner(result: .success("""
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":false,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"Aurora","latestObservedAtMs":2000,"activityState":"online","batteryLevel":81,"locationName":"Home","telemetryStatus":"cached"},{"vehicleId":"\(secondID.uuidString)","displayName":"Comet","activityState":"asleep","batteryLevel":null,"locationName":null,"telemetryStatus":"unknown"}],"credentials":{"present":true}}
         """))
-        let controller = HubController(installedCommandRunner: installed,
+        let controller = HubController(commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "typed vehicle status loaded")
@@ -1252,7 +1126,7 @@ final class HubControllerTests: XCTestCase {
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
-        let controller = HubController(installedCommandRunner: installed,
+        let controller = HubController(commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "selected multi-vehicle control sent")
@@ -1266,7 +1140,7 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
-        let config = NSHomeDirectory() + "/Library/Application Support/Teslatlas Hub/config.toml"
+        let config = HubTestScratch.realHomePath + "/Library/Application Support/Teslatlas Hub/config.toml"
         XCTAssertEqual(installed.arguments, [
             ["--config", config, "status"],
             ["--config", config, "control", "--vehicle-id",
@@ -1281,7 +1155,7 @@ final class HubControllerTests: XCTestCase {
         let runner = PendingVehicleControlRunner(status: """
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
         """)
-        let controller = HubController(installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
                                        serviceInstalledOverride: true)
         let loaded = expectation(description: "vehicle dashboard loaded")
@@ -1318,7 +1192,7 @@ final class HubControllerTests: XCTestCase {
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"One"},{"vehicleId":"\(secondID.uuidString)","displayName":"Two"}],"credentials":{"present":true}}
         """
         let installed = RecordingCommandRunner(result: .success(status))
-        let controller = HubController(installedCommandRunner: installed,
+        let controller = HubController(commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
                                        serviceInstalledOverride: true)
         let settled = expectation(description: "multi-vehicle selector rendered")
@@ -1360,8 +1234,8 @@ final class HubControllerTests: XCTestCase {
             {"status":"ok","version":"\(HubRelease.bundledVersion)","ready":false,"provider":"fleet","credentials":{"present":false}}
             """)
         ])
-        let controller = HubController(commandRunner: embedded,
-                                       installedCommandRunner: installed,
+        let controller = HubController(
+                                       commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true,
@@ -1398,7 +1272,7 @@ final class HubControllerTests: XCTestCase {
             to: folder.appendingPathComponent(".teslamate-handover-pending")
         )
         let runner = CountingRunner()
-        let controller = HubController(installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "sign out blocked")
@@ -1425,7 +1299,7 @@ final class HubControllerTests: XCTestCase {
             {"status":"ok","version":"\(HubRelease.bundledVersion)","ready":false,"provider":"fleet","credentials":{"present":false},"legacyCredentials":{"present":true},"fleetCredentials":{"present":false}}
             """)
         ])
-        let controller = HubController(installedCommandRunner: installed,
+        let controller = HubController(commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true,
@@ -1454,8 +1328,8 @@ final class HubControllerTests: XCTestCase {
         """
         let embedded = RecordingCommandRunner(result: .failure(HubActionError.commandFailed("unused")))
         let installed = RecordingCommandRunner(result: .success(status))
-        let controller = HubController(commandRunner: embedded,
-                                       installedCommandRunner: installed,
+        let controller = HubController(
+                                       commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "vehicle controls sent")
@@ -1477,7 +1351,7 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
-        let config = NSHomeDirectory() + "/Library/Application Support/Teslatlas Hub/config.toml"
+        let config = HubTestScratch.realHomePath + "/Library/Application Support/Teslatlas Hub/config.toml"
         let expectedControls = actions.map {
             ["--config", config, "control", "--vehicle-id", vehicleID.uuidString.lowercased(),
              $0.rawValue, "--confirm"]
@@ -1528,7 +1402,7 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testStartShowsProgressImmediatelyAndSettlesToRunning() {
-        let home = FileManager.default.temporaryDirectory
+        let home = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-start-test-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -1537,7 +1411,7 @@ final class HubControllerTests: XCTestCase {
         """
         let installed = RecordingCommandRunner(result: .success(status))
         let service = PendingServiceRunner(loadState: .unloaded)
-        let controller = HubController(installedCommandRunner: installed,
+        let controller = HubController(commandRunner: installed,
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -1586,7 +1460,7 @@ final class HubControllerTests: XCTestCase {
     func testHubStartedOnboardingCompletionSchedulesOnlySettlementRefresh() throws {
         let runner = PendingCommandRunner()
         let controller = HubController(
-            installedCommandRunner: runner,
+            commandRunner: runner,
             serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
             serviceInstalledOverride: true,
             initialSnapshot: .firstRun
@@ -1644,7 +1518,7 @@ final class HubControllerTests: XCTestCase {
 
     func testInFlightRefreshDoesNotRepaintDashboardDuringServiceTransition() {
         let runner = PendingCommandRunner()
-        let controller = HubController(installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder(),
                                                                       loadState: .loaded),
                                        serviceInstalledOverride: true)
@@ -1668,7 +1542,7 @@ final class HubControllerTests: XCTestCase {
 
     func testServiceTransitionHasHardDeadlineWhenStatusProbeNeverReturns() {
         let runner = PendingCommandRunner()
-        let controller = HubController(installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder(),
                                                                       loadState: .loaded),
                                        serviceInstalledOverride: true,
@@ -1712,7 +1586,7 @@ final class HubControllerTests: XCTestCase {
         """
         let runner = RecordingCommandRunner(result: .success(status))
         let service = PendingServiceRunner(loadState: .unloaded)
-        let controller = HubController(installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
                                        serviceRunner: service,
                                        serviceInstalledOverride: true)
         let loaded = expectation(description: "stopped dashboard loaded")
@@ -1759,7 +1633,7 @@ final class HubControllerTests: XCTestCase {
 
     func testNewestRefreshOwnsSnapshotWhenStatusResponsesCompleteOutOfOrder() {
         let runner = OutOfOrderCommandRunner()
-        let controller = HubController(installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder(),
                                                                       loadState: .loaded),
                                        serviceInstalledOverride: true)
@@ -1985,7 +1859,7 @@ final class HubControllerTests: XCTestCase {
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"fleet","vehicles":[{"vehicleId":"\(firstID.uuidString)","displayName":"Aurora"},{"vehicleId":"\(secondID.uuidString)","displayName":"Comet"}],"credentials":{"present":true}}
         """
         let runner = PendingVehicleControlRunner(status: status)
-        let controller = HubController(installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
                                        serviceInstalledOverride: true)
         let loaded = expectation(description: "vehicle dashboard loaded")
@@ -2009,7 +1883,7 @@ final class HubControllerTests: XCTestCase {
         staleSnapshot.controlVehicleID = secondID
         staleSnapshot.controlVehicles = [HubControlVehicle(id: secondID, displayName: "Comet", status: "Online")]
         let staleRunner = CountingRunner()
-        let staleController = HubController(installedCommandRunner: staleRunner,
+        let staleController = HubController(commandRunner: staleRunner,
                                             serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
                                             serviceInstalledOverride: true,
                                             initialSnapshot: staleSnapshot)
@@ -2095,7 +1969,7 @@ final class HubControllerTests: XCTestCase {
         ]
         let installed = CountingRunner()
         let controller = HubController(environment: [:],
-                                       installedCommandRunner: installed,
+                                       commandRunner: installed,
                                        serviceRunner: ScriptedService(events: EventRecorder(),
                                                                       loadState: .loaded),
                                        serviceInstalledOverride: true,
@@ -2171,7 +2045,6 @@ final class HubControllerTests: XCTestCase {
     func testCompatibilityCheckRejectsMissingVersionAcknowledgementBeforeCommands() {
         let runner = CountingRunner()
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceInstalledOverride: false)
         let rejected = expectation(description: "missing version acknowledgement rejected")
 
@@ -2193,7 +2066,6 @@ final class HubControllerTests: XCTestCase {
     func testDirectMigrationRejectsMissingVersionAcknowledgementBeforeCommands() {
         let runner = CountingRunner()
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceInstalledOverride: false)
         let rejected = expectation(description: "missing version acknowledgement rejected")
 
@@ -2221,7 +2093,6 @@ final class HubControllerTests: XCTestCase {
         ))
         let events = EventRecorder()
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: events),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -2253,13 +2124,10 @@ final class HubControllerTests: XCTestCase {
         let runner = ScriptedRunner(events: events, result: .success(
             #"{"status":"imported","captureMode":"online-snapshot"}"#
         ))
-        let installer = ScriptedInstaller(events: events)
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: installer,
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -2287,7 +2155,6 @@ final class HubControllerTests: XCTestCase {
             $0.contains("--acknowledge-v4-2-compatible-schema")
         })
         XCTAssertTrue(controller.hasPendingMigrationHandover)
-        XCTAssertFalse(events.values.contains("install"))
         XCTAssertFalse(events.values.contains("service:start"))
     }
 
@@ -2296,14 +2163,11 @@ final class HubControllerTests: XCTestCase {
         let runner = ScriptedRunner(events: events, result: .success(
             #"{"status":"imported","captureMode":"online-snapshot"}"#
         ))
-        let installer = ScriptedInstaller(events: events)
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: installer,
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -2328,18 +2192,15 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(HubController.collectorProvider(in: config), "fleet")
     }
 
-    func testFreshMigrationInstallsCurrentServicePackageAfterSuccessfulCopy() throws {
+    func testFreshMigrationInstallsCurrentServicePackageAfterSuccessfulCopy() throws {  // no install any more: the migration only copies; nothing starts before handover
         let events = EventRecorder()
         let runner = ScriptedRunner(events: events, result: .success(
             #"{"status":"imported","captureMode":"online-snapshot"}"#
         ))
-        let installer = ScriptedInstaller(events: events)
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: installer,
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: false)
@@ -2359,7 +2220,6 @@ final class HubControllerTests: XCTestCase {
         XCTAssertNil(runner.stdin)
         XCTAssertTrue(runner.arguments.joined().contains("--online-snapshot"))
         XCTAssertTrue(controller.hasPendingMigrationHandover)
-        XCTAssertFalse(events.values.contains("install"))
         XCTAssertFalse(events.values.contains("service:start"))
         let config = try String(contentsOf: home
             .appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml"))
@@ -2371,14 +2231,11 @@ final class HubControllerTests: XCTestCase {
         let events = EventRecorder()
         let runner = ScriptedRunner(events: events,
                                     result: .failure(HubActionError.commandTimedOut))
-        let installer = ScriptedInstaller(events: events)
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: installer,
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -2419,7 +2276,6 @@ final class HubControllerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
                                        serviceRunner: ScriptedService(events: events),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -2459,9 +2315,8 @@ final class HubControllerTests: XCTestCase {
             try FileManager.default.removeItem(at: config)
             try FileManager.default.createDirectory(at: config, withIntermediateDirectories: false)
         }
-        let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: CountingRunner(),
-                                       installer: ScriptedInstaller(events: EventRecorder()),
+        let controller = HubController(
+                                       commandRunner: runner,
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -2486,58 +2341,17 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(controller.hasPendingMigrationHandover)
     }
 
-    func testInstalledMigrationDoesNotMutateWithStaleBinaryWhenPackageUpdateFails() throws {
-        let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .success(
-            #"{"status":"imported","captureMode":"online-snapshot"}"#
-        ))
-        let installer = ScriptedInstaller(
-            events: events,
-            result: .failure(HubActionError.commandFailed("package failed"))
-        )
-        let service = ScriptedService(events: events)
-        let home = try temporaryHome()
-        defer { try? FileManager.default.removeItem(at: home) }
-        let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: installer,
-                                       serviceRunner: service,
-                                       homeDirectory: home,
-                                       serviceInstalledOverride: true)
-        let finished = expectation(description: "dashboard import ignores package installer")
-
-        controller.importTeslaMate(source: "postgres://reader@localhost/teslamate",
-                                   carID: "1",
-                                   passwordFile: "/tmp/password",
-                                   encryptionKeyFile: "/tmp/key",
-                                   acknowledgeV42CompatibleSchema: true) { result in
-            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
-            finished.fulfill()
-        }
-
-        wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
-        XCTAssertNil(runner.stdin)
-        XCTAssertFalse(events.values.contains("install"))
-        XCTAssertFalse(events.values.contains("service:start"))
-        XCTAssertTrue(controller.hasPendingMigrationHandover)
-    }
-
     func testInstalledAccountConfigureInstallsBeforeSingleSetupAndRestarts() throws {
+        // Pause, one setup with the embedded program, then the ordinary Start (which
+        // carries the held record); no installer remains.
         let events = EventRecorder()
-        let embedded = CountingRunner()
-        let installed = ScriptedRunner(events: events, result: .success("ok"))
+        let runner = ScriptedRunner(events: events, result: .success("ok"))
         let service = ScriptedService(events: events)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
-        var configAtInstall = ""
-        let installer = ScriptedInstaller(events: events) {
-            configAtInstall = (try? self.configContents(in: home)) ?? ""
-        }
-        let controller = HubController(commandRunner: embedded,
-                                       installedCommandRunner: installed,
-                                       installer: installer,
+        let controller = HubController(
+                                       commandRunner: runner,
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true,
@@ -2552,31 +2366,26 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, [
-            "service:stop", "install", "setup", "service:start", "command"
-        ])
-        XCTAssertEqual(embedded.calls, 1) // Read-only version probe; setup uses the installed binary.
-        XCTAssertNotNil(installed.stdin)
-        XCTAssertTrue(installed.arguments[0].contains("--all-vehicles"))
-        XCTAssertEqual(installed.arguments.count, 2)
-        XCTAssertTrue(configAtInstall.contains("provider = \"fleet\""))
+        XCTAssertEqual(events.values, ["service:pause", "setup", "service:start", "command"])
+        XCTAssertNotNil(runner.stdin)
+        XCTAssertTrue(runner.arguments[0].contains("--all-vehicles"))
+        XCTAssertEqual(runner.arguments.count, 2, "one setup, then the status refresh")
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 
     func testInstalledAccountSetupFailureKeepsLegacySelectedAndHubStopped() throws {
+        // C1: the selected configuration is kept; the loaded Hub is recovered once and
+        // the failure never claims the Hub stays stopped.
         let events = EventRecorder()
         let runner = ScriptedRunner(
             events: events,
             result: .failure(HubActionError.commandFailed("setup failed"))
         )
-        let installer = ScriptedInstaller(events: events)
         let service = ScriptedService(events: events, loadState: .loaded)
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: installer,
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true,
@@ -2588,13 +2397,13 @@ final class HubControllerTests: XCTestCase {
         ) { result in
             guard case let .failure(error) = result else { return XCTFail("expected setup failure") }
             XCTAssertTrue(error.localizedDescription.contains("setup failed"))
-            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            XCTAssertFalse(error.localizedDescription.contains("remains stopped"))
             finished.fulfill()
         }
 
         wait(for: [finished], timeout: 2)
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
-        XCTAssertEqual(events.values, ["service:stop", "command", "install", "setup"])
+        XCTAssertEqual(events.values, ["service:pause", "setup", "service:recover"])
     }
 
     func testInstalledLegacyFailureKeepsPreviouslyStoppedHubStopped() throws {
@@ -2607,8 +2416,6 @@ final class HubControllerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: ScriptedInstaller(events: events),
                                        serviceRunner: ScriptedService(events: events, loadState: .unloaded),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true,
@@ -2624,7 +2431,8 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
-        XCTAssertEqual(events.values, ["service:stop", "command", "install", "setup"])
+        XCTAssertEqual(events.values, ["service:pause", "setup", "service:recover"],
+                       "a job recorded unloaded is not started by the fake's recovery; the real controller issues nothing")
     }
 
     func testInstalledLegacyStopFailureKeepsFleetConfigUnchanged() throws {
@@ -2636,8 +2444,6 @@ final class HubControllerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: home) }
         let original = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: ScriptedInstaller(events: events),
                                        serviceRunner: service,
                                        homeDirectory: home,
                                        serviceInstalledOverride: true,
@@ -2653,93 +2459,18 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertEqual(events.values, ["service:stop"])
-    }
-
-    func testInstalledAccountConfigureRestartsOldServiceAfterInstallFailure() throws {
-        let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .success("ok"))
-        let installer = ScriptedInstaller(
-            events: events,
-            result: .failure(HubActionError.commandFailed("package failed"))
-        )
-        let service = ScriptedService(events: events, loadState: .loaded)
-        let home = try temporaryHome()
-        defer { try? FileManager.default.removeItem(at: home) }
-        let original = try writeCollectorConfig(in: home, provider: "fleet")
-        let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: installer,
-                                       serviceRunner: service,
-                                       homeDirectory: home,
-                                       serviceInstalledOverride: true,
-                                       initialSnapshot: .previewRunning)
-        let finished = expectation(description: "install failure returned")
-
-        controller.configureTeslaAccount(
-            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
-        ) { result in
-            guard case let .failure(error) = result else { return XCTFail("expected install failure") }
-            XCTAssertTrue(error.localizedDescription.contains("package failed"))
-            finished.fulfill()
-        }
-
-        wait(for: [finished], timeout: 2)
-        XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertEqual(events.values, ["service:stop", "command", "install", "service:start"])
-    }
-
-    func testForwardOnlyInstallFailureLeavesNewServiceStopped() throws {
-        let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .success("ok"))
-        let installer = ScriptedInstaller(
-            events: events,
-            result: .failure(HubActionError.commandFailed(
-                "TESLATLAS_FORWARD_ONLY_UPGRADE: schema migration failed"
-            ))
-        )
-        let home = try temporaryHome()
-        defer { try? FileManager.default.removeItem(at: home) }
-        let original = try writeCollectorConfig(in: home, provider: "fleet")
-        let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: installer,
-                                       serviceRunner: ScriptedService(events: events),
-                                       homeDirectory: home,
-                                       serviceInstalledOverride: true,
-                                       initialSnapshot: .previewRunning)
-        let finished = expectation(description: "forward-only failure returned")
-
-        controller.configureTeslaAccount(
-            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
-        ) { result in
-            guard case let .failure(error) = result else { return XCTFail("expected install failure") }
-            XCTAssertTrue(error.localizedDescription.contains("TESLATLAS_FORWARD_ONLY_UPGRADE"))
-            finished.fulfill()
-        }
-
-        wait(for: [finished], timeout: 2)
-        XCTAssertEqual(try configContents(in: home), original)
-        XCTAssertEqual(events.values, ["service:stop", "command", "install"])
+        XCTAssertEqual(events.values, ["service:pause", "service:recover"])
     }
 
     func testInstalledUnconfiguredLegacySetupRunsBeforePackagePreflight() throws {
+        // Setup runs before the ordinary Start, whose own writer and Hub preflight follow.
         let events = EventRecorder()
-        let embedded = VersionAwareRunner(
-            events: events,
-            versionResult: .success("teslatlas-hub \(HubRelease.bundledVersion)\n"),
-            commandResult: .success("ok")
-        )
-        let installed = VersionAwareRunner(
-            events: events,
-            versionResult: .success("teslatlas-hub 1.0.0-alpha.0\n")
-        )
+        let runner = ScriptedRunner(events: events, result: .success("ok"))
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
-        let controller = HubController(commandRunner: embedded,
-                                       installedCommandRunner: installed,
-                                       installer: ScriptedInstaller(events: events),
+        let controller = HubController(
+                                       commandRunner: runner,
                                        serviceRunner: ScriptedService(events: events),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -2753,9 +2484,7 @@ final class HubControllerTests: XCTestCase {
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, [
-            "service:stop", "setup", "version", "version", "install", "service:start", "command"
-        ])
+        XCTAssertEqual(events.values, ["service:pause", "setup", "service:start", "command"])
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 
@@ -2770,8 +2499,6 @@ final class HubControllerTests: XCTestCase {
         try Data(repeating: 0x61, count: 1024 * 1024 + 1).write(to: config)
         let runner = CountingRunner()
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: RecordingInstaller(),
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -2804,8 +2531,6 @@ final class HubControllerTests: XCTestCase {
         try FileManager.default.createSymbolicLink(at: config, withDestinationURL: target)
         let runner = CountingRunner()
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: RecordingInstaller(),
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -2836,8 +2561,6 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(mkfifo(config.path, 0o600), 0)
         let runner = CountingRunner()
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: RecordingInstaller(),
                                        serviceRunner: ScriptedService(events: EventRecorder()),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
@@ -2857,176 +2580,34 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(runner.calls, 0)
     }
 
-    func testInstalledUnconfiguredLegacyReusesExactPackagedService() throws {
-        let events = EventRecorder()
-        let embedded = VersionAwareRunner(
-            events: events,
-            versionResult: .success("teslatlas-hub \(HubRelease.bundledVersion)\n"),
-            commandResult: .success("configured")
-        )
-        let installed = VersionAwareRunner(
-            events: events,
-            versionResult: .success("teslatlas-hub \(HubRelease.bundledVersion)\n")
-        )
-        let installer = RecordingInstaller()
-        let home = try temporaryHome()
-        defer { try? FileManager.default.removeItem(at: home) }
-        _ = try writeCollectorConfig(in: home, provider: "fleet")
-        let controller = HubController(commandRunner: embedded,
-                                       installedCommandRunner: installed,
-                                       installer: installer,
-                                       serviceRunner: ScriptedService(events: events),
-                                       homeDirectory: home,
-                                       serviceInstalledOverride: true)
-        let finished = expectation(description: "matching service reused")
-
-        controller.configureTeslaAccount(
-            tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
-        ) { result in
-            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
-            finished.fulfill()
-        }
-
-        wait(for: [finished], timeout: 2)
-        XCTAssertEqual(installer.installCalls, 0)
-        XCTAssertEqual(events.values, [
-            "service:stop", "setup", "version", "version", "service:start", "command"
-        ])
-        XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
-    }
-
-    func testConnectedLegacyReusesMatchingServiceWithoutInstallerTrust() throws {
-        try assertConnectedAccountReusesService(provider: "legacy")
-    }
-
-    func testConnectedFleetReusesMatchingServiceWithoutInstallerTrust() throws {
-        try assertConnectedAccountReusesService(provider: "fleet")
-    }
-
-    private func assertConnectedAccountReusesService(provider: String) throws {
-        let events = EventRecorder()
-        let runner = VersionAwareRunner(events: events,
-            versionResult: .success("teslatlas-hub \(HubRelease.bundledVersion)\n"))
-        let home = try temporaryHome()
-        defer { try? FileManager.default.removeItem(at: home) }
-        _ = try writeCollectorConfig(in: home, provider: "legacy")
-        let controller = HubController(commandRunner: runner,
-            installedCommandRunner: runner,
-            installer: ScriptedInstaller(events: events, result: .failure(
-                HubActionError.untrustedInstaller("signed release metadata is missing"))),
-            serviceRunner: ScriptedService(events: events, loadState: .unloaded),
-            homeDirectory: home, serviceInstalledOverride: true,
-            initialSnapshot: .previewRunning)
-        let finished = expectation(description: "connected account configured without reinstall")
-        let completion: (Result<Void, Error>) -> Void = { result in
-            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
-            finished.fulfill()
-        }
-        if provider == "legacy" {
-            controller.configureTeslaAccount(tokens: TeslaAuthTokens(
-                accessToken: "test-access", refreshToken: "test-refresh"), completion: completion)
-        } else {
-            controller.configureFleetAccount(credentials: HubFleetSetupCredentials(
-                accessToken: "test-access", refreshToken: "test-refresh", clientID: "test-client",
-                region: "europe_middle_east_and_africa", expiresInSeconds: 3600),
-                completion: completion)
-        }
-        wait(for: [finished], timeout: 2)
-        XCTAssertFalse(events.values.contains("install"))
-        XCTAssertEqual(events.values, ["service:stop", "version", "version",
-            provider == "legacy" ? "setup" : "command", "service:start", "command"])
-        XCTAssertTrue(try configContents(in: home).contains("provider = \"\(provider)\""))
-    }
-
-    func testConnectedAccountsDoNotReuseOlderService() throws {
-        try assertConnectedAccountsRequireInstaller(installedVersion: .success("teslatlas-hub 1.0.0"))
-    }
-
-    func testConnectedAccountsDoNotReuseUnreadableServiceVersion() throws {
-        try assertConnectedAccountsRequireInstaller(installedVersion: .failure(
-            HubActionError.commandFailed("version probe failed")))
-    }
-
-    private func assertConnectedAccountsRequireInstaller(installedVersion: Result<String, Error>) throws {
-        for provider in ["legacy", "fleet"] {
-            let events = EventRecorder()
-            let embedded = VersionAwareRunner(events: events,
-                versionResult: .success("teslatlas-hub \(HubRelease.bundledVersion)"))
-            let installed = VersionAwareRunner(events: events, versionResult: installedVersion)
-            let home = try temporaryHome()
-            defer { try? FileManager.default.removeItem(at: home) }
-            let original = try writeCollectorConfig(in: home, provider: "legacy")
-            let controller = HubController(commandRunner: embedded, installedCommandRunner: installed,
-                installer: ScriptedInstaller(events: events, result: .failure(
-                    HubActionError.untrustedInstaller("test installer rejected"))),
-                serviceRunner: ScriptedService(events: events, loadState: .unloaded),
-                homeDirectory: home, serviceInstalledOverride: true, initialSnapshot: .previewRunning)
-            let finished = expectation(description: "upgrade remains subject to installer admission")
-            let completion: (Result<Void, Error>) -> Void = { result in
-                guard case let .failure(error) = result else { return XCTFail("unsafe reuse") }
-                XCTAssertTrue(error.localizedDescription.contains("test installer rejected"))
-                finished.fulfill()
-            }
-            if provider == "legacy" {
-                controller.configureTeslaAccount(tokens: TeslaAuthTokens(
-                    accessToken: "test-access", refreshToken: "test-refresh"), completion: completion)
-            } else {
-                controller.configureFleetAccount(credentials: HubFleetSetupCredentials(
-                    accessToken: "test-access", refreshToken: "test-refresh", clientID: "test-client",
-                    region: "europe_middle_east_and_africa", expiresInSeconds: 3600), completion: completion)
-            }
-            wait(for: [finished], timeout: 2)
-            XCTAssertEqual(events.values, ["service:stop", "version", "version", "install"])
-            XCTAssertEqual(try configContents(in: home), original)
-        }
-    }
-
-    func testBundledServiceVersionMatchIsExact() {
-        XCTAssertTrue(HubController.isBundledServiceVersionOutput(
-            "teslatlas-hub \(HubRelease.bundledVersion)\n"
-        ))
-        XCTAssertFalse(HubController.isBundledServiceVersionOutput(
-            "teslatlas-hub 1.0.0-alpha.0"
-        ))
-        XCTAssertFalse(HubController.isBundledServiceVersionOutput(
-            "prefix teslatlas-hub \(HubRelease.bundledVersion)"
-        ))
-        XCTAssertFalse(HubController.isBundledServiceVersionOutput(
-            "teslatlas-hub \(HubRelease.bundledVersion)\nextra"
-        ))
-    }
-
     func testUnconfiguredLegacyInstallerFailureKeepsNewCredentialsStopped() throws {
+        // A setup failure (no installer step any more): the new credentials are not rolled back and the
+        // pause is followed by exactly one typed recovery.
         let events = EventRecorder()
-        let runner = ScriptedRunner(events: events, result: .success("configured"))
-        let installer = ScriptedInstaller(
-            events: events,
-            result: .failure(HubActionError.commandFailed("package failed"))
-        )
+        let runner = ScriptedRunner(events: events,
+                                    result: .failure(HubActionError.commandFailed("setup refused")))
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: installer,
                                        serviceRunner: ScriptedService(events: events),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true)
-        let finished = expectation(description: "configured legacy remains stopped")
+        let finished = expectation(description: "legacy setup failure recovered")
 
         controller.configureTeslaAccount(
             tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
         ) { result in
             guard case let .failure(error) = result else {
-                return XCTFail("expected package failure")
+                return XCTFail("expected setup failure")
             }
-            XCTAssertTrue(error.localizedDescription.contains("configured"))
-            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            XCTAssertTrue(error.localizedDescription.contains("setup refused"))
+            XCTAssertFalse(error.localizedDescription.contains("remains stopped"))
             finished.fulfill()
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["service:stop", "setup", "command", "install"])
+        XCTAssertEqual(events.values, ["service:pause", "setup", "service:recover"])
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 
@@ -3042,8 +2623,6 @@ final class HubControllerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: home) }
         _ = try writeCollectorConfig(in: home, provider: "fleet")
         let controller = HubController(commandRunner: runner,
-                                       installedCommandRunner: runner,
-                                       installer: ScriptedInstaller(events: events),
                                        serviceRunner: ScriptedService(events: events, loadState: .loaded),
                                        homeDirectory: home,
                                        serviceInstalledOverride: true,
@@ -3056,12 +2635,13 @@ final class HubControllerTests: XCTestCase {
             guard case let .failure(error) = result else {
                 return XCTFail("expected ambiguous setup failure")
             }
-            XCTAssertTrue(error.localizedDescription.contains("remains stopped"))
+            XCTAssertTrue(error.localizedDescription.contains("needs verification"))
+            XCTAssertFalse(error.localizedDescription.contains("remains stopped"))
             finished.fulfill()
         }
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(events.values, ["service:stop", "command", "install", "setup"])
+        XCTAssertEqual(events.values, ["service:pause", "setup", "service:recover"])
         XCTAssertTrue(try configContents(in: home).contains("provider = \"legacy\""))
     }
 
@@ -3112,7 +2692,7 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testProcessExecutorBoundsNonreadingStandardInputAndReapsChild() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString,
+        let root = HubTestScratch.directory.appendingPathComponent(UUID().uuidString,
                                                                                  isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -3163,7 +2743,7 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testNonreadingFixtureCleanupAfterInjectedEarlyCompletionReapsExactOwnedProcess() throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString,
+        let root = HubTestScratch.directory.appendingPathComponent(UUID().uuidString,
                                                                                  isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -3274,7 +2854,7 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testProcessExecutorRejectsOversizedInputBeforeLaunchingChild() {
-        let marker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let marker = HubTestScratch.directory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: marker) }
         let finished = expectation(description: "oversized input rejected")
         HubProcessExecutor.run(executable: URL(fileURLWithPath: "/bin/sh"),
@@ -3310,7 +2890,7 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testProcessExecutorDeliversLineBeforeChildExit() {
-        let releaseFile = FileManager.default.temporaryDirectory
+        let releaseFile = HubTestScratch.directory
             .appendingPathComponent("teslatlas-process-output-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: releaseFile) }
         let lineDelivered = expectation(description: "line delivered while child is running")
@@ -3516,91 +3096,6 @@ final class HubControllerTests: XCTestCase {
         wait(for: [finished], timeout: 2)
     }
 
-    func testUninstallPassesSeparateKeepAndDeleteDataChoices() {
-        let installer = RecordingInstaller()
-        let service = ScriptedService(events: EventRecorder())
-        let controller = HubController(commandRunner: CountingRunner(),
-                                       installer: installer,
-                                       serviceRunner: service,
-                                       serviceInstalledOverride: false)
-        let kept = expectation(description: "keep-data uninstall finished")
-        controller.uninstallService(deleteData: false) { result in
-            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
-            kept.fulfill()
-        }
-        wait(for: [kept], timeout: 2)
-
-        let finished = expectation(description: "delete-data uninstall finished")
-        controller.uninstallService(deleteData: true) { result in
-            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
-            finished.fulfill()
-        }
-        wait(for: [finished], timeout: 2)
-        XCTAssertEqual(installer.deleteDataChoices, [false, true])
-    }
-
-    func testInstallStagesAndVerifiesSignedPackageBeforeInstallerRuns() throws {
-        let package = "/Applications/Teslatlas Hub.app/Contents/Resources/TeslatlasHubService.pkg"
-        let app = "/Applications/Teslatlas Hub.app"
-        let digest = String(repeating: "a", count: 64)
-        let command = try EmbeddedInstaller.installCommand(
-            packagePath: package,
-            appPath: app,
-            expectedSHA256: digest,
-            expectedTeamID: "4AA2EMZ2HA"
-        )
-        XCTAssertTrue(command.contains("/private/var/tmp/teslatlas-hub-install.XXXXXX"))
-        XCTAssertTrue(command.contains("/usr/bin/codesign --verify --deep --strict"))
-        XCTAssertTrue(command.contains("/usr/sbin/spctl --assess --type execute"))
-        XCTAssertTrue(command.contains("/usr/bin/install -o root -g wheel -m 0600"))
-        XCTAssertTrue(command.contains("/bin/test"))
-        XCTAssertFalse(command.contains("/usr/bin/test"))
-        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: "/bin/test"))
-        XCTAssertTrue(command.contains("/usr/bin/shasum -a 256 \"$staged\""))
-        XCTAssertTrue(command.contains("/usr/sbin/pkgutil --check-signature \"$staged\""))
-        XCTAssertTrue(command.contains("/usr/sbin/spctl --assess --type install"))
-        XCTAssertTrue(command.hasSuffix("/usr/sbin/installer -pkg \"$staged\" -target /"))
-        XCTAssertFalse(command.contains("/usr/sbin/installer -pkg '\(package)'"))
-        let syntaxCheck = Process()
-        syntaxCheck.executableURL = URL(fileURLWithPath: "/bin/sh")
-        syntaxCheck.arguments = ["-n", "-c", command]
-        try syntaxCheck.run()
-        syntaxCheck.waitUntilExit()
-        XCTAssertEqual(syntaxCheck.terminationStatus, 0)
-        XCTAssertThrowsError(try EmbeddedInstaller.installCommand(
-            packagePath: package,
-            appPath: app,
-            expectedSHA256: "bad",
-            expectedTeamID: "4AA2EMZ2HA"
-        ))
-        XCTAssertThrowsError(try EmbeddedInstaller.installCommand(
-            packagePath: package,
-            appPath: app,
-            expectedSHA256: digest,
-            expectedTeamID: "bad"
-        ))
-    }
-
-    func testUninstallUsesOnlyTheInstalledRootOwnedUninstaller() throws {
-        let command = EmbeddedInstaller.uninstallCommand(deleteData: true)
-        XCTAssertTrue(command.contains("/Library/Application Support/Teslatlas Hub"))
-        XCTAssertTrue(command.contains("$libexec/uninstall-macos-service.sh"))
-        XCTAssertTrue(command.contains("/usr/bin/stat -f '%u:%g'"))
-        XCTAssertTrue(command.contains("/bin/test"))
-        XCTAssertFalse(command.contains("/usr/bin/test"))
-        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: "/bin/test"))
-        XCTAssertTrue(command.contains("-perm +022"))
-        XCTAssertTrue(command.hasSuffix("/bin/sh \"$uninstaller\" --delete-data"))
-        XCTAssertFalse(command.contains("pkgutil --expand"))
-        XCTAssertFalse(command.contains("TeslatlasHubService.pkg"))
-        let syntaxCheck = Process()
-        syntaxCheck.executableURL = URL(fileURLWithPath: "/bin/sh")
-        syntaxCheck.arguments = ["-n", "-c", command]
-        try syntaxCheck.run()
-        syntaxCheck.waitUntilExit()
-        XCTAssertEqual(syntaxCheck.terminationStatus, 0)
-    }
-
     func testSetupInvocationKeepsTokensOutOfArguments() throws {
         let tokens = TeslaAuthTokens(accessToken: "access-secret", refreshToken: "refresh-secret")
         let invocation = try HubController.setupInvocation(
@@ -3685,7 +3180,7 @@ final class HubControllerTests: XCTestCase {
     }
 
     private func temporaryHome() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
+        let url = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-tests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
         return url
@@ -3736,6 +3231,22 @@ final class HubControllerTests: XCTestCase {
     private func boxes(in view: NSView?) -> [NSBox] {
         guard let view else { return [] }
         return (view as? NSBox).map { [$0] } ?? view.subviews.flatMap { boxes(in: $0) }
+    }
+}
+
+/// Records the lifecycle actions a details window forwards.
+private final class LifecycleCallRecorder {
+    private(set) var names: [String] = []
+    var confirmations: [String] = []
+
+    var actions: HubServiceLifecycleActions {
+        HubServiceLifecycleActions(
+            start: { [self] in names.append("start") },
+            stop: { [self] in names.append("stop") },
+            restart: { [self] in names.append("restart") },
+            remove: { [self] in names.append("remove") },
+            deleteHubAndData: { [self] in names.append("deleteHubAndData") }
+        )
     }
 }
 
@@ -3824,6 +3335,11 @@ private final class PendingServiceRunner: HubServiceControlling {
             completion(pendingResults.removeFirst())
         }
     }
+    func run(arguments: [String], owner: HubLifecycleToken,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        run(arguments: arguments, completion: completion)
+    }
+    func restartRecordHeld(by owner: HubLifecycleToken) -> Bool { false }
 
     func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
         completion(loadState)
@@ -3839,6 +3355,27 @@ private final class PendingServiceRunner: HubServiceControlling {
 
     func complete(at index: Int, _ result: Result<String, Error>) {
         completions.remove(at: index)(result)
+    }
+
+    // New lifecycle requirements, implemented explicitly (no protocol-extension defaults).
+    private(set) var recoverCalls = 0
+    private(set) var releaseCalls = 0
+    private(set) var deleteCalls = 0
+    var restartDutyOutstanding: Bool { false }
+    func whenRestartDutySettled(_ callback: @escaping () -> Void) { callback() }
+    func recoverAfterPause(owner: HubLifecycleToken, completion: @escaping (Result<String, Error>) -> Void) {
+        recoverCalls += 1
+        completion(.success(""))
+    }
+    func releaseRestartRecord(owner: HubLifecycleToken) {
+        releaseCalls += 1
+    }
+
+    func reconcile(owner: HubLifecycleToken, ensure: @escaping () throws -> HubLaunchAgentChange,
+                   completion: @escaping (HubReconcileOutcome) -> Void) { completion(.completed) }
+    func deleteHubAndData(owner: HubLifecycleToken, completion: @escaping (Result<HubDataRemovalReport, Error>) -> Void) {
+        deleteCalls += 1
+        completion(.failure(HubActionError.preview))
     }
 }
 
@@ -3991,114 +3528,1159 @@ private final class ScriptedRunner: HubCommandRunning {
     }
 }
 
-private final class VersionAwareRunner: HubCommandRunning {
-    private let events: EventRecorder
-    private let versionResult: Result<String, Error>
-    private let commandResult: Result<String, Error>
-
-    init(events: EventRecorder,
-         versionResult: Result<String, Error>,
-         commandResult: Result<String, Error> = .success("{}")) {
-        self.events = events
-        self.versionResult = versionResult
-        self.commandResult = commandResult
-    }
-
-    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
-        if arguments == ["--version"] {
-            events.append("version")
-            completion(versionResult)
-        } else {
-            events.append(arguments.contains("setup") ? "setup" : "command")
-            completion(commandResult)
-        }
-    }
-}
-
-private final class ScriptedInstaller: HubInstalling {
-    private let events: EventRecorder
-    private let result: Result<String, Error>
-    private let onInstall: (() -> Void)?
-
-    init(events: EventRecorder,
-         result: Result<String, Error> = .success(""),
-         onInstall: (() -> Void)? = nil) {
-        self.events = events
-        self.result = result
-        self.onInstall = onInstall
-    }
-
-    func install(completion: @escaping (Result<String, Error>) -> Void) {
-        events.append("install")
-        onInstall?()
-        completion(result)
-    }
-
-    func uninstall(deleteData: Bool, completion: @escaping (Result<String, Error>) -> Void) {
-        completion(.success(""))
-    }
-}
-
 private final class ScriptedService: HubServiceControlling {
     private let events: EventRecorder
     private let loadState: HubServiceLoadState
     var result: Result<String, Error> = .success("")
+    /// Per-action overrides of `result`, keyed by the last service argument.
+    var actionResults: [String: Result<String, Error>] = [:]
+    private(set) var stateQueries = 0
+    var recordsStateQueries = false
 
     init(events: EventRecorder, loadState: HubServiceLoadState = .unloaded) {
         self.events = events
         self.loadState = loadState
     }
 
+    /// Holds the pause's completion until the test releases it (a custody window held open).
+    var holdPause = false
+    private(set) var heldPause: ((Result<String, Error>) -> Void)?
+    /// Holds Delete's completion until the test releases it (a Delete left in flight).
+    var holdDelete = false
+    private(set) var heldDelete: ((Result<HubDataRemovalReport, Error>) -> Void)?
+
+    func releasePause() {
+        let held = heldPause
+        heldPause = nil
+        held?(actionResults["pause"] ?? result)
+    }
+
+    func releaseDelete(_ outcome: Result<HubDataRemovalReport, Error>) {
+        let held = heldDelete
+        heldDelete = nil
+        held?(outcome)
+    }
+
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         events.append("service:\(arguments.last ?? "unknown")")
-        completion(result)
+        if holdPause, arguments.last == "pause" { heldPause = completion; return }
+        completion(actionResults[arguments.last ?? ""] ?? result)
     }
+    func run(arguments: [String], owner: HubLifecycleToken,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        run(arguments: arguments, completion: completion)
+    }
+    func restartRecordHeld(by owner: HubLifecycleToken) -> Bool { false }
+
+    /// Consumed one per query; the last entry repeats. Empty: `loadState` always.
+    var loadStateSequence: [HubServiceLoadState] = []
 
     func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
+        stateQueries += 1
+        if recordsStateQueries { events.append("state") }
+        if !loadStateSequence.isEmpty {
+            completion(loadStateSequence.count > 1 ? loadStateSequence.removeFirst() : loadStateSequence[0])
+            return
+        }
         completion(loadState)
     }
+
+    // New lifecycle requirements, implemented explicitly (no protocol-extension defaults).
+    var recoverResult: Result<String, Error> = .success("")
+    private(set) var recoverCalls = 0
+    private(set) var releaseCalls = 0
+    private(set) var deleteCalls = 0
+    var deleteResult: Result<HubDataRemovalReport, Error> = .failure(HubActionError.preview)
+    var restartDutyOutstanding: Bool { false }
+    func whenRestartDutySettled(_ callback: @escaping () -> Void) { callback() }
+    func recoverAfterPause(owner: HubLifecycleToken, completion: @escaping (Result<String, Error>) -> Void) {
+        events.append("service:recover")
+        recoverCalls += 1
+        completion(recoverResult)
+    }
+    func releaseRestartRecord(owner: HubLifecycleToken) {
+        events.append("service:release")
+        releaseCalls += 1
+    }
+
+    func reconcile(owner: HubLifecycleToken, ensure: @escaping () throws -> HubLaunchAgentChange,
+                   completion: @escaping (HubReconcileOutcome) -> Void) {
+        let change: HubLaunchAgentChange
+        do { change = try ensure() } catch { completion(.writerFailed(error)); return }
+        guard change != .unchanged else { completion(.completed); return }
+        loadedState { [self] state in
+            guard case .loaded = state else { completion(.completed); return }
+            run(arguments: ["service", "restart"]) { result in
+                if case let .failure(error) = result { completion(.restartFailed(error)) } else { completion(.completed) }
+            }
+        }
+    }
+    func deleteHubAndData(owner: HubLifecycleToken, completion: @escaping (Result<HubDataRemovalReport, Error>) -> Void) {
+        deleteCalls += 1
+        if holdDelete { heldDelete = completion; return }
+        completion(deleteResult)
+    }
 }
 
-private final class RecordingInstaller: HubInstalling {
-    private(set) var installCalls = 0
-    private(set) var deleteDataChoices: [Bool] = []
 
-    func install(completion: @escaping (Result<String, Error>) -> Void) {
-        installCalls += 1
-        completion(.success(""))
+// MARK: - Lifecycle wiring (E1)
+
+extension HubControllerTests {
+    /// Every `service` action a site issues, in order, plus the sites' own commands.
+    private final class SiteRunner: HubCommandRunning {
+        static let historyCompatibility = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+        static let compatibility = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready."}"#
+        static let historyReady = #"{"status":"ready","credentialScope":"history-only","publishedVehicles":1,"collectorEnabled":false}"#
+        private(set) var commands: [String] = []
+        var historyPreflightFails = false
+
+        func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+            let command = arguments.first { !$0.hasPrefix("-") && !$0.hasSuffix("config.toml") } ?? ""
+            commands.append(command)
+            if arguments.contains("teslamate-check") {
+                completion(.success(arguments.contains("--history-only") ? Self.historyCompatibility : Self.compatibility))
+            } else if arguments.contains("migrate") {
+                completion(.success(#"{"status":"imported","captureMode":"online-snapshot"}"#))
+            } else if arguments.contains("preflight") && arguments.contains("--history-only") {
+                completion(historyPreflightFails ? .failure(HubActionError.commandFailed("not ready")) : .success(Self.historyReady))
+            } else {
+                completion(.success("{}"))
+            }
+        }
+
+        func run(arguments: [String], stdin: String, completion: @escaping (Result<String, Error>) -> Void) {
+            run(arguments: arguments, completion: completion)
+        }
     }
 
-    func uninstall(deleteData: Bool, completion: @escaping (Result<String, Error>) -> Void) {
-        deleteDataChoices.append(deleteData)
-        completion(.success(""))
-    }
-}
-
-private final class PendingInstaller: HubInstalling {
-    private(set) var installCalls = 0
-    private(set) var deleteDataChoices: [Bool] = []
-    private var installCompletion: ((Result<String, Error>) -> Void)?
-    private var uninstallCompletion: ((Result<String, Error>) -> Void)?
-
-    func install(completion: @escaping (Result<String, Error>) -> Void) {
-        installCalls += 1
-        installCompletion = completion
+    private func siteHome() throws -> URL {
+        let home = try temporaryHome()
+        _ = try writeCollectorConfig(in: home, provider: "legacy")
+        return home
     }
 
-    func uninstall(deleteData: Bool, completion: @escaping (Result<String, Error>) -> Void) {
-        deleteDataChoices.append(deleteData)
-        uninstallCompletion = completion
+    private func writeMarker(in home: URL, phase: String, historyOnly: Bool) throws {
+        let folder = home.appendingPathComponent("Library/Application Support/Teslatlas Hub")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try """
+        {"phase":"\(phase)","previousIntervalSeconds":60,"previousProvider":"legacy","historyOnly":\(historyOnly)}
+        """.write(to: folder.appendingPathComponent(".teslamate-handover-pending"), atomically: true, encoding: .utf8)
+        if historyOnly {
+            try HistoryOnlyControl.write(for: folder.appendingPathComponent("config.toml"))
+        }
     }
 
-    func completeInstall(_ result: Result<String, Error>) {
-        let completion = installCompletion
-        installCompletion = nil
-        completion?(result)
+    func testStopSitesIssueTheirActions() throws {
+        let token = TeslaAuthTokens(accessToken: "access", refreshToken: "refresh")
+        let credentials = HubFleetSetupCredentials(accessToken: "a", refreshToken: "r", clientID: "c",
+                                                   region: "europe_middle_east_and_africa", expiresInSeconds: 3600)
+        // (label, expected first action, installed, snapshot, trigger)
+        struct Site {
+            let label: String
+            let expected: String
+            var installed = true
+            var snapshot: HubSnapshot?
+            var failStart = false
+            var historyMarker: (phase: String, historyOnly: Bool)?
+            var readOnlyFolder = false
+            let trigger: (HubController, @escaping () -> Void) -> Void
+        }
+        let sites: [Site] = [
+            Site(label: "stopHub", expected: "stop") { controller, done in controller.stopHub { _ in done() } },
+            Site(label: "signOutTeslaAccount", expected: "stop") { controller, done in
+                controller.signOutTeslaAccount { _ in done() }
+            },
+            Site(label: "prepareOnlineMigration history-only", expected: "stop", installed: false) { controller, done in
+                controller.importTeslaMateHistoryOnlyOnline(
+                    source: "postgresql://reader@127.0.0.1:55438/teslamate_snapshot", carID: "1",
+                    passwordFile: "/private/password", acknowledgeV42CompatibleSchema: true) { _ in done() }
+            },
+            Site(label: "prepareOnlineMigration installed", expected: "stop") { controller, done in
+                controller.importTeslaMateOnline(
+                    source: "postgresql://reader@localhost/teslamate", carID: "1",
+                    passwordFile: "/private/password", encryptionKeyFile: "/private/key",
+                    acknowledgeV42CompatibleSchema: true) { _ in done() }
+            },
+            Site(label: "acknowledgeMigrationHandoverAndStart failed history-only start", expected: "start",
+                 failStart: true, historyMarker: ("awaiting_handover", true)) { controller, done in
+                controller.acknowledgeMigrationHandoverAndStart { _ in done() }
+            },
+            Site(label: "completeMigrationHandoverStart cleanup failed", expected: "start",
+                 historyMarker: ("awaiting_handover", true), readOnlyFolder: true) { controller, done in
+                controller.acknowledgeMigrationHandoverAndStart { _ in done() }
+            },
+            Site(label: "rollbackUnreadyMigrationHandoverStart", expected: "start",
+                 historyMarker: ("awaiting_handover", false)) { controller, done in
+                controller.acknowledgeMigrationHandoverAndStart { _ in done() }
+            },
+            Site(label: "runOnboardingChecks history-only", expected: "stop",
+                 historyMarker: ("awaiting_verification", true)) { controller, done in
+                controller.runOnboardingChecks(expectRunning: false) { _ in done() }
+            },
+            Site(label: "runOnboardingChecks handover pending", expected: "stop",
+                 historyMarker: ("awaiting_verification", false)) { controller, done in
+                controller.runOnboardingChecks(expectRunning: false) { _ in done() }
+            },
+            Site(label: "configureFleetAccount not connected", expected: "pause") { controller, done in
+                controller.configureFleetAccount(credentials: credentials) { _ in done() }
+            },
+            Site(label: "configureFleetAccount connected", expected: "pause", snapshot: .previewRunning) { controller, done in
+                controller.configureFleetAccount(credentials: credentials) { _ in done() }
+            },
+            Site(label: "configureTeslaAccount not connected", expected: "pause") { controller, done in
+                controller.configureTeslaAccount(tokens: token) { _ in done() }
+            },
+            Site(label: "configureTeslaAccount connected", expected: "pause", snapshot: .previewRunning) { controller, done in
+                controller.configureTeslaAccount(tokens: token) { _ in done() }
+            },
+            Site(label: "runFullDiagnostics custody", expected: "pause") { controller, done in
+                controller.runFullDiagnostics { _ in done() }
+            }
+        ]
+        XCTAssertEqual(sites.count, 14, "thirteen existing sites plus the new sign-out stop")
+
+        for site in sites {
+            let home = try siteHome()
+            defer {
+                chmod(home.appendingPathComponent("Library/Application Support/Teslatlas Hub").path, 0o700)
+                try? FileManager.default.removeItem(at: home)
+            }
+            if let marker = site.historyMarker {
+                try writeMarker(in: home, phase: marker.phase, historyOnly: marker.historyOnly)
+            }
+            let events = EventRecorder()
+            let service = ScriptedService(events: events, loadState: .loaded)
+            if site.failStart { service.actionResults["start"] = .failure(HubActionError.commandFailed("start failed")) }
+            let runner = SiteRunner()
+            let controller = HubController(
+                commandRunner: runner,
+                serviceRunner: service,
+                homeDirectory: home,
+                serviceInstalledOverride: site.installed,
+                initialSnapshot: site.snapshot,
+                migrationStartupReadinessPollInterval: 1,
+                migrationStartupReadinessMaxAttempts: 1,
+                migrationStartupReadinessNow: { Date(timeIntervalSince1970: 100) },
+                migrationStartupReadinessSchedule: { _, _ in }
+            )
+            if site.readOnlyFolder {
+                chmod(home.appendingPathComponent("Library/Application Support/Teslatlas Hub").path, 0o500)
+            }
+            let finished = expectation(description: site.label)
+            site.trigger(controller) { finished.fulfill() }
+            wait(for: [finished], timeout: 5)
+            let actions = events.values.filter { $0.hasPrefix("service:") }.map { String($0.dropFirst("service:".count)) }
+            XCTAssertEqual(actions.first, site.expected, "\(site.label): \(actions)")
+            switch site.expected {
+            case "pause": XCTAssertFalse(actions.contains("stop"), "\(site.label) is transient: \(actions)")
+            case "stop": XCTAssertFalse(actions.contains("pause"), "\(site.label) is persistent: \(actions)")
+            default: XCTAssertEqual(actions, ["start", "stop"], "\(site.label) returns to the hold with a persistent stop")
+            }
+        }
     }
 
-    func completeUninstall(_ result: Result<String, Error>) {
-        let completion = uninstallCompletion
-        uninstallCompletion = nil
-        completion?(result)
+    func testSignOutStopsBeforeControlAndAbortsOnStopFailure() throws {
+        let home = try siteHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let events = EventRecorder()
+        let runner = EventingRunner(events: events)
+        let service = ScriptedService(events: events)
+        let controller = HubController(commandRunner: runner, serviceRunner: service, homeDirectory: home,
+                                       serviceInstalledOverride: true, initialSnapshot: .previewRunning)
+        let signedOut = expectation(description: "signed out")
+        controller.signOutTeslaAccount { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            signedOut.fulfill()
+        }
+        wait(for: [signedOut], timeout: 2)
+        XCTAssertEqual(Array(events.values.prefix(2)), ["service:stop", "control"], "the persistent stop comes first")
+
+        let failureEvents = EventRecorder()
+        let failing = ScriptedService(events: failureEvents)
+        failing.result = .failure(HubActionError.commandFailed("stop failed"))
+        let abortedController = HubController(commandRunner: EventingRunner(events: failureEvents), serviceRunner: failing,
+                                              homeDirectory: home, serviceInstalledOverride: true,
+                                              initialSnapshot: .previewRunning)
+        let aborted = expectation(description: "sign-out aborted")
+        abortedController.signOutTeslaAccount { result in
+            guard case let .failure(error) = result else { return XCTFail("a failed stop must abort the sign-out") }
+            XCTAssertTrue(error.localizedDescription.contains("stop failed"))
+            aborted.fulfill()
+        }
+        wait(for: [aborted], timeout: 2)
+        XCTAssertFalse(failureEvents.values.contains("control"), "control sign-out must not run after a failed stop")
+    }
+
+    private final class EventingRunner: HubCommandRunning {
+        private let events: EventRecorder
+        init(events: EventRecorder) { self.events = events }
+        func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+            if arguments.contains("control") { events.append("control") }
+            completion(.success("{}"))
+        }
+    }
+
+    func testControlCommandTimeoutIs45Seconds() {
+        XCTAssertEqual(EmbeddedHubCommandRunner.timeout(for: ["--config", "/c.toml", "control", "sign-out"]), 45)
+        XCTAssertEqual(EmbeddedHubCommandRunner.timeout(for: ["--config", "/c.toml", "status"]), 30)
+        XCTAssertEqual(EmbeddedHubCommandRunner.timeout(for: ["--config", "/c.toml", "preflight"]), 30)
+        XCTAssertEqual(EmbeddedHubCommandRunner.timeout(for: ["--config", "/c.toml", "setup"]), 5 * 60)
+    }
+
+    func testServiceInstalledFollowsLaunchAgent() throws {
+        let home = try siteHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let recorder = LifecycleEvents()
+        let agent = FakeLaunchAgent(events: recorder)
+        for installed in [false, true] {
+            agent.installed = installed
+            let events = EventRecorder()
+            let controller = HubController(commandRunner: EventingRunner(events: events),
+                                           serviceRunner: ScriptedService(events: events),
+                                           launchAgent: agent, dataRemover: nil, homeDirectory: home,
+                                           initialSnapshot: .previewRunning)
+            let done = expectation(description: "sign-out \(installed)")
+            controller.signOutTeslaAccount { _ in done.fulfill() }
+            wait(for: [done], timeout: 2)
+            XCTAssertEqual(events.values.contains("service:stop"), installed,
+                           "a nil override follows the agent's isInstalled")
+        }
+    }
+
+    func testReconcileIsNoOpWithoutPlistInPreviewDevelopmentAndUnderXCTest() throws {
+        let home = try siteHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        struct Scenario {
+            let label: String
+            let environment: [String: String]
+            let installed: Bool
+        }
+        let scenarios = [
+            Scenario(label: "XCTest host", environment: ["XCTestConfigurationFilePath": "/x"], installed: true),
+            Scenario(label: "preview", environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"], installed: true),
+            Scenario(label: "no plist", environment: [:], installed: false)
+        ]
+        for scenario in scenarios {
+            let recorder = LifecycleEvents()
+            let agent = FakeLaunchAgent(events: recorder)
+            agent.installed = scenario.installed
+            agent.change = .replaced
+            let events = EventRecorder()
+            let service = ScriptedService(events: events, loadState: .loaded)
+            let controller = HubController(environment: scenario.environment,
+                                           commandRunner: CountingRunner(), serviceRunner: service,
+                                           launchAgent: agent, dataRemover: nil, homeDirectory: home)
+            let done = expectation(description: scenario.label)
+            controller.reconcileLaunchAgent { done.fulfill() }
+            wait(for: [done], timeout: 2)
+            XCTAssertEqual(recorder.all, [], scenario.label)
+            XCTAssertEqual(events.values, [], scenario.label)
+            XCTAssertEqual(service.stateQueries, 0, scenario.label)
+        }
+
+        // Development: a source-run Hub never reconciles the production file.
+        let recorder = LifecycleEvents()
+        let agent = FakeLaunchAgent(events: recorder)
+        agent.change = .replaced
+        let events = EventRecorder()
+        let controller = HubController(environment: [:], commandRunner: CountingRunner(),
+                                       serviceRunner: ScriptedService(events: events, loadState: .loaded),
+                                       launchAgent: agent, dataRemover: nil, homeDirectory: home,
+                                       serviceInstalledOverride: true,
+                                       developmentConfiguration: try developmentConfiguration())
+        let done = expectation(description: "development")
+        controller.reconcileLaunchAgent { done.fulfill() }
+        wait(for: [done], timeout: 2)
+        XCTAssertEqual(recorder.all, [])
+        XCTAssertEqual(events.values, [])
+    }
+
+    func testReconcileRestartsOnlyChangedLoadedJob() throws {
+        let home = try siteHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        struct Case {
+            let change: HubLaunchAgentChange
+            let state: HubServiceLoadState
+            let restarts: Bool
+            let label: String
+        }
+        let cases = [
+            Case(change: .unchanged, state: .loaded, restarts: false, label: "unchanged and loaded"),
+            Case(change: .replaced, state: .unloaded, restarts: false, label: "changed but not loaded"),
+            Case(change: .created, state: .unloaded, restarts: false, label: "created and not loaded"),
+            Case(change: .replaced, state: .loaded, restarts: true, label: "changed and loaded")
+        ]
+        for scenario in cases {
+            let recorder = LifecycleEvents()
+            let agent = FakeLaunchAgent(events: recorder)
+            agent.change = scenario.change
+            let events = EventRecorder()
+            let controller = HubController(environment: [:], commandRunner: CountingRunner(),
+                                           serviceRunner: ScriptedService(events: events, loadState: scenario.state),
+                                           launchAgent: agent, dataRemover: nil, homeDirectory: home)
+            let done = expectation(description: scenario.label)
+            controller.reconcileLaunchAgent { done.fulfill() }
+            wait(for: [done], timeout: 2)
+            XCTAssertEqual(events.values.contains("service:restart"), scenario.restarts, scenario.label)
+            XCTAssertFalse(events.values.contains("service:start"), "reconcile never starts an unloaded job: \(scenario.label)")
+            XCTAssertEqual(recorder.all, ["ensure"], "\(scenario.label): reconcile does not require the configuration")
+        }
+
+        // A writer error is a diagnostic, never a modal or a restart.
+        let recorder = LifecycleEvents()
+        let agent = FakeLaunchAgent(events: recorder)
+        agent.ensureError = HubActionError.commandFailed("Move Teslatlas Hub to the Applications folder")
+        let events = EventRecorder()
+        let controller = HubController(environment: [:], commandRunner: CountingRunner(),
+                                       serviceRunner: ScriptedService(events: events, loadState: .loaded),
+                                       launchAgent: agent, dataRemover: nil, homeDirectory: home)
+        let done = expectation(description: "writer failure")
+        controller.reconcileLaunchAgent { done.fulfill() }
+        wait(for: [done], timeout: 2)
+        let published = expectation(description: "diagnostic published")
+        DispatchQueue.main.async { published.fulfill() }
+        wait(for: [published], timeout: 2)
+        XCTAssertEqual(events.values, [])
+        XCTAssertTrue(controller.diagnostics().contains { $0.contains("Applications folder") })
+    }
+
+    func testRemoveBackgroundServiceRefusedInPreviewAndDevelopment() throws {
+        let events = EventRecorder()
+        let preview = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"],
+                                    commandRunner: CountingRunner(),
+                                    serviceRunner: ScriptedService(events: events))
+        let previewRefused = expectation(description: "preview refused")
+        preview.removeBackgroundService { result in
+            guard case let .failure(error) = result else { return XCTFail("preview removed") }
+            XCTAssertEqual(error.localizedDescription, HubActionError.preview.localizedDescription)
+            previewRefused.fulfill()
+        }
+        wait(for: [previewRefused], timeout: 1)
+        XCTAssertEqual(events.values, [], "no service call")
+
+        let rejection = HubActionError.commandFailed("A source-run development Hub cannot remove the production service.")
+        let controller = HubController(environment: [:], commandRunner: CountingRunner(),
+                                       serviceRunner: ScriptedService(events: events),
+                                       serviceInstalledOverride: true,
+                                       developmentConfiguration: try developmentConfiguration())
+        let refused = expectation(description: "development refused")
+        controller.removeBackgroundService { result in
+            guard case let .failure(error) = result else { return XCTFail("development removed") }
+            XCTAssertEqual(error.localizedDescription, rejection.localizedDescription)
+            refused.fulfill()
+        }
+        wait(for: [refused], timeout: 1)
+        XCTAssertEqual(events.values, [], "no service call")
+    }
+
+    private func developmentConfiguration() throws -> DevelopmentHubConfiguration {
+        let root = HubTestScratch.validatedFixtureRoot("ControllerDev")
+        let state = root.appendingPathComponent("state", isDirectory: true)
+        let logs = root.appendingPathComponent("logs", isDirectory: true)
+        try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+        for directory in [root, state, logs] {
+            try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o700)], ofItemAtPath: directory.path)
+        }
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let binary = root.appendingPathComponent("teslatlas-hub")
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: binary)
+        try FileManager.default.setAttributes([.posixPermissions: NSNumber(value: 0o755)], ofItemAtPath: binary.path)
+        let config = root.appendingPathComponent("config.toml")
+        let environment = [
+            DevelopmentHubConfiguration.enableVariable: "1",
+            DevelopmentHubConfiguration.binaryVariable: binary.path,
+            DevelopmentHubConfiguration.configVariable: config.path,
+            DevelopmentHubConfiguration.stateVariable: state.path,
+            DevelopmentHubConfiguration.logVariable: logs.path,
+            DevelopmentHubConfiguration.controlVariable: root.path
+        ]
+        return try XCTUnwrap(DevelopmentHubConfiguration.from(environment: environment))
+    }
+
+    // MARK: Pause sites (RD1)
+
+    private enum PauseSite: CaseIterable {
+        case fleetNotConnected, fleetConnected, teslaNotConnected, teslaConnected, custody
+        var connected: Bool { self == .fleetConnected || self == .teslaConnected }
+    }
+
+    private func runPauseSite(_ site: PauseSite, home: URL, service: ScriptedService,
+                              runner: HubCommandRunning) -> Result<Void, Error>? {
+        let controller = HubController(commandRunner: runner, serviceRunner: service, homeDirectory: home,
+                                       serviceInstalledOverride: true,
+                                       initialSnapshot: site.connected ? .previewRunning : nil)
+        var outcome: Result<Void, Error>?
+        let done = expectation(description: "site \(site)")
+        switch site {
+        case .fleetNotConnected, .fleetConnected:
+            controller.configureFleetAccount(credentials: HubFleetSetupCredentials(
+                accessToken: "a", refreshToken: "r", clientID: "c",
+                region: "europe_middle_east_and_africa", expiresInSeconds: 3600)) { outcome = $0; done.fulfill() }
+        case .teslaNotConnected, .teslaConnected:
+            controller.configureTeslaAccount(tokens: TeslaAuthTokens(accessToken: "a", refreshToken: "r")) {
+                outcome = $0; done.fulfill()
+            }
+        case .custody:
+            controller.runFullDiagnostics { report in
+                outcome = report.contains("(failed)") ? .failure(HubActionError.commandFailed(report)) : .success(())
+                done.fulfill()
+            }
+        }
+        wait(for: [done], timeout: 5)
+        return outcome
+    }
+
+    func testPauseSitesRecoverAfterFailedPauseOrWork() throws {
+        enum Failure: CaseIterable { case pauseFails, pauseFailsStaysLoaded, workFails }
+        for site in PauseSite.allCases {
+            for failure in Failure.allCases {
+                let label = "\(site) \(failure)"
+                let home = try siteHome()
+                defer { try? FileManager.default.removeItem(at: home) }
+                let events = EventRecorder()
+                let service = ScriptedService(events: events, loadState: .loaded)
+                var runner: HubCommandRunning = SiteRunner()
+                switch failure {
+                case .pauseFails:
+                    service.actionResults["pause"] = .failure(HubActionError.commandFailed("pause failed (query)"))
+                case .pauseFailsStaysLoaded:
+                    service.actionResults["pause"] = .failure(HubActionError.commandFailed("bootout failed"))
+                case .workFails:
+                    runner = ScriptedRunner(events: EventRecorder(), result: .failure(HubActionError.commandFailed("setup failed")))
+                }
+                _ = runPauseSite(site, home: home, service: service, runner: runner)
+                let actions = events.values.filter { $0.hasPrefix("service:") }
+                if site == .custody, failure == .workFails {
+                    // Disposition: custody diagnostics cannot fail as work (a failing check
+                    // becomes a "(failed)" report section), so the held record is covered by
+                    // the ordinary Start and no typed recovery is owed.
+                    XCTAssertEqual(actions, ["service:pause", "service:start"], label)
+                    continue
+                }
+                XCTAssertEqual(actions.filter { $0 == "service:recover" }.count, 1, "\(label): exactly one typed recovery \(actions)")
+                XCTAssertFalse(actions.contains("service:start"), "\(label): no ordinary start after a failed pause or failed work")
+                XCTAssertEqual(actions.first, "service:pause", label)
+                XCTAssertEqual(actions.last, "service:recover", label)
+            }
+        }
+    }
+
+    func testPauseSiteSuccessUsesOrdinaryStartWithHeldRecord() throws {
+        // A successful pause and successful work use the ordinary Start (one recover-free path).
+        for site in PauseSite.allCases {
+            let home = try siteHome()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let events = EventRecorder()
+            let service = ScriptedService(events: events, loadState: .loaded)
+            _ = runPauseSite(site, home: home, service: service, runner: SiteRunner())
+            let actions = events.values.filter { $0.hasPrefix("service:") }
+            XCTAssertEqual(actions.first, "service:pause", "\(site)")
+            XCTAssertTrue(actions.contains("service:start"), "\(site): the ordinary Start follows \(actions)")
+            XCTAssertFalse(actions.contains("service:recover"), "\(site): no recovery after success")
+        }
+
+        // With the real controller: a failed ordinary Start settles its own recovery, and the
+        // site's typed recovery then finds a settled record and issues nothing more.
+        let home = try siteHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let rig = LifecycleRig(loaded: true)
+        rig.launchctl.failNext("bootstrap", with: HubActionError.commandFailed("bootstrap failed"))
+        let controller = HubController(commandRunner: SiteRunner(), serviceRunner: rig.controller, homeDirectory: home,
+                                       serviceInstalledOverride: true, initialSnapshot: .previewRunning)
+        let done = expectation(description: "failed ordinary start")
+        controller.configureTeslaAccount(tokens: TeslaAuthTokens(accessToken: "a", refreshToken: "r")) { result in
+            guard case let .failure(error) = result else { XCTFail("expected the start failure"); done.fulfill(); return }
+            XCTAssertTrue(error.localizedDescription.contains("bootstrap failed"))
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 5)
+        let commands = rig.launchctlEvents
+        XCTAssertEqual(commands.filter { $0 == "bootout" }.count, 1, "no second bootout")
+        XCTAssertEqual(commands.filter { $0 == "bootstrap" }.count, 2, "the ordinary attempt plus exactly one recovery")
+        XCTAssertFalse(rig.controller.restartDutyOutstanding)
+        let after = rig.launchctlEvents.count
+        rig.recover()
+        XCTAssertEqual(rig.launchctlEvents.count, after, "a later typed recovery finds no record and issues nothing")
+    }
+
+    func testPauseSiteWithFailedStartAndFailedRecoveryReportsByRefreshedStatus() throws {
+        // The ordinary Start fails and its own recovery fails too: the service reports an
+        // unconfirmed restart. The site refreshes and shows the stopped text only when
+        // status shows the Hub stopped.
+        let sites: [PauseSite] = [.fleetNotConnected, .fleetConnected, .teslaNotConnected, .teslaConnected]
+        for site in sites {
+            for running in [true, false] {
+                let label = "\(site) running=\(running)"
+                let home = try siteHome()
+                defer { try? FileManager.default.removeItem(at: home) }
+                let events = EventRecorder()
+                let service = ScriptedService(events: events, loadState: running ? .loaded : .unloaded)
+                service.actionResults["start"] = .failure(HubServiceRestartReport(
+                    original: HubActionError.commandFailed("bootstrap failed"), outcome: .unconfirmed))
+                let outcome = runPauseSite(site, home: home, service: service, runner: SiteRunner())
+                guard case let .failure(error)? = outcome else { XCTFail("\(label): expected a failure"); continue }
+                let text = error.localizedDescription
+                XCTAssertTrue(text.contains("bootstrap failed"), "\(label): \(text)")
+                XCTAssertTrue(text.contains("The restart could not be confirmed."), "\(label): \(text)")
+                XCTAssertEqual(text.contains("The Hub did not restart. Choose Start Hub."), !running,
+                               "\(label): the stopped text appears only when status shows the Hub stopped: \(text)")
+            }
+        }
+    }
+
+    private func custodyReport(service: ScriptedService, home: URL) -> String {
+        let controller = HubController(commandRunner: SiteRunner(), serviceRunner: service, homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        var report = ""
+        let done = expectation(description: "custody diagnostics")
+        controller.runFullDiagnostics { report = $0; done.fulfill() }
+        wait(for: [done], timeout: 5)
+        return report
+    }
+
+    func testCustodyFailedStartAndFailedPauseReportByRefreshedStatus() throws {
+        let didNotRestart = "The Hub did not restart. Choose Start Hub."
+        for running in [true, false] {
+            // Failed ordinary Start whose own recovery could not be confirmed.
+            do {
+                let label = "failed Start running=\(running)"
+                let home = try siteHome()
+                defer { try? FileManager.default.removeItem(at: home) }
+                let service = ScriptedService(events: EventRecorder())
+                service.loadStateSequence = [.loaded, running ? .loaded : .unloaded]
+                service.actionResults["start"] = .failure(HubServiceRestartReport(
+                    original: HubActionError.commandFailed("bootstrap failed"), outcome: .unconfirmed))
+                let report = custodyReport(service: service, home: home)
+                XCTAssertTrue(report.contains("== service resume (failed) =="), "\(label): \(report)")
+                XCTAssertTrue(report.contains("bootstrap failed"), label)
+                XCTAssertEqual(report.components(separatedBy: "The restart could not be confirmed.").count - 1, 1, "\(label): \(report)")
+                XCTAssertEqual(report.contains(didNotRestart), !running,
+                               "\(label): the stopped text appears only when status shows the Hub stopped: \(report)")
+            }
+            // Failed ordinary Start and a typed recovery that fails as well.
+            do {
+                let label = "failed Start and failed recovery running=\(running)"
+                let home = try siteHome()
+                defer { try? FileManager.default.removeItem(at: home) }
+                let service = ScriptedService(events: EventRecorder())
+                service.loadStateSequence = [.loaded, running ? .loaded : .unloaded]
+                service.actionResults["start"] = .failure(HubServiceRestartReport(
+                    original: HubActionError.commandFailed("bootstrap failed"), outcome: .unconfirmed))
+                service.recoverResult = .failure(HubServiceRestartReport(
+                    original: HubActionError.commandFailed(""), outcome: .unconfirmed))
+                let report = custodyReport(service: service, home: home)
+                XCTAssertTrue(report.contains("bootstrap failed"), label)
+                XCTAssertEqual(report.components(separatedBy: "The restart could not be confirmed.").count - 1, 1, "\(label): \(report)")
+                XCTAssertEqual(report.contains(didNotRestart), !running, "\(label): \(report)")
+            }
+            // Failed Pause whose recovery could not be confirmed.
+            do {
+                let label = "failed Pause running=\(running)"
+                let home = try siteHome()
+                defer { try? FileManager.default.removeItem(at: home) }
+                let service = ScriptedService(events: EventRecorder())
+                service.loadStateSequence = [.loaded, running ? .loaded : .unloaded]
+                service.actionResults["pause"] = .failure(HubActionError.commandFailed("bootout failed"))
+                service.recoverResult = .failure(HubServiceRestartReport(
+                    original: HubActionError.commandFailed(""), outcome: .unconfirmed))
+                let report = custodyReport(service: service, home: home)
+                XCTAssertTrue(report.contains("== service pause (failed) =="), "\(label): \(report)")
+                XCTAssertTrue(report.contains("== service recovery (failed) =="), "\(label): \(report)")
+                XCTAssertTrue(report.contains("The restart could not be confirmed."), "\(label): \(report)")
+                XCTAssertEqual(report.contains(didNotRestart), !running,
+                               "\(label): the stopped text appears only when status shows the Hub stopped: \(report)")
+            }
+        }
+        // A restart that succeeded is reported as such and never as "did not restart".
+        let home = try siteHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let service = ScriptedService(events: EventRecorder())
+        service.loadStateSequence = [.loaded, .unloaded]
+        service.actionResults["start"] = .failure(HubServiceRestartReport(
+            original: HubActionError.commandFailed("bootstrap failed"), outcome: .restarted(appliesNewDefinition: false)))
+        let report = custodyReport(service: service, home: home)
+        XCTAssertTrue(report.contains("The Hub was started again."), report)
+        XCTAssertFalse(report.contains(didNotRestart), report)
+    }
+
+    func testPauseSitesMakeNoLoadedStateQueryAfterPause() throws {
+        for site in PauseSite.allCases {
+            let home = try siteHome()
+            defer { try? FileManager.default.removeItem(at: home) }
+            let events = EventRecorder()
+            let service = ScriptedService(events: events, loadState: .loaded)
+            service.recordsStateQueries = true
+            _ = runPauseSite(site, home: home, service: service, runner: SiteRunner())
+            let values = events.values
+            let pause = try XCTUnwrap(values.firstIndex(of: "service:pause"), "\(site) \(values)")
+            let start = try XCTUnwrap(values.firstIndex(of: "service:start"), "\(site) \(values)")
+            XCTAssertFalse(values[pause..<start].contains("state"),
+                           "\(site): no loaded-state query between the pause and the start \(values)")
+            // Custody asks once, before the pause, only to decide whether to pause.
+            XCTAssertEqual(values[..<pause].filter { $0 == "state" }.count, site == .custody ? 1 : 0, "\(site)")
+        }
+    }
+
+    func testCustodyRefusedHistoryOnlyPolicyReleasesRecord() throws {
+        let home = try siteHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try writeMarker(in: home, phase: "awaiting_verification", historyOnly: true)
+        let events = EventRecorder()
+        let service = ScriptedService(events: events, loadState: .loaded)
+        let runner = SiteRunner()
+        runner.historyPreflightFails = true
+        _ = runPauseSite(.custody, home: home, service: service, runner: runner)
+        let actions = events.values.filter { $0.hasPrefix("service:") }
+        XCTAssertEqual(actions, ["service:pause", "service:release"], "the refused policy releases the record and never starts")
+    }
+
+    func testFirstRunSetupStartsServiceThroughWriter() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let events = EventRecorder()
+        let controller = HubController(commandRunner: ScriptedRunner(events: events, result: .success("configured")),
+                                       serviceRunner: ScriptedService(events: events),
+                                       homeDirectory: home, serviceInstalledOverride: false)
+        let done = expectation(description: "first run")
+        controller.configureTeslaAccount(tokens: TeslaAuthTokens(accessToken: "a", refreshToken: "r")) { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 3)
+        XCTAssertEqual(Array(events.values.prefix(2)), ["setup", "service:start"], "setup, then the explicit first Start")
+        XCTAssertFalse(events.values.contains("service:pause"))
+    }
+
+    // MARK: Delete Hub and Data (controller level)
+
+    func testDeleteHubAndDataRefusedInPreviewAndDevelopment() throws {
+        let events = EventRecorder()
+        let service = ScriptedService(events: events)
+        let preview = HubController(environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"], commandRunner: CountingRunner(),
+                                    serviceRunner: service)
+        let previewRefused = expectation(description: "preview refused")
+        preview.deleteHubAndData { result in
+            guard case let .failure(error) = result else { return XCTFail("preview deleted") }
+            XCTAssertEqual(error.localizedDescription, HubActionError.preview.localizedDescription)
+            previewRefused.fulfill()
+        }
+        let development = HubController(environment: [:], commandRunner: CountingRunner(), serviceRunner: service,
+                                        serviceInstalledOverride: true,
+                                        developmentConfiguration: try developmentConfiguration())
+        let developmentRefused = expectation(description: "development refused")
+        development.deleteHubAndData { result in
+            guard case let .failure(error) = result else { return XCTFail("development deleted") }
+            XCTAssertTrue(error.localizedDescription.contains("cannot delete the production service or its data"))
+            developmentRefused.fulfill()
+        }
+        wait(for: [previewRefused, developmentRefused], timeout: 2)
+        XCTAssertEqual(service.deleteCalls, 0)
+        XCTAssertFalse(preview.hubDeletionStarted)
+        XCTAssertFalse(development.hubDeletionStarted)
+        XCTAssertFalse(HubStatusProcessLifecycle.shared.isPaused)
+    }
+
+    // MARK: Delete and diagnostics custody exclude each other (R-E1F5-1)
+
+    private func waitUntil(_ description: String, timeout: TimeInterval = 5, _ condition: () -> Bool) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        XCTAssertTrue(condition(), description)
+    }
+
+    func testDeleteRequestedDuringHeldDiagnosticsCustodyIsRefusedAndDeletesNothing() throws {
+        defer { HubStatusProcessLifecycle.shared.resume() }
+        let home = try siteHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let service = ScriptedService(events: EventRecorder(), loadState: .loaded)
+        service.holdPause = true
+        let controller = HubController(commandRunner: SiteRunner(), serviceRunner: service, homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let diagnosticsDone = expectation(description: "custody ends")
+        controller.runFullDiagnostics { _ in diagnosticsDone.fulfill() }
+        defer { service.releasePause() }
+        XCTAssertNotNil(service.heldPause, "the custody is held at its pause")
+        XCTAssertTrue(controller.diagnosticsPreventQuit)
+
+        let refused = expectation(description: "Delete refused")
+        controller.deleteHubAndData { result in
+            guard case let .failure(error) = result else { XCTFail("Delete ran inside the custody window"); refused.fulfill(); return }
+            XCTAssertTrue(error.localizedDescription.contains("diagnostics"), error.localizedDescription)
+            XCTAssertTrue(error.localizedDescription.contains("Nothing was changed"), error.localizedDescription)
+            refused.fulfill()
+        }
+        wait(for: [refused], timeout: 5)
+        XCTAssertEqual(service.deleteCalls, 0, "no stop, no plist removal, no data step")
+        XCTAssertFalse(controller.hubDeletionStarted)
+        XCTAssertFalse(HubStatusProcessLifecycle.shared.isPaused, "status reads were never paused")
+
+        // The custody finishes normally and Delete is possible again afterwards.
+        service.releasePause()
+        wait(for: [diagnosticsDone], timeout: 5)
+        XCTAssertFalse(controller.diagnosticsPreventQuit)
+        service.deleteResult = .success(HubDataRemovalReport(deleted: ["D1"], kept: [], warnings: []))
+        let deleted = expectation(description: "Delete after the custody")
+        controller.deleteHubAndData { result in
+            if case .failure = result { XCTFail("Delete is refused after the custody ended") }
+            deleted.fulfill()
+        }
+        wait(for: [deleted], timeout: 5)
+        XCTAssertEqual(service.deleteCalls, 1)
+    }
+
+    func testDiagnosticsCustodyRequestedDuringDeleteIsRefusedAndRunsNothing() throws {
+        defer { HubStatusProcessLifecycle.shared.resume() }
+        let home = try siteHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let events = EventRecorder()
+        let service = ScriptedService(events: events, loadState: .loaded)
+        service.holdDelete = true
+        let controller = HubController(commandRunner: SiteRunner(), serviceRunner: service, homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let deleteDone = expectation(description: "Delete refused later")
+        controller.deleteHubAndData { _ in deleteDone.fulfill() }
+        waitUntil("Delete reached the service") { service.heldDelete != nil }
+        defer { service.releaseDelete(.failure(HubActionError.commandFailed("released"))) }
+
+        var report: String?
+        controller.runFullDiagnostics { report = $0 }
+        let text = try XCTUnwrap(report, "the refused custody completes at once")
+        XCTAssertTrue(text.contains("Delete Hub and Data"), text)
+        XCTAssertFalse(controller.diagnosticsPreventQuit, "no custody was taken")
+        XCTAssertEqual(service.stateQueries, 0, "no service query")
+        XCTAssertFalse(events.values.contains("service:pause"), "no pause")
+
+        // A refused Delete hands the lifecycle back: diagnostics run again.
+        service.releaseDelete(.failure(HubActionError.commandFailed("Nothing was changed.")))
+        wait(for: [deleteDone], timeout: 5)
+        let ran = expectation(description: "diagnostics after the refusal")
+        controller.runFullDiagnostics { text in
+            XCTAssertFalse(text.contains("Delete Hub and Data"), text)
+            ran.fulfill()
+        }
+        wait(for: [ran], timeout: 5)
+        XCTAssertGreaterThan(service.stateQueries, 0, "the custody ran")
+    }
+
+    func testSecondDeleteWhileOneIsInFlightIsRefused() throws {
+        defer { HubStatusProcessLifecycle.shared.resume() }
+        let service = ScriptedService(events: EventRecorder())
+        service.holdDelete = true
+        let controller = HubController(commandRunner: SiteRunner(), serviceRunner: service,
+                                       homeDirectory: try temporaryHome(), serviceInstalledOverride: true)
+        let first = expectation(description: "first Delete ends")
+        controller.deleteHubAndData { _ in first.fulfill() }
+        waitUntil("Delete reached the service") { service.heldDelete != nil }
+        let second = expectation(description: "second Delete refused")
+        controller.deleteHubAndData { result in
+            guard case let .failure(error) = result else { XCTFail("a second Delete ran"); second.fulfill(); return }
+            XCTAssertTrue(error.localizedDescription.contains("already started"), error.localizedDescription)
+            second.fulfill()
+        }
+        wait(for: [second], timeout: 5)
+        XCTAssertEqual(service.deleteCalls, 1)
+        service.releaseDelete(.failure(HubActionError.commandFailed("Nothing was changed.")))
+        wait(for: [first], timeout: 5)
+    }
+
+    func testDiagnosticsCustodyStaysRefusedAfterDeleteCompleted() throws {
+        defer { HubStatusProcessLifecycle.shared.resume() }
+        let home = try siteHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let service = ScriptedService(events: EventRecorder(), loadState: .loaded)
+        service.deleteResult = .success(HubDataRemovalReport(deleted: ["D1"], kept: [], warnings: []))
+        let controller = HubController(commandRunner: SiteRunner(), serviceRunner: service, homeDirectory: home,
+                                       serviceInstalledOverride: true)
+        let deleted = expectation(description: "Delete completed")
+        controller.deleteHubAndData { _ in deleted.fulfill() }
+        wait(for: [deleted], timeout: 5)
+        var report: String?
+        controller.runFullDiagnostics { report = $0 }
+        XCTAssertTrue(try XCTUnwrap(report).contains("Delete Hub and Data"))
+        XCTAssertEqual(service.stateQueries, 0)
+        XCTAssertFalse(controller.diagnosticsPreventQuit)
+    }
+
+    func testDeleteResumesStatusReadsOnRefusal() throws {
+        defer { HubStatusProcessLifecycle.shared.resume() }
+        let service = ScriptedService(events: EventRecorder())
+        service.deleteResult = .failure(HubActionError.commandFailed("Nothing was changed, because it is a link."))
+        let controller = HubController(commandRunner: CountingRunner(), serviceRunner: service,
+                                       launchAgent: nil, dataRemover: nil,
+                                       homeDirectory: try temporaryHome(), serviceInstalledOverride: true)
+        let refused = expectation(description: "pre-data refusal")
+        controller.deleteHubAndData { result in
+            guard case .failure = result else { return XCTFail("expected the refusal") }
+            refused.fulfill()
+        }
+        wait(for: [refused], timeout: 5)
+        XCTAssertEqual(service.deleteCalls, 1)
+        XCTAssertFalse(HubStatusProcessLifecycle.shared.isPaused, "status reads resume")
+        XCTAssertFalse(controller.hubDeletionStarted, "the started flag clears")
+        XCTAssertFalse(controller.hubDeletionCompleted)
+    }
+
+    func testDeleteRefusedWhenStatusReadsDoNotStopResumesReads() throws {
+        let lifecycle = HubStatusProcessLifecycle()
+        let stubborn = Process()
+        stubborn.executableURL = URL(fileURLWithPath: "/bin/sh")
+        stubborn.arguments = ["-c", "trap '' TERM; exec /bin/sleep 30"]
+        stubborn.terminationHandler = { lifecycle.finished($0) }
+        try lifecycle.launch(stubborn)
+        defer {
+            Darwin.kill(stubborn.processIdentifier, SIGKILL)
+            stubborn.waitUntilExit()
+        }
+        Thread.sleep(forTimeInterval: 0.4) // let the shell install its trap
+
+        let service = ScriptedService(events: EventRecorder())
+        let controller = HubController(commandRunner: CountingRunner(), serviceRunner: service,
+                                       launchAgent: nil, dataRemover: nil,
+                                       homeDirectory: try temporaryHome(), serviceInstalledOverride: true,
+                                       statusLifecycle: lifecycle, statusPauseBound: 0.2)
+        let refused = expectation(description: "reads busy")
+        controller.deleteHubAndData { result in
+            guard case let .failure(error) = result else { XCTFail("expected the refusal"); refused.fulfill(); return }
+            XCTAssertTrue(error.localizedDescription.contains("still reading the Hub's status"))
+            XCTAssertTrue(error.localizedDescription.contains("Nothing was changed"))
+            refused.fulfill()
+        }
+        wait(for: [refused], timeout: 5)
+        XCTAssertEqual(service.deleteCalls, 0, "no service delete call")
+        XCTAssertFalse(lifecycle.isPaused, "status reads resume")
+        XCTAssertFalse(controller.hubDeletionStarted)
+        XCTAssertFalse(controller.hubDeletionCompleted)
+        // The refusal hands the lifecycle back: a diagnostics custody is allowed again.
+        let custody = expectation(description: "custody allowed again")
+        controller.runFullDiagnostics { report in
+            XCTAssertFalse(report.contains("Delete Hub and Data"), "the Delete claim was released")
+            custody.fulfill()
+        }
+        wait(for: [custody], timeout: 5)
+        XCTAssertFalse(controller.diagnosticsPreventQuit)
+    }
+
+    func testDeleteMarksCompletedAfterDataStep() throws {
+        defer { HubStatusProcessLifecycle.shared.resume() }
+        let service = ScriptedService(events: EventRecorder())
+        service.deleteResult = .success(HubDataRemovalReport(deleted: ["D1"], kept: [], warnings: []))
+        let controller = HubController(commandRunner: CountingRunner(), serviceRunner: service,
+                                       launchAgent: nil, dataRemover: nil,
+                                       homeDirectory: try temporaryHome(), serviceInstalledOverride: true)
+        XCTAssertFalse(controller.hubDeletionCompleted)
+        let finished = expectation(description: "deleted")
+        controller.deleteHubAndData { result in
+            guard case let .success(report) = result else { return XCTFail("expected the report") }
+            XCTAssertEqual(report.deleted, ["D1"])
+            XCTAssertTrue(controller.hubDeletionStarted)
+            XCTAssertTrue(controller.hubDeletionCompleted, "completion is set before the report is handed over")
+            finished.fulfill()
+        }
+        wait(for: [finished], timeout: 5)
+        XCTAssertTrue(HubStatusProcessLifecycle.shared.isPaused, "after the data step reads stay paused")
+    }
+
+    func testStatusPauseTerminatesRunningReadsAndRefusesNew() throws {
+        let lifecycle = HubStatusProcessLifecycle()
+        let running = Process()
+        running.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        running.arguments = ["30"]
+        running.terminationHandler = { lifecycle.finished($0) }
+        try lifecycle.launch(running)
+        XCTAssertEqual(lifecycle.activeCount, 1)
+
+        XCTAssertTrue(lifecycle.pause(waitingUpTo: 5), "true only once the read has exited")
+        XCTAssertFalse(running.isRunning)
+        XCTAssertEqual(lifecycle.activeCount, 0)
+        XCTAssertTrue(lifecycle.isPaused)
+        let refused = Process()
+        refused.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        XCTAssertThrowsError(try lifecycle.launch(refused), "a paused lifecycle refuses new reads")
+
+        lifecycle.resume()
+        XCTAssertFalse(lifecycle.isPaused)
+        let again = Process()
+        again.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        again.terminationHandler = { lifecycle.finished($0) }
+        XCTAssertNoThrow(try lifecycle.launch(again))
+        again.waitUntilExit()
+
+        // A read that outlives the bound makes the pause fail.
+        let stubborn = Process()
+        stubborn.executableURL = URL(fileURLWithPath: "/bin/sh")
+        stubborn.arguments = ["-c", "trap '' TERM; exec /bin/sleep 30"]
+        stubborn.terminationHandler = { lifecycle.finished($0) }
+        try lifecycle.launch(stubborn)
+        Thread.sleep(forTimeInterval: 0.4) // let the shell install its trap
+        XCTAssertFalse(lifecycle.pause(waitingUpTo: 0.3))
+        lifecycle.resume()
+        Darwin.kill(stubborn.processIdentifier, SIGKILL)
+        stubborn.waitUntilExit()
+    }
+
+    func testDeletionStopsWindowRestoration() {
+        defer { HubWindowRestoration.endSuppressing() }
+        let existing = HubUtilityWindowStyle.makeWindow(title: "Existing", size: NSSize(width: 300, height: 200),
+                                                        minimum: NSSize(width: 200, height: 100))
+        existing.setFrameAutosaveName("Hub.Utility.Existing")
+        XCTAssertEqual(existing.frameAutosaveName, "Hub.Utility.Existing")
+        XCTAssertTrue(existing.isRestorable)
+        defer { existing.close() }
+
+        HubWindowRestoration.beginSuppressing(windows: { [existing] })
+        XCTAssertFalse(existing.isRestorable, "current windows become non-restorable")
+        XCTAssertEqual(existing.frameAutosaveName, "", "utility autosave names are cleared")
+
+        let created = HubUtilityWindowStyle.makeWindow(title: "Created", size: NSSize(width: 300, height: 200),
+                                                       minimum: NSSize(width: 200, height: 100))
+        defer { created.close() }
+        XCTAssertFalse(created.isRestorable, "subsequently created windows are non-restorable")
+        XCTAssertEqual(created.frameAutosaveName, "")
+        let sheet = HubOnboardingSheetStyle.makeWindow(contentSize: NSSize(width: 300, height: 200), dismissible: true)
+        defer { sheet.close() }
+        XCTAssertFalse(sheet.isRestorable)
+
+        HubWindowRestoration.endSuppressing()
+        let normal = HubOnboardingSheetStyle.makeWindow(contentSize: NSSize(width: 300, height: 200), dismissible: true)
+        defer { normal.close() }
+        XCTAssertTrue(normal.isRestorable, "suppression ends when a deletion is refused")
+    }
+
+    func testDeleteQuitRefusedWhilePendingAndAllowedOnceCompleted() throws {
+        defer {
+            HubStatusProcessLifecycle.shared.resume()
+            HubWindowRestoration.endSuppressing()
+        }
+        let service = PendingDeleteService()
+        let controller = HubController(environment: [:], commandRunner: CountingRunner(),
+                                       serviceRunner: service, launchAgent: nil, dataRemover: nil,
+                                       homeDirectory: try temporaryHome(), serviceInstalledOverride: true)
+        let settled = expectation(description: "initial refresh")
+        let main = MainWindowController(
+            controller: controller, serviceTransitionTimeout: 5, serviceTransitionPollInterval: 0.05,
+            errorPresenter: { _ in },
+            confirmationPresenter: { alert, _ in alert.buttons.count == 1 ? .alertFirstButtonReturn : .alertSecondButtonReturn },
+            revealApp: { _ in }, terminateApp: {}, olderInstallerPresent: { false },
+            onInitialRefresh: { _ in settled.fulfill() }
+        )
+        wait(for: [settled], timeout: 3)
+        main.showEmbeddedServiceDetails()
+        let delete = try XCTUnwrap(buttons(in: main.window?.contentView).first {
+            $0.identifier?.rawValue == "hub.service.delete-data"
+        })
+        delete.performClick(nil)
+        let deadline = Date().addingTimeInterval(5)
+        while service.deleteCompletion == nil, Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        XCTAssertNotNil(service.deleteCompletion, "the deleting transition reached the service")
+        XCTAssertTrue(HubWindowRestoration.isSuppressing, "Delete makes windows non-restorable when it begins")
+
+        // Pending: Quit is refused through the shared guard and the delegate.
+        XCTAssertTrue(main.operationPreventsQuit)
+        XCTAssertFalse(main.navigationAvailable, "navigation stays unavailable while deleting")
+        let window = try XCTUnwrap(main.window)
+        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: [window], lifecycle: controller.lifecycleCapabilities))
+        XCTAssertEqual(AppDelegate.terminationReply(windows: [window], lifecycle: controller.lifecycleCapabilities, restartDutyOutstanding: false), .terminateCancel)
+        let delegate = AppDelegate(keyWindow: { nil }, replyToTerminate: { _ in })
+        let hosted = NSApplication.shared.windows.contains(window)
+        if hosted { XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateCancel) }
+
+        // Completed: the retained transition no longer blocks Quit, and navigation stays off.
+        service.deleteCompletion?(.success(HubDataRemovalReport(deleted: ["D1"], kept: [], warnings: [])))
+        let completedDeadline = Date().addingTimeInterval(5)
+        while !controller.hubDeletionCompleted, Date() < completedDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        XCTAssertTrue(controller.hubDeletionCompleted)
+        XCTAssertFalse(main.operationPreventsQuit)
+        XCTAssertFalse(main.navigationAvailable, "the deleting transition is retained")
+        XCTAssertTrue(AppDelegate.finishSheetsBeforeQuit(in: [window], lifecycle: controller.lifecycleCapabilities))
+        XCTAssertEqual(AppDelegate.terminationReply(windows: [window], lifecycle: controller.lifecycleCapabilities, restartDutyOutstanding: false), .terminateNow)
+        if hosted { XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow) }
+
+        // A window with no transition of its own does not block Quit either.
+        let other = MainWindowController(
+            controller: controller, serviceTransitionTimeout: 5, serviceTransitionPollInterval: 0.05,
+            errorPresenter: { _ in }, onInitialRefresh: nil)
+        other.showEmbeddedServiceDetails()
+        XCTAssertFalse(other.operationPreventsQuit)
+    }
+
+    func testStoppingStillBlocksQuitEvenOnceDeletionCompleted() throws {
+        // The completion flag exempts the retained .deleting transition only.
+        defer {
+            HubStatusProcessLifecycle.shared.resume()
+            HubWindowRestoration.endSuppressing()
+        }
+        let service = PendingDeleteService()
+        service.loaded = .loaded
+        service.holdStop = true
+        let controller = HubController(environment: [:], commandRunner: CountingRunner(),
+                                       serviceRunner: service, launchAgent: nil, dataRemover: nil,
+                                       homeDirectory: try temporaryHome(), serviceInstalledOverride: true)
+        let settled = expectation(description: "initial refresh")
+        let main = MainWindowController(
+            controller: controller, serviceTransitionTimeout: 5, serviceTransitionPollInterval: 0.05,
+            errorPresenter: { _ in },
+            confirmationPresenter: { _, silent in silent },
+            revealApp: { _ in }, terminateApp: {}, olderInstallerPresent: { false },
+            onInitialRefresh: { _ in settled.fulfill() }
+        )
+        wait(for: [settled], timeout: 3)
+
+        // The data step has run for this controller.
+        controller.deleteHubAndData { _ in }
+        let deleteDeadline = Date().addingTimeInterval(5)
+        while service.deleteCompletion == nil, Date() < deleteDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        service.deleteCompletion?(.success(HubDataRemovalReport(deleted: ["D1"], kept: [], warnings: [])))
+        let completedDeadline = Date().addingTimeInterval(5)
+        while !controller.hubDeletionCompleted, Date() < completedDeadline { RunLoop.current.run(until: Date().addingTimeInterval(0.02)) }
+        XCTAssertTrue(controller.hubDeletionCompleted)
+        XCTAssertFalse(main.operationPreventsQuit, "no transition: Quit is free")
+
+        // After a completed Delete the controller admits no mutation, so a Stop cannot begin
+        // from the window. The one transition a window can still hold is the onboarding
+        // completion's `.starting`: it must still cancel Quit with the completion flag set.
+        main.showEmbeddedServiceDetails()
+        let stop = try XCTUnwrap(buttons(in: main.window?.contentView).first {
+            $0.identifier?.rawValue == "hub.service.start-stop"
+        })
+        XCTAssertFalse(stop.isEnabled, "no service action is offered once the lifecycle is deleted")
+        stop.performClick(nil)
+        XCTAssertNil(main.window?.attachedSheet, "no confirmation is offered")
+        XCTAssertTrue(service.stopCalls == 0, "the service was not asked to stop")
+        main.settleStartedHubFromOnboarding()
+        XCTAssertTrue(controller.hubDeletionCompleted)
+        XCTAssertTrue(main.operationPreventsQuit, ".starting still cancels Quit with the completion flag set")
+        let window = try XCTUnwrap(main.window)
+        XCTAssertFalse(AppDelegate.finishSheetsBeforeQuit(in: [window], lifecycle: controller.lifecycleCapabilities))
+        XCTAssertEqual(AppDelegate.terminationReply(windows: [window], lifecycle: controller.lifecycleCapabilities, restartDutyOutstanding: false), .terminateCancel)
+    }
+
+    private final class PendingDeleteService: HubServiceControlling {
+        var deleteCompletion: ((Result<HubDataRemovalReport, Error>) -> Void)?
+        var loaded: HubServiceLoadState = .unloaded
+        var holdStop = false
+        private(set) var stopCalls = 0
+        var heldStop: ((Result<String, Error>) -> Void)?
+        var restartDutyOutstanding: Bool { false }
+        func whenRestartDutySettled(_ callback: @escaping () -> Void) { callback() }
+        func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+            if arguments.last == "stop" { stopCalls += 1 }
+            if holdStop, arguments.last == "stop" { heldStop = completion; return }
+            completion(.success(""))
+        }
+        func run(arguments: [String], owner: HubLifecycleToken,
+                 completion: @escaping (Result<String, Error>) -> Void) {
+            run(arguments: arguments, completion: completion)
+        }
+        func restartRecordHeld(by owner: HubLifecycleToken) -> Bool { false }
+        func loadedState(completion: @escaping (HubServiceLoadState) -> Void) { completion(loaded) }
+        func recoverAfterPause(owner: HubLifecycleToken, completion: @escaping (Result<String, Error>) -> Void) { completion(.success("")) }
+        func releaseRestartRecord(owner: HubLifecycleToken) {}
+
+        func reconcile(owner: HubLifecycleToken, ensure: @escaping () throws -> HubLaunchAgentChange,
+                       completion: @escaping (HubReconcileOutcome) -> Void) { completion(.completed) }
+        func deleteHubAndData(owner: HubLifecycleToken, completion: @escaping (Result<HubDataRemovalReport, Error>) -> Void) {
+            deleteCompletion = completion
+        }
     }
 }

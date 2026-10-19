@@ -92,7 +92,9 @@ enum HubUtilityWindowStyle {
         window.contentMinSize = minimum
         window.backgroundColor = HubPalette.background
         window.identifier = NSUserInterfaceItemIdentifier("hub.utility." + title)
-        if !HubUIPresentation.isSilentTestHost {
+        if HubWindowRestoration.isSuppressing {
+            HubWindowRestoration.apply(to: window)
+        } else if !HubUIPresentation.isSilentTestHost {
             window.setFrameAutosaveName("Hub.Utility." + title)
         }
         return window
@@ -112,6 +114,7 @@ enum HubOnboardingSheetStyle {
         window.backgroundColor = HubPalette.background
         window.minSize = NSSize(width: 820, height: 640)
         window.standardWindowButton(.closeButton)?.isEnabled = dismissible
+        if HubWindowRestoration.isSuppressing { HubWindowRestoration.apply(to: window) }
         return window
     }
 }
@@ -174,5 +177,42 @@ final class HubReportTextView: NSTextView {
         let height = max(enclosingScrollView?.contentSize.height ?? 0,
                          ceil(manager.usedRect(for: container).height) + textContainerInset.height * 2)
         super.setFrameSize(NSSize(width: width, height: height))
+    }
+}
+
+/// Delete Hub and Data removes the app's saved state; AppKit must not write it again.
+/// While suppressed, current and subsequently created windows are non-restorable and
+/// carry no frame autosave name.
+enum HubWindowRestoration {
+    private static let lock = NSLock()
+    private static var suppressing = false
+
+    static var isSuppressing: Bool {
+        lock.lock(); defer { lock.unlock() }; return suppressing
+    }
+
+    /// Flips the barrier alone, so a Delete's admission can install it under its lock.
+    static func setSuppressed(_ value: Bool) {
+        lock.lock(); suppressing = value; lock.unlock()
+    }
+
+    static func applyToCurrentWindows(windows: () -> [NSWindow] = { NSApp?.windows ?? [] }) {
+        windows().forEach { apply(to: $0) }
+    }
+
+    static func beginSuppressing(windows: () -> [NSWindow] = { NSApp?.windows ?? [] }) {
+        setSuppressed(true)
+        applyToCurrentWindows(windows: windows)
+    }
+
+    static func endSuppressing() {
+        lock.lock(); suppressing = false; lock.unlock()
+    }
+
+    /// Called by every window factory.
+    static func apply(to window: NSWindow) {
+        window.isRestorable = false
+        _ = window.setFrameAutosaveName("")
+        window.invalidateRestorableState()
     }
 }

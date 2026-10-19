@@ -55,6 +55,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private let serviceTransitionTimeout: TimeInterval
     private let serviceTransitionPollInterval: TimeInterval
     private let errorPresenter: (Error) -> Void
+    private let confirmationPresenter: (NSAlert, NSApplication.ModalResponse) -> NSApplication.ModalResponse
+    private let revealApp: (URL) -> Void
+    private let terminateApp: () -> Void
+    private let olderInstallerPresent: () -> Bool
     private var navigationBar: HubNavigationBar!
     private let pageContainer = NSView()
     private(set) var dashboardView: HubDashboardView!
@@ -67,9 +71,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     private var embeddedParentSection: HubMainSection?
     private weak var embeddedReturnResponder: NSView?
     private var displayOptionsObserver: NSObjectProtocol?
-    private var appearancePreference = HubAppearancePreference()
+    private var appearancePreference: HubAppearancePreference
     private var sessionActivity = HubSessionActivityStore(limit: 3, now: Date.init)
     private var lastPresentedSnapshot: HubSnapshot
+    private var lifecycleObservation: HubLifecycleAuthority.Observation?
+    private var lastLifecycleKey: String?
 
     var activeModalKind: HubModalKind? { modalState.active }
 
@@ -86,8 +92,22 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
          serviceTransitionTimeout: TimeInterval,
          serviceTransitionPollInterval: TimeInterval,
          errorPresenter: @escaping (Error) -> Void,
+         confirmationPresenter: @escaping (NSAlert, NSApplication.ModalResponse) -> NSApplication.ModalResponse = {
+             HubUIPresentation.response(to: $0, silentResponse: $1)
+         },
+         revealApp: @escaping (URL) -> Void = HubProductionEffects.appReveal(),
+         terminateApp: @escaping () -> Void = HubProductionEffects.terminator(),
+         olderInstallerPresent: @escaping () -> Bool = {
+             FileManager.default.fileExists(atPath: "/Library/Application Support/Teslatlas Hub")
+         },
+         appearancePreference: HubAppearancePreference = HubAppearancePreference(),
          onInitialRefresh: ((HubSnapshot) -> Void)? = nil) {
+        self.appearancePreference = appearancePreference
         self.controller = controller
+        self.confirmationPresenter = confirmationPresenter
+        self.revealApp = revealApp
+        self.terminateApp = terminateApp
+        self.olderInstallerPresent = olderInstallerPresent
         self.onInitialRefresh = onInitialRefresh
         self.serviceTransitionTimeout = max(0.001, serviceTransitionTimeout)
         self.serviceTransitionPollInterval = max(0.001, serviceTransitionPollInterval)
@@ -163,6 +183,34 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
         RunLoop.main.add(refreshTimer, forMode: .common)
         self.refreshTimer = refreshTimer
+        // Enablement follows the lifecycle owner, not a status refresh (R-E1F6-15).
+        lifecycleObservation = controller.observeLifecycle { [weak self] _ in
+            self?.lifecycleChanged()
+        }
+    }
+
+    /// Whether the controller's lifecycle owner is free: the only authority that admits a
+    /// service, account, migration or control operation. A window flag may add a
+    /// presentation restriction; it never authorizes the work.
+    private var lifecycleIdle: Bool { controller.lifecycleCapabilities.isIdle }
+
+    /// The one calculation of "a service or account action may start now".
+    private var actionsAvailable: Bool {
+        serviceTransition == nil && !initialRefreshPending && !accountWorkflowActive
+            && !serviceDetailsMutationPending && !diagnosticsOperationPending && lifecycleIdle
+    }
+
+    private func lifecycleChanged() {
+        let capabilities = controller.lifecycleCapabilities
+        let key = "\(capabilities.owner?.rawValue ?? "-")/\(capabilities.state)"
+        guard key != lastLifecycleKey else { return }
+        lastLifecycleKey = key
+        if let transition = serviceTransition {
+            applyServiceTransitionPresentation(transition)
+        } else {
+            applySnapshotPresentation(lastPresentedSnapshot)
+        }
+        detailsWindow?.setMutationsEnabled(actionsAvailable)
     }
 
     deinit {
@@ -242,11 +290,14 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         )
     }
 
-    private func makeServiceLifecycleActions() -> HubServiceLifecycleActions {
+    /// Internal so the tests can press each action without going through the details page.
+    func makeServiceLifecycleActions() -> HubServiceLifecycleActions {
         HubServiceLifecycleActions(
             start: { [weak self] in self?.startPressed() },
             stop: { [weak self] in self?.stopPressed() },
-            restart: { [weak self] in self?.restartPressed() }
+            restart: { [weak self] in self?.restartPressed() },
+            remove: { [weak self] in self?.removeBackgroundServiceNow() },
+            deleteHubAndData: { [weak self] in self?.deleteHubAndDataPressed() }
         )
     }
 
@@ -269,10 +320,18 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             && !diagnosticsOperationPending
     }
 
+    /// A pending transition blocks Quit. The one exemption is a Delete Hub and Data whose
+    /// data step has run: its Quit button is the way out. Stopping, Removing and the
+    /// rest keep blocking, whatever the completion flag says.
+    private var transitionPreventsQuit: Bool {
+        guard let transition = serviceTransition else { return false }
+        return !(transition == .deleting && controller.hubDeletionCompleted)
+    }
+
     var operationPreventsQuit: Bool {
-        serviceTransition != nil || vehicleControlPending
+        transitionPreventsQuit || vehicleControlPending
             || serviceDetailsMutationPending || diagnosticsOperationPending
-            || HubController.diagnosticsPreventQuit
+            || controller.lifecycleCapabilities.preventsQuit
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -280,7 +339,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return true
     }
 
-    var canImportTeslaMate: Bool { navigationAvailable && lastPresentedSnapshot.shouldOfferTeslaMateImport }
+    var canImportTeslaMate: Bool {
+        navigationAvailable && lifecycleIdle && lastPresentedSnapshot.shouldOfferTeslaMateImport
+    }
 
     func selectMainSection(_ section: HubMainSection) {
         guard navigationAvailable else { return }
@@ -394,7 +455,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         dashboardView.setInteractionsEnabled(serviceTransition == nil
                                              && !initialRefreshPending
                                              && !accountWorkflowActive
-                                             && !serviceDetailsMutationPending)
+                                             && !serviceDetailsMutationPending
+                                             && lifecycleIdle)
         let vehicleControlsEnabled = acceptedVehicleControlsEnabled(for: snapshot)
         dashboardView.setVehicleControlsEnabled(vehicleControlsEnabled)
         dashboardView.apply(snapshot: snapshot, transition: nil, activity: sessionActivity.activities)
@@ -444,7 +506,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                                && serviceTransition == nil
                                && !accountWorkflowActive
                                && !serviceDetailsMutationPending
-                               && !diagnosticsOperationPending)
+                               && !diagnosticsOperationPending
+                               && lifecycleIdle)
         databaseValue.stringValue = snapshot.database
         versionLabel.stringValue = HubRelease.bundledVersion
         serviceDot.contentTintColor = snapshot.health.color
@@ -453,11 +516,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         installButton.isHidden = snapshot.health != .needsInstall
         restartButton.isHidden = snapshot.health != .degraded
         heroDiagnosticsButton.isHidden = snapshot.health != .degraded
-        let mutableActionsAvailable = serviceTransition == nil
-            && !initialRefreshPending
-            && !accountWorkflowActive
-            && !serviceDetailsMutationPending
-            && !diagnosticsOperationPending
+        let mutableActionsAvailable = actionsAvailable
         detailsWindow?.update(snapshot: snapshot)
         detailsWindow?.setMutationsEnabled(mutableActionsAvailable)
         let accountActionsAvailable = mutableActionsAvailable
@@ -494,6 +553,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             && !accountWorkflowActive
             && !serviceDetailsMutationPending
             && !diagnosticsOperationPending
+            && lifecycleIdle
         let controlsVisible = snapshot.provider == .fleet
         if controlsVisible {
             NSLayoutConstraint.activate(vehicleControlSectionHeightConstraints)
@@ -688,8 +748,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     func vehicleCommand(_ action: HubVehicleControl, vehicleID: UUID) {
-        guard !initialRefreshPending, serviceTransition == nil, !accountWorkflowActive,
-              !serviceDetailsMutationPending, !diagnosticsOperationPending,
+        guard actionsAvailable,
               let vehicle = controlVehicles.first(where: { $0.id == vehicleID }) else { return }
         selectVehicle(vehicleID)
         confirmVehicleControl(action, vehicle: vehicle)
@@ -703,7 +762,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             serviceDetailsMutationPending: serviceDetailsMutationPending,
             vehicleControlPending: vehicleControlPending,
             vehicleControlOutcomeUnknown: vehicleControlOutcomeUnknown
-        ) && !initialRefreshPending && !diagnosticsOperationPending
+        ) && !initialRefreshPending && !diagnosticsOperationPending && lifecycleIdle
     }
 
     static func acceptedVehicleControlsEnabled(
@@ -880,7 +939,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                                 transition: transition,
                                 token: token,
                                 announceCompletion: false)
-        let action = transition == .stopping ? "stop" : "start"
+        let action = transition == .stopping || transition == .removing || transition == .deleting ? "stop" : "start"
         let error = HubActionError.commandFailed(
             HubL10n.format("hub.MainWindowController.849.1824", fallback: "Hub did not finish the %1$@ operation. Its current status is shown; open diagnostics for details.", arguments: [String(describing: action)])
         )
@@ -937,9 +996,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     static func vehicleControlOutcomeIsUnknown(_ error: Error) -> Bool {
-        if let actionError = error as? HubActionError,
-           case .commandTimedOut = actionError {
-            return true
+        if let actionError = error as? HubActionError {
+            // A command that timed out, or whose process could not be stopped, may still act.
+            if case .commandTimedOut = actionError { return true }
+            if case .commandNotQuiescent = actionError { return true }
         }
         let message = error.localizedDescription.lowercased()
         return message.contains("timed out") || message.contains("outcome is ambiguous")
@@ -1029,7 +1089,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func appearancePressed() {
         let isDark = window?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        _ = appearancePreference.toggle(currentIsDark: isDark)
+        // The write is admitted by the lifecycle owner, serialised with a Delete's barrier.
+        let admitted = controller.performPreferenceWrite {
+            _ = appearancePreference.toggle(currentIsDark: isDark)
+        }
+        guard admitted else { NSSound.beep(); return }
         if let window {
             if let content = window.contentView { HubMotion.transition(content) }
             appearancePreference.apply(to: window)
@@ -1072,22 +1136,11 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             snapshot: lastPresentedSnapshot,
             controller: controller,
             lifecycleActions: makeServiceLifecycleActions(),
-            mutationAllowed: { [weak self] in
-                guard let self else { return false }
-                return !self.initialRefreshPending && self.serviceTransition == nil
-                    && !self.accountWorkflowActive && !self.serviceDetailsMutationPending
-                    && !self.diagnosticsOperationPending
-            },
-            onMutationStateChanged: { [weak self] in
-                self?.setServiceDetailsMutationPending($0)
-            },
-            onChanged: { [weak self] in self?.update() },
+            mutationAllowed: { [weak self] in self?.actionsAvailable ?? false },
             onDismiss: { [weak self] in self?.dismissEmbeddedDetail() },
             embedded: true
         )
-        details.setMutationsEnabled(!initialRefreshPending && serviceTransition == nil
-                                    && !accountWorkflowActive && !serviceDetailsMutationPending
-                                    && !diagnosticsOperationPending)
+        details.setMutationsEnabled(actionsAvailable)
         detailsWindow = details
         let page = details.makeEmbeddedPage { [weak self] in self?.dismissEmbeddedDetail() }
         presentEmbeddedDetail(details, page: page, from: .settings)
@@ -1184,7 +1237,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + 4), in: sender)
     }
 
-    private func teslaAccountMenu() -> NSMenu {
+    /// Internal so the tests can reach the menu's actual items without popping it up.
+    func teslaAccountMenu() -> NSMenu {
         let menu = NSMenu(title: HubL10n.text("hub.HubController.1162.479", fallback: "Tesla account"))
         if lastPresentedSnapshot.accountState == .connected {
             menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1152.1840", fallback: "Use Fleet API"), action: #selector(useFleetPressed)))
@@ -1212,6 +1266,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     @objc private func migrateTeslaMatePressed() { showOnboarding(route: .migration) }
 
     @objc private func disconnectTeslaPressed() {
+        guard actionsAvailable, !vehicleControlPending else { NSSound.beep(); return }
         let alert = Self.disconnectConfirmation()
         guard HubUIPresentation.response(to: alert) == .alertSecondButtonReturn else { return }
         controller.signOutTeslaAccount { [weak self] result in
@@ -1280,7 +1335,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if previewRoute == nil {
             onboarding.navigate(to: route)
         }
-        NSApp.activate(ignoringOtherApps: true)
+        HubApplicationActivation.activate()
         return onboarding
     }
 
@@ -1359,7 +1414,6 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         case (.diagnostics, _):
             break
         case let (.serviceDetails, details as ServiceDetailsWindowController):
-            guard !details.mutationInProgress else { return false }
             let oldWindow = details.window
             detailsWindow = nil
             dismissPrimaryModal(kind: .serviceDetails)
@@ -1401,6 +1455,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let mutableActionsAvailable = serviceTransition == nil
             && !initialRefreshPending
             && !active && !serviceDetailsMutationPending
+            && lifecycleIdle
         stopButton.isEnabled = mutableActionsAvailable
         restartButton.isEnabled = mutableActionsAvailable
         installButton.isEnabled = mutableActionsAvailable
@@ -1436,6 +1491,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         let mutableActionsAvailable = serviceTransition == nil
             && !initialRefreshPending
             && !pending && !accountWorkflowActive
+            && lifecycleIdle
         stopButton.isEnabled = mutableActionsAvailable
         restartButton.isEnabled = mutableActionsAvailable
         installButton.isEnabled = mutableActionsAvailable
@@ -1476,8 +1532,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func startPressed() {
-        guard !initialRefreshPending, serviceTransition == nil, !accountWorkflowActive,
-              !serviceDetailsMutationPending, !diagnosticsOperationPending else { return }
+        guard actionsAvailable else { return }
         guard let token = beginServiceTransition(.starting) else { return }
         controller.startHub { [weak self] result in
             switch result {
@@ -1491,8 +1546,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func stopPressed() {
-        guard !initialRefreshPending, serviceTransition == nil, !accountWorkflowActive,
-              !serviceDetailsMutationPending, !diagnosticsOperationPending, let window else { return }
+        guard actionsAvailable, let window else { return }
         let alert = Self.stopHubConfirmation()
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertSecondButtonReturn else { return }
@@ -1501,7 +1555,9 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func stopHubAfterConfirmation() {
-        guard !initialRefreshPending, serviceTransition == nil else { return }
+        // The confirmation may have been open while another owner took the lifecycle:
+        // the capability is checked again now, and the controller admits atomically.
+        guard actionsAvailable else { NSSound.beep(); return }
         guard let token = beginServiceTransition(.stopping) else { return }
         controller.stopHub { [weak self] result in
             switch result {
@@ -1515,8 +1571,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func restartPressed() {
-        guard !initialRefreshPending, serviceTransition == nil, !accountWorkflowActive,
-              !serviceDetailsMutationPending, !diagnosticsOperationPending else { return }
+        guard actionsAvailable else { return }
         guard let token = beginServiceTransition(.restarting) else { return }
         controller.restartHub { [weak self] result in
             switch result {
@@ -1529,9 +1584,98 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    /// Remove Background Service: the details window has asked first. Data and logs stay.
+    private func removeBackgroundServiceNow() {
+        guard actionsAvailable, controller.allowsServiceRemoval else { NSSound.beep(); return }
+        guard let token = beginServiceTransition(.removing) else { return }
+        controller.removeBackgroundService { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .success:
+                self.sessionActivity.record(.hubStopped)
+                self.finishServiceTransition(with: self.controller.snapshot,
+                                             transition: .removing, token: token)
+            case let .failure(error):
+                self.serviceCommandFailed(error, transition: .removing, token: token)
+            }
+        }
+    }
+
+    /// Delete Hub and Data (section 2.3.10.4): the gate of Stop, two confirmations with
+    /// Cancel as the default, then the `.deleting` transition.
+    private func deleteHubAndDataPressed() {
+        guard actionsAvailable, !vehicleControlPending,
+              controller.allowsServiceRemoval else { NSSound.beep(); return }
+        guard confirmationPresenter(ServiceDetailsWindowController.deleteHubAndDataExplanation(),
+                                    .alertFirstButtonReturn) == .alertSecondButtonReturn else { return }
+        guard confirmationPresenter(ServiceDetailsWindowController.deleteDataConfirmation(),
+                                    .alertFirstButtonReturn) == .alertSecondButtonReturn else { return }
+        // A conflicting owner may have appeared while the confirmations were open.
+        guard actionsAvailable, !vehicleControlPending else { NSSound.beep(); return }
+        guard let token = beginServiceTransition(.deleting) else { return }
+        // The controller installs and lifts the restoration barrier itself.
+        controller.deleteHubAndData { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case let .success(report):
+                self.showDeletionFinished(report)
+            case let .failure(error):
+                self.serviceCommandFailed(error, transition: .deleting, token: token)
+            }
+        }
+    }
+
+    /// The data step has run. The transition is retained (no refresh, no settlement
+    /// deadline); Quit selects the app in Finder and terminates through guarded seams.
+    private func showDeletionFinished(_ report: HubDataRemovalReport) {
+        let alert = Self.deleteFinalMessage(report: report, olderInstallerPresent: olderInstallerPresent())
+        _ = confirmationPresenter(alert, .alertFirstButtonReturn)
+        revealApp(Bundle.main.bundleURL)
+        terminateApp()
+    }
+
+    static func deleteFinalMessage(report: HubDataRemovalReport, olderInstallerPresent: Bool) -> NSAlert {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        var text: String
+        // Warnings other than the final-enable one are steps that could not be checked or
+        // completed: they are shown, and they stop the message from claiming a full removal.
+        let details = report.warnings.filter { $0 != HubDataRemovalReport.finalEnableFailedWarning }
+        let items = report.kept.filter { !$0.settings }
+        if report.kept.isEmpty && details.isEmpty {
+            alert.messageText = HubL10n.text("hub.service.delete.final_title", fallback: "Teslatlas Hub has been deleted")
+            text = HubL10n.text("hub.service.delete.final_detail", fallback: "The background service, the Hub's data, configuration and logs, and the app's settings and caches were removed from this Mac. To finish, move Teslatlas Hub to the Trash. The app is shown in Finder when you quit.")
+        } else {
+            // Anything retained or unchecked, including a deletion that could not start, is
+            // never described as a removal.
+            alert.messageText = HubL10n.text("hub.service.delete.final_title_partial", fallback: "Teslatlas Hub was not fully deleted")
+            text = HubL10n.text("hub.service.delete.final_detail_partial", fallback: "The background service was removed and the Hub is stopped, but not everything the Hub keeps on this Mac was deleted. To finish, move Teslatlas Hub to the Trash. The app is shown in Finder when you quit.")
+        }
+        if !items.isEmpty {
+            let list = items.map { "\($0.path) (\($0.reason))" }.joined(separator: ", ")
+            text += "\n\n" + HubL10n.format("hub.service.delete.final_kept", fallback: "These items could not be deleted and are still on this Mac: %1$@. Delete them in Finder.", arguments: [list])
+        }
+        if report.kept.contains(where: { $0.settings }) {
+            // The preferences file belongs to the preferences service: never an item to delete by hand.
+            text += "\n\n" + HubL10n.text("hub.service.delete.final_settings", fallback: "The app's saved settings could not be cleared and are still on this Mac.")
+        }
+        if !details.isEmpty {
+            let joined = details.map { $0.hasSuffix(".") ? String($0.dropLast()) : $0 }.joined(separator: "; ")
+            text += "\n\n" + HubL10n.format("hub.service.delete.final_details", fallback: "Details: %1$@.", arguments: [joined])
+        }
+        if olderInstallerPresent {
+            text += "\n\n" + HubL10n.text("hub.service.delete.final_older", fallback: "Files from an older installer remain in /Library/Application Support/Teslatlas Hub. Removing them needs an administrator; the install guide explains how.")
+        }
+        if report.warnings.contains(HubDataRemovalReport.finalEnableFailedWarning) {
+            text += "\n\n" + HubL10n.text("hub.service.delete.final_enable", fallback: "macOS still lists the background service as turned off. This is harmless and clears the next time the Hub is set up.")
+        }
+        alert.informativeText = text
+        alert.addButton(withTitle: HubL10n.text("hub.service.delete.quit", fallback: "Quit"))
+        return alert
+    }
+
     @objc private func vehicleCardButtonPressed(_ sender: NSButton) {
-        guard !initialRefreshPending, serviceTransition == nil, !accountWorkflowActive,
-              !serviceDetailsMutationPending, !diagnosticsOperationPending else { return }
+        guard actionsAvailable else { return }
         guard let rawValue = sender.identifier?.rawValue,
               let action = HubVehicleControl(rawValue: rawValue) else { return }
         guard let selectedControlVehicleID else { return }
@@ -1551,8 +1695,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if let detailsWindow = activeModalController as? ServiceDetailsWindowController,
            modalState.active == .serviceDetails {
             detailsWindow.update(snapshot: controller.snapshot)
-            detailsWindow.setMutationsEnabled(!initialRefreshPending && !accountWorkflowActive && !serviceDetailsMutationPending
-                                              && !diagnosticsOperationPending)
+            detailsWindow.setMutationsEnabled(actionsAvailable)
             detailsWindow.window?.makeKeyAndOrderFront(nil)
             return detailsWindow
         }
@@ -1561,20 +1704,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
                 snapshot: self.controller.snapshot,
                 controller: self.controller,
                 lifecycleActions: self.makeServiceLifecycleActions(),
-                mutationAllowed: { [weak self] in
-                    guard let self else { return false }
-                    return self.serviceTransition == nil
-                        && !self.accountWorkflowActive && !self.serviceDetailsMutationPending
-                        && !self.diagnosticsOperationPending
-                },
-                onMutationStateChanged: { [weak self] in
-                    self?.setServiceDetailsMutationPending($0)
-                },
-                onChanged: { [weak self] in self?.update() },
+                mutationAllowed: { [weak self] in self?.actionsAvailable ?? false },
                 onDismiss: { [weak self] in self?.dismissServiceDetails() }
             )
         } as? ServiceDetailsWindowController
         detailsWindow = details
+        details?.setMutationsEnabled(actionsAvailable)
         return details
     }
 

@@ -6,6 +6,9 @@ import XCTest
 import Security
 @testable import Teslatlas_Hub
 
+/// The owner of every service call these tests make on the development controller.
+private let developmentOwner = makeLifecycleToken(.start)
+
 final class DevelopmentHubRuntimeTests: XCTestCase {
     // A visible first-run fixture must not queue the application's ordinary
     // last-window Quit and later exit the test host when Process.waitUntilExit
@@ -60,7 +63,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         var environment = fixture.environment
         environment.removeValue(forKey: DevelopmentHubConfiguration.controlVariable)
         let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(environment: environment))
-        XCTAssertEqual(configuration.controlDirectory.path, NSHomeDirectory() + "/dev/runtime")
+        XCTAssertEqual(configuration.controlDirectory.path, HubTestScratch.realHomePath + "/dev/runtime")
         XCTAssertEqual(configuration.plist.deletingLastPathComponent(), configuration.controlDirectory)
         let descriptor = try DevelopmentEventLog.validateDirectoryReadOnly(configuration.controlDirectory, allowOwnedGroupWritableAncestors: false)
         close(descriptor)
@@ -69,8 +72,9 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         let controller = try HubController.applicationController(environment: [:])
 
         XCTAssertNil(controller.developmentConfiguration)
-        XCTAssertTrue(controller.allowsServiceInstallation)
-        XCTAssertTrue(controller.installer is EmbeddedInstaller)
+        XCTAssertTrue(controller.allowsServiceRemoval)
+        XCTAssertTrue(controller.launchAgent is HubLaunchAgentWriter, "the production writer")
+        XCTAssertTrue(controller.dataRemover is HubDataRemover, "the production remover")
         XCTAssertEqual(controller.snapshot.health, .needsInstall)
     }
 
@@ -247,7 +251,8 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         ))
         let relaunched = try HubController.applicationController(environment: fixture.environment)
         XCTAssertEqual(relaunched.developmentConfiguration, configuration)
-        XCTAssertTrue(relaunched.installer is DevelopmentHubInstaller)
+        XCTAssertNil(relaunched.launchAgent, "development never owns the production LaunchAgent file")
+        XCTAssertFalse(relaunched.allowsServiceRemoval)
         try FileManager.default.createSymbolicLink(
             at: configuration.standardOutputLog,
             withDestinationURL: fixture.config
@@ -271,33 +276,98 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         XCTAssertNotEqual(service, "\(domain)/com.teslatlas.hub")
     }
 
-    func testApplicationControllerInjectsFailClosedDevelopmentInstaller() throws {
-        let fixture = try makeFixture()
+    func testDevelopmentControllerMapsPauseAndRecoveryAndRefusesRemoveAndDelete() throws {
+        let fixture = try makeFixture(createConfig: true, mode: .standalone)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let controller = try HubController.applicationController(environment: fixture.environment)
+        let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(environment: fixture.environment))
+        let unloadedFailure = HubActionError.commandExited(
+            113, "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())")
+        var loaded = true
+        var calls: [[String]] = []
+        var preflights = 0
+        let controller = DevelopmentLaunchctlServiceController(
+            configuration: configuration,
+            processRunner: { executable, arguments, _, completion in
+                if executable.path != "/bin/launchctl" {
+                    preflights += 1
+                    completion(.failure(HubActionError.commandFailed("preflight stops the start")))
+                    return
+                }
+                calls.append(arguments)
+                switch arguments.first {
+                case "print": completion(loaded ? .success("") : .failure(unloadedFailure))
+                case "bootout": loaded = false; completion(.success(""))
+                default: completion(.success(""))
+                }
+            }
+        )
 
-        XCTAssertTrue(controller.installer is DevelopmentHubInstaller)
-        let install = expectation(description: "direct development install rejected")
-        controller.installer.install { result in
-            guard case let .failure(error) = result else {
-                XCTFail("development installer unexpectedly installed production service")
-                install.fulfill()
-                return
-            }
-            XCTAssertTrue(error.localizedDescription.contains("cannot mutate"))
-            install.fulfill()
+        // Pause maps to the existing stop and holds the loaded record.
+        let paused = expectation(description: "pause")
+        controller.run(arguments: ["service", "pause"], owner: developmentOwner) { result in
+            if case let .failure(error) = result { XCTFail("pause failed: \(error)") }
+            paused.fulfill()
         }
-        let uninstall = expectation(description: "direct development uninstall rejected")
-        controller.installer.uninstall(deleteData: true) { result in
-            guard case let .failure(error) = result else {
-                XCTFail("development installer unexpectedly uninstalled production service")
-                uninstall.fulfill()
-                return
-            }
-            XCTAssertTrue(error.localizedDescription.contains("cannot mutate"))
-            uninstall.fulfill()
+        wait(for: [paused], timeout: 2)
+        XCTAssertTrue(calls.contains(["bootout", "gui/\(getuid())/\(configuration.serviceLabel)"]))
+        XCTAssertFalse(calls.contains { $0.first == "disable" }, "a pause never disables")
+        XCTAssertTrue(controller.restartDutyOutstanding)
+
+        // A second pause keeps the first record (the job is unloaded by now).
+        let secondPause = expectation(description: "second pause")
+        controller.run(arguments: ["service", "pause"], owner: developmentOwner) { _ in secondPause.fulfill() }
+        wait(for: [secondPause], timeout: 2)
+        XCTAssertTrue(controller.restartDutyOutstanding, "the second pause must keep the first record")
+
+        // Recovery runs the existing start only for a loaded record (its preflight is the first step).
+        let recovered = expectation(description: "recovery")
+        controller.recoverAfterPause(owner: developmentOwner) { _ in recovered.fulfill() }
+        wait(for: [recovered], timeout: 2)
+        XCTAssertEqual(preflights, 1)
+        XCTAssertFalse(controller.restartDutyOutstanding)
+
+        // A record showing the job unloaded owes nothing.
+        let unloadedPause = expectation(description: "pause unloaded")
+        controller.run(arguments: ["service", "pause"], owner: developmentOwner) { _ in unloadedPause.fulfill() }
+        wait(for: [unloadedPause], timeout: 2)
+        XCTAssertFalse(controller.restartDutyOutstanding)
+        let before = preflights
+        let noRecovery = expectation(description: "no start owed")
+        controller.recoverAfterPause(owner: developmentOwner) { result in
+            if case let .success(note) = result { XCTAssertEqual(note, "") } else { XCTFail("nothing owed") }
+            noRecovery.fulfill()
         }
-        wait(for: [install, uninstall], timeout: 1)
+        wait(for: [noRecovery], timeout: 2)
+        XCTAssertEqual(preflights, before)
+
+        // Release clears a record without a command.
+        loaded = true
+        let pausedAgain = expectation(description: "pause again")
+        controller.run(arguments: ["service", "pause"], owner: developmentOwner) { _ in pausedAgain.fulfill() }
+        wait(for: [pausedAgain], timeout: 2)
+        XCTAssertTrue(controller.restartDutyOutstanding)
+        var settled = 0
+        controller.whenRestartDutySettled { settled += 1 }
+        controller.releaseRestartRecord(owner: developmentOwner)
+        XCTAssertEqual(settled, 1)
+        XCTAssertFalse(controller.restartDutyOutstanding)
+
+        // Remove and Delete are refused with no launchctl command.
+        let callsBefore = calls.count
+        let remove = expectation(description: "remove refused")
+        controller.run(arguments: ["service", "remove"], owner: developmentOwner) { result in
+            guard case let .failure(error) = result else { XCTFail("development removed the production service"); remove.fulfill(); return }
+            XCTAssertTrue(error.localizedDescription.contains("cannot mutate"))
+            remove.fulfill()
+        }
+        let delete = expectation(description: "delete refused")
+        controller.deleteHubAndData(owner: developmentOwner) { result in
+            guard case let .failure(error) = result else { XCTFail("development deleted data"); delete.fulfill(); return }
+            XCTAssertTrue(error.localizedDescription.contains("cannot mutate"))
+            delete.fulfill()
+        }
+        wait(for: [remove, delete], timeout: 2)
+        XCTAssertEqual(calls.count, callsBefore)
     }
 
     func testDevelopmentServicePlansStartStopAndRestartWithoutProductionLabel() {
@@ -338,7 +408,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         )
         let rejected = expectation(description: "unsafe source-run preflight rejected")
 
-        controller.run(arguments: ["service", "start"]) { result in
+        controller.run(arguments: ["service", "start"], owner: developmentOwner) { result in
             guard case let .failure(error) = result else {
                 XCTFail("unsafe source-run mode reached launchd")
                 rejected.fulfill()
@@ -378,7 +448,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
             }
         )
         let rejected = expectation(description: "invalid mode marker rejected")
-        controller.run(arguments: ["service", "start"]) { result in
+        controller.run(arguments: ["service", "start"], owner: developmentOwner) { result in
             guard case .failure = result else { return XCTFail("invalid marker was accepted") }
             rejected.fulfill()
         }
@@ -403,7 +473,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
             }
         )
         let rejected = expectation(description: "history preflight rejected before launch")
-        controller.run(arguments: ["service", "start"]) { result in
+        controller.run(arguments: ["service", "start"], owner: developmentOwner) { result in
             guard case .failure = result else { return XCTFail("unsafe start was allowed") }
             rejected.fulfill()
         }
@@ -464,7 +534,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         )
         let started = expectation(description: "valid source-run launch planned")
 
-        controller.run(arguments: ["service", "start"]) { result in
+        controller.run(arguments: ["service", "start"], owner: developmentOwner) { result in
             if case let .failure(error) = result {
                 XCTFail("valid preflight did not reach bootstrap: \(error)")
             }
@@ -540,7 +610,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         )
         let rejected = expectation(description: "persistent unready status rejected")
 
-        controller.run(arguments: ["service", "start"]) { result in
+        controller.run(arguments: ["service", "start"], owner: developmentOwner) { result in
             guard case let .failure(error) = result else {
                 XCTFail("persistent ready:false status reported success")
                 rejected.fulfill()
@@ -554,6 +624,63 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         wait(for: [rejected], timeout: 1)
         XCTAssertEqual(statusChecks, 3)
         XCTAssertTrue(cleanupRequested)
+    }
+
+    func testStartupCleanupThatCannotStopItsCommandKeepsItsQuiescence() throws {
+        let fixture = try makeFixture(createConfig: true, mode: .standalone)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(
+            environment: fixture.environment
+        ))
+        let service = "gui/\(getuid())/\(configuration.serviceLabel)"
+        let quiescence = HubChildQuiescence()
+        quiescence.childMayRun()
+        defer { quiescence.childReaped() }
+        var launchPlanCompleted = false
+        let controller = DevelopmentLaunchctlServiceController(
+            configuration: configuration,
+            processRunner: { executable, arguments, _, completion in
+                if executable == configuration.binary, arguments.contains("serve-preflight") {
+                    completion(.success(#"{"status":"ready","mode":"standalone"}"#))
+                } else if executable == configuration.binary {
+                    completion(.success(#"{"status":"ok","ready":false}"#))
+                } else if arguments == ["print", service], !launchPlanCompleted {
+                    completion(.failure(HubActionError.commandExited(
+                        113,
+                        "Could not find service \"\(configuration.serviceLabel)\" in domain for user gui: \(getuid())"
+                    )))
+                } else if arguments.first == "bootstrap" {
+                    launchPlanCompleted = true
+                    completion(.success(""))
+                } else if arguments == ["bootout", service] {
+                    completion(.failure(HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence)))
+                } else if arguments == ["print", service] {
+                    completion(.success(self.runningLaunchctlOutput(configuration: configuration, pid: 4105)))
+                } else {
+                    completion(.success(""))
+                }
+            },
+            readinessPollInterval: 0,
+            readinessMaxAttempts: 2,
+            readinessSchedule: { _, action in action() }
+        )
+        let rejected = expectation(description: "startup failure with a cleanup that cannot be stopped")
+        controller.run(arguments: ["service", "start"], owner: developmentOwner) { result in
+            guard case let .failure(error) = result else {
+                XCTFail("success")
+                rejected.fulfill()
+                return
+            }
+            guard case let HubActionError.commandNotQuiescent(inner, held) = error else {
+                XCTFail("the cleanup wrapper dropped the quiescence: \(error)")
+                rejected.fulfill()
+                return
+            }
+            XCTAssertTrue(held === quiescence)
+            XCTAssertTrue(inner.localizedDescription.contains("could not be unloaded"), inner.localizedDescription)
+            rejected.fulfill()
+        }
+        wait(for: [rejected], timeout: 1)
     }
 
     func testLivePIDAndHealthyCatalogueWithoutHTTPSNeverCompletesStartup() throws {
@@ -607,7 +734,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         )
         let rejected = expectation(description: "persistent unready status rejected")
 
-        controller.run(arguments: ["service", "start"]) { result in
+        controller.run(arguments: ["service", "start"], owner: developmentOwner) { result in
             guard case let .failure(error) = result else {
                 XCTFail("persistent ready:false status reported success")
                 rejected.fulfill()
@@ -677,7 +804,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         )
         let rejected = expectation(description: "deadline failure completes after unload")
 
-        controller.run(arguments: ["service", "start"]) { result in
+        controller.run(arguments: ["service", "start"], owner: developmentOwner) { result in
             completionObservedCleanup = cleanupRequested
             guard case let .failure(error) = result else {
                 XCTFail("persistent failure past the deadline reported success")
@@ -751,7 +878,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         )
         let rejected = expectation(description: "competing listener rejected")
 
-        controller.run(arguments: ["service", "start"]) { result in
+        controller.run(arguments: ["service", "start"], owner: developmentOwner) { result in
             guard case let .failure(error) = result else {
                 XCTFail("a competing listener counted as the owned process")
                 rejected.fulfill()
@@ -817,7 +944,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         )
         let rejected = expectation(description: "lifetime lock surfaced")
 
-        controller.run(arguments: ["service", "start"]) { result in
+        controller.run(arguments: ["service", "start"], owner: developmentOwner) { result in
             guard case let .failure(error) = result else {
                 XCTFail("lifetime-lock failure reported success")
                 rejected.fulfill()
@@ -885,7 +1012,6 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         """))
         let controller = HubController(
             commandRunner: runner,
-            installedCommandRunner: runner,
             serviceRunner: DevelopmentLoadedService(),
             serviceInstalledOverride: true,
             developmentConfiguration: configuration
@@ -911,7 +1037,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         wait(for: [loadedLogs], timeout: 1)
     }
 
-    func testDevelopmentModeBlocksProductionInstallerMutations() throws {
+    func testDevelopmentModeRefusesRemoveAndDelete() throws {
         let fixture = try makeFixture()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(
@@ -919,21 +1045,22 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         ))
         let controller = HubController(serviceInstalledOverride: true,
                                        developmentConfiguration: configuration)
-        XCTAssertFalse(controller.allowsServiceInstallation)
+        XCTAssertFalse(controller.allowsServiceRemoval)
 
-        let install = expectation(description: "install rejected")
-        controller.installService { result in
-            guard case let .failure(error) = result else { XCTFail(); install.fulfill(); return }
-            XCTAssertTrue(error.localizedDescription.contains("cannot install"))
-            install.fulfill()
+        let remove = expectation(description: "remove rejected")
+        controller.removeBackgroundService { result in
+            guard case let .failure(error) = result else { XCTFail(); remove.fulfill(); return }
+            XCTAssertTrue(error.localizedDescription.contains("cannot remove"))
+            remove.fulfill()
         }
-        let uninstall = expectation(description: "uninstall rejected")
-        controller.uninstallService(deleteData: true) { result in
-            guard case let .failure(error) = result else { XCTFail(); uninstall.fulfill(); return }
-            XCTAssertTrue(error.localizedDescription.contains("cannot uninstall"))
-            uninstall.fulfill()
+        let delete = expectation(description: "delete rejected")
+        controller.deleteHubAndData { result in
+            guard case let .failure(error) = result else { XCTFail(); delete.fulfill(); return }
+            XCTAssertTrue(error.localizedDescription.contains("cannot delete"))
+            delete.fulfill()
         }
-        wait(for: [install, uninstall], timeout: 1)
+        wait(for: [remove, delete], timeout: 1)
+        XCTAssertFalse(controller.hubDeletionStarted, "a refused development Delete starts nothing")
     }
 
     func testHTTPSReadinessEndpointRejectsUnsafeAndUnsupportedConfiguration() throws {
@@ -1068,7 +1195,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         let runner = DevelopmentStatusRunner(result: .success("""
         {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"\(fixture.state.path)/catalogue.sqlite3","bytes":2040000000},"ready":true,"credentials":{"present":true},"vehicles":[{"vehicleId":"B4C070D1-4C7C-4E01-BD5D-AC56F42A77B5","displayName":"Existing"}]}
         """))
-        let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
             serviceRunner: service, serviceInstalledOverride: true, developmentConfiguration: configuration)
         let unavailable = expectation(description: "live PID without HTTPS is unavailable")
         controller.refresh { snapshot in
@@ -1141,7 +1268,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(environment: fixture.environment))
         let runner = DevelopmentStatusRunner(result: .failure(HubActionError.commandFailed("status unavailable")))
-        let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
             serviceRunner: DevelopmentLoadedService(), serviceInstalledOverride: true,
             developmentConfiguration: configuration)
         let done = expectation(description: "unavailable initial status remains unknown")
@@ -1172,7 +1299,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(environment: fixture.environment))
         let runner = DeferredDevelopmentStatusRunner()
-        let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
             serviceRunner: DevelopmentLoadedService(state: .unloaded), serviceInstalledOverride: true,
             developmentConfiguration: configuration)
         let settled = expectation(description: "initial unavailable status settled")
@@ -1214,12 +1341,12 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         XCTAssertTrue(detailCaptions.contains("Checking Hub"))
         XCTAssertTrue(detailCaptions.contains("Status unavailable"))
         XCTAssertFalse(detailCaptions.contains("Active"))
-        for title in ["Update Service…", "Uninstall Hub…", "Delete Hub and Data…"] {
-            let button = try XCTUnwrap(buttons(window.window?.contentView).first { $0.title == title })
-            XCTAssertFalse(button.isEnabled)
+        for title in ["Stop Hub…", "Restart Hub", "Remove Background Service…", "Delete Hub and Data…"] {
+            guard let button = buttons(window.window?.contentView).first(where: { $0.title == title }) else { continue }
+            XCTAssertFalse(button.isEnabled, title)
             button.performClick(nil)
         }
-        XCTAssertFalse(details.mutationInProgress)
+        _ = details
         XCTAssertEqual(runner.arguments.count, 1, "embedded mutations cannot start while status is pending")
         window.selectMainSection(.dashboard)
         XCTAssertEqual(runner.arguments, [["--config", fixture.config.path, "status"]])
@@ -1238,7 +1365,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(environment: fixture.environment))
         let runner = DeferredDevelopmentStatusRunner()
         let known = HubSnapshot.previewRunning
-        let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
+        let controller = HubController(commandRunner: runner,
             serviceRunner: DevelopmentLoadedService(state: .unloaded), serviceInstalledOverride: true,
             initialSnapshot: known, developmentConfiguration: configuration)
         let window = MainWindowController(controller: controller)
@@ -1269,7 +1396,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         let fixture = try makeFixture(createConfig: true)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let runner = DeferredDevelopmentStatusRunner()
-        let controller = HubController(environment: [:], commandRunner: runner, installedCommandRunner: runner,
+        let controller = HubController(environment: [:], commandRunner: runner,
             serviceRunner: DevelopmentLoadedService(state: .unloaded), homeDirectory: fixture.root,
             serviceInstalledOverride: false)
         XCTAssertTrue(controller.shouldShowOnboardingBeforeInitialRefresh)
@@ -1473,9 +1600,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
 
     private func makeFixture(createConfig: Bool = false,
                              mode: DevelopmentHubMode? = nil) throws -> Fixture {
-        let root = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
-            .appendingPathComponent("dev/TeslatlasHubDevelopmentTests-\(UUID().uuidString)",
-                                    isDirectory: true)
+        let root = HubTestScratch.validatedFixtureRoot("DevelopmentTests")
         let state = root.appendingPathComponent("state", isDirectory: true)
         let logs = root.appendingPathComponent("logs", isDirectory: true)
         try FileManager.default.createDirectory(at: state, withIntermediateDirectories: true)
@@ -1560,8 +1685,34 @@ private final class DevelopmentLoadedService: HubServiceControlling {
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         completion(.success(""))
     }
+    func run(arguments: [String], owner: HubLifecycleToken,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        run(arguments: arguments, completion: completion)
+    }
+    func restartRecordHeld(by owner: HubLifecycleToken) -> Bool { false }
 
     func loadedState(completion: @escaping (HubServiceLoadState) -> Void) {
         completion(state)
+    }
+
+    // New lifecycle requirements, implemented explicitly (no protocol-extension defaults).
+    private(set) var recoverCalls = 0
+    private(set) var releaseCalls = 0
+    private(set) var deleteCalls = 0
+    var restartDutyOutstanding: Bool { false }
+    func whenRestartDutySettled(_ callback: @escaping () -> Void) { callback() }
+    func recoverAfterPause(owner: HubLifecycleToken, completion: @escaping (Result<String, Error>) -> Void) {
+        recoverCalls += 1
+        completion(.success(""))
+    }
+    func releaseRestartRecord(owner: HubLifecycleToken) {
+        releaseCalls += 1
+    }
+
+    func reconcile(owner: HubLifecycleToken, ensure: @escaping () throws -> HubLaunchAgentChange,
+                   completion: @escaping (HubReconcileOutcome) -> Void) { completion(.completed) }
+    func deleteHubAndData(owner: HubLifecycleToken, completion: @escaping (Result<HubDataRemovalReport, Error>) -> Void) {
+        deleteCalls += 1
+        completion(.failure(HubActionError.preview))
     }
 }

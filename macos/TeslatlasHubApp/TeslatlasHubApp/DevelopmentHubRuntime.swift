@@ -62,6 +62,140 @@ enum HistoryOnlyControl {
     }
 }
 
+/// File-system calls of the atomic writer, replaceable so a test can inject a write
+/// or rename failure. Production and development use the system calls.
+struct HubFileSystemHooks {
+    var write: (Int32, UnsafeRawPointer, Int) -> Int
+    var renameat: (Int32, String, Int32, String) -> Int32
+    var fsync: (Int32) -> Int32
+
+    static let system = HubFileSystemHooks(
+        write: { Darwin.write($0, $1, $2) },
+        renameat: { Darwin.renameat($0, $1, $2, $3) },
+        fsync: { Darwin.fsync($0) }
+    )
+}
+
+/// Descriptor-relative temporary write and rename, shared by the development
+/// launch-agent writer and the production writer. The temporary name is created
+/// exclusively and without following links; it is unlinked on every exit.
+enum HubAtomicFile {
+    static func replace(_ data: Data,
+                        inDirectory directory: Int32,
+                        named name: String,
+                        temporaryName: () -> String,
+                        durable: Bool,
+                        hooks: HubFileSystemHooks = .system) throws {
+        let temporary = temporaryName()
+        let descriptor = openat(directory, temporary,
+                                O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { close(descriptor); _ = unlinkat(directory, temporary, 0) }
+        try data.withUnsafeBytes { raw in
+            var offset = 0
+            while offset < raw.count {
+                let count = hooks.write(descriptor, raw.baseAddress!.advanced(by: offset), raw.count - offset)
+                guard count > 0 else {
+                    if errno == EINTR { continue }
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+                offset += count
+            }
+        }
+        if durable {
+            guard hooks.fsync(descriptor) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            guard fchmod(descriptor, mode_t(0o600)) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            var written = stat()
+            guard fstat(descriptor, &written) == 0,
+                  written.st_mode & S_IFMT == S_IFREG,
+                  written.st_mode & 0o777 == 0o600,
+                  written.st_nlink == 1,
+                  written.st_size == off_t(data.count) else { throw POSIXError(.EIO) }
+        }
+        guard hooks.renameat(directory, temporary, directory, name) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        if durable {
+            guard hooks.fsync(directory) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        }
+    }
+}
+
+enum HubPrivateLogFailure: Error, Equatable {
+    case cannotOpen
+    case unsafeShape
+    case unsupportedPermissions
+    case repairFailed
+    case identityChanged
+    case compactionFailed
+}
+
+/// Per-file preparation of a launchd log target: created 0600, an existing
+/// current-owner regular single-link file repaired from exactly 0644 to 0600,
+/// anything else refused. launchd has been observed creating absent targets as
+/// 0644 despite the plist Umask. Development passes no compaction; production
+/// compacts a file above `above` bytes to its last `keep` bytes in place (same
+/// inode; the job is unloaded, so nothing writes concurrently).
+enum HubPrivateLogFile {
+    static func prepare(directory: Int32,
+                        name: String,
+                        owner: uid_t,
+                        compaction: (above: Int, keep: Int)? = nil) throws {
+        var descriptor = openat(directory, name, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
+        if descriptor < 0, errno == EEXIST {
+            descriptor = openat(directory, name, O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK)
+        }
+        guard descriptor >= 0 else { throw HubPrivateLogFailure.cannotOpen }
+        defer { close(descriptor) }
+
+        var information = stat()
+        guard fstat(descriptor, &information) == 0,
+              information.st_mode & S_IFMT == S_IFREG,
+              information.st_uid == owner,
+              information.st_nlink == 1 else { throw HubPrivateLogFailure.unsafeShape }
+        let permissions = information.st_mode & 0o777
+        guard permissions == 0o600 || permissions == 0o644 else { throw HubPrivateLogFailure.unsupportedPermissions }
+        if permissions == 0o644, fchmod(descriptor, mode_t(0o600)) != 0 { throw HubPrivateLogFailure.repairFailed }
+        if let compaction, information.st_size > off_t(compaction.above) {
+            try compact(descriptor: descriptor, size: information.st_size, keep: compaction.keep)
+        }
+        var repaired = stat()
+        guard fstat(descriptor, &repaired) == 0,
+              repaired.st_dev == information.st_dev,
+              repaired.st_ino == information.st_ino,
+              repaired.st_mode & S_IFMT == S_IFREG,
+              repaired.st_uid == owner,
+              repaired.st_nlink == 1,
+              repaired.st_mode & 0o777 == 0o600 else { throw HubPrivateLogFailure.identityChanged }
+    }
+
+    private static func compact(descriptor: Int32, size: off_t, keep: Int) throws {
+        let retained = min(Int(size), keep)
+        var bytes = [UInt8](repeating: 0, count: retained)
+        var offset = 0
+        while offset < retained {
+            let count = bytes.withUnsafeMutableBytes {
+                pread(descriptor, $0.baseAddress!.advanced(by: offset), retained - offset,
+                      size - off_t(retained) + off_t(offset))
+            }
+            if count < 0, errno == EINTR { continue }
+            guard count > 0 else { throw HubPrivateLogFailure.compactionFailed }
+            offset += count
+        }
+        guard ftruncate(descriptor, 0) == 0 else { throw HubPrivateLogFailure.compactionFailed }
+        offset = 0
+        while offset < retained {
+            let count = bytes.withUnsafeBytes {
+                pwrite(descriptor, $0.baseAddress!.advanced(by: offset), retained - offset, off_t(offset))
+            }
+            if count < 0, errno == EINTR { continue }
+            guard count > 0 else { throw HubPrivateLogFailure.compactionFailed }
+            offset += count
+        }
+        guard fsync(descriptor) == 0 else { throw HubPrivateLogFailure.compactionFailed }
+    }
+}
+
 enum DevelopmentHubMode: String, Equatable {
     case fixture
     case standalone
@@ -189,58 +323,36 @@ struct DevelopmentHubConfiguration: Equatable {
         }
 
         for name in ["hub.out.log", "hub.err.log"] {
-            var descriptor = openat(
-                directory,
-                name,
-                O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
-                mode_t(0o600)
-            )
-            if descriptor < 0, errno == EEXIST {
-                descriptor = openat(
-                    directory,
-                    name,
-                    O_RDWR | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
-                )
+            do {
+                try HubPrivateLogFile.prepare(directory: directory, name: name, owner: ownerUID)
+            } catch let failure as HubPrivateLogFailure {
+                throw Self.launchLogError(failure, path: logDirectory.appendingPathComponent(name).path)
             }
-            guard descriptor >= 0 else {
-                throw HubActionError.commandFailed(
-                    HubL10n.format("hub.DevelopmentHubRuntime.202.106", fallback: "Development log cannot be safely opened: %1$@", arguments: [String(describing: logDirectory.appendingPathComponent(name).path)])
-                )
-            }
-            defer { close(descriptor) }
+        }
+    }
 
-            var information = stat()
-            guard fstat(descriptor, &information) == 0,
-                  information.st_mode & S_IFMT == S_IFREG,
-                  information.st_uid == ownerUID,
-                  information.st_nlink == 1 else {
-                throw HubActionError.commandFailed(
-                    HubL10n.format("hub.DevelopmentHubRuntime.213.107", fallback: "Development log must be a current-owner regular single-link file: %1$@", arguments: [String(describing: logDirectory.appendingPathComponent(name).path)])
-                )
-            }
-            let permissions = information.st_mode & 0o777
-            guard permissions == 0o600 || permissions == 0o644 else {
-                throw HubActionError.commandFailed(
-                    HubL10n.format("hub.DevelopmentHubRuntime.219.108", fallback: "Development log has unsupported permissions: %1$@", arguments: [String(describing: logDirectory.appendingPathComponent(name).path)])
-                )
-            }
-            if permissions == 0o644, fchmod(descriptor, mode_t(0o600)) != 0 {
-                throw HubActionError.commandFailed(
-                    HubL10n.format("hub.DevelopmentHubRuntime.224.109", fallback: "Development log permissions could not be repaired: %1$@", arguments: [String(describing: logDirectory.appendingPathComponent(name).path)])
-                )
-            }
-            var repaired = stat()
-            guard fstat(descriptor, &repaired) == 0,
-                  repaired.st_dev == information.st_dev,
-                  repaired.st_ino == information.st_ino,
-                  repaired.st_mode & S_IFMT == S_IFREG,
-                  repaired.st_uid == ownerUID,
-                  repaired.st_nlink == 1,
-                  repaired.st_mode & 0o777 == 0o600 else {
-                throw HubActionError.commandFailed(
-                    HubL10n.format("hub.DevelopmentHubRuntime.236.110", fallback: "Development log identity changed during preparation: %1$@", arguments: [String(describing: logDirectory.appendingPathComponent(name).path)])
-                )
-            }
+    private static func launchLogError(_ failure: HubPrivateLogFailure, path: String) -> Error {
+        switch failure {
+        case .cannotOpen:
+            return HubActionError.commandFailed(
+                HubL10n.format("hub.DevelopmentHubRuntime.202.106", fallback: "Development log cannot be safely opened: %1$@", arguments: [String(describing: path)])
+            )
+        case .unsafeShape:
+            return HubActionError.commandFailed(
+                HubL10n.format("hub.DevelopmentHubRuntime.213.107", fallback: "Development log must be a current-owner regular single-link file: %1$@", arguments: [String(describing: path)])
+            )
+        case .unsupportedPermissions:
+            return HubActionError.commandFailed(
+                HubL10n.format("hub.DevelopmentHubRuntime.219.108", fallback: "Development log has unsupported permissions: %1$@", arguments: [String(describing: path)])
+            )
+        case .repairFailed:
+            return HubActionError.commandFailed(
+                HubL10n.format("hub.DevelopmentHubRuntime.224.109", fallback: "Development log permissions could not be repaired: %1$@", arguments: [String(describing: path)])
+            )
+        case .identityChanged, .compactionFailed:
+            return HubActionError.commandFailed(
+                HubL10n.format("hub.DevelopmentHubRuntime.236.110", fallback: "Development log identity changed during preparation: %1$@", arguments: [String(describing: path)])
+            )
         }
     }
 
@@ -343,25 +455,6 @@ struct DevelopmentHubConfiguration: Equatable {
                 }
             }
         }
-    }
-}
-
-/// Fail-closed replacement for every installer entry point while the control
-/// app is attached to a source-run development Hub.
-final class DevelopmentHubInstaller: HubInstalling {
-    func install(completion: @escaping (Result<String, Error>) -> Void) {
-        completion(.failure(Self.rejection))
-    }
-
-    func uninstall(deleteData: Bool,
-                   completion: @escaping (Result<String, Error>) -> Void) {
-        completion(.failure(Self.rejection))
-    }
-
-    private static var rejection: Error {
-        HubActionError.commandFailed(
-            HubL10n.text("hub.DevelopmentHubRuntime.354.127", fallback: "A source-run development Hub cannot mutate the production service installation.")
-        )
     }
 }
 
@@ -726,23 +819,121 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling, HubLiv
         }
     }
 
-    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
-        let action: HubServiceAction
+    private static var rejection: Error {
+        HubActionError.commandFailed(
+            HubL10n.text("hub.service.development_refused",
+                         fallback: "A source-run development Hub cannot mutate the production service installation.")
+        )
+    }
+
+    // MARK: Restart duty (the pause record of section 2.3.2, development semantics)
+
+    private let recordLock = NSLock()
+    private var heldRecord: Bool?
+    /// The owner that made the held record; only that owner may consume or clear it.
+    private var heldOwner: HubLifecycleToken?
+    private var settledCallbacks: [() -> Void] = []
+
+    private func setHeldRecord(_ record: Bool?, owner: HubLifecycleToken? = nil) {
+        recordLock.lock()
+        heldRecord = record
+        heldOwner = record == nil ? nil : owner
+        let callbacks = record == true ? [] : settledCallbacks
+        if record != true { settledCallbacks.removeAll() }
+        recordLock.unlock()
+        callbacks.forEach { $0() }
+    }
+
+    private var currentRecord: Bool? {
+        recordLock.lock(); defer { recordLock.unlock() }
+        return heldRecord
+    }
+
+    var restartDutyOutstanding: Bool { currentRecord == true }
+
+    func whenRestartDutySettled(_ callback: @escaping () -> Void) {
+        recordLock.lock()
+        let outstanding = heldRecord == true
+        if outstanding { settledCallbacks.append(callback) }
+        recordLock.unlock()
+        if !outstanding { callback() }
+    }
+
+    private func recordAllows(_ owner: HubLifecycleToken) -> Bool {
+        recordLock.lock(); defer { recordLock.unlock() }
+        return heldRecord == nil || heldOwner == owner
+    }
+
+    func restartRecordHeld(by owner: HubLifecycleToken) -> Bool {
+        recordLock.lock(); defer { recordLock.unlock() }
+        return heldRecord != nil && heldOwner == owner
+    }
+
+    func releaseRestartRecord(owner: HubLifecycleToken) {
+        guard recordAllows(owner) else { return }
+        setHeldRecord(nil)
+    }
+
+    /// Runs the existing start only when the record shows the job loaded before the pause.
+    func recoverAfterPause(owner: HubLifecycleToken,
+                           completion: @escaping (Result<String, Error>) -> Void) {
+        guard recordAllows(owner) else { completion(.success("")); return }
+        guard currentRecord == true else {
+            setHeldRecord(nil)
+            completion(.success(""))
+            return
+        }
+        run(arguments: ["service", "start"], owner: owner) { [weak self] result in
+            self?.setHeldRecord(nil)
+            completion(result)
+        }
+    }
+
+    func deleteHubAndData(owner: HubLifecycleToken,
+                          completion: @escaping (Result<HubDataRemovalReport, Error>) -> Void) {
+        completion(.failure(Self.rejection))
+    }
+
+    /// A source-run development Hub never reconciles the production service file.
+    func reconcile(owner: HubLifecycleToken,
+                   ensure: @escaping () throws -> HubLaunchAgentChange,
+                   completion: @escaping (HubReconcileOutcome) -> Void) {
+        completion(.completed)
+    }
+
+    func run(arguments: [String], owner: HubLifecycleToken,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        guard recordAllows(owner) else {
+            completion(.failure(HubActionError.commandFailed(
+                HubL10n.text("hub.lifecycle.record_held_elsewhere",
+                             fallback: "Another Hub operation is holding the service. Nothing was changed."))))
+            return
+        }
+        let requested: HubServiceAction
         switch arguments.last {
-        case "start": action = .start
-        case "stop": action = .stop
-        case "restart": action = .restart
+        case "start": requested = .start
+        case "stop": requested = .stop
+        case "pause": requested = .pause
+        case "restart": requested = .restart
+        case "remove":
+            completion(.failure(Self.rejection))
+            return
         default:
             completion(.failure(HubActionError.commandFailed(HubL10n.text("hub.DevelopmentHubRuntime.472.142", fallback: "Unknown service action."))))
             return
         }
+        // Pause maps to the existing stop and keeps the loaded state its plan reads.
+        let action: HubServiceAction = requested == .pause ? .stop : requested
+        if requested == .stop { setHeldRecord(nil) }
         let journal = DevelopmentEventLog.shared(directory: configuration.logDirectory)
         let logAction: DevelopmentEventLog.Action = action == .start ? .start : action == .stop ? .stop : .restart
         let operation = UUID(); let started = DispatchTime.now().uptimeNanoseconds
         journal.record(kind: .control, action: logAction, outcome: .start, operation: operation)
         let originalCompletion = completion
-        let completion: (Result<String, Error>) -> Void = { result in
+        let completion: (Result<String, Error>) -> Void = { [weak self] result in
             journal.completion(kind: .control, action: logAction, operation: operation, started: started, result: result)
+            // An ordinary start or restart settles the held record, however it ended.
+            if requested == .start || requested == .restart { self?.setHeldRecord(nil) }
             originalCompletion(result)
         }
         if action == .stop {
@@ -752,7 +943,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling, HubLiv
                 completion(.failure(error))
                 return
             }
-            runLaunchPlan(action: action, completion: completion)
+            runLaunchPlan(action: action, owner: owner, recordsPause: requested == .pause, completion: completion)
             return
         }
         do {
@@ -772,7 +963,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling, HubLiv
                     completion(.failure(error))
                     return
                 }
-                self.runLaunchPlan(action: action, completion: completion)
+                self.runLaunchPlan(action: action, owner: owner, completion: completion)
             case let .failure(error):
                 completion(.failure(error))
             }
@@ -803,6 +994,8 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling, HubLiv
     }
 
     private func runLaunchPlan(action: HubServiceAction,
+                               owner: HubLifecycleToken,
+                               recordsPause: Bool = false,
                                completion: @escaping (Result<String, Error>) -> Void) {
         loadedState(validateStopTarget: action == .stop) { [weak self] state in
             guard let self else { return }
@@ -812,6 +1005,8 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling, HubLiv
             case .unloaded: loaded = false
             case let .unknown(error): completion(.failure(error)); return
             }
+            // A second pause keeps the first record: the duty follows the state before it.
+            if recordsPause, self.currentRecord == nil { self.setHeldRecord(loaded, owner: owner) }
             self.runCommands(Self.commandPlan(action: action,
                                               loaded: loaded,
                                               domain: self.domain,
@@ -874,7 +1069,7 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling, HubLiv
                             service: String,
                             plist: String) -> [[String]] {
         switch action {
-        case .stop: return loaded ? [["bootout", service]] : []
+        case .stop, .pause, .remove, .delete: return loaded ? [["bootout", service]] : []
         // launchd keeps the loaded job's environment after a plist rewrite.
         case .start:
             return loaded
@@ -894,24 +1089,11 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling, HubLiv
         let directory = try DevelopmentEventLog.validateDirectoryReadOnly(configuration.controlDirectory,
                                                                          allowOwnedGroupWritableAncestors: false)
         defer { close(directory) }
-        let temporary = ".launch-agent.\(UUID().uuidString).tmp"
-        let descriptor = openat(directory, temporary, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, mode_t(0o600))
-        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
-        defer { close(descriptor); _ = unlinkat(directory, temporary, 0) }
-        try data.withUnsafeBytes { raw in
-            var offset = 0
-            while offset < raw.count {
-                let count = write(descriptor, raw.baseAddress!.advanced(by: offset), raw.count - offset)
-                guard count > 0 else {
-                    if errno == EINTR { continue }
-                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-                }
-                offset += count
-            }
-        }
-        guard renameat(directory, temporary, directory, configuration.plist.lastPathComponent) == 0 else {
-            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-        }
+        try HubAtomicFile.replace(data,
+                                  inDirectory: directory,
+                                  named: configuration.plist.lastPathComponent,
+                                  temporaryName: { ".launch-agent.\(UUID().uuidString).tmp" },
+                                  durable: false)
         try configuration.validate(requireConfig: true)
     }
 
@@ -1151,9 +1333,10 @@ final class DevelopmentLaunchctlServiceController: HubServiceControlling, HubLiv
     }
 
     private func startupCleanupFailure(startupError: Error, cleanupError: Error) -> Error {
-        HubActionError.commandFailed(
-            HubL10n.format("hub.DevelopmentHubRuntime.852.187", fallback: "%1$@ The failed development LaunchAgent could not be unloaded: %2$@", arguments: [String(describing: startupError.localizedDescription), String(describing: Self.boundedDiagnostic(cleanupError.localizedDescription))])
-        )
+        // F7-2: the cleanup command may still be running; the message must not hide that.
+        HubActionError.keepingQuiescence(of: cleanupError, in: HubActionError.commandFailed(
+            HubL10n.format("hub.DevelopmentHubRuntime.852.187", fallback: "%1$@ The failed development LaunchAgent could not be unloaded: %2$@", arguments: [String(describing: startupError.localizedDescription), String(describing: Self.boundedDiagnostic(HubActionError.settingQuiescenceAside(cleanupError).localizedDescription))])
+        ))
     }
 
     private func startupFailure(lastFailure: String) -> Error {

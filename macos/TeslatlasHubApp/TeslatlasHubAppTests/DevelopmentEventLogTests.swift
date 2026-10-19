@@ -84,6 +84,36 @@ final class DevelopmentEventLogTests: XCTestCase {
         }
         XCTAssertTrue(outcomes.contains("failed")); XCTAssertTrue(outcomes.contains("timeout"))
     }
+    func testANotQuiescentFailureIsJournalledByItsUnderlyingError() throws {
+        let directory = try canonicalTemporaryDirectory().appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let quiescence = HubChildQuiescence()
+        quiescence.childMayRun()
+        defer { quiescence.childReaped() }
+        let journal = DevelopmentEventLog(directory: directory)
+        let cases: [(DevelopmentEventLog.Action, Error)] = [
+            (.migrate, HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence)),
+            (.doctor, HubActionError.commandNotQuiescent(HubActionError.commandExited(7, "x"), quiescence)),
+            (.status, HubActionError.commandNotQuiescent(HubActionError.commandFailed("x"), quiescence))
+        ]
+        for (action, error) in cases {
+            journal.completion(kind: .command, action: action, operation: UUID(),
+                               started: DispatchTime.now().uptimeNanoseconds, result: .failure(error))
+        }
+        XCTAssertTrue(journal.drain(timeout: 5))
+        var frames: [String: [String: Any]] = [:]
+        for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) where file.pathExtension == "jsonl" {
+            for line in try String(contentsOf: file, encoding: .utf8).split(separator: "\n") {
+                let frame = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+                frames[try XCTUnwrap(frame["action"] as? String)] = frame
+            }
+        }
+        XCTAssertEqual(frames["migrate"]?["outcome"] as? String, "timeout")
+        XCTAssertEqual(frames["doctor"]?["outcome"] as? String, "failed")
+        XCTAssertEqual(frames["doctor"]?["exit_code"] as? Int, 7)
+        XCTAssertEqual(frames["status"]?["outcome"] as? String, "failed")
+    }
     func testJournalRejectsSymlinkDestination() throws {
         let root = try canonicalTemporaryDirectory().appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])

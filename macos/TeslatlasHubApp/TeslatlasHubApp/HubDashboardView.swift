@@ -6,12 +6,16 @@ enum HubServiceTransition: Equatable {
     case starting
     case stopping
     case restarting
+    case removing
+    case deleting
 
     var title: String {
         switch self {
         case .starting: return HubL10n.text("hub.HubDashboardView.12.1336", fallback: "Starting Hub…")
         case .stopping: return HubL10n.text("hub.HubDashboardView.13.1337", fallback: "Stopping Hub…")
         case .restarting: return HubL10n.text("hub.HubDashboardView.14.1338", fallback: "Restarting Hub…")
+        case .removing: return HubL10n.text("hub.service.removing.title", fallback: "Removing background service…")
+        case .deleting: return HubL10n.text("hub.service.deleting.title", fallback: "Deleting Hub and data…")
         }
     }
 
@@ -20,6 +24,8 @@ enum HubServiceTransition: Equatable {
         case .starting: return HubL10n.text("hub.HubDashboardView.20.1339", fallback: "Preparing vehicle data collection.")
         case .stopping: return HubL10n.text("hub.HubDashboardView.21.1340", fallback: "Finishing current work and stopping safely.")
         case .restarting: return HubL10n.text("hub.HubDashboardView.22.1341", fallback: "Restarting the background service.")
+        case .removing: return HubL10n.text("hub.service.removing.subtitle", fallback: "Stopping the background service, then removing it.")
+        case .deleting: return HubL10n.text("hub.service.deleting.subtitle", fallback: "Stopping the background service, then deleting the Hub's files.")
         }
     }
 
@@ -28,6 +34,8 @@ enum HubServiceTransition: Equatable {
         case .starting: return HubL10n.text("hub.HubDashboardView.28.1342", fallback: "Starting…")
         case .stopping: return HubL10n.text("hub.HubDashboardView.29.1343", fallback: "Stopping…")
         case .restarting: return HubL10n.text("hub.HubDashboardView.30.1344", fallback: "Restarting…")
+        case .removing: return HubL10n.text("hub.service.removing.service", fallback: "Removing…")
+        case .deleting: return HubL10n.text("hub.service.deleting.service", fallback: "Deleting…")
         }
     }
 
@@ -36,6 +44,8 @@ enum HubServiceTransition: Equatable {
         case .starting: return HubL10n.text("hub.HubDashboardView.36.1345", fallback: "Hub started.")
         case .stopping: return HubL10n.text("hub.HubDashboardView.37.1346", fallback: "Hub stopped.")
         case .restarting: return HubL10n.text("hub.HubDashboardView.38.1347", fallback: "Hub restarted.")
+        case .removing: return HubL10n.text("hub.service.removing.done", fallback: "Background service removed.")
+        case .deleting: return HubL10n.text("hub.service.deleting.done", fallback: "Hub and data deleted.")
         }
     }
 
@@ -44,6 +54,8 @@ enum HubServiceTransition: Equatable {
         case .starting: return "play.circle"
         case .stopping: return "pause.circle"
         case .restarting: return "arrow.clockwise.circle"
+        case .removing: return "minus.circle"
+        case .deleting: return "trash.circle"
         }
     }
 }

@@ -142,7 +142,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
 
     func testStaleSSHSecretCleanupAdmitsOnlyOwnedUUIDDirectories() throws {
         let manager = FileManager.default
-        let root = manager.temporaryDirectory
+        let root = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-cleanup-test-\(UUID().uuidString)", isDirectory: true)
         let eligible = root.appendingPathComponent(
             "th-\(UUID().uuidString)", isDirectory: true
@@ -171,7 +171,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
 
     func testStaleSSHSecretCleanupPreservesHeldOwnerAndRemovesReleasedOwner() throws {
         let manager = FileManager.default
-        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let root = HubTestScratch.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try manager.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? manager.removeItem(at: root) }
         let owner = try TeslaMateImportDirectoryOwner.create(in: root)
@@ -187,7 +187,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
 
     func testStaleSSHSecretCleanupExcludesAnotherProcessesOwnerLock() throws {
         let manager = FileManager.default
-        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let root = HubTestScratch.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try manager.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? manager.removeItem(at: root) }
         let owner = try TeslaMateImportDirectoryOwner.create(in: root)
@@ -228,7 +228,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
 
     func testStaleSSHSecretCleanupRejectsSymlinkOwnerLock() throws {
         let manager = FileManager.default
-        let root = manager.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let root = HubTestScratch.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let directory = root.appendingPathComponent("th-\(UUID().uuidString)", isDirectory: true)
         try manager.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: root) }
@@ -242,7 +242,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testStaleSSHSecretCleanupRecordsAnUnavailableTemporaryRoot() {
-        let missingRoot = FileManager.default.temporaryDirectory
+        let missingRoot = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-missing-cleanup-\(UUID().uuidString)",
                                     isDirectory: true)
 
@@ -295,7 +295,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testResumedMigrationHandoverCannotClose() throws {
-        let home = FileManager.default.temporaryDirectory
+        let home = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-handover-close-\(UUID().uuidString)",
                                     isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -320,7 +320,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testResumedHistoryOnlyHandoverUsesOfflineAcknowledgement() throws {
-        let home = FileManager.default.temporaryDirectory
+        let home = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-history-resume-\(UUID().uuidString)",
                                     isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
@@ -451,14 +451,14 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testAppDiagnosticsPersistBoundedShareSafeEvents() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-log-test-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("app.log")
         let log = HubAppLog(fileURL: file)
         log.record("ssh.failed", category: "teslamate_import", level: "ERROR", fields: [
             "password": "secret-value",
-            "path": NSHomeDirectory() + "/.ssh/id_rsa"
+            "path": HubTestScratch.realHomePath + "/.ssh/id_rsa"
         ])
 
         let text = log.recentText()
@@ -478,7 +478,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testSavedSupportReportsAreOwnerOnly() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-report-test-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
@@ -495,7 +495,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testSavedSupportReportsRefuseSymlinksAndFIFOs() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-report-safety-test-\(UUID().uuidString)",
                                     isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -531,12 +531,13 @@ final class OnboardingWindowControllerTests: XCTestCase {
             processIdentifier: 42
         )
 
-        XCTAssertEqual(testURL.path, "/private/var/tmp/TeslatlasHubTests-42/app.log")
+        // F6-1: under XCTest the host writes inside the one folder the test scripts clean, one folder per host process.
+        XCTAssertEqual(testURL.path, "/private/var/tmp/teslatlas-hub-tests/host-42/app.log")
         XCTAssertEqual(productionURL.path, "/Users/example/Library/Logs/Teslatlas Hub/app.log")
     }
 
     func testAppDiagnosticsBoundLargeEventsAndRotateWithoutReadingAnUnboundedFile() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-log-bound-test-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("app.log")
@@ -556,7 +557,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testAppDiagnosticsRefuseAReplacedSymlink() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-log-link-test-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
@@ -573,7 +574,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testAppDiagnosticsRefuseASymlinkedDirectory() throws {
-        let root = FileManager.default.temporaryDirectory
+        let root = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-log-directory-test-\(UUID().uuidString)",
                                     isDirectory: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -592,7 +593,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testAppAndServiceDiagnosticsRejectAFIFOWithoutBlocking() throws {
-        let directory = FileManager.default.temporaryDirectory
+        let directory = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-log-fifo-test-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
@@ -720,7 +721,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         dashboard.detailsButton.performClick(nil)
         XCTAssertNotNil(dashboard.detailsWindow)
         let detailsMutations = buttons(in: dashboard.window?.contentView).filter {
-            ["Update Service…", "Uninstall Hub…"].contains($0.title)
+            ["hub.service.start-stop", "hub.service.restart"].contains($0.identifier?.rawValue)
         }
         XCTAssertEqual(detailsMutations.count, 2)
         XCTAssertTrue(detailsMutations.allSatisfy(\.isEnabled))
@@ -758,11 +759,137 @@ final class OnboardingWindowControllerTests: XCTestCase {
         wait(for: [refreshed], timeout: 1)
     }
 
-    func testPermanentDataDeletionConfirmationDefaultsToCancel() {
-        let alert = ServiceDetailsWindowController.deleteDataConfirmation()
-        XCTAssertEqual(alert.buttons.map(\.title), ["Cancel", "Delete Data and Uninstall"])
-        XCTAssertEqual(alert.buttons[0].keyEquivalent, "\r")
-        XCTAssertEqual(alert.buttons[1].keyEquivalent, "")
+    func testDeleteHubAndDataConfirmationsDefaultToCancel() {
+        let first = ServiceDetailsWindowController.deleteHubAndDataExplanation()
+        XCTAssertEqual(first.messageText, "Delete Teslatlas Hub and all its data?")
+        XCTAssertEqual(first.buttons.map(\.title), ["Cancel", "Continue…"])
+        XCTAssertEqual(first.buttons[0].keyEquivalent, "\r")
+        XCTAssertEqual(first.buttons[1].keyEquivalent, "")
+        XCTAssertTrue(first.informativeText.contains("The app itself stays. Move it to the Trash afterwards."))
+        XCTAssertTrue(first.informativeText.contains("Backups and exports saved outside the Hub folder are not touched."))
+
+        let second = ServiceDetailsWindowController.deleteDataConfirmation()
+        XCTAssertEqual(second.messageText, "Permanently delete Hub data?")
+        XCTAssertEqual(second.informativeText, "This removes the Hub database and configuration. This cannot be undone.")
+        XCTAssertEqual(second.buttons.map(\.title), ["Cancel", "Delete Permanently"])
+        XCTAssertEqual(second.buttons[0].keyEquivalent, "\r")
+        XCTAssertEqual(second.buttons[1].keyEquivalent, "")
+    }
+
+    func testDeleteFinalMessageHasOneQuitButtonCallingRevealAndTerminate() throws {
+        let harness = try DeleteHarness(testCase: self)
+        defer { harness.tearDown() }
+        harness.service.deleteResult = .success(HubDataRemovalReport(deleted: ["D1"], kept: [], warnings: []))
+        harness.answers = [.alertSecondButtonReturn, .alertSecondButtonReturn, .alertFirstButtonReturn]
+        let terminated = expectation(description: "terminate called")
+        harness.onTerminate = { terminated.fulfill() }
+
+        harness.pressDelete()
+        wait(for: [terminated], timeout: 3)
+
+        XCTAssertEqual(harness.alerts.map(\.messageText),
+                       ["Delete Teslatlas Hub and all its data?", "Permanently delete Hub data?",
+                        "Teslatlas Hub has been deleted"])
+        let final = try XCTUnwrap(harness.alerts.last)
+        XCTAssertEqual(final.buttons.map(\.title), ["Quit"])
+        XCTAssertTrue(final.informativeText.hasPrefix("The background service, the Hub's data, configuration and logs"))
+        XCTAssertFalse(final.informativeText.contains("could not be deleted"))
+        XCTAssertEqual(harness.revealed, [Bundle.main.bundleURL])
+        XCTAssertEqual(harness.terminateCalls, 1)
+        XCTAssertTrue(harness.controller.hubDeletionCompleted)
+    }
+
+    func testDeleteFinalMessageNamesKeptItemsOlderInstallerAndFinalEnable() {
+        let report = HubDataRemovalReport(
+            deleted: ["D1"],
+            kept: [HubDataRemovalKept(path: "~/Library/Application Support/Teslatlas Hub/data", reason: "is shared with other users")],
+            warnings: [HubDataRemovalReport.finalEnableFailedWarning])
+        let alert = MainWindowController.deleteFinalMessage(report: report, olderInstallerPresent: true)
+        XCTAssertEqual(alert.buttons.map(\.title), ["Quit"])
+        XCTAssertEqual(alert.messageText, "Teslatlas Hub was not fully deleted", "retained items are never called a deletion")
+        XCTAssertFalse(alert.informativeText.contains("were removed from this Mac"))
+        XCTAssertTrue(alert.informativeText.contains("These items could not be deleted and are still on this Mac: ~/Library/Application Support/Teslatlas Hub/data (is shared with other users). Delete them in Finder."))
+        XCTAssertTrue(alert.informativeText.contains("Files from an older installer remain in /Library/Application Support/Teslatlas Hub."))
+        XCTAssertTrue(alert.informativeText.contains("macOS still lists the background service as turned off."))
+        let plain = MainWindowController.deleteFinalMessage(report: HubDataRemovalReport(), olderInstallerPresent: false)
+        XCTAssertFalse(plain.informativeText.contains("older installer"))
+        XCTAssertFalse(plain.informativeText.contains("turned off"))
+    }
+
+    func testDeleteRefusalLeavesAppRunningAndEndsTransition() throws {
+        let harness = try DeleteHarness(testCase: self)
+        defer { harness.tearDown() }
+        harness.service.deleteResult = .failure(HubActionError.commandFailed("Nothing was changed, because it is a link."))
+        harness.answers = [.alertSecondButtonReturn, .alertSecondButtonReturn]
+        let errorShown = expectation(description: "refusal shown")
+        harness.onError = { errorShown.fulfill() }
+
+        harness.pressDelete()
+        wait(for: [errorShown], timeout: 3)
+
+        XCTAssertEqual(harness.terminateCalls, 0, "a refusal must leave the app running")
+        XCTAssertTrue(harness.revealed.isEmpty)
+        XCTAssertFalse(harness.controller.hubDeletionStarted)
+        XCTAssertFalse(harness.controller.hubDeletionCompleted)
+        XCTAssertFalse(harness.window.operationPreventsQuit, "the transition ended")
+        XCTAssertFalse(HubStatusProcessLifecycle.shared.isPaused, "status reads resumed")
+        XCTAssertFalse(HubWindowRestoration.isSuppressing)
+    }
+
+    func testDeleteIsRefusedWhileADiagnosticsCustodyIsHeldAnywhere() throws {
+        // The Logs page's Run Diagnostics holds custody without the Diagnostics page's
+        // pending flag: the Delete gate must see the custody itself.
+        let harness = try DeleteHarness(testCase: self)
+        defer { harness.tearDown() }
+        harness.startHeldDiagnostics()
+        XCTAssertTrue(harness.controller.diagnosticsPreventQuit, "custody is held at its pause")
+        harness.answers = [.alertSecondButtonReturn, .alertSecondButtonReturn]
+
+        harness.pressDelete()
+
+        XCTAssertTrue(harness.alerts.isEmpty, "no confirmation is offered")
+        XCTAssertEqual(harness.service.deleteCalls, 0)
+        XCTAssertFalse(harness.controller.hubDeletionStarted)
+        XCTAssertFalse(HubStatusProcessLifecycle.shared.isPaused)
+        XCTAssertEqual(harness.terminateCalls, 0)
+
+        // The window's own gate refuses too, without the details page in between.
+        harness.window.makeServiceLifecycleActions().deleteHubAndData()
+        XCTAssertTrue(harness.alerts.isEmpty, "the Delete gate itself sees the custody")
+        XCTAssertEqual(harness.service.deleteCalls, 0)
+        XCTAssertFalse(harness.controller.hubDeletionStarted)
+        harness.finishHeldDiagnostics()
+    }
+
+    func testServiceDetailsMutationsAreRefusedWhileADiagnosticsCustodyIsHeld() throws {
+        let harness = try DeleteHarness(testCase: self)
+        defer { harness.tearDown() }
+        harness.startHeldDiagnostics()
+        XCTAssertTrue(harness.controller.diagnosticsPreventQuit)
+        let commandsBefore = harness.service.runArguments
+        harness.answers = [.alertSecondButtonReturn, .alertSecondButtonReturn]
+
+        for identifier in ["hub.service.start-stop", "hub.service.restart", "hub.service.remove"] {
+            harness.press(identifier)
+        }
+
+        XCTAssertTrue(harness.alerts.isEmpty, "no confirmation is offered")
+        XCTAssertEqual(harness.service.runArguments, commandsBefore, "no service command was issued")
+        harness.finishHeldDiagnostics()
+    }
+
+    func testCancelAtEitherDeleteConfirmationCallsNothing() throws {
+        for answers: [NSApplication.ModalResponse] in [[.alertFirstButtonReturn],
+                                                       [.alertSecondButtonReturn, .alertFirstButtonReturn]] {
+            let harness = try DeleteHarness(testCase: self)
+            defer { harness.tearDown() }
+            harness.answers = answers
+            harness.pressDelete()
+            XCTAssertEqual(harness.alerts.count, answers.count)
+            XCTAssertEqual(harness.service.deleteCalls, 0)
+            XCTAssertFalse(harness.controller.hubDeletionStarted)
+            XCTAssertFalse(harness.window.operationPreventsQuit)
+        }
     }
 
     func testChoosePageShowsMigrationCopyAndIconWhenSelected() throws {
@@ -1562,7 +1689,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
     }
 
     func testCommandLRedactsServiceSecretsBeforeDisplay() throws {
-        let home = FileManager.default.temporaryDirectory
+        let home = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-visible-log-test-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let folder = home.appendingPathComponent("Library/Logs/Teslatlas Hub", isDirectory: true)
@@ -1598,9 +1725,8 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let migration = OnboardingWindowController(controller: controller,
                                                     previewRoute: "migration",
                                                     onComplete: { _ in })
-        XCTAssertEqual(dashboard.window?.contentLayoutRect.size,
-                       NSSize(width: HubMetrics.windowSize.width,
-                              height: HubMetrics.windowSize.height + 32))
+        // The frame is the window's native size (see testMainWindowBuildsInPreviewMode).
+        assertNativeMainWindowFrame(dashboard.window?.frame.size)
         XCTAssertEqual(onboarding.window?.contentLayoutRect.size, HubMetrics.windowSize)
 
         let destination: URL
@@ -1632,7 +1758,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             }
             directory.deleteLastPathComponent()
         }
-        return FileManager.default.temporaryDirectory
+        return HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-design-qa", isDirectory: true)
     }
 
@@ -1699,5 +1825,169 @@ final class OnboardingWindowControllerTests: XCTestCase {
         guard let view else { return [] }
         return (view as? NSTextView).map { [$0] }
             ?? view.subviews.flatMap { textViews(in: $0) }
+    }
+}
+
+
+/// A main window over a production-mode controller with fake service and recording seams:
+/// no real launchctl, home, preferences, Finder or termination.
+final class DeleteHarness {
+    let service = DeleteScriptedService()
+    let controller: HubController
+    let window: MainWindowController
+    let home: URL
+    var answers: [NSApplication.ModalResponse] = []
+    private(set) var alerts: [NSAlert] = []
+    private(set) var revealed: [URL] = []
+    private(set) var terminateCalls = 0
+    var onTerminate: (() -> Void)?
+    var onError: (() -> Void)?
+    private let settled: XCTestExpectation
+
+    init(testCase: XCTestCase) throws {
+        home = HubTestScratch.directory
+            .appendingPathComponent("teslatlas-delete-harness-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        settled = testCase.expectation(description: "initial refresh")
+        controller = HubController(environment: [:],
+                                   commandRunner: DeleteHarnessRunner(),
+                                   serviceRunner: service,
+                                   launchAgent: nil,
+                                   dataRemover: nil,
+                                   homeDirectory: home,
+                                   serviceInstalledOverride: true)
+        var weakSelf: DeleteHarness?
+        window = MainWindowController(
+            controller: controller,
+            serviceTransitionTimeout: 5,
+            serviceTransitionPollInterval: 0.05,
+            errorPresenter: { _ in weakSelf?.onError?() },
+            confirmationPresenter: { alert, _ in
+                guard let harness = weakSelf else { return .alertFirstButtonReturn }
+                harness.alerts.append(alert)
+                return harness.answers.isEmpty ? .alertFirstButtonReturn : harness.answers.removeFirst()
+            },
+            revealApp: { weakSelf?.revealed.append($0) },
+            terminateApp: { weakSelf?.terminateCalls += 1; weakSelf?.onTerminate?() },
+            olderInstallerPresent: { false },
+            onInitialRefresh: { _ in weakSelf?.settled.fulfill() }
+        )
+        weakSelf = self
+        testCase.wait(for: [settled], timeout: 3)
+        window.showEmbeddedServiceDetails()
+    }
+
+    func pressDelete() { press("hub.service.delete-data") }
+
+    func press(_ identifier: String) {
+        let button = descendants(window.window?.contentView).compactMap { $0 as? NSButton }
+            .first { $0.identifier?.rawValue == identifier }
+        button?.performClick(nil)
+    }
+
+    /// A diagnostics run held at its Pause (the Logs page's call). Its completion is
+    /// observable, and `tearDown` releases it and waits for the final settlement, so the
+    /// harness never returns while a custody or a child is still alive.
+    private(set) var heldDiagnosticsFinished = false
+    private var heldDiagnosticsStarted = false
+
+    func startHeldDiagnostics() {
+        service.loaded = .loaded
+        service.holdPause = true
+        heldDiagnosticsStarted = true
+        controller.runFullDiagnostics { [weak self] _ in self?.heldDiagnosticsFinished = true }
+    }
+
+    /// Releases every held step and waits (watchdog only) for the final completion; then
+    /// asserts nothing is owned and no step is held.
+    func finishHeldDiagnostics(file: StaticString = #filePath, line: UInt = #line) {
+        guard heldDiagnosticsStarted else { return }
+        let limit = Date().addingTimeInterval(10)
+        while !heldDiagnosticsFinished, Date() < limit {
+            service.releaseHeld()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTAssertTrue(heldDiagnosticsFinished, "the diagnostics run settled", file: file, line: line)
+        spinUntil(2) { self.controller.lifecycleCapabilities.owner == nil }
+        XCTAssertNil(controller.lifecycleCapabilities.owner, "no owner remains", file: file, line: line)
+        XCTAssertNil(service.heldPause, file: file, line: line)
+        XCTAssertNil(service.heldStart, file: file, line: line)
+        heldDiagnosticsStarted = false
+    }
+
+    func tearDown() {
+        finishHeldDiagnostics()
+        HubWindowRestoration.endSuppressing()
+        HubStatusProcessLifecycle.shared.resume()
+        try? FileManager.default.removeItem(at: home)
+    }
+
+    private func descendants(_ view: NSView?) -> [NSView] {
+        guard let view else { return [] }
+        return [view] + view.subviews.flatMap { descendants($0) }
+    }
+}
+
+final class DeleteHarnessRunner: HubCommandRunning {
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        completion(.failure(HubActionError.commandFailed("no status in this harness")))
+    }
+}
+
+final class DeleteScriptedService: HubServiceControlling {
+    var deleteResult: Result<HubDataRemovalReport, Error> = .success(HubDataRemovalReport())
+    private(set) var deleteCalls = 0
+    private(set) var recoverCalls = 0
+    private(set) var releaseCalls = 0
+    var loaded: HubServiceLoadState = .unloaded
+    /// Holds the pause's completion (a diagnostics custody window left open).
+    var holdPause = false
+    private(set) var heldPause: ((Result<String, Error>) -> Void)?
+    func releasePause() {
+        let held = heldPause
+        heldPause = nil
+        held?(.success(""))
+    }
+    /// Holds the ordinary resume: a diagnostics run whose last step completes late.
+    var holdStart = false
+    private(set) var heldStart: ((Result<String, Error>) -> Void)?
+    func releaseStart() {
+        let held = heldStart
+        heldStart = nil
+        held?(.success(""))
+    }
+    /// Releases whatever is held; true when something was.
+    @discardableResult
+    func releaseHeld() -> Bool {
+        if heldPause != nil { releasePause(); return true }
+        if heldStart != nil { releaseStart(); return true }
+        return false
+    }
+    var restartDutyOutstanding: Bool { false }
+    func whenRestartDutySettled(_ callback: @escaping () -> Void) { callback() }
+    private(set) var runArguments: [[String]] = []
+    func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
+        runArguments.append(arguments)
+        if holdPause, arguments.last == "pause" { heldPause = completion; return }
+        if holdStart, arguments.last == "start" { heldStart = completion; return }
+        completion(.success(""))
+    }
+    func run(arguments: [String], owner: HubLifecycleToken,
+             completion: @escaping (Result<String, Error>) -> Void) {
+        run(arguments: arguments, completion: completion)
+    }
+    func restartRecordHeld(by owner: HubLifecycleToken) -> Bool { false }
+    func loadedState(completion: @escaping (HubServiceLoadState) -> Void) { completion(loaded) }
+    func recoverAfterPause(owner: HubLifecycleToken, completion: @escaping (Result<String, Error>) -> Void) {
+        recoverCalls += 1
+        completion(.success(""))
+    }
+    func releaseRestartRecord(owner: HubLifecycleToken) { releaseCalls += 1 }
+
+    func reconcile(owner: HubLifecycleToken, ensure: @escaping () throws -> HubLaunchAgentChange,
+                   completion: @escaping (HubReconcileOutcome) -> Void) { completion(.completed) }
+    func deleteHubAndData(owner: HubLifecycleToken, completion: @escaping (Result<HubDataRemovalReport, Error>) -> Void) {
+        deleteCalls += 1
+        completion(deleteResult)
     }
 }

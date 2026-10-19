@@ -11,6 +11,22 @@ struct HubServiceLifecycleActions {
     let start: () -> Void
     let stop: () -> Void
     let restart: () -> Void
+    /// Remove Background Service: the non-destructive choice (data and logs stay).
+    let remove: () -> Void
+    /// Delete Hub and Data: the owner's confirmed, user-level deletion.
+    let deleteHubAndData: () -> Void
+
+    init(start: @escaping () -> Void,
+         stop: @escaping () -> Void,
+         restart: @escaping () -> Void,
+         remove: @escaping () -> Void = {},
+         deleteHubAndData: @escaping () -> Void = {}) {
+        self.start = start
+        self.stop = stop
+        self.restart = restart
+        self.remove = remove
+        self.deleteHubAndData = deleteHubAndData
+    }
 }
 
 final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate {
@@ -19,8 +35,6 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     private let controller: HubController
     private let lifecycleActions: HubServiceLifecycleActions?
     private let mutationAllowed: () -> Bool
-    private let onMutationStateChanged: (Bool) -> Void
-    private let onChanged: () -> Void
     private let onDismiss: () -> Void
     private let errorPresenter: (Error) -> Void
     private let confirmationPresenter: ConfirmationPresenter
@@ -33,33 +47,16 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     private let pendingDetail = NSTextField(wrappingLabelWithString: "")
     private let startStopButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.96.1352", fallback: "Stop Hub…"), target: nil, action: nil)
     private let restartButton = HubActionButton(title: HubL10n.text("hub.HubDashboardView.97.1353", fallback: "Restart Hub"), target: nil, action: nil)
-    private let updateButton = HubActionButton(title: HubL10n.text("hub.ServiceDetailsWindowController.36.2167", fallback: "Update Service…"), target: nil, action: nil)
-    private let uninstallButton = HubActionButton(title: HubL10n.text("hub.ServiceDetailsWindowController.37.2168", fallback: "Uninstall Hub…"), target: nil, action: nil)
+    private let removeButton = HubActionButton(title: HubL10n.text("hub.service.remove.button", fallback: "Remove Background Service…"), target: nil, action: nil)
     private let deleteDataButton = HubActionButton(title: HubL10n.text("hub.ServiceDetailsWindowController.38.2169", fallback: "Delete Hub and Data…"), target: nil, action: nil)
     private var mutationsEnabled = true
-    private var mutationPending = false
     private var embeddedBody: NSView?
     private var serviceHealth: HubHealth
-
-    private enum MutationKind {
-        case update
-        case uninstall
-
-        var title: String { self == .update ? HubL10n.text("hub.ServiceDetailsWindowController.48.2170", fallback: "Updating Hub…") : HubL10n.text("hub.ServiceDetailsWindowController.48.2171", fallback: "Uninstalling Hub…") }
-        var detail: String {
-            self == .update
-                ? HubL10n.text("hub.ServiceDetailsWindowController.51.2172", fallback: "Installing the current bundled service on this Mac.")
-                : HubL10n.text("hub.ServiceDetailsWindowController.52.2173", fallback: "Stopping and removing the local Hub service.")
-        }
-        var completion: String { self == .update ? HubL10n.text("hub.ServiceDetailsWindowController.54.2174", fallback: "Hub update completed.") : HubL10n.text("hub.ServiceDetailsWindowController.54.2175", fallback: "Hub uninstall completed.") }
-    }
 
     init(snapshot: HubSnapshot,
          controller: HubController,
          lifecycleActions: HubServiceLifecycleActions? = nil,
          mutationAllowed: @escaping () -> Bool = { true },
-         onMutationStateChanged: @escaping (Bool) -> Void = { _ in },
-         onChanged: @escaping () -> Void,
          onDismiss: @escaping () -> Void = {},
          embedded: Bool = false,
          errorPresenter: @escaping (Error) -> Void = HubUIPresentation.presentError,
@@ -69,8 +66,6 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         self.controller = controller
         self.lifecycleActions = lifecycleActions
         self.mutationAllowed = mutationAllowed
-        self.onMutationStateChanged = onMutationStateChanged
-        self.onChanged = onChanged
         self.onDismiss = onDismiss
         self.errorPresenter = errorPresenter
         self.confirmationPresenter = confirmationPresenter
@@ -146,8 +141,6 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         updateMutationButtons()
     }
 
-    var mutationInProgress: Bool { mutationPending }
-
     func setServiceTransition(_ transition: HubServiceTransition?) {
         guard let transition else {
             pendingProgress.stopAnimation(nil)
@@ -186,7 +179,10 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         configureButton(restartButton, symbol: "arrow.clockwise", style: .neutral,
                         action: #selector(restartPressed))
         restartButton.identifier = NSUserInterfaceItemIdentifier("hub.service.restart")
-        let lifecycleButtons = NSStackView(views: [startStopButton, restartButton])
+        configureButton(removeButton, symbol: nil, style: .neutral,
+                        action: #selector(removePressed))
+        removeButton.identifier = NSUserInterfaceItemIdentifier("hub.service.remove")
+        let lifecycleButtons = NSStackView(views: [startStopButton, restartButton, removeButton])
         lifecycleButtons.alignment = .centerY
         lifecycleButtons.spacing = 8
         let lifecycleContents = NSStackView(views: [lifecycleTitle, lifecycleDetail, lifecycleButtons])
@@ -234,17 +230,18 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         ])
         pendingSurface.isHidden = true
 
-        configureButton(uninstallButton, symbol: nil, style: .destructive,
-                        action: #selector(uninstallPressed))
-        let dangerTitle = NSTextField(labelWithString: HubL10n.text("hub.ServiceDetailsWindowController.239.2201", fallback: "Uninstall Hub"))
+        configureButton(deleteDataButton, symbol: "trash", style: .flatDanger,
+                        action: #selector(deleteDataPressed))
+        deleteDataButton.identifier = NSUserInterfaceItemIdentifier("hub.service.delete-data")
+        let dangerTitle = NSTextField(labelWithString: HubL10n.text("hub.service.delete.title", fallback: "Delete Hub and Data"))
         dangerTitle.font = .systemFont(ofSize: 13, weight: .semibold)
         dangerTitle.textColor = HubPalette.foreground
         let dangerDetail = NSTextField(wrappingLabelWithString:
-            HubL10n.text("hub.ServiceDetailsWindowController.243.2202", fallback: "Stops the service and removes it from this Mac. Your collected data folder is left in place unless you delete it manually."))
+            HubL10n.text("hub.service.delete.detail", fallback: "Stops the background service and permanently deletes the Hub's data, configuration, sign-in details and logs from this Mac. The app itself stays until you move it to the Trash."))
         dangerDetail.font = .systemFont(ofSize: 12.5)
         dangerDetail.textColor = HubPalette.mutedForeground
         dangerDetail.maximumNumberOfLines = 0
-        let dangerContents = NSStackView(views: [dangerTitle, dangerDetail, uninstallButton])
+        let dangerContents = NSStackView(views: [dangerTitle, dangerDetail, deleteDataButton])
         dangerContents.orientation = .vertical
         dangerContents.alignment = .leading
         dangerContents.spacing = 0
@@ -262,18 +259,9 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         ])
         dangerDetail.widthAnchor.constraint(equalTo: dangerContents.widthAnchor).isActive = true
 
-        configureButton(updateButton, symbol: "arrow.down.circle", style: .flatAccent,
-                        action: #selector(updateServicePressed))
-        configureButton(deleteDataButton, symbol: "trash", style: .flatDanger,
-                        action: #selector(deleteDataPressed))
-        deleteDataButton.identifier = NSUserInterfaceItemIdentifier("hub.service.delete-data")
-        let maintenance = NSStackView(views: [updateButton, deleteDataButton])
-        maintenance.orientation = .vertical
-        maintenance.alignment = .leading
-        maintenance.spacing = 4
-        dangerCard.isHidden = !controller.allowsServiceInstallation
-        maintenance.isHidden = !controller.allowsServiceInstallation
-        let body = NSStackView(views: [detailsCard, pendingSurface, lifecycleCard, dangerCard, maintenance])
+        dangerCard.isHidden = !controller.allowsServiceRemoval
+        removeButton.isHidden = !controller.allowsServiceRemoval
+        let body = NSStackView(views: [detailsCard, pendingSurface, lifecycleCard, dangerCard])
         body.orientation = .vertical
         body.alignment = .leading
         body.spacing = 16
@@ -322,8 +310,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard !mutationPending else { NSSound.beep(); return false }
-        return true
+        true
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -331,7 +318,7 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     }
 
     @objc private func startStopPressed() {
-        guard mutationsEnabled, !mutationPending, mutationAllowed(), let lifecycleActions else {
+        guard mutationsEnabled, mutationAllowed(), let lifecycleActions else {
             NSSound.beep()
             return
         }
@@ -339,91 +326,33 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     }
 
     @objc private func restartPressed() {
-        guard mutationsEnabled, !mutationPending, mutationAllowed(), let lifecycleActions else {
+        guard mutationsEnabled, mutationAllowed(), let lifecycleActions else {
             NSSound.beep()
             return
         }
         lifecycleActions.restart()
     }
 
-    @objc private func updateServicePressed() {
-        guard beginMutation(.update) else { return }
-        controller.installService { [self] result in
-            switch result {
-            case .success:
-                endMutation(.update, error: nil)
-                onChanged()
-            case let .failure(error):
-                endMutation(.update, error: error)
-                errorPresenter(error)
-            }
-        }
-    }
-
-    @objc private func uninstallPressed() {
-        let choice = NSAlert()
-        choice.alertStyle = .warning
-        choice.messageText = HubL10n.text("hub.ServiceDetailsWindowController.366.2208", fallback: "Uninstall Teslatlas Hub?")
-        choice.informativeText = HubL10n.text("hub.ServiceDetailsWindowController.367.2209", fallback: "The background service and logs will be removed. Your Hub database and configuration are preserved by default.")
-        choice.addButton(withTitle: HubL10n.text("hub.ServiceDetailsWindowController.368.2210", fallback: "Uninstall, Keep Data"))
-        choice.addButton(withTitle: HubL10n.text("hub.ServiceDetailsWindowController.369.2211", fallback: "Delete Data…"))
-        choice.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
-        let response = confirmationPresenter(choice, .alertThirdButtonReturn)
-        guard response != .alertThirdButtonReturn else { return }
-
-        let deleteData = response == .alertSecondButtonReturn
-        if deleteData {
-            guard confirmationPresenter(Self.deleteDataConfirmation(), .alertFirstButtonReturn)
-                == .alertSecondButtonReturn else { return }
-        }
-        uninstall(deleteData: deleteData)
-    }
-
-    @objc private func deleteDataPressed() {
-        guard confirmationPresenter(Self.deleteDataConfirmation(), .alertSecondButtonReturn)
-            == .alertSecondButtonReturn else { return }
-        uninstall(deleteData: true)
-    }
-
-    private func uninstall(deleteData: Bool) {
-        guard beginMutation(.uninstall) else { return }
-        controller.uninstallService(deleteData: deleteData) { [self] result in
-            switch result {
-            case .success:
-                endMutation(.uninstall, error: nil)
-                onChanged()
-                onDismiss()
-            case let .failure(error):
-                endMutation(.uninstall, error: error)
-                errorPresenter(error)
-            }
-        }
-    }
-
-    private func beginMutation(_ kind: MutationKind) -> Bool {
-        guard mutationsEnabled, !mutationPending, mutationAllowed() else {
+    /// Asks first (Cancel is the default); then the lifecycle path, with the same
+    /// pending surface and gate as Stop.
+    @objc private func removePressed() {
+        guard mutationsEnabled, mutationAllowed(), let lifecycleActions else {
             NSSound.beep()
-            return false
+            return
         }
-        mutationPending = true
-        showPending(title: kind.title, detail: kind.detail)
-        HubAccessibility.announce(kind.title, from: pendingSurface)
-        updateMutationButtons()
-        onMutationStateChanged(true)
-        return true
+        guard confirmationPresenter(Self.removeConfirmation(), .alertFirstButtonReturn)
+            == .alertSecondButtonReturn else { return }
+        lifecycleActions.remove()
     }
 
-    private func endMutation(_ kind: MutationKind, error: Error?) {
-        guard mutationPending else { return }
-        mutationPending = false
-        let operation = kind.title.replacingOccurrences(of: "…", with: "")
-        let announcement = error.map { HubL10n.format("hub.MainWindowController.800.1821", fallback: "%1$@ failed: %2$@", arguments: [String(describing: operation), String(describing: $0.localizedDescription)]) }
-            ?? kind.completion
-        HubAccessibility.announce(announcement, from: pendingSurface)
-        pendingProgress.stopAnimation(nil)
-        pendingSurface.isHidden = true
-        onMutationStateChanged(false)
-        updateMutationButtons()
+    /// The window only forwards: the main window owns the two confirmations, the gate
+    /// and the transition (section 2.3.10.4).
+    @objc private func deleteDataPressed() {
+        guard mutationsEnabled, mutationAllowed(), let lifecycleActions else {
+            NSSound.beep()
+            return
+        }
+        lifecycleActions.deleteHubAndData()
     }
 
     private func showPending(title: String, detail: String) {
@@ -439,13 +368,12 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
     }
 
     private func updateMutationButtons() {
-        let enabled = mutationsEnabled && !mutationPending
-        updateButton.isEnabled = enabled
-        uninstallButton.isEnabled = enabled
-        deleteDataButton.isEnabled = enabled
-        startStopButton.isEnabled = enabled && lifecycleActions != nil
-        restartButton.isEnabled = enabled && lifecycleActions != nil
-        window?.standardWindowButton(.closeButton)?.isEnabled = !mutationPending
+        let enabled = mutationsEnabled
+        let available = enabled && lifecycleActions != nil
+        deleteDataButton.isEnabled = available
+        removeButton.isEnabled = available
+        startStopButton.isEnabled = available
+        restartButton.isEnabled = available
     }
 
     private func updateLifecycleButtons() {
@@ -484,13 +412,40 @@ final class ServiceDetailsWindowController: NSWindowController, NSWindowDelegate
         updateMutationButtons()
     }
 
+    /// Remove Background Service: Cancel first and answering Return.
+    static func removeConfirmation() -> NSAlert {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = HubL10n.text("hub.service.remove.confirm_title", fallback: "Remove the background service?")
+        alert.informativeText = HubL10n.text("hub.service.remove.confirm_detail", fallback: "Teslatlas Hub stops and no longer starts at login. Your Hub data, configuration and logs stay. Start Hub sets it up again.")
+        alert.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
+        alert.addButton(withTitle: HubL10n.text("hub.service.remove.confirm_button", fallback: "Remove"))
+        alert.buttons[0].keyEquivalent = "\r"
+        alert.buttons[1].keyEquivalent = ""
+        return alert
+    }
+
+    /// First confirmation of Delete Hub and Data: Cancel first and answering Return.
+    static func deleteHubAndDataExplanation() -> NSAlert {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = HubL10n.text("hub.service.delete.explain_title", fallback: "Delete Teslatlas Hub and all its data?")
+        alert.informativeText = HubL10n.text("hub.service.delete.explain_detail", fallback: "Teslatlas Hub stops, its background service is removed, and it no longer starts at login. Then the Hub's database, configuration, sign-in details and logs are permanently deleted from this Mac, together with the app's own settings and caches.\n\nBackups and exports saved outside the Hub folder are not touched. If the Hub folder holds a backup, an export or a link to another location, nothing is deleted and the app tells you why.\n\nThe app itself stays. Move it to the Trash afterwards.")
+        alert.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
+        alert.addButton(withTitle: HubL10n.text("hub.service.delete.continue", fallback: "Continue…"))
+        alert.buttons[0].keyEquivalent = "\r"
+        alert.buttons[1].keyEquivalent = ""
+        return alert
+    }
+
+    /// Second confirmation: kept keys for its text; Cancel first and answering Return.
     static func deleteDataConfirmation() -> NSAlert {
         let confirmation = NSAlert()
         confirmation.alertStyle = .critical
         confirmation.messageText = HubL10n.text("hub.ServiceDetailsWindowController.490.2228", fallback: "Permanently delete Hub data?")
         confirmation.informativeText = HubL10n.text("hub.ServiceDetailsWindowController.491.2229", fallback: "This removes the Hub database and configuration. This cannot be undone.")
         confirmation.addButton(withTitle: HubL10n.text("hub.ImportSheetController.112.1706", fallback: "Cancel"))
-        confirmation.addButton(withTitle: HubL10n.text("hub.ServiceDetailsWindowController.493.2231", fallback: "Delete Data and Uninstall"))
+        confirmation.addButton(withTitle: HubL10n.text("hub.service.delete.permanently", fallback: "Delete Permanently"))
         confirmation.buttons[0].keyEquivalent = "\r"
         confirmation.buttons[1].keyEquivalent = ""
         return confirmation
