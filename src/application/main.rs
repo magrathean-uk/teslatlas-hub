@@ -35,7 +35,6 @@ use teslatlas_hub::{
         TeslaMateLegacyTokenStore,
     },
     diagnostics::{inspect_hub, log_runtime_inventory},
-    edge_delivery,
     fleet_api::FleetRegion,
     fleet_credentials::{
         FleetCredentialError, FleetSetupCredentials, inspect_stored_fleet_credentials,

@@ -2,7 +2,7 @@
 
 ## Responsibility
 
-Own versioned, implementation-neutral public contracts. Hub is the authoritative server implementation; this repository is the public compatibility authority. The current-Hub HTTP profile, the Hub sync profiles, and Edge delivery are separate contracts; select one before applying a document's rules.
+Own versioned, implementation-neutral public contracts. Hub is the authoritative server implementation; this repository is the public compatibility authority. The current-Hub HTTP profile, the Hub sync profiles and the receiver envelope profile (`receiver-v1`) are separate contracts; select one before applying a document's rules.
 
 ## Goals and non-goals
 
@@ -34,7 +34,7 @@ conflict is resolved and the local validation gate passes.
 | --- | --- | --- |
 | Current-Hub HTTP | `profiles/hub-http-v1/1.2.0/` | Discovery, pairing, authenticated reads and pages, rotation, revocation, and the bounded conformance contract |
 | Hub sync | `profiles/hub-sync-v1/{1.3.0,1.4.0,1.5.0}/` | Changes-since, no-op, key discovery, and signed packs |
-| Edge delivery | `profiles/edge-delivery-v2/2.0.0/` | Edge pull, stable identity, acknowledgement, and durable-consumer disposition |
+| Receiver envelope | `profiles/receiver-v1/1.0.0/` | The envelope a self-hosted telemetry receiver posts to the Hub, with its two annotated rules and vectors |
 | Conformance | `conformance/` | The `hub-sync-v1@1.3.0` fixture cases and the `hub-http-v1@1.2.0` offline and native checks |
 
 ## Public rules

@@ -110,17 +110,6 @@ pub struct CollectorDiagnostics {
     pub geocoder_enabled: bool,
     pub terrain_enabled: bool,
     pub bind: String,
-    pub edge: Option<EdgeConsumerDiagnostics>,
-}
-
-#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct EdgeConsumerDiagnostics {
-    pub state: String,
-    pub detail: String,
-    pub updated_at_ms: Option<i64>,
-    pub pending_publications: u64,
-    pub ack_frontier: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -394,20 +383,15 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         && catalogue.paired_devices == 0
         && !legacy.present
         && !fleet.present;
-    let collector_required =
-        (config.collector.interval_seconds > 0 || config.collector.edge.is_some()) && !init_only;
-    let direct_provider_credentials_required =
-        collector_required && config.collector.edge.is_none();
-    let can_start = collector_required
-        && !configured.is_empty()
-        && (config.collector.edge.is_some() || selected_credentials_present);
+    let collector_required = config.collector.interval_seconds > 0 && !init_only;
+    let direct_provider_credentials_required = collector_required;
+    let can_start = collector_required && !configured.is_empty() && selected_credentials_present;
     // The doctor's own start check judges admission, not operational validity: an
     // owner-resolvable condition (a refusal, a credential-unit configuration
     // fault, an identified unresolved Fleet refresh) is attention, so it must not
     // fail the report, while `can_start` keeps its prerequisite meaning.
-    let diagnostic_can_start = collector_required
-        && !configured.is_empty()
-        && (config.collector.edge.is_some() || selected_credentials_admitted);
+    let diagnostic_can_start =
+        collector_required && !configured.is_empty() && selected_credentials_admitted;
     let selected_credentials_configured = match config.collector.provider {
         CollectorProvider::Legacy => legacy.present,
         CollectorProvider::Fleet => fleet.present,
@@ -415,7 +399,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     let stream_audit = store
         .stream_audit_summary_since(now_ms.saturating_sub(STREAM_AUDIT_DIAGNOSTIC_WINDOW_MS))?;
     let stream_recovered = stream_audit_recovered(&stream_audit);
-    let cadence_violation = (collector_required && config.collector.edge.is_none())
+    let cadence_violation = collector_required
         .then(|| config.collector.cadence_violation())
         .flatten();
     let view = store.collector_readiness_view(&ReadinessContext::configured(
@@ -458,24 +442,6 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     }
 
     let tls = tls_diagnostics(config);
-    let edge = if let Some(edge) = &config.collector.edge {
-        let counts = store.edge_ledger_counts(&edge.installation_id, &edge.lineage)?;
-        let state = store.edge_diagnostic(&edge.installation_id, &edge.lineage)?;
-        Some(EdgeConsumerDiagnostics {
-            state: state
-                .as_ref()
-                .map_or_else(|| "never_started".to_owned(), |value| value.state.clone()),
-            detail: state.as_ref().map_or_else(
-                || "no Edge worker receipt".to_owned(),
-                |value| value.detail.clone(),
-            ),
-            updated_at_ms: state.as_ref().map(|value| value.updated_at_ms),
-            pending_publications: counts.pending_publications,
-            ack_frontier: counts.ack_frontier,
-        })
-    } else {
-        None
-    };
     let wal_ok = DoctorCheck {
         name: "sqliteJournal".to_owned(),
         passed: catalogue.journal_mode.eq_ignore_ascii_case("wal")
@@ -548,9 +514,6 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         detail: match (&cadence_violation, collector_required) {
             (_, false) => {
                 "inactive: supervised collection is not required, so no cadence applies".to_owned()
-            }
-            (None, true) if config.collector.edge.is_some() => {
-                "inactive: Edge delivery replaces polling, so no cadence applies".to_owned()
             }
             (None, true) => "valid".to_owned(),
             (Some(violation), true) => format!(
@@ -656,7 +619,6 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             geocoder_enabled: config.geocoder.enabled,
             terrain_enabled: config.terrain.enabled,
             bind: config.bind.to_string(),
-            edge,
         },
         stream_audit,
         tls,

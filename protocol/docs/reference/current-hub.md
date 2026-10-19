@@ -15,7 +15,7 @@ checked-in `conformance.hub_http_12` validator and write all response material t
 the private directory created for the session.
 
 The profile is source-neutral and does not require Hub source or an SDK. It is
-separate from the Edge delivery profile. It has no protocol-version
+separate from the receiver envelope profile. It has no protocol-version
 request header, SSE stream, vehicle command route, or metadata CRUD. It serves
 vehicle, current-state, drive, charge, charge-sample and position pages (see
 below).

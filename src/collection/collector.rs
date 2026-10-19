@@ -57,7 +57,7 @@ use crate::{
         FleetTelemetryVins, VehicleVin, WakeResult,
     },
     fleet_credentials::{FleetAuthManager, FleetCredentialError, FleetSetupCredentials},
-    fleet_telemetry::FleetTelemetrySnapshot,
+    fleet_telemetry::{FleetTelemetryAccumulator, ReceiverEnvelope, ReceiverKind, parse_envelope},
     geocoder::{AdmittedUserEgressGuard, Geocoder, GeocoderError},
     hub_pack::{
         ProjectionBinding, ProjectionCar, ProjectionDeltaPackRequest, ProjectionPackError,
@@ -102,6 +102,8 @@ const STREAM_SOURCE_KEY: &str = OWNER_API_SOURCE_KEY;
 const FLEET_TELEMETRY_CONFIG_LIFETIME_SECONDS: u64 = 30 * 24 * 60 * 60;
 const FLEET_TELEMETRY_CONFIG_RENEWAL_INTERVAL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const FLEET_TELEMETRY_CONFIG_RETRY_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
+/// The most mutations one publication claim takes.
+const SYNC_CLAIM_MUTATION_LIMIT: usize = 10_000;
 const FLEET_REFRESH_REQUEST_NOT_SENT_RETRY: Duration = Duration::from_secs(5 * 60);
 
 include!("collector/authentication.rs");
@@ -119,37 +121,66 @@ include!("collector/scheduler_holds.rs");
 include!("collector/scheduler_counters.rs");
 include!("collector/tick.rs");
 include!("collector/projection.rs");
+include!("collector/receiver.rs");
 include!("collector/errors.rs");
 
-/// Drain the ordinary durable sync-mutation outbox created by an Edge ingest.
-/// The Edge receipt remains committed when this derived publication fails.
-pub(crate) fn publish_edge_pending_mutations(
+/// What one bounded publication turn did (G2-6 6A S9).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PublicationTurn {
+    /// Mutations published by this turn.
+    pub published: usize,
+    /// The claim was full, so more unpublished mutations may remain: take
+    /// another turn.
+    pub more: bool,
+}
+
+/// Publish one bounded claim (at most `claim_limit` mutations, never more than
+/// 10,000) of a vehicle's ordinary durable sync mutations. The caller holds the
+/// publication gate for the whole turn and calls again while `more` is set, so a
+/// long backlog is never published in one unbounded loop. The turn neither claims,
+/// completes nor fails an export-outbox row: ordinary replay completes an empty
+/// row later.
+pub(crate) fn publish_unpublished_sync_mutations(
     store: &HubStore,
     cursor_key: &CursorKey,
     vehicle_id: Uuid,
     now_ms: i64,
-) -> Result<usize, CollectorError> {
-    let _publication_gate = store.try_acquire_publication_gate()?;
-    #[cfg(feature = "edge-test-faults")]
-    if crate::edge_test_fault::fail_publication_once() {
-        return Err(
-            StoreError::SyncMutation("instrumented Edge publication failure".to_owned()).into(),
-        );
-    }
+    _publication_gate: &crate::db::PublicationGate,
+    claim_limit: usize,
+) -> Result<PublicationTurn, CollectorError> {
     if !store.vehicle_has_v2_base(vehicle_id)? {
         return Err(StoreError::LineageCatalogConflict.into());
     }
-    let mut published = 0usize;
-    while let Some(claim) = store.claim_sync_mutations(vehicle_id, now_ms, 10_000)? {
-        match publish_v2_delta(store, cursor_key, &claim) {
-            Ok(()) => published += claim.mutations.len(),
-            Err(error) => {
-                store.release_sync_mutations(&claim)?;
-                return Err(error);
+    let Some(claim) = store.claim_sync_mutations(vehicle_id, now_ms, claim_limit)? else {
+        return Ok(PublicationTurn {
+            published: 0,
+            more: false,
+        });
+    };
+    let outcome = {
+        #[cfg(test)]
+        {
+            if store.instrumentation().take_publication_fault() {
+                Err(StoreError::InjectedStreamFault("publication-turn").into())
+            } else {
+                publish_v2_delta(store, cursor_key, &claim)
             }
         }
+        #[cfg(not(test))]
+        {
+            publish_v2_delta(store, cursor_key, &claim)
+        }
+    };
+    match outcome {
+        Ok(()) => Ok(PublicationTurn {
+            published: claim.mutations.len(),
+            more: claim.mutations.len() >= claim_limit.min(SYNC_CLAIM_MUTATION_LIMIT),
+        }),
+        Err(error) => {
+            store.release_sync_mutations(&claim)?;
+            Err(error)
+        }
     }
-    Ok(published)
 }
 
 #[cfg(test)]

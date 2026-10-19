@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[test]
-fn standalone_preflight_allows_only_known_v66_to_v70_forward_upgrades_without_writes() {
+fn standalone_preflight_allows_only_known_v66_to_v73_forward_upgrades_without_writes() {
     use crate::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
     let temporary = crate::private_tempdir().unwrap();
     let data_dir = temporary.path().join("state");
@@ -19,7 +19,54 @@ fn standalone_preflight_allows_only_known_v66_to_v70_forward_upgrades_without_wr
         .current_observations_for_vehicle(vehicle.vehicle_id)
         .unwrap();
     let connection = store.open().unwrap();
-    // Rewind the v71 credential status table first: a v70 store is the shape
+    // Rewind the v74 retirement step first: a v73 store is the shape of the
+    // development catalogues before the retired delivery objects were dropped,
+    // and standalone Serve migrates it itself.
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {} PRAGMA user_version=73; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
+            crate::db::REWIND_V74_SQL
+        ))
+        .unwrap();
+    let v73_bytes = fs::read(config.database_path()).unwrap();
+    assert!(matches!(
+        HubStore::open_read_only(&data_dir),
+        Err(crate::db::StoreError::UnsupportedSchema(73))
+    ));
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
+    assert_eq!(fs::read(config.database_path()).unwrap(), v73_bytes);
+    // Rewind the v73 receiver-state table next: a v72 store is the shape B2
+    // left, the most likely upgrade source, and standalone Serve migrates it
+    // itself.
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {} PRAGMA user_version=72; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
+            crate::db::REWIND_V73_SQL
+        ))
+        .unwrap();
+    let v72_bytes = fs::read(config.database_path()).unwrap();
+    assert!(matches!(
+        HubStore::open_read_only(&data_dir),
+        Err(crate::db::StoreError::UnsupportedSchema(72))
+    ));
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
+    assert_eq!(fs::read(config.database_path()).unwrap(), v72_bytes);
+    // Rewind the v72 rejected-access-digest column next: a v71 store is the
+    // gap B2 left below its own step, and standalone Serve migrates it itself.
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {} PRAGMA user_version=71; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
+            crate::db::REWIND_V72_SQL
+        ))
+        .unwrap();
+    let v71_bytes = fs::read(config.database_path()).unwrap();
+    assert!(matches!(
+        HubStore::open_read_only(&data_dir),
+        Err(crate::db::StoreError::UnsupportedSchema(71))
+    ));
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
+    assert_eq!(fs::read(config.database_path()).unwrap(), v71_bytes);
+    // Rewind the v71 credential status table next: a v70 store is the shape
     // of the development catalogues before it, and standalone Serve migrates
     // it itself.
     connection
@@ -154,7 +201,7 @@ fn standalone_preflight_allows_only_known_v66_to_v70_forward_upgrades_without_wr
 
 use super::*;
 use crate::{
-    config::{CollectorProvider, EdgeCollectorConfig, HubConfig, TlsListenerConfig},
+    config::{CollectorProvider, HubConfig, TlsListenerConfig},
     credentials::OwnerTokens,
     db::{HubStore, TeslaMateLegacyTokenStore},
     fleet_api::FleetRegion,
@@ -291,7 +338,6 @@ fn source_run_mode_requires_explicit_opt_in_and_known_mode() {
     for (raw, expected) in [
         ("fixture", DevelopmentServeMode::Fixture),
         ("standalone", DevelopmentServeMode::Standalone),
-        ("edge", DevelopmentServeMode::Edge),
         ("private-lan", DevelopmentServeMode::PrivateLan),
     ] {
         assert_eq!(
@@ -302,6 +348,8 @@ fn source_run_mode_requires_explicit_opt_in_and_known_mode() {
     assert!(development_serve_mode(None, Some(OsStr::new("standalone"))).is_err());
     assert!(development_serve_mode(Some(OsStr::new("true")), None).is_err());
     assert!(development_serve_mode(Some(OsStr::new("1")), Some(OsStr::new("production"))).is_err());
+    // The retired Edge mode is refused by name.
+    assert!(development_serve_mode(Some(OsStr::new("1")), Some(OsStr::new("edge"))).is_err());
 }
 
 #[test]
@@ -372,53 +420,11 @@ fn standalone_source_run_accepts_empty_state_but_rejects_collectors_and_fixture_
     preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone))
         .expect("fresh empty standalone Hub");
     assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Fixture)).is_err());
-    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Edge)).is_err());
-
     config.collector.interval_seconds = 60;
     assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
     config.collector.interval_seconds = 0;
     config.bind = "0.0.0.0:21444".parse().expect("public bind");
     assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
-}
-
-#[test]
-fn edge_source_run_uses_normal_binding_preflight_and_rejects_standalone_mode() {
-    let temporary = crate::private_tempdir().expect("temporary source-run root");
-    let data = temporary.path().join("data");
-    let store = seed_selected_car(&data);
-    let (vehicle_id, _, _) = store.configured_tesla_vehicles().unwrap()[0].clone();
-    let source_id: String = store
-        .open()
-        .expect("catalogue")
-        .query_row(
-            "SELECT source_id FROM vehicles WHERE vehicle_id = ?1",
-            rusqlite::params![vehicle_id.to_string()],
-            |row| row.get(0),
-        )
-        .expect("source identity");
-    let mut config = source_run_config(temporary.path(), &data);
-    config.collector.edge = Some(EdgeCollectorConfig {
-        base_url: "https://127.0.0.1:24443/".to_owned(),
-        ca_certificate_path: temporary.path().join("edge-ca.pem"),
-        client_certificate_path: temporary.path().join("edge-client.pem"),
-        client_private_key_path: temporary.path().join("edge-client-key.pem"),
-        bearer_token_path: temporary.path().join("edge-token"),
-        installation_id: "local-edge".to_owned(),
-        lineage: "local-spool".to_owned(),
-        source_id: source_id.parse().expect("source UUID"),
-        vehicle_id,
-        vin: "5YJTEST0000000001".to_owned(),
-        car_id: 1,
-        poll_milliseconds: 500,
-        timeout_seconds: 20,
-        max_backoff_seconds: 60,
-    });
-
-    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Edge))
-        .expect("explicit local Edge binding");
-    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).is_err());
-    config.collector.edge.as_mut().unwrap().vin = "5YJTEST0000000002".to_owned();
-    assert!(preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Edge)).is_err());
 }
 
 #[test]

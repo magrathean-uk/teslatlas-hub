@@ -1105,28 +1105,14 @@ impl HubStore {
             .map(|(source, _)| source)
     }
 
-    /// Register a sealed source identity for an explicitly invoked synthetic
-    /// interoperability fixture. This is unavailable in product builds.
-    #[cfg(feature = "interop-fixture")]
-    pub fn register_interop_source_with_id(
-        &self,
-        descriptor: &SourceDescriptor,
-        created_at_ms: i64,
-        source_id: Uuid,
-    ) -> Result<SourceRecord, StoreError> {
-        if source_id.is_nil() {
-            return Err(StoreError::InvalidSourceId);
-        }
-        self.register_source_with_creation_state(descriptor, created_at_ms, Some(source_id))
-            .map(|(source, _)| source)
-    }
-
     fn register_source_with_creation_state(
         &self,
         descriptor: &SourceDescriptor,
         created_at_ms: i64,
         expected_source_id: Option<Uuid>,
     ) -> Result<(SourceRecord, bool), StoreError> {
+        #[cfg(test)]
+        StoreInstrumentation::bump(&self.instrumentation.source_registration_calls);
         descriptor.validate()?;
         validate_timestamp("source created_at_ms", created_at_ms)?;
 
@@ -1181,6 +1167,136 @@ impl HubStore {
         ))
     }
 
+    /// Read-only: whether [`Self::register_source`] and [`Self::register_vehicle`]
+    /// with these descriptors would change nothing, and if so the identity they
+    /// would return (G2-6 6A S5, C-6). `vehicle.source_id` is ignored; the source
+    /// is looked up from `source`.
+    ///
+    /// Everything registration compares or writes is verified in one read
+    /// transaction: the source row, the vehicle named by the source key alias,
+    /// its VIN and display name, and the source key, Tesla EID, VIN and Tesla VID
+    /// aliases, including the rule that keeps exactly one current EID alias. A
+    /// missing value, a differing value or a conflicting alias is not
+    /// unchanged: the answer is `None` and the caller registers (which reports
+    /// a conflict with its own error). No registration call and no write.
+    pub(crate) fn registered_vehicle_unchanged(
+        &self,
+        source: &SourceDescriptor,
+        vehicle: &VehicleDescriptor,
+    ) -> Result<Option<UnchangedRegistration>, StoreError> {
+        source.validate()?;
+        let mut connection = self.open_read_only_connection()?;
+        let transaction = connection.transaction().map_err(StoreError::Begin)?;
+        let Some(found_source) = find_source(&transaction, source)? else {
+            return Ok(None);
+        };
+        let mut descriptor = vehicle.clone();
+        descriptor.source_id = found_source.source_id;
+        descriptor.validate()?;
+
+        let source_key_alias = format!("{}:{}", descriptor.source_id, descriptor.source_vehicle_key);
+        let aliased: Option<String> = transaction
+            .query_row(
+                "SELECT vehicle_id FROM vehicle_identity_aliases
+                  WHERE alias_kind = 'source_key' AND alias_value = ?1",
+                params![source_key_alias],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        let Some(aliased) = aliased else {
+            return Ok(None);
+        };
+        let aliased = parse_stored_uuid("vehicle_id", &aliased)?;
+
+        let source_vehicle = find_vehicle(
+            &transaction,
+            descriptor.source_id,
+            &descriptor.source_vehicle_key,
+        )?;
+        let identity_vehicle = match find_identity_vehicle(&transaction, &descriptor) {
+            Ok(found) => found,
+            Err(StoreError::VehicleIdentityConflict) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        if source_vehicle.is_some()
+            && identity_vehicle.is_some()
+            && source_vehicle.as_ref().map(|found| found.vehicle_id) != identity_vehicle
+        {
+            return Ok(None);
+        }
+        let record = match source_vehicle {
+            Some(found) => Some(found),
+            None => match identity_vehicle {
+                Some(vehicle_id) => find_vehicle_by_id(&transaction, vehicle_id)?,
+                None => None,
+            },
+        };
+        let Some(record) = record else {
+            return Ok(None);
+        };
+        if record.vehicle_id != aliased {
+            return Ok(None);
+        }
+        if let Some(vin) = &descriptor.vin
+            && record.vin.as_ref() != Some(vin)
+        {
+            return Ok(None);
+        }
+        if let Some(display_name) = &descriptor.display_name
+            && record.display_name.as_ref() != Some(display_name)
+        {
+            return Ok(None);
+        }
+
+        let mut aliases = vec![("source_key", source_key_alias)];
+        if let Some(eid) = descriptor.tesla_eid {
+            aliases.push(("tesla_eid", eid.to_string()));
+        }
+        if let Some(vin) = &descriptor.vin {
+            aliases.push(("vin", vin.clone()));
+        }
+        if let Some(vid) = descriptor.tesla_vid {
+            aliases.push(("tesla_vid", vid.to_string()));
+        }
+        for (kind, value) in aliases {
+            let owner: Option<String> = transaction
+                .query_row(
+                    "SELECT vehicle_id FROM vehicle_identity_aliases
+                      WHERE alias_kind = ?1 AND alias_value = ?2",
+                    params![kind, value],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(StoreError::Query)?;
+            if owner.as_deref() != Some(record.vehicle_id.to_string().as_str()) {
+                return Ok(None);
+            }
+        }
+        // Registration deletes every other EID alias once the VIN matches.
+        if let (Some(vin), Some(eid)) = (&descriptor.vin, descriptor.tesla_eid)
+            && record.vin.as_ref() == Some(vin)
+        {
+            let stale: bool = transaction
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM vehicle_identity_aliases
+                      WHERE vehicle_id = ?1 AND alias_kind = 'tesla_eid'
+                        AND alias_value <> ?2)",
+                    params![record.vehicle_id.to_string(), eid.to_string()],
+                    |row| row.get(0),
+                )
+                .map_err(StoreError::Query)?;
+            if stale {
+                return Ok(None);
+            }
+        }
+        Ok(Some(UnchangedRegistration {
+            source_id: found_source.source_id,
+            source_generation: found_source.generation,
+            vehicle_id: record.vehicle_id,
+        }))
+    }
+
     /// Return the stable Hub vehicle identity for one source-owned vehicle.
     /// Re-registering the same source key only refreshes non-identity display
     /// metadata; it can never create a second local vehicle id.
@@ -1213,6 +1329,8 @@ impl HubStore {
         registered_at_ms: i64,
         expected_vehicle_id: Option<Uuid>,
     ) -> Result<VehicleRecord, StoreError> {
+        #[cfg(test)]
+        StoreInstrumentation::bump(&self.instrumentation.vehicle_registration_calls);
         descriptor.validate()?;
         validate_timestamp("vehicle registered_at_ms", registered_at_ms)?;
 

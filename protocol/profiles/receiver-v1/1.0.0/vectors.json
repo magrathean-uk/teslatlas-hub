@@ -1,106 +1,4 @@
 {
-  "dispositions": [
-    {
-      "ack_eligible_after_commit": true,
-      "category": "projected_telemetry",
-      "reason": "fleet_protojson_projected",
-      "receipt_transaction": "same_as_hub_data_effect",
-      "record_id": "8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9",
-      "required_durable_fields": [
-        "edge_installation_id",
-        "edge_lineage",
-        "spool_seq",
-        "record_id",
-        "legacy_record_id",
-        "payload_sha256"
-      ]
-    },
-    {
-      "ack_eligible_after_commit": true,
-      "category": "durable_non_projection_event",
-      "reason": "alert_event_retained",
-      "receipt_transaction": "same_as_hub_data_effect",
-      "record_id": "42424c8baa6532299915b8026625a0dc271769fd97e19647b6366df523866d1f",
-      "required_durable_fields": [
-        "edge_installation_id",
-        "edge_lineage",
-        "spool_seq",
-        "record_id",
-        "legacy_record_id",
-        "reason",
-        "payload_sha256"
-      ]
-    },
-    {
-      "ack_eligible_after_commit": true,
-      "category": "durable_gap",
-      "reason": "retention_expired",
-      "receipt_transaction": "same_as_hub_data_effect",
-      "record_id": "73002ffc20a769d62ab2800675b51e8fc3a895ff762b370e5edf11185b864ab2",
-      "required_durable_fields": [
-        "edge_installation_id",
-        "edge_lineage",
-        "spool_seq",
-        "notice_id",
-        "reason",
-        "occurred_at_ms",
-        "evidence_sha256"
-      ]
-    },
-    {
-      "ack_eligible_after_commit": true,
-      "category": "duplicate",
-      "reason": "stable_record_already_applied",
-      "receipt_transaction": "same_as_hub_data_effect",
-      "record_id": "8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9",
-      "required_durable_fields": [
-        "edge_installation_id",
-        "edge_lineage",
-        "spool_seq",
-        "record_id",
-        "legacy_record_id",
-        "payload_sha256"
-      ]
-    },
-    {
-      "ack_eligible_after_commit": false,
-      "ack_prefix_effect": "no_advance",
-      "category": "rejected_invalid_envelope",
-      "reason": "identity_mismatch",
-      "receipt_transaction": "none",
-      "record_id": "8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9",
-      "required_durable_fields": [
-        "visible_redacted_failure"
-      ]
-    }
-  ],
-  "gap": {
-    "lost_envelope": {
-      "payload": {
-        "createdAt": "2027-01-15T08:00:00.100Z",
-        "data": {
-          "Soc": {
-            "intValue": "79"
-          }
-        },
-        "vin": "5YJ3E1EA7KF000001"
-      },
-      "received_at_ms": 1800000000200,
-      "timestamp_ms": 1800000000100,
-      "tx_type": "V",
-      "txid": "edge-expired-0002",
-      "version": 1,
-      "vin": "5YJ3E1EA7KF000001"
-    },
-    "lost_stable_record_id": "6b69134908b9c1866e56028a80cc7bfbc88372df17e32489da72ed47d4c9b525",
-    "notice": {
-      "evidence_sha256": "c2fceaa38e73c41b78386cad195a383e5ae4505db9f71c0e43e7f669a8380e53",
-      "notice_id": "73002ffc20a769d62ab2800675b51e8fc3a895ff762b370e5edf11185b864ab2",
-      "occurred_at_ms": 1800000060200,
-      "reason": "retention_expired",
-      "spool_seq": 11
-    }
-  },
   "identity": {
     "base_envelope": {
       "payload": {
@@ -277,6 +175,28 @@
       "id": "lost-ack-response",
       "request_body_utf8": "{\"version\":2,\"batch_id\":\"01d91f49aa9e06ae80070976797616a9ec74cf6ef22c6862f615b5a28371a0ef\",\"accepted_record_ids\":[\"8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9\"],\"accepted_gap_notice_ids\":[\"73002ffc20a769d62ab2800675b51e8fc3a895ff762b370e5edf11185b864ab2\"]}",
       "retry_result": "same_ack_result_bytes"
+    },
+    {
+      "ack_prefix_effect": "no_advance",
+      "envelope": {
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5yj3e1ea7kf000001"
+      },
+      "expected_status": 400,
+      "id": "lowercase-vin-envelope"
     }
   ],
   "non_projection_envelopes": [
@@ -343,32 +263,330 @@
       "record_id": "42b51e71fd1afb779369fbaf3f63cc1ee2741e44bbe5ad412717303a68fe24c2"
     }
   ],
-  "profile_id": "edge-delivery-v2@2.0.0",
-  "re_enqueued_after_completed_ack": {
-    "ack_eligible_after_atomic_commit": true,
-    "application_count_after_commit": 1,
-    "envelope": {
-      "payload": {
-        "createdAt": "2027-01-15T08:00:00Z",
-        "data": {
-          "Soc": {
-            "intValue": "80"
-          }
+  "profile_id": "receiver-v1@1.0.0",
+  "receiver_negative_envelopes": [
+    {
+      "envelope": {
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
         },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5yj3e1ea7kf000001"
+      },
+      "expected_status": 400,
+      "id": "lowercase-vin",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF00000I"
+      },
+      "expected_status": 400,
+      "id": "vin-containing-i",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 2,
         "vin": "5YJ3E1EA7KF000001"
       },
-      "received_at_ms": 1800000005100,
-      "timestamp_ms": 1800000000000,
-      "tx_type": "V",
-      "txid": "edge-projected-0001",
-      "version": 1,
-      "vin": "5YJ3E1EA7KF000001"
+      "expected_status": 400,
+      "id": "version-2",
+      "rule": "schema",
+      "schema_valid": false
     },
-    "expected_disposition": "duplicate",
-    "legacy_record_id": "5fe1588aca9e75808ce9d1292f7b683e489d9724d5772fae5dfd941714fe0bd1",
-    "record_id": "8284fe7aea66b79f09cfa5b2fe3ca99fc79fdac24631e06b8365aa8a0c64e5c9",
-    "spool_seq": 13
-  },
+    {
+      "envelope": {
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "missing-txid",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "extra": "x",
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "unknown-top-level-property",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 946684799999,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "received-time-before-2000",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "v 1",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "tx-type-with-space",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "payload": [
+          1,
+          2
+        ],
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "positional-array-payload",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "deviceClientVersion": "1.0",
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "camel-case-device-client-version",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "firmwareVersion": "1.0",
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "camel-case-firmware-version",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "device_client_version": null,
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "null-device-client-version",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "firmware_version": null,
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "null-firmware-version",
+      "rule": "schema",
+      "schema_valid": false
+    },
+    {
+      "envelope": {
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000000000,
+        "tx_type": "telemetry",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "unaccepted-normalised-tx-type",
+      "rule": "accepted-tx-type",
+      "schema_valid": true
+    },
+    {
+      "envelope": {
+        "payload": {
+          "createdAt": "2027-01-15T08:00:00Z",
+          "data": {
+            "Soc": {
+              "intValue": "80"
+            }
+          },
+          "vin": "5YJ3E1EA7KF000001"
+        },
+        "received_at_ms": 1800000000100,
+        "timestamp_ms": 1800000300101,
+        "tx_type": "V",
+        "txid": "edge-projected-0001",
+        "version": 1,
+        "vin": "5YJ3E1EA7KF000001"
+      },
+      "expected_status": 400,
+      "id": "event-clock-beyond-five-minutes",
+      "rule": "event-clock",
+      "schema_valid": true
+    }
+  ],
   "sequence": {
     "ack_prefixes": [
       {

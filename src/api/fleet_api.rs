@@ -433,6 +433,10 @@ pub enum FleetTelemetryField {
     AcChargingPower,
     #[serde(rename = "DCChargingPower")]
     DcChargingPower,
+    #[serde(rename = "FastChargerPresent")]
+    FastChargerPresent,
+    #[serde(rename = "FastChargerType")]
+    FastChargerType,
     #[serde(rename = "ChargeAmps")]
     ChargeAmps,
     #[serde(rename = "ChargeLimitSoc")]
@@ -642,6 +646,8 @@ impl FleetTelemetryConfigBuilder {
             (FleetTelemetryField::DcChargingEnergyIn, 15, None),
             (FleetTelemetryField::AcChargingPower, 15, None),
             (FleetTelemetryField::DcChargingPower, 15, None),
+            (FleetTelemetryField::FastChargerPresent, 15, None),
+            (FleetTelemetryField::FastChargerType, 15, None),
             (FleetTelemetryField::ChargeAmps, 15, None),
             (FleetTelemetryField::ChargeLimitSoc, 30, None),
             (FleetTelemetryField::ChargePortDoorOpen, 1, None),

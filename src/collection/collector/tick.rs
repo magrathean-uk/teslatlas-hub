@@ -29,6 +29,9 @@ struct Registered {
     hub_id: Uuid,
     source_id: Uuid,
     pack_car_id: i64,
+    /// The source's generation when the identity was resolved: the pack binding
+    /// of a full snapshot names it.
+    generation: u64,
 }
 
 /// A registered identity with the descriptor facts it was registered under, so a
@@ -95,6 +98,7 @@ impl IdentityCache {
             hub_id: record.vehicle_id,
             source_id: source.source_id,
             pack_car_id,
+            generation: source.generation,
         };
         self.entries.insert(
             vehicle.id,
@@ -315,6 +319,54 @@ fn finish_collection_in_transaction(
     failures: usize,
     output: &mut TickTxOutput,
 ) -> Result<(), CollectorError> {
+    intake_snapshots_in_transaction(
+        store,
+        transaction,
+        &SnapshotIntake {
+            provider: commit.provider,
+            provider_feed: None,
+            observed_at_ms: None,
+            offline_drive_timeout: commit.offline_drive_timeout,
+        },
+        registered,
+        snapshots,
+        failures,
+        output,
+    )
+}
+
+/// What the shared snapshot intake needs besides the transaction and the batch
+/// (G2-6 6A S5): the provider, the sparse-feed marker and `T_gap`. The tick passes
+/// its [`TickCommit`] values and no marker; the self-hosted receiver passes the
+/// Fleet provider, its `fleet_telemetry` marker and the configured timeout.
+struct SnapshotIntake<'a> {
+    provider: CollectorProvider,
+    /// `provider_feed` written at the root of each stored observation. A
+    /// marker makes the observation sparse (C1 R76): an absent or null key is
+    /// no statement. `None` stores a full record, as every tick does.
+    provider_feed: Option<&'a str>,
+    /// The time the stored observation is ordered and de-duplicated by, when the
+    /// caller knows a better one than [`observation_timestamp`] finds in the
+    /// snapshot: the receiver passes its accumulator's event-time high-water mark,
+    /// which never moves backwards and does not change when a record is replayed.
+    /// It is used only while plausible (C1 R5); otherwise the snapshot's own rule
+    /// applies.
+    observed_at_ms: Option<i64>,
+    offline_drive_timeout: Duration,
+}
+
+/// The intake body shared by the tick and the receiver (C3 R5): each snapshot with
+/// its lifecycle delta, then each car's settings, materialised car and lifecycle
+/// catch-up, all inside the caller's transaction.
+fn intake_snapshots_in_transaction(
+    store: &HubStore,
+    transaction: &rusqlite::Transaction<'_>,
+    intake: &SnapshotIntake<'_>,
+    registered: &HashMap<VehicleId, Registered>,
+    snapshots: &[SnapshotItem],
+    failures: usize,
+    output: &mut TickTxOutput,
+) -> Result<(), CollectorError> {
     if snapshots.is_empty() {
         return Ok(());
     }
@@ -352,15 +404,26 @@ fn finish_collection_in_transaction(
         let input = ObservationInput {
             source_id: identity.source_id,
             vehicle_id: identity.hub_id,
-            observed_at_ms: observation_timestamp(&item.snapshot, item.received_at_ms),
-            payload: observation_payload(&item.snapshot, &item.vehicle.state, commit.provider),
+            observed_at_ms: intake
+                .observed_at_ms
+                .filter(|observed| {
+                    (K_EARLIEST_MS..=item.received_at_ms.saturating_add(K_SKEW_MS))
+                        .contains(observed)
+                })
+                .unwrap_or_else(|| observation_timestamp(&item.snapshot, item.received_at_ms)),
+            payload: observation_payload(
+                &item.snapshot,
+                &item.vehicle.state,
+                intake.provider,
+                intake.provider_feed,
+            ),
         };
         let result = store.accept_owner_observation_and_lifecycle_in_transaction(
             transaction,
             &input,
             item.received_at_ms,
             identity.pack_car_id,
-            commit.offline_drive_timeout,
+            intake.offline_drive_timeout,
         )?;
         if result.append.inserted {
             report.observations_inserted += 1;

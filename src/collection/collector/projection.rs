@@ -429,7 +429,7 @@ fn persist_collection_mode(
             source_id: source.source_id,
             vehicle_id,
             observed_at_ms: observation_timestamp(snapshot, received_at_ms),
-            payload: observation_payload(snapshot, source_vehicle_state, provider),
+            payload: observation_payload(snapshot, source_vehicle_state, provider, None),
         };
         let append = if atomic_lifecycle {
             let pack_car_id = projection_car_id_for_vehicle(store, vehicle_id, source_vehicle_id)?;
@@ -886,13 +886,11 @@ fn publish_compatibility_snapshots_for_provider_guarded(
 ) -> Result<usize, CollectorError> {
     check_optional_write(guard, "publication-source")?;
     let source = store.register_source(&provider_source(provider), published_at_ms)?;
-    let installation_id = store.installation_id()?;
     let snapshots: HashMap<u64, &VehicleData> = collection
         .snapshots
         .iter()
         .map(|snapshot| (snapshot.vehicle_id().get(), snapshot))
         .collect();
-    let writer = ProjectionPackWriter::new(store.packs_dir());
 
     let mut published = 0;
     for vehicle in &collection.vehicles {
@@ -921,78 +919,134 @@ fn publish_compatibility_snapshots_for_provider_guarded(
         store.persist_materialised_car_if_absent(registered.vehicle_id, &seed_car)?;
         check_optional_write(guard, "publication-settings")?;
         store.upsert_car_settings(registered.vehicle_id, selected_car_id, &vehicle.settings)?;
-        if store.vehicle_has_v2_base(registered.vehicle_id)? {
-            check_optional_write(guard, "publication-sync-claim")?;
-            if let Some(sync_claim) =
-                store.claim_sync_mutations(registered.vehicle_id, published_at_ms, 10_000)?
-                && let Err(error) = publish_v2_delta_guarded(store, cursor_key, &sync_claim, guard)
-            {
-                check_optional_write(guard, "publication-sync-release")?;
-                store.release_sync_mutations(&sync_claim)?;
-                return Err(error);
-            }
-            continue;
-        }
-        let history = store.materialised_history(registered.vehicle_id)?;
-        let durable_car = match history.car.clone() {
-            Some(car) => car,
-            None => {
-                return Err(crate::db::StoreError::SyncMutation(
-                    "missing materialised car after compatibility seed".into(),
-                )
-                .into());
-            }
-        };
-        let states = history.states.clone();
-        let updates = history.updates.clone();
-        let snapshot = ProjectionSnapshot {
-            cars: vec![durable_car],
-            drives: history.drives,
-            positions: history.positions,
-            charges: history.charges,
-            charge_samples: history.charge_samples,
-        };
-        let fingerprint = Sha256Digest::from_bytes(
-            Sha256::digest(
-                serde_json::to_vec(&(&snapshot, &states, &updates))
-                    .map_err(CollectorError::SerializeSnapshot)?,
-            )
-            .into(),
-        );
-        if store.snapshot_fingerprint_is_current(registered.vehicle_id, fingerprint)? {
-            continue;
-        }
-        check_optional_write(guard, "publication-sequence")?;
-        let sequence =
-            store.reserve_next_full_snapshot_sequence(publication_gate, registered.vehicle_id)?;
-        let binding = ProjectionBinding {
-            installation_id,
-            account_id: source.source_id,
-            vehicle_id: registered.vehicle_id,
+        let identity = Registered {
+            hub_id: registered.vehicle_id,
+            source_id: source.source_id,
+            pack_car_id: selected_car_id,
             generation: source.generation,
-            selected_car_id,
         };
-        let request = ProjectionPackRequest {
-            pack_id: Uuid::new_v4(),
-            snapshot_id: Uuid::new_v4(),
-            ordinal: 0,
-            binding: binding.clone(),
-            sequence: SequenceRange {
-                from_exclusive: sequence,
-                to_inclusive: sequence,
-            },
-            snapshot: &snapshot,
-        };
-        check_optional_write(guard, "publication-pack")?;
-        let built =
-            writer.write_full_snapshot_with_states_and_updates(&request, &states, &updates)?;
-        let manifest = request
-            .signed_manifest_with_states_and_updates(&built, &states, &updates, cursor_key)?;
-        check_optional_write(guard, "publication-finalize")?;
-        store.finalize_import_snapshot_with_binding(&manifest, fingerprint, &[], &binding)?;
-        published += 1;
+        published += publish_resolved_vehicle(
+            store,
+            publication_gate,
+            cursor_key,
+            &identity,
+            published_at_ms,
+            guard,
+        )?;
     }
     Ok(published)
+}
+
+/// The publication of vehicles whose identities were resolved earlier (G2-6 6A S5,
+/// C-6): the self-hosted receiver resolves them read-only, writes the car, its
+/// settings and the lifecycle inside its intake transaction, and publishes after
+/// that commit. This form calls neither `register_source` nor `register_vehicle`
+/// and repeats none of the intake's writes; the claim, the delta pack and the
+/// catalogue commit are those of the registering form.
+fn publish_compatibility_snapshots_with_identities(
+    store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
+    cursor_key: &CursorKey,
+    identities: &[Registered],
+    published_at_ms: i64,
+    guard: Option<&RunWriteGuard>,
+) -> Result<usize, CollectorError> {
+    let mut published = 0;
+    for identity in identities {
+        published += publish_resolved_vehicle(
+            store,
+            publication_gate,
+            cursor_key,
+            identity,
+            published_at_ms,
+            guard,
+        )?;
+    }
+    Ok(published)
+}
+
+/// The part of a vehicle's publication that follows its identity, shared by the
+/// registering and the identity-taking forms: the v2 delta of its sync mutations
+/// when it has a v2 base, otherwise the full snapshot.
+fn publish_resolved_vehicle(
+    store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
+    cursor_key: &CursorKey,
+    identity: &Registered,
+    published_at_ms: i64,
+    guard: Option<&RunWriteGuard>,
+) -> Result<usize, CollectorError> {
+    if store.vehicle_has_v2_base(identity.hub_id)? {
+        check_optional_write(guard, "publication-sync-claim")?;
+        if let Some(sync_claim) =
+            store.claim_sync_mutations(identity.hub_id, published_at_ms, 10_000)?
+            && let Err(error) = publish_v2_delta_guarded(store, cursor_key, &sync_claim, guard)
+        {
+            check_optional_write(guard, "publication-sync-release")?;
+            store.release_sync_mutations(&sync_claim)?;
+            return Err(error);
+        }
+        return Ok(0);
+    }
+    let installation_id = store.installation_id()?;
+    let writer = ProjectionPackWriter::new(store.packs_dir());
+    let history = store.materialised_history(identity.hub_id)?;
+    let durable_car = match history.car.clone() {
+        Some(car) => car,
+        None => {
+            return Err(crate::db::StoreError::SyncMutation(
+                "missing materialised car after compatibility seed".into(),
+            )
+            .into());
+        }
+    };
+    let states = history.states.clone();
+    let updates = history.updates.clone();
+    let snapshot = ProjectionSnapshot {
+        cars: vec![durable_car],
+        drives: history.drives,
+        positions: history.positions,
+        charges: history.charges,
+        charge_samples: history.charge_samples,
+    };
+    let fingerprint = Sha256Digest::from_bytes(
+        Sha256::digest(
+            serde_json::to_vec(&(&snapshot, &states, &updates))
+                .map_err(CollectorError::SerializeSnapshot)?,
+        )
+        .into(),
+    );
+    if store.snapshot_fingerprint_is_current(identity.hub_id, fingerprint)? {
+        return Ok(0);
+    }
+    check_optional_write(guard, "publication-sequence")?;
+    let sequence =
+        store.reserve_next_full_snapshot_sequence(publication_gate, identity.hub_id)?;
+    let binding = ProjectionBinding {
+        installation_id,
+        account_id: identity.source_id,
+        vehicle_id: identity.hub_id,
+        generation: identity.generation,
+        selected_car_id: identity.pack_car_id,
+    };
+    let request = ProjectionPackRequest {
+        pack_id: Uuid::new_v4(),
+        snapshot_id: Uuid::new_v4(),
+        ordinal: 0,
+        binding: binding.clone(),
+        sequence: SequenceRange {
+            from_exclusive: sequence,
+            to_inclusive: sequence,
+        },
+        snapshot: &snapshot,
+    };
+    check_optional_write(guard, "publication-pack")?;
+    let built = writer.write_full_snapshot_with_states_and_updates(&request, &states, &updates)?;
+    let manifest = request
+        .signed_manifest_with_states_and_updates(&built, &states, &updates, cursor_key)?;
+    check_optional_write(guard, "publication-finalize")?;
+    store.finalize_import_snapshot_with_binding(&manifest, fingerprint, &[], &binding)?;
+    Ok(1)
 }
 
 fn compatibility_car(
@@ -1193,12 +1247,19 @@ fn observation_payload(
     snapshot: &VehicleData,
     source_vehicle_state: &str,
     provider: CollectorProvider,
+    provider_feed: Option<&str>,
 ) -> Value {
     let mut payload = Map::new();
     payload.insert(
         "record_type".to_owned(),
         Value::String(provider_vehicle_data_record_type(provider).to_owned()),
     );
+    if let Some(provider_feed) = provider_feed {
+        payload.insert(
+            "provider_feed".to_owned(),
+            Value::String(provider_feed.to_owned()),
+        );
+    }
     payload.insert(
         "source_vehicle_id".to_owned(),
         Value::String(snapshot.vehicle_id().get().to_string()),

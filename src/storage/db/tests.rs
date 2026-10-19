@@ -8,7 +8,6 @@ use crate::protocol::{
 };
 
 include!("tests/database_and_migrations.rs");
-include!("tests/edge_delivery.rs");
 include!("tests/catalogue_and_pairing.rs");
 include!("tests/device_vehicle_grants.rs");
 include!("tests/device_credentials.rs");
@@ -30,6 +29,7 @@ include!("tests/address_lookup_cache.rs");
 include!("tests/terrain_tile_digests.rs");
 include!("tests/lineage_digest_cache.rs");
 include!("tests/collector_state.rs");
+include!("tests/receiver_and_retirement.rs");
 include!("tests/auth_state.rs");
 include!("tests/legacy_attempt_close.rs");
 include!("tests/r3_fix_round.rs");

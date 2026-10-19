@@ -1616,3 +1616,416 @@ fn st93_the_collector_seed_allocates_live_ids_above_the_import_watermarks() {
     );
     assert!(history.states.iter().all(|state| state.id > 30));
 }
+
+// ---- retirement cover and collector-less publication (G2-6 6A S9) ----
+
+const DRAIN_VIN: &str = "5YJ3E1EA7KF000001";
+const DRAIN_AT: i64 = 1_800_000_000_000;
+
+fn drain_config() -> PublicationDrainConfig {
+    PublicationDrainConfig {
+        retry_initial: Duration::from_millis(10),
+        retry_max: Duration::from_millis(40),
+        idle: Duration::from_millis(20),
+        ..PublicationDrainConfig::default()
+    }
+}
+
+fn drain_unpublished(store: &HubStore, vehicle: Uuid) -> i64 {
+    store
+        .open()
+        .expect("database")
+        .query_row(
+            "SELECT COUNT(*) FROM sync_mutations WHERE vehicle_id = ?1 AND published = 0",
+            [vehicle.to_string()],
+            |row| row.get(0),
+        )
+        .expect("unpublished count")
+}
+
+fn drain_deltas(store: &HubStore, vehicle: Uuid) -> i64 {
+    store
+        .open()
+        .expect("database")
+        .query_row(
+            "SELECT COUNT(*) FROM sync_deltas WHERE vehicle_id = ?1",
+            [vehicle.to_string()],
+            |row| row.get(0),
+        )
+        .expect("delta count")
+}
+
+/// Every column of every export-outbox row, in vehicle order.
+fn drain_outbox(store: &HubStore) -> Vec<(String, i64, i64, i64, i64, Option<String>)> {
+    store
+        .open()
+        .expect("database")
+        .prepare(
+            "SELECT vehicle_id, dirty_revision, attempts, next_attempt_ms, claimed_until_ms,
+                    last_error
+               FROM export_outbox ORDER BY vehicle_id",
+        )
+        .expect("outbox statement")
+        .query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        })
+        .expect("outbox rows")
+        .collect::<Result<_, _>>()
+        .expect("outbox row")
+}
+
+fn drain_mark_outbox(store: &HubStore, vehicle: Uuid) {
+    store
+        .open()
+        .expect("database")
+        .execute(
+            "INSERT INTO export_outbox(vehicle_id, dirty_revision, attempts, next_attempt_ms,
+                claimed_until_ms, last_error)
+             VALUES (?1, 1, 0, 0, 0, NULL)
+             ON CONFLICT(vehicle_id) DO UPDATE SET dirty_revision = 1, attempts = 0,
+                next_attempt_ms = 0, claimed_until_ms = 0, last_error = NULL",
+            [vehicle.to_string()],
+        )
+        .expect("outbox row");
+}
+
+fn drain_registered_without_base(store: &HubStore, id: Uuid, key: &str) {
+    let source = store
+        .register_source(&provider_source(CollectorProvider::Legacy), DRAIN_AT)
+        .expect("source");
+    store
+        .register_vehicle_with_id(
+            &VehicleDescriptor::new(source.source_id, key),
+            DRAIN_AT,
+            id,
+        )
+        .expect("vehicle without a base");
+    drain_mark_outbox(store, id);
+}
+
+#[tokio::test]
+async fn retirement_cover_is_published_by_the_collector_replay() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let key = CursorKey::from_bytes([31; 32]);
+    let vehicle_id = v2_base_with_pending_work(&store, &key, 9, DRAIN_VIN, None, DRAIN_AT);
+    add_pending_observation(&store, 9, DRAIN_VIN, DRAIN_AT + 60_000, "P", 0);
+    assert!(drain_unpublished(&store, vehicle_id) > 0, "derived work is pending");
+    // Exactly the row the v74 step writes for a vehicle with a pending publication.
+    store
+        .open()
+        .unwrap()
+        .execute("DELETE FROM export_outbox", [])
+        .unwrap();
+    drain_mark_outbox(&store, vehicle_id);
+    assert_eq!(drain_outbox(&store).len(), 1);
+
+    // The collector's own replay, as its loops call it, until the row is gone.
+    let vehicle = Vehicle::for_test(9, DRAIN_VIN, "online");
+    for round in 0..5 {
+        replay_export_outbox(
+            &store,
+            &key,
+            std::slice::from_ref(&vehicle),
+            DRAIN_AT + 120_000 + round,
+        )
+        .await
+        .expect("replay");
+        if drain_outbox(&store).is_empty() {
+            break;
+        }
+    }
+    assert_eq!(drain_unpublished(&store, vehicle_id), 0, "all cover published");
+    assert!(drain_outbox(&store).is_empty(), "the outbox row completed");
+    assert!(drain_deltas(&store, vehicle_id) >= 1);
+}
+
+#[tokio::test]
+async fn drain_without_collector_publishes_v2_vehicles_and_skips_others() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let key = CursorKey::from_bytes([32; 32]);
+    let eligible = v2_base_with_pending_work(&store, &key, 9, DRAIN_VIN, None, DRAIN_AT);
+    add_pending_observation(&store, 9, DRAIN_VIN, DRAIN_AT + 60_000, "P", 0);
+    let no_base = Uuid::from_u128(0x2000_0000_0000_4000_8000_0000_0000_0001);
+    drain_registered_without_base(&store, no_base, "no-base");
+    assert!(!store.vehicle_has_v2_base(no_base).unwrap());
+    assert!(drain_unpublished(&store, eligible) > 0);
+    let outbox_before = drain_outbox(&store);
+    assert_eq!(outbox_before.len(), 2);
+
+    let (_stop, mut stopped) = watch::channel(false);
+    let pass = drain_pending_publication_pass(&store, &key, None, &mut stopped, &drain_config())
+        .await
+        .expect("pass");
+    assert_eq!(pass.vehicles_seen, 2);
+    assert_eq!(pass.skipped_without_base, 1);
+    assert_eq!(pass.failed, 0);
+    assert!(pass.published > 0);
+    assert_eq!(drain_unpublished(&store, eligible), 0, "eligible work published");
+    assert!(!store.vehicle_has_v2_base(no_base).unwrap(), "no-base work stays with its own path");
+    // The helper neither claimed, completed nor failed an outbox row.
+    assert_eq!(drain_outbox(&store), outbox_before);
+}
+
+#[tokio::test]
+async fn drain_without_collector_continues_after_a_full_page() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let key = CursorKey::from_bytes([33; 32]);
+    // More vehicles without a base than one page holds, all ordered before the
+    // eligible ones: skipped vehicles must not hide later eligible work.
+    let skipped = crate::db::EXPORT_OUTBOX_VEHICLE_PAGE + 4;
+    for index in 0..skipped {
+        drain_registered_without_base(
+            &store,
+            Uuid::from_u128(0x1000_0000_0000_4000_8000_0000_0000_0000 + index as u128),
+            &format!("no-base-{index}"),
+        );
+    }
+    let late = Uuid::from_u128(0xf000_0000_0000_4000_8000_0000_0000_0001);
+    let later = Uuid::from_u128(0xf000_0000_0000_4000_8000_0000_0000_0002);
+    v2_base_with_pending_work(&store, &key, 9, DRAIN_VIN, Some(late), DRAIN_AT);
+    v2_base_with_pending_work(&store, &key, 10, "5YJ3E1EA7KF000002", Some(later), DRAIN_AT);
+    assert!(drain_unpublished(&store, late) > 0 && drain_unpublished(&store, later) > 0);
+    assert!(drain_outbox(&store).len() > crate::db::EXPORT_OUTBOX_VEHICLE_PAGE);
+
+    let (_stop, mut stopped) = watch::channel(false);
+    let pass = drain_pending_publication_pass(&store, &key, None, &mut stopped, &drain_config())
+        .await
+        .expect("pass");
+    assert_eq!(pass.skipped_without_base, skipped);
+    assert_eq!(pass.vehicles_seen, skipped + 2);
+    assert_eq!(drain_unpublished(&store, late), 0, "work beyond the first page is published");
+    assert_eq!(drain_unpublished(&store, later), 0);
+}
+
+#[tokio::test]
+async fn drain_without_collector_continues_after_a_full_claim() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let key = CursorKey::from_bytes([34; 32]);
+    let vehicle = v2_base_with_pending_work(&store, &key, 9, DRAIN_VIN, None, DRAIN_AT);
+    for step in 1..=4 {
+        let shift = if step % 2 == 0 { "P" } else { "D" };
+        add_pending_observation(&store, 9, DRAIN_VIN, DRAIN_AT + 60_000 * step, shift, 10 * step);
+    }
+    let pending = drain_unpublished(&store, vehicle);
+    assert!(pending > 4, "a backlog larger than the test claim bound: {pending}");
+    let deltas_before = drain_deltas(&store, vehicle);
+
+    // A claim of two mutations: the backlog needs many turns, all in one pass.
+    let config = PublicationDrainConfig {
+        claim_limit: 2,
+        ..drain_config()
+    };
+    let (_stop, mut stopped) = watch::channel(false);
+    let pass = drain_pending_publication_pass(&store, &key, None, &mut stopped, &config)
+        .await
+        .expect("pass");
+    assert_eq!(pass.published as i64, pending);
+    assert_eq!(drain_unpublished(&store, vehicle), 0, "the whole backlog is published");
+    let turns = drain_deltas(&store, vehicle) - deltas_before;
+    assert!(
+        turns >= (pending + 1) / 2,
+        "each turn published at most its claim: {turns} deltas for {pending} mutations"
+    );
+}
+
+#[tokio::test]
+async fn drain_without_collector_retries_and_stops_with_serve() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let key = CursorKey::from_bytes([35; 32]);
+    let vehicle = v2_base_with_pending_work(&store, &key, 9, DRAIN_VIN, None, DRAIN_AT);
+    add_pending_observation(&store, 9, DRAIN_VIN, DRAIN_AT + 60_000, "P", 0);
+    let pending = drain_unpublished(&store, vehicle);
+    assert!(pending > 0);
+
+    // A transient failure keeps the work durable and releases the claim.
+    store.instrumentation().fail_publication_turns(1);
+    let (_stop, mut stopped) = watch::channel(false);
+    let failed =
+        drain_pending_publication_pass(&store, &key, None, &mut stopped, &drain_config()).await;
+    let failed = failed.expect("a vehicle's failed turn is counted, not a pass error");
+    assert_eq!(failed.failed, 1, "the injected turn failure is counted");
+    assert_eq!(failed.published, 0);
+    assert_eq!(drain_unpublished(&store, vehicle), pending, "the work is retained");
+    let claimed: i64 = store
+        .open()
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM sync_mutations
+              WHERE vehicle_id = ?1 AND published = 0 AND claimed_until_ms > 0",
+            [vehicle.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(claimed, 0, "the failed turn released its claim");
+
+    // The task retries with backoff, without a busy loop, and publishes.
+    store.instrumentation().reset();
+    store.instrumentation().fail_publication_turns(2);
+    let drain = PublicationDrain::spawn(store.clone(), key.clone(), None, drain_config());
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while drain_unpublished(&store, vehicle) > 0 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the task retried and published");
+    assert_eq!(store.instrumentation().snapshot().publication_task_starts, 1);
+    assert_eq!(store.instrumentation().snapshot().publication_task_exits, 0);
+    drain.stop_and_join().await.expect("orderly stop");
+    assert_eq!(
+        store.instrumentation().snapshot().publication_task_exits,
+        1,
+        "the stop joined the task"
+    );
+
+    // A stop during a long idle wait ends the task at once.
+    let idle_config = PublicationDrainConfig {
+        idle: Duration::from_secs(3_600),
+        ..drain_config()
+    };
+    let drain = PublicationDrain::spawn(store.clone(), key, None, idle_config);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::timeout(Duration::from_secs(5), drain.stop_and_join())
+        .await
+        .expect("a stop interrupts the idle wait")
+        .expect("orderly stop");
+    assert_eq!(store.instrumentation().snapshot().publication_task_exits, 2);
+}
+
+const DRAIN_VIN_TWO: &str = "5YJ3E1EA7KF000002";
+
+/// Two v2-based vehicles with pending work; the first by identity order is the
+/// one whose reads a test breaks.
+fn drain_broken_and_sound(store: &HubStore, key: &CursorKey) -> (Uuid, Uuid) {
+    let broken = Uuid::from_u128(0x1000_0000_0000_4000_8000_0000_0000_0001);
+    let sound = Uuid::from_u128(0x2000_0000_0000_4000_8000_0000_0000_0002);
+    v2_base_with_pending_work(store, key, 9, DRAIN_VIN, Some(broken), DRAIN_AT);
+    add_pending_observation(store, 9, DRAIN_VIN, DRAIN_AT + 60_000, "P", 0);
+    v2_base_with_pending_work(store, key, 10, DRAIN_VIN_TWO, Some(sound), DRAIN_AT);
+    add_pending_observation(store, 10, DRAIN_VIN_TWO, DRAIN_AT + 60_000, "P", 0);
+    assert!(drain_unpublished(store, broken) > 0 && drain_unpublished(store, sound) > 0);
+    (broken, sound)
+}
+
+#[tokio::test]
+async fn drain_without_collector_counts_logs_and_continues_after_a_vehicle_read_error() {
+    for variant in 0..2 {
+        let temp = crate::private_tempdir().expect("temporary store");
+        let store = HubStore::initialize(temp.path()).expect("store");
+        let key = CursorKey::from_bytes([36; 32]);
+        let (broken, sound) = drain_broken_and_sound(&store, &key);
+        let broken_pending = drain_unpublished(&store, broken);
+        let fault = if variant == 0 {
+            StoreReadFault::HasV2Base(broken)
+        } else {
+            StoreReadFault::HasUnpublished(broken)
+        };
+
+        crate::test_log_capture::arm();
+        store.instrumentation().fail_reads(Some(fault));
+        let (_stop, mut stopped) = watch::channel(false);
+        let pass =
+            drain_pending_publication_pass(&store, &key, None, &mut stopped, &drain_config()).await;
+        let log = crate::test_log_capture::disarm();
+        let pass = pass.expect("one vehicle's read error does not end the pass");
+        assert_eq!(pass.vehicles_seen, 2, "variant {variant}: the later vehicle is reached");
+        assert_eq!(pass.failed, 1, "variant {variant}: the read error is counted");
+        assert!(pass.published > 0, "variant {variant}");
+        assert_eq!(drain_unpublished(&store, sound), 0, "variant {variant}: later work published");
+        assert_eq!(
+            drain_unpublished(&store, broken),
+            broken_pending,
+            "variant {variant}: the unreadable vehicle's work is retained"
+        );
+        assert_eq!(
+            log.matches("publication_read_failed").count(),
+            1,
+            "variant {variant}: logged once: {log}"
+        );
+        assert!(log.contains(&broken.to_string()), "variant {variant}: names the Hub vehicle UUID");
+        assert!(!log.contains(&sound.to_string()), "variant {variant}");
+        assert!(!log.contains(DRAIN_VIN) && !log.contains(DRAIN_VIN_TWO), "variant {variant}");
+
+        // With the read repaired the next pass publishes the retained work.
+        store.instrumentation().fail_reads(None);
+        let (_stop, mut stopped) = watch::channel(false);
+        let pass =
+            drain_pending_publication_pass(&store, &key, None, &mut stopped, &drain_config())
+                .await
+                .expect("pass");
+        assert_eq!(pass.failed, 0, "variant {variant}");
+        assert_eq!(drain_unpublished(&store, broken), 0, "variant {variant}");
+    }
+}
+
+#[tokio::test]
+async fn drain_without_collector_logs_a_pass_error_once_per_backoff_step() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let key = CursorKey::from_bytes([37; 32]);
+    let (broken, sound) = drain_broken_and_sound(&store, &key);
+
+    crate::test_log_capture::arm();
+    store.instrumentation().fail_outbox_pages(3);
+    let drain = PublicationDrain::spawn(store.clone(), key.clone(), None, drain_config());
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while drain_unpublished(&store, broken) > 0 || drain_unpublished(&store, sound) > 0 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the task backed off and published");
+    drain.stop_and_join().await.expect("orderly stop");
+    let log = crate::test_log_capture::disarm();
+    assert_eq!(
+        log.matches("publication_pass_failed").count(),
+        3,
+        "one line per failed pass, none for the passes that worked: {log}"
+    );
+    assert!(!log.contains("publication_read_failed"), "{log}");
+    assert!(!log.contains(DRAIN_VIN) && !log.contains(DRAIN_VIN_TWO));
+}
+
+#[tokio::test]
+async fn drain_without_collector_backs_off_after_read_errors_without_a_second_log_line() {
+    let temp = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let key = CursorKey::from_bytes([38; 32]);
+    let (broken, sound) = drain_broken_and_sound(&store, &key);
+
+    crate::test_log_capture::arm();
+    store
+        .instrumentation()
+        .fail_reads(Some(StoreReadFault::HasUnpublished(broken)));
+    let drain = PublicationDrain::spawn(store.clone(), key.clone(), None, drain_config());
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while drain_unpublished(&store, sound) > 0 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the later vehicle is published although the first cannot be read");
+    // Let the backoff retry the unreadable vehicle a few times.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    drain.stop_and_join().await.expect("orderly stop");
+    let log = crate::test_log_capture::disarm();
+    let read_lines = log.matches("publication_read_failed").count();
+    assert!(read_lines >= 2, "the unreadable vehicle is retried and logged per pass: {log}");
+    assert_eq!(
+        log.matches("publication_pass_failed").count(),
+        0,
+        "a vehicle's error is not logged again as a pass error: {log}"
+    );
+}

@@ -24,7 +24,7 @@ use tokio_tungstenite::{accept_async, tungstenite::Message};
 use super::*;
 use crate::{
     credentials::{LegacyAuthManager, OwnerTokens},
-    db::{SourceDescriptor, SyncMutation, SyncMutationClaim, VehicleDescriptor},
+    db::{SourceDescriptor, StoreReadFault, SyncMutation, SyncMutationClaim, VehicleDescriptor},
     lifecycle::OpenSessionState,
     owner_api::{Vehicle, VehicleData},
 };

@@ -11,8 +11,6 @@ use std::{
     path::{Path, PathBuf},
 };
 #[cfg(feature = "interop-fixture")]
-use teslatlas_hub::hub_pack::ProjectionCarSettings;
-#[cfg(feature = "interop-fixture")]
 use teslatlas_hub::protocol::HUB_PROJECTION_SCHEMA_V3;
 use teslatlas_hub::{
     credentials::OwnerTokens,
@@ -152,135 +150,6 @@ pub struct DynamicVehicleMutation {
     pub vehicle_id: Uuid,
 }
 
-/// One sealed source/vehicle tuple for an empty, synthetic Edge control
-/// fixture. It is compiled only when the explicit interop feature is enabled.
-#[cfg(feature = "interop-fixture")]
-#[derive(Clone)]
-pub struct EmptyEdgeBinding {
-    pub installation_id: String,
-    pub lineage: String,
-    pub source_id: Uuid,
-    pub vehicle_id: Uuid,
-    pub vin: String,
-    pub car_id: i64,
-}
-
-#[cfg(feature = "interop-fixture")]
-#[derive(Serialize)]
-pub struct PreparedEmptyEdgeBinding {
-    pub schema_version: u8,
-    pub data_dir: PathBuf,
-    pub installation_id: String,
-    pub lineage: String,
-    pub hub_id: Uuid,
-    pub source_id: Uuid,
-    pub vehicle_id: Uuid,
-    pub vin: String,
-    pub car_id: i64,
-    pub base_snapshot_id: Uuid,
-    pub base_sequence: u64,
-}
-
-/// Create one fresh, empty Edge-bound Hub catalogue. This intentionally uses
-/// the normal source, vehicle, and settings APIs; it never rewrites catalogue
-/// rows or seeds observations or Edge receipts. It publishes the one empty
-/// base required by normal macOS preflight to recognise the configured car.
-#[cfg(feature = "interop-fixture")]
-pub fn prepare_empty_edge_binding(
-    root: &Path,
-    binding: &EmptyEdgeBinding,
-) -> Result<PreparedEmptyEdgeBinding> {
-    if !root.is_absolute()
-        || binding.source_id.is_nil()
-        || binding.vehicle_id.is_nil()
-        || binding.car_id <= 0
-    {
-        return Err(
-            "empty Edge fixture requires absolute root and sealed non-nil identities".into(),
-        );
-    }
-
-    fs::DirBuilder::new().mode(0o700).create(root)?;
-    let data_dir = root.join("hub");
-    let store = HubStore::initialize(&data_dir)?;
-    let source = store.register_interop_source_with_id(
-        &SourceDescriptor::new("owner_api_compat", "local_installation_v1"),
-        OBSERVED_AT_MS,
-        binding.source_id,
-    )?;
-    let mut vehicle = VehicleDescriptor::new(source.source_id, binding.car_id.to_string())
-        .with_tesla_identity(Some(binding.car_id), None);
-    vehicle.vin = Some(binding.vin.clone());
-    vehicle.display_name = Some("Empty Edge binding".into());
-    store.register_vehicle_with_id(&vehicle, OBSERVED_AT_MS, binding.vehicle_id)?;
-    store.upsert_car_settings(
-        binding.vehicle_id,
-        binding.car_id,
-        &ProjectionCarSettings::default(),
-    )?;
-    let hub_id = store.installation_id()?;
-    let cursor_key = load_or_create_cursor_key(&data_dir)?;
-    let car: ProjectionCar = serde_json::from_value(json!({
-        "id": binding.car_id,
-        "name": "Empty Edge binding",
-        "model": "model3",
-        "vin": binding.vin,
-        "source_eid": binding.car_id,
-        "firmware_version": "synthetic-empty-base"
-    }))?;
-    let snapshot = ProjectionSnapshot {
-        cars: vec![car],
-        drives: Vec::new(),
-        positions: Vec::new(),
-        charges: Vec::new(),
-        charge_samples: Vec::new(),
-    };
-    store.persist_materialised_car_if_absent(binding.vehicle_id, &snapshot.cars[0])?;
-    let base_sequence = store.next_full_snapshot_sequence(binding.vehicle_id)?;
-    let base_snapshot_id = Uuid::new_v4();
-    let request = ProjectionPackRequest {
-        pack_id: Uuid::new_v4(),
-        snapshot_id: base_snapshot_id,
-        ordinal: 0,
-        binding: ProjectionBinding {
-            installation_id: hub_id,
-            account_id: source.source_id,
-            vehicle_id: binding.vehicle_id,
-            generation: source.generation,
-            selected_car_id: binding.car_id,
-        },
-        sequence: SequenceRange {
-            from_exclusive: base_sequence,
-            to_inclusive: base_sequence,
-        },
-        snapshot: &snapshot,
-    };
-    let built = ProjectionPackWriter::new(store.packs_dir())
-        .write_full_snapshot_with_states_and_updates(&request, &[], &[])?;
-    let manifest =
-        request.signed_manifest_with_states_and_updates(&built, &[], &[], &cursor_key)?;
-    store.finalize_import_snapshot_with_binding(
-        &manifest,
-        Sha256Digest::from_bytes([0xE0; 32]),
-        &[],
-        &request.binding,
-    )?;
-
-    Ok(PreparedEmptyEdgeBinding {
-        schema_version: 2,
-        data_dir,
-        installation_id: binding.installation_id.clone(),
-        lineage: binding.lineage.clone(),
-        hub_id,
-        source_id: source.source_id,
-        vehicle_id: binding.vehicle_id,
-        vin: binding.vin.clone(),
-        car_id: binding.car_id,
-        base_snapshot_id,
-        base_sequence,
-    })
-}
-
 pub fn prepare(root: &Path, port: u16) -> Result<PreparedFixture> {
     prepare_with_source_id(root, port, Uuid::new_v4())
 }
@@ -324,8 +193,8 @@ pub fn prepare_with_scenario_and_source_id(
     )
 }
 
-/// Prepare a synthetic fixture whose first vehicle exactly matches a sealed
-/// Edge binding. The second, empty fixture vehicle remains distinct so normal
+/// Prepare a synthetic fixture whose first vehicle exactly matches a selected
+/// source identity. The second, empty fixture vehicle remains distinct so normal
 /// public-client discovery still has two vehicles.
 pub fn prepare_with_scenario_source_and_primary_vehicle(
     root: &Path,
@@ -500,7 +369,7 @@ fn prepare_with_vehicle_identities(
         transaction.commit()?;
         drop(connection);
         // Keep the legacy base binding as the durable configured-vehicle fact
-        // used by native serve preflight and Edge delivery. Schema 2.2 is a
+        // used by native serve preflight and the receiver. Schema 2.2 is a
         // second, newer publication, matching the production import path; it
         // supplements rather than replaces the binding catalogue.
         let legacy_sequence = store.next_full_snapshot_sequence(vehicle_id)?;

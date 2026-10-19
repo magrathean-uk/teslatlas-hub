@@ -452,7 +452,7 @@ async fn cadence_readyz_preserves_attention_details_and_service_reasons() {
 }
 
 #[tokio::test]
-async fn cadence_readyz_disabled_and_edge_have_no_operational_cadence_error() {
+async fn cadence_readyz_disabled_has_no_operational_cadence_error() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
     write_rows(
@@ -480,8 +480,8 @@ async fn cadence_readyz_disabled_and_edge_have_no_operational_cadence_error() {
     assert!(!disabled_view.running);
     // `/readyz` is never given a cadence (the production context sets none), so
     // a Fleet-mode context and a corrected Legacy context alike carry no cadence
-    // fault: the attention is the C3 stop, never the cadence. The Edge exclusion
-    // itself is proven where the cadence is derived, in the doctor test
+    // fault: the attention is the C3 stop, never the cadence. The cadence
+    // itself is proven where it is derived, in the doctor test
     // `cadence_doctor_describes_inactive_settings_without_attention`.
     for context in [
         ReadinessContext::configured(true, NOW_MS + 1_000, CollectorMode::FleetPolling, None),

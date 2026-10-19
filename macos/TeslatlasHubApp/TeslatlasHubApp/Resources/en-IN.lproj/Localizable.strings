@@ -41,7 +41,7 @@
 "hub.DevelopmentHubRuntime.109.98" = "Local development mode was not enabled. Set %1$@=1 together with all four development paths.";
 "hub.DevelopmentHubRuntime.115.99" = "%1$@ must be a non-empty absolute path.";
 "hub.DevelopmentHubRuntime.119.100" = "%1$@ must not contain relative path components.";
-"hub.DevelopmentHubRuntime.128.101" = "%1$@ must be fixture, standalone, or edge.";
+"hub.DevelopmentHubRuntime.128.101" = "%1$@ must be fixture or standalone.";
 "hub.DevelopmentHubRuntime.172.102" = "Development log directory cannot be safely opened: %1$@";
 "hub.DevelopmentHubRuntime.18.82" = "History-only control file is unsafe or unavailable.";
 "hub.DevelopmentHubRuntime.182.103" = "Development log directory changed during preparation: %1$@";

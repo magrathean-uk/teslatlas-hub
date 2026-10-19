@@ -18,10 +18,6 @@ pub mod sync;
 #[path = "../source_identity.rs"]
 mod source_identity;
 
-#[cfg(feature = "edge-test-faults")]
-#[path = "runtime/edge_test_fault.rs"]
-mod edge_test_fault;
-
 // Stable compatibility exports. New code should prefer the domain paths above.
 pub use api::{fleet_api, http_range, owner_api, protocol, server, transport};
 pub use auth::{
@@ -30,7 +26,7 @@ pub use auth::{
 };
 #[cfg(test)]
 pub use collection::fake_tesla;
-pub use collection::{collector, current_state, edge_delivery, fleet_telemetry, tesla_stream};
+pub use collection::{collector, current_state, fleet_telemetry, tesla_stream};
 pub use geo::{geocoder, gpx, location, terrain, terrain_cache};
 pub use import::teslamate::{
     direct as teslamate_direct, fragments as teslamate_fragments, importer as teslamate_import,

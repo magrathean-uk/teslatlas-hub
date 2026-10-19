@@ -831,7 +831,47 @@ impl HubStore {
         Ok(())
     }
 
+    /// One keyset page of the vehicles in the export outbox, ordered by vehicle
+    /// identity and starting strictly after `after` (G2-6 6A S9). A page holds at
+    /// most [`EXPORT_OUTBOX_VEHICLE_PAGE`] vehicles whatever `limit` asks. The
+    /// read neither claims, completes nor fails an outbox row.
+    pub(crate) fn export_outbox_vehicle_page(
+        &self,
+        after: Option<Uuid>,
+        limit: usize,
+    ) -> Result<Vec<Uuid>, StoreError> {
+        #[cfg(test)]
+        if self.instrumentation().take_outbox_page_fault() {
+            return Err(StoreError::InjectedStreamFault("export-outbox-page"));
+        }
+        let limit = limit.clamp(1, EXPORT_OUTBOX_VEHICLE_PAGE);
+        let connection = self.open_read_only_connection()?;
+        let after = after.map(|vehicle_id| vehicle_id.to_string()).unwrap_or_default();
+        let mut statement = connection
+            .prepare(
+                "SELECT vehicle_id FROM export_outbox
+                  WHERE vehicle_id > ?1
+                  ORDER BY vehicle_id LIMIT ?2",
+            )
+            .map_err(StoreError::Query)?;
+        let rows = statement
+            .query_map(params![after, limit as i64], |row| row.get::<_, String>(0))
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)?;
+        rows.iter()
+            .map(|vehicle_id| parse_stored_uuid("export outbox vehicle", vehicle_id))
+            .collect()
+    }
+
     pub fn vehicle_has_v2_base(&self, vehicle_id: Uuid) -> Result<bool, StoreError> {
+        #[cfg(test)]
+        if self
+            .instrumentation()
+            .reading_fails(StoreReadFault::HasV2Base(vehicle_id))
+        {
+            return Err(StoreError::InjectedStreamFault("vehicle-has-v2-base"));
+        }
         let connection = self.open()?;
         connection
             .query_row(
@@ -843,6 +883,13 @@ impl HubStore {
     }
 
     pub fn has_unpublished_sync_mutations(&self, vehicle_id: Uuid) -> Result<bool, StoreError> {
+        #[cfg(test)]
+        if self
+            .instrumentation()
+            .reading_fails(StoreReadFault::HasUnpublished(vehicle_id))
+        {
+            return Err(StoreError::InjectedStreamFault("vehicle-has-unpublished"));
+        }
         let connection = self.open()?;
         connection
             .query_row(

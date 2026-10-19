@@ -7,7 +7,7 @@ below are separate policies and do not establish standards conformance.
 
 The table describes the contracts this package keeps: the current-Hub HTTP
 profile `hub-http-v1@1.2.0`, the Hub sync profiles `hub-sync-v1@1.3.0` through
-`1.5.0`, and `edge-delivery-v2@2.0.0`. Use each profile's own documents for its
+`1.5.0`, and `receiver-v1@1.0.0`. Use each profile's own documents for its
 routes, errors and limits: [`current-hub.md`](current-hub.md) for the HTTP
 profile and [`hub-sync.md`](hub-sync.md) for the sync profiles.
 
@@ -16,9 +16,9 @@ profile and [`hub-sync.md`](hub-sync.md) for the sync profiles.
 | Requirement words | [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.html) and [RFC 8174](https://www.rfc-editor.org/rfc/rfc8174.html) | uppercase normative terms in prose contracts |
 | Well-known discovery | [RFC 8615](https://www.rfc-editor.org/rfc/rfc8615.html) | `/.well-known/teslatlas-hub` shape and deployment considerations |
 | HTTP semantics, validators | [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) | strong `ETag` and `If-None-Match` with `304` on the `hub-http-v1@1.2.0` reads; strong `ETag` and a single byte range (`206` with `Content-Range`) on the `hub-sync-v1@1.3.0` pack route |
-| OpenAPI | [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) | operation and HTTP representation contract of the OpenAPI documents of every retained profile (`hub-http-v1@1.2.0`, `hub-sync-v1@1.3.0`, `1.4.0` and `1.5.0`, and `edge-delivery-v2@2.0.0`), each of which declares OpenAPI 3.1.0 |
+| OpenAPI | [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) | operation and HTTP representation contract of the OpenAPI documents of every retained profile (`hub-http-v1@1.2.0`, `hub-sync-v1@1.3.0`, `1.4.0` and `1.5.0`), each of which declares OpenAPI 3.1.0 |
 | JSON Schema | [Core](https://json-schema.org/draft/2020-12/json-schema-core.html) and [Validation](https://json-schema.org/draft/2020-12/json-schema-validation.html) | the data schemas of every retained profile |
-| Canonical JSON | [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html) | signed payloads and digests of the sync profiles; Edge identities, with the key-order erratum below |
+| Canonical JSON | [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html) | signed payloads and digests of the sync profiles; the receiver profile's informative identity block, with the key-order erratum below |
 | Version syntax | [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html) | protocol and capability version numbers |
 
 ### Entity tags in the current-Hub profile
@@ -33,11 +33,12 @@ this section only names the standard they rest on. The inner-space and
 literal-backslash entity-tag witnesses of the retired root contract, its
 metadata hash candidates and its other validator rules were retired with it.
 
-### Edge delivery key-order erratum
+### Receiver identity key-order erratum
 
-The `edge-delivery-v2@2.0.0` machine profile explicitly names
-`edge-json-utf8-key-order-v1` as an in-place authority erratum for the already
-prescribed identity behavior. Every object, including objects within arrays,
+The `receiver-v1@1.0.0` machine profile carries, as informative text, the
+identity block of the retired `edge-delivery-v2@2.0.0` profile. That block
+names `edge-json-utf8-key-order-v1` as an in-place authority erratum for the
+already prescribed identity behavior. Every object, including objects within arrays,
 sorts its raw property names by unsigned lexicographic UTF-8 byte order before
 JSON escaping, without Unicode normalization. Shorter strings precede longer
 strings with the same byte prefix. Array order is preserved.
@@ -50,8 +51,8 @@ does not migrate identities to ordinary RFC 8785 JCS. Other existing
 serialization semantics are not changed by this key-order correction. Broad
 numeric interpretation for signed64 timestamps and unrestricted payloads
 remains unresolved. The bounded nested Unicode/integer/string corpus proves
-its selected bytes and identifiers, not broad numeric behavior or actual Edge
-runtime, atomic commit, ACK, replay or crash acceptance.
+its selected bytes and identifiers, not broad numeric behavior or any runtime,
+atomic commit, replay or crash acceptance.
 
 ## Project policies
 

@@ -60,7 +60,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 72;
+pub const SCHEMA_VERSION: i32 = 74;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -89,6 +89,13 @@ pub(crate) const SUPERVISED_COLLECTOR_LEASE_MS: i64 = 30_000;
 /// high-volume telemetry into individual observations rather than retaining an
 /// unbounded response in memory or in the Hub database.
 pub const MAX_RAW_OBSERVATION_BYTES: usize = 256 * 1024;
+
+/// The most vehicles one page of the export outbox enumeration holds.
+pub(crate) const EXPORT_OUTBOX_VEHICLE_PAGE: usize = 256;
+
+/// Record type of a receiver alert or error event kept as one raw observation
+/// (G2-6 6A S5). It has no current row and the processed-row prune keeps it.
+pub(crate) const RECEIVER_EVENT_RECORD_TYPE: &str = "fleet_telemetry_event_v1";
 
 /// The read API is deliberately capped so callers cannot accidentally turn a
 /// history query into an all-memory transfer.
@@ -327,7 +334,7 @@ pub enum StreamFaultPoint {
     Commit,
 }
 
-#[cfg(any(test, feature = "edge-test-faults"))]
+#[cfg(test)]
 impl StreamFaultPoint {
     const fn label(self) -> &'static str {
         match self {
@@ -370,6 +377,184 @@ pub struct HubStore {
     /// Digests of the lineage packs this store hashed, shared by its clones.
     #[cfg(test)]
     lineage_pack_hashes: Arc<Mutex<Vec<Sha256Digest>>>,
+    /// Test only (G2-6 6A S4): connection opens, registration calls and write
+    /// transactions this store and its clones performed.
+    #[cfg(test)]
+    instrumentation: Arc<StoreInstrumentation>,
+}
+
+/// Test only (G2-6 6A S4/S5): counters shared by a store and its clones. A test
+/// resets them after its fixture setup, then reads the deltas of the operation
+/// under test.
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub(crate) struct StoreInstrumentation {
+    /// SQL connections opened for writing (`HubStore::open`).
+    pub(crate) writable_opens: std::sync::atomic::AtomicUsize,
+    /// SQL connections opened read-only.
+    pub(crate) read_only_opens: std::sync::atomic::AtomicUsize,
+    /// Entries into the source registration implementation.
+    pub(crate) source_registration_calls: std::sync::atomic::AtomicUsize,
+    /// Entries into the vehicle registration implementation.
+    pub(crate) vehicle_registration_calls: std::sync::atomic::AtomicUsize,
+    /// Collector write transactions begun (the shared intake seam).
+    pub(crate) write_transaction_attempts: std::sync::atomic::AtomicUsize,
+    /// Collector write transactions committed.
+    pub(crate) write_transaction_commits: std::sync::atomic::AtomicUsize,
+    /// Collector-less publication tasks started (G2-6 6A S9).
+    pub(crate) publication_task_starts: std::sync::atomic::AtomicUsize,
+    /// Collector-less publication tasks that ended.
+    pub(crate) publication_task_exits: std::sync::atomic::AtomicUsize,
+    /// Publication turns to fail after their claim, armed by a test.
+    publication_faults: std::sync::atomic::AtomicUsize,
+    /// A per-vehicle publication read to fail until cleared, armed by a test.
+    read_fault: std::sync::Mutex<Option<StoreReadFault>>,
+    /// Export-outbox page reads to fail, armed by a test.
+    outbox_page_faults: std::sync::atomic::AtomicUsize,
+}
+
+/// Test only (G2-6 6A fix round 2, R5): which per-vehicle read of the
+/// collector-less publication task fails.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StoreReadFault {
+    /// `HubStore::vehicle_has_v2_base` of this vehicle.
+    HasV2Base(Uuid),
+    /// `HubStore::has_unpublished_sync_mutations` of this vehicle.
+    HasUnpublished(Uuid),
+}
+
+/// A point-in-time copy of [`StoreInstrumentation`].
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct StoreCounts {
+    pub(crate) writable_opens: usize,
+    pub(crate) read_only_opens: usize,
+    pub(crate) source_registration_calls: usize,
+    pub(crate) vehicle_registration_calls: usize,
+    pub(crate) write_transaction_attempts: usize,
+    pub(crate) write_transaction_commits: usize,
+    pub(crate) publication_task_starts: usize,
+    pub(crate) publication_task_exits: usize,
+}
+
+#[cfg(test)]
+impl StoreCounts {
+    /// Every connection this store opened, writable or read-only.
+    pub(crate) fn opens(self) -> usize {
+        self.writable_opens + self.read_only_opens
+    }
+
+    /// Both registration implementations together.
+    pub(crate) fn registration_calls(self) -> usize {
+        self.source_registration_calls + self.vehicle_registration_calls
+    }
+}
+
+#[cfg(test)]
+impl StoreInstrumentation {
+    fn bump(counter: &std::sync::atomic::AtomicUsize) {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn read(counter: &std::sync::atomic::AtomicUsize) -> usize {
+        counter.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub(crate) fn snapshot(&self) -> StoreCounts {
+        StoreCounts {
+            writable_opens: Self::read(&self.writable_opens),
+            read_only_opens: Self::read(&self.read_only_opens),
+            source_registration_calls: Self::read(&self.source_registration_calls),
+            vehicle_registration_calls: Self::read(&self.vehicle_registration_calls),
+            write_transaction_attempts: Self::read(&self.write_transaction_attempts),
+            write_transaction_commits: Self::read(&self.write_transaction_commits),
+            publication_task_starts: Self::read(&self.publication_task_starts),
+            publication_task_exits: Self::read(&self.publication_task_exits),
+        }
+    }
+
+    pub(crate) fn note_publication_task_start(&self) {
+        Self::bump(&self.publication_task_starts);
+    }
+
+    pub(crate) fn note_publication_task_exit(&self) {
+        Self::bump(&self.publication_task_exits);
+    }
+
+    /// Make the next `turns` publication turns fail after they claim.
+    pub(crate) fn fail_publication_turns(&self, turns: usize) {
+        self.publication_faults
+            .store(turns, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Consume one armed publication fault, if any.
+    pub(crate) fn take_publication_fault(&self) -> bool {
+        self.publication_faults
+            .fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |left| left.checked_sub(1),
+            )
+            .is_ok()
+    }
+
+    /// Make one per-vehicle read fail until cleared with `None`.
+    pub(crate) fn fail_reads(&self, fault: Option<StoreReadFault>) {
+        *self
+            .read_fault
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = fault;
+    }
+
+    /// Whether `read` is the armed failing read.
+    pub(crate) fn reading_fails(&self, read: StoreReadFault) -> bool {
+        *self
+            .read_fault
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            == Some(read)
+    }
+
+    /// Make the next `reads` export-outbox page reads fail.
+    pub(crate) fn fail_outbox_pages(&self, reads: usize) {
+        self.outbox_page_faults
+            .store(reads, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Consume one armed page-read fault, if any.
+    pub(crate) fn take_outbox_page_fault(&self) -> bool {
+        self.outbox_page_faults
+            .fetch_update(
+                std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+                |left| left.checked_sub(1),
+            )
+            .is_ok()
+    }
+
+    /// Zero every counter. Call it after fixture setup.
+    pub(crate) fn reset(&self) {
+        for counter in [
+            &self.writable_opens,
+            &self.read_only_opens,
+            &self.source_registration_calls,
+            &self.vehicle_registration_calls,
+            &self.write_transaction_attempts,
+            &self.write_transaction_commits,
+            &self.publication_task_starts,
+            &self.publication_task_exits,
+        ] {
+            counter.store(0, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
+#[cfg(test)]
+impl HubStore {
+    pub(crate) fn instrumentation(&self) -> &StoreInstrumentation {
+        &self.instrumentation
+    }
 }
 
 /// One collector-owned SQLite handle for high-rate stream writes. Each
@@ -1411,11 +1596,11 @@ include!("db/observations_and_lifecycle.rs");
 include!("db/collector_state.rs");
 include!("db/auth_state.rs");
 include!("db/readiness.rs");
-include!("db/edge_delivery.rs");
 include!("db/geofences_and_terrain.rs");
 include!("db/catalogue_models.rs");
 include!("db/domain_models.rs");
 include!("db/catalogue_helpers.rs");
+include!("db/receiver_state.rs");
 include!("db/migrations.rs");
 include!("db/catalogue_maintenance.rs");
 include!("db/observation_persistence.rs");

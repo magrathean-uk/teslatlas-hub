@@ -66,41 +66,13 @@ pub fn prepare_install(data_dir: &Path, config_path: &Path) -> io::Result<Instal
     install_files(data_dir, config_path, &home, &executable)
 }
 
-/// Validate the configured collection authority, including Edge-only Fleet
-/// ingestion where no Tesla Fleet token is owned by Hub.
+/// Validate the configured collection authority, including receiver-only
+/// Fleet ingestion where no Tesla Fleet token is owned by Hub.
 pub fn preflight_hub_for_config(config: &crate::config::HubConfig) -> io::Result<()> {
-    if config.collector.interval_seconds == 0
-        && config.collector.edge.is_none()
-        && config.collector.fleet_telemetry.is_none()
-    {
+    if config.collector.interval_seconds == 0 && config.collector.fleet_telemetry.is_none() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "production Hub requires an enabled collector path",
-        ));
-    }
-    if let Some(edge) = &config.collector.edge {
-        let store = preflight_store(&config.data_dir)?;
-        let selected = store
-            .configured_tesla_vehicles()
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
-            .into_iter()
-            .any(|(vehicle_id, _, settings)| vehicle_id == edge.vehicle_id && settings.enabled);
-        store
-            .validate_edge_binding(&crate::db::EdgeBinding {
-                installation_id: edge.installation_id.clone(),
-                lineage: edge.lineage.clone(),
-                source_id: edge.source_id,
-                vehicle_id: edge.vehicle_id,
-                vin: edge.vin.clone(),
-                car_id: edge.car_id,
-            })
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        if selected {
-            return Ok(());
-        }
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "configured Edge vehicle/source/VIN binding is unavailable",
         ));
     }
     preflight_hub_for_provider(&config.data_dir, config.collector.provider)
@@ -110,14 +82,13 @@ pub fn preflight_hub_for_config(config: &crate::config::HubConfig) -> io::Result
 pub enum DevelopmentServeMode {
     Fixture,
     Standalone,
-    Edge,
     PrivateLan,
 }
 
 /// Parse the process-level source-run opt-in without consulting global state.
 /// An absent opt-in always selects production admission. The historical
 /// fixture behavior remains the default for existing explicit development
-/// launchers; standalone and Edge composition must be selected by name.
+/// launchers; standalone composition must be selected by name.
 pub fn development_serve_mode(
     opt_in: Option<&OsStr>,
     mode: Option<&OsStr>,
@@ -139,17 +110,12 @@ pub fn development_serve_mode(
         (Some(_), Some(value)) if value == OsStr::new("standalone") => {
             Ok(Some(DevelopmentServeMode::Standalone))
         }
-        (Some(_), Some(value)) if value == OsStr::new("edge") => {
-            Ok(Some(DevelopmentServeMode::Edge))
-        }
         (Some(_), Some(value)) if value == OsStr::new("private-lan") => {
             Ok(Some(DevelopmentServeMode::PrivateLan))
         }
         (Some(_), Some(_)) => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!(
-                "{DEVELOPMENT_SERVE_MODE_ENV} must be fixture, standalone, edge, or private-lan"
-            ),
+            format!("{DEVELOPMENT_SERVE_MODE_ENV} must be fixture, standalone, or private-lan"),
         )),
     }
 }
@@ -158,8 +124,7 @@ pub fn development_serve_mode(
 /// Existing source-run modes remain loopback-only. Private LAN is an explicit
 /// local-v1 opt-in with an exact RFC1918 IPv4 HTTPS identity.
 /// Fixture mode additionally requires the historical published fixture;
-/// standalone permits empty/import-only state; Edge requires the exact local
-/// Edge binding through the normal production preflight.
+/// standalone permits empty/import-only state.
 pub fn preflight_hub_for_serve(
     config: &crate::config::HubConfig,
     development_mode: Option<DevelopmentServeMode>,
@@ -204,9 +169,7 @@ pub fn preflight_hub_for_serve(
 
     match development_mode {
         DevelopmentServeMode::Standalone => {
-            if config.collector.interval_seconds != 0
-                || config.collector.edge.is_some()
-                || config.collector.fleet_telemetry.is_some()
+            if config.collector.interval_seconds != 0 || config.collector.fleet_telemetry.is_some()
             {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -223,26 +186,11 @@ pub fn preflight_hub_for_serve(
             )?;
             return Ok(());
         }
-        DevelopmentServeMode::Edge => {
-            if config.collector.interval_seconds != 0
-                || config.collector.edge.is_none()
-                || config.collector.fleet_telemetry.is_some()
-            {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "Edge source-run Serve requires only collector.edge",
-                ));
-            }
-            return preflight_hub_for_config(config);
-        }
         DevelopmentServeMode::PrivateLan => unreachable!("private LAN preflight returned above"),
         DevelopmentServeMode::Fixture => {}
     }
 
-    if config.collector.interval_seconds != 0
-        || config.collector.edge.is_some()
-        || config.collector.fleet_telemetry.is_some()
-    {
+    if config.collector.interval_seconds != 0 || config.collector.fleet_telemetry.is_some() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "fixture source-run Serve requires every collector path to be disabled",
@@ -340,10 +288,10 @@ fn preflight_private_lan_serve(config: &crate::config::HubConfig) -> io::Result<
         ));
     }
     crate::server::validate_tls_identity(tls)?;
-    if config.collector.edge.is_some() || config.collector.fleet_telemetry.is_some() {
+    if config.collector.fleet_telemetry.is_some() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
-            "private-LAN source-run Serve does not admit Edge or Fleet telemetry",
+            "private-LAN source-run Serve does not admit Fleet Telemetry",
         ));
     }
     if config.collector.interval_seconds == 0 {

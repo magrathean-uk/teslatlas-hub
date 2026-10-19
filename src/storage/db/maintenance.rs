@@ -717,6 +717,8 @@ impl HubStore {
             sink_attempts: Arc::default(),
             #[cfg(test)]
             lineage_pack_hashes: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(test)]
+            instrumentation: Arc::default(),
         };
         let mut visited = HashSet::new();
         for payload in manifest_rows {

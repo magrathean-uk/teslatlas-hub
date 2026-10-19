@@ -1,13 +1,21 @@
 {
   "authentication": {
-    "authorization": "Authorization: Bearer tte1.<credential-id>.<secret>",
-    "requirements_are_conjunctive": true,
-    "tls": "mutual TLS with an Edge-configured dedicated Hub client CA"
+    "authorization": "Authorization: Bearer <ingest-token>",
+    "scheme": "ingest bearer"
   },
-  "consumer_commit": {
-    "invalid": "authentication, identity, alias, sequence or envelope conflict is visible and cannot advance the ACK prefix",
-    "rule": "receipt, sequence disposition, aliases, Hub data effect and recoverable derived-export work commit atomically before ACK",
-    "valid_non_projection": "persist bounded identity, reason and payload digest before ACK"
+  "carried_vectors": {
+    "groups": [
+      "identity",
+      "negative_cases",
+      "non_projection_envelopes",
+      "sequence",
+      "unicode_key_order"
+    ],
+    "normative_groups": [
+      "receiver_negative_envelopes"
+    ],
+    "note": "These five groups are carried verbatim, with their digests pinned by tests/test_receiver_profile.py, from the retired delivery profile. Their delivery, acknowledgement and batch vocabulary, and the wire_path references of negative_cases to files retired with that profile, are historical and bind no receiver. The envelopes inside non_projection_envelopes remain valid receiver inputs. receiver_negative_envelopes is the conformance corpus for this profile.",
+    "status": "historical-informative"
   },
   "examples": [
     {
@@ -21,26 +29,6 @@
     {
       "kind": "receiver-envelope",
       "path": "examples/error-envelope.json"
-    },
-    {
-      "kind": "batch-v2",
-      "path": "examples/batch.json"
-    },
-    {
-      "kind": "ack-v2",
-      "path": "examples/ack-prefix.json"
-    },
-    {
-      "kind": "ack-result-v2",
-      "path": "examples/ack-result.json"
-    },
-    {
-      "kind": "consumer-disposition",
-      "path": "examples/non-projection-disposition.json"
-    },
-    {
-      "kind": "consumer-gap-disposition",
-      "path": "examples/gap-disposition.json"
     }
   ],
   "hash_parameters": {
@@ -119,60 +107,37 @@
     ],
     "stable_record_id": "lower_hex(SHA-256(hex_decode(hash_parameters.domains.stable_record_id.bytes_hex) || EdgeCanonical(stable_identity)))"
   },
+  "informative": {
+    "identity_and_hash_parameters": "dispatcher deduplication identity; the Hub uses its own observation key and does not compute that identity"
+  },
   "license_boundary": "Apache-2.0 source-neutral public contract",
   "limits": {
-    "accepted_gap_notice_ids": 256,
-    "accepted_record_ids": 256,
-    "ack_body_bytes": 131072,
-    "batch_max_bytes_default": 1048576,
-    "batch_max_bytes_hard": 4194304,
-    "batch_max_bytes_measurement": "sum_of_compact_json_encoded_records_and_gaps",
-    "batch_max_items_default": 256,
-    "batch_max_items_hard": 1024,
-    "batch_response_body_bytes_hard": 4195441,
     "receiver_body_bytes": 262144
   },
-  "profile_id": "edge-delivery-v2@2.0.0",
-  "profile_name": "edge-delivery-v2",
-  "retained_wire_versions": [
-    1,
-    2
-  ],
-  "revision": "2.0.0",
+  "profile_id": "receiver-v1@1.0.0",
+  "profile_name": "receiver-v1",
+  "receiver_body_bytes": 262144,
+  "revision": "1.0.0",
   "routes": [
     {
-      "method": "GET",
-      "path": "/v2/hub/batches/next",
-      "success_status": 200
-    },
-    {
       "method": "POST",
-      "path": "/v2/hub/acks",
-      "success_status": 200
+      "path": "/v1/internal/fleet-telemetry",
+      "success_status": 204
     }
   ],
+  "rules": {
+    "annotated_rules_enforcement": "A conforming receiver enforces these rules; JSON Schema validation alone does not.",
+    "event_clock": "x-teslatlas-event-clock-rule: timestamp_ms <= received_at_ms + 300000",
+    "tx_type": "x-teslatlas-normalize and x-teslatlas-accepted-normalized-values on tx_type"
+  },
   "schemas": [
-    "receiver-envelope.schema.json",
-    "delivery.schema.json",
-    "consumer-disposition.schema.json"
+    "receiver-envelope.schema.json"
   ],
-  "selection": {
-    "automatic_v1_downgrade": false,
-    "required_for_hub_consumer": 2
-  },
-  "sequence": {
-    "acknowledgement": "accepted IDs form exactly one contiguous prefix; empty prefix is valid",
-    "lineage": "sequence reset or spool replacement requires a new explicitly configured Edge lineage",
-    "ordering": "ascending spool_seq after merging records and gaps",
-    "replay": "same stable ID at a later spool_seq is a durable duplicate disposition with its new alias, then ACK eligible",
-    "uniqueness": "one item per spool_seq across both arrays"
-  },
-  "spool_format": 2,
-  "status": "candidate",
+  "status": "served",
   "timestamp_semantics": {
-    "batch_record_received_at_ms": "edge_durable_admission_time",
-    "envelope_received_at_ms": "receiver_supplied_arrival_time_in_v1_alias_only",
-    "envelope_timestamp_ms": "telemetry_event_time"
+    "envelope_received_at_ms": "dispatcher_arrival_time",
+    "envelope_timestamp_ms": "telemetry_event_time",
+    "hub_admission_time": "hub_clock_read_once_per_post_and_stored_as_received_at_ms"
   },
   "vectors": "vectors.json"
 }

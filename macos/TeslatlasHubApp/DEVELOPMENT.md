@@ -17,19 +17,16 @@ TESLATLAS_HUB_DEVELOPMENT_MODE=standalone
 `TESLATLAS_HUB_DEVELOPMENT_MODE` selects one exact source-run contract:
 
 - `standalone` runs an empty or import-only Hub with every collector disabled.
-- `edge` runs only the explicitly configured local `collector.edge` composition.
 - `fixture` retains the historical seeded-fixture checks. It is the compatibility
   default when the mode variable is absent, but it is not the ordinary fresh setup.
 - `private-lan` admits an explicitly selected RFC1918 IPv4 listener with strict
   TLS and an exact matching HTTPS public URL. It can serve an existing valid
   Hub store with collection disabled, or use the normal native Legacy provider
-  preflight when that provider is enabled. It does not adopt Edge or Fleet
+  preflight when that provider is enabled. It does not adopt Fleet
   Telemetry ingress.
 
-The original three modes require a literal loopback listener, matching HTTPS public URL, and
-a valid owner-controlled TLS identity. Standalone rejects any collector; Edge rejects
-periodic/Fleet Telemetry collection and passes the normal production Edge binding
-preflight. No mode bypasses configuration, data ownership, TLS, or credential checks.
+The original two modes require a literal loopback listener, matching HTTPS public URL, and
+a valid owner-controlled TLS identity. Standalone rejects any collector. The retired `edge` mode is refused by name. No mode bypasses configuration, data ownership, TLS, or credential checks.
 
 Create the config parent, state, and log directories as the current user. State and
 log directories must use mode `0700`. If the config already exists it must be a
@@ -74,7 +71,7 @@ runs the same binary's non-listening validation path:
 
 This loads the exact configuration and calls the same source-run Serve admission
 used by the long-lived process. A mode mismatch, unsafe listener/TLS identity, empty
-fixture, or invalid Edge binding is returned directly to the app; no listener,
+fixture, or collector configuration is returned directly to the app; no listener,
 collector, property-list replacement, bootstrap, or kickstart occurs. Stop remains
 available without preflight so a damaged or obsolete job can always be booted out.
 

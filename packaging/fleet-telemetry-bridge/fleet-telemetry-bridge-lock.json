@@ -9,7 +9,7 @@
   },
   "overlay": {
     "patch": "0001-teslatlas-http-dispatcher.patch",
-    "patch_sha256": "cfc6831c9686af759781edd647d7c6e10c56b567af4eadf569c14586c2cfbec3",
+    "patch_sha256": "33b3c1ab5597507cc4ddf78be57fa017c3b731a109559c9e6ec6e60f14ee3637",
     "module_graph": {
       "go_mod": "module-graph/go.mod",
       "go_mod_sha256": "77d4b41b52532ae27118e2fe73bdd2214e678db5bfbf3cdaf3c134873bf0318c",

@@ -5,6 +5,32 @@ All notable released changes are recorded here. From 2026.36.1, Hub follows
 
 ## Unreleased
 
+- Retired Edge delivery. A `[collector.edge]` table now fails with a clear error; remove
+  it and use the receiver in `[collector.fleet_telemetry]`. `status` no longer reports
+  `edgeDelivery` and `doctor` no longer reports an `edge` collector block. The source-run
+  `edge` development mode and the `edge-test-faults` feature are gone.
+- The receiver route is stricter and keeps more: uppercase-only VINs, exact envelope keys,
+  alert and error events kept (and kept through later pruning) without touching current
+  state, accumulator state kept across restarts, connection boundaries enforced, and the energy counter filled only by
+  `DCChargingEnergyIn`. Unchanged vehicle identities cause no registration writes.
+- The receiver orders and de-duplicates the observations it stores by the newest
+  event time its accumulator has seen, not by the drive timestamp or the Hub's receipt
+  time (a coordinator decision, G2-6 6A fix round 1; it keeps a delayed drive record
+  that arrives after a newer charge record). Records stored before this change used the
+  older key, so on an upgraded Hub the first records after the upgrade may be skipped
+  until vehicle time passes the last receipt-time key already stored.
+- A Hub that serves the receiver route refuses `offline_drive_timeout_seconds = 0` with
+  a startup error instead of answering every vehicle and connectivity POST with 503.
+- The collector-less publication task counts and logs one vehicle's failed store read
+  once (with the Hub vehicle identifier) and goes on to the next vehicle; an error of the
+  whole pass is logged once per back-off step. A v74 migration step that fails for any
+  reason but the clock reports a migration error and rolls back.
+- Store schema 73 adds the accumulator-state table; schema 74 copies the retired Edge
+  loss evidence into `retired_delivery_gaps` and drops the six Edge tables. Older
+  binaries refuse a store at these versions.
+- Derived publication of pending work no longer waits for a collector: a Hub without an
+  eligible collector publishes it when it starts serving and keeps checking while it
+  serves, one bounded step at a time.
 - Separated service readiness from collection attention. `/readyz` keeps its published
   bodies and six reasons; status, doctor and the Mac app show the one condition you can
   fix, including a usable sign-in that must be renewed, an unknown Fleet token refresh and

@@ -525,7 +525,7 @@ fn walk_files(root: &Path) -> Vec<PathBuf> {
 
 #[test]
 fn doctor_disabled_collection_suppresses_attention() {
-    // Interval zero, no Edge, a valid setup, stored stops and a stale stream
+    // Interval zero (no collector), a valid setup, stored stops and a stale stream
     // witness: no attention, no detail, nothing running, and otherwise OK.
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("store");
@@ -1043,42 +1043,16 @@ fn cadence_doctor_describes_inactive_settings_without_attention() {
     let check = doctor_check(&off, "collectorCadence");
     assert!(check.passed);
     assert!(check.detail.starts_with("inactive"), "{}", check.detail);
-    // Edge delivery replaces polling (its configuration requires interval zero). A
-    // configured car makes collection required under Edge, and the cadence still
-    // faults (a request timeout above its range): the doctor describes it as inactive, raises no attention, and
-    // the prerequisite meaning of canStart is unchanged (a car and Edge).
-    let edge_dir = crate::private_tempdir().expect("temporary Hub");
-    let edge_store = HubStore::initialize(edge_dir.path()).expect("store");
-    doctor_seed_car(&edge_store);
-    let edge_tail = "\n[collector.edge]\nbase_url = 'https://edge.example.test/'\nca_certificate_path = '/etc/edge/ca.pem'\nclient_certificate_path = '/etc/edge/client.pem'\nclient_private_key_path = '/etc/edge/client.key'\nbearer_token_path = '/etc/edge/bearer'\ninstallation_id = 'edge-installation'\nlineage = 'edge-lineage'\nsource_id = '00000000-0000-4000-8000-000000000001'\nvehicle_id = '00000000-0000-4000-8000-000000000002'\nvin = '5YJ3E1EA7KF410001'\ncar_id = 1";
-    let edge_config = doctor_config(
-        edge_dir.path(),
-        &format!("provider = 'fleet'\ninterval_seconds = 0\nrequest_timeout_seconds = 121\n{edge_tail}"),
-        "",
-    );
-    assert!(edge_config.collector.edge.is_some());
-    assert!(
-        edge_config.collector.cadence_violation().is_some(),
-        "the Edge setting would fault if it applied"
-    );
-    let edge = inspect_hub(&edge_store, &edge_config).expect("report");
-    assert!(!edge.collector.init_only);
-    assert_eq!(edge.collector.cadence_error, None);
-    assert_eq!(edge.collector.collection_attention, None);
-    let check = doctor_check(&edge, "collectorCadence");
-    assert!(check.passed);
-    assert_eq!(check.detail, "inactive: Edge delivery replaces polling, so no cadence applies");
-    assert!(edge.collector.can_start, "a car and Edge keep the prerequisite meaning");
-    assert!(doctor_check(&edge, "collectorReadiness").passed);
-    assert_eq!(edge.collector.readiness, "collector_absent");
-    // The same cadence without Edge faults: it is the Edge exclusion that
-    // suppresses it.
+    // The same cadence with collection required faults and raises attention.
+    let direct_dir = crate::private_tempdir().expect("temporary Hub");
+    let direct_store = HubStore::initialize(direct_dir.path()).expect("store");
+    doctor_seed_car(&direct_store);
     let direct_config = doctor_config(
-        edge_dir.path(),
+        direct_dir.path(),
         "provider = 'fleet'\ninterval_seconds = 300\nrequest_timeout_seconds = 121",
         "",
     );
-    let direct = inspect_hub(&edge_store, &direct_config).expect("report");
+    let direct = inspect_hub(&direct_store, &direct_config).expect("report");
     assert!(direct.collector.cadence_error.is_some());
     assert_eq!(
         direct.collector.collection_attention.as_deref(),

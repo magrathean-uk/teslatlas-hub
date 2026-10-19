@@ -199,7 +199,6 @@ enum HubPrivateLogFile {
 enum DevelopmentHubMode: String, Equatable {
     case fixture
     case standalone
-    case edge
 }
 
 /// Explicit, owner-controlled source runtime used by unsigned development builds.
@@ -263,7 +262,7 @@ struct DevelopmentHubConfiguration: Equatable {
         if let rawMode = environment[modeVariable] {
             guard let parsed = DevelopmentHubMode(rawValue: rawMode) else {
                 throw HubActionError.commandFailed(
-                    HubL10n.format("hub.DevelopmentHubRuntime.128.101", fallback: "%1$@ must be fixture, standalone, or edge.", arguments: [String(describing: modeVariable)])
+                    HubL10n.format("hub.DevelopmentHubRuntime.128.101", fallback: "%1$@ must be fixture or standalone.", arguments: [String(describing: modeVariable)])
                 )
             }
             mode = parsed

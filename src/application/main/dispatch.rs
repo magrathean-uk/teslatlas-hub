@@ -114,20 +114,6 @@ fn build_status_report(
         cadence_violation.clone(),
     ));
     let collector = store.supervised_collector_lease_status()?;
-    let edge_delivery = if let Some(edge) = &config.collector.edge {
-        let counts = store.edge_ledger_counts(&edge.installation_id, &edge.lineage)?;
-        let diagnostic = store.edge_diagnostic(&edge.installation_id, &edge.lineage)?;
-        serde_json::json!({
-            "configured": true,
-            "state": diagnostic.as_ref().map_or("never_started", |value| value.state.as_str()),
-            "detail": diagnostic.as_ref().map_or("no Edge worker receipt", |value| value.detail.as_str()),
-            "updatedAtMs": diagnostic.as_ref().map(|value| value.updated_at_ms),
-            "pendingPublications": counts.pending_publications,
-            "ackFrontier": counts.ack_frontier,
-        })
-    } else {
-        serde_json::json!({"configured": false, "state": "disabled"})
-    };
     let database_bytes = fs::metadata(store.database_path())?.len();
 
     let mut report = serde_json::json!({
@@ -144,7 +130,6 @@ fn build_status_report(
             "collectorRunning": view.running,
             "collector": collector,
             "provider": config.collector.provider,
-            "edgeDelivery": edge_delivery,
             "vehicle": vehicle,
             "vehicles": vehicle_summaries,
             "credentials": {
@@ -179,8 +164,7 @@ fn build_status_report(
                 },
                 "paidVehicleDataPolling": config.collector.provider == CollectorProvider::Fleet
                     && config.collector.interval_seconds > 0
-                    && config.collector.fleet_telemetry.is_none()
-                    && config.collector.edge.is_none(),
+                    && config.collector.fleet_telemetry.is_none(),
                 "deliveryPolicy": config.collector.fleet_telemetry.as_ref().map(|_| "latest"),
             },
         });
@@ -895,7 +879,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 let collector_store = store.clone();
                 let collector_config = config.clone();
                 let collector_admission = std::sync::Arc::clone(&admission);
-                let edge_enabled = collector_config.collector.edge.is_some();
                 let server_config = config;
                 let server_admission = std::sync::Arc::clone(&admission);
                 let control_admission = std::sync::Arc::clone(&admission);
@@ -907,31 +890,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     command_proxy,
                     collector_enabled,
                     move |ready, shutdown| async move {
-                        if edge_enabled {
-                            edge_delivery::run_for_admitted_user(
-                                &collector_store,
-                                &collector_config,
-                                collector_admission,
-                                ready,
-                                async move {
-                                    let _ = shutdown.await;
-                                },
-                            )
-                            .await
-                            .map_err(std::io::Error::other)
-                        } else {
-                            collector::run_supervised_for_admitted_user(
-                                &collector_store,
-                                &collector_config,
-                                collector_admission,
-                                ready,
-                                async move {
-                                    let _ = shutdown.await;
-                                },
-                            )
-                            .await
-                            .map_err(std::io::Error::other)
-                        }
+                        collector::run_supervised_for_admitted_user(
+                            &collector_store,
+                            &collector_config,
+                            collector_admission,
+                            ready,
+                            async move {
+                                let _ = shutdown.await;
+                            },
+                        )
+                        .await
+                        .map_err(std::io::Error::other)
                     },
                     move |cursor_key, shutdown| async move {
                         server::serve_for_admitted_user(

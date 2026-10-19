@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 /// Restore the latest complete Fleet snapshot for one configured VIN. Native
-/// Fleet Telemetry sends deltas, so restart must seed the in-memory
-/// accumulator from this durable allowlisted state.
+/// Fleet Telemetry sends deltas, so a receiver without usable stored
+/// accumulator state seeds its accumulator from this durable allowlisted state.
 pub(crate) fn fleet_telemetry_seed_for_vin(
     store: &HubStore,
     vin: &str,
@@ -24,55 +24,6 @@ pub(crate) fn fleet_telemetry_seed_for_vin(
         })
         .flatten()
     }))
-}
-
-/// Commit one accumulated native Fleet Telemetry snapshot through the same
-/// atomic lifecycle and projection path used by ordinary Fleet responses.
-/// Returning success is the receiver's permission to acknowledge the vehicle.
-pub(crate) async fn persist_fleet_telemetry_snapshot(
-    store: &HubStore,
-    cursor_key: &CursorKey,
-    snapshot: &FleetTelemetrySnapshot,
-) -> Result<ManualCollectionReport, CollectorError> {
-    let (_, eid, settings) = configured_fleet_vehicle_for_vin(store, &snapshot.vin)?;
-    let source_vehicle_id =
-        VehicleId::try_from_i64(eid).ok_or(CollectorError::SelectedVehicleMissing)?;
-    let stream_id =
-        StreamVehicleId::try_from_i64(eid).ok_or(CollectorError::SelectedVehicleMissing)?;
-    let source_vehicle_state = snapshot
-        .owner_data
-        .get("state")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty() && value.len() <= 64)
-        .unwrap_or("unknown")
-        .to_owned();
-    // Fleet Telemetry arrives from the vehicle fleet over the receiver, not as
-    // the answer to a bearer request, and no credential is in scope here: the
-    // scrub gets an empty secret set and is a no-op.
-    let data = VehicleData::from_provider_raw_json(
-        source_vehicle_id,
-        serde_json::json!({"response": snapshot.owner_data}),
-        &ProviderSecrets::none(),
-    )?;
-    let vehicle = Vehicle {
-        id: source_vehicle_id,
-        stream_id,
-        vin: snapshot.vin.clone(),
-        state: source_vehicle_state,
-        display_name: None,
-        settings,
-    };
-    finish_collection_for_provider(
-        store,
-        cursor_key,
-        &ManualCollection {
-            vehicles: vec![vehicle],
-            snapshots: vec![data],
-            failures: Vec::new(),
-        },
-        CollectorProvider::Fleet,
-    )
-    .await
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]

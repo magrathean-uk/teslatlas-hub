@@ -2356,16 +2356,20 @@ fn source_run_serve_preflight_cli_requires_an_explicit_known_mode() {
         "/private/tmp/source-run.toml",
         "serve-preflight",
         "--mode",
-        "edge",
+        "standalone",
     ])
-    .expect("explicit Edge serve preflight");
+    .expect("explicit standalone serve preflight");
     assert!(matches!(
         cli.command,
         Command::ServePreflight {
-            mode: DevelopmentServeModeArgument::Edge,
+            mode: DevelopmentServeModeArgument::Standalone,
             history_only: false,
         }
     ));
+    assert!(
+        Cli::try_parse_from(["teslatlas-hub", "serve-preflight", "--mode", "edge"]).is_err(),
+        "the retired Edge mode is refused"
+    );
     assert!(
         Cli::try_parse_from(["teslatlas-hub", "serve-preflight"]).is_err(),
         "mode is mandatory"

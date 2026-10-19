@@ -438,6 +438,12 @@ pub enum StoreError {
     InvalidLifecycleSession,
     #[error("cannot write lifecycle history: {0}")]
     LifecycleWrite(rusqlite::Error),
+    #[error("cannot read receiver state: {0}")]
+    ReceiverState(rusqlite::Error),
+    #[error("receiver event record is invalid")]
+    InvalidEventRecord,
+    #[error("migration clock is unavailable")]
+    MigrationClock,
     #[error("cannot project lifecycle: {0}")]
     LifecycleProjection(crate::lifecycle::LifecycleError),
     #[error("injected stream fault at {0}")]

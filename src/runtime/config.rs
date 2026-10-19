@@ -332,9 +332,6 @@ pub struct CollectorConfig {
     /// polling.
     #[serde(default)]
     pub fleet_telemetry: Option<FleetTelemetryConfig>,
-    /// Optional outbound pull consumer for one explicitly bound Edge lineage.
-    #[serde(default)]
-    pub edge: Option<EdgeCollectorConfig>,
     #[serde(default = "default_stream_health_timeout_seconds")]
     pub stream_health_timeout_seconds: u64,
     /// Enables explicit legacy owner-auth refresh calls. No secret is read
@@ -402,7 +399,6 @@ impl fmt::Debug for CollectorConfig {
                 "fleet_telemetry",
                 &self.fleet_telemetry.as_ref().map(|_| "[configured]"),
             )
-            .field("edge", &self.edge.as_ref().map(|_| "[configured]"))
             .field(
                 "stream_health_timeout_seconds",
                 &self.stream_health_timeout_seconds,
@@ -669,7 +665,6 @@ impl Default for CollectorConfig {
             fleet_command_proxy_url: None,
             fleet_command_proxy_root_certificate_path: None,
             fleet_telemetry: None,
-            edge: None,
             stream_health_timeout_seconds: default_stream_health_timeout_seconds(),
             legacy_auth: LegacyAuthConfig::default(),
         }
@@ -1010,117 +1005,6 @@ impl ConfigNotice {
             Self::ValueClamped { .. } => "config_value_clamped",
             Self::KeyIgnored { .. } => "config_key_ignored",
         }
-    }
-}
-
-#[derive(Clone, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct EdgeCollectorConfig {
-    pub base_url: String,
-    pub ca_certificate_path: PathBuf,
-    pub client_certificate_path: PathBuf,
-    pub client_private_key_path: PathBuf,
-    pub bearer_token_path: PathBuf,
-    pub installation_id: String,
-    pub lineage: String,
-    pub source_id: uuid::Uuid,
-    pub vehicle_id: uuid::Uuid,
-    pub vin: String,
-    pub car_id: i64,
-    #[serde(default = "default_edge_poll_milliseconds")]
-    pub poll_milliseconds: u64,
-    #[serde(default = "default_edge_timeout_seconds")]
-    pub timeout_seconds: u64,
-    #[serde(default = "default_edge_max_backoff_seconds")]
-    pub max_backoff_seconds: u64,
-}
-
-impl fmt::Debug for EdgeCollectorConfig {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("EdgeCollectorConfig")
-            .field("base_url", &self.base_url)
-            .field("ca_certificate_path", &"[configured]")
-            .field("client_certificate_path", &"[configured]")
-            .field("client_private_key_path", &"[redacted]")
-            .field("bearer_token_path", &"[redacted]")
-            .field("installation_id", &self.installation_id)
-            .field("lineage", &self.lineage)
-            .field("source_id", &self.source_id)
-            .field("vehicle_id", &self.vehicle_id)
-            .field("vin", &self.vin)
-            .field("car_id", &self.car_id)
-            .field("poll_milliseconds", &self.poll_milliseconds)
-            .field("timeout_seconds", &self.timeout_seconds)
-            .field("max_backoff_seconds", &self.max_backoff_seconds)
-            .finish()
-    }
-}
-
-const fn default_edge_poll_milliseconds() -> u64 {
-    500
-}
-const fn default_edge_timeout_seconds() -> u64 {
-    20
-}
-const fn default_edge_max_backoff_seconds() -> u64 {
-    60
-}
-
-impl EdgeCollectorConfig {
-    fn validate(&self) -> Result<(), ConfigError> {
-        let endpoint = Url::parse(&self.base_url).map_err(|_| ConfigError::InvalidEdge)?;
-        if endpoint.scheme() != "https"
-            || endpoint.host_str().is_none()
-            || !endpoint.username().is_empty()
-            || endpoint.password().is_some()
-            || endpoint.query().is_some()
-            || endpoint.fragment().is_some()
-            || endpoint.path() != "/"
-            || self.source_id.is_nil()
-            || self.vehicle_id.is_nil()
-            || self.car_id <= 0
-            || self.poll_milliseconds == 0
-            || self.timeout_seconds == 0
-            || self.max_backoff_seconds == 0
-            || self.installation_id.is_empty()
-            || self.installation_id.len() > 128
-            || self.lineage.is_empty()
-            || self.lineage.len() > 128
-            || self.vin.len() != 17
-            || !self.vin.bytes().all(|byte| byte.is_ascii_alphanumeric())
-            || self
-                .vin
-                .bytes()
-                .any(|byte| matches!(byte, b'I' | b'O' | b'Q'))
-            || !self.installation_id.bytes().all(|byte| {
-                byte.is_ascii_lowercase()
-                    || byte.is_ascii_digit()
-                    || matches!(byte, b'.' | b'_' | b'-')
-            })
-            || !self.lineage.bytes().all(|byte| {
-                byte.is_ascii_lowercase()
-                    || byte.is_ascii_digit()
-                    || matches!(byte, b'.' | b'_' | b'-')
-            })
-        {
-            return Err(ConfigError::InvalidEdge);
-        }
-        let paths = [
-            &self.ca_certificate_path,
-            &self.client_certificate_path,
-            &self.client_private_key_path,
-            &self.bearer_token_path,
-        ];
-        if paths.iter().any(|path| !path.is_absolute())
-            || paths
-                .iter()
-                .enumerate()
-                .any(|(index, path)| paths[index + 1..].contains(path))
-        {
-            return Err(ConfigError::InvalidEdge);
-        }
-        Ok(())
     }
 }
 
@@ -2054,6 +1938,17 @@ impl HubConfig {
         let source = std::str::from_utf8(source)
             .map_err(|_| ConfigError::Invalid("configuration must be UTF-8"))?;
         let digest = Sha256Digest::of_bytes(source.as_bytes());
+        // The retired Edge table is refused by name before typed parsing, in
+        // table and dotted-key form. Malformed TOML keeps its ordinary parse
+        // diagnostics.
+        if let Ok(root) = source.parse::<toml::Table>()
+            && root
+                .get("collector")
+                .and_then(toml::Value::as_table)
+                .is_some_and(|collector| collector.contains_key("edge"))
+        {
+            return Err(ConfigError::EdgeDeliveryRetired);
+        }
         let config: Self = toml::from_str(source).map_err(ConfigError::Parse)?;
         config.validate()?;
         Ok((config, digest))
@@ -2121,15 +2016,6 @@ impl HubConfig {
                 }
             } else if self.bind != fleet_telemetry_ingress_bind() {
                 return Err(ConfigError::InvalidFleetTelemetry);
-            }
-        }
-        if let Some(edge) = &self.collector.edge {
-            edge.validate()?;
-            if self.collector.provider != CollectorProvider::Fleet
-                || self.collector.interval_seconds != 0
-                || self.collector.fleet_telemetry.is_some()
-            {
-                return Err(ConfigError::InvalidEdge);
             }
         }
         let source_set = self.teslamate.source_url.is_some();
@@ -2236,9 +2122,9 @@ pub enum ConfigError {
     )]
     FleetTelemetryListenerCollision,
     #[error(
-        "Edge collector configuration is invalid or conflicts with another ingestion authority"
+        "[collector.edge] is no longer supported: Edge delivery was retired. Remove the table; to stream telemetry, configure the self-hosted receiver in [collector.fleet_telemetry]."
     )]
-    InvalidEdge,
+    EdgeDeliveryRetired,
     #[error("geocoder endpoint is invalid or unsafe")]
     InvalidGeocoderEndpoint,
     #[error("geocoder language is invalid")]

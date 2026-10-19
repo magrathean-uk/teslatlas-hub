@@ -74,7 +74,7 @@ fn as_exists(store: &HubStore, table: &str) -> bool {
 #[test]
 fn the_v71_step_adds_the_credential_status_table_and_a_v70_catalogue_migrates_to_it() {
     // The v72 step (hub fix pass 2, F2-1) follows it; its own test is in `r3_fix_round.rs`.
-    assert_eq!(SCHEMA_VERSION, 72);
+    assert_eq!(SCHEMA_VERSION, 74);
     let (temporary, store) = as_store();
     assert!(as_exists(&store, "collector_auth_state"));
     assert_eq!(store.load_collector_auth_row().unwrap(), None, "nothing is backfilled");

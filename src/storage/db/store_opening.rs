@@ -46,6 +46,8 @@ impl HubStore {
             sink_attempts: Arc::default(),
             #[cfg(test)]
             lineage_pack_hashes: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(test)]
+            instrumentation: Arc::default(),
         };
         ensure_shared_sqlite_catalogue_file_with_repair(&store.database_path, false)?;
         let mut connection = store.open()?;
@@ -84,6 +86,8 @@ impl HubStore {
     }
 
     pub fn open(&self) -> Result<Connection, StoreError> {
+        #[cfg(test)]
+        StoreInstrumentation::bump(&self.instrumentation.writable_opens);
         let metadata =
             fs::symlink_metadata(&self.database_path).map_err(StoreError::InspectSharedSqlite)?;
         admit_shared_sqlite_file(
@@ -359,8 +363,10 @@ impl HubStore {
     /// shape (before per-device vehicle grants), the v68 shape (before
     /// geocoder lookups were bound to their provider and terrain tile digests
     /// were recorded), the v69 shape (before the collector state tables), the v70
-    /// shape (before the credential status table) and the v71 shape (before its
-    /// rejected-access digest) to v72. Return no store handle: consumers still require a fully migrated schema.
+    /// shape (before the credential status table), the v71 shape (before its
+    /// rejected-access digest), the v72 shape (before the receiver accumulator-state
+    /// table) and the v73 shape (before the retired delivery objects were dropped) to
+    /// v74. Return no store handle: consumers still require a fully migrated schema.
     pub(crate) fn preflight_standalone_schema_read_only(data_dir: &Path) -> Result<(), StoreError> {
         Self::open_read_only_with_mode(data_dir, false, true).map(|_| ())
     }
@@ -393,6 +399,8 @@ impl HubStore {
             sink_attempts: Arc::default(),
             #[cfg(test)]
             lineage_pack_hashes: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(test)]
+            instrumentation: Arc::default(),
         };
         let connection = store.open_read_only_connection()?;
         let application_id: i32 = connection
@@ -403,7 +411,7 @@ impl HubStore {
         }
         let version = schema_version(&connection)?;
         let known_forward_upgrade =
-            standalone_migration_candidate && SCHEMA_VERSION == 72 && matches!(version, 66..=71);
+            standalone_migration_candidate && SCHEMA_VERSION == 74 && matches!(version, 66..=73);
         if version != SCHEMA_VERSION && !known_forward_upgrade {
             return Err(StoreError::UnsupportedSchema(version));
         }
@@ -411,6 +419,8 @@ impl HubStore {
     }
 
     fn open_read_only_connection(&self) -> Result<Connection, StoreError> {
+        #[cfg(test)]
+        StoreInstrumentation::bump(&self.instrumentation.read_only_opens);
         let connection = if self.immutable_snapshot.is_some() {
             let canonical = self
                 .database_path

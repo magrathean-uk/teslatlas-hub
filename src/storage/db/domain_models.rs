@@ -182,6 +182,15 @@ impl VehicleDescriptor {
     }
 }
 
+/// The identity an unchanged registration would return, read without any
+/// registration call (G2-6 6A S5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct UnchangedRegistration {
+    pub(crate) source_id: Uuid,
+    pub(crate) source_generation: u64,
+    pub(crate) vehicle_id: Uuid,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VehicleRecord {
     pub vehicle_id: Uuid,

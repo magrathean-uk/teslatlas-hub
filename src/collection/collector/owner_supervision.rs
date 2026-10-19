@@ -2089,3 +2089,316 @@ fn is_compaction_catalog_capacity_error(error: &StoreError) -> bool {
         StoreError::Manifest(ProtocolError::LineageAggregateLimitExceeded)
     )
 }
+
+// Publication independent of collection (G2-6 6A S9, C-7). A Hub whose collector
+// does not run still holds derived work that must reach the lineage: the v74
+// step marks the vehicles of a retired consumer in the export outbox, and the
+// receiver publishes only what its own POSTs commit. `serve_for_admitted_user`
+// starts one task that walks the outbox in bounded keyset pages and publishes
+// each v2-based vehicle's unpublished mutations one bounded claim at a time.
+// It claims, completes and fails no outbox row; ordinary replay completes an empty
+// row when a collector next runs.
+
+/// Timing and bounds of the collector-less publication task.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PublicationDrainConfig {
+    /// The first wait after a failed pass; it doubles up to `retry_max`.
+    pub(crate) retry_initial: Duration,
+    pub(crate) retry_max: Duration,
+    /// The wait between passes that had nothing to publish.
+    pub(crate) idle: Duration,
+    /// The most mutations one claim takes.
+    pub(crate) claim_limit: usize,
+    /// The most outbox vehicles one page holds.
+    pub(crate) page_limit: usize,
+}
+
+impl Default for PublicationDrainConfig {
+    fn default() -> Self {
+        Self {
+            retry_initial: Duration::from_secs(1),
+            retry_max: Duration::from_secs(60),
+            idle: Duration::from_secs(30),
+            claim_limit: SYNC_CLAIM_MUTATION_LIMIT,
+            page_limit: crate::db::EXPORT_OUTBOX_VEHICLE_PAGE,
+        }
+    }
+}
+
+/// What one pass over the export outbox did.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PublicationPass {
+    /// Vehicles seen across all pages.
+    pub(crate) vehicles_seen: usize,
+    /// Mutations published.
+    pub(crate) published: usize,
+    /// Vehicles without a v2 base: left to the snapshot-producing paths.
+    pub(crate) skipped_without_base: usize,
+    /// Vehicles whose publication failed this pass; their work is retained.
+    pub(crate) failed: usize,
+    /// The stop signal ended the pass early.
+    pub(crate) stopped: bool,
+}
+
+/// Whether the task was told to stop (or its owner is gone).
+fn publication_stop_requested(stop: &watch::Receiver<bool>) -> bool {
+    *stop.borrow() || stop.has_changed().is_err()
+}
+
+/// Wait for `duration` or for the stop signal. Returns whether to stop.
+async fn publication_wait(stop: &mut watch::Receiver<bool>, duration: Duration) -> bool {
+    if publication_stop_requested(stop) {
+        return true;
+    }
+    tokio::select! {
+        () = sleep(duration) => false,
+        _ = stop.changed() => true,
+    }
+}
+
+/// A vehicle's own failure (a store read or a publication turn): log it once
+/// with the Hub vehicle UUID and a fixed reason, then let the pass go on. Only
+/// the loss of sensitive access ends the pass.
+fn note_vehicle_failure(
+    vehicle_id: Uuid,
+    reason: &'static str,
+    error: CollectorError,
+) -> Result<(), CollectorError> {
+    if loses_sensitive_access(&error) {
+        return Err(error);
+    }
+    tracing::warn!(
+        target: "collector.publication",
+        vehicle_id = %vehicle_id,
+        reason,
+        "collector-less publication of a vehicle failed; the work is retained"
+    );
+    Ok(())
+}
+
+/// One pass: every page of the export outbox, every v2-based vehicle with
+/// unpublished work, one bounded claim per turn, with a stop check and a yield
+/// between turns. A vehicle that is skipped or fails (a store read or a
+/// publication turn) is counted, logged once and never hides a later one; only
+/// a pass-level error (the page read, the gate, the clock, the task, lost
+/// access) ends the pass, and the caller logs it once.
+async fn drain_pending_publication_pass(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    admission: Option<&Arc<crate::hub_user_process::AdmittedUserHub>>,
+    stop: &mut watch::Receiver<bool>,
+    config: &PublicationDrainConfig,
+) -> Result<PublicationPass, CollectorError> {
+    let mut pass = PublicationPass::default();
+    let mut after: Option<Uuid> = None;
+    let page_limit = config.page_limit.clamp(1, crate::db::EXPORT_OUTBOX_VEHICLE_PAGE);
+    loop {
+        if publication_stop_requested(stop) {
+            pass.stopped = true;
+            break;
+        }
+        assert_runtime_sensitive_access(admission.map(|admission| &**admission))?;
+        let page = store.export_outbox_vehicle_page(after, page_limit)?;
+        if page.is_empty() {
+            break;
+        }
+        for vehicle_id in &page {
+            pass.vehicles_seen += 1;
+            match store.vehicle_has_v2_base(*vehicle_id) {
+                Ok(true) => {}
+                Ok(false) => {
+                    pass.skipped_without_base += 1;
+                    continue;
+                }
+                Err(error) => {
+                    note_vehicle_failure(*vehicle_id, "publication_read_failed", error.into())?;
+                    pass.failed += 1;
+                    continue;
+                }
+            }
+            let mut failed = false;
+            loop {
+                if publication_stop_requested(stop) {
+                    pass.stopped = true;
+                    break;
+                }
+                assert_runtime_sensitive_access(admission.map(|admission| &**admission))?;
+                match store.has_unpublished_sync_mutations(*vehicle_id) {
+                    Ok(true) => {}
+                    Ok(false) => break,
+                    Err(error) => {
+                        note_vehicle_failure(
+                            *vehicle_id,
+                            "publication_read_failed",
+                            error.into(),
+                        )?;
+                        failed = true;
+                        break;
+                    }
+                }
+                let gate = tokio::select! {
+                    gate = store.acquire_publication_gate() => gate?,
+                    _ = stop.changed() => {
+                        pass.stopped = true;
+                        break;
+                    }
+                };
+                let turn_store = store.clone();
+                let turn_key = cursor_key.clone();
+                let vehicle = *vehicle_id;
+                let claim_limit = config.claim_limit;
+                let now_ms = current_epoch_millis()?;
+                // The turn runs to completion on a blocking thread and is awaited
+                // here, never abandoned: a stop signal is honoured between turns.
+                let turn = tokio::task::spawn_blocking(move || {
+                    publish_unpublished_sync_mutations(
+                        &turn_store,
+                        &turn_key,
+                        vehicle,
+                        now_ms,
+                        &gate,
+                        claim_limit,
+                    )
+                })
+                .await
+                .map_err(|_| CollectorError::ExportPublicationTask)?;
+                match turn {
+                    Ok(turn) => {
+                        pass.published += turn.published;
+                        if !turn.more {
+                            break;
+                        }
+                        tokio::task::yield_now().await;
+                    }
+                    Err(error) => {
+                        note_vehicle_failure(*vehicle_id, "publication_failed", error)?;
+                        failed = true;
+                        break;
+                    }
+                }
+            }
+            if failed {
+                pass.failed += 1;
+            }
+            if pass.stopped {
+                break;
+            }
+        }
+        if pass.stopped || page.len() < page_limit {
+            break;
+        }
+        after = page.last().copied();
+    }
+    Ok(pass)
+}
+
+/// The task body: passes until stopped. A pass in which a vehicle failed, or
+/// that ended in a pass-level error, waits with a bounded doubling backoff and
+/// tries again; an idle pass waits `idle`. A vehicle's failure was logged when it
+/// happened; a pass-level error is logged here, once per backoff step.
+async fn run_publication_drain(
+    store: HubStore,
+    cursor_key: CursorKey,
+    admission: Option<Arc<crate::hub_user_process::AdmittedUserHub>>,
+    mut stop: watch::Receiver<bool>,
+    config: PublicationDrainConfig,
+) -> Result<(), CollectorError> {
+    let mut backoff = config.retry_initial;
+    loop {
+        if publication_stop_requested(&stop) {
+            return Ok(());
+        }
+        match drain_pending_publication_pass(
+            &store,
+            &cursor_key,
+            admission.as_ref(),
+            &mut stop,
+            &config,
+        )
+        .await
+        {
+            Ok(pass) if pass.stopped => return Ok(()),
+            Ok(pass) if pass.failed > 0 => {
+                if publication_wait(&mut stop, backoff).await {
+                    return Ok(());
+                }
+                backoff = backoff.saturating_mul(2).min(config.retry_max);
+            }
+            Ok(pass) if pass.published > 0 => {
+                backoff = config.retry_initial;
+                tokio::task::yield_now().await;
+            }
+            Ok(_) => {
+                backoff = config.retry_initial;
+                if publication_wait(&mut stop, config.idle).await {
+                    return Ok(());
+                }
+            }
+            Err(error) if loses_sensitive_access(&error) => return Err(error),
+            Err(_) => {
+                tracing::warn!(
+                    target: "collector.publication",
+                    reason = "publication_pass_failed",
+                    backoff_ms = u64::try_from(backoff.as_millis()).unwrap_or(u64::MAX),
+                    "collector-less publication pass failed; trying again after the backoff"
+                );
+                if publication_wait(&mut stop, backoff).await {
+                    return Ok(());
+                }
+                backoff = backoff.saturating_mul(2).min(config.retry_max);
+            }
+        }
+    }
+}
+
+/// The running collector-less publication task and its stop signal. Dropping it
+/// signals the task to stop after its current bounded turn; [`Self::stop_and_join`]
+/// also waits for the task to end.
+pub(crate) struct PublicationDrain {
+    stop: watch::Sender<bool>,
+    task: Option<JoinHandle<Result<(), CollectorError>>>,
+}
+
+impl PublicationDrain {
+    pub(crate) fn spawn(
+        store: HubStore,
+        cursor_key: CursorKey,
+        admission: Option<Arc<crate::hub_user_process::AdmittedUserHub>>,
+        config: PublicationDrainConfig,
+    ) -> Self {
+        let (stop, stopped) = watch::channel(false);
+        #[cfg(test)]
+        store.instrumentation().note_publication_task_start();
+        let task = tokio::spawn(async move {
+            #[cfg(test)]
+            let exit_store = store.clone();
+            let result = run_publication_drain(store, cursor_key, admission, stopped, config).await;
+            #[cfg(test)]
+            exit_store.instrumentation().note_publication_task_exit();
+            result
+        });
+        Self {
+            stop,
+            task: Some(task),
+        }
+    }
+
+    /// Signal the task to stop and wait for it to end. An active turn finishes
+    /// first, so no blocking publication operation outlives the call.
+    pub(crate) async fn stop_and_join(mut self) -> Result<(), CollectorError> {
+        let _ = self.stop.send(true);
+        let Some(task) = self.task.take() else {
+            return Ok(());
+        };
+        match task.await {
+            Ok(result) => result,
+            Err(_) => Err(CollectorError::ExportPublicationTask),
+        }
+    }
+}
+
+impl Drop for PublicationDrain {
+    fn drop(&mut self) {
+        let _ = self.stop.send(true);
+    }
+}

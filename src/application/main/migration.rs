@@ -24,21 +24,6 @@ fn collector_can_start(
     store: &HubStore,
     config: &HubConfig,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    if let Some(edge) = &config.collector.edge {
-        store.validate_edge_binding(&teslatlas_hub::db::EdgeBinding {
-            installation_id: edge.installation_id.clone(),
-            lineage: edge.lineage.clone(),
-            source_id: edge.source_id,
-            vehicle_id: edge.vehicle_id,
-            vin: edge.vin.clone(),
-            car_id: edge.car_id,
-        })?;
-        let selected = store
-            .configured_tesla_vehicles()?
-            .into_iter()
-            .any(|(vehicle_id, _, settings)| vehicle_id == edge.vehicle_id && settings.enabled);
-        return Ok(selected);
-    }
     let credentials_present = match config.collector.provider {
         CollectorProvider::Legacy => store.load_teslamate_legacy_tokens()?.is_some(),
         CollectorProvider::Fleet => store.load_fleet_tokens()?.is_some(),
@@ -80,7 +65,6 @@ struct MacMigrationInput<'a> {
 #[cfg(unix)]
 fn validate_history_only_config(config: &HubConfig) -> Result<(), Box<dyn std::error::Error>> {
     if config.collector.interval_seconds != 0
-        || config.collector.edge.is_some()
         || config.collector.fleet_telemetry.is_some()
         || config.collector.legacy_auth.enabled
     {

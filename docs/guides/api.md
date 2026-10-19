@@ -193,7 +193,7 @@ receipts. The G3 receipt SHA-256 is
 Those receipts cover source-built synthetic
 journeys on macOS 27 Apple silicon and Debian 13.6 ARM64, including pairing,
 rotation, current/history reads, bounded pagination, restart behavior, and the
-recorded Edge durable-delivery lane. They do not establish an installer,
+recorded Edge durable-delivery lane (Edge delivery was subsequently retired). They do not establish an installer,
 notarized or service-managed release, real Tesla data, deferred client
 integration, declared minimum OS floors, production, or a full platform matrix.
 No source publication or tag is implied.

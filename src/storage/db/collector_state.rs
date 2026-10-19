@@ -519,10 +519,14 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        #[cfg(test)]
+        StoreInstrumentation::bump(&self.instrumentation.write_transaction_attempts);
         let (value, wrote) = work(&transaction)?;
         if wrote {
             before_commit()?;
             transaction.commit().map_err(StoreError::LifecycleWrite)?;
+            #[cfg(test)]
+            StoreInstrumentation::bump(&self.instrumentation.write_transaction_commits);
         }
         Ok(value)
     }

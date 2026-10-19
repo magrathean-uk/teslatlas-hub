@@ -346,3 +346,122 @@ impl<F: Future> Future for PendingLogged<'_, F> {
         polled
     }
 }
+
+/// Test only (G2-6 6A S5): configure `vin` as Fleet vehicle `eid` the way a Fleet
+/// collection does: the Fleet source and vehicle are registered and the base is
+/// published, so the vehicle is a configured one. Returns its Hub vehicle UUID.
+#[cfg(test)]
+pub(crate) async fn configure_fleet_vehicle_for_test(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    eid: u64,
+    vin: &str,
+) -> Uuid {
+    finish_collection_for_provider(
+        store,
+        cursor_key,
+        &ManualCollection {
+            vehicles: vec![Vehicle::for_test(eid, vin, "online")],
+            snapshots: Vec::new(),
+            failures: Vec::new(),
+        },
+        CollectorProvider::Fleet,
+    )
+    .await
+    .expect("configured Fleet vehicle");
+    store
+        .configured_tesla_vehicles()
+        .expect("configured vehicles")
+        .into_iter()
+        .find(|(_, configured_eid, _)| *configured_eid == eid as i64)
+        .expect("the vehicle is configured")
+        .0
+}
+
+/// Test only (G2-6 6A S9): a vehicle with a v2 base and unpublished derived work,
+/// the state the retirement step leaves a retired consumer's vehicle in. The
+/// vehicle is registered under `vehicle_id` when one is given (so a test can
+/// order the export outbox). Its first observation's mutations stay unpublished
+/// after the base is published and its export-outbox row is dirty.
+#[cfg(test)]
+pub(crate) fn v2_base_with_pending_work(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    eid: u64,
+    vin: &str,
+    vehicle_id: Option<Uuid>,
+    at_ms: i64,
+) -> Uuid {
+    let source = store
+        .register_source(&provider_source(CollectorProvider::Legacy), at_ms)
+        .expect("source");
+    if let Some(vehicle_id) = vehicle_id {
+        let mut descriptor = VehicleDescriptor::new(source.source_id, eid.to_string())
+            .with_tesla_identity(Some(eid as i64), None);
+        descriptor.vin = Some(vin.to_owned());
+        store
+            .register_vehicle_with_id(&descriptor, at_ms, vehicle_id)
+            .expect("chosen vehicle identity");
+    }
+    let collection = pending_observation(eid, vin, at_ms, "D", 12);
+    persist_collection(store, &collection, at_ms).expect("raw observation");
+    materialise_lifecycle_for_collection(store, &collection, at_ms).expect("lifecycle");
+    let gate = store.try_acquire_publication_gate().expect("publication gate");
+    publish_compatibility_snapshots(store, &gate, cursor_key, &collection, at_ms)
+        .expect("base publication");
+    drop(gate);
+    vehicle_id.unwrap_or_else(|| {
+        store
+            .open()
+            .expect("database")
+            .query_row(
+                "SELECT vehicle_id FROM vehicles WHERE source_vehicle_key = ?1",
+                [eid.to_string()],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("vehicle id")
+            .parse()
+            .expect("vehicle UUID")
+    })
+}
+
+/// Test only: one more observation of an existing test vehicle, stored and
+/// materialised but not published, so it adds unpublished mutations.
+#[cfg(test)]
+pub(crate) fn add_pending_observation(
+    store: &HubStore,
+    eid: u64,
+    vin: &str,
+    at_ms: i64,
+    shift: &str,
+    speed: i64,
+) {
+    let collection = pending_observation(eid, vin, at_ms, shift, speed);
+    persist_collection(store, &collection, at_ms).expect("raw observation");
+    materialise_lifecycle_for_collection(store, &collection, at_ms).expect("lifecycle");
+}
+
+#[cfg(test)]
+fn pending_observation(
+    eid: u64,
+    vin: &str,
+    at_ms: i64,
+    shift: &str,
+    speed: i64,
+) -> ManualCollection {
+    ManualCollection {
+        vehicles: vec![Vehicle::for_test(eid, vin, "online")],
+        snapshots: vec![VehicleData::for_test(
+            eid,
+            serde_json::json!({
+                "drive_state": {
+                    "shift_state": shift, "speed": speed, "latitude": 47.0,
+                    "longitude": 19.0, "timestamp": at_ms
+                },
+                "vehicle_config": {"car_type": "model3"},
+                "vehicle_state": {"car_version": "2026.20"}
+            }),
+        )],
+        failures: vec![],
+    }
+}

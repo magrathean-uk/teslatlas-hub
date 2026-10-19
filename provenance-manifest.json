@@ -342,7 +342,6 @@
         "src/auth/mod.rs",
         "src/collection/collector.rs",
         "src/collection/current_state.rs",
-        "src/collection/edge_delivery.rs",
         "src/collection/fleet_telemetry.rs",
         "src/collection/mod.rs",
         "src/collection/tesla_stream.rs",
@@ -518,8 +517,7 @@
         "src/api/server/tests/fleet_listener.rs",
         "src/api/server/tests/hub_sync.rs",
         "src/api/server/tests/loopback_access.rs",
-        "tools/interop/__init__.py",
-        "tools/source_run_receiver_edge_hub.py"
+        "tools/interop/__init__.py"
       ]
     },
     {
@@ -639,6 +637,7 @@
         "src/api/server/tests/lineage_manifest.rs",
         "src/api/server/tests/public_history.rs",
         "src/api/server/tests/readiness.rs",
+        "src/api/server/tests/receiver.rs",
         "src/api/server/tests/server_limits.rs",
         "src/api/server/tests/vehicle_grants.rs",
         "src/collection/teslamate_current.rs",

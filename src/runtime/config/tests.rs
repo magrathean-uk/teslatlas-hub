@@ -530,64 +530,51 @@ fn fleet_telemetry_debug_redacts_secret_path() {
 }
 
 #[test]
-fn edge_collector_is_opt_in_and_exclusive_with_direct_ingestion() {
-    let valid = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
-                 [collector]\nprovider = 'fleet'\ninterval_seconds = 0\n\
-                 [collector.edge]\n\
-                 base_url = 'https://edge.example.test:18470/'\n\
-                 ca_certificate_path = '/etc/teslatlas-hub/edge/ca.pem'\n\
-                 client_certificate_path = '/etc/teslatlas-hub/edge/client.pem'\n\
-                 client_private_key_path = '/var/lib/teslatlas-hub/secrets/edge-key.pem'\n\
-                 bearer_token_path = '/var/lib/teslatlas-hub/secrets/edge-token'\n\
-                 installation_id = 'garage-edge'\nlineage = 'spool-2026-09-05'\n\
-                 source_id = '11111111-1111-4111-8111-111111111111'\n\
-                 vehicle_id = '22222222-2222-4222-8222-222222222222'\n\
-                 vin = '5YJ3E1EA7KF000001'\ncar_id = 101\n";
-    let (config, _) = HubConfig::from_exact_bytes(valid.as_bytes()).expect("valid Edge config");
-    assert!(config.collector.edge.is_some());
+fn retired_edge_table_fails_with_the_retirement_error() {
+    const EXPECTED: &str = "[collector.edge] is no longer supported: Edge delivery was retired. Remove the table; to stream telemetry, configure the self-hosted receiver in [collector.fleet_telemetry].";
+    let base = "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n";
+    // The configuration without the retired key loads.
+    HubConfig::from_exact_bytes(
+        format!("{base}[collector]\nprovider = 'fleet'\ninterval_seconds = 0\n").as_bytes(),
+    )
+    .expect("configuration without the retired key loads");
 
-    for invalid in [
-        valid.replace("provider = 'fleet'\n", ""),
-        valid.replace("interval_seconds = 0", "interval_seconds = 60"),
-        valid.replace(
-            "https://edge.example.test:18470/",
-            "http://edge.example.test:18470/",
+    for retired in [
+        // Table form, with the fields the retired table used to carry.
+        format!(
+            "{base}[collector]\nprovider = 'fleet'\ninterval_seconds = 0\n\
+             [collector.edge]\nbase_url = 'https://edge.example.test:18470/'\n\
+             installation_id = 'garage-edge'\n"
         ),
-        valid.replace("garage-edge", "Garage Edge"),
-        valid.replace(
-            "/var/lib/teslatlas-hub/secrets/edge-token",
-            "relative-token",
-        ),
+        // An empty table is refused too.
+        format!("{base}[collector]\nprovider = 'fleet'\n[collector.edge]\n"),
+        // Dotted-key forms.
+        format!("{base}[collector]\nedge.base_url = 'https://edge.example.test:18470/'\n"),
+        format!("{base}collector.edge.base_url = 'https://edge.example.test:18470/'\n"),
+        // Inline table.
+        format!("{base}[collector]\nedge = {{ base_url = 'https://edge.example.test/' }}\n"),
     ] {
-        assert!(matches!(
-            HubConfig::from_exact_bytes(invalid.as_bytes()),
-            Err(ConfigError::InvalidEdge)
-        ));
+        let error = HubConfig::from_exact_bytes(retired.as_bytes())
+            .expect_err("the retired table is refused");
+        assert!(
+            matches!(error, ConfigError::EdgeDeliveryRetired),
+            "{error:?}"
+        );
+        assert_eq!(error.to_string(), EXPECTED);
     }
-}
 
-#[test]
-fn edge_collector_debug_redacts_private_paths() {
-    let edge = EdgeCollectorConfig {
-        base_url: "https://edge.example.test:18470/".to_owned(),
-        ca_certificate_path: PathBuf::from("/public/ca-marker.pem"),
-        client_certificate_path: PathBuf::from("/public/client-marker.pem"),
-        client_private_key_path: PathBuf::from("/secret/key-marker.pem"),
-        bearer_token_path: PathBuf::from("/secret/token-marker"),
-        installation_id: "garage-edge".to_owned(),
-        lineage: "spool-2026-09-05".to_owned(),
-        source_id: uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
-        vehicle_id: uuid::Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap(),
-        vin: "5YJ3E1EA7KF000001".to_owned(),
-        car_id: 101,
-        poll_milliseconds: 500,
-        timeout_seconds: 20,
-        max_backoff_seconds: 60,
-    };
-    let rendered = format!("{edge:?}");
-    for marker in ["ca-marker", "client-marker", "key-marker", "token-marker"] {
-        assert!(!rendered.contains(marker));
-    }
+    // An unrelated unknown collector key keeps its ordinary parse error.
+    let unknown = format!("{base}[collector]\nmystery_key = 1\n");
+    assert!(matches!(
+        HubConfig::from_exact_bytes(unknown.as_bytes()),
+        Err(ConfigError::Parse(_))
+    ));
+    // Malformed TOML keeps the ordinary parse diagnostics as well.
+    let malformed = format!("{base}[collector\nedge = 1\n");
+    assert!(matches!(
+        HubConfig::from_exact_bytes(malformed.as_bytes()),
+        Err(ConfigError::Parse(_))
+    ));
 }
 
 #[test]

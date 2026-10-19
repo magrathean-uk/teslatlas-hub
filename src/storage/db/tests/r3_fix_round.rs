@@ -170,7 +170,7 @@ fn f3_the_rejected_access_digest_is_stored_and_no_refresh_rewrites_it() {
 
 #[test]
 fn f3_the_v72_step_adds_the_digest_column_and_a_v71_row_keeps_its_count() {
-    assert_eq!(SCHEMA_VERSION, 72);
+    assert_eq!(SCHEMA_VERSION, 74);
     let (temporary, store) = as_store();
     drop(store);
     let count_two = CollectorAuthRow {

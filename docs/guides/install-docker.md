@@ -14,8 +14,8 @@ contact a package repository: it copies the public CA root bundle from the
 digest-pinned Rust builder and uses the Hub binary itself for the private TLS
 health probe.
 
-The current Compose file is a core Hub candidate. Optional Fleet, Home
-Assistant, and Edge services require their own reviewed source cohort and
+The current Compose file is a core Hub candidate. Optional Fleet and Home
+Assistant services require their own reviewed source cohort and
 acceptance evidence.
 
 The Dockerfile deliberately avoids `COPY --chmod`, but the candidate
@@ -179,7 +179,7 @@ so run it before starting the resident service.
 The published port defaults to `127.0.0.1:8443`. Change the explicit host bind
 only when the certificate, `public_url`, firewall and trusted hostname agree.
 The private Fleet ingestion and command-proxy ports are not published by the
-core service. Direct Fleet and Edge delivery are separate collection choices.
+core service. Direct Fleet polling and a self-hosted telemetry receiver are separate collection choices.
 
 `/healthz` reports that the process responds. `/readyz` reports the service's
 actual serving conditions and may remain unavailable while setup or collection

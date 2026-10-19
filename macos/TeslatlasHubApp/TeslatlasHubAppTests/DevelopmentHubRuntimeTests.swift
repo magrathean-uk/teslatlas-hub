@@ -391,7 +391,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
     }
 
     func testUnsafeServePreflightFailsBeforeLaunchAgentWriteOrBootstrap() throws {
-        let fixture = try makeFixture(createConfig: true, mode: .edge)
+        let fixture = try makeFixture(createConfig: true, mode: .standalone)
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(
             environment: fixture.environment
@@ -402,7 +402,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
             processRunner: { executable, arguments, _, completion in
                 calls.append((executable, arguments))
                 completion(.failure(HubActionError.commandFailed(
-                    "Edge source-run Serve requires only collector.edge"
+                    "standalone source-run Serve requires every collector path to be disabled"
                 )))
             }
         )
@@ -414,7 +414,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
                 rejected.fulfill()
                 return
             }
-            XCTAssertTrue(error.localizedDescription.contains("collector.edge"))
+            XCTAssertTrue(error.localizedDescription.contains("every collector path"))
             rejected.fulfill()
         }
 
@@ -423,7 +423,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         XCTAssertEqual(calls[0].0, configuration.binary)
         XCTAssertEqual(calls[0].1, [
             "--config", configuration.config.path,
-            "serve-preflight", "--mode", "edge"
+            "serve-preflight", "--mode", "standalone"
         ])
         XCTAssertFalse(FileManager.default.fileExists(atPath: configuration.plist.path))
         XCTAssertFalse(calls.contains { $0.0.path == "/bin/launchctl" })
@@ -979,8 +979,19 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         XCTAssertEqual(controller.launchAgentPropertyList()["StandardErrorPath"] as? String, "/dev/null")
     }
 
-    func testDevelopmentLaunchAgentPropagatesExplicitStandaloneAndEdgeModes() throws {
-        for mode in [DevelopmentHubMode.standalone, .edge] {
+    func testRetiredEdgeModeIsRefused() throws {
+        let fixture = try makeFixture(createConfig: true, mode: .standalone)
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        var environment = fixture.environment
+        environment[DevelopmentHubConfiguration.modeVariable] = "edge"
+        XCTAssertThrowsError(try DevelopmentHubConfiguration.from(environment: environment)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("must be fixture or standalone"))
+        }
+        XCTAssertNil(DevelopmentHubMode(rawValue: "edge"))
+    }
+
+    func testDevelopmentLaunchAgentPropagatesExplicitStandaloneMode() throws {
+        for mode in [DevelopmentHubMode.standalone] {
             let fixture = try makeFixture(createConfig: true, mode: mode)
             defer { try? FileManager.default.removeItem(at: fixture.root) }
             let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(

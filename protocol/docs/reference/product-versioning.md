@@ -6,8 +6,8 @@ tag, package publication, release artifact, or support.
 
 The product version appears in `VERSION`, `pyproject.toml`, and the root package
 entry in `uv.lock`. It does not replace the current-Hub HTTP profile
-`hub-http-v1@1.2.0`, the Hub sync profiles, or the Edge delivery profile
-`2.0.0`. These identities are selected independently.
+`hub-http-v1@1.2.0`, the Hub sync profiles, or the receiver envelope profile
+`receiver-v1@1.0.0`. These identities are selected independently.
 
 The current-Hub profile is exported at `profiles/hub-http-v1/1.2.0/`. Its
 `version` discovery field reports the Hub's product version; its `profile`

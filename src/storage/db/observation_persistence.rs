@@ -239,8 +239,12 @@ fn prune_processed_observations(
         .map_err(StoreError::LifecycleWrite)?;
     transaction
         .execute(
+            // Receiver alert and error events are retained evidence, not
+            // processing rows: the projection never consumes them.
             "DELETE FROM raw_observations
-             WHERE vehicle_id = ?1 AND observation_id <= ?2",
+             WHERE vehicle_id = ?1 AND observation_id <= ?2
+               AND json_extract(payload_json, '$.record_type')
+                   IS NOT 'fleet_telemetry_event_v1'",
             params![vehicle_id.to_string(), through_observation_id],
         )
         .map_err(StoreError::LifecycleWrite)?;

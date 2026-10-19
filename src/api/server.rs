@@ -71,7 +71,7 @@ use crate::{
         validate_paired_device_name,
     },
     discovery_source_url,
-    fleet_telemetry::{FleetTelemetryAccumulator, MAX_FLEET_TELEMETRY_INPUT_BYTES, vin_from_json},
+    fleet_telemetry::MAX_FLEET_TELEMETRY_INPUT_BYTES,
     http_range::{parse_single_range, unsatisfied_content_range},
     manifest_signing::ManifestSigning,
     protocol::{
@@ -409,7 +409,8 @@ pub struct AppState {
 #[derive(Clone)]
 struct FleetTelemetryIngress {
     token_digest: Sha256Digest,
-    accumulators: Arc<tokio::sync::Mutex<HashMap<String, FleetTelemetryAccumulator>>>,
+    /// The receiver's accumulators, identity cache, clock and test hooks (6A S5).
+    receiver: Arc<crate::collector::FleetReceiver>,
 }
 
 #[derive(Clone)]
@@ -531,8 +532,29 @@ impl FleetTelemetryIngress {
         }
         Ok(Self {
             token_digest: Sha256Digest::of_bytes(token),
-            accumulators: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            receiver: Arc::new(crate::collector::FleetReceiver::new(
+                crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT,
+            )),
         })
+    }
+
+    /// The configured `offline_drive_timeout_seconds` the receiver's lifecycle
+    /// intake uses, as the collector's own intake does (C-12). The lifecycle
+    /// refuses a zero gap, so a zero timeout would answer every vehicle and
+    /// connectivity POST with 503 for ever: startup refuses it instead (R4).
+    fn with_offline_drive_timeout(
+        mut self,
+        offline_drive_timeout: Duration,
+    ) -> std::io::Result<Self> {
+        if offline_drive_timeout.is_zero() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "collector.offline_drive_timeout_seconds must be greater than zero when \
+                 [collector.fleet_telemetry] is configured",
+            ));
+        }
+        self.receiver = Arc::new(crate::collector::FleetReceiver::new(offline_drive_timeout));
+        Ok(self)
     }
 
     fn authorizes(&self, headers: &HeaderMap) -> bool {
@@ -1036,6 +1058,9 @@ where
             format!("Hub admission is unavailable: {error}"),
         )
     })?;
+    // An incoming key means a collector supplied it and owns replay. Without one,
+    // the key is the Hub's own and nothing else publishes pending derived work.
+    let collector_owns_replay = cursor_key.is_some();
     let cursor_key = match (cursor_key, config.tls.is_some()) {
         (Some(cursor_key), _) => Some(cursor_key),
         (None, true) => Some(
@@ -1063,6 +1088,15 @@ where
                 })
         }
     };
+    let publication_drain = match (collector_owns_replay, cursor_key.as_ref()) {
+        (false, Some(cursor_key)) => Some(crate::collector::PublicationDrain::spawn(
+            store.clone(),
+            cursor_key.clone(),
+            Some(std::sync::Arc::clone(&admission)),
+            crate::collector::PublicationDrainConfig::default(),
+        )),
+        _ => None,
+    };
     let (current_stop, stopped) = tokio::sync::oneshot::channel();
     let mut current_worker = config.teslamate.current.clone().map(|current| {
         tokio::spawn(crate::collection::teslamate_current::run(
@@ -1083,6 +1117,17 @@ where
         shutdown,
     )
     .await;
+    // The publication task ends cooperatively; its active bounded turn finishes
+    // before serving returns.
+    if let Some(drain) = publication_drain
+        && let Err(error) = drain.stop_and_join().await
+    {
+        tracing::error!(
+            target: "collector.publication",
+            error = %error,
+            "collector-less publication task ended with an error"
+        );
+    }
     let _ = current_stop.send(());
     if let Some(worker) = current_worker.as_mut()
         && tokio::time::timeout(std::time::Duration::from_secs(3), &mut *worker)
@@ -1113,7 +1158,15 @@ where
         .collector
         .fleet_telemetry
         .as_ref()
-        .map(|telemetry| FleetTelemetryIngress::from_token_file(&telemetry.ingest_token_path))
+        .map(|telemetry| {
+            FleetTelemetryIngress::from_token_file(&telemetry.ingest_token_path).and_then(
+                |ingress| {
+                    ingress.with_offline_drive_timeout(Duration::from_secs(
+                        config.collector.offline_drive_timeout_seconds,
+                    ))
+                },
+            )
+        })
         .transpose()?;
     if let Some(tls) = &config.tls {
         let cursor_key = cursor_key.ok_or_else(|| {
@@ -1303,43 +1356,19 @@ async fn ingest_fleet_telemetry(
     let Some(cursor_key) = state.cursor_key.as_deref() else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
-    let vin = match vin_from_json(&body) {
-        Ok(vin) => vin,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
-
-    // Serialize apply+commit per process. The receiver acknowledges only a
-    // 2xx response, so publish the candidate accumulator after SQLite commits;
-    // a transient failure can then be retried without losing the transaction.
-    let mut accumulators = ingress.accumulators.lock().await;
-    let mut candidate = if let Some(accumulator) = accumulators.get(&vin) {
-        accumulator.clone()
-    } else {
-        match crate::collector::fleet_telemetry_seed_for_vin(&state.store, &vin) {
-            Ok(Some(owner_data)) => match FleetTelemetryAccumulator::restore(&vin, &owner_data) {
-                Ok(accumulator) => accumulator,
-                Err(_) => return StatusCode::UNPROCESSABLE_ENTITY.into_response(),
-            },
-            Ok(None) => match FleetTelemetryAccumulator::empty(&vin) {
-                Ok(accumulator) => accumulator,
-                Err(_) => return StatusCode::UNPROCESSABLE_ENTITY.into_response(),
-            },
-            Err(_) => return StatusCode::UNPROCESSABLE_ENTITY.into_response(),
-        }
-    };
-    let snapshot = match candidate.apply_json(&body) {
-        Ok(snapshot) => snapshot,
-        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
-    };
-    match crate::collector::persist_fleet_telemetry_snapshot(&state.store, cursor_key, &snapshot)
+    match ingress
+        .receiver
+        .ingest(&state.store, cursor_key, &body)
         .await
     {
-        Ok(_) => {
-            accumulators.insert(vin, candidate);
-            StatusCode::NO_CONTENT.into_response()
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(crate::collector::ReceiverRejection::Invalid) => {
+            StatusCode::BAD_REQUEST.into_response()
         }
-        Err(error) => {
-            tracing::error!(error = %error, "Fleet Telemetry commit failed");
+        Err(crate::collector::ReceiverRejection::UnknownVehicle) => {
+            StatusCode::UNPROCESSABLE_ENTITY.into_response()
+        }
+        Err(crate::collector::ReceiverRejection::Unavailable) => {
             StatusCode::SERVICE_UNAVAILABLE.into_response()
         }
     }

@@ -11,7 +11,7 @@
 
 This repository owns the stable public boundary between Teslatlas Hub and
 Teslatlas, public SDKs, open reference clients, Home Assistant, user-operated
-edge receivers, and future third-party integrations. The protocol is
+telemetry receivers, and future third-party integrations. The protocol is
 implementable from this repository alone: a client does not need Hub Rust or
 proprietary Teslatlas source.
 
@@ -34,8 +34,7 @@ It carries three distinct contract families with different identities:
   The candidate `hub-sync-v1@1.5.0` adds a live overlay (`base_live_sequence`,
   `live_sequence`, the `sync.live` capability) to a PhysicalV3 head; no Hub
   serves it yet.
-- Edge delivery: `profiles/edge-delivery-v2/2.0.0/`, with its own pull and
-  acknowledgement contract.
+- `profiles/receiver-v1/1.0.0/`: the receiver envelope a self-hosted telemetry receiver posts to the Hub
 
 These are protocol profiles, not claims about a deployed Hub or SDK release.
 This repository contains no Hub implementation, generated SDK, or proprietary
@@ -75,8 +74,8 @@ or deployment instructions.
   sets, typed delta packs, bounded admission, no-op and full-replacement rebase.
 - `profiles/hub-sync-v1/1.3.0/` — retained changes-since, no-op, key discovery,
   schema 2.2 multi-chunk manifests, and signed prepared map months.
-- `profiles/edge-delivery-v2/2.0.0/` — Edge pull, stable identity,
-  sequence/gap, acknowledgement, and durable-consumer disposition contract.
+- `profiles/receiver-v1/1.0.0/` — the receiver envelope schema, examples and
+  vectors, with the two annotated rules a conforming receiver enforces.
 - `generators/` — documented `openapi-generator` recipes for
   `profiles/hub-http-v1/1.2.0/openapi.json`; no generated code is committed.
 - `conformance/` — the `hub-sync-v1@1.3.0` fixture cases, the offline and native

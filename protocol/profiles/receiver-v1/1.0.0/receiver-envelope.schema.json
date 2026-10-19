@@ -1,5 +1,5 @@
 {
-  "$id": "https://protocol.teslatlas.example/profiles/edge-delivery-v2/2.0.0/receiver-envelope.schema.json",
+  "$id": "https://protocol.teslatlas.example/profiles/receiver-v1/1.0.0/receiver-envelope.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
@@ -58,7 +58,7 @@
     "timestamp_ms",
     "payload"
   ],
-  "title": "Strict Edge receiver envelope retained by delivery v2",
+  "title": "Receiver envelope",
   "type": "object",
   "x-teslatlas-event-clock-rule": "timestamp_ms <= received_at_ms + 300000"
 }

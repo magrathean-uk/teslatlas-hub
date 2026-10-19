@@ -267,11 +267,19 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     let after = cs_catalogue_rows(&connection);
     // Every pre-existing table holds exactly the rows it held.
+    // The retired delivery tables are dropped by the v74 step; the rewind
+    // restored them empty, so only they may be missing afterwards.
     for (table, rows) in &before {
+        if table.starts_with("edge_") {
+            assert!(rows.is_empty(), "{table} was restored empty");
+            assert!(!after.contains_key(table), "{table} is retired");
+            continue;
+        }
         assert_eq!(&after[table], rows, "{table}");
     }
-    // Six tables are new: the five of C3 are empty, the credential status table
-    // is present and its singleton row is absent.
+    // Eight tables are new: the five of C3 are empty, the credential status table
+    // is present and its singleton row is absent, and the receiver state and
+    // retired gap tables are empty.
     let added: Vec<&String> = after.keys().filter(|name| !before.contains_key(*name)).collect();
     assert_eq!(
         added,
@@ -282,6 +290,8 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
             "collector_owner_actions",
             "collector_request_counters",
             "collector_vehicle_state",
+            "fleet_telemetry_accumulator_states",
+            "retired_delivery_gaps",
         ]
         .iter()
         .collect::<Vec<_>>()

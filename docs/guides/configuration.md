@@ -374,7 +374,7 @@ the one it loaded; the sign-in state is read afresh at every reading in either c
 
 A bounded `observe` run does not wait: it refuses at once with the same message, before it
 starts a listener, and exits with an error. Collection turned off (`interval_seconds = 0`)
-or delivered by Edge has no cadence to break and shows nothing of this.
+has no cadence to break and shows nothing of this.
 
 Owner-visible changes in this release:
 
@@ -522,6 +522,43 @@ When Fleet Telemetry is configured, resident collection is push-only and does
 not fall back to paid periodic `vehicle_data` calls. Follow
 [Fleet setup](fleet-setup.md) for certificates, receiver, virtual key, scopes,
 and regional registration.
+
+### What the receiver route accepts
+
+The self-hosted receiver posts one envelope per request to the Hub's private
+route (profile `receiver-v1`, `protocol/profiles/receiver-v1/1.0.0/`).
+
+- VINs are uppercase and use the 17 characters without I, O or Q. Only the
+  documented envelope keys are accepted: `version`, `vin`, `txid`, `tx_type`,
+  `received_at_ms`, `timestamp_ms`, `payload` and the optional snake-case
+  `device_client_version` and `firmware_version`. Camel-case spellings, an
+  explicit `null` and a payload that is not an object get a 400.
+- `alerts` and `errors` records are kept as events and stay in the store when
+  the processed observations are pruned. They never change the vehicle's current
+  state. The stored record carries the receiver's own event
+  time as the time it happened and the Hub's admission time as the time it was
+  received; the dispatcher's arrival time is not the admission time.
+- A cumulative charge-energy figure appears only when the vehicle sends
+  `DCChargingEnergyIn`; `ChargeEnergyAdded` is recognised and never fills it.
+  Charger power uses the AC figure while it is above zero, then the DC figure,
+  and the generic charger figure only until a specific one arrives on the
+  connection. `FastChargerPresent` and `FastChargerType` are requested every
+  15 seconds.
+- A connectivity record that reports offline, or a different connection ID,
+  ends the connection: its groups are cleared and later frames stamped at or
+  before that moment are ignored, even after a restart. If the offline record
+  itself is lost, the old values stay until a later offline record or a new
+  connection ID arrives; that is a known limit.
+- The receiver keeps each vehicle's accumulated state so a restart loses nothing.
+  If a stored state cannot be used, the Hub logs one warning (the vehicle's Hub
+  identifier only) and starts again from the vehicle's latest stored values.
+- The receiver closes a drive after `offline_drive_timeout_seconds` of silence,
+  as the collector does. With `[collector.fleet_telemetry]` configured, a value of
+  zero is refused when the Hub starts serving ("collector.offline_drive_timeout_seconds
+  must be greater than zero when [collector.fleet_telemetry] is configured"); the
+  other cadence rules apply only to collection and do not stop the receiver.
+- The retired `[collector.edge]` table is refused with a clear error. Remove
+  it; to stream telemetry, configure the receiver in `[collector.fleet_telemetry]`.
 
 ## Geocoding and terrain
 

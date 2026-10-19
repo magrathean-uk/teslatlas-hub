@@ -332,6 +332,25 @@ impl HubStore {
         result
     }
 
+    /// Append one receiver alert or error event as a raw observation inside the
+    /// caller's transaction, which owns the commit (G2-6 6A S5). The record type
+    /// must be [`RECEIVER_EVENT_RECORD_TYPE`]; it has no current row and is not
+    /// delivered to the lifecycle. A replay of the same event (same vehicle,
+    /// event time and payload) inserts nothing.
+    pub(crate) fn append_event_observation_in_transaction(
+        transaction: &Transaction<'_>,
+        input: &ObservationInput,
+        received_at_ms: i64,
+    ) -> Result<AppendObservation, StoreError> {
+        input.validate()?;
+        if input.payload.get("record_type").and_then(Value::as_str)
+            != Some(RECEIVER_EVENT_RECORD_TYPE)
+        {
+            return Err(StoreError::InvalidEventRecord);
+        }
+        append_observation_in_transaction(transaction, input, received_at_ms)
+    }
+
     /// Last accepted reachability of a vehicle, `online`, `asleep` or
     /// `offline`, from its persisted lifecycle state (C1 R7, R77). `None` when
     /// the vehicle has no state or no reachability has been accepted yet. The

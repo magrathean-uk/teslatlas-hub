@@ -19,7 +19,7 @@ installed-Hub, App or SDK acceptance.
 | Hub sync `hub-sync-v1@1.3.0` | Served (candidate contract). 65 deterministic conformance cases run in `./tools/check` and `./conformance/run`. Hub and App runtime admission is separate and remains open. |
 | Hub sync `hub-sync-v1@1.4.0` | Served through its selector (candidate contract). Its profile files are retained and digest-bound; the unit suites run in `./tools/check` and the conformance runner does not run it. Hub and App runtime admission is separate and remains open. |
 | Hub sync `hub-sync-v1@1.5.0` | Candidate, not served: no Hub serves the live overlay yet. Its profile files are retained and digest-bound; the unit suites run in `./tools/check`. No runtime acceptance is claimed. |
-| Edge delivery `edge-delivery-v2@2.0.0` | Separate delivery contract with bounded historical synthetic evidence. |
+| Receiver envelope `receiver-v1@1.0.0` | Served by the Hub receiver route. Evidence: the independent profile tests T1 (`tests/test_receiver_profile.py`) and the Hub route tests T2 (`receiver_answers_the_profile_vectors` in `src/api/server/tests/receiver.rs`) against the same vectors. Edge delivery (`edge-delivery-v2@2.0.0`) was retired; its dated evidence below is historical. |
 
 ## Canonical bindings
 

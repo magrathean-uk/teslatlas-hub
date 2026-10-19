@@ -245,7 +245,7 @@ final class OnboardingHubControllerTests: XCTestCase {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
 
-        for mode in [DevelopmentHubMode.standalone, .edge] {
+        for mode in [DevelopmentHubMode.standalone] {
             let configuration = DevelopmentHubConfiguration(
                 binary: home.appendingPathComponent("teslatlas-hub"),
                 config: home.appendingPathComponent("config.toml"),

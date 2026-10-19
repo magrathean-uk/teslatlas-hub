@@ -1862,123 +1862,9 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
 
     if version == 57 {
         connection
-            .execute_batch(
-                "
-                BEGIN IMMEDIATE;
-                CREATE TABLE IF NOT EXISTS edge_lineages (
-                    installation_id TEXT NOT NULL,
-                    lineage TEXT NOT NULL,
-                    source_id TEXT NOT NULL REFERENCES sources(source_id) ON DELETE RESTRICT,
-                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
-                    vin TEXT NOT NULL,
-                    car_id INTEGER NOT NULL CHECK(car_id > 0),
-                    first_spool_seq INTEGER,
-                    ack_frontier INTEGER,
-                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
-                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= created_at_ms),
-                    PRIMARY KEY(installation_id, lineage),
-                    CHECK(length(CAST(installation_id AS BLOB)) BETWEEN 1 AND 128),
-                    CHECK(length(CAST(lineage AS BLOB)) BETWEEN 1 AND 128),
-                    CHECK(length(CAST(vin AS BLOB)) = 17),
-                    CHECK(first_spool_seq IS NULL OR first_spool_seq >= 1),
-                    CHECK(ack_frontier IS NULL OR ack_frontier >= first_spool_seq)
-                ) STRICT;
-                CREATE TABLE IF NOT EXISTS edge_applications (
-                    installation_id TEXT NOT NULL,
-                    lineage TEXT NOT NULL,
-                    stable_record_id TEXT NOT NULL,
-                    payload_sha256 TEXT NOT NULL,
-                    disposition TEXT NOT NULL CHECK(disposition IN (
-                        'projected_telemetry', 'durable_non_projection_event'
-                    )),
-                    first_spool_seq INTEGER NOT NULL CHECK(first_spool_seq >= 1),
-                    observation_id INTEGER,
-                    applied_at_ms INTEGER NOT NULL CHECK(applied_at_ms >= 0),
-                    PRIMARY KEY(installation_id, lineage, stable_record_id),
-                    FOREIGN KEY(installation_id, lineage)
-                        REFERENCES edge_lineages(installation_id, lineage) ON DELETE RESTRICT,
-                    CHECK(length(stable_record_id) = 64),
-                    CHECK(length(payload_sha256) = 64)
-                ) STRICT;
-                CREATE TABLE IF NOT EXISTS edge_sequence_dispositions (
-                    installation_id TEXT NOT NULL,
-                    lineage TEXT NOT NULL,
-                    spool_seq INTEGER NOT NULL CHECK(spool_seq >= 1),
-                    item_kind TEXT NOT NULL CHECK(item_kind IN ('record', 'gap')),
-                    item_id TEXT NOT NULL,
-                    legacy_record_id TEXT,
-                    payload_sha256 TEXT,
-                    category TEXT NOT NULL CHECK(category IN (
-                        'projected_telemetry', 'durable_non_projection_event',
-                        'durable_gap', 'duplicate'
-                    )),
-                    reason TEXT NOT NULL,
-                    occurred_at_ms INTEGER,
-                    evidence_sha256 TEXT,
-                    committed_at_ms INTEGER NOT NULL CHECK(committed_at_ms >= 0),
-                    PRIMARY KEY(installation_id, lineage, spool_seq),
-                    FOREIGN KEY(installation_id, lineage)
-                        REFERENCES edge_lineages(installation_id, lineage) ON DELETE RESTRICT,
-                    CHECK(length(item_id) = 64),
-                    CHECK(legacy_record_id IS NULL OR length(legacy_record_id) = 64),
-                    CHECK(payload_sha256 IS NULL OR length(payload_sha256) = 64),
-                    CHECK(evidence_sha256 IS NULL OR length(evidence_sha256) = 64),
-                    CHECK((item_kind = 'gap' AND category = 'durable_gap'
-                           AND legacy_record_id IS NULL AND payload_sha256 IS NULL
-                           AND occurred_at_ms IS NOT NULL AND evidence_sha256 IS NOT NULL)
-                       OR (item_kind = 'record' AND category != 'durable_gap'
-                           AND legacy_record_id IS NOT NULL AND payload_sha256 IS NOT NULL
-                           AND occurred_at_ms IS NULL AND evidence_sha256 IS NULL))
-                ) STRICT;
-                CREATE UNIQUE INDEX IF NOT EXISTS edge_sequence_item_identity
-                    ON edge_sequence_dispositions(installation_id, lineage, item_kind, item_id, spool_seq);
-                CREATE TABLE IF NOT EXISTS edge_accumulator_states (
-                    installation_id TEXT NOT NULL,
-                    lineage TEXT NOT NULL,
-                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
-                    state_version INTEGER NOT NULL CHECK(state_version = 1),
-                    state_json BLOB NOT NULL CHECK(length(state_json) BETWEEN 2 AND 262144),
-                    through_spool_seq INTEGER NOT NULL CHECK(through_spool_seq >= 1),
-                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),
-                    PRIMARY KEY(installation_id, lineage),
-                    FOREIGN KEY(installation_id, lineage)
-                        REFERENCES edge_lineages(installation_id, lineage) ON DELETE RESTRICT
-                ) STRICT;
-                CREATE TABLE IF NOT EXISTS edge_pending_publications (
-                    installation_id TEXT NOT NULL,
-                    lineage TEXT NOT NULL,
-                    stable_record_id TEXT NOT NULL,
-                    vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
-                    status TEXT NOT NULL CHECK(status IN ('pending', 'publishing', 'retry', 'complete')),
-                    attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
-                    next_attempt_ms INTEGER NOT NULL CHECK(next_attempt_ms >= 0),
-                    last_error TEXT,
-                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
-                    completed_at_ms INTEGER,
-                    PRIMARY KEY(installation_id, lineage, stable_record_id),
-                    FOREIGN KEY(installation_id, lineage, stable_record_id)
-                        REFERENCES edge_applications(installation_id, lineage, stable_record_id)
-                        ON DELETE RESTRICT,
-                    CHECK(last_error IS NULL OR length(CAST(last_error AS BLOB)) <= 256)
-                ) STRICT;
-                CREATE INDEX IF NOT EXISTS edge_pending_publication_due
-                    ON edge_pending_publications(status, next_attempt_ms);
-                CREATE TABLE IF NOT EXISTS edge_consumer_diagnostics (
-                    installation_id TEXT NOT NULL,
-                    lineage TEXT NOT NULL,
-                    state TEXT NOT NULL CHECK(state IN (
-                        'connected', 'backoff', 'auth_failed', 'blocked_record',
-                        'pending_publication', 'stopped'
-                    )),
-                    detail TEXT NOT NULL,
-                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),
-                    PRIMARY KEY(installation_id, lineage),
-                    CHECK(length(CAST(detail AS BLOB)) <= 256)
-                ) STRICT;
-                PRAGMA user_version = 58;
-                COMMIT;
-                ",
-            )
+            .execute_batch(&format!(
+                "BEGIN IMMEDIATE; {HISTORICAL_DELIVERY_TABLES_SQL} PRAGMA user_version = 58; COMMIT;"
+            ))
             .map_err(StoreError::Migrate)?;
         version = 58;
     }
@@ -2639,6 +2525,16 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
             .map_err(StoreError::Migrate)?;
         version = 72;
     }
+
+    if version == 72 {
+        migrate_receiver_state_table(connection)?;
+        version = 73;
+    }
+
+    if version == 73 {
+        migrate_retire_delivery_tables(connection)?;
+        version = 74;
+    }
     if version == SCHEMA_VERSION {
         Ok(())
     } else {
@@ -2648,42 +2544,61 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
 
 /// Test fixtures that rewind a current catalogue to the shape before the v72
 /// step run this: it drops the rejected-access-digest column of the credential
-/// status table (hub fix pass 3). Every older rewind drops the whole table.
+/// status table (hub fix pass 3). Every older rewind drops the whole table. It
+/// starts with the rewind of the receiver-state and retirement steps (v73 and
+/// v74), which come after this step.
 #[cfg(test)]
-pub(crate) const REWIND_V72_SQL: &str = "
+pub(crate) const REWIND_V72_SQL: &str = concat!(
+    rewind_v73_sql!(),
+    "
     ALTER TABLE collector_auth_state DROP COLUMN fuse_rejected_access_digest;
-";
+"
+);
 
 /// Test fixtures that rewind a current catalogue to the shape before the v71
 /// step run this: it drops the legacy credential unit's status table (C5
-/// section 3.3). Every older rewind starts with the same drop.
+/// section 3.3), which also removes the v72 digest column. It starts with the
+/// v74 and v73 rewinds (`rewind_v73_sql!`), which undo the retirement and
+/// receiver-state steps that come after it. Every older rewind starts with the
+/// same drop.
 #[cfg(test)]
-pub(crate) const REWIND_V71_SQL: &str = "
+pub(crate) const REWIND_V71_SQL: &str = concat!(
+    rewind_v73_sql!(),
+    "
     DROP TABLE IF EXISTS collector_auth_state;
-";
+"
+);
 
 /// Test fixtures that rewind a current catalogue to the shape before the v70
 /// step run this: it drops the legacy credential status table of the v71 step
-/// and the five collector state tables (C3 R4). A fixture that rewinds further
-/// runs [`REWIND_V69_SQL`], which starts with the same drops.
+/// and the five collector state tables (C3 R4). It starts with the v74 and v73
+/// rewinds (`rewind_v73_sql!`), which undo the retirement and receiver-state
+/// steps that come after them. A fixture that rewinds further runs
+/// [`REWIND_V69_SQL`], which starts with the same rewinds and drops.
 #[cfg(test)]
-pub(crate) const REWIND_V70_SQL: &str = "
+pub(crate) const REWIND_V70_SQL: &str = concat!(
+    rewind_v73_sql!(),
+    "
     DROP TABLE IF EXISTS collector_auth_state;
     DROP TABLE IF EXISTS collector_owner_actions;
     DROP TABLE IF EXISTS collection_gaps;
     DROP TABLE IF EXISTS collector_request_counters;
     DROP TABLE IF EXISTS collector_vehicle_state;
     DROP TABLE IF EXISTS collector_account_state;
-";
+"
+);
 
 /// Test fixtures that rewind a current catalogue to an older shape run this
-/// first: it undoes everything the v71 step adds (the credential status
-/// table), the v70 step (the collector state tables) and then everything the
-/// v69 step adds (G2-3e: the lookup columns; G2-3f: the terrain tile digest
-/// table). Every older rewind starts here, so migrating the rewound catalogue
-/// forward adds them again.
+/// first: it undoes the v74 retirement and v73 receiver-state steps
+/// (`rewind_v73_sql!`), everything the v71 step adds (the credential status
+/// table, with the v72 digest column), the v70 step (the collector state
+/// tables) and then everything the v69 step adds (G2-3e: the lookup columns;
+/// G2-3f: the terrain tile digest table). Every older rewind starts here, so
+/// migrating the rewound catalogue forward adds them again.
 #[cfg(test)]
-pub(crate) const REWIND_V69_SQL: &str = "
+pub(crate) const REWIND_V69_SQL: &str = concat!(
+    rewind_v73_sql!(),
+    "
     DROP TABLE IF EXISTS collector_auth_state;
     DROP TABLE IF EXISTS collector_owner_actions;
     DROP TABLE IF EXISTS collection_gaps;
@@ -2710,7 +2625,14 @@ pub(crate) const REWIND_V69_SQL: &str = "
     ALTER TABLE address_lookup_cache DROP COLUMN state_district;
     ALTER TABLE address_lookup_cache DROP COLUMN country;
     ALTER TABLE address_lookup_cache DROP COLUMN raw_json;
-";
+"
+);
+
+/// The v74 and v73 rewinds, for fixtures that step back one version at a time.
+#[cfg(test)]
+pub(crate) const REWIND_V74_SQL: &str = rewind_v74_sql!();
+#[cfg(test)]
+pub(crate) const REWIND_V73_SQL: &str = rewind_v73_sql!();
 
 fn migrate_address_cache_metadata(connection: &Connection) -> Result<(), StoreError> {
     const COLUMNS: [(&str, &str); 12] = [

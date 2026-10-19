@@ -26,28 +26,11 @@ import time
 import urllib.error
 import urllib.request
 import urllib.parse
-import uuid
 
 MAX_CONFIG_BYTES = 64 * 1024
 DEVELOPMENT_SERVE_ENV = "TESLATLAS_HUB_DEVELOPMENT"
 DEVELOPMENT_SERVE_MODE_ENV = "TESLATLAS_HUB_DEVELOPMENT_MODE"
 DEVELOPMENT_SERVE_MODE = "fixture"
-EDGE_PRIMARY_BASE_URL = "https://127.0.0.1:18510/"
-EDGE_DOCKER_BASE_URL = "https://127.0.0.1:19443/"
-EDGE_R1_DOCKER_BASE_URL = "https://127.0.0.1:20443/"
-EDGE_R10_DOCKER_BASE_URL = "https://127.0.0.1:20543/"
-EDGE_R12_DOCKER_BASE_URL = "https://127.0.0.1:20743/"
-EDGE_R12_REPLACEMENT_DOCKER_BASE_URL = "https://127.0.0.1:20843/"
-EDGE_R13_AUTHORIZED_DOCKER_BASE_URL = "https://127.0.0.1:20943/"
-EDGE_ALLOWED_BASE_URLS = frozenset((
-    EDGE_PRIMARY_BASE_URL,
-    EDGE_DOCKER_BASE_URL,
-    EDGE_R1_DOCKER_BASE_URL,
-    EDGE_R10_DOCKER_BASE_URL,
-    EDGE_R12_DOCKER_BASE_URL,
-    EDGE_R12_REPLACEMENT_DOCKER_BASE_URL,
-    EDGE_R13_AUTHORIZED_DOCKER_BASE_URL,
-))
 DEFAULT_SCENARIO_ID = "b1-five-drives"
 PHYSICAL_V3_SCENARIO_ID = "physical-v3-public-513"
 HTTP_PROFILE_ID = "hub-http-v1@1.2.0"
@@ -62,11 +45,6 @@ SCENARIO_SOURCES = {
     DEFAULT_SCENARIO_ID: Path(__file__).resolve().parents[2] / "tests/interop/scenario.json",
     "viewer-r1-51-drives": Path(__file__).resolve().parents[2] / "tests/interop/scenario-viewer-r1-51-drives.json",
     PHYSICAL_V3_SCENARIO_ID: Path(__file__).resolve().parents[2] / "tests/interop/scenario.json",
-}
-EDGE_COLLECTOR_FIELDS = {
-    "base_url", "ca_certificate_path", "client_certificate_path",
-    "client_private_key_path", "bearer_token_path", "installation_id",
-    "lineage", "source_id", "vehicle_id", "vin", "car_id",
 }
 
 _native_path = Path(__file__).resolve().parents[2] / "protocol/conformance/hub_native_evidence.py"
@@ -106,7 +84,7 @@ def read_private_json(path):
 
 def load_config(path):
     config = read_private_json(path)
-    allowed = {"binary", "seed_binary", "output_dir", "port", "lifetime_seconds", "profile_id", "profile_path", "profile_sha256", "allowed_origins", "edge_collector", "scenario_id"}
+    allowed = {"binary", "seed_binary", "output_dir", "port", "lifetime_seconds", "profile_id", "profile_path", "profile_sha256", "allowed_origins", "scenario_id"}
     if not isinstance(config, dict) or set(config) - allowed:
         raise ValueError("unknown config fields")
     scenario_id = config.get("scenario_id", DEFAULT_SCENARIO_ID)
@@ -159,10 +137,6 @@ def load_config(path):
                 or parsed.geturl() != origin):
             raise ValueError("allowed origins must be exact canonical HTTP origins")
     scenario_source(config)
-    if "edge_collector" in config:
-        if scenario_id == PHYSICAL_V3_SCENARIO_ID:
-            raise ValueError("physical V3 fixture keeps collectors disabled")
-        config["edge_collector"] = validate_edge_collector(config["edge_collector"])
     return config
 
 
@@ -197,82 +171,12 @@ def configure_allowed_origins(config_path, origins):
         stream.write("[http]\nallowed_origins = %s\n" % json.dumps(origins, separators=(",", ":")))
 
 
-def validate_edge_collector(value):
-    if not isinstance(value, dict) or set(value) != EDGE_COLLECTOR_FIELDS:
-        raise ValueError("invalid Edge collector binding")
-    if value["base_url"] not in EDGE_ALLOWED_BASE_URLS:
-        raise ValueError("Edge collector must use a reserved endpoint")
-    for field in ("installation_id", "lineage"):
-        item = value[field]
-        if not isinstance(item, str) or not re.fullmatch(r"[a-z0-9._-]{1,128}", item):
-            raise ValueError("invalid Edge collector binding")
-    for field in ("source_id", "vehicle_id"):
-        item = value[field]
-        if not isinstance(item, str):
-            raise ValueError("invalid Edge collector binding")
-        try:
-            if uuid.UUID(item).int == 0:
-                raise ValueError("invalid Edge collector binding")
-        except ValueError as error:
-            raise ValueError("invalid Edge collector binding") from error
-    vin = value["vin"]
-    if (not isinstance(vin, str) or len(vin) != 17
-            or not vin.isascii() or not vin.isalnum()
-            or any(item in vin for item in "IOQ")
-            or type(value["car_id"]) is not int or value["car_id"] <= 0):
-        raise ValueError("invalid Edge collector binding")
-    for field in ("ca_certificate_path", "client_certificate_path", "client_private_key_path", "bearer_token_path"):
-        item = value[field]
-        if not isinstance(item, str) or not Path(item).is_absolute():
-            raise ValueError("invalid Edge collector private path")
-        candidate = Path(item)
-        try:
-            metadata = candidate.lstat()
-        except OSError as error:
-            raise ValueError("invalid Edge collector private path") from error
-        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.getuid()
-                or metadata.st_nlink != 1 or metadata.st_mode & 0o077):
-            raise ValueError("invalid Edge collector private path")
-    paths = [value[field] for field in ("ca_certificate_path", "client_certificate_path", "client_private_key_path", "bearer_token_path")]
-    if len(set(paths)) != len(paths):
-        raise ValueError("invalid Edge collector private path")
-    return value
-
-
-def configure_edge_collector(config_path, edge):
-    path = Path(config_path)
-    original = path.read_text()
-    collector = "[collector]\ninterval_seconds = 0\n"
-    if original.count(collector) != 1 or "[collector.edge]" in original or not original.endswith("\n"):
-        raise ValueError("seeded fixture has no disabled collector section")
-    updated = original.replace("[collector]\n", '[collector]\nprovider = "fleet"\n', 1)
-    fields = (
-        "base_url", "ca_certificate_path", "client_certificate_path",
-        "client_private_key_path", "bearer_token_path", "installation_id",
-        "lineage", "source_id", "vehicle_id", "vin", "car_id",
-    )
-    with open(path, "w", encoding="utf-8") as stream:
-        stream.write(updated)
-        stream.write("[collector.edge]\n")
-        for field in fields:
-            stream.write("%s = %s\n" % (field, json.dumps(edge[field])))
-
-
 def configure_seeded_config(config_path, config):
-    if "edge_collector" in config:
-        configure_edge_collector(config_path, config["edge_collector"])
     configure_allowed_origins(config_path, config["allowed_origins"])
 
 
 def seed_command(config, seed_binary, output_dir, port):
     command = [str(seed_binary), "--output", str(output_dir), "--port", str(port)]
-    if "edge_collector" in config:
-        command.extend((
-            "--source-id", config["edge_collector"]["source_id"],
-            "--vehicle-id", config["edge_collector"]["vehicle_id"],
-            "--vin", config["edge_collector"]["vin"],
-            "--car-id", str(config["edge_collector"]["car_id"]),
-        ))
     if "scenario_id" in config:
         command.extend(("--scenario", config["scenario_id"]))
     return command

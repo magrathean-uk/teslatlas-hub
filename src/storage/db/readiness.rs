@@ -144,7 +144,7 @@ pub struct ReadinessContext {
     /// The loaded collector mode, or `None` for a context-free read.
     pub mode: Option<crate::config::CollectorMode>,
     /// The active cadence violation of the loaded configuration, if any. Callers
-    /// pass `None` for a disabled collector and for Edge.
+    /// pass `None` for a disabled collector.
     pub cadence: Option<crate::config::CadenceViolation>,
 }
 

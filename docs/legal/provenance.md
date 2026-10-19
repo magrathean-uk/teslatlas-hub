@@ -78,9 +78,8 @@ archive SHA-256 is
 The build applies
 `packaging/fleet-telemetry-bridge/0001-teslatlas-http-dispatcher.patch`
 (SHA-256
-`cfc6831c9686af759781edd647d7c6e10c56b567af4eadf569c14586c2cfbec3`)
-to a temporary private source copy. That patch adds only the bounded Teslatlas
-loopback dispatcher and its configuration. It forwards decoded `V` and
+`33b3c1ab5597507cc4ddf78be57fa017c3b731a109559c9e6ec6e60f14ee3637`)
+to a temporary private source copy. That patch adds the bounded Teslatlas loopback dispatcher and its configuration, and changes the receiver's debug log to record the record type instead of the raw telemetry payload. It forwards decoded `V` and
 connectivity records to
 `http://127.0.0.1:8080/v1/internal/fleet-telemetry`; vehicle records are
 acknowledged only after Hub accepts them. The build then replaces the upstream

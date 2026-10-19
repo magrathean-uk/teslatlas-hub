@@ -800,7 +800,7 @@ async fn fleet_setup_requires_every_configured_vehicle_by_eid_or_vin() {
 }
 
 #[tokio::test]
-async fn native_fleet_telemetry_commits_and_restores_through_fleet_projection() {
+async fn receiver_commits_and_restores_through_fleet_projection() {
     const VIN: &str = "5YJ3E1EA7KF000001";
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
@@ -824,38 +824,51 @@ async fn native_fleet_telemetry_commits_and_restores_through_fleet_projection() 
             .is_none()
     );
 
-    let mut accumulator =
-        crate::fleet_telemetry::FleetTelemetryAccumulator::empty(VIN).expect("accumulator");
-    let t0 = current_epoch_millis().expect("clock") - 1_000;
-    let snapshot = accumulator
-        .apply_json(
-            &serde_json::to_vec(&serde_json::json!({
-                "version": 1,
-                "vin": VIN,
-                "txid": "tx-drive-1",
-                "tx_type": "vehicle_data",
-                "received_at_ms": t0 + 100,
-                "timestamp_ms": t0,
-                "payload": {
-                    "vin": VIN,
-                    "createdAt": "2027-01-15T08:00:00Z",
-                    "data": {
-                        "Location": {"locationValue": {"latitude": 51.5, "longitude": -0.12}},
-                        "VehicleSpeed": {"doubleValue": 48.0},
-                        "Gear": {"stringValue": "drive"},
-                        "Power": {"doubleValue": 12.0},
-                        "BatteryLevel": {"doubleValue": 80.0},
-                        "Soc": {"doubleValue": 79.0}
-                    }
-                }
-            }))
-            .expect("telemetry JSON"),
-        )
-        .expect("telemetry snapshot");
-    let report = persist_fleet_telemetry_snapshot(&store, &cursor_key, &snapshot)
+    let receiver = FleetReceiver::new(crate::lifecycle::DEFAULT_OFFLINE_DRIVE_TIMEOUT);
+    let t0 = 1_800_000_000_000_i64;
+    receiver.hooks().set_clock(move || t0 + 500);
+    let body = serde_json::to_vec(&serde_json::json!({
+        "version": 1,
+        "vin": VIN,
+        "txid": "tx-drive-1",
+        "tx_type": "vehicle_data",
+        "received_at_ms": t0 + 100,
+        "timestamp_ms": t0,
+        "payload": {
+            "vin": VIN,
+            "createdAt": "2027-01-15T08:00:00Z",
+            "data": {
+                "Location": {"locationValue": {"latitude": 51.5, "longitude": -0.12}},
+                "VehicleSpeed": {"doubleValue": 48.0},
+                "Gear": {"stringValue": "drive"},
+                "Power": {"doubleValue": 12.0},
+                "BatteryLevel": {"doubleValue": 80.0},
+                "Soc": {"doubleValue": 79.0}
+            }
+        }
+    }))
+    .expect("telemetry JSON");
+    receiver
+        .ingest(&store, &cursor_key, &body)
         .await
         .expect("telemetry commit");
-    assert_eq!(report.observations_inserted, 1);
+    let observation_rows = |store: &HubStore| -> Vec<(i64, i64, i64)> {
+        store
+            .open()
+            .expect("database")
+            .prepare(
+                "SELECT observation_id, observed_at_ms, received_at_ms FROM current_observations
+                  WHERE record_type = 'fleet_api_vehicle_data_v1'",
+            )
+            .expect("statement")
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .expect("rows")
+            .collect::<Result<_, _>>()
+            .expect("row")
+    };
+    let stored = observation_rows(&store);
+    assert_eq!(stored.len(), 1, "one observation is stored");
+    assert_eq!(stored[0].2, t0 + 500, "its receipt time is the Hub admission time");
 
     let restored = fleet_telemetry_seed_for_vin(&store, VIN)
         .expect("restored seed")
@@ -863,11 +876,22 @@ async fn native_fleet_telemetry_commits_and_restores_through_fleet_projection() 
     assert_eq!(restored["charge_state"]["battery_level"], 80);
     assert_eq!(restored["drive_state"]["shift_state"], "D");
 
-    let duplicate = persist_fleet_telemetry_snapshot(&store, &cursor_key, &snapshot)
+    let raw_before: i64 = store
+        .open()
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| row.get(0))
+        .unwrap();
+    receiver
+        .ingest(&store, &cursor_key, &body)
         .await
         .expect("duplicate telemetry commit");
-    assert_eq!(duplicate.observations_inserted, 0);
-    assert_eq!(duplicate.observations_already_present, 1);
+    assert_eq!(observation_rows(&store), stored, "a duplicate inserts nothing");
+    let raw_after: i64 = store
+        .open()
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(raw_after, raw_before);
 }
 
 #[tokio::test]
