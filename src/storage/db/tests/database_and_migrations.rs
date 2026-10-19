@@ -142,7 +142,7 @@ fn teslamate_current_migration_preserves_populated_v66_and_adds_truthful_provena
             .len(),
         2
     );
-    assert_eq!(schema_version(&upgraded.open().unwrap()).unwrap(), 69);
+    assert_eq!(schema_version(&upgraded.open().unwrap()).unwrap(), SCHEMA_VERSION);
 }
 
 #[test]
@@ -551,7 +551,7 @@ fn schema_67_upgrade_grants_active_vehicles_and_backfills_the_lifetime_cap() {
     let before_ms = epoch_ms();
     migrate(&connection).expect("migrate schema 67");
     let after_ms = epoch_ms();
-    assert_eq!(schema_version(&connection).unwrap(), 69);
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
 
     // Every device, revoked or not, holds a grant for each active vehicle and
     // none for the retired one; granted_at_ms is the device's creation time.
@@ -1347,6 +1347,41 @@ fn supervised_collector_lease_fences_kill_stale_and_recovery_transitions() {
             .expect_err("orderly stop is immediately absent")
             .code,
         ReadinessReasonCode::CollectorAbsent
+    );
+}
+
+#[test]
+fn a_stale_collector_lease_release_leaves_the_replacement_row_untouched() {
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let first = store
+        .acquire_supervised_collector_lease(1_000)
+        .expect("first collector lease");
+    let replacement = store
+        .acquire_supervised_collector_lease(1_000 + SUPERVISED_COLLECTOR_LEASE_MS)
+        .expect("replacement takes over the expired lease");
+    let before = store
+        .supervised_collector_lease_status()
+        .expect("read replacement status")
+        .expect("replacement row");
+    store
+        .release_supervised_collector_lease(first)
+        .expect("stale release is harmless");
+    assert_eq!(
+        store
+            .supervised_collector_lease_status()
+            .expect("read status after the stale release"),
+        Some(before),
+        "the replaced owner's release deletes nothing of the replacement"
+    );
+    store
+        .release_supervised_collector_lease(replacement)
+        .expect("replacement releases its own lease");
+    assert_eq!(
+        store
+            .supervised_collector_lease_status()
+            .expect("read released status"),
+        None
     );
 }
 

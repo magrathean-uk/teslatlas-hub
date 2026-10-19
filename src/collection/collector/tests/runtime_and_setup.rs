@@ -106,25 +106,56 @@ async fn empty_inventory_then_return_remains_discoverable_across_supervisor_rest
     assert_eq!(reopened.configured_tesla_vehicles().unwrap().len(), 1);
 }
 
-#[test]
-fn fleet_provider_not_found_uses_not_found_schedule() {
-    let now = Instant::now();
-    let vehicle = Vehicle::for_test(1, "5YJ3E1EA7KF000001", "online");
-    let vehicle_id = vehicle.id;
-    let mut scheduler = VehicleScheduler::new(test_cadence(), now);
-    scheduler.accept_discovery(vec![vehicle], now);
+/// C3 R53 (Codex R11): one list that lacks a configured car proves nothing, so the
+/// scheduled collector retires no car on it. A retired car leaves the configured
+/// set at once, which would drop it from the scheduler (and its stream, and the
+/// open-drive closure of R40) before the scheduler's own second, spaced absence has
+/// confirmed the removal. Setup, whose list is the owner's own view, still retires.
+#[tokio::test]
+async fn a_scheduled_list_that_lacks_a_car_retires_nothing_and_a_later_list_keeps_it() {
+    const VIN: &str = "5YJ3E1EA7KF000001";
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = HubStore::initialize(temporary.path()).expect("Hub store");
+    let key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
+    let vehicle = Vehicle::for_test(70, VIN, "online");
+    finish_collection_for_provider(
+        &store,
+        &key,
+        &ManualCollection {
+            vehicles: vec![vehicle.clone()],
+            snapshots: Vec::new(),
+            failures: Vec::new(),
+        },
+        CollectorProvider::Legacy,
+    )
+    .await
+    .expect("initial configured vehicle");
+    assert_eq!(store.configured_tesla_vehicles().unwrap().len(), 1);
 
-    scheduler.vehicle_failed_for_error(
-        vehicle_id,
-        &CollectorError::FleetApi(FleetApiError::ProviderHttpStatus {
-            status: 404,
-            error: "vehicle_not_found".to_owned(),
-            description: None,
-        }),
-        now,
-    );
+    for _ in 0..3 {
+        accept_scheduled_provider_inventory(&store, CollectorProvider::Legacy, Ok(Vec::new()))
+            .expect("successful empty scheduled list");
+        assert_eq!(
+            store.configured_tesla_vehicles().unwrap().len(),
+            1,
+            "the car stays configured for the scheduler to confirm its removal"
+        );
+    }
+    // The scheduler confirms the removal after spaced absences and holds the car
+    // `Removed`; it is still in the configured set it reads, so its drive is still
+    // closed by R40 and its hold is restored after a restart.
+    accept_scheduled_provider_inventory(&store, CollectorProvider::Legacy, Ok(vec![vehicle.clone()]))
+        .expect("the car is listed again");
+    assert_eq!(store.configured_tesla_vehicles().unwrap().len(), 1);
 
-    assert_eq!(scheduler.vehicle_fuses[&vehicle_id].not_found.len(), 1);
+    // A car retired earlier (by setup, or by the owner) comes back when listed.
+    accept_complete_provider_inventory(&store, CollectorProvider::Legacy, Ok(Vec::new()))
+        .expect("setup's empty list retires");
+    assert!(store.configured_tesla_vehicles().unwrap().is_empty());
+    accept_scheduled_provider_inventory(&store, CollectorProvider::Legacy, Ok(vec![vehicle]))
+        .expect("a scheduled list that names it reactivates it");
+    assert_eq!(store.configured_tesla_vehicles().unwrap().len(), 1);
 }
 
 #[test]
@@ -291,18 +322,18 @@ async fn completed_stream_task_drains_final_events_and_is_reaped_once() {
             update: Box::new(crate::tesla_stream::StreamUpdate {
                 tag: vehicle_id.to_string(),
                 timestamp_ms: current_epoch_millis().expect("clock") - 1_000,
-                speed: Some(20),
+                speed: Some(20.0),
                 odometer: Some(100.0),
-                soc: Some(80),
-                elevation: Some(25),
+                soc: Some(80.0),
+                elevation: Some(25.0),
                 est_heading: Some(180),
                 est_lat: Some(51.5),
                 est_lng: Some(-0.1),
                 power: Some(12),
                 shift_state: Some("D".to_owned()),
-                range: Some(200),
-                est_range: Some(210),
-                heading: Some(180),
+                range: Some(200.0),
+                est_range: Some(210.0),
+                heading: Some(180.0),
             }),
             queued_at: Instant::now(),
         })
@@ -343,14 +374,19 @@ async fn completed_stream_task_drains_final_events_and_is_reaped_once() {
     .await
     .expect("final events must drain before task failure");
     assert_eq!(result.transition, StreamAuthenticationTransition::Rejected);
-    assert!(matches!(
-        result.terminal_error,
-        Some(CollectorError::StreamTask(StreamTaskOutcome::Supervisor(
-            crate::tesla_stream::StreamSupervisorError::EventQueueFull
-        )))
-    ));
+    // C3 R28, C4 R56 e: a run that ends with `EventQueueFull` is not a collector
+    // error. The scheduler spaces the next run and the loop removes the runtime.
+    assert!(result.terminal_error.is_none());
+    assert_eq!(result.ended, vec![vehicle_id]);
+    assert!(
+        scheduler.vehicles[&vehicle_id]
+            .stream
+            .restart_not_before
+            .is_some(),
+        "the next run waits"
+    );
     assert!(streams[0].task.is_none(), "completed task was not consumed");
-    assert!(!scheduler.vehicles[&vehicle_id].stream_healthy);
+    assert!(!scheduler.vehicles[&vehicle_id].stream.connected);
     let registered = projection_car_ids[&vehicle_id].registered_vehicle_id;
     let observations = store
         .current_observations_for_vehicle(registered)
@@ -516,19 +552,30 @@ async fn resident_fleet_control_uses_selected_vehicle_shared_bearer_proxy_and_au
             .expect("loopback proxy URL");
     let proxy = FleetCommandProxy::for_fake_http(proxy_base, Duration::from_secs(2))
         .expect("fake command proxy");
-    let api = FleetApi::new(
-        crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
-        Duration::from_secs(2),
-    )
-    .expect("Fleet API client");
-    let auth_api = FleetAuthApi::new(
-        crate::fleet_api::FleetRegion::EuropeMiddleEastAndAfrica,
+    // The Fleet data and authentication clients are those of a recording loopback
+    // double (never Tesla's hosts): the command goes through the proxy alone, and
+    // the double proves that the resident action sends nothing else.
+    let (fleet_wire, fleet_address, fleet_server) = p3_wire().await;
+    let fleet_base = url::Url::parse(&format!("http://{fleet_address}/")).expect("Fleet double URL");
+    let api = FleetApi::for_fake_http(fleet_base.clone(), Duration::from_secs(2))
+        .expect("Fleet API client");
+    let auth_api = FleetAuthApi::for_fake_http(
+        fleet_base.join("oauth2/v3/token").expect("Fleet auth double URL"),
         Duration::from_secs(2),
     )
     .expect("Fleet auth client");
     let socket = ResidentControlSocket::bind(temporary.path()).expect("resident socket");
-    let mut resident =
-        tokio::spawn(socket.serve_fleet(store.clone(), api, auth_api, Some(proxy), manager));
+    // C3 R25: the resident action counts its request in the shared counter.
+    let counter =
+        RequestLedger::standalone(&store, &core_cadence().fleet_policy()).expect("request counter");
+    let mut resident = tokio::spawn(socket.serve_fleet(
+        store.clone(),
+        api,
+        auth_api,
+        Some(proxy),
+        manager,
+        counter.clone(),
+    ));
 
     let report = request_resident_vehicle_action(
         temporary.path(),
@@ -546,6 +593,11 @@ async fn resident_fleet_control_uses_selected_vehicle_shared_bearer_proxy_and_au
         *requests.lock().expect("proxy ledger"),
         vec![(true, true, true, b"{}".to_vec())]
     );
+    // One command request, billed at the command price: 150 U is one cent, rounded up.
+    let view = counter.view();
+    assert_eq!(view.requests[RequestCategory::Command.index()].1, 1);
+    assert_eq!(view.requests[RequestCategory::Data.index()].1, 0);
+    assert_eq!(view.estimate.expect("Fleet estimate").gross_cents, 1);
 
     let receipt = store
         .open()
@@ -581,10 +633,17 @@ async fn resident_fleet_control_uses_selected_vehicle_shared_bearer_proxy_and_au
         )
     );
 
+    assert!(
+        fleet_wire.seen().is_empty(),
+        "the Fleet clients sent nothing: {:?}",
+        fleet_wire.seen()
+    );
+
     resident.abort();
     let _ = (&mut resident).await;
     proxy_server.abort();
     let _ = proxy_server.await;
+    fleet_server.abort();
 }
 
 #[tokio::test]
@@ -610,7 +669,7 @@ async fn fleet_observer_revalidates_admission_before_discovery_egress() {
     let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary.path())
         .expect("admit observer");
     let manager = Arc::new(tokio::sync::Mutex::new(
-        FleetAuthManager::from_store_for_admitted_user(store, temporary.path(), admission)
+        FleetAuthManager::from_store_for_admitted_user(store, temporary.path(), admission, None)
             .expect("observer manager"),
     ));
 
@@ -653,7 +712,7 @@ async fn fleet_observer_revalidates_admission_before_discovery_egress() {
         .expect("replacement lock mode");
 
     assert!(matches!(
-        fleet_list_vehicles_with_auth(&api, &auth_api, &manager, false).await,
+        fleet_list_vehicles_with_auth(&api, &auth_api, &manager, false, None, &TickRefresh::default()).await,
         Err(CollectorError::FleetCredential(
             FleetCredentialError::SensitiveAccessUnavailable
         ))
@@ -944,7 +1003,9 @@ async fn assert_legacy_eid_rotation_preserves_identity_and_settings(mode: Legacy
     original.settings.use_streaming_api = false;
     original.settings.suspend_after_idle_min = 123;
     original.settings.suspend_min = 456;
-    original.settings.suspend_min_resolved = false;
+    // A live-discovered car's suspend length is final (C3 R60), so persisting
+    // the discovery stores it as resolved.
+    original.settings.suspend_min_resolved = true;
     original.settings.req_not_unlocked = false;
     original.settings.free_supercharging = true;
     original.settings.lfp_battery = true;
@@ -1486,7 +1547,7 @@ fn only_typed_terminal_auth_failures_trip_operational_readiness() {
 }
 
 #[tokio::test]
-async fn stream_auth_rejection_fences_later_owner_api_success_until_healthy_stream() {
+async fn a_stream_rejection_is_no_lease_state_until_the_credential_unit_signs_the_account_out() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
     let vehicle = Vehicle::for_test(9, "5YJ3E1EA7KF000001", "online");
@@ -1508,7 +1569,6 @@ async fn stream_auth_rejection_fences_later_owner_api_success_until_healthy_stre
         task: Some(task),
     }];
     let (state, receiver) = watch::channel(SupervisedCollectorState::Active);
-    let mut stream_authentication_rejected = false;
 
     events
         .send(StreamEvent::AuthRejected)
@@ -1518,24 +1578,20 @@ async fn stream_auth_rejection_fences_later_owner_api_success_until_healthy_stre
         .await
         .expect("drain rejection");
     assert_eq!(transition, StreamAuthenticationTransition::Rejected);
-    report_stream_authentication_transition(
-        &state,
-        &mut stream_authentication_rejected,
-        transition,
-    );
 
-    // A products 200 response says nothing about the Streaming API
-    // credential. It must not clear an earlier stream 401/403.
-    report_successful_owner_api_request(&state, stream_authentication_rejected);
-    assert_eq!(
-        *receiver.borrow(),
-        SupervisedCollectorState::AuthenticationTerminal
-    );
+    // C5 R40, C4 R56 (c): a stream rejection carries no generation and is never
+    // counted by itself. The credential unit confirms it with one Owner API read
+    // before any user-facing credential state, and the lease is `auth_terminal`
+    // only while the account is signed out (R43), so nothing changes here.
+    assert_eq!(*receiver.borrow(), SupervisedCollectorState::Active);
+    report_successful_owner_api_request(&state);
+    assert_eq!(*receiver.borrow(), SupervisedCollectorState::Active);
 
-    let telemetry = crate::tesla_stream::parse_data_update(
-            r#"{"msg_type":"data:update","tag":"9","value":"1,42,12345.6,80,25,180,51.5,-0.1,120,D,200,210,180"}"#,
-        )
-        .expect("valid authenticated stream frame");
+    let sample_time = current_epoch_millis().expect("clock") - 1_000;
+    let telemetry = crate::tesla_stream::parse_data_update(&format!(
+        r#"{{"msg_type":"data:update","tag":"9","value":"{sample_time},25,51.5,-0.1,210,180,12345.6,120,200,D,80,42"}}"#,
+    ))
+    .expect("valid authenticated stream frame");
     events
         .send(StreamEvent::Telemetry {
             update: Box::new(telemetry),
@@ -1547,12 +1603,6 @@ async fn stream_auth_rejection_fences_later_owner_api_success_until_healthy_stre
         .await
         .expect("drain healthy stream");
     assert_eq!(transition, StreamAuthenticationTransition::Authenticated);
-    report_stream_authentication_transition(
-        &state,
-        &mut stream_authentication_rejected,
-        transition,
-    );
-    assert!(!stream_authentication_rejected);
     assert_eq!(*receiver.borrow(), SupervisedCollectorState::Active);
 
     stop_and_clear_manual_probe_streams(&mut streams).await;
@@ -1591,18 +1641,18 @@ async fn production_stream_queue_backpressures_and_drains_without_event_loss() {
             tag: vehicle_id.to_string(),
             timestamp_ms: first_timestamp
                 + i64::try_from(offset * 200).expect("telemetry offset fits i64"),
-            speed: Some(20),
+            speed: Some(20.0),
             odometer: Some(100.0 + offset as f64 / 1_000.0),
-            soc: Some(80),
-            elevation: Some(25),
+            soc: Some(80.0),
+            elevation: Some(25.0),
             est_heading: Some(180),
             est_lat: Some(51.5),
             est_lng: Some(-0.1),
             power: Some(12),
             shift_state: Some("D".to_owned()),
-            range: Some(200),
-            est_range: Some(210),
-            heading: Some(180),
+            range: Some(200.0),
+            est_range: Some(210.0),
+            heading: Some(180.0),
         }),
         queued_at: Instant::now(),
     };
@@ -1675,8 +1725,8 @@ async fn production_stream_queue_backpressures_and_drains_without_event_loss() {
 #[test]
 fn active_streams_bound_collection_sleep_below_queue_capacity() {
     assert_eq!(collection_sleep_cap(false), CONTROL_SETTINGS_REFRESH);
-    assert_eq!(collection_sleep_cap(true), STREAM_EVENT_DRAIN_INTERVAL);
-    assert!(STREAM_EVENT_DRAIN_INTERVAL < Duration::from_secs(1));
+    assert_eq!(collection_sleep_cap(true), K_STREAM_DRAIN_CAP);
+    assert!(K_STREAM_DRAIN_CAP < Duration::from_secs(1));
     const {
         assert!(STREAM_EVENT_CHANNEL_CAPACITY > MAX_STREAM_EVENTS_PER_DRAIN);
     }

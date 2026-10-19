@@ -75,6 +75,28 @@ pub(crate) fn legacy_refresh_credential_generation(tokens: &OwnerTokens) -> uuid
     uuid::Uuid::from_bytes(bytes[..16].try_into().expect("fixed digest prefix"))
 }
 
+/// Non-reversible identity of one legacy access token (hub fix pass 3): the digest the
+/// rejection fuse keeps of the access token it counted as rejected, so a restart can tell
+/// whether the stored pair still holds that token. The same family as the refresh
+/// generation above (a domain-separated SHA-256, 128 bits of it), under its own domain, so
+/// it is never equal to a generation; it is never logged and `Debug` shows presence only.
+///
+/// The digest is of the canonical token, the one the load works with: the surrounding
+/// whitespace the load trims (R46) is trimmed here too, so the construction, the fill of a
+/// missing digest and the count of a rejection hash the same bytes whichever text they
+/// hold (hub fix pass 4, F4-1). The digest stays unkeyed, like the generation: a key-derived
+/// one would change when the key is replaced with the same plaintext, and a restart would
+/// conclude that the rejected token was replaced.
+pub(crate) fn legacy_access_token_digest(access_token: &str) -> uuid::Uuid {
+    let access = crate::legacy_auth::trim_token_whitespace(access_token).as_bytes();
+    let mut digest = Sha256::new();
+    digest.update(b"teslatlas-hub:legacy-access-rejected:v1\0");
+    digest.update((access.len() as u64).to_le_bytes());
+    digest.update(access);
+    let bytes: [u8; 32] = digest.finalize().into();
+    uuid::Uuid::from_bytes(bytes[..16].try_into().expect("fixed digest prefix"))
+}
+
 /// Encrypt a user-supplied legacy pair without exposing the credential type
 /// through the CLI crate. Files may end in one conventional line ending.
 pub fn encrypt_legacy_owner_token_files(
@@ -236,7 +258,7 @@ mod tests {
         ASSOCIATED_DATA, AUTH_TAG_BYTES, CLOAK_TAG, CLOAK_TYPE, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
         MAX_LEGACY_TOKEN_PLAINTEXT_BYTES, NONCE_BYTES, TeslaMateTokenError,
         decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files, encrypt_legacy_owner_tokens,
-        legacy_refresh_credential_generation,
+        legacy_access_token_digest, legacy_refresh_credential_generation,
     };
     use crate::credentials::OwnerTokens;
 
@@ -443,5 +465,26 @@ mod tests {
             generation,
             legacy_refresh_credential_generation(&different_refresh)
         );
+    }
+    #[test]
+    fn legacy_access_token_digest_is_stable_domain_separated_and_tells_tokens_apart() {
+        let digest = legacy_access_token_digest("access-one");
+        assert_eq!(digest, legacy_access_token_digest("access-one"));
+        assert_ne!(digest, legacy_access_token_digest("access-two"));
+        // Never a refresh generation of the same text.
+        let as_refresh =
+            OwnerTokens::from_secret_parts("a".to_owned(), "access-one".to_owned()).expect("pair");
+        assert_ne!(digest, legacy_refresh_credential_generation(&as_refresh));
+        // The text itself is not in the digest's form.
+        assert!(!digest.to_string().contains("access"));
+    }
+
+    #[test]
+    fn legacy_access_token_digest_is_of_the_trimmed_token() {
+        // F4-1: the surrounding whitespace the load trims (R46) is not part of the identity.
+        let digest = legacy_access_token_digest("access-one");
+        assert_eq!(digest, legacy_access_token_digest("  access-one \t\r\n"));
+        // Whitespace inside the token is part of it.
+        assert_ne!(digest, legacy_access_token_digest("access- one"));
     }
 }

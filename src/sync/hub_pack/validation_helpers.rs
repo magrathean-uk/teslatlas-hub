@@ -207,6 +207,7 @@ pub(crate) fn ensure_private_staging_directory(path: &Path) -> Result<(), Projec
     // The caller may run with a group-writable umask. Create this sensitive
     // leaf at its private mode rather than admitting and repairing an unsafe
     // directory after the fact.
+    crate::platform::file_attempts::note(path);
     fs::create_dir_all(path.parent().expect("staging path has a parent")).map_err(|source| {
         ProjectionPackError::CreateDirectory {
             path: path.to_path_buf(),
@@ -322,6 +323,7 @@ pub(crate) fn cleanup_stale_pack_staging(
     let mut removed = 0_usize;
     let mut freed_bytes = 0_u64;
     for (path, bytes, links) in candidates {
+        crate::platform::file_attempts::note(&path);
         match fs::remove_file(&path) {
             Ok(()) => {
                 removed += 1;
@@ -334,6 +336,7 @@ pub(crate) fn cleanup_stale_pack_staging(
         }
     }
     if removed != 0 {
+        crate::platform::file_attempts::note(&staging);
         File::open(&staging)
             .and_then(|directory| directory.sync_all())
             .map_err(|source| ProjectionPackError::CleanupStaging {

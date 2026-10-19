@@ -634,3 +634,123 @@ fn entry_names_list_the_entries_without_the_dot_entries() {
     names.sort();
     assert_eq!(names, [".hidden", "plain", "sub"]);
 }
+
+// ---- B2 fix round, P3b fix 5 (R-P3bF5-3): the remaining file mutations are counted -------------------------
+
+#[test]
+fn p3bf5_a_directory_sync_that_changes_nothing_moves_the_file_counter() {
+    // A sync flushes what is there and leaves the file image as it was, which no listing
+    // shows; the counter, and the directory's own, still move (once per sync).
+    let base = tempdir().unwrap();
+    let directory = open_for_test(base.path(), false).unwrap();
+    fs::write(base.path().join("kept"), b"unchanged").unwrap();
+    let listing = directory.entry_names().unwrap();
+    let before = crate::platform::file_attempts::count_under(base.path());
+    let attempts = directory.mutation_attempts();
+
+    directory.sync().unwrap();
+
+    assert_eq!(directory.entry_names().unwrap(), listing);
+    assert_eq!(fs::read(base.path().join("kept")).unwrap(), b"unchanged");
+    assert_eq!(
+        crate::platform::file_attempts::count_under(base.path()),
+        before + 1
+    );
+    assert_eq!(directory.mutation_attempts(), attempts + 1);
+}
+
+#[test]
+fn p3bf5_creating_and_tightening_a_directory_move_the_file_counter() {
+    // Two missing components, each created (mkdirat) and then protected (ACL clear and
+    // fchmod): four attempts, recorded under the paths they were aimed at.
+    let base = tempdir().unwrap();
+    let missing = base.path().join("missing").join("cache");
+    let before = crate::platform::file_attempts::count_under(base.path());
+    open_for_test(&missing, true).unwrap();
+    let created = crate::platform::file_attempts::count_under(base.path()) - before;
+    assert_eq!(
+        created,
+        4,
+        "{:#?}",
+        crate::platform::file_attempts::entries_under(base.path())
+    );
+
+    // A root that is wider than 0700 is tightened: one attempt, then none are left to make
+    // for the same directory except the check of the ACL of a root that is already private.
+    let wide = base.path().join("wide");
+    fs::create_dir(&wide).unwrap();
+    fs::set_permissions(&wide, fs::Permissions::from_mode(0o755)).unwrap();
+    let before = crate::platform::file_attempts::count_under(&wide);
+    open_for_test(&wide, true).unwrap();
+    assert_eq!(
+        crate::platform::file_attempts::count_under(&wide) - before,
+        1,
+        "the tightening is one attempt on the root"
+    );
+    assert_eq!(mode_of(&wide), 0o700);
+
+    // A root that is private already still has its ACL checked (cleared) through the
+    // descriptor: counted as one attempt too.
+    let before = crate::platform::file_attempts::count_under(&wide);
+    open_for_test(&wide, true).unwrap();
+    assert_eq!(
+        crate::platform::file_attempts::count_under(&wide) - before,
+        1,
+        "the check of a private root is one attempt"
+    );
+}
+
+#[test]
+fn p3bf6_an_entry_is_the_file_it_names_by_inode_not_by_name() {
+    // N2: `is_entry` is what lets a writer or a reclaim that holds a lock know that the
+    // name still refers to the locked file. A rename moves the file away from its name;
+    // a file re-created under the old name is another file.
+    let base = tempdir().unwrap();
+    let directory = open_for_test(base.path(), false).unwrap();
+    let old = directory.create_exclusive("a").unwrap();
+    assert!(directory.is_entry("a", &old).unwrap());
+    assert!(
+        !directory.is_entry("missing", &old).unwrap(),
+        "an absent name is no entry"
+    );
+    directory.rename("a", "b").unwrap();
+    assert!(!directory.is_entry("a", &old).unwrap(), "renamed away");
+    assert!(
+        directory.is_entry("b", &old).unwrap(),
+        "now under its new name"
+    );
+    let fresh = directory.create_exclusive("a").unwrap();
+    assert!(
+        !directory.is_entry("a", &old).unwrap(),
+        "a file re-created under the old name is not the old file"
+    );
+    assert!(directory.is_entry("a", &fresh).unwrap());
+    assert!(!directory.is_entry("b", &fresh).unwrap());
+}
+
+#[test]
+fn p3bf6_the_lock_probe_answers_for_the_real_filesystem_and_for_a_contended_root() {
+    let base = tempdir().unwrap();
+    let directory = open_for_test(base.path(), false).unwrap();
+    directory
+        .probe_lock_support()
+        .expect("a local filesystem locks");
+    // Another open file description holds the lock: still "locking works".
+    let holder = fs::File::open(base.path()).unwrap();
+    flock(&holder, FlockOperation::NonBlockingLockExclusive).unwrap();
+    directory
+        .probe_lock_support()
+        .expect("contention is not a refusal");
+    drop(holder);
+    // The probe let its own lock go: a second description can take the root's lock.
+    let after = fs::File::open(base.path()).unwrap();
+    flock(&after, FlockOperation::NonBlockingLockExclusive).expect("the probe left no lock");
+    drop(after);
+    INJECTED_LOCK_ERROR.with(|cell| cell.set(Some(Errno::NOTSUP.raw_os_error())));
+    let error = directory.probe_lock_support().unwrap_err();
+    assert_eq!(error.raw_os_error(), Some(Errno::NOTSUP.raw_os_error()));
+    // The injection is spent after one use.
+    directory
+        .probe_lock_support()
+        .expect("the injected error was used once");
+}

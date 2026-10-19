@@ -35,9 +35,41 @@ async fn oauth_refresh_endpoint_validates_shape_without_retaining_secret() {
     assert_eq!(invalid.status(), StatusCode::BAD_REQUEST);
     assert_eq!(source.token_refresh_request_count(), 0);
 
-    let valid = client
-        .post(endpoint)
+    // C5 D4: the policy headers are required, and so is an exact four-member
+    // body.
+    let exact_body = json!({
+        "grant_type": "refresh_token",
+        "scope": "openid email offline_access",
+        "client_id": "ownerapi",
+        "refresh_token": "must-not-be-retained",
+    });
+    let without_headers = client
+        .post(endpoint.clone())
         .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .body(serde_json::to_vec(&exact_body).expect("body"))
+        .send()
+        .await
+        .expect("request without policy headers");
+    assert_eq!(without_headers.status(), StatusCode::BAD_REQUEST);
+    let mut with_extra_member = exact_body.clone();
+    with_extra_member["extra"] = json!("member");
+    let mut extra = client.post(endpoint.clone());
+    for (name, value) in crate::legacy_auth::REFRESH_REQUEST_HEADERS {
+        extra = extra.header(name, value);
+    }
+    let extra = extra
+        .body(serde_json::to_vec(&with_extra_member).expect("body"))
+        .send()
+        .await
+        .expect("request with an extra member");
+    assert_eq!(extra.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(source.token_refresh_request_count(), 0);
+
+    let mut valid = client.post(endpoint.clone());
+    for (name, value) in crate::legacy_auth::REFRESH_REQUEST_HEADERS {
+        valid = valid.header(name, value);
+    }
+    let valid = valid
         .body(
             serde_json::to_vec(&json!({
                 "grant_type": "refresh_token",
@@ -64,10 +96,10 @@ async fn oauth_refresh_endpoint_validates_shape_without_retaining_secret() {
     assert_eq!(source.token_refresh_request_count(), 1);
 
     let requests = source.audited_requests();
-    assert_eq!(requests.len(), 2);
+    assert_eq!(requests.len(), 4);
     assert_eq!(requests[0].path, "/oauth2/v3/token");
     assert_eq!(requests[0].response_status, 400);
-    assert_eq!(requests[1].response_status, 200);
+    assert_eq!(requests[3].response_status, 200);
     let serialized = serde_json::to_string(&requests).expect("redacted ledger JSON");
     assert!(!serialized.contains("must-not-be-retained"));
 
@@ -76,7 +108,7 @@ async fn oauth_refresh_endpoint_validates_shape_without_retaining_secret() {
 
 #[test]
 fn stream_controls_reject_duplicate_keys() {
-    let fields = crate::tesla_stream::TESLAMATE_STREAM_FIELDS.join(",");
+    let fields = crate::tesla_stream::STREAM_COLUMNS.join(",");
     let duplicate_subscribes = [
         format!(
             r#"{{"msg_type":"wrong","msg_type":"data:subscribe_oauth","token":"stream-evidence-secret","value":"{fields}","tag":"{FIXTURE_VID_TAG}"}}"#
@@ -299,7 +331,7 @@ async fn stream_ledger_requires_exact_fixture_subscription_and_records_shutdown(
     let subscribe = serde_json::json!({
         "msg_type": "data:subscribe_oauth",
         "token": "not-retained",
-        "value": crate::tesla_stream::TESLAMATE_STREAM_FIELDS.join(","),
+        "value": crate::tesla_stream::STREAM_COLUMNS.join(","),
         "tag": FIXTURE_VID_TAG,
     });
     socket
@@ -333,7 +365,7 @@ async fn stream_ledger_requires_exact_fixture_subscription_and_records_shutdown(
     .await
     .expect("unsubscribe recorded");
     let events = source.audited_stream_events();
-    let expected_fields = crate::tesla_stream::TESLAMATE_STREAM_FIELDS.join(",");
+    let expected_fields = crate::tesla_stream::STREAM_COLUMNS.join(",");
     assert_eq!(
         events
             .iter()
@@ -370,7 +402,7 @@ async fn stream_rejects_wrong_tag_without_retaining_token() {
             serde_json::json!({
                 "msg_type": "data:subscribe_oauth",
                 "token": "must-not-appear-in-ledger",
-                "value": crate::tesla_stream::TESLAMATE_STREAM_FIELDS.join(","),
+                "value": crate::tesla_stream::STREAM_COLUMNS.join(","),
                 "tag": "wrong-fixture",
             })
             .to_string()
@@ -557,7 +589,7 @@ async fn stream_fault_closes_sessions_rejects_handshakes_and_recovers_without_ov
             serde_json::json!({
                 "msg_type": "data:subscribe_oauth",
                 "token": "not-retained",
-                "value": crate::tesla_stream::TESLAMATE_STREAM_FIELDS.join(","),
+                "value": crate::tesla_stream::STREAM_COLUMNS.join(","),
                 "tag": FIXTURE_VID_TAG,
             })
             .to_string()
@@ -676,7 +708,7 @@ async fn concurrent_stream_sessions_keep_evidence_ordered_and_snapshots_exact() 
                 serde_json::json!({
                     "msg_type": "data:subscribe_oauth",
                     "token": "not-retained",
-                    "value": crate::tesla_stream::TESLAMATE_STREAM_FIELDS.join(","),
+                    "value": crate::tesla_stream::STREAM_COLUMNS.join(","),
                     "tag": FIXTURE_VID_TAG,
                 })
                 .to_string()
@@ -777,7 +809,7 @@ async fn source_shutdown_joins_active_stream_sessions_before_final_ledger() {
             serde_json::json!({
                 "msg_type": "data:subscribe_oauth",
                 "token": "not-retained",
-                "value": crate::tesla_stream::TESLAMATE_STREAM_FIELDS.join(","),
+                "value": crate::tesla_stream::STREAM_COLUMNS.join(","),
                 "tag": FIXTURE_VID_TAG,
             })
             .to_string()
@@ -811,4 +843,254 @@ async fn source_shutdown_joins_active_stream_sessions_before_final_ledger() {
                     && event["active_session_count"] == 0
             })
     );
+}
+
+// ---- C4 P1: the fake follows the Hub's column set and offers scripted answers --------
+
+/// A subscribe frame for the fixture vehicle with this `value`.
+fn subscribe_text(value: &str) -> String {
+    serde_json::json!({
+        "msg_type": "data:subscribe_oauth",
+        "token": "synthetic-token",
+        "value": value,
+        "tag": FIXTURE_VID_TAG,
+    })
+    .to_string()
+}
+
+#[test]
+fn sc66_the_fake_accepts_only_the_hub_column_list_in_its_order() {
+    let columns = crate::tesla_stream::STREAM_COLUMNS;
+    let accepted = exact_subscribe_fields(&subscribe_text(&columns.join(",")));
+    assert_eq!(
+        accepted,
+        Ok((FIXTURE_VID_TAG.to_owned(), columns.join(",")))
+    );
+    // The same names in any other order are refused.
+    let mut reversed = columns;
+    reversed.reverse();
+    assert_eq!(
+        exact_subscribe_fields(&subscribe_text(&reversed.join(","))),
+        Err("unexpected_subscribe_fields")
+    );
+    // So is the 12-name list that includes `est_heading`.
+    let mut with_heading = columns.to_vec();
+    with_heading.push("est_heading");
+    assert_eq!(
+        exact_subscribe_fields(&subscribe_text(&with_heading.join(","))),
+        Err("unexpected_subscribe_fields")
+    );
+    // And a list with one name missing.
+    assert_eq!(
+        exact_subscribe_fields(&subscribe_text(&columns[1..].join(","))),
+        Err("unexpected_subscribe_fields")
+    );
+}
+
+#[test]
+fn the_fake_value_has_the_time_then_eleven_values_in_column_order() {
+    let value = stream_update_value(1_700_000_000_123, 20, 12_345.5, 64, 47.5, 19.05, -11, "P");
+    let elements: Vec<&str> = value.split(',').collect();
+    assert_eq!(elements.len(), 12);
+    assert_eq!(elements[0], "1700000000123");
+    // power is element 7 (column 6) and speed the last element.
+    assert_eq!(elements[7], "-11");
+    assert_eq!(elements[9], "P");
+    assert_eq!(elements[11], "20");
+    let update = crate::tesla_stream::parse_data_update(&format!(
+        r#"{{"msg_type":"data:update","tag":"9","value":"{value}"}}"#
+    ))
+    .expect("the Hub parser accepts the fake's value");
+    assert_eq!(update.timestamp_ms, 1_700_000_000_123);
+    assert_eq!(update.est_lat, Some(47.5));
+    assert_eq!(update.est_lng, Some(19.05));
+    assert_eq!(update.odometer, Some(12_345.5));
+    assert_eq!(update.power, Some(-11));
+    assert_eq!(update.shift_state.as_deref(), Some("P"));
+    assert_eq!(update.soc, Some(64.0));
+    assert_eq!(update.speed, Some(20.0));
+    assert_eq!(update.est_heading, None);
+    assert!(update.elevation.is_some() && update.heading.is_some());
+    assert!(update.range.is_some() && update.est_range.is_some());
+}
+
+/// Connects to the fake's stream, subscribes with the Hub's own frame and returns
+/// the socket.
+async fn subscribed_socket(
+    source: &FakeTeslaSource,
+) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
+    let (mut socket, _) = connect_async(source.stream_endpoint())
+        .await
+        .expect("connect");
+    let frame = crate::tesla_stream::subscribe_frame(FIXTURE_VID_TAG, "synthetic-token")
+        .expect("subscribe frame");
+    socket
+        .send(Message::Text(frame.into()))
+        .await
+        .expect("subscribe");
+    socket
+}
+
+async fn next_text(
+    socket: &mut tokio_tungstenite::WebSocketStream<
+        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+    >,
+) -> Value {
+    let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
+        .await
+        .expect("a message in time")
+        .expect("not closed")
+        .expect("a frame");
+    let Message::Text(text) = message else {
+        panic!("not text: {message:?}");
+    };
+    serde_json::from_str(&text).expect("JSON")
+}
+
+#[tokio::test]
+async fn the_normal_script_sends_a_hello_then_frames_the_hub_parser_accepts() {
+    let source = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
+        .await
+        .expect("fake Tesla");
+    // The scenario places stream frames after the last Owner API sample; give it one
+    // a minute before its start so the first connection has an interval to fill.
+    {
+        let mut inner = source.state.inner.lock().expect("fake lock");
+        inner.last_owner_data_ts_ms = Some(inner.base_ts_ms - 60_000);
+    }
+    let mut socket = subscribed_socket(&source).await;
+    let hello = next_text(&mut socket).await;
+    assert_eq!(hello["msg_type"], "control:hello");
+    assert_eq!(hello["connection_timeout"], 0);
+    // Every data frame parses with the Hub's rules and carries its own sample time.
+    let mut seen = 0;
+    while let Ok(Some(Ok(Message::Text(text)))) =
+        tokio::time::timeout(Duration::from_millis(300), socket.next()).await
+    {
+        let envelope: Value = serde_json::from_str(&text).expect("JSON");
+        assert_eq!(envelope["msg_type"], "data:update");
+        let update = crate::tesla_stream::parse_data_update(&text).expect("a valid frame");
+        assert_eq!(update.tag, FIXTURE_VID.to_string());
+        assert_eq!(Some(update.timestamp_ms), envelope["timestamp"].as_i64());
+        assert!(update.power.is_some());
+        seen += 1;
+    }
+    assert!(seen > 0, "the scenario sent no frame");
+    drop(socket);
+    source.shutdown().await;
+}
+
+#[tokio::test]
+async fn scripted_hello_and_error_frames() {
+    let source = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
+        .await
+        .expect("fake Tesla");
+
+    source.set_stream_script(StreamScript::Hello {
+        code: Some(401),
+        connection_timeout: Some(30_000),
+    });
+    let mut socket = subscribed_socket(&source).await;
+    let hello = next_text(&mut socket).await;
+    assert_eq!(hello["code"], 401);
+    assert_eq!(hello["connection_timeout"], 30_000);
+    drop(socket);
+
+    source.set_stream_script(StreamScript::Hello {
+        code: None,
+        connection_timeout: None,
+    });
+    let mut socket = subscribed_socket(&source).await;
+    let hello = next_text(&mut socket).await;
+    assert_eq!(hello, serde_json::json!({"msg_type": "control:hello"}));
+    drop(socket);
+
+    source.set_stream_script(StreamScript::ErrorFrame {
+        error_type: "vehicle_test_a".to_owned(),
+        value: "token invalid".to_owned(),
+    });
+    let mut socket = subscribed_socket(&source).await;
+    assert_eq!(next_text(&mut socket).await["msg_type"], "control:hello");
+    let error = next_text(&mut socket).await;
+    assert_eq!(error["msg_type"], "data:error");
+    assert_eq!(error["error_type"], "vehicle_test_a");
+    assert_eq!(error["value"], "token invalid");
+    assert_eq!(error["tag"], FIXTURE_VID_TAG);
+    // No telemetry follows an error script.
+    assert!(
+        tokio::time::timeout(Duration::from_millis(200), socket.next())
+            .await
+            .is_err()
+    );
+    drop(socket);
+    source.shutdown().await;
+}
+
+#[tokio::test]
+async fn scripted_close_and_silence() {
+    let source = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
+        .await
+        .expect("fake Tesla");
+
+    source.set_stream_script(StreamScript::CloseAfterSubscribe);
+    let mut socket = subscribed_socket(&source).await;
+    let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
+        .await
+        .expect("a close in time");
+    assert!(matches!(
+        message,
+        Some(Ok(Message::Close(_))) | None | Some(Err(_))
+    ));
+    drop(socket);
+
+    // A silent session sends nothing, not even a hello, and never answers a Ping.
+    source.set_stream_script(StreamScript::Silent);
+    let mut socket = subscribed_socket(&source).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), socket.next())
+            .await
+            .is_err(),
+        "a silent session sent a message"
+    );
+    drop(socket);
+    source.shutdown().await;
+}
+
+#[tokio::test]
+async fn scripted_upgrade_answers_carry_status_and_retry_after() {
+    let source = FakeTeslaSource::spawn_canonical(AdvanceMode::Manual)
+        .await
+        .expect("fake Tesla");
+    for (status, retry_after) in [
+        (401_u16, None),
+        (403, None),
+        (404, None),
+        (503, Some("600")),
+        (503, Some("Wed, 21 Oct 2026 07:28:00 GMT")),
+    ] {
+        source.set_stream_script(StreamScript::UpgradeStatus {
+            status,
+            retry_after: retry_after.map(str::to_owned),
+        });
+        let error = connect_async(source.stream_endpoint())
+            .await
+            .expect_err("the upgrade is refused");
+        let tokio_tungstenite::tungstenite::Error::Http(response) = error else {
+            panic!("not an HTTP answer: {error:?}");
+        };
+        assert_eq!(response.status().as_u16(), status);
+        assert_eq!(
+            response
+                .headers()
+                .get("retry-after")
+                .and_then(|value| value.to_str().ok()),
+            retry_after
+        );
+    }
+    // The canonical script connects again.
+    source.set_stream_script(StreamScript::Normal);
+    let mut socket = subscribed_socket(&source).await;
+    assert_eq!(next_text(&mut socket).await["msg_type"], "control:hello");
+    drop(socket);
+    source.shutdown().await;
 }

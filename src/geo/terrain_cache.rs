@@ -44,7 +44,6 @@ const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_HGT_BYTES: u64 = SRTM1_BYTES;
 const MAX_SOURCE_BYTES: u64 = 16;
 const MAX_TILE_CACHE_BYTES: u64 = MAX_HGT_BYTES + MAX_SOURCE_BYTES;
-const TEMPORARY_FILE_MAX_AGE: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug, Error)]
 pub enum TerrainCacheError {
@@ -70,6 +69,8 @@ pub enum TerrainCacheError {
     EgressDenied,
     #[error("terrain cache root is not a trusted private directory")]
     UntrustedRoot(#[source] PrivateDirectoryError),
+    #[error("terrain cache root does not support file locking")]
+    LockingUnsupported(#[source] io::Error),
     #[error("terrain tile digest store operation failed")]
     Store(#[source] Box<StoreError>),
     #[error("terrain tile has no matching recorded digest")]
@@ -80,6 +81,18 @@ impl TerrainCacheError {
     fn store(error: StoreError) -> Self {
         Self::Store(Box::new(error))
     }
+}
+
+/// The guard in front of one persistent cache mutation (B2 fix round, P3b fix 3,
+/// R-P3bF3-2): a directory created or tightened, a file written, renamed or removed,
+/// a digest recorded. It is consulted immediately before the mutation, with no await
+/// between, and after every lock or download the mutation waited for. A refusal is
+/// `EgressDenied`, which the collector's pass reports as the loss of its sensitive
+/// access; nothing is created, changed or deleted by the refused step.
+fn permit<G: EgressGuard + ?Sized>(guard: &G) -> Result<(), TerrainCacheError> {
+    guard
+        .assert_egress_allowed()
+        .map_err(|_| TerrainCacheError::EgressDenied)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,7 +197,20 @@ impl TerrainCache {
     /// world-writable only when the effective user owns it (or root owns it
     /// with the sticky bit). Missing components are created `0700`, one at a
     /// time, below an ancestor that passed those rules.
+    #[cfg(any(not(target_os = "macos"), test))]
     pub fn new(options: TerrainCacheOptions) -> Result<Self, TerrainCacheError> {
+        Self::new_with_guard(options, &crate::geocoder::UnguardedEgress)
+    }
+
+    /// [`Self::new`] with the run's guard in front of the directory creation and
+    /// tightening and in front of the reclaim of abandoned temporary files (B2 fix
+    /// round, P3b fix 3, R-P3bF3-2; fix 4, R-P3bF4-6; fix 5, R-P3bF5-2): a refused guard
+    /// creates, tightens and removes nothing, and the reclaim asks it again immediately
+    /// before each removal and before its directory sync.
+    pub fn new_with_guard<G: EgressGuard + ?Sized>(
+        options: TerrainCacheOptions,
+        guard: &G,
+    ) -> Result<Self, TerrainCacheError> {
         if options.min_free_bytes == 0
             || options.max_cache_bytes < MAX_TILE_CACHE_BYTES
             || options.connect_timeout.is_zero()
@@ -192,11 +218,19 @@ impl TerrainCache {
         {
             return Err(TerrainCacheError::InvalidConfig);
         }
+        permit(guard)?;
         let root = Arc::new(
             private_directory::open_validated(&options.root, true)
                 .map_err(TerrainCacheError::UntrustedRoot)?,
         );
-        cleanup_stale_temporary_files(&root, SystemTime::now())?;
+        permit(guard)?;
+        // The entries of the cache are owned by locks (see [`EntryLease`]): a root whose
+        // filesystem cannot take one would fail every cache miss and leave an unremovable
+        // file behind each attempt, so it is refused here, before anything is created
+        // in it. The probe touches no file.
+        root.probe_lock_support()
+            .map_err(TerrainCacheError::LockingUnsupported)?;
+        reclaim_abandoned_temporary_files(&root, guard)?;
         crate::crypto::install_default_provider();
         let client = Client::builder()
             .connect_timeout(options.connect_timeout)
@@ -342,7 +376,11 @@ impl TerrainCache {
     /// Hub recorded at download. A file that is not a valid tile, has no
     /// record, or does not match its record is unproven: it is discarded and
     /// `None` says the tile must be fetched.
-    fn admit(&self, tile: TileId) -> Result<Option<AdmittedTile>, TerrainCacheError> {
+    fn admit<G: EgressGuard + ?Sized>(
+        &self,
+        tile: TileId,
+        guard: &G,
+    ) -> Result<Option<AdmittedTile>, TerrainCacheError> {
         let name = tile.name();
         let file_name = tile_file(tile);
         let hgt = match HgtTile::open_in(&name, self.root.as_ref(), &file_name) {
@@ -351,7 +389,7 @@ impl TerrainCache {
                 return Ok(None);
             }
             Err(_) => {
-                self.discard_tile(tile);
+                self.discard_tile(tile, guard)?;
                 return Ok(None);
             }
         };
@@ -361,15 +399,15 @@ impl TerrainCache {
             .terrain_tile_digest(&name)
             .map_err(TerrainCacheError::store)?;
         let Some(recorded) = recorded else {
-            self.discard_tile(tile);
+            self.discard_tile(tile, guard)?;
             return Ok(None);
         };
         let (identity, sha256) = self.tile_hash(&name, &hgt)?;
         if sha256 != recorded.sha256 {
-            self.discard_tile(tile);
+            self.discard_tile(tile, guard)?;
             return Ok(None);
         }
-        self.enforce_cache_quota(Some(&file_name), 0)?;
+        self.enforce_cache_quota(Some(&file_name), 0, guard)?;
         Ok(Some(AdmittedTile {
             tile: hgt,
             identity,
@@ -396,11 +434,14 @@ impl TerrainCache {
         let guard = lock.lock().await;
         let result = async {
             let _quota_guard = self.quota_lock.lock().await;
-            if let Some(admitted) = self.admit(tile)? {
+            // Both locks were awaited: a loss acknowledged meanwhile stops the lookup
+            // before it discards, evicts or writes anything (R-P3bF3-2).
+            permit(egress_guard)?;
+            if let Some(admitted) = self.admit(tile, egress_guard)? {
                 return Ok(admitted);
             }
             self.ensure_space()?;
-            self.enforce_cache_quota(None, MAX_TILE_CACHE_BYTES)?;
+            self.enforce_cache_quota(None, MAX_TILE_CACHE_BYTES, egress_guard)?;
             let source = match self.download(&tile, true, egress_guard).await {
                 Ok(source) => source,
                 // Admission failure is not a provider failure.  Do not use a
@@ -410,10 +451,13 @@ impl TerrainCache {
                 }
                 Err(_) => self.download(&tile, false, egress_guard).await?,
             };
-            write_source_atomic(&self.root, &source_file(tile), source)?;
+            permit(egress_guard)?;
+            let may_remove = || permit(egress_guard).is_ok();
+            write_source_atomic(&self.root, &source_file(tile), source, &may_remove)?;
             // The download recorded its digest before the tile was put in
             // place, so admission now finds the record it needs.
-            self.admit(tile)?.ok_or(TerrainCacheError::UnprovenTile)
+            self.admit(tile, egress_guard)?
+                .ok_or(TerrainCacheError::UnprovenTile)
         };
         let result = result.await;
         drop(guard);
@@ -465,10 +509,11 @@ impl TerrainCache {
 
     /// Evict the oldest complete tiles until `reserved_bytes` more fit under
     /// the quota. `protected` is the file name of a tile that must stay.
-    fn enforce_cache_quota(
+    fn enforce_cache_quota<G: EgressGuard + ?Sized>(
         &self,
         protected: Option<&str>,
         reserved_bytes: u64,
+        guard: &G,
     ) -> Result<(), TerrainCacheError> {
         #[derive(Debug)]
         struct CachedTile {
@@ -526,6 +571,7 @@ impl TerrainCache {
                 .cmp(&right.modified)
                 .then_with(|| left.hgt.cmp(&right.hgt))
         });
+        let mut evicted = false;
         for tile in tiles {
             if total.saturating_add(reserved_bytes) <= self.options.max_cache_bytes {
                 break;
@@ -533,16 +579,24 @@ impl TerrainCache {
             if protected.is_some_and(|name| name == tile.hgt) {
                 continue;
             }
+            permit(guard)?;
             self.root
                 .remove(&tile.source)
                 .map_err(TerrainCacheError::Io)?;
             self.root.remove(&tile.hgt).map_err(TerrainCacheError::Io)?;
             total = total.saturating_sub(tile.bytes);
+            evicted = true;
         }
         if total.saturating_add(reserved_bytes) > self.options.max_cache_bytes {
             return Err(TerrainCacheError::CacheQuotaExceeded);
         }
-        let _ = self.root.sync();
+        // The directory is synced for the removals only, and like them behind the guard
+        // (B2 fix round, P3b fix 5, R-P3bF5-3: the counted sync found one that ran after
+        // every enforcement, evicting or not, with no consultation of its own).
+        if evicted {
+            permit(guard)?;
+            let _ = self.root.sync();
+        }
         Ok(())
     }
 
@@ -621,8 +675,21 @@ impl TerrainCache {
         {
             return Err(TerrainCacheError::InvalidArchive);
         }
-        let (compressed, compressed_name) = create_private_temp(&self.root, "archive")?;
-        let _archive_cleanup = TemporaryEntry::new(Arc::clone(&self.root), compressed_name);
+        // The archive's temporary file is a cache mutation: it is created only while the
+        // guard allows, and left alone, not removed, once the guard has refused (R-P3bF3-2).
+        permit(egress_guard)?;
+        let (compressed, compressed_name, archive_lease) =
+            create_private_temp(&self.root, "archive")?;
+        // The entry removes its file only while the guard still allows it, whatever ends
+        // the download: a body that fails, a lookup budget that expires, a worker that
+        // is stopped or aborted all drop it (R-P3bF4-5).
+        let may_remove = || permit(egress_guard).is_ok();
+        let mut archive_cleanup = TemporaryEntry::new(
+            Arc::clone(&self.root),
+            compressed_name.clone(),
+            archive_lease,
+            &may_remove,
+        );
         let mut output = tokio::fs::File::from_std(compressed);
         let download_result = async {
             let mut total = 0_u64;
@@ -633,11 +700,31 @@ impl TerrainCache {
                 if total > MAX_ARCHIVE_BYTES {
                     return Err(TerrainCacheError::InvalidArchive);
                 }
+                // The chunk arrived after an await. The previous chunk's write is let
+                // finish first (a tokio file issues a write only after the one before it
+                // has completed), so that the guard is the last thing in front of this
+                // write, with no await between (R-P3bF4-5; fix 5, Opus N3).
+                timeout(self.options.read_timeout, output.flush())
+                    .await
+                    .map_err(|_| TerrainCacheError::BadResponse)?
+                    .map_err(TerrainCacheError::Io)?;
+                permit(egress_guard)?;
+                #[cfg(test)]
+                self.root.note_file_attempt(&compressed_name);
                 timeout(self.options.read_timeout, output.write_all(&chunk))
                     .await
                     .map_err(|_| TerrainCacheError::BadResponse)?
                     .map_err(TerrainCacheError::Io)?;
             }
+            // The last chunk's write is let finish before the guard stands in front of the
+            // sync (fix 5, Opus N3).
+            timeout(self.options.read_timeout, output.flush())
+                .await
+                .map_err(|_| TerrainCacheError::BadResponse)?
+                .map_err(TerrainCacheError::Io)?;
+            permit(egress_guard)?;
+            #[cfg(test)]
+            self.root.note_file_attempt(&compressed_name);
             output.sync_all().await.map_err(TerrainCacheError::Io)
         }
         .await;
@@ -646,8 +733,21 @@ impl TerrainCache {
         // between the two would choose the bytes this Hub then records as
         // trusted.
         let archive = output.into_std().await;
-        download_result?;
-        let staged = decompress_to_hgt(&self.root, archive, aws, &name)?;
+        if let Err(error) = download_result {
+            if permit(egress_guard).is_err() {
+                archive_cleanup.keep();
+            }
+            return Err(error);
+        }
+        // The staged tile, its digest in the store and its rename into place are
+        // mutations after the download's awaits: the same guard that stood in front of
+        // the request stands in front of them (B2 fix round, P3b fix 2, R-P3bF2-1; fix
+        // 3), and nothing follows it that waits. A refusal leaves the archive as it is.
+        if let Err(denied) = permit(egress_guard) {
+            archive_cleanup.keep();
+            return Err(denied);
+        }
+        let staged = decompress_to_hgt(&self.root, archive, aws, &name, &may_remove)?;
         self.commit_tile(*tile, staged)?;
         Ok(if aws { "aws" } else { "esa" })
     }
@@ -657,7 +757,7 @@ impl TerrainCache {
     /// admits nothing, while the other order could leave a tile with no
     /// record. The temporary file and the destination are entries of the same
     /// validated directory, so the rename cannot leave it.
-    fn commit_tile(&self, tile: TileId, staged: StagedTile) -> Result<(), TerrainCacheError> {
+    fn commit_tile(&self, tile: TileId, staged: StagedTile<'_>) -> Result<(), TerrainCacheError> {
         self.options
             .store
             .record_terrain_tile_digest(&tile.name(), &staged.sha256, epoch_millis())
@@ -670,9 +770,18 @@ impl TerrainCache {
         Ok(())
     }
 
-    fn discard_tile(&self, tile: TileId) {
+    /// Delete an unproven tile and its source marker. The deletion is a mutation of the
+    /// persistent cache: a refused guard deletes nothing and the lookup ends (B2 fix
+    /// round, P3b fix 3, R-P3bF3-2).
+    fn discard_tile<G: EgressGuard + ?Sized>(
+        &self,
+        tile: TileId,
+        guard: &G,
+    ) -> Result<(), TerrainCacheError> {
+        permit(guard)?;
         let _ = self.root.remove(&source_file(tile));
         let _ = self.root.remove(&tile_file(tile));
+        Ok(())
     }
 }
 
@@ -692,32 +801,78 @@ fn epoch_millis() -> i64 {
         .unwrap_or(0)
 }
 
-fn cleanup_stale_temporary_files(
+/// The ownership of one temporary entry, held for the entry's whole life (B2 fix round,
+/// P3b fix 5, R-P3bF5-1): an exclusive advisory lock on the open file description the
+/// entry was created through. Two Hub processes with data directories of their own can
+/// share one terrain cache, so no registry of a process can say that an entry nobody of
+/// that process wrote is abandoned; the lock can. It lives as long as any descriptor
+/// duplicated from the creating one stays open, and the kernel releases it when the last
+/// closes, whatever ended the writer: a clean drop, an abort, a crash or a kill.
+struct EntryLease(#[allow(dead_code)] File);
+
+/// Test only (B2 fix round, P3b fix 6, N2): a step run once, on the test's thread, between
+/// the lock just taken on a candidate (of the reclaim) or on a new entry (of the creation)
+/// and the check that its name still is the locked file: the instant in which another
+/// process may rename, remove or re-create the name.
+#[cfg(test)]
+type AfterLockStep = Box<dyn FnOnce(&PrivateDirectory, &str)>;
+
+#[cfg(test)]
+thread_local! {
+    static AFTER_LOCK: std::cell::RefCell<Option<AfterLockStep>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+fn after_lock(root: &PrivateDirectory, name: &str) {
+    if let Some(step) = AFTER_LOCK.with(|cell| cell.borrow_mut().take()) {
+        step(root, name);
+    }
+}
+
+/// Reclaim every owned temporary entry whose writer is gone, whatever its age: an archive
+/// kept after a refusal, the leftover of a process that died, a staged tile nobody
+/// renamed. Such an entry counts against the quota and, at the smallest supported quota,
+/// would fail every cache miss of the next run until it aged out (R-P3bF4-6).
+///
+/// An entry is abandoned when its exclusive lock can be taken without waiting: a live
+/// writer, of this process or another, holds it, and a candidate that cannot be locked
+/// (or whose lock cannot be asked for) is never removed. The lock is taken before the
+/// guard is asked, the name is checked to still be the file that was locked, and the
+/// guard is asked again immediately before each removal and before the directory sync
+/// (R-P3bF5-2): a refusal ends the reclaim with nothing further attempted. A symlink or
+/// a non-regular entry is left alone.
+fn reclaim_abandoned_temporary_files<G: EgressGuard + ?Sized>(
     root: &PrivateDirectory,
-    now: SystemTime,
+    guard: &G,
 ) -> Result<(), TerrainCacheError> {
     let mut removed = false;
     for name in root.entry_names().map_err(TerrainCacheError::Io)? {
         if !is_owned_temporary_name(OsStr::new(&name)) {
             continue;
         }
-        let Some(file) = root.open_regular(&name).map_err(TerrainCacheError::Io)? else {
+        let Some(candidate) = root.open_regular(&name).map_err(TerrainCacheError::Io)? else {
             continue;
         };
-        let stale = file
-            .metadata()
-            .map_err(TerrainCacheError::Io)?
-            .modified()
-            .ok()
-            .and_then(|modified| now.duration_since(modified).ok())
-            .is_some_and(|age| age >= TEMPORARY_FILE_MAX_AGE);
-        if !stale {
+        if !matches!(private_directory::try_lock_exclusive(&candidate), Ok(true)) {
             continue;
         }
+        #[cfg(test)]
+        after_lock(root, &name);
+        // A writer that renamed its entry into place and let go, and then another that
+        // reused the name, must not lose its file to a lock taken on the old one.
+        if !root
+            .is_entry(&name, &candidate)
+            .map_err(TerrainCacheError::Io)?
+        {
+            continue;
+        }
+        permit(guard)?;
         root.remove(&name).map_err(TerrainCacheError::Io)?;
         removed = true;
     }
     if removed {
+        permit(guard)?;
         root.sync().map_err(TerrainCacheError::Io)?;
     }
     Ok(())
@@ -744,12 +899,12 @@ fn write_source_atomic(
     root: &Arc<PrivateDirectory>,
     name: &str,
     source: &str,
+    may_remove: RemovalGuard<'_>,
 ) -> Result<(), TerrainCacheError> {
-    let (mut file, temporary) = create_private_temp(root, "source")?;
-    let entry = TemporaryEntry::new(Arc::clone(root), temporary);
-    file.write_all(source.as_bytes())
-        .map_err(TerrainCacheError::Io)?;
-    file.sync_all().map_err(TerrainCacheError::Io)?;
+    let (mut file, temporary, lease) = create_private_temp(root, "source")?;
+    let entry = TemporaryEntry::new(Arc::clone(root), temporary, lease, may_remove);
+    write_counted(&mut file, root, entry.name(), source.as_bytes())?;
+    sync_counted(&file, root, entry.name())?;
     drop(file);
     root.rename(entry.name(), name)
         .map_err(TerrainCacheError::Io)?;
@@ -757,18 +912,60 @@ fn write_source_atomic(
     Ok(())
 }
 
-/// A temporary entry of the cache root, removed again unless it was renamed
-/// into place (`disarm`). It names the entry relative to the held directory.
-struct TemporaryEntry {
-    directory: Arc<PrivateDirectory>,
-    name: Option<String>,
+/// Write to a staged file of the cache root; the attempt is counted in tests whatever
+/// follows (R-P3bF4-7).
+fn write_counted(
+    file: &mut File,
+    #[cfg_attr(not(test), allow(unused_variables))] root: &PrivateDirectory,
+    #[cfg_attr(not(test), allow(unused_variables))] name: &str,
+    bytes: &[u8],
+) -> Result<(), TerrainCacheError> {
+    #[cfg(test)]
+    root.note_file_attempt(name);
+    file.write_all(bytes).map_err(TerrainCacheError::Io)
 }
 
-impl TemporaryEntry {
-    fn new(directory: Arc<PrivateDirectory>, name: String) -> Self {
+fn sync_counted(
+    file: &File,
+    #[cfg_attr(not(test), allow(unused_variables))] root: &PrivateDirectory,
+    #[cfg_attr(not(test), allow(unused_variables))] name: &str,
+) -> Result<(), TerrainCacheError> {
+    #[cfg(test)]
+    root.note_file_attempt(name);
+    file.sync_all().map_err(TerrainCacheError::Io)
+}
+
+/// Whether the run's guard still allows a removal (see [`TemporaryEntry`]).
+type RemovalGuard<'a> = &'a (dyn Fn() -> bool + Sync);
+
+/// A temporary entry of the cache root, removed again unless it was renamed
+/// into place (`disarm`). It names the entry relative to the held directory.
+///
+/// The removal is a cache mutation like any other (B2 fix round, P3b fix 4,
+/// R-P3bF4-5): the entry consults the run's guard when it is dropped, whatever dropped
+/// it (a failed download, the lookup budget, the worker's stop or abort), and keeps the
+/// file once the guard has refused or cannot be consulted. A kept entry is no longer
+/// owned by this instance: the next admitted construction reclaims it.
+struct TemporaryEntry<'a> {
+    directory: Arc<PrivateDirectory>,
+    name: Option<String>,
+    /// The lock that says a live writer owns the entry; released with the entry.
+    lease: Option<EntryLease>,
+    may_remove: RemovalGuard<'a>,
+}
+
+impl<'a> TemporaryEntry<'a> {
+    fn new(
+        directory: Arc<PrivateDirectory>,
+        name: String,
+        lease: EntryLease,
+        may_remove: RemovalGuard<'a>,
+    ) -> Self {
         Self {
             directory,
             name: Some(name),
+            lease: Some(lease),
+            may_remove,
         }
     }
 
@@ -776,32 +973,73 @@ impl TemporaryEntry {
         self.name.as_deref().unwrap_or_default()
     }
 
+    /// The entry was renamed into place: nothing is left to remove.
     fn disarm(mut self) {
+        self.release();
+    }
+
+    /// Leave the entry as it is, even when the value is dropped: after a refusal of the
+    /// guard nothing more is removed (B2 fix round, P3b fix 3, R-P3bF3-2). The next
+    /// admitted construction of the cache reclaims it.
+    fn keep(&mut self) {
+        self.release();
+    }
+
+    /// Give up this instance's ownership of the entry: its lock is let go, so that a
+    /// reclaim (of this process or another) may take the entry if it is still there.
+    fn release(&mut self) {
         self.name = None;
+        self.lease = None;
     }
 }
 
-impl Drop for TemporaryEntry {
+impl Drop for TemporaryEntry<'_> {
     fn drop(&mut self) {
-        if let Some(name) = &self.name {
-            let _ = self.directory.remove(name);
+        let Some(name) = self.name.clone() else {
+            return;
+        };
+        // The consultation is the last thing before the removal, with no await between.
+        let allowed = (self.may_remove)();
+        if allowed {
+            let _ = self.directory.remove(&name);
         }
+        self.release();
     }
 }
 
-/// Create a fresh `0600` temporary file inside the cache root and return it
-/// with its entry name.
+/// Create a fresh `0600` temporary file inside the cache root and return it with its
+/// entry name and the lock that says a live writer owns it (see [`EntryLease`]).
+///
+/// The lock is taken on the new file at once and the name is checked to still be that
+/// file: a reclaim of another process that listed the entry in the instant between the
+/// creation and the lock either holds the lock still (the name is skipped; the reclaim
+/// removes the file) or has removed it already (the name is skipped). A name is never
+/// used without the lock held. A failure to lock (other than another holder) or to
+/// duplicate leaves the new file behind, since removing it is a mutation the caller's guard
+/// has not been asked about; a root whose filesystem cannot lock at all never gets here,
+/// because the construction of the cache refuses it, so what is left is an unusual
+/// transient error, and the next reclaim that can lock the file removes it.
 fn create_private_temp(
     root: &PrivateDirectory,
     label: &str,
-) -> Result<(File, String), TerrainCacheError> {
+) -> Result<(File, String, EntryLease), TerrainCacheError> {
     for attempt in 0..16_u32 {
         let name = format!(".{label}.{}.{}.tmp", std::process::id(), attempt);
-        match root.create_exclusive(&name) {
-            Ok(file) => return Ok((file, name)),
+        let file = match root.create_exclusive(&name) {
+            Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(error) => return Err(TerrainCacheError::Io(error)),
+        };
+        if !private_directory::try_lock_exclusive(&file).map_err(TerrainCacheError::Io)? {
+            continue;
         }
+        #[cfg(test)]
+        after_lock(root, &name);
+        if !root.is_entry(&name, &file).map_err(TerrainCacheError::Io)? {
+            continue;
+        }
+        let lease = EntryLease(file.try_clone().map_err(TerrainCacheError::Io)?);
+        return Ok((file, name, lease));
     }
     Err(TerrainCacheError::Io(io::Error::new(
         io::ErrorKind::AlreadyExists,
@@ -811,25 +1049,26 @@ fn create_private_temp(
 
 /// A decompressed tile waiting in the cache root under a temporary name, with
 /// the SHA-256 of exactly the bytes that were stored.
-struct StagedTile {
-    entry: TemporaryEntry,
+struct StagedTile<'a> {
+    entry: TemporaryEntry<'a>,
     sha256: String,
 }
 
-fn decompress_to_hgt(
+fn decompress_to_hgt<'a>(
     root: &Arc<PrivateDirectory>,
     mut input: File,
     gzip: bool,
     expected_tile_name: &str,
-) -> Result<StagedTile, TerrainCacheError> {
-    let (mut output, temporary) = create_private_temp(root, "hgt")?;
-    let entry = TemporaryEntry::new(Arc::clone(root), temporary);
+    may_remove: RemovalGuard<'a>,
+) -> Result<StagedTile<'a>, TerrainCacheError> {
+    let (mut output, temporary, lease) = create_private_temp(root, "hgt")?;
+    let entry = TemporaryEntry::new(Arc::clone(root), temporary, lease, may_remove);
     input
         .seek(SeekFrom::Start(0))
         .map_err(TerrainCacheError::Io)?;
     if gzip {
         let mut decoder = GzDecoder::new(input);
-        copy_limited(&mut decoder, &mut output)?;
+        copy_limited(&mut decoder, &mut output, root, entry.name())?;
     } else {
         let mut zip = ZipArchive::new(input).map_err(|_| TerrainCacheError::InvalidArchive)?;
         let expected_entry = format!("{expected_tile_name}.hgt");
@@ -854,13 +1093,13 @@ fn decompress_to_hgt(
                 return Err(TerrainCacheError::InvalidArchive);
             }
             found = true;
-            copy_limited(&mut member, &mut output)?;
+            copy_limited(&mut member, &mut output, root, entry.name())?;
         }
         if !found {
             return Err(TerrainCacheError::InvalidArchive);
         }
     }
-    output.sync_all().map_err(TerrainCacheError::Io)?;
+    sync_counted(&output, root, entry.name())?;
     // Hash what was stored: read the bytes back through the descriptor they
     // were written through, which also proves the exact HGT length.
     let stored = HgtTile::from_file(expected_tile_name, output).map_err(|error| match error {
@@ -873,9 +1112,11 @@ fn decompress_to_hgt(
     Ok(StagedTile { entry, sha256 })
 }
 
-fn copy_limited<R: Read, W: Write>(
+fn copy_limited<R: Read>(
     reader: &mut R,
-    writer: &mut W,
+    writer: &mut File,
+    root: &PrivateDirectory,
+    name: &str,
 ) -> Result<u64, TerrainCacheError> {
     let mut buffer = [0_u8; 64 * 1024];
     let mut total = 0_u64;
@@ -888,9 +1129,7 @@ fn copy_limited<R: Read, W: Write>(
         if total > MAX_HGT_BYTES {
             return Err(TerrainCacheError::InvalidArchive);
         }
-        writer
-            .write_all(&buffer[..read])
-            .map_err(TerrainCacheError::Io)?;
+        write_counted(writer, root, name, &buffer[..read])?;
     }
     Ok(total)
 }

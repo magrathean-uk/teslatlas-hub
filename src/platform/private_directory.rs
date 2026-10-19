@@ -42,8 +42,8 @@ use std::{
 
 use rustix::{
     fs::{
-        AtFlags, Dir, FileType, Mode, OFlags, fchmod, fstat, fstatvfs, fsync, mkdirat, open,
-        openat, renameat, statat, unlinkat,
+        AtFlags, Dir, FileType, FlockOperation, Mode, OFlags, fchmod, flock, fstat, fstatvfs,
+        fsync, mkdirat, open, openat, renameat, statat, unlinkat,
     },
     io::Errno,
 };
@@ -107,6 +107,11 @@ pub(crate) fn ancestor_fault(facts: DirectoryFacts, euid: u32) -> Option<Directo
 pub(crate) struct PrivateDirectory {
     descriptor: OwnedFd,
     path: PathBuf,
+    /// Test only (B2 fix round, P3b fix 3, R-P3bF3-4): every attempt to create, rename
+    /// or remove an entry, counted here at the file boundary whoever asks and whatever
+    /// the caller's guard was told, and whether or not the entry changes.
+    #[cfg(test)]
+    mutation_attempts: std::sync::atomic::AtomicUsize,
 }
 
 impl AsFd for PrivateDirectory {
@@ -175,12 +180,16 @@ fn walk(
             return Err(PrivateDirectoryError::WritableByOthers(walked));
         }
     } else {
-        // Already `0700`: only an ACL could still let others in.
+        // Already `0700`: only an ACL could still let others in. The clearing of one is
+        // a change of the directory's metadata, counted in tests even when none is there.
+        crate::platform::file_attempts::note(&walked);
         clear_extended_acl(&child, &walked)?;
     }
     Ok(PrivateDirectory {
         descriptor: child,
         path: walked,
+        #[cfg(test)]
+        mutation_attempts: std::sync::atomic::AtomicUsize::new(0),
     })
 }
 
@@ -212,6 +221,8 @@ impl PrivateDirectory {
 
     /// Create a new `0600` file that must not exist, never through a symlink.
     pub(crate) fn create_exclusive(&self, name: &str) -> io::Result<File> {
+        #[cfg(test)]
+        self.note_file_attempt(name);
         single_component(name)?;
         let descriptor = openat(
             &self.descriptor,
@@ -224,6 +235,11 @@ impl PrivateDirectory {
 
     /// Rename one entry of this directory over another entry of it.
     pub(crate) fn rename(&self, from: &str, to: &str) -> io::Result<()> {
+        #[cfg(test)]
+        {
+            self.note_file_attempt(from);
+            crate::platform::file_attempts::note(&self.path.join(to));
+        }
         single_component(from)?;
         single_component(to)?;
         renameat(&self.descriptor, from, &self.descriptor, to).map_err(io::Error::from)
@@ -231,6 +247,8 @@ impl PrivateDirectory {
 
     /// Remove one entry of this directory (never a directory). Absent is fine.
     pub(crate) fn remove(&self, name: &str) -> io::Result<()> {
+        #[cfg(test)]
+        self.note_file_attempt(name);
         single_component(name)?;
         match unlinkat(&self.descriptor, name, AtFlags::empty()) {
             Ok(()) | Err(Errno::NOENT) => Ok(()),
@@ -238,9 +256,68 @@ impl PrivateDirectory {
         }
     }
 
-    /// Flush the directory entries to stable storage.
+    /// Test only (R-P3bF4-7): one attempt to create, write, sync, rename or remove the
+    /// entry `name` of this directory, counted here and under its path in the registry
+    /// of file attempts. Every file mutation of the cache goes through a helper that
+    /// calls it, whoever asks and whatever the caller's guard said.
+    #[cfg(test)]
+    pub(crate) fn note_file_attempt(&self, name: &str) {
+        self.mutation_attempts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        crate::platform::file_attempts::note(&self.path.join(name));
+    }
+
+    /// Test only: the creations, content writes, syncs, renames and removals attempted
+    /// through this directory (a rename counts once, and is recorded at both names).
+    #[cfg(test)]
+    pub(crate) fn mutation_attempts(&self) -> usize {
+        self.mutation_attempts
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Flush the directory entries to stable storage. A sync leaves the file image as it
+    /// was; in tests the attempt is counted all the same (B2 fix round, P3b fix 5,
+    /// R-P3bF5-3), against the directory itself.
     pub(crate) fn sync(&self) -> io::Result<()> {
+        #[cfg(test)]
+        {
+            self.mutation_attempts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            crate::platform::file_attempts::note(&self.path);
+        }
         fsync(&self.descriptor).map_err(io::Error::from)
+    }
+
+    /// Whether the entry `name` of this directory (not followed if it is a symlink) is
+    /// the very file `file` holds open: the same device and inode. A writer or a reclaim
+    /// that has locked a file uses it to know that the name still refers to what it holds.
+    pub(crate) fn is_entry(&self, name: &str, file: &File) -> io::Result<bool> {
+        single_component(name)?;
+        let entry = match statat(&self.descriptor, name, AtFlags::SYMLINK_NOFOLLOW) {
+            Ok(stat) => stat,
+            Err(Errno::NOENT) => return Ok(false),
+            Err(error) => return Err(error.into()),
+        };
+        let held = fstat(file).map_err(io::Error::from)?;
+        #[allow(clippy::unnecessary_cast)]
+        Ok(entry.st_dev as u64 == held.st_dev as u64 && entry.st_ino == held.st_ino)
+    }
+
+    /// Whether the filesystem holding this directory can take an advisory `flock`
+    /// (B2 fix round, P3b fix 6, N1): one non-blocking exclusive lock on the held
+    /// directory descriptor, let go again at once, so no file or entry is touched. Another
+    /// holder is the answer "locking works" (`EWOULDBLOCK`); any other error (`ENOTSUP`,
+    /// `ENOLCK`, ...) means the entry locks of the terrain cache cannot be relied on here.
+    pub(crate) fn probe_lock_support(&self) -> io::Result<()> {
+        #[cfg(test)]
+        if let Some(code) = INJECTED_LOCK_ERROR.with(std::cell::Cell::take) {
+            return Err(io::Error::from_raw_os_error(code));
+        }
+        match flock(&self.descriptor, FlockOperation::NonBlockingLockExclusive) {
+            Ok(()) => flock(&self.descriptor, FlockOperation::Unlock).map_err(io::Error::from),
+            Err(Errno::WOULDBLOCK) => Ok(()),
+            Err(error) => Err(error.into()),
+        }
     }
 
     /// The names of the entries, without `.` and `..`. Names that are not
@@ -264,6 +341,27 @@ impl PrivateDirectory {
     pub(crate) fn available_bytes(&self) -> io::Result<u64> {
         let stat = fstatvfs(&self.descriptor)?;
         Ok(stat.f_bavail.saturating_mul(stat.f_frsize))
+    }
+}
+
+// Test only: the OS error code the next `PrivateDirectory::probe_lock_support` of this
+// thread reports instead of asking the filesystem (a root without file locking).
+#[cfg(test)]
+thread_local! {
+    pub(crate) static INJECTED_LOCK_ERROR: std::cell::Cell<Option<i32>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// Take an exclusive advisory lock (`flock`) on `file` without waiting: `Ok(true)` when
+/// it is held now, `Ok(false)` when another open file description holds it, of this
+/// process or of another. The lock belongs to the open file description, so it is kept
+/// for as long as `file` or any duplicate of it stays open, and the kernel releases it
+/// when the last of them closes, whatever ended the process.
+pub(crate) fn try_lock_exclusive(file: &File) -> io::Result<bool> {
+    match flock(file, FlockOperation::NonBlockingLockExclusive) {
+        Ok(()) => Ok(true),
+        Err(Errno::WOULDBLOCK) => Ok(false),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -375,6 +473,8 @@ fn open_or_create(
     if !create {
         return Err(io_error(path, io::ErrorKind::NotFound));
     }
+    // Counted in tests whatever follows (B2 fix round, P3b fix 5, R-P3bF5-3).
+    crate::platform::file_attempts::note(path);
     let created = match mkdirat(parent, name, Mode::RWXU) {
         Ok(()) => true,
         // Someone else created it between the open and the mkdirat: judge it
@@ -418,6 +518,7 @@ fn check_ancestor(
 /// Make a directory the caller has opened and found to be its own private:
 /// no extended ACL, and mode `0700`.
 fn protect(directory: &OwnedFd, path: &Path) -> Result<(), PrivateDirectoryError> {
+    crate::platform::file_attempts::note(path);
     clear_extended_acl(directory, path)?;
     fchmod(directory, Mode::RWXU).map_err(|error| io_error(path, error))
 }

@@ -128,6 +128,7 @@ impl ProjectionPackWriter {
         let staging_dir = self.packs_dir.join(".staging");
         let content_dir = self.packs_dir.join("sha256");
         ensure_private_staging_directory(&staging_dir)?;
+        crate::platform::file_attempts::note(&content_dir);
         fs::create_dir_all(&content_dir).map_err(|source| {
             ProjectionPackError::CreateDirectory {
                 path: content_dir.clone(),
@@ -217,6 +218,7 @@ impl ProjectionPackWriter {
         let staging_dir = self.packs_dir.join(".staging");
         let content_dir = self.packs_dir.join("sha256");
         ensure_private_staging_directory(&staging_dir)?;
+        crate::platform::file_attempts::note(&content_dir);
         fs::create_dir_all(&content_dir).map_err(|source| {
             ProjectionPackError::CreateDirectory {
                 path: content_dir.clone(),
@@ -314,6 +316,7 @@ impl ProjectionPackWriter {
         let staging_dir = self.packs_dir.join(".staging");
         let content_dir = self.packs_dir.join("sha256");
         ensure_private_staging_directory(&staging_dir)?;
+        crate::platform::file_attempts::note(&content_dir);
         fs::create_dir_all(&content_dir).map_err(|source| {
             ProjectionPackError::CreateDirectory {
                 path: content_dir.clone(),
@@ -382,6 +385,7 @@ impl ProjectionPackWriter {
         let staging_dir = self.packs_dir.join(".staging");
         let content_dir = self.packs_dir.join("sha256");
         ensure_private_staging_directory(&staging_dir)?;
+        crate::platform::file_attempts::note(&content_dir);
         fs::create_dir_all(&content_dir).map_err(|source| {
             ProjectionPackError::CreateDirectory {
                 path: content_dir.clone(),

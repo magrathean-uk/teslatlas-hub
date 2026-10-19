@@ -82,16 +82,17 @@ struct ChargeCostModeChoice {
     deprecated_alias: Option<String>,
 }
 
-/// The old `set-charge-cost --mode` values that still work for one release, each
-/// naming a total, a per-kWh rate or a per-minute rate (C2 R53a). The values of
-/// the previous release are the dirty side's to supply (C2 section 12 item 9)
-/// and the clean inputs do not state them, so the table is empty until the
-/// coordinator provides them; each line added here is accepted with a
-/// deprecation line on stderr and the same store call as its new mode. An old
-/// value that is not listed is a usage error. Reason: an invocation that named
-/// a mode of the old release must not silently break, and one that relied on
-/// an unlisted default must not silently store its number as a total, which is
-/// why `--mode` is required in this release.
+/// The old `set-charge-cost --mode` values that still work for one release but
+/// are deprecated, each naming a total, a per-kWh rate or a per-minute rate
+/// (C2 R53a, R72). The previous release accepted exactly `total`, `per_kwh` and
+/// `per_minute`, rejected every other value and meant `total` when `--mode` was
+/// absent, so every old value is a current name and this table is empty: no old
+/// invocation needs a deprecation line. A line added here later (for a rename
+/// of a mode) is accepted with exactly one deprecation line on stderr before
+/// the store call and makes the same store call as its mode; a current name
+/// always wins over an alias of the same text. An unlisted value is a usage
+/// error. Reason: an invocation that worked must keep its meaning, and a value
+/// or default that stays current is not deprecated.
 const DEPRECATED_CHARGE_COST_MODES: &[(&str, ChargeCostMode)] = &[];
 
 /// Parse a `--mode` value: the three names, then the deprecated aliases of
@@ -274,11 +275,11 @@ enum ControlCommand {
         /// The total cost, or the price per kWh or per minute, as `--mode` says.
         #[arg(long, allow_negative_numbers = true)]
         cost: f64,
-        /// What `--cost` means: `total`, `per_kwh` or `per_minute`. Required in
-        /// this release (C2 R53a); `total` becomes the default in the next.
+        /// What `--cost` means: `total` (the default), `per_kwh` or `per_minute`
+        /// (C2 R53, R72).
         #[arg(
             long,
-            required = true,
+            default_value = "total",
             value_name = "total|per_kwh|per_minute",
             value_parser = parse_charge_cost_mode
         )]
@@ -290,6 +291,32 @@ enum ControlCommand {
         #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
         drive_id: i64,
     },
+}
+
+/// Actions on the collector (C3 R65, R66). Each records a request in the Hub's
+/// database, which the running collector applies within a few seconds in its next
+/// tick; the CLI sends nothing to Tesla and needs no running collector to record it.
+#[derive(Debug, Subcommand)]
+enum CollectorCommand {
+    /// Retry collection now: clear a refusal or suspension of the account, every
+    /// wait and every paused car, and check the Tesla account once.
+    Retry,
+    /// Clear one paused car's pause so collection starts again for it.
+    Resume {
+        /// Hub vehicle UUID of the paused car.
+        vehicle: uuid::Uuid,
+    },
+    /// Collection gaps: the stretches in which the Hub could not record the car.
+    Gaps {
+        #[command(subcommand)]
+        command: CollectorGapsCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum CollectorGapsCommand {
+    /// Mark every alert gap as seen, so readiness stops reporting it as unnotified.
+    Acknowledge,
 }
 
 #[derive(Debug, Subcommand)]
@@ -456,6 +483,12 @@ enum Command {
         vehicle_id: Option<uuid::Uuid>,
         #[command(subcommand)]
         command: ControlCommand,
+    },
+    /// Retry collection, resume a paused car or acknowledge collection gaps while the
+    /// service runs.
+    Collector {
+        #[command(subcommand)]
+        command: CollectorCommand,
     },
     /// Import one TeslaMate car, its history, and its opaque legacy token pair.
     #[cfg(unix)]

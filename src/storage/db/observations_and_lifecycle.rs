@@ -334,7 +334,11 @@ impl HubStore {
 
     /// Last accepted reachability of a vehicle, `online`, `asleep` or
     /// `offline`, from its persisted lifecycle state (C1 R7, R77). `None` when
-    /// the vehicle has no state or no reachability has been accepted yet.
+    /// the vehicle has no state or no reachability has been accepted yet. The
+    /// collector reads it inside its tick transaction
+    /// (`collector_lifecycle_snapshot_in_transaction`, C3 R14); this standalone
+    /// read is for tests.
+    #[cfg(test)]
     pub(crate) fn lifecycle_last_reach(
         &self,
         vehicle_id: Uuid,
@@ -358,7 +362,11 @@ impl HubStore {
     /// `vehicle_data`, then asleep again (C1 R77, section 7 item 8). Only the
     /// three Tesla reachability texts are delivered; any other state text gives
     /// the unit no evidence and would otherwise be stored on every poll.
-    /// Returns whether the discovery was delivered.
+    /// Returns whether the discovery was delivered. The collector's tick
+    /// transaction applies C3 R14's rule instead (`discovery_action`), which also
+    /// withholds an unchanged state's write; this function is kept for tests of
+    /// the intake's ordering rules.
+    #[cfg(test)]
     pub(crate) fn record_current_discovery(
         &self,
         input: &ObservationInput,
@@ -367,22 +375,7 @@ impl HubStore {
     ) -> Result<bool, StoreError> {
         input.validate()?;
         validate_timestamp("discovery received_at_ms", received_at_ms)?;
-        let record_type = input.payload.get("record_type").and_then(Value::as_str);
-        if !matches!(
-            record_type,
-            Some("owner_api_discovery_v1" | "fleet_api_discovery_v1")
-        ) {
-            return Err(StoreError::InvalidCurrentDiscovery);
-        }
-        let payload = serde_json::to_vec(&input.payload).map_err(StoreError::SerializeObservation)?;
-        if payload.len() > MAX_RAW_OBSERVATION_BYTES {
-            return Err(StoreError::ObservationTooLarge {
-                actual: payload.len(),
-                maximum: MAX_RAW_OBSERVATION_BYTES,
-            });
-        }
-        let digest = Sha256Digest::of_bytes(&payload);
-        let payload = String::from_utf8(payload).expect("serde_json is UTF-8");
+        Self::validate_current_discovery(input)?;
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -390,7 +383,8 @@ impl HubStore {
         ensure_vehicle_belongs_to_source(&transaction, input.vehicle_id, input.source_id)?;
         let discovered = observation_vehicle_state(&input.payload);
         if matches!(discovered.as_str(), "online" | "asleep" | "offline")
-            && let Some(record) = load_lifecycle_state_in_transaction(&transaction, input.vehicle_id)?
+            && let Some(record) =
+                load_lifecycle_state_in_transaction(&transaction, input.vehicle_id)?
         {
             let state = crate::lifecycle::OpenSessionState::decode(&record.open_session_json)
                 .map_err(|_| StoreError::InvalidLifecycleSession)?;
@@ -402,21 +396,75 @@ impl HubStore {
                     record.car_id,
                     offline_drive_timeout,
                 )?;
-                transaction.commit().map_err(StoreError::AppendObservation)?;
+                transaction
+                    .commit()
+                    .map_err(StoreError::AppendObservation)?;
                 return Ok(true);
             }
         }
-        transaction.execute(
-            "INSERT INTO current_observations(
+        Self::write_current_discovery_in_transaction(&transaction, input, received_at_ms)?;
+        transaction
+            .commit()
+            .map_err(StoreError::AppendObservation)?;
+        Ok(false)
+    }
+
+    /// A discovery payload must carry one of the two discovery record types and
+    /// fit the raw-observation bound.
+    fn validate_current_discovery(input: &ObservationInput) -> Result<(), StoreError> {
+        let record_type = input.payload.get("record_type").and_then(Value::as_str);
+        if !matches!(
+            record_type,
+            Some("owner_api_discovery_v1" | "fleet_api_discovery_v1")
+        ) {
+            return Err(StoreError::InvalidCurrentDiscovery);
+        }
+        let size = serde_json::to_vec(&input.payload)
+            .map_err(StoreError::SerializeObservation)?
+            .len();
+        if size > MAX_RAW_OBSERVATION_BYTES {
+            return Err(StoreError::ObservationTooLarge {
+                actual: size,
+                maximum: MAX_RAW_OBSERVATION_BYTES,
+            });
+        }
+        Ok(())
+    }
+
+    /// Write only the vehicle's current discovery row, inside the caller's
+    /// transaction, which owns the commit (C3 R14 "missing current row": a
+    /// discovery that equals the lifecycle's last reachability stores no raw row,
+    /// but a vehicle without a current discovery row still gets that row). The
+    /// row is replaced only by a newer or different discovery.
+    pub(crate) fn write_current_discovery_in_transaction(
+        transaction: &Transaction<'_>,
+        input: &ObservationInput,
+        received_at_ms: i64,
+    ) -> Result<(), StoreError> {
+        input.validate()?;
+        validate_timestamp("discovery received_at_ms", received_at_ms)?;
+        Self::validate_current_discovery(input)?;
+        let record_type = input
+            .payload
+            .get("record_type")
+            .and_then(Value::as_str)
+            .ok_or(StoreError::InvalidCurrentDiscovery)?;
+        let payload =
+            serde_json::to_vec(&input.payload).map_err(StoreError::SerializeObservation)?;
+        let digest = Sha256Digest::of_bytes(&payload);
+        let payload = String::from_utf8(payload).expect("serde_json is UTF-8");
+        ensure_vehicle_belongs_to_source(transaction, input.vehicle_id, input.source_id)?;
+        transaction
+            .execute(
+                concat!(
+                    "INSERT INTO current_observations(
                 vehicle_id,record_type,observation_id,source_id,
                 observed_at_ms,received_at_ms,payload_sha256,payload_json
              ) VALUES (
                 ?1,?2,
-                MAX(
-                    COALESCE((SELECT MAX(observation_id) FROM raw_observations),0),
-                    COALESCE((SELECT MAX(observation_id) FROM current_observations),0),
-                    COALESCE((SELECT MAX(last_observation_id) FROM vehicle_lifecycle_state),0)
-                )+1,
+                ",
+                    next_observation_id_sql!(),
+                    ",
                 ?3,?4,?5,?6,?7
              ) ON CONFLICT(vehicle_id,record_type) DO UPDATE SET
                 observation_id=excluded.observation_id,
@@ -427,15 +475,20 @@ impl HubStore {
                 payload_json=excluded.payload_json
              WHERE excluded.observed_at_ms > current_observations.observed_at_ms
                 OR (excluded.observed_at_ms = current_observations.observed_at_ms
-                    AND excluded.payload_sha256 != current_observations.payload_sha256)",
-            params![
-                input.vehicle_id.to_string(), record_type.expect("checked discovery type"),
-                input.source_id.to_string(), input.observed_at_ms, received_at_ms,
-                digest.as_bytes().as_slice(), payload,
-            ],
-        ).map_err(StoreError::AppendObservation)?;
-        transaction.commit().map_err(StoreError::AppendObservation)?;
-        Ok(false)
+                    AND excluded.payload_sha256 != current_observations.payload_sha256)"
+                ),
+                params![
+                    input.vehicle_id.to_string(),
+                    record_type,
+                    input.source_id.to_string(),
+                    input.observed_at_ms,
+                    received_at_ms,
+                    digest.as_bytes().as_slice(),
+                    payload,
+                ],
+            )
+            .map_err(StoreError::AppendObservation)?;
+        Ok(())
     }
 
     pub(crate) fn accept_stream_observation_and_lifecycle(
@@ -1378,9 +1431,9 @@ impl HubStore {
                 // stored samples loaded (R43a).
                 let span_observed = match billing_type {
                     crate::hub_pack::GeofenceBillingType::PerMinute => {
-                        crate::lifecycle::charge_span_observed(
+                        crate::lifecycle::charge_span_observed_from(
                             &row,
-                            &load_materialised_charge_samples(&transaction, vehicle_id, charge_id)?,
+                            &fold_materialised_charge_samples(&transaction, vehicle_id, charge_id)?,
                         )
                     }
                     crate::hub_pack::GeofenceBillingType::PerKwh => true,
@@ -1716,7 +1769,7 @@ impl HubStore {
                     .map_err(|_| StoreError::InvalidLifecycleSession)
             })
             .transpose()?;
-        let previous_open = self.load_imported_open_session(source_id, vehicle_id)?;
+        let mut previous_open = self.load_imported_open_session(source_id, vehicle_id)?;
         let seeded = crate::lifecycle::seed_imported_open_session_state(
             source_id,
             session,
@@ -1733,7 +1786,9 @@ impl HubStore {
                     && refs.state_source_row_id == session.state.as_ref().map(|row| row.id)
                     && refs.standalone_position_count == session.standalone_positions.len() as u64
             })
-            && previous_open.as_ref().is_some_and(|old| old == session);
+            && previous_open
+                .as_mut()
+                .is_some_and(|old| imported_open_session_is_unchanged(old, session));
         if same_seed {
             return Ok(OpenSessionSeedReport {
                 no_op: true,
@@ -2152,4 +2207,41 @@ fn round_manual_amount(value: f64, decimals: i32) -> Option<f64> {
     }
     let rounded = scaled.round() / scale;
     Some(if rounded == 0.0 { 0.0 } else { rounded })
+}
+
+/// The larger of two known watermark values, the known one when only one is
+/// known, `None` when neither is (C2 R73): the value the raise-only
+/// `charging_processes` upsert stores.
+fn raise_only_value(stored: Option<i64>, snapshot: Option<i64>) -> Option<i64> {
+    match (stored, snapshot) {
+        (Some(stored), Some(snapshot)) => Some(stored.max(snapshot)),
+        (stored, snapshot) => stored.or(snapshot),
+    }
+}
+
+/// Whether the stored imported open session already equals the snapshot as the
+/// seed would leave it (C2 R73). The seed replaces every watermark domain but
+/// `charging_processes` by the snapshot's and stores the raise-only merge of
+/// the stored and the snapshot's `charging_processes` watermark (R5: no rewrite
+/// lowers the vehicle's import bound). The stored session is therefore
+/// unchanged when its open rows and its other watermarks equal the snapshot's
+/// and its `charging_processes` watermark already equals that merge, so a
+/// snapshot whose charge maximum or charge time is absent or not above the
+/// stored value is a no-op when repeated. `stored` is left with the snapshot's
+/// own `charging_processes` watermark, which the caller no longer uses.
+fn imported_open_session_is_unchanged(
+    stored: &mut crate::teslamate_projection::TeslaMateOpenSession,
+    snapshot: &crate::teslamate_projection::TeslaMateOpenSession,
+) -> bool {
+    let kept = stored.watermarks.charging_processes;
+    let incoming = snapshot.watermarks.charging_processes;
+    let merged = crate::teslamate_projection::TeslaMateSourceWatermark {
+        max_id: raise_only_value(kept.max_id, incoming.max_id),
+        max_timestamp_ms: raise_only_value(kept.max_timestamp_ms, incoming.max_timestamp_ms),
+    };
+    if kept != merged {
+        return false;
+    }
+    stored.watermarks.charging_processes = incoming;
+    *stored == *snapshot
 }

@@ -71,6 +71,15 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub restore-data \
   --destination /srv/teslatlas-hub-restore/hub-data
 ```
 
+Fleet request counts and reservations come from the backup, as the restore report explains in `fleetRequestCountsNotice`. A backup from earlier in the same UTC calendar month omits requests billed after it was made, so total spending can exceed the intended local monthly cap. A backup from before request counting was introduced contains no saved counts. Restore does not force a new cap stop. Before restarting Fleet polling, account for requests already billed when setting `monthly_cap_cents` for the rest of the month. Tesla's billing remains authoritative. A preserved collector lease is converted into a collection gap in the copied catalogue; the restored Hub's first collector start closes that gap.
+
+A restored Hub also has the sign-in as it was when the backup was made. If the original
+Hub renewed its token since, the copy still holds the earlier refresh token, which Tesla no
+longer accepts: the restored Hub's first renewal is rejected and it shows
+`collector_auth_terminal` (and `"ready": false`) until you sign in again (`setup` for the
+Owner API, `setup-fleet` for Fleet). That is expected after a restore from an older backup:
+sign in again before the readiness check below.
+
 Copy the packaged configuration to a separate recovery file. The shell's
 no-clobber option makes this fail if the recovery file already exists; the
 installed configuration remains unchanged. Edit only the recovery copy and set
@@ -126,7 +135,8 @@ sudo systemctl cat teslatlas-hub.service
 
 Confirm that `systemctl cat` shows both recovery overrides, then start the
 service and check its state, recent log, and Hub readiness. The final command
-must report `"ready": true` before recovery is treated as complete:
+must report `"ready": true` before recovery is treated as complete (after signing in again,
+if the backup is older than the last token renewal):
 
 ```sh
 sudo systemctl start teslatlas-hub.service

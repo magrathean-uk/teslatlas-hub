@@ -9,6 +9,7 @@ fn write_projection_sqlite(
     updates: &[ProjectionUpdate],
     row_count: u64,
 ) -> Result<(), ProjectionPackError> {
+    crate::platform::file_attempts::note(path);
     let connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -276,6 +277,7 @@ fn write_projection_sqlite_2_2(
     row_count: u64,
     purpose: ProjectionPackPurposeV2_2,
 ) -> Result<(), ProjectionPackError> {
+    crate::platform::file_attempts::note(path);
     let connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE

@@ -60,7 +60,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 69;
+pub const SCHEMA_VERSION: i32 = 72;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -346,12 +346,27 @@ pub struct HubStore {
     private_import_spool_dir: PathBuf,
     publication_lock_path: PathBuf,
     immutable_snapshot: Option<ImmutableCatalogueFingerprint>,
+    /// How many cars the running collector last reported as unable to write their
+    /// stream receipts (C3 R28, R66, section 8 item 6): in memory only, shared by
+    /// this store's clones, because the store that refused a receipt would refuse a
+    /// write of this signal too. Readiness reads it beside the stored rows.
+    stream_audit_failed_cars: std::sync::Arc<std::sync::atomic::AtomicUsize>,
     #[cfg(test)]
     stream_fault: Arc<Mutex<Option<StreamFaultPoint>>>,
     #[cfg(test)]
     projection_state_detach_fault: Arc<Mutex<bool>>,
     #[cfg(test)]
     credential_write_hook: Arc<Mutex<Option<CredentialWriteHook>>>,
+    /// Test only (B2 fix round, P3b fix 3, R-P3bF3-4; fix 4, N1): the attempts of every
+    /// connection this store opened to mutate its database (a statement prepared that
+    /// inserts, updates, deletes or changes the schema, and a row changed), counted at
+    /// the SQLite boundary by an authorizer and an update hook, independently of every
+    /// guard. There is no commit hook and a transaction's begin is not counted. The
+    /// limit: a statement cached on a connection that is held across calls and changes
+    /// no row is invisible; every `HubStore` call opens a connection of its own, so each
+    /// statement of the collector is prepared afresh. Shared by this store's clones.
+    #[cfg(test)]
+    sink_attempts: Arc<std::sync::atomic::AtomicUsize>,
     /// Digests of the lineage packs this store hashed, shared by its clones.
     #[cfg(test)]
     lineage_pack_hashes: Arc<Mutex<Vec<Sha256Digest>>>,
@@ -914,8 +929,11 @@ impl SupervisedCollectorState {
     }
 }
 
-/// Stable, redacted service-readiness reasons. These codes deliberately carry
-/// no paths, source errors, vehicle identifiers, endpoints, or credentials.
+/// Stable, redacted service-readiness reasons: exactly the six failures of the
+/// supported HTTP profile (`/readyz`). They carry no paths, source errors,
+/// vehicle identifiers, endpoints, or credentials. Conditions the owner can
+/// resolve while the service stays up are collection attention
+/// ([`CollectionAttentionCode`]), never a reason here (B2 clarification 3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReadinessReasonCode {
@@ -924,7 +942,33 @@ pub enum ReadinessReasonCode {
     PublishedContentUnservable,
     CollectorAbsent,
     CollectorStale,
+    /// The collector's lease is `auth_terminal`, or the applicable credential
+    /// status is effectively `signed_out` (C5 R43, R52).
     CollectorAuthTerminal,
+}
+
+impl ReadinessReasonCode {
+    /// Every service reason, in the order of the service check.
+    pub const ALL: [Self; 6] = [
+        Self::CatalogueUnavailable,
+        Self::LifecycleQuarantined,
+        Self::PublishedContentUnservable,
+        Self::CollectorAbsent,
+        Self::CollectorStale,
+        Self::CollectorAuthTerminal,
+    ];
+
+    /// The wire word, equal to the serialized value.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::CatalogueUnavailable => "catalogue_unavailable",
+            Self::LifecycleQuarantined => "lifecycle_quarantined",
+            Self::PublishedContentUnservable => "published_content_unservable",
+            Self::CollectorAbsent => "collector_absent",
+            Self::CollectorStale => "collector_stale",
+            Self::CollectorAuthTerminal => "collector_auth_terminal",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1285,8 +1329,18 @@ enum LineagePackVerification {
     MetadataOnly,
 }
 
+impl LineagePackInspection {
+    /// One attempt to create, fill, sync or remove the transient file, counted in tests
+    /// whatever follows (B2 fix round, P3b fix 5, R-P3bF5-3): the file is gone when the
+    /// inspection ends and leaves the pack files as they were.
+    fn note_attempt(&self) {
+        crate::platform::file_attempts::note(&self.path);
+    }
+}
+
 impl Drop for LineagePackInspection {
     fn drop(&mut self) {
+        self.note_attempt();
         let _ = fs::remove_file(&self.path);
     }
 }
@@ -1324,6 +1378,22 @@ struct SharedSchema22NoOpDirectory {
     path: PathBuf,
 }
 
+/// The SQL expression for the next observation id: one above the largest id
+/// any of the three tables holds (a missing table maximum counts as 0). Every
+/// writer that allocates an id splices this one text, so the rule has a single
+/// definition. `raw_observations` and `current_observations` key on the id and
+/// `vehicle_lifecycle_state` has a cursor per vehicle, so each maximum is a
+/// short read, not a scan.
+macro_rules! next_observation_id_sql {
+    () => {
+        "MAX(
+            COALESCE((SELECT MAX(observation_id) FROM raw_observations), 0),
+            COALESCE((SELECT MAX(observation_id) FROM current_observations), 0),
+            COALESCE((SELECT MAX(last_observation_id) FROM vehicle_lifecycle_state), 0)
+         ) + 1"
+    };
+}
+
 include!("db/store_opening.rs");
 include!("db/legacy_credentials.rs");
 include!("db/fleet_credentials.rs");
@@ -1338,6 +1408,9 @@ include!("db/identity_and_audit.rs");
 include!("db/device_credentials.rs");
 include!("db/device_grants.rs");
 include!("db/observations_and_lifecycle.rs");
+include!("db/collector_state.rs");
+include!("db/auth_state.rs");
+include!("db/readiness.rs");
 include!("db/edge_delivery.rs");
 include!("db/geofences_and_terrain.rs");
 include!("db/catalogue_models.rs");

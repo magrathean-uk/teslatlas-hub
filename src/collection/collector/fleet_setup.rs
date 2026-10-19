@@ -96,12 +96,27 @@ pub async fn configure_fleet_telemetry_for_admitted_user(
         store.clone(),
         &config.data_dir,
         Arc::clone(&admission),
+        None,
     )?;
     let auth_api = FleetAuthApi::new(
         manager.region(),
         Duration::from_secs(config.collector.request_timeout_seconds),
     )?;
-    apply_fleet_telemetry_configuration(store, config, &mut manager, &auth_api, &admission).await
+    // C3 R25: this one-shot command is a Fleet sender with no scheduler, so it counts
+    // its requests in a ledger of its own and writes the counts when it is done,
+    // whether or not the configuration succeeded.
+    let counter = RequestLedger::standalone(store, &config.collector.cadence()?.fleet_policy())?;
+    let result = apply_fleet_telemetry_configuration(
+        store,
+        config,
+        &mut manager,
+        &auth_api,
+        &admission,
+        &counter,
+    )
+    .await;
+    counter.flush_to_store(store)?;
+    result
 }
 
 #[cfg(unix)]
@@ -111,6 +126,7 @@ async fn apply_fleet_telemetry_configuration(
     manager: &mut FleetAuthManager,
     auth_api: &FleetAuthApi,
     admission: &Arc<crate::hub_user_process::AdmittedUserHub>,
+    counter: &RequestLedger,
 ) -> Result<FleetTelemetrySetupReport, CollectorError> {
     admission.assert_sensitive_access()?;
     let telemetry = config
@@ -164,17 +180,22 @@ async fn apply_fleet_telemetry_configuration(
                 &destination,
             )
             .await;
+        // C3 R25: a configuration request is a command-priced Fleet request, counted
+        // at completion (R27 scope: shown, never blocked).
+        counter.record_fleet_result(RequestCategory::Command, &first);
         let result = if matches!(first, Err(FleetApiError::HttpStatus(401 | 403))) {
             manager.mark_refresh_due();
             manager.refresh_if_due(auth_api, SystemTime::now()).await?;
             admission.assert_sensitive_access()?;
-            proxy
+            let second = proxy
                 .configure_fleet_telemetry(
                     manager.access_token_for_sensitive_use()?,
                     &vins,
                     &destination,
                 )
-                .await?
+                .await;
+            counter.record_fleet_result(RequestCategory::Command, &second);
+            second?
         } else {
             first?
         };
@@ -187,13 +208,16 @@ async fn apply_fleet_telemetry_configuration(
         let first = proxy
             .remove_fleet_telemetry(manager.access_token_for_sensitive_use()?, &vin)
             .await;
+        counter.record_fleet_result(RequestCategory::Command, &first);
         let removal = if matches!(first, Err(FleetApiError::HttpStatus(401 | 403))) {
             manager.mark_refresh_due();
             manager.refresh_if_due(auth_api, SystemTime::now()).await?;
             admission.assert_sensitive_access()?;
-            proxy
+            let second = proxy
                 .remove_fleet_telemetry(manager.access_token_for_sensitive_use()?, &vin)
-                .await
+                .await;
+            counter.record_fleet_result(RequestCategory::Command, &second);
+            second
         } else {
             first
         };
@@ -254,6 +278,7 @@ pub async fn setup_native_vehicle(
     let auth = LegacyAuth::from_access_token(
         tokens.access_token().to_owned(),
         tokens.refresh_token().to_owned(),
+        &AuthEndpointConfig::from_config(config, false),
     )?;
     let client = OwnerApi::new(
         config
@@ -286,6 +311,7 @@ pub async fn setup_native_vehicles(
     let auth = LegacyAuth::from_access_token(
         tokens.access_token().to_owned(),
         tokens.refresh_token().to_owned(),
+        &AuthEndpointConfig::from_config(config, false),
     )?;
     let client = OwnerApi::new(
         config
@@ -293,6 +319,24 @@ pub async fn setup_native_vehicles(
             .owner_api_options_for_region(auth.region())?,
     )?;
     setup_native_vehicles_with_client(store, &config.data_dir, &client, &auth).await
+}
+
+/// The setup commands' vehicle list (C3 R24, R25): a request of category `state`,
+/// counted at completion in a ledger of its own and written before the answer is
+/// used, because a setup command has no scheduler tick to carry its count (R27
+/// scope: shown, never blocked).
+async fn counted_fleet_setup_list(
+    store: &HubStore,
+    config: &HubConfig,
+    client: &FleetApi,
+    access_token: &crate::fleet_api::FleetAccessToken,
+    refresh_token: &crate::fleet_api::FleetRefreshToken,
+) -> Result<Result<Vec<Vehicle>, CollectorError>, CollectorError> {
+    let counter = RequestLedger::standalone(store, &config.collector.cadence()?.fleet_policy())?;
+    let listed = client.list_vehicles(access_token, refresh_token).await;
+    counter.record_fleet_result(RequestCategory::State, &listed);
+    counter.flush_to_store(store)?;
+    Ok(listed.map_err(Into::into))
 }
 
 /// Configure one vehicle from a bounded Fleet OAuth credential object.
@@ -320,10 +364,7 @@ pub async fn setup_fleet_vehicle(
     let vehicles = accept_complete_provider_inventory(
         store,
         CollectorProvider::Fleet,
-        client
-            .list_vehicles(&access_token, &refresh_token)
-            .await
-            .map_err(Into::into),
+        counted_fleet_setup_list(store, config, &client, &access_token, &refresh_token).await?,
     )?;
     ensure_fleet_inventory_contains_configured(store, &vehicles)?;
     let mut vehicle = select_native_setup_vehicle(vehicles, requested_vehicle_id)?;
@@ -381,10 +422,7 @@ pub async fn setup_fleet_vehicles(
     let mut vehicles = accept_complete_provider_inventory(
         store,
         CollectorProvider::Fleet,
-        client
-            .list_vehicles(&access_token, &refresh_token)
-            .await
-            .map_err(Into::into),
+        counted_fleet_setup_list(store, config, &client, &access_token, &refresh_token).await?,
     )?;
     ensure_fleet_inventory_contains_configured(store, &vehicles)?;
     if vehicles.is_empty() {
@@ -563,6 +601,7 @@ fn ensure_fleet_inventory_contains_configured(
 
 /// Execute one explicitly confirmed legacy vehicle action. This path never
 /// refreshes or retries credentials and is not reachable from the collector.
+#[cfg(test)]
 async fn execute_resident_legacy_vehicle_action(
     store: &HubStore,
     client: &OwnerApi,
@@ -572,6 +611,43 @@ async fn execute_resident_legacy_vehicle_action(
     hub_vehicle_id: Uuid,
     action: LegacyVehicleAction,
 ) -> Result<LegacyVehicleActionReport, ResidentActionExecutionError> {
+    execute_resident_legacy_vehicle_action_guarded(
+        store,
+        client,
+        manager,
+        fuse,
+        refresh,
+        hub_vehicle_id,
+        action,
+        None,
+    )
+    .await
+}
+
+/// [`execute_resident_legacy_vehicle_action`] under a supervised run: the action's
+/// audit receipt is started and completed only while the run's write guard allows
+/// (B2 fix round, P3b fix 2, R-P3bF2-1). A receipt that was started and whose
+/// completion is refused stays `started`: the outcome is ambiguous.
+#[allow(clippy::too_many_arguments)]
+async fn execute_resident_legacy_vehicle_action_guarded(
+    store: &HubStore,
+    client: &OwnerApi,
+    manager: &Arc<tokio::sync::Mutex<LegacyAuthManager>>,
+    fuse: &Arc<tokio::sync::Mutex<LegacyAuthFuse>>,
+    refresh: &Arc<LegacyRefreshCoordinator>,
+    hub_vehicle_id: Uuid,
+    action: LegacyVehicleAction,
+    guard: Option<&RunWriteGuard>,
+) -> Result<LegacyVehicleActionReport, ResidentActionExecutionError> {
+    // C3 R48, R49 (B2 clarification 3): a standing refusal for the configured
+    // mode, or an unreadable account row, rejects a new action before any
+    // authentication waits or is prepared. The socket serves only through here;
+    // the fused request path checks again once it holds the shared locks.
+    manager
+        .lock()
+        .await
+        .assert_resident_admission()
+        .map_err(OwnerApiAuthError::from)?;
     refresh
         .wait_for_prior()
         .await
@@ -583,6 +659,8 @@ async fn execute_resident_legacy_vehicle_action(
         .ok_or(ResidentActionExecutionError::VehicleMissing)?;
     let vehicle_id =
         VehicleId::try_from_i64(tesla_eid).ok_or(ResidentActionExecutionError::VehicleMissing)?;
+    check_resident_receipt_write(guard, "resident-begin")
+        .map_err(|_| ResidentActionExecutionError::Authentication)?;
     let receipt_id = store.begin_outbound_request(&OutboundRequestStart {
         correlation_id: Uuid::new_v4(),
         vehicle_tesla_id: Some(tesla_eid),
@@ -611,15 +689,11 @@ async fn execute_resident_legacy_vehicle_action(
             )
             .await
     };
-    if matches!(
-        &result,
-        Err(OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(401)))
-    ) {
-        refresh
-            .enqueue(client.clone(), Arc::clone(manager), Arc::clone(fuse))
-            .await;
-    }
+    // C5 R40: a 401 to the action is handled inside the request, by the credential
+    // unit, and the action is never sent again.
     let completion = legacy_action_completion(result.as_ref().err());
+    check_resident_receipt_write(guard, "resident-complete")
+        .map_err(|_| ResidentActionExecutionError::CompletionRefused)?;
     store
         .complete_outbound_request(receipt_id, &completion)
         .map_err(ResidentActionExecutionError::CompletionUnknown)?;
@@ -633,7 +707,20 @@ async fn execute_resident_legacy_vehicle_action(
     })
 }
 
-async fn execute_resident_fleet_vehicle_action(
+/// Whether the resident action may write its audit receipt now: the run's write
+/// guard when the action runs under a supervised run, nothing otherwise.
+fn check_resident_receipt_write(
+    guard: Option<&RunWriteGuard>,
+    point: &'static str,
+) -> Result<(), CollectorError> {
+    check_optional_write(guard, point)
+}
+
+/// The resident Fleet action under a supervised run (B2 fix round,
+/// P3b fix 2, R-P3bF2-1): the receipt's start, its cancellation and its completion
+/// are each preceded by the run's write guard.
+#[allow(clippy::too_many_arguments)]
+async fn execute_resident_fleet_vehicle_action_guarded(
     store: &HubStore,
     api: &FleetApi,
     auth_api: &FleetAuthApi,
@@ -641,6 +728,8 @@ async fn execute_resident_fleet_vehicle_action(
     manager: &Arc<tokio::sync::Mutex<FleetAuthManager>>,
     hub_vehicle_id: Uuid,
     action: LegacyVehicleAction,
+    counter: &RequestLedger,
+    guard: Option<&RunWriteGuard>,
 ) -> Result<LegacyVehicleActionReport, ResidentActionExecutionError> {
     let (tesla_eid, vin) = store
         .configured_tesla_vehicle_identity(hub_vehicle_id)?
@@ -656,6 +745,8 @@ async fn execute_resident_fleet_vehicle_action(
         .refresh_if_due(auth_api, SystemTime::now())
         .await
         .map_err(ResidentActionExecutionError::FleetCredential)?;
+    check_resident_receipt_write(guard, "resident-begin")
+        .map_err(|_| ResidentActionExecutionError::Authentication)?;
     let receipt_id = store.begin_outbound_request(&OutboundRequestStart {
         correlation_id: Uuid::new_v4(),
         vehicle_tesla_id: Some(tesla_eid),
@@ -675,6 +766,11 @@ async fn execute_resident_fleet_vehicle_action(
     let access_token = match manager.access_token_for_sensitive_use() {
         Ok(token) => token,
         Err(error) => {
+            // The cancellation is a receipt write too: after the loss the receipt
+            // stays started and the credential error is the answer.
+            if check_resident_receipt_write(guard, "resident-cancel").is_err() {
+                return Err(ResidentActionExecutionError::FleetCredential(error));
+            }
             store
                 .complete_outbound_request(
                     receipt_id,
@@ -704,10 +800,22 @@ async fn execute_resident_fleet_vehicle_action(
             }
         }
     };
+    // C3 R25: a wake or a command is a Fleet request of its own category, counted at
+    // completion beside the tick (R27 scope: shown, never blocked).
+    counter.record_fleet_result(
+        if action == LegacyVehicleAction::Wake {
+            RequestCategory::Wake
+        } else {
+            RequestCategory::Command
+        },
+        &result,
+    );
     if matches!(result, Err(FleetApiError::HttpStatus(401 | 403))) {
         manager.mark_refresh_due();
     }
     let completion = fleet_action_completion(result.as_ref().err());
+    check_resident_receipt_write(guard, "resident-complete")
+        .map_err(|_| ResidentActionExecutionError::CompletionRefused)?;
     store
         .complete_outbound_request(receipt_id, &completion)
         .map_err(ResidentActionExecutionError::CompletionUnknown)?;
@@ -758,6 +866,8 @@ enum ResidentActionExecutionError {
     FleetCredential(#[from] FleetCredentialError),
     #[error("vehicle command outcome is ambiguous because its audit could not complete")]
     CompletionUnknown(StoreError),
+    #[error("vehicle command outcome is ambiguous because the run may no longer write")]
+    CompletionRefused,
 }
 
 fn legacy_action_completion(error: Option<&OwnerApiAuthError>) -> OutboundRequestCompletion {
@@ -771,6 +881,14 @@ fn legacy_action_completion(error: Option<&OwnerApiAuthError>) -> OutboundReques
         ),
         Some(OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(status))) => {
             (OutboundRequestOutcome::HttpError, Some(*status), None)
+        }
+        // The typed 403 and 410 of C3 R42 are still the statuses the receipt
+        // records.
+        Some(OwnerApiAuthError::Owner(OwnerApiError::Forbidden { .. })) => {
+            (OutboundRequestOutcome::HttpError, Some(403), None)
+        }
+        Some(OwnerApiAuthError::Owner(OwnerApiError::Gone)) => {
+            (OutboundRequestOutcome::HttpError, Some(410), None)
         }
         Some(OwnerApiAuthError::Owner(OwnerApiError::RateLimited {
             retry_after_seconds,
@@ -1006,6 +1124,7 @@ impl ResidentControlSocket {
         })
     }
 
+    #[cfg(test)]
     async fn serve(
         self,
         store: HubStore,
@@ -1013,6 +1132,19 @@ impl ResidentControlSocket {
         manager: Arc<tokio::sync::Mutex<LegacyAuthManager>>,
         fuse: Arc<tokio::sync::Mutex<LegacyAuthFuse>>,
         refresh: Arc<LegacyRefreshCoordinator>,
+    ) -> Result<(), CollectorError> {
+        self.serve_guarded(store, client, manager, fuse, refresh, None)
+            .await
+    }
+
+    async fn serve_guarded(
+        self,
+        store: HubStore,
+        client: OwnerApi,
+        manager: Arc<tokio::sync::Mutex<LegacyAuthManager>>,
+        fuse: Arc<tokio::sync::Mutex<LegacyAuthFuse>>,
+        refresh: Arc<LegacyRefreshCoordinator>,
+        guard: Option<RunWriteGuard>,
     ) -> Result<(), CollectorError> {
         loop {
             let (mut socket, _) = self
@@ -1027,7 +1159,7 @@ impl ResidentControlSocket {
             .await
             {
                 Ok(Ok(request)) if request.protocol == RESIDENT_CONTROL_PROTOCOL => {
-                    match execute_resident_legacy_vehicle_action(
+                    match execute_resident_legacy_vehicle_action_guarded(
                         &store,
                         &client,
                         &manager,
@@ -1035,6 +1167,7 @@ impl ResidentControlSocket {
                         &refresh,
                         request.hub_vehicle_id,
                         request.action,
+                        guard.as_ref(),
                     )
                     .await
                     {
@@ -1058,6 +1191,7 @@ impl ResidentControlSocket {
         }
     }
 
+    #[cfg(test)]
     async fn serve_fleet(
         self,
         store: HubStore,
@@ -1065,6 +1199,22 @@ impl ResidentControlSocket {
         auth_api: FleetAuthApi,
         command_proxy: Option<FleetCommandProxy>,
         manager: Arc<tokio::sync::Mutex<FleetAuthManager>>,
+        counter: RequestLedger,
+    ) -> Result<(), CollectorError> {
+        self.serve_fleet_guarded(store, api, auth_api, command_proxy, manager, counter, None)
+            .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn serve_fleet_guarded(
+        self,
+        store: HubStore,
+        api: FleetApi,
+        auth_api: FleetAuthApi,
+        command_proxy: Option<FleetCommandProxy>,
+        manager: Arc<tokio::sync::Mutex<FleetAuthManager>>,
+        counter: RequestLedger,
+        guard: Option<RunWriteGuard>,
     ) -> Result<(), CollectorError> {
         loop {
             let (mut socket, _) = self
@@ -1079,7 +1229,7 @@ impl ResidentControlSocket {
             .await
             {
                 Ok(Ok(request)) if request.protocol == RESIDENT_CONTROL_PROTOCOL => {
-                    match execute_resident_fleet_vehicle_action(
+                    match execute_resident_fleet_vehicle_action_guarded(
                         &store,
                         &api,
                         &auth_api,
@@ -1087,6 +1237,8 @@ impl ResidentControlSocket {
                         &manager,
                         request.hub_vehicle_id,
                         request.action,
+                        &counter,
+                        guard.as_ref(),
                     )
                     .await
                     {
@@ -1152,12 +1304,23 @@ fn classify_resident_action_error(
         ResidentActionExecutionError::Authentication => {
             ResidentVehicleActionFailure::AuthenticationRejected
         }
-        ResidentActionExecutionError::CompletionUnknown(_) => {
+        ResidentActionExecutionError::CompletionUnknown(_)
+        | ResidentActionExecutionError::CompletionRefused => {
             ResidentVehicleActionFailure::OutcomeAmbiguous
+        }
+        ResidentActionExecutionError::Provider(OwnerApiAuthError::Auth(
+            LegacyAuthManagerError::Auth(error),
+        )) if error.is_terminal_auth_failure()
+            || matches!(
+                error,
+                LegacyAuthError::AuthUnavailable { .. } | LegacyAuthError::VehicleAccessRejected
+            ) =>
+        {
+            ResidentVehicleActionFailure::AuthenticationRejected
         }
         ResidentActionExecutionError::Provider(OwnerApiAuthError::NotSignedIn)
         | ResidentActionExecutionError::Provider(OwnerApiAuthError::Owner(
-            OwnerApiError::HttpStatus(401 | 403),
+            OwnerApiError::HttpStatus(401 | 403) | OwnerApiError::Forbidden { .. },
         )) => ResidentVehicleActionFailure::AuthenticationRejected,
         ResidentActionExecutionError::Provider(_) => ResidentVehicleActionFailure::ProviderRejected,
         ResidentActionExecutionError::FleetCredential(_) => {
@@ -1329,7 +1492,7 @@ fn select_native_setup_vehicle(
 
 struct TerrainWorker {
     wake: mpsc::Sender<()>,
-    initialized: Option<oneshot::Receiver<Result<(), ()>>>,
+    initialized: Option<oneshot::Receiver<Result<(), CollectorError>>>,
     start: Option<oneshot::Sender<()>>,
     stop: Option<oneshot::Sender<()>>,
     task: JoinHandle<Result<(), CollectorError>>,
@@ -1342,7 +1505,6 @@ impl TerrainWorker {
             .ok_or(CollectorError::TerrainWorkerStartup)?
             .await
             .map_err(|_| CollectorError::TerrainWorkerStartup)?
-            .map_err(|_| CollectorError::TerrainWorkerStartup)
     }
 
     fn start(&mut self) -> Result<(), CollectorError> {

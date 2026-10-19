@@ -1010,6 +1010,121 @@ final class HubControllerTests: XCTestCase {
         XCTAssertEqual(installed.arguments, [["--config", NSHomeDirectory() + "/Library/Application Support/Teslatlas Hub/config.toml", "status"]])
     }
 
+    private static let collectionAttentionLabels: [(code: String, label: String)] = [
+        ("collector_api_refused", "Owner API has refused collection"),
+        ("collector_provider_refused", "The provider has refused collection"),
+        ("collector_fleet_access_refused", "Fleet access has been refused"),
+        ("collector_billing_suspended", "Fleet billing is suspended"),
+        ("collector_cap_reached", "The local monthly cap has been reached"),
+        ("collector_config_error", "Fleet configuration needs attention"),
+        ("collector_account_locked", "The account is locked"),
+        ("collector_stream_audit_failed", "Stream receipts cannot be written"),
+        ("collector_auth_waiting", "Collection is waiting for credentials"),
+        ("collector_auth_configuration_error", "Sign-in configuration needs attention"),
+        ("collector_auth_sign_in_required",
+         "Sign in again; collection can continue until the token expires"),
+        ("collector_cadence_invalid",
+         "Collection cadence needs attention; correct the setting and restart"),
+        ("collector_fleet_refresh_outcome_unknown",
+         "Reconnect Fleet credentials; the last refresh outcome is unknown")
+    ]
+
+    private func attentionStatus(ready: Bool, reason: String?, attention: String?,
+                                 includeAttention: Bool = true) -> String {
+        let attentionMember = includeAttention
+            ? #","collectionAttention":\#(attention.map { "\"\($0)\"" } ?? "null")"#
+            : ""
+        let reasonJSON = reason.map { "\"\($0)\"" } ?? "null"
+        return """
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":\(ready),"readinessReason":\(reasonJSON)\(attentionMember),"provider":"legacy","vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Example"}],"credentials":{"present":true},"legacyCredentials":{"present":true}}
+        """
+    }
+
+    func testRefreshShowsCollectionAttentionWithoutChangingServiceReadiness() {
+        func snapshot(for json: String) -> HubSnapshot {
+            let installed = RecordingCommandRunner(result: .success(json))
+            let controller = HubController(
+                installedCommandRunner: installed,
+                serviceRunner: ScriptedService(events: EventRecorder(), loadState: .loaded),
+                serviceInstalledOverride: true)
+            let finished = expectation(description: "status loaded")
+            var loaded: HubSnapshot?
+            controller.refresh { value in
+                loaded = value
+                finished.fulfill()
+            }
+            wait(for: [finished], timeout: 2)
+            return loaded ?? HubSnapshot.previewRunning
+        }
+        func attentionLines(_ value: HubSnapshot) -> [String] {
+            value.diagnosticLines.filter { $0.hasPrefix("Collection attention:") }
+        }
+
+        // Every registry code is shown in plain words, beside a running service.
+        for entry in Self.collectionAttentionLabels {
+            let running = snapshot(for: attentionStatus(ready: true, reason: nil,
+                                                        attention: entry.code))
+            XCTAssertEqual(running.health, .running, entry.code)
+            XCTAssertEqual(running.service, "Installed and running", entry.code)
+            XCTAssertEqual(attentionLines(running), ["Collection attention: \(entry.label)"],
+                           entry.code)
+            // A simultaneous service failure degrades; the attention stays shown.
+            let failed = snapshot(for: attentionStatus(ready: false, reason: "collector_stale",
+                                                       attention: entry.code))
+            XCTAssertEqual(failed.health, .degraded, entry.code)
+            XCTAssertEqual(attentionLines(failed), ["Collection attention: \(entry.label)"],
+                           entry.code)
+            XCTAssertTrue(failed.diagnosticLines.contains("Readiness: collector_stale"))
+        }
+        // A null, a missing member and an unknown word: no line, no line, and the
+        // general line, with the health decided by readiness alone.
+        let none = snapshot(for: attentionStatus(ready: true, reason: nil, attention: nil))
+        XCTAssertEqual(none.health, .running)
+        XCTAssertTrue(attentionLines(none).isEmpty)
+        let missing = snapshot(for: attentionStatus(ready: true, reason: nil, attention: nil,
+                                                    includeAttention: false))
+        XCTAssertEqual(missing.health, .running)
+        XCTAssertTrue(attentionLines(missing).isEmpty)
+        let unknown = snapshot(for: attentionStatus(ready: true, reason: nil,
+                                                    attention: "collector_from_a_newer_hub"))
+        XCTAssertEqual(unknown.health, .running)
+        XCTAssertEqual(attentionLines(unknown), ["Collection attention: Collection needs attention"])
+        // The attention line sits right after the readiness line.
+        let order = snapshot(for: attentionStatus(ready: true, reason: nil,
+                                                  attention: "collector_cap_reached"))
+        let readinessIndex = order.diagnosticLines.firstIndex { $0.hasPrefix("Readiness:") }
+        XCTAssertEqual(order.diagnosticLines[(readinessIndex ?? 0) + 1],
+                       "Collection attention: The local monthly cap has been reached")
+    }
+
+    func testStoppedOnboardingAcceptsCollectionAttention() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let runner = CommandMapRunner(responses: [
+            "status": .success(attentionStatus(ready: true, reason: nil,
+                                               attention: "collector_cap_reached")),
+            // The actual doctor exits successfully with attention in its report.
+            "doctor": .success(#"{"status":"ok","collector":{"collectionAttention":"collector_cap_reached","readiness":"ready","running":false,"lease":null,"cadenceError":null}}"#)
+        ])
+        let events = EventRecorder()
+        let controller = HubController(commandRunner: runner, installedCommandRunner: runner,
+            serviceRunner: ScriptedService(events: events, loadState: .unloaded),
+            homeDirectory: home, serviceInstalledOverride: true)
+        let done = expectation(description: "stopped verification complete")
+        controller.runOnboardingChecks(expectRunning: false) { result in
+            guard case let .success(checks) = result else {
+                XCTFail("missing checks"); done.fulfill(); return
+            }
+            XCTAssertEqual(checks.first { $0.title == "Service" }?.passed, true)
+            XCTAssertEqual(checks.first { $0.title == "Diagnostics" }?.passed, true)
+            XCTAssertEqual(checks.first { $0.title == "Diagnostics" }?.detail, "Passed")
+            done.fulfill()
+        }
+        wait(for: [done], timeout: 2)
+        XCTAssertTrue(runner.commands.contains("doctor"))
+        XCTAssertFalse(events.values.contains { $0.contains("service:start") })
+    }
+
     func testRefreshPreservesStoppedStateAcrossVersionMismatch() {
         let installed = RecordingCommandRunner(result: .success("""
         {"status":"ok","version":"9.9.9","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1},"ready":true,"provider":"legacy","credentials":{"present":true}}

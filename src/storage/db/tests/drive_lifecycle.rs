@@ -487,3 +487,130 @@ fn st49_a_deleted_fence_relabels_stored_drives_identically() {
         .expect("delete area");
     assert_eq!(labels(&store), (None, None));
 }
+
+// ------------------------------------------------ C1 B2 amendment A (R87)
+
+fn r87_fence(name: &str, centre: (f64, f64), radius: f64) -> crate::teslamate_projection::TeslaMateGeofence {
+    crate::teslamate_projection::TeslaMateGeofence {
+        id: 0,
+        name: name.to_owned(),
+        latitude: Some(centre.0),
+        longitude: Some(centre.1),
+        radius_m: Some(radius),
+        billing_type: Some(crate::hub_pack::GeofenceBillingType::PerKwh),
+        cost_per_unit: None,
+        session_fee: None,
+    }
+}
+
+#[test]
+fn st95_b_the_children_labels_and_terrain_recompute_agree_with_the_row() {
+    use crate::lifecycle::lead_checkpoint_tests::{B, C, st95_samples};
+    let temp = crate::private_tempdir().expect("tempdir");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    store
+        .save_geofence(vehicle.vehicle_id, None, r87_fence("B-spot", B, 50.0))
+        .expect("B-spot");
+    store
+        .save_geofence(vehicle.vehicle_id, None, r87_fence("C-spot", C, 50.0))
+        .expect("C-spot");
+    feed_owner_samples(&store, &source, &vehicle, &st95_samples());
+    let history = store
+        .materialised_history(vehicle.vehicle_id)
+        .expect("history");
+    assert_eq!(history.drives.len(), 1);
+    let drive = &history.drives[0];
+    assert_eq!(drive.end_date_ms, crate::lifecycle::drive_tests::T0 + crate::lifecycle::drive_tests::MIN);
+    assert_eq!(drive.start_geofence, None);
+    assert_eq!(drive.end_geofence.as_deref(), Some("B-spot"));
+    // Positions A and B stay under the drive; C, dated after the end, is
+    // standalone.
+    let t0 = crate::lifecycle::drive_tests::T0;
+    let min = crate::lifecycle::drive_tests::MIN;
+    assert_eq!(
+        placed_positions(&history),
+        vec![(1, Some(1), t0), (2, Some(1), t0 + min), (3, None, t0 + 2 * min)]
+    );
+    assert_eq!(open_position_rows(&store, &vehicle), 0);
+    // A terrain recompute over the drive's children gives the row's totals.
+    let vehicle_key = vehicle.vehicle_id.to_string();
+    let mut connection = store.open().expect("connection");
+    let transaction = connection.transaction().expect("transaction");
+    recompute_terrain_drive(&transaction, &vehicle_key, drive.id).expect("recompute");
+    transaction.commit().expect("commit");
+    let (ascent, descent): (Option<i64>, Option<i64>) = connection
+        .query_row(
+            "SELECT ascent, descent FROM materialised_drives
+             WHERE vehicle_id = ?1 AND drive_id = ?2",
+            params![vehicle_key, drive.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("drive row");
+    assert_eq!((ascent, descent), (Some(4), Some(0)));
+}
+
+#[test]
+fn st96_b_a_discarded_drive_leaves_every_position_standalone() {
+    use crate::lifecycle::drive_tests::{MIN, T0};
+    use crate::lifecycle::lead_checkpoint_tests::st96_samples;
+    let temp = crate::private_tempdir().expect("tempdir");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    feed_owner_samples(&store, &source, &vehicle, &st96_samples());
+    let history = store
+        .materialised_history(vehicle.vehicle_id)
+        .expect("history");
+    assert!(history.drives.is_empty());
+    assert_eq!(
+        placed_positions(&history),
+        vec![(1, None, T0), (2, None, T0 + MIN), (3, None, T0 + 2 * MIN)]
+    );
+    assert_eq!(open_position_rows(&store, &vehicle), 0);
+}
+
+#[test]
+fn st97_c_a_delayed_motion_fact_leaves_the_later_position_standalone() {
+    use crate::lifecycle::drive_tests::{MIN, SEC, T0};
+    use crate::lifecycle::lead_checkpoint_tests::st97a_samples;
+    let temp = crate::private_tempdir().expect("tempdir");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    feed_owner_samples(&store, &source, &vehicle, &st97a_samples());
+    let history = store
+        .materialised_history(vehicle.vehicle_id)
+        .expect("history");
+    assert_eq!(history.drives.len(), 1);
+    assert_eq!(history.drives[0].end_date_ms, T0 + MIN + 30 * SEC);
+    assert_eq!(
+        placed_positions(&history),
+        vec![(1, Some(1), T0), (2, None, T0 + 2 * MIN)]
+    );
+}
+
+#[test]
+fn st98_b_an_overflowed_end_keeps_the_children_with_the_row() {
+    use crate::lifecycle::drive_tests::{MIN, T0};
+    use crate::lifecycle::lead_checkpoint_tests::st98_samples;
+    let temp = crate::private_tempdir().expect("tempdir");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    feed_owner_samples(&store, &source, &vehicle, &st98_samples());
+    let history = store
+        .materialised_history(vehicle.vehicle_id)
+        .expect("history");
+    assert_eq!(history.drives.len(), 1);
+    assert_eq!(history.drives[0].end_date_ms, T0 + MIN);
+    // A and L1 stay under the drive; L2 to L5 are standalone.
+    assert_eq!(
+        placed_positions(&history),
+        vec![
+            (1, Some(1), T0),
+            (2, Some(1), T0 + MIN),
+            (3, None, T0 + 2 * MIN),
+            (4, None, T0 + 3 * MIN),
+            (5, None, T0 + 4 * MIN),
+            (6, None, T0 + 5 * MIN),
+        ]
+    );
+}

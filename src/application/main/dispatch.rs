@@ -35,6 +35,216 @@ fn current_vehicle_status_fields(
     })
 }
 
+/// The `status` JSON of one store under one loaded configuration (the whole
+/// command output, so tests run the production assembly). Readiness comes from
+/// the shared configuration-aware view: `ready` and `readinessReason` are the
+/// service tier only; `collectionAttention` is the single owner-resolvable
+/// condition, `readinessDetail` the healthy-only detail, `collectorRunning` the
+/// lease witness, and `collectorCadenceError` appears only for an active invalid
+/// cadence. The redacted lease timing stays in `collector`.
+fn build_status_report(
+    store: &HubStore,
+    config: &HubConfig,
+    now_ms: i64,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let vehicles = store.published_vehicles()?;
+    let configured = store.configured_tesla_vehicles()?;
+    let mut vehicle_summaries = Vec::with_capacity(vehicles.len());
+    for vehicle in &vehicles {
+        let binding = store.v2_projection_binding(vehicle.vehicle_id)?;
+        let latest =
+            store.latest_current_observation_metadata_for_vehicle(vehicle.vehicle_id)?;
+        let current = current_vehicle_status_fields(store, vehicle.vehicle_id)?;
+        let tesla_eid = configured.iter().find_map(|(vehicle_id, eid, _)| {
+            (*vehicle_id == vehicle.vehicle_id).then_some(*eid)
+        });
+        vehicle_summaries.push(serde_json::json!({
+            "vehicleId": vehicle.vehicle_id,
+            "displayName": vehicle.display_name,
+            "sourceCarId": binding.selected_car_id,
+            "teslaEid": tesla_eid,
+            "latestObservationId": latest.as_ref().map_or(0, |observation| observation.observation_id),
+            "latestObservedAtMs": latest.as_ref().map(|observation| observation.observed_at_ms),
+            "latestReceivedAtMs": latest.as_ref().map(|observation| observation.received_at_ms),
+            "activityState": current.activity_state,
+            "batteryLevel": current.battery_level,
+            "locationName": current.location_name,
+            "telemetryStatus": current.telemetry_status,
+        }));
+    }
+    let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());
+    let legacy_credentials = store.load_teslamate_legacy_tokens()?;
+    let fleet_credentials = store.load_fleet_tokens()?;
+    let (fleet_scope_summary, fleet_scope_status) = if fleet_credentials.is_some() {
+        match stored_fleet_scope_summary(store, &config.data_dir) {
+            Ok(summary) => (summary, Some("ready")),
+            Err(error) => {
+                let status = match error {
+                    FleetCredentialError::MissingCollectionScopes => {
+                        "missing_collection_scopes"
+                    }
+                    FleetCredentialError::InvalidAccessTokenClaims => {
+                        "invalid_access_token_claims"
+                    }
+                    FleetCredentialError::MigrationRequired => "migration_required",
+                    _ => "unavailable",
+                };
+                (None, Some(status))
+            }
+        }
+    } else {
+        (None, None)
+    };
+    let selected_credentials_present = match config.collector.provider {
+        CollectorProvider::Legacy => legacy_credentials.is_some(),
+        CollectorProvider::Fleet => fleet_credentials.is_some(),
+    };
+    // One configuration-aware read of the three readiness tiers: the loaded mode
+    // decides whether the credential status applies, an active cadence fault is
+    // attention, and a fault in an added read is reported as
+    // `catalogue_unavailable` inside the view instead of failing the command.
+    let collector_required = config.collector.interval_seconds > 0;
+    let cadence_violation = collector_required
+        .then(|| config.collector.cadence_violation())
+        .flatten();
+    let view = store.collector_readiness_view(&ReadinessContext::configured(
+        collector_required,
+        now_ms,
+        collector_mode(&config.collector),
+        cadence_violation.clone(),
+    ));
+    let collector = store.supervised_collector_lease_status()?;
+    let edge_delivery = if let Some(edge) = &config.collector.edge {
+        let counts = store.edge_ledger_counts(&edge.installation_id, &edge.lineage)?;
+        let diagnostic = store.edge_diagnostic(&edge.installation_id, &edge.lineage)?;
+        serde_json::json!({
+            "configured": true,
+            "state": diagnostic.as_ref().map_or("never_started", |value| value.state.as_str()),
+            "detail": diagnostic.as_ref().map_or("no Edge worker receipt", |value| value.detail.as_str()),
+            "updatedAtMs": diagnostic.as_ref().map(|value| value.updated_at_ms),
+            "pendingPublications": counts.pending_publications,
+            "ackFrontier": counts.ack_frontier,
+        })
+    } else {
+        serde_json::json!({"configured": false, "state": "disabled"})
+    };
+    let database_bytes = fs::metadata(store.database_path())?.len();
+
+    let mut report = serde_json::json!({
+            "status": "ok",
+            "version": teslatlas_hub::BUILD_VERSION,
+            "database": {
+                "path": store.database_path(),
+                "bytes": database_bytes,
+            },
+            "ready": view.service.is_ok(),
+            "readinessReason": view.service.err().map(|failure| failure.code),
+            "collectionAttention": view.attention,
+            "readinessDetail": view.detail,
+            "collectorRunning": view.running,
+            "collector": collector,
+            "provider": config.collector.provider,
+            "edgeDelivery": edge_delivery,
+            "vehicle": vehicle,
+            "vehicles": vehicle_summaries,
+            "credentials": {
+                "present": selected_credentials_present,
+            },
+            "legacyCredentials": {
+                "present": legacy_credentials.is_some(),
+                "expiresAt": legacy_credentials.as_ref().map(TeslaMateLegacyTokenStore::expires_at),
+                "nextRefreshAt": legacy_credentials
+                    .as_ref()
+                    .map(TeslaMateLegacyTokenStore::next_refresh_at),
+            },
+            "fleetCredentials": {
+                "present": fleet_credentials.is_some(),
+                "expiresAt": fleet_credentials.as_ref().map(|credentials| credentials.expires_at()),
+                "nextRefreshAt": fleet_credentials.as_ref().map(|credentials| credentials.next_refresh_at()),
+                "scopes": fleet_scope_summary,
+                "scopeStatus": fleet_scope_status,
+            },
+            "fleetTelemetry": {
+                "enabled": config.collector.fleet_telemetry.is_some(),
+                "configured": config.collector.fleet_telemetry.is_some(),
+                "mode": if config.collector.fleet_telemetry.is_some() {
+                    "native_push_configured"
+                } else {
+                    "disabled"
+                },
+                "operationalState": if config.collector.fleet_telemetry.is_some() {
+                    "requires_receiver_and_vehicle_receipt_proof"
+                } else {
+                    "disabled"
+                },
+                "paidVehicleDataPolling": config.collector.provider == CollectorProvider::Fleet
+                    && config.collector.interval_seconds > 0
+                    && config.collector.fleet_telemetry.is_none()
+                    && config.collector.edge.is_none(),
+                "deliveryPolicy": config.collector.fleet_telemetry.as_ref().map(|_| "latest"),
+            },
+        });
+    if let Some(violation) = cadence_violation {
+        report["collectorCadenceError"] = serde_json::to_value(violation.report())?;
+    }
+    Ok(report)
+}
+
+/// The bounded observation of one admitted Hub: the observer collector hands
+/// over its cursor key, then the server starts, until `control` ends it. The
+/// observer never takes the managed configuration wait: a cadence the
+/// configuration breaks refuses before the handoff, so no listener is ever
+/// built and the command fails with the exact cadence message instead of
+/// appearing to succeed (B2 clarification 3).
+#[cfg(unix)]
+async fn run_observe_orchestration<Control>(
+    store: HubStore,
+    config: HubConfig,
+    config_sha256: teslatlas_hub::protocol::Sha256Digest,
+    admission: std::sync::Arc<AdmittedUserHub>,
+    control: Control,
+) -> std::io::Result<()>
+where
+    Control: Future<Output = MacServeControl>,
+{
+    let collector_store = store.clone();
+    let collector_config = config.clone();
+    let collector_admission = std::sync::Arc::clone(&admission);
+    let server_config = config;
+    let server_admission = admission;
+    run_macos_serve_supervisor(
+        true,
+        move |ready, shutdown| async move {
+            collector::run_observer_for_admitted_user(
+                &collector_store,
+                &collector_config,
+                collector_admission,
+                ready,
+                async move {
+                    let _ = shutdown.await;
+                },
+            )
+            .await
+            .map_err(std::io::Error::other)
+        },
+        move |cursor_key, shutdown| async move {
+            server::serve_for_admitted_user(
+                store,
+                &server_config,
+                config_sha256,
+                server_admission,
+                cursor_key,
+                async move {
+                    let _ = shutdown.await;
+                },
+            )
+            .await
+        },
+        control,
+    )
+    .await
+}
+
 async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     let config_path = cli.config.unwrap_or_else(default_config_path);
 
@@ -204,6 +414,12 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return run_control(&config_path, *vehicle_id, command).await;
     }
 
+    // Like `control` this takes one short SQLite transaction and no instance lock,
+    // so it works while the collector runs.
+    if let Command::Collector { command } = &cli.command {
+        return run_collector_command(&config_path, command);
+    }
+
     #[cfg(not(unix))]
     if matches!(&cli.command, Command::Serve) {
         return Err("serve requires a Unix platform".into());
@@ -332,130 +548,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         Command::Status => {
             let config = HubConfig::load(&config_path)?;
             let store = HubStore::open_read_only(&config.data_dir)?;
-            let vehicles = store.published_vehicles()?;
-            let configured = store.configured_tesla_vehicles()?;
-            let mut vehicle_summaries = Vec::with_capacity(vehicles.len());
-            for vehicle in &vehicles {
-                let binding = store.v2_projection_binding(vehicle.vehicle_id)?;
-                let latest =
-                    store.latest_current_observation_metadata_for_vehicle(vehicle.vehicle_id)?;
-                let current = current_vehicle_status_fields(&store, vehicle.vehicle_id)?;
-                let tesla_eid = configured.iter().find_map(|(vehicle_id, eid, _)| {
-                    (*vehicle_id == vehicle.vehicle_id).then_some(*eid)
-                });
-                vehicle_summaries.push(serde_json::json!({
-                    "vehicleId": vehicle.vehicle_id,
-                    "displayName": vehicle.display_name,
-                    "sourceCarId": binding.selected_car_id,
-                    "teslaEid": tesla_eid,
-                    "latestObservationId": latest.as_ref().map_or(0, |observation| observation.observation_id),
-                    "latestObservedAtMs": latest.as_ref().map(|observation| observation.observed_at_ms),
-                    "latestReceivedAtMs": latest.as_ref().map(|observation| observation.received_at_ms),
-                    "activityState": current.activity_state,
-                    "batteryLevel": current.battery_level,
-                    "locationName": current.location_name,
-                    "telemetryStatus": current.telemetry_status,
-                }));
-            }
-            let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());
-            let legacy_credentials = store.load_teslamate_legacy_tokens()?;
-            let fleet_credentials = store.load_fleet_tokens()?;
-            let (fleet_scope_summary, fleet_scope_status) = if fleet_credentials.is_some() {
-                match stored_fleet_scope_summary(&store, &config.data_dir) {
-                    Ok(summary) => (summary, Some("ready")),
-                    Err(error) => {
-                        let status = match error {
-                            FleetCredentialError::MissingCollectionScopes => {
-                                "missing_collection_scopes"
-                            }
-                            FleetCredentialError::InvalidAccessTokenClaims => {
-                                "invalid_access_token_claims"
-                            }
-                            FleetCredentialError::MigrationRequired => "migration_required",
-                            _ => "unavailable",
-                        };
-                        (None, Some(status))
-                    }
-                }
-            } else {
-                (None, None)
-            };
-            let selected_credentials_present = match config.collector.provider {
-                CollectorProvider::Legacy => legacy_credentials.is_some(),
-                CollectorProvider::Fleet => fleet_credentials.is_some(),
-            };
-            let readiness = store
-                .service_readiness_at(config.collector.interval_seconds > 0, current_epoch_ms()?);
-            let collector = store.supervised_collector_lease_status()?;
-            let edge_delivery = if let Some(edge) = &config.collector.edge {
-                let counts = store.edge_ledger_counts(&edge.installation_id, &edge.lineage)?;
-                let diagnostic = store.edge_diagnostic(&edge.installation_id, &edge.lineage)?;
-                serde_json::json!({
-                    "configured": true,
-                    "state": diagnostic.as_ref().map_or("never_started", |value| value.state.as_str()),
-                    "detail": diagnostic.as_ref().map_or("no Edge worker receipt", |value| value.detail.as_str()),
-                    "updatedAtMs": diagnostic.as_ref().map(|value| value.updated_at_ms),
-                    "pendingPublications": counts.pending_publications,
-                    "ackFrontier": counts.ack_frontier,
-                })
-            } else {
-                serde_json::json!({"configured": false, "state": "disabled"})
-            };
-            let database_bytes = fs::metadata(store.database_path())?.len();
-            println!(
-                "{}",
-                serde_json::json!({
-                    "status": "ok",
-                    "version": teslatlas_hub::BUILD_VERSION,
-                    "database": {
-                        "path": store.database_path(),
-                        "bytes": database_bytes,
-                    },
-                    "ready": readiness.is_ok(),
-                    "readinessReason": readiness.err().map(|failure| failure.code),
-                    "collector": collector,
-                    "provider": config.collector.provider,
-                    "edgeDelivery": edge_delivery,
-                    "vehicle": vehicle,
-                    "vehicles": vehicle_summaries,
-                    "credentials": {
-                        "present": selected_credentials_present,
-                    },
-                    "legacyCredentials": {
-                        "present": legacy_credentials.is_some(),
-                        "expiresAt": legacy_credentials.as_ref().map(TeslaMateLegacyTokenStore::expires_at),
-                        "nextRefreshAt": legacy_credentials
-                            .as_ref()
-                            .map(TeslaMateLegacyTokenStore::next_refresh_at),
-                    },
-                    "fleetCredentials": {
-                        "present": fleet_credentials.is_some(),
-                        "expiresAt": fleet_credentials.as_ref().map(|credentials| credentials.expires_at()),
-                        "nextRefreshAt": fleet_credentials.as_ref().map(|credentials| credentials.next_refresh_at()),
-                        "scopes": fleet_scope_summary,
-                        "scopeStatus": fleet_scope_status,
-                    },
-                    "fleetTelemetry": {
-                        "enabled": config.collector.fleet_telemetry.is_some(),
-                        "configured": config.collector.fleet_telemetry.is_some(),
-                        "mode": if config.collector.fleet_telemetry.is_some() {
-                            "native_push_configured"
-                        } else {
-                            "disabled"
-                        },
-                        "operationalState": if config.collector.fleet_telemetry.is_some() {
-                            "requires_receiver_and_vehicle_receipt_proof"
-                        } else {
-                            "disabled"
-                        },
-                        "paidVehicleDataPolling": config.collector.provider == CollectorProvider::Fleet
-                            && config.collector.interval_seconds > 0
-                            && config.collector.fleet_telemetry.is_none()
-                            && config.collector.edge.is_none(),
-                        "deliveryPolicy": config.collector.fleet_telemetry.as_ref().map(|_| "latest"),
-                    },
-                })
-            );
+            let report = build_status_report(&store, &config, current_epoch_ms()?)?;
+            println!("{report}");
             return Ok(());
         }
         #[cfg(unix)]
@@ -498,7 +592,10 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         )?;
                     }
                     CollectorProvider::Fleet => {
-                        validate_stored_fleet_credentials(store, &config.data_dir)?;
+                        // Diagnostic admission, read-only: an identified
+                        // unresolved refresh passes (the Hub starts as a running
+                        // reconnect stop); independent integrity failures do not.
+                        inspect_stored_fleet_credentials(store, &config.data_dir)?;
                     }
                 }
                 Ok(())
@@ -735,6 +832,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         | Command::Status
         | Command::TeslaMateCheck { .. }
         | Command::Control { .. }
+        | Command::Collector { .. }
         | Command::ObservationWatermark { .. }
         | Command::VerifyObservation { .. } => {
             unreachable!("read-only commands return before opening writable Hub state")
@@ -781,6 +879,11 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
 
                 let collector_enabled = collector_can_start(&store, &config)?;
                 log_runtime_inventory(&store, &config);
+                if collector_enabled {
+                    // Once per start: a clamped stream timeout or an ignored
+                    // key (C3 R21).
+                    config.collector.log_start_notices();
+                }
                 tracing::info!(
                     collector_enabled,
                     provider = ?config.collector.provider,
@@ -869,45 +972,17 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             use tokio::signal::unix::{SignalKind, signal};
             let mut sigterm = signal(SignalKind::terminate())?;
 
-            let collector_store = store.clone();
-            let collector_config = config.clone();
-            let collector_admission = std::sync::Arc::clone(&admission);
-            let server_config = config;
-            let server_admission = std::sync::Arc::clone(&admission);
             let control_admission = std::sync::Arc::clone(&admission);
             tracing::info!(
                 duration_seconds,
-                provider = ?collector_config.collector.provider,
+                provider = ?config.collector.provider,
                 "Hub bounded observation starting"
             );
-            let observe_result = run_macos_serve_supervisor(
-                true,
-                move |ready, shutdown| async move {
-                    collector::run_observer_for_admitted_user(
-                        &collector_store,
-                        &collector_config,
-                        collector_admission,
-                        ready,
-                        async move {
-                            let _ = shutdown.await;
-                        },
-                    )
-                    .await
-                    .map_err(std::io::Error::other)
-                },
-                move |cursor_key, shutdown| async move {
-                    server::serve_for_admitted_user(
-                        store,
-                        &server_config,
-                        config_sha256,
-                        server_admission,
-                        cursor_key,
-                        async move {
-                            let _ = shutdown.await;
-                        },
-                    )
-                    .await
-                },
+            let observe_result = run_observe_orchestration(
+                store,
+                config,
+                config_sha256,
+                admission,
                 async move {
                     tokio::select! {
                         error = control_admission.wait_until_invalid() => {

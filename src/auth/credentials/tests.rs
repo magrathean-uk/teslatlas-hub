@@ -2,6 +2,9 @@
 
 use super::*;
 
+#[path = "refresh_tests.rs"]
+mod refresh_tests;
+
 #[test]
 fn owner_tokens_are_redacted_and_zeroizable_on_drop() {
     fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
@@ -201,14 +204,18 @@ async fn hub_teslamate_store_refreshes_and_reopens_with_the_successor() {
     assert_eq!(stored.expires_at(), expected_expires);
     assert_eq!(stored.next_refresh_at(), expected_next_refresh);
 
-    assert!(matches!(
-        stale_manager
-            .refresh_now(&Client::new(), SystemTime::now())
-            .await,
-        Err(LegacyAuthManagerError::Auth(
-            LegacyAuthError::SensitiveRotationOutcomeUnknown
-        ))
-    ));
+    // C5 R44a, R62: the second manager finds the row changed by the first one's
+    // refresh. That is a pair the unit itself wrote, so it loads it and sends
+    // nothing; it is not a sign-out.
+    stale_manager
+        .refresh_now(&Client::new(), SystemTime::now())
+        .await
+        .expect("the stale authority adopts the successor");
+    assert_eq!(
+        stale_manager.access_token(),
+        crate::fake_tesla::FAKE_REFRESHED_ACCESS_TOKEN
+    );
+    assert_eq!(stale_manager.generation(), manager.generation());
     assert_eq!(fake.token_refresh_request_count(), 1);
     assert!(
         !store
@@ -280,7 +287,9 @@ async fn runtime_replacement_after_refresh_receipt_begin_cancels_before_token_po
     let checks = Arc::new(AtomicUsize::new(0));
     let guarded_checks = Arc::clone(&checks);
     manager.sensitive_access = Arc::new(move || {
-        if guarded_checks.fetch_add(1, Ordering::SeqCst) < 2 {
+        // The check before the attempt passes; the one after the reservation
+        // (C5 R17) does not.
+        if guarded_checks.fetch_add(1, Ordering::SeqCst) < 1 {
             Ok(())
         } else {
             Err(CredentialError::SensitiveAccessUnavailable)
@@ -294,7 +303,7 @@ async fn runtime_replacement_after_refresh_receipt_begin_cancels_before_token_po
             LegacyAuthError::SensitiveAccessUnavailable
         ))
     ));
-    assert_eq!(checks.load(Ordering::SeqCst), 3);
+    assert_eq!(checks.load(Ordering::SeqCst), 2);
     assert_eq!(fake.token_refresh_request_count(), 0);
     assert!(
         !store
@@ -371,29 +380,57 @@ async fn post_send_refresh_failure_is_terminal_until_explicit_new_credentials() 
     )
     .expect("load initial pair");
     crate::crypto::install_default_provider();
+    // C5 R45 row 4: a grant that cannot be used leaves the attempt unresolved
+    // and the account in `sign_in_required`; no token request follows.
     assert!(matches!(
         manager.refresh_now(&Client::new(), SystemTime::now()).await,
         Err(LegacyAuthManagerError::Auth(
-            LegacyAuthError::SensitiveRotationOutcomeUnknown
+            LegacyAuthError::InvalidResponse
         ))
     ));
     response_task.await.expect("response task");
-    assert!(matches!(
-        manager.refresh_now(&Client::new(), SystemTime::now()).await,
-        Err(LegacyAuthManagerError::Auth(
-            LegacyAuthError::SensitiveRotationOutcomeUnknown
-        ))
-    ));
-    assert!(matches!(
-        LegacyAuthManager::from_hub_teslamate_store_with_issuer(
-            store.clone(),
-            data.path(),
-            issuer.clone(),
+    // C5-S2: the account is in `sign_in_required`, which stops token requests only
+    // (R43). A forced refresh is told that none is possible, which is a wait for
+    // the caller and not the terminal error of a sign-out the state does not hold
+    // (R56): the access token is still usable here.
+    let refused = manager
+        .refresh_now(&Client::new(), SystemTime::now())
+        .await
+        .expect_err("no token request follows");
+    assert!(
+        matches!(
+            refused,
+            LegacyAuthManagerError::Auth(LegacyAuthError::RefreshNotPossible)
         ),
-        Err(LegacyAuthManagerError::Auth(
-            LegacyAuthError::SensitiveRotationOutcomeUnknown
-        ))
+        "{refused:?}"
+    );
+    assert!(!refused.is_terminal_auth_failure());
+    assert_eq!(
+        manager.status_now().state,
+        crate::legacy_auth::state::AuthState::SignInRequired
+    );
+    // A restart builds the manager in its stopped state (C5-B2, R57 step 3): it
+    // sends nothing, hands out no token and says why, so the collector can start,
+    // show the state and wait for the owner.
+    let restarted = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+        store.clone(),
+        data.path(),
+        issuer.clone(),
+    )
+    .expect("a stopped manager");
+    assert!(matches!(
+        restarted.access_token_for_sensitive_use(),
+        Err(LegacyAuthManagerError::Auth(LegacyAuthError::SignedOut {
+            reason: crate::legacy_auth::SignOutReason::RefreshOutcomeUnknown
+        }))
     ));
+    let status = restarted.status_now();
+    assert_eq!(
+        status.state,
+        crate::legacy_auth::state::AuthState::SignedOut
+    );
+    assert!(status.state.lease_is_terminal());
+    drop(restarted);
 
     let replacement =
         OwnerTokens::from_secret_parts("fresh-access".to_owned(), "fresh-refresh".to_owned())
@@ -440,12 +477,275 @@ fn postgres_password_parsing() {
     assert!(TeslaMatePostgresPassword::from_bytes(b"bad\n\n").is_err());
 }
 
+/// C5T-03, R45 row 5, R24: a failed write of a successor is a wait for the write
+/// and not a loss of the authority to use the credential. The manager never
+/// reports it to a caller (the successor is held and the write retried), and the
+/// two errors that name it are not the collector's sensitive-access fence, which
+/// ends the run. The real loss of the admission and an outcome of a refresh that
+/// is unknown while the guard fails still are.
 #[test]
-fn refreshed_pair_persistence_failure_is_terminal() {
+fn a_failed_write_of_a_successor_is_a_wait_and_not_a_lost_authority() {
     for error in [
         LegacyAuthManagerError::Auth(LegacyAuthError::Persistence),
         LegacyAuthManagerError::Auth(LegacyAuthError::SensitivePersistenceUnavailable),
     ] {
-        assert!(error.is_sensitive_access_failure());
+        assert!(!error.is_sensitive_access_failure(), "{error:?}");
+        assert!(!error.is_terminal_auth_failure(), "{error:?}");
+    }
+    for error in [
+        LegacyAuthManagerError::Auth(LegacyAuthError::SensitiveAccessUnavailable),
+        LegacyAuthManagerError::Auth(LegacyAuthError::SensitiveRotationOutcomeUnknown),
+        LegacyAuthManagerError::Credential(CredentialError::SensitiveAccessUnavailable),
+    ] {
+        assert!(error.is_sensitive_access_failure(), "{error:?}");
+    }
+}
+
+/// A JWT-shaped access token with the given payload (C5 spec section 8 `jwt`).
+fn jwt_for_test(payload: serde_json::Value) -> String {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    format!(
+        "{}.{}.c2ln",
+        URL_SAFE_NO_PAD.encode(br#"{"alg":"none","typ":"JWT"}"#),
+        URL_SAFE_NO_PAD.encode(payload.to_string())
+    )
+}
+
+fn seed_pair(
+    store: &crate::db::HubStore,
+    data_dir: &Path,
+    access: &str,
+    refresh: &str,
+    schedule: Option<(i64, i64)>,
+) {
+    crate::teslamate_credentials::replace_key(data_dir, b"test-cloak-key").expect("private key");
+    let key = crate::teslamate_credentials::load_key(data_dir).expect("load private key");
+    let tokens = OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned())
+        .expect("stored tokens");
+    let (access, refresh) =
+        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+            .expect("encrypt tokens");
+    let stored = match schedule {
+        Some((expires_at, next_refresh_at)) => crate::db::TeslaMateLegacyTokenStore::refreshed(
+            access,
+            refresh,
+            expires_at,
+            next_refresh_at,
+        ),
+        None => crate::db::TeslaMateLegacyTokenStore::imported(access, refresh),
+    }
+    .expect("schedule");
+    store
+        .replace_teslamate_legacy_tokens(&stored)
+        .expect("store tokens");
+}
+
+fn tesla_endpoint(region: Option<crate::tesla_stream::StreamRegion>) -> AuthEndpointConfig {
+    AuthEndpointConfig {
+        mode: crate::legacy_auth::AuthMode::Tesla,
+        region,
+        token_url: None,
+        allow_loopback_http: false,
+    }
+}
+
+/// C5 spec test 84 and test 74 at the manager: every production constructor
+/// takes the endpoint configuration, pasted whitespace is trimmed in memory
+/// only, and the single-use fence is keyed by the generation of the stored
+/// bytes, never of the trimmed copy.
+#[test]
+fn production_constructors_take_the_endpoint_and_key_the_fence_by_the_stored_bytes() {
+    let data = crate::private_tempdir().expect("data directory");
+    let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
+    let access = jwt_for_test(serde_json::json!({
+        "iss": "https://auth.tesla.cn/oauth2/v3",
+        "exp": 1_800_028_800_i64,
+    }));
+    // Surrounding spaces survive the credential helpers (only control bytes
+    // are refused there), so a pasted pair like this can be stored.
+    let padded_access = format!("{access} ");
+    seed_pair(
+        &store,
+        data.path(),
+        &padded_access,
+        "refresh-0 ",
+        Some((1_800_028_800, 1_800_021_600)),
+    );
+    let raw_tokens =
+        OwnerTokens::from_secret_parts(padded_access, "refresh-0 ".to_owned()).expect("raw tokens");
+    let expected_generation =
+        crate::teslamate_token::legacy_refresh_credential_generation(&raw_tokens);
+    let trimmed_tokens =
+        OwnerTokens::from_secret_parts(access.clone(), "refresh-0".to_owned()).expect("trimmed");
+    assert_ne!(
+        expected_generation,
+        crate::teslamate_token::legacy_refresh_credential_generation(&trimmed_tokens),
+        "the trimmed copy would be a different generation"
+    );
+
+    let managed = LegacyAuthManager::from_hub_teslamate_store(
+        store.clone(),
+        data.path(),
+        &tesla_endpoint(None),
+    )
+    .expect("managed manager");
+    assert_eq!(managed.access_token(), access);
+    assert_eq!(managed.refresh_token(), "refresh-0");
+    assert_eq!(managed.region(), crate::tesla_stream::StreamRegion::China);
+    // The row is bound to the generation of its stored bytes at construction.
+    let stored_generation = store
+        .load_teslamate_legacy_tokens()
+        .expect("load row")
+        .expect("a row")
+        .credential_generation();
+    let LegacyAuthPersistence::HubTeslaMate(persistence) = &managed.persistence else {
+        panic!("a store-backed manager");
+    };
+    let (receipt, input_generation) = persistence.begin_refresh().expect("begin the attempt");
+    assert_eq!(input_generation, expected_generation);
+    assert_eq!(Some(input_generation), stored_generation);
+    persistence
+        .cancel_refresh(receipt, input_generation)
+        .expect("cancel the unsent attempt");
+
+    let observer = LegacyAuthManager::from_hub_teslamate_store_observer(
+        store,
+        data.path(),
+        &tesla_endpoint(None),
+    )
+    .expect("observer manager");
+    assert_eq!(observer.refresh_token(), "refresh-0");
+    assert_eq!(observer.region(), crate::tesla_stream::StreamRegion::China);
+}
+
+/// C5 R5 at the manager (C5-B2): a configuration the token contradicts builds the
+/// manager in its configuration-error state. It sends nothing and hands out no
+/// token, and the collector still starts (R43), takes its lease and shows the
+/// state; a construction that failed here would end the run before its
+/// readiness. Nothing is stored as a stop (R5), so the next start with the
+/// configuration fixed is ready.
+#[test]
+fn the_manager_is_built_in_a_configuration_error_for_a_conflicting_or_missing_region() {
+    use crate::legacy_auth::state::AuthState;
+
+    let data = crate::private_tempdir().expect("data directory");
+    let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
+    seed_pair(&store, data.path(), "opaque-access-0001", "refresh-0", None);
+    let manager = LegacyAuthManager::from_hub_teslamate_store(
+        store.clone(),
+        data.path(),
+        &tesla_endpoint(None),
+    )
+    .expect("a stopped manager is still a manager");
+    assert_eq!(manager.status_now().state, AuthState::ConfigurationError);
+    assert!(matches!(
+        manager.access_token_for_sensitive_use(),
+        Err(LegacyAuthManagerError::Auth(
+            LegacyAuthError::RegionRequired
+        ))
+    ));
+    assert!(matches!(
+        manager.wait_view(manager.clock()),
+        AuthWait::Stopped
+    ));
+    assert_eq!(
+        manager.region(),
+        crate::tesla_stream::StreamRegion::Global,
+        "the data hosts of a stopped manager follow the configured region, else the global one"
+    );
+    let row = store
+        .load_collector_auth_row()
+        .unwrap()
+        .expect("a status row");
+    assert_eq!(
+        (row.state.as_str(), row.reason.as_deref()),
+        ("configuration_error", Some("region_required"))
+    );
+    assert!(row.stopped_generation.is_none(), "not a stored stop (R5)");
+    drop(manager);
+    // The configuration fixed, the next start is ready with no owner action.
+    let manager = LegacyAuthManager::from_hub_teslamate_store(
+        store.clone(),
+        data.path(),
+        &tesla_endpoint(Some(crate::tesla_stream::StreamRegion::China)),
+    )
+    .expect("the fixed configuration");
+    assert_eq!(manager.status_now().state, AuthState::Ready);
+    assert_eq!(manager.region(), crate::tesla_stream::StreamRegion::China);
+    assert!(manager.access_token_for_sensitive_use().is_ok());
+    drop(manager);
+    // A token of the global issuer and a configured China region contradict each
+    // other (R5): the manager is stopped, and the data hosts it names follow the
+    // configured region.
+    let global_token = jwt_for_test(serde_json::json!({
+        "iss": "https://auth.tesla.com/oauth2/v3",
+        "exp": 1_800_028_800_i64,
+    }));
+    seed_pair(&store, data.path(), &global_token, "refresh-0", None);
+    let manager = LegacyAuthManager::from_hub_teslamate_store(
+        store,
+        data.path(),
+        &tesla_endpoint(Some(crate::tesla_stream::StreamRegion::China)),
+    )
+    .expect("a stopped manager");
+    assert_eq!(manager.status_now().state, AuthState::ConfigurationError);
+    assert_eq!(manager.region(), crate::tesla_stream::StreamRegion::China);
+}
+
+/// R-P3bF4-4 at the constructor: an interrupted key replacement is settled only while
+/// the run's guard admits it. A guard that has observed the loss refuses the settlement,
+/// and the refusal is the bare loss of the sensitive access, the error every other path
+/// of the unit reports for it, and not a fault of a credential file. Both key files stay
+/// as they were.
+#[test]
+fn a_refused_key_settlement_is_the_bare_loss_of_the_sensitive_access() {
+    for replacement_committed in [true, false] {
+        let data = crate::private_tempdir().expect("data directory");
+        let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
+        seed_pair(&store, data.path(), "opaque-access-0001", "refresh-0", None);
+        if replacement_committed {
+            crate::teslamate_credentials::leave_previous_key_for_test(data.path(), b"left-over")
+                .expect("a leftover previous generation");
+        } else {
+            crate::teslamate_credentials::begin_key_replacement_for_test(data.path(), b"newer-key")
+                .expect("a replacement that did not commit");
+        }
+        let current = crate::teslamate_credentials::key_path(data.path());
+        let previous = data
+            .path()
+            .join("secrets")
+            .join(".teslamate-encryption.previous.key");
+        let seeded = (
+            std::fs::read(&current).expect("the current key"),
+            std::fs::read(&previous).expect("the previous generation was seeded"),
+        );
+        let lost: LossObserver = Arc::new(|| true);
+        let outcome = LegacyAuthManager::from_hub_teslamate_store_with_policy(
+            store,
+            data.path(),
+            LegacyAuthRefreshPolicy::Managed,
+            AuthMode::Tesla,
+            crate::tesla_stream::StreamRegion::Global,
+            endpoint_rebuild(&tesla_endpoint(None)),
+            Arc::new(SystemEnv),
+            Some(lost),
+        );
+        assert!(
+            matches!(
+                outcome,
+                Err(LegacyAuthManagerError::Credential(
+                    CredentialError::SensitiveAccessUnavailable
+                ))
+            ),
+            "{replacement_committed}: {outcome:?}"
+        );
+        let after = (
+            std::fs::read(&current).expect("the current key is still there"),
+            std::fs::read(&previous).expect("the previous generation is still there"),
+        );
+        assert!(
+            after == seeded,
+            "{replacement_committed}: a key file was removed or restored"
+        );
     }
 }

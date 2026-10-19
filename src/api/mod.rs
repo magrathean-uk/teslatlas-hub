@@ -8,4 +8,6 @@ pub mod owner_api;
 pub mod protocol;
 pub(crate) mod public_query;
 pub mod server;
+#[cfg(test)]
+pub(crate) mod test_egress_guard;
 pub mod transport;

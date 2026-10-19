@@ -747,3 +747,295 @@ fn t61_a_restart_mid_charge_gives_the_same_row_and_car_as_an_uninterrupted_run()
     assert_eq!(restarted_car, car);
     assert_eq!(restarted_mutations, mutations);
 }
+
+// ---------------------------------------------- C2 B2 amendment B (R71)
+
+/// One sample of T67's session L: time `T0 + 30 s * k`, ids falling as time
+/// rises, level `40 + k / 60`, counter `3k / 100`, and a rated range only at
+/// the listed steps.
+fn t67_sample(k: i64) -> crate::hub_pack::ProjectionChargeSample {
+    let rated = match k {
+        0 => Some(100.00),
+        999 => Some(249.85),
+        1_999 => Some(400.00),
+        2_999 => Some(550.00),
+        3_059 => Some(711.80),
+        3_249 => Some(712.00),
+        _ => None,
+    };
+    let mut sample = cost_sample(10_000 - k, 3, 30_000 * k, Some((3 * k) as f64 / 100.0));
+    sample.battery_level = Some(40 + k / 60);
+    sample.rated_range_km = rated;
+    sample
+}
+
+fn t67_samples() -> Vec<crate::hub_pack::ProjectionChargeSample> {
+    (0..3_250).map(t67_sample).collect()
+}
+
+/// Vehicle V with a car row whose efficiency is None, two small sessions
+/// (figures 140.0 and 160.0) and session L of 3,250 samples, stored directly.
+fn t67_store() -> (tempfile::TempDir, HubStore, VehicleRecord) {
+    let (directory, store, vehicle) = eff_store();
+    let v = vehicle.vehicle_id;
+    eff_put_car(&store, v, None);
+    eff_put(&store, v, 1, 22.40);
+    eff_put(&store, v, 2, 25.60);
+    let mut connection = store.open().expect("connection");
+    let mut row = cost_row(3, None, None, Some(false), None);
+    row.end_date_ms = Some(COST_T0 + 3_250 * 30_000);
+    let transaction = connection.transaction().expect("transaction");
+    transaction
+        .execute(
+            "INSERT INTO materialised_charges(vehicle_id, charge_id, car_id, charge_json)
+             VALUES (?1, 3, 1, ?2)",
+            params![v.to_string(), serde_json::to_string(&row).expect("row json")],
+        )
+        .expect("insert row");
+    for sample in t67_samples() {
+        transaction
+            .execute(
+                "INSERT INTO materialised_charge_samples(
+                    vehicle_id, sample_id, charge_id, sample_json
+                 ) VALUES (?1, ?2, 3, ?3)",
+                params![
+                    v.to_string(),
+                    sample.id,
+                    serde_json::to_string(&sample).expect("sample json")
+                ],
+            )
+            .expect("insert sample");
+    }
+    transaction.commit().expect("commit");
+    (directory, store, vehicle)
+}
+
+fn t67_read(store: &HubStore, vehicle: Uuid, charge_id: i64, page_rows: i64) -> SessionEfficiencyRead {
+    let mut connection = store.open().expect("connection");
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .expect("begin");
+    let read = read_session_efficiency(&transaction, vehicle, charge_id, page_rows).expect("read");
+    transaction.commit().expect("commit");
+    read
+}
+
+/// `json_set` on one stored sample of session L (`k`), as a test edit.
+fn t67_edit(store: &HubStore, vehicle: Uuid, k: i64, set: &str, value: &str) {
+    store
+        .open()
+        .expect("connection")
+        .execute(
+            &format!(
+                "UPDATE materialised_charge_samples
+                 SET sample_json = json_set(sample_json, '$.{set}', json('{value}'))
+                 WHERE vehicle_id = ?1 AND sample_id = ?2"
+            ),
+            params![vehicle.to_string(), 10_000 - k],
+        )
+        .expect("edit sample");
+}
+
+#[test]
+fn t67_a_a_session_larger_than_three_pages_gives_the_whole_session_figure() {
+    assert_eq!(K_EFF_SAMPLE_PAGE, 1_000);
+    let (_directory, store, vehicle) = t67_store();
+    let v = vehicle.vehicle_id;
+    let read = t67_read(&store, v, 3, K_EFF_SAMPLE_PAGE);
+    let expected = crate::lifecycle::session_efficiency_wh_per_km(&t67_samples());
+    assert!((read.figure.expect("figure") - 150.0).abs() < 1e-9, "{read:?}");
+    assert_eq!(read.figure.map(f64::to_bits), expected.map(f64::to_bits));
+    assert_eq!(
+        (read.rows, read.queries, read.largest_page, read.undecodable),
+        (3_250, 4, 1_000, false)
+    );
+    eff_recompute(&store, v);
+    assert_eq!(eff_car_of(&store, v).efficiency_wh_per_km, Some(150.0));
+    assert_eq!(eff_car_mutations(&store, v), 1);
+}
+
+#[test]
+fn t67_b_to_e_a_heater_or_a_decrease_in_any_page_is_seen() {
+    // (b) A heater between A and B on a sample that is not a window sample
+    // (second page).
+    let (_directory, store, vehicle) = t67_store();
+    let v = vehicle.vehicle_id;
+    t67_edit(&store, v, 1_500, "battery_heater_on", "true");
+    assert_eq!(t67_read(&store, v, 3, K_EFF_SAMPLE_PAGE).figure, None);
+    eff_recompute(&store, v);
+    assert_eq!(eff_car_of(&store, v).efficiency_wh_per_km, None);
+    assert_eq!(eff_car_mutations(&store, v), 0);
+
+    // (c) A heater after B (fourth page) changes nothing.
+    let (_directory, store, vehicle) = t67_store();
+    let v = vehicle.vehicle_id;
+    t67_edit(&store, v, 3_100, "battery_heater_on", "true");
+    let read = t67_read(&store, v, 3, K_EFF_SAMPLE_PAGE);
+    assert!((read.figure.expect("figure") - 150.0).abs() < 1e-9);
+
+    // (d) A heater on B itself (fourth page).
+    let (_directory, store, vehicle) = t67_store();
+    let v = vehicle.vehicle_id;
+    t67_edit(&store, v, 3_059, "battery_heater", "true");
+    assert_eq!(t67_read(&store, v, 3, K_EFF_SAMPLE_PAGE).figure, None);
+
+    // (e) A counter below the previous window sample's, across the first and
+    // second pages (k = 999 holds 29.97).
+    let (_directory, store, vehicle) = t67_store();
+    let v = vehicle.vehicle_id;
+    t67_edit(&store, v, 1_999, "charge_energy_added_kwh", "29.96");
+    assert_eq!(t67_read(&store, v, 3, K_EFF_SAMPLE_PAGE).figure, None);
+}
+
+#[test]
+fn t67_f_an_undecodable_sample_gives_the_session_no_figure_and_is_counted() {
+    arm_fill_log_capture();
+    let (_directory, store, vehicle) = t67_store();
+    let v = vehicle.vehicle_id;
+    store
+        .open()
+        .expect("connection")
+        .execute(
+            "UPDATE materialised_charge_samples SET sample_json = '{}'
+             WHERE vehicle_id = ?1 AND sample_id = ?2",
+            params![v.to_string(), 10_000 - 2_500],
+        )
+        .expect("corrupt sample");
+    let read = t67_read(&store, v, 3, K_EFF_SAMPLE_PAGE);
+    assert!(read.undecodable);
+    assert_eq!(read.figure, None);
+    assert_eq!(read.rows, 3_249, "placed against 3,250 counted");
+    eff_recompute(&store, v);
+    assert_eq!(eff_car_of(&store, v).efficiency_wh_per_km, None);
+    let logs = eff_plain(take_fill_logs());
+    assert!(logs.contains("skipped=1"), "one skipped session counted: {logs}");
+}
+
+/// T68's session: T50's six samples at `T0 + 10 min * k`, `sample_id` and
+/// `id` `6 - k`, so the ids fall as time rises.
+fn t68_store() -> (tempfile::TempDir, HubStore, VehicleRecord, Vec<crate::hub_pack::ProjectionChargeSample>) {
+    let (directory, store, vehicle) = eff_store();
+    let v = vehicle.vehicle_id;
+    eff_put_car(&store, v, None);
+    let mut row = cost_row(1, None, None, Some(false), None);
+    row.end_date_ms = Some(COST_T0 + 60 * COST_MIN);
+    let connection = store.open().expect("connection");
+    connection
+        .execute(
+            "INSERT INTO materialised_charges(vehicle_id, charge_id, car_id, charge_json)
+             VALUES (?1, 1, 1, ?2)",
+            params![v.to_string(), serde_json::to_string(&row).expect("row json")],
+        )
+        .expect("insert row");
+    let figures = [
+        (50, 200.00, 0.00),
+        (60, 240.00, 6.00),
+        (70, 280.00, 12.00),
+        (80, 320.00, 18.00),
+        (90, 360.00, 24.00),
+        (95, 380.00, 27.00),
+    ];
+    let mut samples = Vec::new();
+    for (k, (level, rated, counter)) in figures.into_iter().enumerate() {
+        let k = k as i64;
+        let mut sample = cost_sample(6 - k, 1, 10 * COST_MIN * k, Some(counter));
+        sample.battery_level = Some(level);
+        sample.rated_range_km = Some(rated);
+        connection
+            .execute(
+                "INSERT INTO materialised_charge_samples(
+                    vehicle_id, sample_id, charge_id, sample_json
+                 ) VALUES (?1, ?2, 1, ?3)",
+                params![
+                    v.to_string(),
+                    sample.id,
+                    serde_json::to_string(&sample).expect("sample json")
+                ],
+            )
+            .expect("insert sample");
+        samples.push(sample);
+    }
+    (directory, store, vehicle, samples)
+}
+
+#[test]
+fn t68_a_the_page_size_changes_the_queries_and_never_the_figure() {
+    let (_directory, store, vehicle, samples) = t68_store();
+    let expected = crate::lifecycle::session_efficiency_wh_per_km(&samples);
+    assert_eq!(expected, Some(150.0));
+    for (page, queries, largest) in [(1, 7, 1), (2, 4, 2), (4, 2, 4), (6, 2, 6), (1_000, 1, 6)] {
+        let read = t67_read(&store, vehicle.vehicle_id, 1, page);
+        assert_eq!(read.figure.map(f64::to_bits), expected.map(f64::to_bits), "page {page}");
+        assert_eq!(
+            (read.rows, read.queries, read.largest_page, read.undecodable),
+            (6, queries, largest, false),
+            "page {page}"
+        );
+    }
+}
+
+#[test]
+fn t68_b_a_rejection_does_not_end_the_reading() {
+    let (_directory, store, vehicle, _) = t68_store();
+    let v = vehicle.vehicle_id;
+    // The level-80 sample is k = 3, sample id 3, on the second page of two.
+    store
+        .open()
+        .expect("connection")
+        .execute(
+            "UPDATE materialised_charge_samples
+             SET sample_json = json_set(sample_json, '$.battery_heater_on', json('true'))
+             WHERE vehicle_id = ?1 AND sample_id = 3",
+            params![v.to_string()],
+        )
+        .expect("heater");
+    let read = t67_read(&store, v, 1, 2);
+    assert_eq!((read.figure, read.undecodable, read.rows), (None, false, 6));
+}
+
+#[test]
+fn t68_c_a_row_that_is_not_the_sample_it_claims_to_be_makes_the_session_undecodable() {
+    // The level-70 sample is k = 2, sample id 4. Three ways to be wrong: no
+    // time (the row is never placed: 5 rows against 6 counted), a time that
+    // is not a number (it casts to 0, so the row is placed and then fails to
+    // decode) and a decoded id that differs from the row's key.
+    let edits = [
+        ("no time", "'{}'"),
+        (
+            "time not a number",
+            "json_set(sample_json, '$.timestamp_ms', 'x')",
+        ),
+        ("id differs from its key", "json_set(sample_json, '$.id', 99)"),
+    ];
+    for (label, expression) in edits {
+        arm_fill_log_capture();
+        let (_directory, store, vehicle, _) = t68_store();
+        let v = vehicle.vehicle_id;
+        store
+            .open()
+            .expect("connection")
+            .execute(
+                &format!(
+                    "UPDATE materialised_charge_samples SET sample_json = {expression}
+                     WHERE vehicle_id = ?1 AND sample_id = 4"
+                ),
+                params![v.to_string()],
+            )
+            .expect("edit");
+        let read = t67_read(&store, v, 1, 2);
+        assert_eq!((read.figure, read.undecodable), (None, true), "{label}");
+        eff_recompute(&store, v);
+        let logs = eff_plain(take_fill_logs());
+        assert!(logs.contains("skipped=1"), "{label}: counted once: {logs}");
+    }
+}
+
+#[test]
+fn t68_d_a_charge_with_no_samples_gives_no_figure_from_one_query() {
+    let (_directory, store, vehicle) = eff_store();
+    let read = t67_read(&store, vehicle.vehicle_id, 77, 2);
+    assert_eq!(
+        (read.figure, read.rows, read.queries, read.undecodable),
+        (None, 0, 1, false)
+    );
+}

@@ -272,6 +272,28 @@ fn grant_authority_rows(data: &Path) -> (i64, i64, i64) {
     )
 }
 
+/// Rewind a current catalogue to the v70 shape: the v71 credential status
+/// table goes; the collector tables and their rows stay.
+fn downgrade_catalogue_to_schema_70(connection: &Connection) {
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {} PRAGMA user_version = 70; COMMIT;",
+            crate::db::REWIND_V71_SQL
+        ))
+        .expect("rewind catalogue to schema 70");
+}
+
+/// Rewind a current catalogue to the v69 shape: the v71 table and the five v70
+/// collector tables go (not the v69 lookup columns, which a v69 catalogue has).
+fn downgrade_catalogue_to_schema_69(connection: &Connection) {
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {} PRAGMA user_version = 69; COMMIT;",
+            crate::db::REWIND_V70_SQL
+        ))
+        .expect("rewind catalogue to schema 69");
+}
+
 /// Rewind a current catalogue to the v68 shape: the v69 geocoder lookup
 /// columns go.
 fn downgrade_catalogue_to_schema_68(connection: &Connection) {
@@ -431,7 +453,11 @@ fn reseal_backup_as_schema(backup: &Path, schema: i32) -> BackupManifest {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .expect("open historical catalogue fixture");
-        if schema == 68 {
+        if schema == 70 {
+            downgrade_catalogue_to_schema_70(&connection);
+        } else if schema == 69 {
+            downgrade_catalogue_to_schema_69(&connection);
+        } else if schema == 68 {
             downgrade_catalogue_to_schema_68(&connection);
         } else if schema == 67 {
             downgrade_catalogue_to_schema_67(&connection);
@@ -1810,3 +1836,6 @@ fn noncanonical_or_scope_expanding_manifest_is_rejected() {
 
     assert!(verify_data_backup(&backup).is_err());
 }
+
+#[path = "tests/b2.rs"]
+mod b2;

@@ -67,7 +67,7 @@ use crate::{
     config::TlsListenerConfig,
     db::{
         HubStore, PAIRED_DEVICE_MAX_LIFETIME_MS, PairedDeviceRecord, PublishedVehicle,
-        ReadinessReasonCode, StoredPack, VehicleScope, VehicleVisibility,
+        ReadinessContext, ReadinessReasonCode, StoredPack, VehicleScope, VehicleVisibility,
         validate_paired_device_name,
     },
     discovery_source_url,
@@ -390,8 +390,16 @@ pub struct AppState {
     manifest_signing: Option<Arc<ManifestSigning>>,
     cursor_key: Option<Arc<CursorKey>>,
     native_config_digest: Option<Sha256Digest>,
+    /// The loaded collector mode that decides whether the credential unit's
+    /// status applies to readiness (B2 clarification 3). `None` only for an
+    /// explicitly context-free router, which falls back to the stored account
+    /// mode.
+    readiness_mode: Option<crate::config::CollectorMode>,
     readiness_cache: Arc<Mutex<Option<CachedReadiness>>>,
     readiness_singleflight: Arc<tokio::sync::Semaphore>,
+    /// Tests step the readiness clock; zero means the system clock.
+    #[cfg(test)]
+    readiness_test_now_ms: Arc<std::sync::atomic::AtomicI64>,
     sync_control_slots: Arc<tokio::sync::Semaphore>,
     pack_stream_slots: Arc<tokio::sync::Semaphore>,
     pack_streams_by_device: Arc<Mutex<HashMap<Uuid, usize>>>,
@@ -536,6 +544,10 @@ impl FleetTelemetryIngress {
 #[derive(Clone, Copy)]
 struct CachedReadiness {
     checked_at: Instant,
+    /// The epoch millisecond from which the answer must be read again although
+    /// the cache is still fresh: a usable `sign_in_required` becomes terminal
+    /// at its known usability bound with no row written.
+    valid_until_ms: Option<i64>,
     result: Result<(), ReadinessReasonCode>,
 }
 
@@ -559,13 +571,36 @@ impl AppState {
             manifest_signing: manifest_signing.map(Arc::new),
             cursor_key: cursor_key.map(Arc::new),
             native_config_digest,
+            readiness_mode: None,
             readiness_cache: Arc::new(Mutex::new(None)),
             readiness_singleflight: Arc::new(tokio::sync::Semaphore::new(1)),
+            #[cfg(test)]
+            readiness_test_now_ms: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             sync_control_slots: Arc::new(tokio::sync::Semaphore::new(1)),
             pack_stream_slots: Arc::new(tokio::sync::Semaphore::new(MAX_ACTIVE_PACK_STREAMS)),
             pack_streams_by_device: Arc::new(Mutex::new(HashMap::new())),
             fleet_telemetry: fleet_telemetry.map(Arc::new),
         }
+    }
+
+    /// The loaded collector mode readiness is evaluated under.
+    fn with_readiness_mode(mut self, mode: crate::config::CollectorMode) -> Self {
+        self.readiness_mode = Some(mode);
+        self
+    }
+
+    /// The evaluation time of a readiness read, epoch milliseconds.
+    fn readiness_now_ms(&self) -> Result<i64, std::time::SystemTimeError> {
+        #[cfg(test)]
+        {
+            let forced = self
+                .readiness_test_now_ms
+                .load(std::sync::atomic::Ordering::SeqCst);
+            if forced != 0 {
+                return Ok(forced);
+            }
+        }
+        current_epoch_ms()
     }
 
     /// The lifetime cap claimed devices get, in milliseconds.
@@ -592,9 +627,18 @@ impl AppState {
             Ok(cache) => cache,
             Err(_) => return Some(Err(ReadinessReasonCode::CatalogueUnavailable)),
         };
-        cache.as_ref().and_then(|cached| {
-            (cached.checked_at.elapsed() <= READINESS_CACHE_TTL).then_some(cached.result)
-        })
+        let cached = cache.as_ref()?;
+        if cached.checked_at.elapsed() > READINESS_CACHE_TTL {
+            return None;
+        }
+        if let Some(until) = cached.valid_until_ms {
+            // Never serve an answer from the moment it can change by itself.
+            let now_ms = self.readiness_now_ms().ok()?;
+            if now_ms >= until {
+                return None;
+            }
+        }
+        Some(cached.result)
     }
 
     async fn service_readiness(&self) -> Result<(), ReadinessReasonCode> {
@@ -615,17 +659,28 @@ impl AppState {
         let store = Arc::clone(&self.store);
         let cache = Arc::clone(&self.readiness_cache);
         let supervised_collector_required = self.supervised_collector_required;
+        let mode = self.readiness_mode;
+        let now_ms = self.readiness_now_ms();
         tokio::task::spawn_blocking(move || {
-            let result = current_epoch_ms()
-                .map_err(|_| ReadinessReasonCode::CatalogueUnavailable)
-                .and_then(|now_ms| {
-                    store
-                        .service_readiness_at(supervised_collector_required, now_ms)
-                        .map_err(|failure| failure.code)
-                });
+            let (result, valid_until_ms) = match now_ms {
+                Ok(now_ms) => {
+                    let view = store.collector_readiness_view(&ReadinessContext {
+                        collector_required: supervised_collector_required,
+                        now_ms,
+                        mode,
+                        cadence: None,
+                    });
+                    (
+                        view.service.map_err(|failure| failure.code),
+                        view.service_valid_until_ms,
+                    )
+                }
+                Err(_) => (Err(ReadinessReasonCode::CatalogueUnavailable), None),
+            };
             if let Ok(mut slot) = cache.lock() {
                 *slot = Some(CachedReadiness {
                     checked_at: Instant::now(),
+                    valid_until_ms,
                     result,
                 });
             }
@@ -786,7 +841,8 @@ fn tls_router_for_config(
             Some(native_config_digest),
             None,
         )
-        .with_device_max_lifetime_ms(config.pairing.device_max_lifetime_ms()),
+        .with_device_max_lifetime_ms(config.pairing.device_max_lifetime_ms())
+        .with_readiness_mode(crate::config::collector_mode(&config.collector)),
         CorsPolicy::for_config(config),
     )
 }
@@ -1167,15 +1223,18 @@ where
             handle,
             tokio::spawn(
                 server.serve(
-                    router_with_access_telemetry_and_http(
-                        store,
-                        supervised_collector_required,
-                        false,
-                        false,
-                        cursor_key.as_ref().map(ManifestSigning::from_cursor_key),
-                        cursor_key,
-                        Some(native_config_digest),
-                        fleet_telemetry,
+                    router_for_state(
+                        AppState::new(
+                            store,
+                            supervised_collector_required,
+                            false,
+                            false,
+                            cursor_key.as_ref().map(ManifestSigning::from_cursor_key),
+                            cursor_key,
+                            Some(native_config_digest),
+                            fleet_telemetry,
+                        )
+                        .with_readiness_mode(crate::config::collector_mode(&config.collector)),
                         CorsPolicy::for_config(config),
                     )
                     .layer(axum::middleware::from_fn_with_state(

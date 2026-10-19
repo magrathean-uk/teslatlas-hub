@@ -16,6 +16,11 @@ async fn persist_discovery_events(
     .await
 }
 
+/// Store discovery candidates by the rule of C3 R14 on a transaction of their
+/// own (the supervised loops store them inside the tick transaction, `tick.rs`;
+/// this function keeps its signature for the tests that call it), then publish
+/// the compatibility snapshots as before.
+#[cfg(test)]
 async fn persist_discovery_events_with_timeout(
     store: &HubStore,
     cursor_key: &CursorKey,
@@ -23,59 +28,20 @@ async fn persist_discovery_events_with_timeout(
     provider: CollectorProvider,
     offline_drive_timeout: Duration,
 ) -> Result<(), CollectorError> {
-    let publication_gate = store.acquire_publication_gate().await?;
-    let observed_at_ms = current_epoch_millis()?;
-    let source = store.register_source(&provider_source(provider), observed_at_ms)?;
-    for vehicle in vehicles {
-        let mut descriptor = VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string())
-            .with_tesla_identity(Some(vehicle.id.get() as i64), None);
-        descriptor.vin = clean_optional_text(Some(&vehicle.vin));
-        descriptor.display_name = clean_optional_text(vehicle.display_name.as_deref());
-        let registered = store.register_vehicle(&descriptor, observed_at_ms)?;
-        let pack_car_id =
-            projection_car_id_for_vehicle(store, registered.vehicle_id, vehicle.id.get())?;
-        let mut live_settings = vehicle.settings.clone();
-        live_settings.suspend_min_resolved = false;
-        store.upsert_car_settings(registered.vehicle_id, pack_car_id, &live_settings)?;
-        // A discovery is delivered to the lifecycle unless it equals the
-        // vehicle's persisted last reachability, not merely the previous
-        // discovery (C1 R77, section 7 item 8).
-        if store.lifecycle_last_reach(registered.vehicle_id)?.as_deref()
-            == Some(vehicle.state.as_str())
-        {
-            continue;
-        }
-        store.accept_owner_observation_and_lifecycle_with_offline_timeout(
-            &ObservationInput {
-                source_id: source.source_id,
-                vehicle_id: registered.vehicle_id,
-                observed_at_ms,
-                payload: discovery_payload(vehicle, provider),
-            },
-            observed_at_ms,
-            pack_car_id,
-            offline_drive_timeout,
-        )?;
-    }
-    let collection = ManualCollection {
-        vehicles: vehicles.to_vec(),
-        snapshots: Vec::new(),
-        failures: Vec::new(),
-    };
-    publish_compatibility_snapshots_for_provider(
+    persist_discovery_batch(
         store,
-        &publication_gate,
         cursor_key,
-        &collection,
-        observed_at_ms,
+        vehicles,
         provider,
-    )?;
-    Ok(())
+        offline_drive_timeout,
+        true,
+    )
+    .await
 }
 
-// A successful inventory response is current presence evidence even when it
-// produces no scheduler event. Do not re-run lifecycle or compatibility
-// publication for these unchanged vehicles.
+// A successful inventory response is current presence evidence, but R14 stores
+// nothing for a state the lifecycle already holds: only a missing current row is
+// written. Nothing is published for these vehicles.
 #[cfg(test)]
 async fn persist_unchanged_discoveries(
     store: &HubStore,
@@ -91,33 +57,94 @@ async fn persist_unchanged_discoveries(
     .await
 }
 
+#[cfg(test)]
 async fn persist_unchanged_discoveries_with_timeout(
     store: &HubStore,
     vehicles: &[Vehicle],
     provider: CollectorProvider,
     offline_drive_timeout: Duration,
 ) -> Result<(), CollectorError> {
+    persist_discovery_batch(
+        store,
+        &CursorKey::from_bytes([0; 32]),
+        vehicles,
+        provider,
+        offline_drive_timeout,
+        false,
+    )
+    .await
+}
+
+/// The R14 rule for a batch of candidates on one transaction of its own, with the
+/// lifecycle facts read inside it (no scheduler cache). One implementation serves
+/// both public functions above and the tick transaction.
+#[cfg(test)]
+async fn persist_discovery_batch(
+    store: &HubStore,
+    cursor_key: &CursorKey,
+    vehicles: &[Vehicle],
+    provider: CollectorProvider,
+    offline_drive_timeout: Duration,
+    publish: bool,
+) -> Result<(), CollectorError> {
     if vehicles.is_empty() {
         return Ok(());
     }
-    let _publication_gate = store.acquire_publication_gate().await?;
+    let publication_gate = store.acquire_publication_gate().await?;
     let observed_at_ms = current_epoch_millis()?;
-    let source = store.register_source(&provider_source(provider), observed_at_ms)?;
+    let mut identities = IdentityCache::default();
+    let mut registered = HashMap::new();
     for vehicle in vehicles {
-        let mut descriptor = VehicleDescriptor::new(source.source_id, vehicle.id.get().to_string())
-            .with_tesla_identity(Some(vehicle.id.get() as i64), None);
-        descriptor.vin = clean_optional_text(Some(&vehicle.vin));
-        descriptor.display_name = clean_optional_text(vehicle.display_name.as_deref());
-        let registered = store.register_vehicle(&descriptor, observed_at_ms)?;
-        store.record_current_discovery(
-            &ObservationInput {
-                source_id: source.source_id,
-                vehicle_id: registered.vehicle_id,
-                observed_at_ms,
-                payload: discovery_payload(vehicle, provider),
-            },
+        registered.insert(
+            vehicle.id,
+            identities.resolve(store, provider, vehicle, observed_at_ms)?,
+        );
+    }
+    let commit = TickCommit {
+        store,
+        cursor_key,
+        provider,
+        offline_drive_timeout,
+    };
+    let items: Vec<DiscoveryItem> = vehicles
+        .iter()
+        .map(|vehicle| DiscoveryItem {
+            vehicle: vehicle.clone(),
+            received_at_ms: observed_at_ms,
+        })
+        .collect();
+    store.collector_write_transaction(
+        |transaction| {
+            let mut output = TickTxOutput::default();
+            for item in &items {
+                store_discovery_in_transaction(
+                    store,
+                    transaction,
+                    &commit,
+                    &registered[&item.vehicle.id],
+                    item,
+                    None,
+                    &mut output,
+                )?;
+            }
+            let wrote = output.wrote;
+            Ok::<_, CollectorError>(((), wrote))
+        },
+        || Ok::<(), CollectorError>(()),
+    )?;
+    if publish {
+        let collection = ManualCollection {
+            vehicles: vehicles.to_vec(),
+            snapshots: Vec::new(),
+            failures: Vec::new(),
+        };
+        publish_compatibility_snapshots_for_provider(
+            store,
+            &publication_gate,
+            cursor_key,
+            &collection,
             observed_at_ms,
-            offline_drive_timeout,
+            provider,
         )?;
     }
     Ok(())
@@ -131,105 +158,199 @@ fn discovery_payload(vehicle: &Vehicle, provider: CollectorProvider) -> Value {
     })
 }
 
+/// The cadence phase of a `vehicle_data` snapshot (C3 R15), first match:
+/// 1. Motion (C1 R40 on this snapshot alone, gear normalised by C1 R40a: gear D,
+///    R or N, or no gear and `drive_state.speed > 0`), with `service_mode` not
+///    true, and Motion survives C1 R22 against plugged evidence: plugged evidence
+///    (`charging_state` Charging, Starting, Stopped, NoPower or Complete) wins
+///    only when both `drive_state.timestamp` and `charge_state.timestamp` are
+///    integers and the charge time is later: `Driving`;
+/// 2. `vehicle_state.software_update.status` trimmed and ASCII-lowercased equals
+///    `installing`: `Updating`;
+/// 3. `charging_state` Charging or Starting, with `service_mode` not true:
+///    `Charging`;
+/// 4. otherwise `Online`.
+///
+/// Reasons: the order and the conflict rule are C1's (C1 R21: drive over install
+/// over charge; C1 R22: the later of the drive and charge statements wins and
+/// Motion wins a tie), so on one snapshot the cadence follows what C1 records
+/// (review N1); `Starting` gets the charging cadence because energy is about to
+/// flow and the session's first samples are its start; `Stopped`, `NoPower`,
+/// `Complete` and `Disconnected` move no energy, so they are parked cadence; in
+/// service mode C1 opens no sessions (C1 R25), so session cadences buy nothing.
 fn poll_phase(snapshot: &VehicleData) -> PollPhase {
     let fields = snapshot.fields();
-    let updating = fields
-        .get("vehicle_state")
-        .and_then(Value::as_object)
-        .and_then(|vehicle| vehicle.get("software_update"))
+    let group = |name: &str| fields.get(name).and_then(Value::as_object);
+    let drive = group("drive_state");
+    let charge = group("charge_state");
+    let vehicle_state = group("vehicle_state");
+    let in_service_mode = snapshot_service_mode(snapshot) == Some(true);
+    let charging_state = charge
+        .and_then(|group| group.get("charging_state"))
+        .and_then(Value::as_str)
+        .and_then(crate::lifecycle::normalise_enum_text);
+    // Gear: only P, R, N and D are gears; every other name means no gear.
+    let gear = drive
+        .and_then(|group| group.get("shift_state"))
+        .and_then(Value::as_str)
+        .and_then(crate::lifecycle::normalise_enum_text)
+        .filter(|name| matches!(*name, "P" | "R" | "N" | "D"));
+    let moving = match gear {
+        Some("D" | "R" | "N") => true,
+        Some(_) => false,
+        None => drive
+            .and_then(|group| group.get("speed"))
+            .and_then(Value::as_f64)
+            .is_some_and(|speed| speed > 0.0),
+    };
+    let plugged = matches!(
+        charging_state,
+        Some("Charging" | "Starting" | "Stopped" | "NoPower" | "Complete")
+    );
+    // C1 R22: the later statement wins, and plugged evidence needs both times
+    // to be integers to be judged later at all.
+    let timestamp = |group: Option<&Map<String, Value>>| {
+        group
+            .and_then(|group| group.get("timestamp"))
+            .and_then(Value::as_i64)
+    };
+    let plugged_wins = plugged
+        && matches!(
+            (timestamp(drive), timestamp(charge)),
+            (Some(drive_time), Some(charge_time)) if charge_time > drive_time
+        );
+    if moving && !in_service_mode && !plugged_wins {
+        return PollPhase::Driving;
+    }
+    let installing = vehicle_state
+        .and_then(|group| group.get("software_update"))
         .and_then(Value::as_object)
         .and_then(|update| update.get("status"))
         .and_then(Value::as_str)
-        .is_some_and(|status| status.eq_ignore_ascii_case("installing"));
-    if updating {
+        .is_some_and(|status| status.trim().eq_ignore_ascii_case("installing"));
+    if installing {
         return PollPhase::Updating;
     }
-    let charging = fields
-        .get("charge_state")
-        .and_then(Value::as_object)
-        .and_then(|charge| charge.get("charging_state"))
-        .and_then(Value::as_str)
-        .is_some_and(|state| {
-            matches!(state.to_ascii_lowercase().as_str(), "starting" | "charging")
-        });
-    if charging {
+    if matches!(charging_state, Some("Charging" | "Starting")) && !in_service_mode {
         return PollPhase::Charging;
     }
-    let drive = fields.get("drive_state").and_then(Value::as_object);
-    let shift = drive
-        .and_then(|drive| drive.get("shift_state"))
-        .and_then(Value::as_str);
-    if matches!(shift, Some("D" | "R" | "N" | "d" | "r" | "n")) {
-        PollPhase::Driving
-    } else {
-        PollPhase::Online
-    }
+    PollPhase::Online
 }
 
+/// Whether a `vehicle_data` snapshot shows the car in use (C3 R29): any of
+///
+/// - `drive_state.shift_state` is D, R or N after C1 R40a normalisation (the
+///   drivetrain is in a driving gear), or there is no gear and
+///   `drive_state.speed > 0` (the car is moving). A car in service mode that is
+///   moving is in use too, so motion counts whatever `service_mode` says;
+/// - `charge_state.charging_state` is `Charging` or `Starting` (energy is
+///   flowing or about to, and the car stays awake while charging anyway);
+/// - `vehicle_state.software_update.status` trimmed and ASCII-lowercased is
+///   `installing` (the car is unavailable while it installs);
+/// - `climate_state.is_climate_on` is true while `climate_keeper_mode` is absent,
+///   null or `"off"` (ASCII case-insensitive): the owner or a schedule is
+///   conditioning the cabin, usually just before a drive, and the car stays
+///   awake regardless. A keeper mode other than `"off"` (dog, camp and the like)
+///   holds the cabin for hours with nobody driving, so polling through it would
+///   catch nothing, for the reason sentry mode is not use either;
+/// - `vehicle_state.is_user_present` or `vehicle_state.remote_start` is true (a
+///   person is in the car, or keyless driving was enabled remotely: a drive is
+///   imminent);
+/// - `vehicle_state.locked` is false and the car's `req_not_unlocked` setting is
+///   on (the owner's opt-in, C3 R58).
+///
+/// Not use: sentry mode (the car stays awake for recording and the Hub stores
+/// nothing beyond a parked snapshot, so polling a sentry car all night would only
+/// spend requests), open doors, trunks or windows (not in the data model, and a
+/// door left open overnight would keep polling all night), and the parked
+/// charging states `Stopped`, `NoPower`, `Complete` and `Disconnected` (no energy
+/// flows; a scheduled charge wakes the car itself, which the wake rule sees). A
+/// field that is absent or of the wrong JSON type gives no evidence.
+fn snapshot_shows_use(snapshot: &VehicleData, req_not_unlocked: bool) -> bool {
+    let fields = snapshot.fields();
+    let group = |name: &str| fields.get(name).and_then(Value::as_object);
+    let flag = |group: Option<&Map<String, Value>>, key: &str| {
+        group
+            .and_then(|group| group.get(key))
+            .and_then(Value::as_bool)
+    };
+    let drive = group("drive_state");
+    let charge = group("charge_state");
+    let climate = group("climate_state");
+    let vehicle_state = group("vehicle_state");
+    // Gear: only P, R, N and D are gears; every other name means no gear (C1
+    // R40, R40a).
+    let gear = drive
+        .and_then(|group| group.get("shift_state"))
+        .and_then(Value::as_str)
+        .and_then(crate::lifecycle::normalise_enum_text)
+        .filter(|name| matches!(*name, "P" | "R" | "N" | "D"));
+    let moving = match gear {
+        Some("D" | "R" | "N") => true,
+        Some(_) => false,
+        None => drive
+            .and_then(|group| group.get("speed"))
+            .and_then(Value::as_f64)
+            .is_some_and(|speed| speed > 0.0),
+    };
+    if moving {
+        return true;
+    }
+    let charging = charge
+        .and_then(|group| group.get("charging_state"))
+        .and_then(Value::as_str)
+        .and_then(crate::lifecycle::normalise_enum_text);
+    if matches!(charging, Some("Charging" | "Starting")) {
+        return true;
+    }
+    let installing = vehicle_state
+        .and_then(|group| group.get("software_update"))
+        .and_then(Value::as_object)
+        .and_then(|update| update.get("status"))
+        .and_then(Value::as_str)
+        .is_some_and(|status| status.trim().eq_ignore_ascii_case("installing"));
+    if installing {
+        return true;
+    }
+    // A keeper mode of the wrong JSON type is no statement about a keeper, so it
+    // reads as absent.
+    let keeper_holds_the_cabin = climate
+        .and_then(|group| group.get("climate_keeper_mode"))
+        .and_then(Value::as_str)
+        .is_some_and(|mode| !mode.eq_ignore_ascii_case("off"));
+    if flag(climate, "is_climate_on") == Some(true) && !keeper_holds_the_cabin {
+        return true;
+    }
+    if flag(vehicle_state, "is_user_present") == Some(true)
+        || flag(vehicle_state, "remote_start") == Some(true)
+    {
+        return true;
+    }
+    req_not_unlocked && flag(vehicle_state, "locked") == Some(false)
+}
+
+/// The test-only form of [`sleep_eligible_with_policy`] with the default policy
+/// (an unlocked car does not count as in use, C3 R30).
 #[cfg(test)]
 fn sleep_eligible(snapshot: &VehicleData) -> bool {
-    sleep_eligible_with_policy(snapshot, true)
+    sleep_eligible_with_policy(snapshot, false)
 }
 
+/// Whether a read of the car may let it fall asleep (C3 R30): it shows no use
+/// (R29). One definition serves both supervised loops; `req_not_unlocked` is the
+/// car's own setting. Reason: the idle window of R31 must start only when the car
+/// is doing nothing a poller could miss.
 fn sleep_eligible_with_policy(snapshot: &VehicleData, req_not_unlocked: bool) -> bool {
-    let fields = snapshot.fields();
-    let Some(drive) = fields.get("drive_state").and_then(Value::as_object) else {
-        return false;
-    };
-    let Some(climate) = fields.get("climate_state").and_then(Value::as_object) else {
-        return false;
-    };
-    let Some(vehicle) = fields.get("vehicle_state").and_then(Value::as_object) else {
-        return false;
-    };
-    if poll_phase(snapshot) != PollPhase::Online {
-        return false;
-    }
-    let true_field = |fields: &Map<String, Value>, name: &str| {
-        fields.get(name).and_then(Value::as_bool) == Some(true)
-    };
-    if true_field(vehicle, "is_user_present")
-        || true_field(vehicle, "sentry_mode")
-        || (req_not_unlocked && vehicle.get("locked").and_then(Value::as_bool) != Some(true))
-        || true_field(climate, "is_preconditioning")
-        || climate
-            .get("climate_keeper_mode")
-            .and_then(Value::as_str)
-            .is_some_and(|mode| mode.eq_ignore_ascii_case("dog"))
-        || drive.get("power").and_then(Value::as_i64).unwrap_or(0) > 0
-    {
-        return false;
-    }
-    for field in ["df", "pf", "dr", "pr", "ft", "rt"] {
-        if vehicle.get(field).and_then(Value::as_i64).unwrap_or(0) > 0 {
-            return false;
-        }
-    }
-    if vehicle
-        .get("software_update")
-        .and_then(Value::as_object)
-        .is_some_and(|update| {
-            update
-                .get("status")
-                .and_then(Value::as_str)
-                .is_some_and(|status| status.eq_ignore_ascii_case("downloading"))
-                && update
-                    .get("download_perc")
-                    .and_then(Value::as_f64)
-                    .is_none_or(|percent| percent < 100.0)
-        })
-    {
-        return false;
-    }
-    true
+    !snapshot_shows_use(snapshot, req_not_unlocked)
 }
 
+/// `vehicle_state.service_mode` when it is a JSON boolean (C3 R15), else `None`.
 fn snapshot_service_mode(snapshot: &VehicleData) -> Option<bool> {
     snapshot
         .fields()
         .get("vehicle_state")
         .and_then(Value::as_object)
-        .and_then(|state| state.get("service_mode"))
+        .and_then(|group| group.get("service_mode"))
         .and_then(Value::as_bool)
 }
 
@@ -392,7 +513,12 @@ fn materialise_lifecycle_for_collection_provider(
         let registered = store.register_vehicle(&descriptor, received_at_ms)?;
         let car_id = projection_car_id_for_vehicle(store, registered.vehicle_id, vehicle.id.get())?;
         let mut live_settings = vehicle.settings.clone();
-        live_settings.suspend_min_resolved = false;
+        // A live car's suspend length is final (C3 R60): no model lookup. A row an
+        // earlier Hub version left unresolved gets the Hub default once, before
+        // the upsert marks it resolved. Imported rows and owner-set values are
+        // never changed.
+        store.resolve_car_suspend_min(registered.vehicle_id)?;
+        live_settings.suspend_min_resolved = true;
         store.upsert_car_settings(registered.vehicle_id, car_id, &live_settings)?;
         let latest_snapshot = collection
             .snapshots
@@ -402,17 +528,6 @@ fn materialise_lifecycle_for_collection_provider(
         store.persist_materialised_car_if_absent(registered.vehicle_id, &seed_car)?;
         let materialised =
             materialise_vehicle_lifecycle(store, registered.vehicle_id, car_id, received_at_ms)?;
-        let state = store
-            .load_lifecycle_state(registered.vehicle_id)?
-            .and_then(|record| OpenSessionState::decode(&record.open_session_json).ok());
-        if let Some(metadata) = state.and_then(|state| state.car_metadata) {
-            store.resolve_car_suspend_min(
-                registered.vehicle_id,
-                metadata.model.as_deref(),
-                metadata.trim_badging.as_deref(),
-                metadata.marketing_name.as_deref(),
-            )?;
-        }
         report.drives_closed += materialised.drives_closed;
         report.charges_closed += materialised.charges_closed;
         report.positions_materialised += materialised.positions_materialised;
@@ -422,13 +537,85 @@ fn materialise_lifecycle_for_collection_provider(
     Ok(report)
 }
 
+/// Count the children of the batch's closed drives and charges (C1 R88): per
+/// parent, the in-batch child ids plus the stored ones, each id once. Stored
+/// ids are read page by page and nothing but ids is held. Returns the position
+/// count, the charge-sample count and the page statistics.
+fn count_closed_children(
+    store: &HubStore,
+    vehicle_id: Uuid,
+    delta: &crate::lifecycle::LifecycleDelta,
+    page_rows: usize,
+) -> Result<(usize, usize, crate::db::ClosePageStats), crate::db::StoreError> {
+    let mut stats = crate::db::ClosePageStats::default();
+    let mut positions = 0;
+    for drive in &delta.drives {
+        let mut ids = std::collections::HashSet::new();
+        ids.extend(
+            delta
+                .positions
+                .iter()
+                .chain(delta.open_drive_positions.iter())
+                .filter(|position| position.drive_id == Some(drive.id))
+                .map(|position| position.id),
+        );
+        store.open_child_ids_paged(
+            vehicle_id,
+            crate::db::OpenChildKind::Position,
+            drive.id,
+            page_rows,
+            &mut ids,
+            &mut stats,
+        )?;
+        positions += ids.len();
+    }
+    let mut samples = 0;
+    for charge in &delta.charges {
+        let mut ids = std::collections::HashSet::new();
+        ids.extend(
+            delta
+                .charge_samples
+                .iter()
+                .chain(delta.open_charge_samples.iter())
+                .filter(|sample| sample.charge_process_id == charge.id)
+                .map(|sample| sample.id),
+        );
+        store.open_child_ids_paged(
+            vehicle_id,
+            crate::db::OpenChildKind::ChargeSample,
+            charge.id,
+            page_rows,
+            &mut ids,
+            &mut stats,
+        )?;
+        samples += ids.len();
+    }
+    Ok((positions, samples, stats))
+}
+
 fn materialise_vehicle_lifecycle(
     store: &HubStore,
     vehicle_id: Uuid,
     car_id: i64,
     received_at_ms: i64,
 ) -> Result<LifecycleMaterialisationReport, CollectorError> {
-    let existing = store.load_lifecycle_state(vehicle_id)?;
+    materialise_vehicle_lifecycle_with(store, None, vehicle_id, car_id, received_at_ms)
+}
+
+/// [`materialise_vehicle_lifecycle`] on the caller's transaction when one is
+/// given (C3 R5, the tick transaction owns the commit), else on transactions of
+/// its own.
+fn materialise_vehicle_lifecycle_with(
+    store: &HubStore,
+    transaction: Option<&rusqlite::Transaction<'_>>,
+    vehicle_id: Uuid,
+    car_id: i64,
+    received_at_ms: i64,
+) -> Result<LifecycleMaterialisationReport, CollectorError> {
+    let existing = match transaction {
+        Some(transaction) => HubStore::lifecycle_state_in_transaction(transaction, vehicle_id)?,
+        None => store.load_lifecycle_state(vehicle_id)?,
+    };
     let mut state = match existing.as_ref() {
         Some(record) => match OpenSessionState::decode(&record.open_session_json) {
             Ok(state) => state,
@@ -449,11 +636,19 @@ fn materialise_vehicle_lifecycle(
     // Incremental lifecycle: do not rehydrate full open child collections here.
     // Aggregates + lifecycle_open_rows keep close/materialization correct.
 
-    let observations = store.observations_after_id_for_vehicle(
-        vehicle_id,
-        state.last_observation_id,
-        crate::db::MAX_OBSERVATION_QUERY_LIMIT,
-    )?;
+    let observations = match transaction {
+        Some(transaction) => HubStore::observations_after_in_transaction(
+            transaction,
+            vehicle_id,
+            state.last_observation_id,
+            crate::db::MAX_OBSERVATION_QUERY_LIMIT,
+        )?,
+        None => store.observations_after_id_for_vehicle(
+            vehicle_id,
+            state.last_observation_id,
+            crate::db::MAX_OBSERVATION_QUERY_LIMIT,
+        )?,
+    };
 
     let mut report = LifecycleMaterialisationReport::default();
     let mut total_delta = crate::lifecycle::LifecycleDelta::default();
@@ -492,51 +687,18 @@ fn materialise_vehicle_lifecycle(
         open.samples.clear();
     }
     // Closed drives/charges materialise durable open-row children that were never
-    // kept in active memory. Count them for the materialisation report.
-    for drive in &total_delta.drives {
-        let mut ids = std::collections::HashSet::new();
-        for position in total_delta
-            .positions
-            .iter()
-            .filter(|position| position.drive_id == Some(drive.id))
-        {
-            ids.insert(position.id);
-        }
-        for position in total_delta
-            .open_drive_positions
-            .iter()
-            .filter(|position| position.drive_id == Some(drive.id))
-        {
-            ids.insert(position.id);
-        }
-        for position in store.open_drive_positions(vehicle_id, drive.id)? {
-            ids.insert(position.id);
-        }
-        report.positions_materialised += ids.len();
-    }
-    for charge in &total_delta.charges {
-        let mut ids = std::collections::HashSet::new();
-        for sample in total_delta
-            .charge_samples
-            .iter()
-            .filter(|sample| sample.charge_process_id == charge.id)
-        {
-            ids.insert(sample.id);
-        }
-        for sample in total_delta
-            .open_charge_samples
-            .iter()
-            .filter(|sample| sample.charge_process_id == charge.id)
-        {
-            ids.insert(sample.id);
-        }
-        for sample in store.open_charge_samples(vehicle_id, charge.id)? {
-            ids.insert(sample.id);
-        }
-        report.charge_samples_materialised += ids.len();
-    }
+    // kept in active memory. Count them for the materialisation report, reading
+    // the stored ids a page at a time (C1 R88).
+    let (positions, samples, _stats) = count_closed_children(
+        store,
+        vehicle_id,
+        &total_delta,
+        crate::lifecycle::K_CLOSE_PAGE_ROWS,
+    )?;
+    report.positions_materialised += positions;
+    report.charge_samples_materialised += samples;
     let encoded = state.encode().map_err(CollectorError::Lifecycle)?;
-    store.commit_lifecycle_delta(&crate::db::LifecycleCommit {
+    let commit = crate::db::LifecycleCommit {
         vehicle_id,
         car_id,
         open_session_json: &encoded,
@@ -544,10 +706,17 @@ fn materialise_vehicle_lifecycle(
         quarantined,
         updated_at_ms: received_at_ms,
         delta: &total_delta,
-    })?;
+    };
+    match transaction {
+        Some(transaction) => {
+            HubStore::commit_lifecycle_delta_in_transaction(transaction, &commit)?;
+        }
+        None => store.commit_lifecycle_delta(&commit)?,
+    }
     Ok(report)
 }
 
+#[cfg(test)]
 fn force_close_vehicle_for_service(
     store: &HubStore,
     source_vehicle_id: VehicleId,
@@ -561,6 +730,9 @@ fn force_close_vehicle_for_service(
     )
 }
 
+/// Production appends the event through the tick transaction (`push_service_refused_event`, C3 R52);
+/// this standalone form serves the tests of the intake.
+#[cfg(test)]
 fn force_close_vehicle_for_service_provider(
     store: &HubStore,
     source_vehicle_id: VehicleId,
@@ -588,6 +760,10 @@ fn force_close_vehicle_for_service_provider(
     )
 }
 
+/// `event` value of the Hub lifecycle event for a drive whose car has had no stored
+/// observation for longer than `T_gap` (C1 R15, R43 item 4; C3 R40).
+const HUB_EVENT_NO_DATA: &str = "no_data";
+
 /// `event` value of the Hub lifecycle event for a vehicle that Tesla refused as
 /// "in service" (C1 R15, R25).
 const HUB_EVENT_SERVICE_REFUSED: &str = "service_refused";
@@ -597,6 +773,7 @@ const HUB_EVENT_SERVICE_REFUSED: &str = "service_refused";
 /// section 7 item 3b). `observed_at_ms` is the Hub wall-clock time of the
 /// decision; the projection never takes an end time from it, only the last
 /// evidence of the session.
+#[cfg(test)]
 fn append_hub_lifecycle_event(
     store: &HubStore,
     source_id: Uuid,
@@ -623,9 +800,39 @@ fn append_hub_lifecycle_event(
     Ok(())
 }
 
+/// [`append_hub_lifecycle_event`] inside the tick transaction (C3 R5, R40, R52):
+/// the intake and the projection join the caller's transaction, which owns the
+/// commit.
+fn append_hub_lifecycle_event_in_transaction(
+    store: &HubStore,
+    transaction: &rusqlite::Transaction<'_>,
+    identity: &Registered,
+    observed_at_ms: i64,
+    event: &str,
+    offline_drive_timeout: Duration,
+) -> Result<(), CollectorError> {
+    store.accept_owner_observation_and_lifecycle_in_transaction(
+        transaction,
+        &ObservationInput {
+            source_id: identity.source_id,
+            vehicle_id: identity.hub_id,
+            observed_at_ms,
+            payload: serde_json::json!({
+                "record_type": "hub_lifecycle_event_v1",
+                "event": event,
+            }),
+        },
+        observed_at_ms,
+        identity.pack_car_id,
+        offline_drive_timeout,
+    )?;
+    Ok(())
+}
+
 /// Publish a typed first-party mirror for every discovered owner vehicle.
 /// Completed drive, position, charge, and charge-sample rows come only from
 /// the materialised lifecycle store — never fabricated from a single sample.
+#[cfg(test)]
 fn publish_compatibility_snapshots(
     store: &HubStore,
     publication_gate: &crate::db::PublicationGate,
@@ -651,6 +858,33 @@ fn publish_compatibility_snapshots_for_provider(
     published_at_ms: i64,
     provider: CollectorProvider,
 ) -> Result<usize, CollectorError> {
+    publish_compatibility_snapshots_for_provider_guarded(
+        store,
+        publication_gate,
+        cursor_key,
+        collection,
+        published_at_ms,
+        provider,
+        None,
+    )
+}
+
+/// The publication of a supervised run (B2 fix round, P3b fix 2, R-P3bF2-1): the
+/// source, each vehicle, the materialised car, the settings, the sync claim and its
+/// release, the sequence reservation, the pack output and the snapshot's
+/// finalisation are separate store mutations, each preceded by the run's write guard.
+/// A refused write ends the publication with the sensitive failure and leaves any
+/// claim as it is: the release is a mutation too.
+fn publish_compatibility_snapshots_for_provider_guarded(
+    store: &HubStore,
+    publication_gate: &crate::db::PublicationGate,
+    cursor_key: &CursorKey,
+    collection: &ManualCollection,
+    published_at_ms: i64,
+    provider: CollectorProvider,
+    guard: Option<&RunWriteGuard>,
+) -> Result<usize, CollectorError> {
+    check_optional_write(guard, "publication-source")?;
     let source = store.register_source(&provider_source(provider), published_at_ms)?;
     let installation_id = store.installation_id()?;
     let snapshots: HashMap<u64, &VehicleData> = collection
@@ -668,7 +902,9 @@ fn publish_compatibility_snapshots_for_provider(
                 .with_tesla_identity(Some(source_vehicle_id as i64), None);
         descriptor.vin = clean_optional_text(Some(&vehicle.vin));
         descriptor.display_name = clean_optional_text(vehicle.display_name.as_deref());
+        check_optional_write(guard, "publication-vehicle")?;
         let registered = store.register_vehicle(&descriptor, published_at_ms)?;
+        check_optional_write(guard, "publication-car-id")?;
         let selected_car_id =
             projection_car_id_for_vehicle(store, registered.vehicle_id, source_vehicle_id)?;
         // Discovery can be the first live Owner-API event after a TeslaMate
@@ -681,13 +917,17 @@ fn publish_compatibility_snapshots_for_provider(
             snapshots.get(&source_vehicle_id).copied(),
             selected_car_id,
         );
+        check_optional_write(guard, "publication-seed-car")?;
         store.persist_materialised_car_if_absent(registered.vehicle_id, &seed_car)?;
+        check_optional_write(guard, "publication-settings")?;
         store.upsert_car_settings(registered.vehicle_id, selected_car_id, &vehicle.settings)?;
         if store.vehicle_has_v2_base(registered.vehicle_id)? {
+            check_optional_write(guard, "publication-sync-claim")?;
             if let Some(sync_claim) =
                 store.claim_sync_mutations(registered.vehicle_id, published_at_ms, 10_000)?
-                && let Err(error) = publish_v2_delta(store, cursor_key, &sync_claim)
+                && let Err(error) = publish_v2_delta_guarded(store, cursor_key, &sync_claim, guard)
             {
+                check_optional_write(guard, "publication-sync-release")?;
                 store.release_sync_mutations(&sync_claim)?;
                 return Err(error);
             }
@@ -722,6 +962,7 @@ fn publish_compatibility_snapshots_for_provider(
         if store.snapshot_fingerprint_is_current(registered.vehicle_id, fingerprint)? {
             continue;
         }
+        check_optional_write(guard, "publication-sequence")?;
         let sequence =
             store.reserve_next_full_snapshot_sequence(publication_gate, registered.vehicle_id)?;
         let binding = ProjectionBinding {
@@ -742,10 +983,12 @@ fn publish_compatibility_snapshots_for_provider(
             },
             snapshot: &snapshot,
         };
+        check_optional_write(guard, "publication-pack")?;
         let built =
             writer.write_full_snapshot_with_states_and_updates(&request, &states, &updates)?;
         let manifest = request
             .signed_manifest_with_states_and_updates(&built, &states, &updates, cursor_key)?;
+        check_optional_write(guard, "publication-finalize")?;
         store.finalize_import_snapshot_with_binding(&manifest, fingerprint, &[], &binding)?;
         published += 1;
     }
@@ -996,9 +1239,7 @@ fn observation_timestamp(snapshot: &VehicleData, received_at_ms: i64) -> i64 {
         .into_iter()
         .flatten()
         .filter_map(Value::as_i64)
-        .find(|timestamp| {
-            (*timestamp >= K_EARLIEST_MS) && (*timestamp <= maximum)
-        })
+        .find(|timestamp| (*timestamp >= K_EARLIEST_MS) && (*timestamp <= maximum))
         .unwrap_or(received_at_ms)
 }
 

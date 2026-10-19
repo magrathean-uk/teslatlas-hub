@@ -108,6 +108,37 @@ pub(crate) const K_ELEV_MAX: i64 = 9_000;
 /// positions keep raw elevations, so the exact figure stays recomputable.
 pub(crate) const K_SMALLINT_MAX: i64 = 32_767;
 
+/// Most lead checkpoints an open drive holds (C1 R87): 4.
+///
+/// The open-session blob is rewritten at every observation commit, so what it
+/// carries counts against the Intake target (250 ms p95 to durable commit) and
+/// the worst-case blob test (ST74). A checkpoint is one drive without children,
+/// about 2 KB of JSON, so four add about 8 KB. Lead folds accumulate only while
+/// a position source without gear or speed runs ahead of every motion source,
+/// and an explicit end can be dated before them only by the delivery delay of
+/// the observation that carries it. Beyond four such facts the overflow rule
+/// (R87 point 8, known limit 11) keeps the row and its children consistent and
+/// costs only end-time precision.
+pub(crate) const K_LEAD_CHECKPOINTS: usize = 4;
+
+/// Most stored open children of one closing session read at once (C1 R88):
+/// 1,000 rows.
+///
+/// A page must be fixed and small against the Memory target (200 MiB steady
+/// for the process group) and large enough that paging adds no measurable
+/// statement cost. A stored child is the JSON of one position row (under 2 KB)
+/// or of one charge sample (fewer fields), so a page holds under 2 MB of JSON
+/// plus its decoded rows, about 1 % of the steady allowance, whatever the
+/// session's length. The close already writes one materialised row and one
+/// sync mutation per child, so one indexed range read per 1,000 children adds
+/// under 0.1 % to the statements. Halving the page would double the range
+/// reads for no memory gain that matters; a page ten times larger would take a
+/// tenth of the steady allowance in one allocation. Used by the C1 materialisation
+/// and the collector's reads; C2's efficiency reader has its own page,
+/// `K_EFF_SAMPLE_PAGE` (projection_helpers.rs), of the same value (1,000), and C2's
+/// close fold of the stored samples reads one stored row at a time.
+pub(crate) const K_CLOSE_PAGE_ROWS: usize = 1_000;
+
 /// One folded observation of an open drive (C1 R42), built from the fresh
 /// families only (R6a): a stale value is older than one already used and must
 /// not move a "last" value backwards.
@@ -232,6 +263,7 @@ impl OpenDrive {
             elevation_count: 0,
             odometer_coarse: false,
             still_checkpoint: None,
+            lead_checkpoints: Vec::new(),
             positions: Vec::new(),
         }
     }
@@ -259,6 +291,18 @@ fn observe_drive_point(
     open: &mut OpenDrive,
     point: &DrivePoint,
     emitted: Option<&ProjectionPosition>,
+) {
+    fold_drive_point(open, point, emitted, true);
+}
+
+/// The fold itself. `track_still` is false for a fold into a lead checkpoint
+/// (C1 R87 point 4 (c)), which updates aggregates only and takes no still
+/// checkpoint of its own.
+fn fold_drive_point(
+    open: &mut OpenDrive,
+    point: &DrivePoint,
+    emitted: Option<&ProjectionPosition>,
+    track_still: bool,
 ) {
     open.last_folded_at_ms = Some(
         open.last_folded_at_ms
@@ -343,14 +387,25 @@ fn observe_drive_point(
             open.last_motion_at_ms = Some(point.at_ms);
             open.still_checkpoint = None;
         }
-        DriveEvidence::NoInfo if open.still_checkpoint.is_none() => {
-            let mut copy = open.clone();
-            copy.positions = Vec::new();
-            copy.still_checkpoint = None;
+        DriveEvidence::NoInfo if track_still && open.still_checkpoint.is_none() => {
+            let copy = detached_copy(open);
             open.still_checkpoint = Some(Box::new(copy));
         }
         DriveEvidence::NoInfo | DriveEvidence::Park => {}
     }
+}
+
+/// A copy of an open drive without its positions, still checkpoint or lead
+/// checkpoints (C1 R44, R87 points 3 and 4).
+fn detached_copy(open: &mut OpenDrive) -> OpenDrive {
+    let positions = std::mem::take(&mut open.positions);
+    let still = open.still_checkpoint.take();
+    let leads = std::mem::take(&mut open.lead_checkpoints);
+    let copy = open.clone();
+    open.positions = positions;
+    open.still_checkpoint = still;
+    open.lead_checkpoints = leads;
+    copy
 }
 
 /// Fold one stored position into the open drive (C1 R42). The retained caller
@@ -572,8 +627,10 @@ fn valid_coordinates(latitude: Option<f64>, longitude: Option<f64>) -> Option<(f
 /// than the start; the caller substitutes the still checkpoint for a drive
 /// closed for lack of evidence (R44). `explicit_end` is the time of a Park or
 /// plugged-in statement that closes the drive (R43 items 6 and 7): the end is
-/// that time, never earlier than the start, even when a later position was
-/// folded first. `always_keep` is set for a drive created by seeding an
+/// that time, never earlier than the start, and never earlier than the source's
+/// own last fold: the caller passes the end source of C1 R87 (a lead checkpoint
+/// or the open drive), which holds only folds dated at or before that time
+/// unless a checkpoint was dropped (known limit 11). `always_keep` is set for a drive created by seeding an
 /// imported open session (R14, R47).
 ///
 /// Keep rule (R47): `distance_km` known and at least [`K_DMIN_KM`] decides
@@ -588,7 +645,10 @@ fn finalize_drive(
     explicit_end: Option<i64>,
 ) -> Result<Option<ClosedDrive>, LifecycleError> {
     let end_date_ms = explicit_end
-        .unwrap_or_else(|| open.effective_last_folded_ms())
+        .map_or_else(
+            || open.effective_last_folded_ms(),
+            |end| end.max(open.effective_last_folded_ms()),
+        )
         .max(open.start_date_ms);
     // R46: odometer-based only; GPS path length is never substituted.
     let distance_km = match (open.first_odometer, open.last_odometer) {
@@ -857,6 +917,102 @@ const K_EFF_MIN_SPAN: i64 = 10;
 /// stored car efficiency is left as it is.
 pub(crate) const K_EFF_MIN_FIGURES: usize = 3;
 
+/// One end of a session's efficiency window (C2 R71 (a)): the battery level in
+/// per cent, the usable energy counter in kWh and the rated range in km of a
+/// window sample.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct EfficiencyPoint {
+    pub level: i64,
+    pub counter_kwh: f64,
+    pub rated_km: f64,
+}
+
+/// The fixed-size state of one session's efficiency figure (C2 R71): the first
+/// and last window samples and two flags, whatever the session's length. The
+/// session's samples go in one at a time, in sample order (`timestamp_ms`, then
+/// `id`), through [`Self::observe`], and [`Self::finish`] gives the figure of
+/// C2 R62 bit for bit. R62 needs only `A` (the first window sample), `B` (the
+/// last), the counter of the window sample before each window sample, and
+/// whether a heater was on from `A` to `B`, so one pass computes it without
+/// holding the samples.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EfficiencyFold {
+    first: Option<EfficiencyPoint>,
+    last: Option<EfficiencyPoint>,
+    heater_seen: bool,
+    rejected: bool,
+}
+
+impl EfficiencyFold {
+    pub(crate) fn new() -> Self {
+        Self {
+            first: None,
+            last: None,
+            heater_seen: false,
+            rejected: false,
+        }
+    }
+
+    /// The point of a window sample (R62 step 1): battery level at most
+    /// [`K_EFF_MAX_LEVEL`], a finite rated range and a usable counter.
+    fn window_point(sample: &ProjectionChargeSample) -> Option<EfficiencyPoint> {
+        Some(EfficiencyPoint {
+            level: sample
+                .battery_level
+                .filter(|level| *level <= K_EFF_MAX_LEVEL)?,
+            counter_kwh: usable_energy_counter(sample)?,
+            rated_km: finite_reading(sample.rated_range_km)?,
+        })
+    }
+
+    /// Fold one sample (C2 R71 (a)). Until the first window sample, only a
+    /// window sample changes anything (a heater before `A` does not count).
+    /// Afterwards a heater sample marks the heater as seen, and a window sample
+    /// rejects the session when a heater was seen or when its counter is below
+    /// the counter of the window sample before it, and becomes the last.
+    pub(crate) fn observe(&mut self, sample: &ProjectionChargeSample) {
+        let heater =
+            sample.battery_heater_on == Some(true) || sample.battery_heater == Some(true);
+        let point = Self::window_point(sample);
+        let Some(first) = self.first else {
+            if let Some(point) = point {
+                self.first = Some(point);
+                self.heater_seen = heater;
+            }
+            return;
+        };
+        if heater {
+            self.heater_seen = true;
+        }
+        if let Some(point) = point {
+            let previous = self.last.unwrap_or(first).counter_kwh;
+            if self.heater_seen || point.counter_kwh < previous {
+                self.rejected = true;
+            }
+            self.last = Some(point);
+        }
+    }
+
+    /// The figure (R62 steps 4 and 5): `None` when the session was rejected or
+    /// has fewer than two window samples; otherwise `1000 * dE / dR` from `A`
+    /// to `B`, when the level rises by at least [`K_EFF_MIN_SPAN`], the counter
+    /// and the rated range both rise, and the result is finite and positive.
+    pub(crate) fn finish(&self) -> Option<f64> {
+        if self.rejected {
+            return None;
+        }
+        let (a, b) = (self.first?, self.last?);
+        let level_span = b.level - a.level;
+        let energy_added = b.counter_kwh - a.counter_kwh;
+        let range_gained = b.rated_km - a.rated_km;
+        if level_span < K_EFF_MIN_SPAN || energy_added <= 0.0 || range_gained <= 0.0 {
+            return None;
+        }
+        let figure = (1000.0 * energy_added) / range_gained;
+        (figure.is_finite() && figure > 0.0).then_some(figure)
+    }
+}
+
 /// One charging session's efficiency, in Wh per km of rated range, or `None`
 /// (C2 R62). `samples` are the session's stored samples; they are read in
 /// sample order (`timestamp_ms`, then `id`), so the caller's order does not
@@ -877,45 +1033,19 @@ pub(crate) const K_EFF_MIN_FIGURES: usize = 3;
 /// Both ends are state readings, so the gaps between them do not matter and
 /// nothing is integrated. Rated range is the fixed basis (R61). The pack
 /// chemistry changes no rule (R62a).
+///
+/// The function serves callers that already hold a slice (tests); the store
+/// reads a session through [`EfficiencyFold`] in bounded pages (R71), and the
+/// two give the same figure bit for bit.
+#[allow(dead_code)] // C2 R71: read by tests; the store reads a session through `EfficiencyFold`.
 pub(crate) fn session_efficiency_wh_per_km(samples: &[ProjectionChargeSample]) -> Option<f64> {
     let mut ordered = samples.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|sample| (sample.timestamp_ms, sample.id));
-    let in_window = |sample: &ProjectionChargeSample| {
-        sample
-            .battery_level
-            .is_some_and(|level| level <= K_EFF_MAX_LEVEL)
-            && finite_reading(sample.rated_range_km).is_some()
-            && usable_energy_counter(sample).is_some()
-    };
-    let first = ordered.iter().position(|sample| in_window(sample))?;
-    let last = ordered.iter().rposition(|sample| in_window(sample))?;
-    if first == last {
-        return None;
+    let mut fold = EfficiencyFold::new();
+    for sample in ordered {
+        fold.observe(sample);
     }
-    let span = &ordered[first..=last];
-    if span
-        .iter()
-        .any(|sample| sample.battery_heater_on == Some(true) || sample.battery_heater == Some(true))
-    {
-        return None;
-    }
-    let counters = span
-        .iter()
-        .filter(|sample| in_window(sample))
-        .filter_map(|sample| usable_energy_counter(sample))
-        .collect::<Vec<_>>();
-    if counters.windows(2).any(|pair| pair[1] < pair[0]) {
-        return None;
-    }
-    let (a, b) = (ordered[first], ordered[last]);
-    let level_span = b.battery_level? - a.battery_level?;
-    let energy_added = usable_energy_counter(b)? - usable_energy_counter(a)?;
-    let range_gained = finite_reading(b.rated_range_km)? - finite_reading(a.rated_range_km)?;
-    if level_span < K_EFF_MIN_SPAN || energy_added <= 0.0 || range_gained <= 0.0 {
-        return None;
-    }
-    let figure = (1000.0 * energy_added) / range_gained;
-    (figure.is_finite() && figure > 0.0).then_some(figure)
+    fold.finish()
 }
 
 /// The car's efficiency from its session figures, in Wh per km (C2 R64, R65,
@@ -1436,8 +1566,40 @@ fn fold_into_open_drive(
         None
     };
     let point = drive_point(observation);
+    let t = point.at_ms;
+    // A lead fold (C1 R87 point 2): a fresh position with no fresh motion
+    // family, dated after the motion watermark as it stands before step 10.
+    let lead = observation.fresh.position
+        && !observation.fresh.motion
+        && state
+            .last_drive_timestamp_ms
+            .is_none_or(|watermark| t > watermark);
     if let Some(open) = state.open_drive.as_mut() {
+        // (a) A fresh motion family at t removes every cut at or before t.
+        if observation.fresh.motion {
+            open.lead_checkpoints.retain(|checkpoint| checkpoint.cut_ms > t);
+        }
+        // (b) A lead fold keeps a copy of the drive as it stands now.
+        if lead {
+            if open.lead_checkpoints.len() >= K_LEAD_CHECKPOINTS {
+                open.lead_checkpoints.remove(0);
+            }
+            let drive = detached_copy(open);
+            let at = open
+                .lead_checkpoints
+                .partition_point(|checkpoint| checkpoint.cut_ms <= t);
+            open.lead_checkpoints
+                .insert(at, LeadCheckpoint { cut_ms: t, drive });
+        }
+        // (c) Fold into the drive and into every checkpoint cut above t.
         observe_drive_point(open, &point, position.as_ref());
+        for checkpoint in open
+            .lead_checkpoints
+            .iter_mut()
+            .filter(|checkpoint| checkpoint.cut_ms > t)
+        {
+            fold_drive_point(&mut checkpoint.drive, &point, None, false);
+        }
     }
     Ok(position)
 }
@@ -1454,8 +1616,9 @@ fn fold_into_open_drive(
 /// position (R48); storage places earlier children by the same rule.
 ///
 /// `explicit_end` is the Park or plugged-in fact's own time when one closes the
-/// drive (R43 items 6 and 7, R44): a position folded earlier but dated later
-/// stays a child dated after the end (R48a).
+/// drive (R43 items 6 and 7, R44). The row and the keep decision come from the
+/// end source (R87): folds dated after the end are left out, and a position
+/// folded earlier but dated later stays a child dated after the end (R48a).
 ///
 /// The close also leaves the parked snapshot (R69) and the references of the
 /// standalone rule (R53) at the drive's latest emitted position.
@@ -1477,8 +1640,25 @@ fn close_open_drive(
         == Some(open.id);
     let drive_id = open.id;
     let checkpoint = open.still_checkpoint.take();
-    let mut source = match checkpoint {
-        Some(checkpoint) if loe_end => *checkpoint,
+    let mut leads = std::mem::take(&mut open.lead_checkpoints);
+    // The end source (C1 R87 point 5): for an explicit end, the lead checkpoint
+    // with the smallest cut above the end if one is held, else the open drive.
+    // A lack-of-evidence close is decided by R44 and ignores them.
+    let lead_source = if loe_end {
+        None
+    } else {
+        explicit_end.and_then(|end| {
+            let at = leads.partition_point(|lead| lead.cut_ms <= end);
+            (at < leads.len()).then(|| leads.swap_remove(at))
+        })
+    };
+    let mut source = match (checkpoint, lead_source) {
+        (Some(checkpoint), _) if loe_end => *checkpoint,
+        (_, Some(lead)) => {
+            let mut drive = lead.drive;
+            drive.positions = std::mem::take(&mut open.positions);
+            drive
+        }
         _ => open,
     };
     // Children kept in memory by pure tests travel in the delta like any
@@ -1580,7 +1760,12 @@ fn drive_close_step(
     let parked = observation.drive == DriveEvidence::Park;
     let plugged = observation.charge.is_plugged();
     if parked || plugged {
-        if drive_facts {
+        // R87 point 6: a plugged observation whose only fresh drive family is
+        // a position dated before the drive's newest fold cannot end the drive
+        // at its own time, so the drive ends at its last evidence.
+        let can_end_here = observation.fresh.motion
+            || (observation.fresh.position && t_drive >= last_folded);
+        if can_end_here {
             let position = fold_into_open_drive(state, observation)?;
             close_open_drive(state, delta, false, position, Some(t_drive))?;
         } else {

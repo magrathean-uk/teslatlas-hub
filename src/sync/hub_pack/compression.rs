@@ -87,6 +87,7 @@ fn compress_file_with_workers(
         path: source_path.to_path_buf(),
         source,
     })?;
+    crate::platform::file_attempts::note(destination_path);
     let destination = OpenOptions::new()
         .write(true)
         .truncate(true)
@@ -142,6 +143,7 @@ fn publish_immutable(
     limits: ProtocolLimits,
 ) -> Result<ImmutablePublication, ProjectionPackError> {
     let temporary_path = temporary.path().to_path_buf();
+    crate::platform::file_attempts::note(&temporary_path);
     fs::set_permissions(
         &temporary_path,
         fs::Permissions::from_mode(SHARED_IMMUTABLE_PACK_MODE),
@@ -158,6 +160,7 @@ fn publish_immutable(
         })?;
     crate::durability_fault::check(crate::durability_fault::DurabilityFaultPoint::PackFinalInstall)
         .map_err(ProjectionPackError::Durability)?;
+    crate::platform::file_attempts::note(final_path);
     let ownership = match fs::hard_link(&temporary_path, final_path) {
         Ok(()) => ProjectionPackOwnership::Created,
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
@@ -195,6 +198,7 @@ fn publish_immutable(
             cleanup_state: ProjectionPackCleanupState::PendingStartupRepair,
         });
     }
+    crate::platform::file_attempts::note(&temporary_path);
     if let Err(source) = fs::remove_file(&temporary_path) {
         tracing::warn!(%source, path = %temporary_path.display(), "pack committed with staging cleanup pending");
         return Ok(ImmutablePublication {
@@ -230,6 +234,9 @@ fn sync_parent_directory(path: &Path) -> Result<(), ProjectionPackError> {
         path: path.to_path_buf(),
         source: io::Error::other("immutable pack has no parent directory"),
     })?;
+    // A sync leaves the file image as it was and is counted in tests all the same (B2 fix
+    // round, P3b fix 5, R-P3bF5-3).
+    crate::platform::file_attempts::note(parent);
     File::open(parent)
         .and_then(|directory| directory.sync_all())
         .map_err(|source| ProjectionPackError::Publish {

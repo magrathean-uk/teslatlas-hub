@@ -2,6 +2,7 @@
 
 //! Operating-system service and process integration.
 
+pub(crate) mod file_attempts;
 #[cfg(unix)]
 pub mod hub_user_process;
 #[cfg(target_os = "linux")]

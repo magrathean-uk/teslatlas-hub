@@ -547,6 +547,66 @@ final class OnboardingHubControllerTests: XCTestCase {
         ])
     }
 
+    func testHandoverReadyWithAttentionStillRequiresNewCollectorLease() throws {
+        let home = try temporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let config = try prepareAwaitingHandover(in: home, previousIntervalSeconds: 60)
+        let events = OnboardingEvents()
+        let scheduler = ManualOnboardingScheduler()
+        let oldInstance = "11111111-1111-4111-8111-111111111111"
+        let newInstance = "22222222-2222-4222-8222-222222222222"
+        let attention = "collector_cap_reached"
+        // A ready status that carries collection attention is still ready, but a
+        // reused lease (and a stale one) is rejected until a new collector's lease
+        // appears; only then does the handover complete.
+        let runner = OnboardingRunner(events: events, statusResults: [
+            .success(readinessStatus(ready: true, collectorInstanceID: oldInstance,
+                                     startedAtMs: 50_000, attention: attention)),
+            .success(readinessStatus(ready: true, collectorInstanceID: oldInstance,
+                                     startedAtMs: 50_000, attention: attention)),
+            .success(readinessStatus(ready: true, collectorInstanceID: oldInstance,
+                                     startedAtMs: 50_000, attention: attention)),
+            .success(readinessStatus(ready: true, collectorInstanceID: newInstance,
+                                     startedAtMs: 101_000, attention: attention))
+        ])
+        let controller = HubController(
+            commandRunner: runner,
+            installedCommandRunner: runner,
+            serviceRunner: OnboardingService(events: events),
+            homeDirectory: home,
+            serviceInstalledOverride: true,
+            migrationStartupReadinessPollInterval: 1,
+            migrationStartupReadinessMaxAttempts: 3,
+            migrationStartupReadinessNow: { Date(timeIntervalSince1970: 100) },
+            migrationStartupReadinessSchedule: scheduler.schedule
+        )
+        let finished = expectation(description: "fresh collector becomes ready with attention")
+        var completed = false
+
+        controller.acknowledgeMigrationHandoverAndStart { result in
+            if case let .failure(error) = result { XCTFail(error.localizedDescription) }
+            completed = true
+            finished.fulfill()
+        }
+
+        XCTAssertFalse(completed, "the old lease is rejected although the status is ready")
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+        XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 60"))
+
+        scheduler.runNext()
+        XCTAssertFalse(completed, "a reused lease is still not a new collector")
+        XCTAssertTrue(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+
+        scheduler.runNext()
+        wait(for: [finished], timeout: 1)
+        XCTAssertFalse(controller.hasPendingMigrationHandover)
+        XCTAssertEqual(events.values, [
+            "status", "service:start", "status", "status", "status"
+        ])
+    }
+
     func testHandoverStartRejectsConcurrentInvocationBeforeStartingAnotherService() throws {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
@@ -954,7 +1014,9 @@ final class OnboardingHubControllerTests: XCTestCase {
 
     private func readinessStatus(ready: Bool,
                                  collectorInstanceID: String?,
-                                 startedAtMs: Int64 = 50_000) -> String {
+                                 startedAtMs: Int64 = 50_000,
+                                 attention: String? = nil) -> String {
+        let attentionMember = attention.map { #","collectionAttention":"\#($0)""# } ?? ""
         let collector: String
         if let collectorInstanceID {
             collector = """
@@ -964,7 +1026,7 @@ final class OnboardingHubControllerTests: XCTestCase {
             collector = "null"
         }
         return """
-        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":\(ready),"readinessReason":\(ready ? "null" : "\"collector_absent\""),"provider":"legacy","vehicle":{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000},"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000}],"credentials":{"present":true},"legacyCredentials":{"present":true,"expiresAt":null,"nextRefreshAt":null},"fleetCredentials":{"present":false,"expiresAt":null,"nextRefreshAt":null,"scopes":null,"scopeStatus":null},"fleetTelemetry":{"enabled":false,"configured":false,"mode":"disabled","operationalState":"disabled","paidVehicleDataPolling":false,"deliveryPolicy":null},"collector":\(collector)}
+        {"status":"ok","version":"\(HubRelease.bundledVersion)","database":{"path":"/tmp/hub/catalogue.sqlite3","bytes":1048576},"ready":\(ready),"readinessReason":\(ready ? "null" : "\"collector_absent\"")\(attentionMember),"provider":"legacy","vehicle":{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000},"vehicles":[{"vehicleId":"7a5d69ab-8ea8-4056-8b2f-42c41c28ae36","displayName":"Athena","sourceCarId":1,"teslaEid":1,"latestObservationId":1,"latestObservedAtMs":1000,"latestReceivedAtMs":1000}],"credentials":{"present":true},"legacyCredentials":{"present":true,"expiresAt":null,"nextRefreshAt":null},"fleetCredentials":{"present":false,"expiresAt":null,"nextRefreshAt":null,"scopes":null,"scopeStatus":null},"fleetTelemetry":{"enabled":false,"configured":false,"mode":"disabled","operationalState":"disabled","paidVehicleDataPolling":false,"deliveryPolicy":null},"collector":\(collector)}
         """
     }
 }

@@ -427,3 +427,144 @@ fn rejects_symlinked_cursor_key() {
         Err(TeslaMateCredentialError::UnsafeCursorKeyFile)
     ));
 }
+
+// ---- B2 fix round, P3b fix 4 (R-P3bF4-4, R-P3bF4-7): the guarded settlement and its counter -----------------
+
+/// The files of `secrets/` with inode, modification time and length.
+fn secrets_image(data_dir: &Path) -> Vec<String> {
+    use std::os::unix::fs::MetadataExt as _;
+    let mut image: Vec<String> = fs::read_dir(data_dir.join("secrets"))
+        .expect("secrets")
+        .flatten()
+        .map(|entry| {
+            let metadata = entry.metadata().expect("metadata");
+            format!(
+                "{}:{}:{}.{}:{}",
+                entry.file_name().to_string_lossy(),
+                metadata.ino(),
+                metadata.mtime(),
+                metadata.mtime_nsec(),
+                metadata.len()
+            )
+        })
+        .collect();
+    image.sort();
+    image
+}
+
+/// An interrupted replacement: `(directory, committed pair, the key that decrypts it)`.
+/// `committed_new`: the SQLite commit happened (the current key matches and the previous
+/// is left over); otherwise it did not (the previous matches and the current does not).
+fn interrupted(
+    committed_new: bool,
+) -> (
+    tempfile::TempDir,
+    crate::db::TeslaMateLegacyTokenStore,
+    &'static [u8],
+) {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let old_key: &[u8] = b"old exact TeslaMate key";
+    let new_key: &[u8] = b"new exact TeslaMate key";
+    replace_key(temporary.path(), old_key).expect("old key");
+    drop(begin_key_replacement(temporary.path(), new_key).expect("stage new key"));
+    if committed_new {
+        (
+            temporary,
+            encrypted_store(new_key, "new-access", "new-refresh"),
+            new_key,
+        )
+    } else {
+        (
+            temporary,
+            encrypted_store(old_key, "old-access", "old-refresh"),
+            old_key,
+        )
+    }
+}
+
+#[test]
+fn p3bf4_a_refused_settlement_leaves_both_key_files_as_they_were() {
+    for committed_new in [true, false] {
+        let (temporary, tokens, _) = interrupted(committed_new);
+        let image = secrets_image(temporary.path());
+        let attempts = crate::platform::file_attempts::count_under(temporary.path());
+        assert!(matches!(
+            load_key_for_tokens_with(temporary.path(), &tokens, &|| false),
+            Err(TeslaMateCredentialError::SettlementRefused)
+        ));
+        assert_eq!(
+            secrets_image(temporary.path()),
+            image,
+            "committed {committed_new}"
+        );
+        assert_eq!(
+            crate::platform::file_attempts::count_under(temporary.path()),
+            attempts,
+            "no file mutation was attempted (committed {committed_new})"
+        );
+    }
+}
+
+#[test]
+fn p3bf4_an_admitted_settlement_consults_in_front_of_each_mutation_and_settles() {
+    for (committed_new, consultations) in [(true, 1_usize), (false, 2)] {
+        let (temporary, tokens, key) = interrupted(committed_new);
+        let consulted = std::cell::Cell::new(0_usize);
+        let loaded = load_key_for_tokens_with(temporary.path(), &tokens, &|| {
+            consulted.set(consulted.get() + 1);
+            true
+        })
+        .expect("the admitted settlement");
+        assert_eq!(loaded.as_bytes(), key);
+        assert_eq!(consulted.get(), consultations, "committed {committed_new}");
+        assert!(!previous_key_path(temporary.path()).exists());
+        assert_eq!(load_key(temporary.path()).expect("current").as_bytes(), key);
+    }
+}
+
+#[test]
+fn p3bf4_a_restore_refused_between_its_two_mutations_is_recovered_by_the_next_start() {
+    let (temporary, tokens, key) = interrupted(false);
+    let consulted = std::cell::Cell::new(0_usize);
+    let refused = load_key_for_tokens_with(temporary.path(), &tokens, &|| {
+        consulted.set(consulted.get() + 1);
+        consulted.get() < 2
+    });
+    assert!(matches!(
+        refused,
+        Err(TeslaMateCredentialError::SettlementRefused)
+    ));
+    // The current key was deleted and the previous not yet restored: the pair is still
+    // recoverable, and the next admitted start settles it.
+    assert!(!key_path(temporary.path()).exists());
+    assert!(previous_key_path(temporary.path()).exists());
+    let recovered = load_key_for_tokens(temporary.path(), &tokens).expect("recovered");
+    assert_eq!(recovered.as_bytes(), key);
+    assert!(!previous_key_path(temporary.path()).exists());
+}
+
+#[test]
+fn p3bf5_the_credential_file_counter_counts_creation_settlement_and_directory_sync() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let count = || crate::platform::file_attempts::count_under(temporary.path());
+    assert_eq!(count(), 0);
+    load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    let created = count();
+    // The secrets directory, the temporary file's create, write and sync, the hard link
+    // of the final name, the removal of the temporary name and the sync of the directory.
+    assert_eq!(created, 7);
+    // An idempotent load writes nothing and counts nothing.
+    load_or_create_cursor_key(temporary.path()).expect("cursor key again");
+    assert_eq!(count(), created);
+    // The settlement of an interrupted replacement removes the previous generation and
+    // syncs the directory (the transient write is counted by the terrain control,
+    // `p3bf4_the_stamp_counts_a_transient_file_write_the_final_files_do_not_show`).
+    let (settled, tokens, _) = interrupted(true);
+    let before = crate::platform::file_attempts::count_under(settled.path());
+    load_key_for_tokens(settled.path(), &tokens).expect("settled");
+    assert_eq!(
+        crate::platform::file_attempts::count_under(settled.path()),
+        before + 2,
+        "the removal of the previous generation and the sync of the directory are counted"
+    );
+}

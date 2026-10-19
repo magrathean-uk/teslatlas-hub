@@ -137,11 +137,7 @@ fn st81_a_discovery_that_differs_from_the_last_reach_is_delivered() {
     );
     assert_eq!(cursor(&store, vehicle), c1);
     // The car wakes and is seen through the stream.
-    let wake = frame(
-        0,
-        T0 + 2 * MIN,
-        "0,1000.0,80,25,180,10.0,20.0,,,200,210,181",
-    );
+    let wake = frame(0, T0 + 2 * MIN, "25,10.0,20.0,210,181,1000.0,,200,,80,0");
     store
         .accept_owner_observation_and_lifecycle(&input(source, vehicle, &wake), T0 + 2 * MIN, CAR)
         .expect("stream wake");

@@ -16,13 +16,14 @@ use uuid::Uuid;
 
 use crate::{
     BUILD_VERSION,
-    config::{CollectorProvider, HubConfig},
+    config::{CadenceViolationReport, CollectorMode, CollectorProvider, HubConfig, collector_mode},
     db::{
-        CatalogueInventory, HubStore, ReadinessReasonCode, SCHEMA_VERSION, StoreError,
-        StreamAuditSummary,
+        CatalogueInventory, HubStore, ReadinessContext, SCHEMA_VERSION, StoreError,
+        StreamAuditSummary, SupervisedCollectorLeaseStatus,
     },
     fleet_credentials::{
-        FleetCredentialError, stored_fleet_scope_summary, validate_stored_fleet_credentials,
+        FleetCredentialError, inspect_stored_fleet_credentials, stored_fleet_scope_summary,
+        validate_stored_fleet_credentials,
     },
     teslamate_credentials::validate_stored_legacy_credentials_read_only,
 };
@@ -42,6 +43,18 @@ pub struct CredentialPresence {
     pub expires_at: Option<i64>,
     pub next_refresh_at: Option<i64>,
     pub valid_for_collection: bool,
+    /// The credential unit's state code (C5 R52), read from the store so any
+    /// process can show it. `None` before the unit has ever run.
+    pub auth_state: Option<String>,
+    /// The state's reason code, or `None` (C5 R52).
+    pub auth_reason: Option<String>,
+    /// Epoch seconds of the next token attempt while one is pending (C5 R31).
+    pub retry_at: Option<i64>,
+    /// Whether the account collects at the moment of the last status write
+    /// (C5 R52a). False before the unit has ever run.
+    pub collecting: bool,
+    /// The host clock differs from Tesla's by more than 300 s (C5 R55).
+    pub clock_skew: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -76,6 +89,24 @@ pub struct CollectorDiagnostics {
     pub can_start: bool,
     pub init_only: bool,
     pub readiness: String,
+    /// The one condition that needs the owner while the service stays up (B2
+    /// clarification 3): the final attention registry, selected by its fixed
+    /// precedence and read independently of the lease. `None` for a disabled
+    /// collector. It never changes `readiness` and never fails the report.
+    pub collection_attention: Option<String>,
+    /// Healthy collector states worth showing: a paused car, a rate-limit wait,
+    /// a Tesla outage, an alert gap the owner has not been told about (C3 R13,
+    /// R66). They never change `readiness` and never repeat the attention.
+    pub readiness_detail: Vec<String>,
+    /// A required collector holds a coherent, unexpired lease (a terminal lease
+    /// still witnesses a running process). Lease timing is not an exact stop
+    /// time.
+    pub running: bool,
+    /// The redacted lease timing, or `None` without a lease row.
+    pub lease: Option<SupervisedCollectorLeaseStatus>,
+    /// The first broken cadence rule of this configuration while collection is
+    /// active (managed Serve waits for a correction and restart), else `None`.
+    pub cadence_error: Option<CadenceViolationReport>,
     pub geocoder_enabled: bool,
     pub terrain_enabled: bool,
     pub bind: String,
@@ -181,6 +212,9 @@ impl HubDoctorReport {
             can_start = self.collector.can_start,
             init_only = self.collector.init_only,
             readiness = %self.collector.readiness,
+            attention = self.collector.collection_attention.as_deref(),
+            running = self.collector.running,
+            cadence_valid = self.collector.cadence_error.is_none(),
             "Hub doctor credentials and collector"
         );
         tracing::info!(
@@ -253,10 +287,49 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     let legacy_tokens = store.load_teslamate_legacy_tokens()?;
     let fleet_tokens = store.load_fleet_tokens()?;
     let unresolved_legacy_refresh = store.has_unresolved_legacy_refresh()?;
-    let legacy_valid_for_collection = !unresolved_legacy_refresh
+    let now_ms = diagnostic_epoch_ms();
+    // The loaded configuration, not the account row, decides whether the
+    // credential unit's status applies (B2 clarification 3): Legacy and Provider
+    // read it, effective at this moment; Fleet polling ignores a retained one and
+    // never reads Legacy credential material for it.
+    let loaded_mode = collector_mode(&config.collector);
+    let auth_status = if loaded_mode == CollectorMode::FleetPolling {
+        None
+    } else {
+        match store.effective_collector_auth(loaded_mode, now_ms) {
+            Ok(effective) => effective.map(|effective| effective.row),
+            // A key, cipher or store fault: show what is stored; the credential
+            // validation below reports the fault itself.
+            Err(_) => store.load_collector_auth_row()?,
+        }
+    };
+    // C5 section 3.5: a stop, a refusal or a configuration fault means the
+    // stored pair cannot collect, however well it decrypts.
+    let auth_blocks_collection = auth_status.as_ref().is_some_and(|row| {
+        matches!(
+            row.state.as_str(),
+            "signed_out" | "configuration_error" | "api_refused"
+        )
+    });
+    // A Fleet configuration never touches the Legacy key material: the retained
+    // pair is reported as present and not valid for collection, without a key
+    // read or a decryption (C3 R1, B2 clarification 3).
+    let legacy_key_valid = loaded_mode != CollectorMode::FleetPolling
         && legacy_tokens.as_ref().is_some_and(|tokens| {
             validate_stored_legacy_credentials_read_only(&config.data_dir, tokens).is_ok()
         });
+    // Operational validity: whether collection could use the pair now.
+    let legacy_valid_for_collection =
+        !unresolved_legacy_refresh && !auth_blocks_collection && legacy_key_valid;
+    // Diagnostic admission: the pair is present and decrypts, no Legacy refresh is
+    // unresolved and the applicable status is not signed out. A refusal or a
+    // credential-unit configuration fault alone is attention, not a failure.
+    let legacy_admitted = legacy_tokens.is_some()
+        && legacy_key_valid
+        && !unresolved_legacy_refresh
+        && !auth_status
+            .as_ref()
+            .is_some_and(|row| row.state == "signed_out");
     let legacy = CredentialPresence {
         present: legacy_tokens.is_some(),
         expires_at: legacy_tokens.as_ref().map(|tokens| tokens.expires_at()),
@@ -264,6 +337,11 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             .as_ref()
             .map(|tokens| tokens.next_refresh_at()),
         valid_for_collection: legacy_valid_for_collection,
+        auth_state: auth_status.as_ref().map(|row| row.state.clone()),
+        auth_reason: auth_status.as_ref().and_then(|row| row.reason.clone()),
+        retry_at: auth_status.as_ref().and_then(|row| row.retry_at),
+        collecting: auth_status.as_ref().is_some_and(|row| row.collecting),
+        clock_skew: auth_status.as_ref().is_some_and(|row| row.clock_skew),
     };
     let mut fleet = FleetCredentialDiagnostics {
         present: fleet_tokens.is_some(),
@@ -276,6 +354,11 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         vehicle_charging_commands: None,
         valid_for_collection: false,
     };
+    // Independent integrity of the stored Fleet pair (key, ciphertext,
+    // generation, claims, scopes), then whether an identified refresh is
+    // unresolved. The unresolved input is fenced, so it never collects
+    // (`valid_for_collection`), but the pair is sound and admissible.
+    let mut fleet_admitted = false;
     if fleet.present {
         match stored_fleet_scope_summary(store, &config.data_dir) {
             Ok(Some(summary)) => {
@@ -290,11 +373,16 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         }
         fleet.valid_for_collection =
             validate_stored_fleet_credentials(store, &config.data_dir).is_ok();
+        fleet_admitted = inspect_stored_fleet_credentials(store, &config.data_dir).is_ok();
     }
 
     let selected_credentials_present = match config.collector.provider {
         CollectorProvider::Legacy => legacy.present && legacy.valid_for_collection,
         CollectorProvider::Fleet => fleet.present && fleet.valid_for_collection,
+    };
+    let selected_credentials_admitted = match config.collector.provider {
+        CollectorProvider::Legacy => legacy_admitted,
+        CollectorProvider::Fleet => fleet.present && fleet_admitted,
     };
     let configured = store.configured_tesla_vehicles()?;
     let init_only = configured.is_empty()
@@ -313,18 +401,36 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     let can_start = collector_required
         && !configured.is_empty()
         && (config.collector.edge.is_some() || selected_credentials_present);
+    // The doctor's own start check judges admission, not operational validity: an
+    // owner-resolvable condition (a refusal, a credential-unit configuration
+    // fault, an identified unresolved Fleet refresh) is attention, so it must not
+    // fail the report, while `can_start` keeps its prerequisite meaning.
+    let diagnostic_can_start = collector_required
+        && !configured.is_empty()
+        && (config.collector.edge.is_some() || selected_credentials_admitted);
     let selected_credentials_configured = match config.collector.provider {
         CollectorProvider::Legacy => legacy.present,
         CollectorProvider::Fleet => fleet.present,
     };
-    let now_ms = diagnostic_epoch_ms();
     let stream_audit = store
         .stream_audit_summary_since(now_ms.saturating_sub(STREAM_AUDIT_DIAGNOSTIC_WINDOW_MS))?;
     let stream_recovered = stream_audit_recovered(&stream_audit);
-    let readiness = match store.service_readiness_at(collector_required, now_ms) {
+    let cadence_violation = (collector_required && config.collector.edge.is_none())
+        .then(|| config.collector.cadence_violation())
+        .flatten();
+    let view = store.collector_readiness_view(&ReadinessContext::configured(
+        collector_required,
+        now_ms,
+        loaded_mode,
+        cadence_violation.clone(),
+    ));
+    let readiness = match view.service {
         Ok(()) => "ready".to_owned(),
-        Err(failure) => readiness_code(failure.code).to_owned(),
+        Err(failure) => failure.code.code().to_owned(),
     };
+    let attention = view.attention.map(|code| code.code().to_owned());
+    let readiness_detail: Vec<String> = view.detail.iter().map(|word| (*word).to_owned()).collect();
+    let lease = store.supervised_collector_lease_status()?;
 
     let published = store.published_vehicles()?;
     let mut vehicles = Vec::with_capacity(published.len());
@@ -384,18 +490,29 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             catalogue.schema_version
         ),
     };
+    let credential_attribution = match config.collector.provider {
+        CollectorProvider::Legacy => format!(
+            "authState={} unresolvedRefresh={}",
+            legacy.auth_state.as_deref().unwrap_or("none"),
+            unresolved_legacy_refresh
+        ),
+        CollectorProvider::Fleet => {
+            "authState=not_applicable unresolvedRefresh=not_applicable".to_owned()
+        }
+    };
     let credentials_check = DoctorCheck {
         name: "selectedProviderCredentials".to_owned(),
         passed: (!direct_provider_credentials_required && !selected_credentials_configured)
-            || selected_credentials_present,
+            || selected_credentials_admitted,
         detail: format!(
-            "provider={:?} legacyPresent={} legacyCollection={} fleetPresent={} fleetCollection={} required={}",
+            "provider={:?} legacyPresent={} legacyCollection={} fleetPresent={} fleetCollection={} required={} {}",
             config.collector.provider,
             legacy.present,
             legacy.valid_for_collection,
             fleet.present,
             fleet.valid_for_collection,
-            collector_required
+            collector_required,
+            credential_attribution
         ),
     };
     let tls_check = DoctorCheck {
@@ -412,11 +529,34 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
     };
     let collector_check = DoctorCheck {
         name: "collectorReadiness".to_owned(),
-        passed: collector_readiness_passes(collector_required, can_start, &readiness),
+        passed: collector_readiness_passes(collector_required, diagnostic_can_start, &readiness),
         detail: format!(
-            "required={} initOnly={} canStart={} readiness={}",
-            collector_required, init_only, can_start, readiness
+            "required={} initOnly={} canStart={} readiness={} attention={} detail={}",
+            collector_required,
+            init_only,
+            can_start,
+            readiness,
+            attention.as_deref().unwrap_or("none"),
+            readiness_detail.join(",")
         ),
+    };
+    // The cadence is informational here: an invalid one is attention, and the
+    // doctor's other checks decide pass or failure (B2 clarification 3).
+    let cadence_check = DoctorCheck {
+        name: "collectorCadence".to_owned(),
+        passed: true,
+        detail: match (&cadence_violation, collector_required) {
+            (_, false) => {
+                "inactive: supervised collection is not required, so no cadence applies".to_owned()
+            }
+            (None, true) if config.collector.edge.is_some() => {
+                "inactive: Edge delivery replaces polling, so no cadence applies".to_owned()
+            }
+            (None, true) => "valid".to_owned(),
+            (Some(violation), true) => format!(
+                "invalid: {violation}; managed Serve waits without collecting until the setting is corrected and the service restarted"
+            ),
+        },
     };
     let stream_check = DoctorCheck {
         name: "streamRecovery".to_owned(),
@@ -459,6 +599,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         credentials_check,
         tls_check,
         collector_check,
+        cadence_check,
         stream_check,
         token_preservation,
         teslamate_safety,
@@ -468,8 +609,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             3,
             DoctorCheck {
                 name: "fleetCollectionScopes".to_owned(),
-                passed: (!direct_provider_credentials_required && !fleet.present)
-                    || fleet.valid_for_collection,
+                passed: (!direct_provider_credentials_required && !fleet.present) || fleet_admitted,
                 detail: fleet
                     .scope_status
                     .clone()
@@ -506,6 +646,13 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             can_start,
             init_only,
             readiness,
+            collection_attention: attention,
+            readiness_detail,
+            running: view.running,
+            lease,
+            cadence_error: cadence_violation
+                .as_ref()
+                .map(|violation| violation.report()),
             geocoder_enabled: config.geocoder.enabled,
             terrain_enabled: config.terrain.enabled,
             bind: config.bind.to_string(),
@@ -603,17 +750,6 @@ fn fleet_scope_status(error: &FleetCredentialError) -> &'static str {
     }
 }
 
-fn readiness_code(code: ReadinessReasonCode) -> &'static str {
-    match code {
-        ReadinessReasonCode::CatalogueUnavailable => "catalogue_unavailable",
-        ReadinessReasonCode::LifecycleQuarantined => "lifecycle_quarantined",
-        ReadinessReasonCode::PublishedContentUnservable => "published_content_unservable",
-        ReadinessReasonCode::CollectorAbsent => "collector_absent",
-        ReadinessReasonCode::CollectorStale => "collector_stale",
-        ReadinessReasonCode::CollectorAuthTerminal => "collector_auth_terminal",
-    }
-}
-
 fn diagnostic_epoch_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -627,6 +763,8 @@ mod tests {
     use super::*;
     use crate::config::HubConfig;
     use std::os::unix::fs::PermissionsExt;
+
+    include!("diagnostics/readiness_tests.rs");
 
     #[test]
     fn stopped_collector_is_ready_to_start_not_a_doctor_failure() {
@@ -860,6 +998,187 @@ mod tests {
                 .has_unresolved_legacy_refresh()
                 .expect("doctor remains read-only")
         );
+    }
+
+    /// A Hub directory with a valid stored pair (imported form) and a doctor
+    /// configuration for it, for the credential status tests below.
+    fn legacy_doctor_fixture() -> (tempfile::TempDir, HubStore, HubConfig) {
+        let temporary = crate::private_tempdir().expect("temporary Hub");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let key = b"exact TeslaMate key";
+        let tokens = crate::credentials::OwnerTokens::from_secret_parts(
+            "access".to_owned(),
+            "refresh".to_owned(),
+        )
+        .expect("tokens");
+        let (access, refresh) =
+            crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
+        let stored =
+            crate::db::TeslaMateLegacyTokenStore::imported(access, refresh).expect("stored tokens");
+        crate::teslamate_credentials::replace_key_and_tokens(
+            temporary.path(),
+            &store,
+            key,
+            &stored,
+        )
+        .expect("persist credentials");
+        let config_path = temporary.path().join("config.toml");
+        fs::write(
+            &config_path,
+            format!(
+                "data_dir = {:?}\nbind = '127.0.0.1:18443'\n\n[collector]\ninterval_seconds = 0\n",
+                temporary.path()
+            ),
+        )
+        .expect("write config");
+        fs::set_permissions(&config_path, fs::Permissions::from_mode(0o600))
+            .expect("private config");
+        let config = HubConfig::load(&config_path).expect("config");
+        (temporary, store, config)
+    }
+
+    #[test]
+    fn doctor_shows_the_credential_status_to_a_process_that_only_opens_the_store() {
+        let (temporary, store, config) = legacy_doctor_fixture();
+        // Before the credential unit has run there is no status to show.
+        let before = inspect_hub(&store, &config).expect("report before");
+        let json = serde_json::to_value(&before.credentials.legacy).expect("JSON");
+        assert_eq!(json["authState"], serde_json::Value::Null);
+        assert_eq!(json["authReason"], serde_json::Value::Null);
+        assert_eq!(json["retryAt"], serde_json::Value::Null);
+        assert_eq!(json["collecting"], false);
+        assert_eq!(json["clockSkew"], false);
+        assert_eq!(json["validForCollection"], true);
+        // The collector process stores `retrying(network)` with the token no
+        // longer usable (test 89, C5R-12).
+        let collector = HubStore::initialize(temporary.path()).expect("collector handle");
+        let row = crate::db::CollectorAuthRow {
+            state: "retrying".to_owned(),
+            reason: Some("network".to_owned()),
+            collecting: false,
+            retry_at: Some(1_800_000_060),
+            stopped_generation: None,
+            stopped_mode: None,
+            fuse_consecutive: 0,
+            fuse_generation: None,
+            fuse_last_rejection_at: None,
+            fuse_pause_until: None,
+            fuse_rejected_access_digest: None,
+            clock_skew: true,
+        };
+        collector
+            .write_collector_auth_row(&row, 1_800_000_000_000)
+            .expect("status");
+        // A second process that opens the store reads it from the diagnostics.
+        let second = HubStore::initialize(temporary.path()).expect("second process");
+        let report = inspect_hub(&second, &config).expect("report");
+        let json = serde_json::to_value(&report).expect("report JSON");
+        let legacy = &json["credentials"]["legacy"];
+        assert_eq!(legacy["authState"], "retrying");
+        assert_eq!(legacy["authReason"], "network");
+        assert_eq!(legacy["retryAt"], 1_800_000_060_i64);
+        assert_eq!(legacy["collecting"], false);
+        assert_eq!(legacy["clockSkew"], true);
+        // The existing keys keep their names and the new ones are additive.
+        let mut keys: Vec<&str> = legacy
+            .as_object()
+            .expect("object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "authReason",
+                "authState",
+                "clockSkew",
+                "collecting",
+                "expiresAt",
+                "nextRefreshAt",
+                "present",
+                "retryAt",
+                "validForCollection"
+            ]
+        );
+        // Only codes, times and flags: every string value of the legacy block is a code.
+        for value in legacy.as_object().expect("object").values() {
+            if let Some(text) = value.as_str() {
+                assert!(matches!(text, "retrying" | "network"), "{text}");
+            }
+        }
+        assert!(!json.to_string().contains("exact TeslaMate key"));
+    }
+
+    #[test]
+    fn valid_for_collection_is_false_only_for_signed_out_configuration_error_and_api_refused() {
+        let (_temporary, store, config) = legacy_doctor_fixture();
+        // The stops are tied to the stored pair's own generation: a stop of another
+        // generation is lifted in the effective view (C5 R44a).
+        let generation = store
+            .load_teslamate_legacy_tokens()
+            .expect("tokens")
+            .expect("row")
+            .credential_generation()
+            .expect("bound generation");
+        let row = |state: &str, reason: Option<&str>| crate::db::CollectorAuthRow {
+            state: state.to_owned(),
+            reason: reason.map(str::to_owned),
+            collecting: matches!(state, "ready" | "refreshing" | "sign_in_required"),
+            retry_at: None,
+            stopped_generation: matches!(state, "sign_in_required" | "signed_out")
+                .then_some(generation),
+            stopped_mode: (state == "api_refused").then(|| "legacy".to_owned()),
+            fuse_consecutive: 0,
+            fuse_generation: None,
+            fuse_last_rejection_at: None,
+            fuse_pause_until: None,
+            fuse_rejected_access_digest: None,
+            clock_skew: false,
+        };
+        let cases: [(&str, Option<&str>, bool); 11] = [
+            ("ready", None, true),
+            ("refreshing", None, true),
+            ("retrying", Some("network"), true),
+            ("persistence_pending", None, true),
+            ("awaiting_confirmation", Some("access_token_rejected"), true),
+            ("observer_waiting", Some("token_expired"), true),
+            ("clock_invalid", None, true),
+            ("sign_in_required", Some("refresh_token_rejected"), true),
+            ("signed_out", Some("access_token_rejected"), false),
+            ("configuration_error", Some("region_conflict"), false),
+            ("api_refused", Some("owner_api"), false),
+        ];
+        for (state, reason, valid) in cases {
+            let mut stored = row(state, reason);
+            if state == "awaiting_confirmation" {
+                stored.fuse_consecutive = 2;
+                stored.fuse_generation = Some(generation);
+                stored.fuse_pause_until = Some(1);
+            }
+            store
+                .write_collector_auth_row(&stored, 1_000)
+                .expect("status row");
+            let report = inspect_hub(&store, &config).expect("report");
+            let legacy = &report.credentials.legacy;
+            assert_eq!(legacy.valid_for_collection, valid, "{state}");
+            assert_eq!(legacy.auth_state.as_deref(), Some(state));
+            assert_eq!(legacy.auth_reason.as_deref(), reason);
+            assert_eq!(legacy.collecting, stored.collecting, "{state}");
+        }
+        // An unresolved refresh still blocks, whatever the status says.
+        store
+            .write_collector_auth_row(&row("ready", None), 2_000)
+            .expect("ready");
+        let tokens = store
+            .load_teslamate_legacy_tokens()
+            .expect("tokens")
+            .expect("row");
+        store
+            .begin_legacy_refresh(tokens.credential_generation().expect("generation"))
+            .expect("begin");
+        let report = inspect_hub(&store, &config).expect("report");
+        assert!(!report.credentials.legacy.valid_for_collection);
     }
 
     #[test]

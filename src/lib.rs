@@ -95,6 +95,96 @@ pub(crate) fn private_tempdir() -> std::io::Result<tempfile::TempDir> {
         .tempdir()
 }
 
+/// One process-wide log capture for tests. Tests that read their own log lines
+/// share it, because a process may install only one global `tracing` subscriber:
+/// two helpers that each installed their own made whichever ran second fail, so
+/// the outcome depended on test order. The subscriber is installed once, at
+/// `TRACE`, and writes each event to a buffer of the thread that emitted it, so
+/// every callsite stays enabled for every thread (a scoped subscriber would let a
+/// callsite first reached by another thread cache as disabled) and a thread that
+/// has not armed a buffer captures nothing.
+#[cfg(test)]
+pub(crate) mod test_log_capture {
+    use std::{
+        collections::HashMap,
+        io::Write,
+        sync::{LazyLock, Mutex, Once},
+        thread::{self, ThreadId},
+    };
+
+    static BUFFERS: LazyLock<Mutex<HashMap<ThreadId, Vec<u8>>>> = LazyLock::new(Default::default);
+
+    #[derive(Clone, Copy)]
+    struct Capture;
+
+    impl Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            if let Some(buffer) = BUFFERS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .get_mut(&thread::current().id())
+            {
+                buffer.extend_from_slice(bytes);
+            }
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Capture {
+        type Writer = Capture;
+
+        fn make_writer(&'a self) -> Self::Writer {
+            *self
+        }
+    }
+
+    /// Install the capture (once) and start an empty buffer for this thread.
+    pub(crate) fn arm() {
+        static INSTALL: Once = Once::new();
+        INSTALL.call_once(|| {
+            tracing::subscriber::set_global_default(
+                tracing_subscriber::fmt()
+                    .with_ansi(false)
+                    .with_max_level(tracing::Level::TRACE)
+                    .with_writer(Capture)
+                    .finish(),
+            )
+            .expect("no test installs a global subscriber but this one");
+        });
+        BUFFERS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(thread::current().id(), Vec::new());
+    }
+
+    /// What this thread has logged since `arm`.
+    pub(crate) fn read() -> String {
+        let buffers = BUFFERS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        String::from_utf8_lossy(
+            buffers
+                .get(&thread::current().id())
+                .map_or(&[][..], Vec::as_slice),
+        )
+        .into_owned()
+    }
+
+    /// Stop capturing for this thread and return what it logged.
+    pub(crate) fn disarm() -> String {
+        let captured = BUFFERS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&thread::current().id())
+            .unwrap_or_default();
+        String::from_utf8_lossy(&captured).into_owned()
+    }
+}
+
 /// Interactive legal notice printed by `teslatlas-hub legal`.
 pub fn legal_notice() -> String {
     let corresponding_source = corresponding_source_url().unwrap_or_else(|| {

@@ -1821,3 +1821,173 @@ fn owner_observation_joins_caller_transaction_for_atomic_receipts() {
         );
     }
 }
+
+#[test]
+fn a_new_observation_id_is_one_above_the_largest_id_any_table_holds() {
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store initializes");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    let append = |observed_at_ms: i64| {
+        store
+            .append_observation(
+                &ObservationInput {
+                    source_id: source.source_id,
+                    vehicle_id: vehicle.vehicle_id,
+                    observed_at_ms,
+                    payload: serde_json::json!({"speed": observed_at_ms}),
+                },
+                observed_at_ms + 5,
+            )
+            .expect("observation")
+            .observation
+            .observation_id
+    };
+    // No row anywhere: the first id is 1.
+    assert_eq!(append(10_000), 1);
+    assert_eq!(append(10_001), 2);
+    // The lifecycle cursor is above every stored observation: ids never
+    // re-use a cursor value.
+    store
+        .open()
+        .expect("connection")
+        .execute(
+            "INSERT INTO vehicle_lifecycle_state(
+                vehicle_id, car_id, last_observation_id, open_session_json,
+                quarantined, updated_at_ms
+             ) VALUES (?1, 1, 500, CAST('{}' AS BLOB), 0, 1000)",
+            params![vehicle.vehicle_id.to_string()],
+        )
+        .expect("lifecycle cursor");
+    assert_eq!(append(10_002), 501);
+    // A cursor below the largest stored id does not lower the next id.
+    store
+        .open()
+        .expect("connection")
+        .execute(
+            "UPDATE vehicle_lifecycle_state SET last_observation_id = 3
+             WHERE vehicle_id = ?1",
+            params![vehicle.vehicle_id.to_string()],
+        )
+        .expect("lower cursor");
+    assert_eq!(append(10_003), 502);
+}
+
+#[test]
+fn every_observation_id_writer_counts_the_current_table_and_the_other_two() {
+    // The raw append and the two current-only writers (a discovery row and a
+    // TeslaMate position row) take their id from one rule: one above the largest
+    // id in `raw_observations`, `current_observations` and the lifecycle
+    // cursors. Each case below makes a different table hold the largest id, so
+    // a writer that leaves one table out gives a smaller id and fails.
+    let temp = crate::private_tempdir().expect("temp directory");
+    let store = HubStore::initialize(temp.path()).expect("store initializes");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    let input = |observed_at_ms: i64, payload: Value| ObservationInput {
+        source_id: source.source_id,
+        vehicle_id: vehicle.vehicle_id,
+        observed_at_ms,
+        payload,
+    };
+    let append = |observed_at_ms: i64, payload: Value| {
+        store
+            .append_observation(&input(observed_at_ms, payload), observed_at_ms + 5)
+            .expect("observation")
+            .observation
+            .observation_id
+    };
+    let discovery = |observed_at_ms: i64| {
+        let mut connection = store.open().expect("connection");
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .expect("transaction");
+        HubStore::write_current_discovery_in_transaction(
+            &transaction,
+            &input(
+                observed_at_ms,
+                serde_json::json!({"record_type": "owner_api_discovery_v1", "state": "online"}),
+            ),
+            observed_at_ms + 5,
+        )
+        .expect("discovery row");
+        transaction.commit().expect("commit");
+    };
+    let position = |observed_at_ms: i64| {
+        assert!(
+            store
+                .record_teslamate_current(
+                    &input(
+                        observed_at_ms,
+                        serde_json::json!({"record_type": "teslamate_position_v1",
+                                           "t": observed_at_ms}),
+                    ),
+                    observed_at_ms + 5,
+                )
+                .expect("position row")
+        );
+    };
+    let current_id = |record_type: &str| -> i64 {
+        store
+            .open()
+            .expect("connection")
+            .query_row(
+                "SELECT observation_id FROM current_observations
+                 WHERE vehicle_id = ?1 AND record_type = ?2",
+                params![vehicle.vehicle_id.to_string(), record_type],
+                |row| row.get(0),
+            )
+            .expect("current row")
+    };
+    let set_current_ids = |observation_id: i64| {
+        store
+            .open()
+            .expect("connection")
+            .execute(
+                "UPDATE current_observations SET observation_id = ?1",
+                params![observation_id],
+            )
+            .expect("current ids");
+    };
+
+    // A current row that carries a record type: raw id 1, current row 1.
+    assert_eq!(
+        append(
+            10_000,
+            serde_json::json!({"record_type": "owner_api_vehicle_data_v1", "response": {}})
+        ),
+        1
+    );
+    // The current table holds the largest id: the raw append goes above it.
+    set_current_ids(1_000);
+    assert_eq!(append(10_100, serde_json::json!({"speed": 1})), 1_001);
+    // The raw table holds the largest id: a discovery row goes above it.
+    discovery(20_000);
+    assert_eq!(current_id("owner_api_discovery_v1"), 1_002);
+    // The current table holds the largest id: a position row goes above it.
+    position(30_000);
+    assert_eq!(current_id("teslamate_position_v1"), 1_003);
+    // The raw table holds the largest id again: a later position row goes
+    // above it, not above the lowered current rows.
+    set_current_ids(1);
+    position(40_000);
+    assert_eq!(current_id("teslamate_position_v1"), 1_002);
+    // The current table holds the largest id: a later discovery goes above it.
+    discovery(50_000);
+    assert_eq!(current_id("owner_api_discovery_v1"), 1_003);
+    // A lifecycle cursor above everything: both current-only writers go above it.
+    store
+        .open()
+        .expect("connection")
+        .execute(
+            "INSERT INTO vehicle_lifecycle_state(
+                vehicle_id, car_id, last_observation_id, open_session_json,
+                quarantined, updated_at_ms
+             ) VALUES (?1, 1, 5000, CAST('{}' AS BLOB), 0, 1000)",
+            params![vehicle.vehicle_id.to_string()],
+        )
+        .expect("lifecycle cursor");
+    position(60_000);
+    assert_eq!(current_id("teslamate_position_v1"), 5_001);
+    discovery(70_000);
+    assert_eq!(current_id("owner_api_discovery_v1"), 5_002);
+    assert_eq!(append(70_100, serde_json::json!({"speed": 2})), 5_003);
+}

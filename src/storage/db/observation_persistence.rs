@@ -29,13 +29,13 @@ impl HubStore {
         ensure_vehicle_belongs_to_source(&transaction, input.vehicle_id, input.source_id)?;
         let inserted = transaction
             .execute(
-                "INSERT INTO current_observations(
+                concat!(
+                    "INSERT INTO current_observations(
                 vehicle_id, record_type, observation_id, source_id, observed_at_ms,
                 received_at_ms, payload_sha256, payload_json
-             ) VALUES (?1, 'teslamate_position_v1',
-                MAX(COALESCE((SELECT MAX(observation_id) FROM raw_observations),0),
-                    COALESCE((SELECT MAX(observation_id) FROM current_observations),0),
-                    COALESCE((SELECT MAX(last_observation_id) FROM vehicle_lifecycle_state),0))+1,
+             ) VALUES (?1, 'teslamate_position_v1', ",
+                    next_observation_id_sql!(),
+                    ",
                 ?2, ?3, ?4, ?5, ?6)
              ON CONFLICT(vehicle_id, record_type) DO UPDATE SET
                 observation_id=excluded.observation_id, source_id=excluded.source_id,
@@ -43,7 +43,8 @@ impl HubStore {
                 payload_sha256=excluded.payload_sha256, payload_json=excluded.payload_json
              WHERE excluded.observed_at_ms > current_observations.observed_at_ms
                 OR (excluded.observed_at_ms = current_observations.observed_at_ms
-                    AND excluded.payload_sha256 != current_observations.payload_sha256)",
+                    AND excluded.payload_sha256 != current_observations.payload_sha256)"
+                ),
                 params![
                     input.vehicle_id.to_string(),
                     input.source_id.to_string(),
@@ -135,22 +136,17 @@ fn append_observation_in_transaction(
     }
     let inserted = transaction
         .execute(
-            "INSERT INTO raw_observations
+            concat!(
+                "INSERT INTO raw_observations
              (observation_id, source_id, vehicle_id, observed_at_ms,
               received_at_ms, payload_sha256, payload_json)
-             VALUES (
-                 COALESCE((
-                     SELECT MAX(observation_id) FROM (
-                         SELECT observation_id FROM raw_observations
-                         UNION ALL
-                         SELECT observation_id FROM current_observations
-                         UNION ALL
-                         SELECT last_observation_id FROM vehicle_lifecycle_state
-                     )
-                 ), 0) + 1,
+             VALUES (",
+                next_observation_id_sql!(),
+                ",
                  ?1, ?2, ?3, ?4, ?5, ?6
              )
-             ON CONFLICT(source_id, vehicle_id, observed_at_ms, payload_sha256) DO NOTHING",
+             ON CONFLICT(source_id, vehicle_id, observed_at_ms, payload_sha256) DO NOTHING"
+            ),
             params![
                 input.source_id.to_string(),
                 input.vehicle_id.to_string(),
@@ -350,37 +346,141 @@ fn observations_after_id_in_transaction(
         .map_err(StoreError::Query)
 }
 
-fn load_open_positions_for_parent(
-    transaction: &Transaction<'_>,
-    vehicle_key: &str,
-    drive_id: i64,
-) -> Result<Vec<crate::hub_pack::ProjectionPosition>, StoreError> {
-    let mut statement = transaction
-        .prepare(
-            "SELECT row_json FROM lifecycle_open_rows
-             WHERE vehicle_id = ?1 AND domain = 'position'
-               AND parent_source_row_id = ?2
-             ORDER BY source_row_id",
-        )
-        .map_err(StoreError::Query)?;
-    let rows = statement
-        .query_map(params![vehicle_key, drive_id], |row| {
-            row.get::<_, String>(0)
-        })
-        .map_err(StoreError::Query)?;
-    let mut positions = Vec::new();
-    for row in rows {
-        let json = row.map_err(StoreError::Query)?;
-        positions.push(serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)?);
-    }
-    Ok(positions)
+/// Statistics of one paged read of stored open children (C1 R88): the number
+/// of pages that held at least one row and the largest page. A closing commit
+/// and the collector's count report them so the bound can be tested. The empty
+/// read that ends a parent whose last page was exactly full is not a page.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ClosePageStats {
+    pub pages: u64,
+    pub largest_page: usize,
 }
 
-fn load_open_charge_samples_for_parent(
+impl ClosePageStats {
+    fn record(&mut self, rows: usize) {
+        if rows > 0 {
+            self.pages += 1;
+            self.largest_page = self.largest_page.max(rows);
+        }
+    }
+}
+
+/// Which stored open children a paged read covers (C1 R88).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OpenChildKind {
+    /// Position children of an open drive.
+    Position,
+    /// Charge-sample children of an open charge.
+    ChargeSample,
+}
+
+impl OpenChildKind {
+    fn domain(self) -> &'static str {
+        match self {
+            Self::Position => "position",
+            Self::ChargeSample => "charge_sample",
+        }
+    }
+}
+
+/// Read the stored children of one parent in keyset pages of at most
+/// `page_rows` rows (C1 R88) and hand each row to `visit` as it is read. Each
+/// page is released before the next is read, so no more than one page of row
+/// JSON is held at once, whatever the session's length. A page shorter than
+/// the limit ends the parent. The existing index
+/// `lifecycle_open_rows_vehicle_domain (vehicle_id, domain, source_row_id)`
+/// serves the range read.
+fn for_each_open_child_page(
+    connection: &rusqlite::Connection,
+    vehicle_key: &str,
+    kind: OpenChildKind,
+    parent_id: i64,
+    page_rows: usize,
+    stats: &mut ClosePageStats,
+    mut visit: impl FnMut(i64, &str) -> Result<(), StoreError>,
+) -> Result<(), StoreError> {
+    let limit = i64::try_from(page_rows.max(1)).unwrap_or(i64::MAX);
+    let mut statement = connection
+        .prepare(
+            "SELECT source_row_id, row_json FROM lifecycle_open_rows
+             WHERE vehicle_id = ?1 AND domain = ?2
+               AND parent_source_row_id = ?3 AND source_row_id > ?4
+             ORDER BY source_row_id
+             LIMIT ?5",
+        )
+        .map_err(StoreError::Query)?;
+    let mut after = i64::MIN;
+    loop {
+        let page = statement
+            .query_map(
+                params![vehicle_key, kind.domain(), parent_id, after, limit],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+            )
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)?;
+        stats.record(page.len());
+        let full = page.len() as i64 >= limit;
+        for (id, json) in &page {
+            visit(*id, json)?;
+            after = *id;
+        }
+        if !full {
+            return Ok(());
+        }
+    }
+}
+
+/// Read the ids only of the stored children of one parent, page by page, into
+/// `ids` (C1 R88, the collector's count).
+fn collect_open_child_ids(
+    connection: &rusqlite::Connection,
+    vehicle_key: &str,
+    kind: OpenChildKind,
+    parent_id: i64,
+    page_rows: usize,
+    ids: &mut std::collections::HashSet<i64>,
+    stats: &mut ClosePageStats,
+) -> Result<(), StoreError> {
+    let limit = i64::try_from(page_rows.max(1)).unwrap_or(i64::MAX);
+    let mut statement = connection
+        .prepare(
+            "SELECT source_row_id FROM lifecycle_open_rows
+             WHERE vehicle_id = ?1 AND domain = ?2
+               AND parent_source_row_id = ?3 AND source_row_id > ?4
+             ORDER BY source_row_id
+             LIMIT ?5",
+        )
+        .map_err(StoreError::Query)?;
+    let mut after = i64::MIN;
+    loop {
+        let page = statement
+            .query_map(
+                params![vehicle_key, kind.domain(), parent_id, after, limit],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(StoreError::Query)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(StoreError::Query)?;
+        stats.record(page.len());
+        let full = page.len() as i64 >= limit;
+        for id in &page {
+            ids.insert(*id);
+            after = *id;
+        }
+        if !full {
+            return Ok(());
+        }
+    }
+}
+
+fn fold_open_charge_samples_for_parent(
     transaction: &Transaction<'_>,
     vehicle_key: &str,
     charge_id: i64,
-) -> Result<Vec<crate::hub_pack::ProjectionChargeSample>, StoreError> {
+    carried_by_delta: &std::collections::HashSet<i64>,
+    facts: &mut crate::lifecycle::ChargeSampleFacts,
+) -> Result<(), StoreError> {
     let mut statement = transaction
         .prepare(
             "SELECT row_json FROM lifecycle_open_rows
@@ -394,12 +494,15 @@ fn load_open_charge_samples_for_parent(
             row.get::<_, String>(0)
         })
         .map_err(StoreError::Query)?;
-    let mut samples = Vec::new();
     for row in rows {
         let json = row.map_err(StoreError::Query)?;
-        samples.push(parse_open_charge_sample(&json)?);
+        let sample = parse_open_charge_sample(&json)?;
+        // A sample the delta carries again is counted once, as the delta has it.
+        if !carried_by_delta.contains(&sample.id) {
+            facts.observe(&sample);
+        }
     }
-    Ok(samples)
+    Ok(())
 }
 
 /// One stored open charge sample. A live sample is stored as a
@@ -419,8 +522,9 @@ fn parse_open_charge_sample(
     }
 }
 
-// Full open-child rehydrate was removed from the hot observation path.
-// Close materialization loads children once via load_open_*_for_parent.
+// Full open-child rehydrate was removed from the hot observation path. A closing
+// commit and the collector's count read the stored children of a session in
+// bounded pages (`for_each_open_child_page`, C1 R88).
 
 fn observation_vehicle_state(payload: &Value) -> String {
     payload

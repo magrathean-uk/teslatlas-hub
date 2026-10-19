@@ -82,7 +82,7 @@ fn st81_a_stream_wake_between_two_asleep_discoveries() {
         OpenSessionState::new(),
         &[
             d(1, T0, "asleep"),
-            frame(2, T0 + MIN, "0,1000.0,80,25,180,10.0,20.0,,,200,210,181"),
+            frame(2, T0 + MIN, "25,10.0,20.0,210,181,1000.0,,200,,80,0"),
             d(3, T0 + 5 * MIN, "asleep"),
         ],
     );
@@ -111,7 +111,7 @@ fn st81_clock_skew_delays_a_reach_change_by_one_discovery() {
         &frame(
             2,
             T0 + 5 * MIN + 30_000,
-            "0,1000.0,80,25,180,10.0,20.0,,,200,210,181",
+            "25,10.0,20.0,210,181,1000.0,,200,,80,0",
         ),
     )
     .state;

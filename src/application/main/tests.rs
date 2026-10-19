@@ -65,8 +65,12 @@ use uuid::Uuid;
 
 #[path = "charge_cost_cli_tests.rs"]
 mod charge_cost_cli_tests;
+#[path = "collector_cli_tests.rs"]
+mod collector_cli_tests;
 #[path = "pairing_scope_tests.rs"]
 mod pairing_scope_tests;
+#[path = "readiness_cli_tests.rs"]
+mod readiness_cli_tests;
 
 #[test]
 fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {

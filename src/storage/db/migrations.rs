@@ -2440,8 +2440,7 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         // its digest equals the row. Nothing is backfilled: tiles cached
         // before this step have no row, so they are unproven and fetched
         // again once. The table has no foreign key, so it is independent of
-        // the vehicle catalogue and of every earlier step. v70 is the next
-        // step.
+        // the vehicle catalogue and of every earlier step.
         connection
             .execute_batch(
                 "BEGIN IMMEDIATE;
@@ -2487,6 +2486,159 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
             .map_err(StoreError::Migrate)?;
         version = 69;
     }
+
+    if version == 69 {
+        // Durable collector state (C3 R4): the few scheduler values a restart
+        // must not forget (an account refusal or wait, a vehicle's
+        // suspension, hold and probe deadline, the month's request counts), the
+        // collection gaps the Hub records and alerts, and the owner's pending
+        // collector actions. Every table is additive and nothing is
+        // backfilled: a catalogue without rows means a collector that has not
+        // run yet. The collector's lease stays in `supervised_collector_lease`
+        // (its state values belong to the credential unit). No location, VIN,
+        // token, URL or Tesla identifier is stored in these tables.
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                CREATE TABLE collector_account_state (
+                    singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+                    mode TEXT NOT NULL CHECK(mode IN ('legacy', 'provider', 'fleet_polling')),
+                    config_fingerprint TEXT NOT NULL CHECK(length(config_fingerprint) = 64),
+                    state TEXT NOT NULL CHECK(state IN ('collecting', 'owner_api_refused',
+                        'provider_refused', 'fleet_access_refused', 'billing_suspended',
+                        'cap_reached', 'config_error', 'account_locked')),
+                    reason_code TEXT NOT NULL CHECK(length(reason_code) BETWEEN 1 AND 64),
+                    since_ms INTEGER NOT NULL CHECK(since_ms >= 0),
+                    rate_limited_until_ms INTEGER
+                        CHECK(rate_limited_until_ms IS NULL OR rate_limited_until_ms >= 0),
+                    next_probe_ms INTEGER CHECK(next_probe_ms IS NULL OR next_probe_ms >= 0),
+                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0)
+                ) STRICT;
+                CREATE TABLE collector_vehicle_state (
+                    vehicle_id TEXT PRIMARY KEY NOT NULL
+                        REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    phase TEXT NOT NULL CHECK(phase IN ('unknown', 'asleep', 'offline',
+                        'online', 'suspended', 'driving', 'charging', 'updating')),
+                    hold TEXT NOT NULL CHECK(hold IN ('none', 'disabled', 'service',
+                        'paused', 'removed')),
+                    reason_code TEXT NOT NULL CHECK(length(reason_code) BETWEEN 1 AND 64),
+                    phase_since_ms INTEGER NOT NULL CHECK(phase_since_ms >= 0),
+                    suspended_until_ms INTEGER
+                        CHECK(suspended_until_ms IS NULL OR suspended_until_ms >= 0),
+                    next_probe_ms INTEGER CHECK(next_probe_ms IS NULL OR next_probe_ms >= 0),
+                    last_wake_read_at_ms INTEGER
+                        CHECK(last_wake_read_at_ms IS NULL OR last_wake_read_at_ms >= 0),
+                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0)
+                ) STRICT;
+                CREATE TABLE collector_request_counters (
+                    month TEXT NOT NULL CHECK(length(month) = 7),
+                    mode TEXT NOT NULL CHECK(mode IN ('legacy', 'provider', 'fleet_polling')),
+                    category TEXT NOT NULL CHECK(category IN ('data', 'state', 'wake', 'command')),
+                    sent INTEGER NOT NULL CHECK(sent >= 0),
+                    billable INTEGER NOT NULL CHECK(billable >= 0 AND billable <= sent),
+                    reserved INTEGER NOT NULL CHECK(reserved >= billable),
+                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),
+                    PRIMARY KEY(month, mode, category)
+                ) STRICT, WITHOUT ROWID;
+                CREATE TABLE collection_gaps (
+                    gap_id INTEGER PRIMARY KEY,
+                    vehicle_id TEXT REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    kind TEXT NOT NULL CHECK(kind IN ('hub_down', 'hub_stopped',
+                        'host_suspended', 'cap_reached', 'owner_api_refused',
+                        'provider_refused', 'fleet_access_refused', 'billing_suspended',
+                        'config_error', 'account_locked', 'auth_terminal', 'vehicle_paused',
+                        'rate_limited', 'tesla_unreachable')),
+                    started_at_ms INTEGER NOT NULL CHECK(started_at_ms >= 0),
+                    ended_at_ms INTEGER
+                        CHECK(ended_at_ms IS NULL OR ended_at_ms >= started_at_ms),
+                    alert INTEGER NOT NULL CHECK(alert IN (0, 1)),
+                    notified_at_ms INTEGER CHECK(notified_at_ms IS NULL OR notified_at_ms >= 0),
+                    created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0)
+                ) STRICT;
+                CREATE INDEX collection_gaps_open ON collection_gaps(ended_at_ms, gap_id);
+                CREATE TABLE collector_owner_actions (
+                    action_id INTEGER PRIMARY KEY,
+                    action TEXT NOT NULL CHECK(action IN ('retry_collection', 'resume_vehicle')),
+                    vehicle_id TEXT REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+                    requested_at_ms INTEGER NOT NULL CHECK(requested_at_ms >= 0),
+                    applied_at_ms INTEGER CHECK(applied_at_ms IS NULL OR applied_at_ms >= 0),
+                    CHECK((action = 'resume_vehicle') = (vehicle_id IS NOT NULL))
+                ) STRICT;
+                CREATE INDEX collector_owner_actions_pending
+                    ON collector_owner_actions(applied_at_ms, action_id);
+                PRAGMA user_version = 70;
+                COMMIT;",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 70;
+    }
+
+    if version == 70 {
+        // The legacy credential unit's durable status (C5 section 3.3, R43,
+        // R52, R52a, R57): one singleton row that outlives the process, so a
+        // status process and readiness can show the credential state, a stop
+        // survives a restart until credentials change, and the rejection fuse
+        // survives a crash loop. Additive and not backfilled: no row means the
+        // unit has not run yet. No token, URL, vehicle or location is stored.
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                CREATE TABLE collector_auth_state (
+                    singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+                    state TEXT NOT NULL CHECK(state IN ('ready', 'refreshing', 'retrying',
+                        'persistence_pending', 'awaiting_confirmation', 'observer_waiting',
+                        'clock_invalid', 'configuration_error', 'sign_in_required',
+                        'signed_out', 'api_refused')),
+                    reason TEXT CHECK(reason IS NULL OR length(reason) BETWEEN 1 AND 64),
+                    collecting INTEGER NOT NULL CHECK(collecting IN (0, 1)),
+                    retry_at INTEGER CHECK(retry_at IS NULL OR retry_at >= 0),
+                    stopped_generation TEXT
+                        CHECK(stopped_generation IS NULL OR length(stopped_generation) = 36),
+                    stopped_mode TEXT
+                        CHECK(stopped_mode IS NULL OR stopped_mode IN ('legacy', 'provider')),
+                    fuse_consecutive INTEGER NOT NULL CHECK(fuse_consecutive BETWEEN 0 AND 3),
+                    fuse_generation TEXT
+                        CHECK(fuse_generation IS NULL OR length(fuse_generation) = 36),
+                    fuse_last_rejection_at INTEGER
+                        CHECK(fuse_last_rejection_at IS NULL OR fuse_last_rejection_at >= 0),
+                    fuse_pause_until INTEGER
+                        CHECK(fuse_pause_until IS NULL OR fuse_pause_until >= 0),
+                    clock_skew INTEGER NOT NULL CHECK(clock_skew IN (0, 1)),
+                    updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0),
+                    CHECK((state IN ('sign_in_required', 'signed_out'))
+                          = (stopped_generation IS NOT NULL)),
+                    CHECK((state = 'api_refused') = (stopped_mode IS NOT NULL)),
+                    CHECK((fuse_consecutive = 0) = (fuse_generation IS NULL))
+                ) STRICT;
+                PRAGMA user_version = 71;
+                COMMIT;",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 71;
+    }
+
+    if version == 71 {
+        // The rejected-access-token digest of the credential status (B2 round 3, hub fix
+        // pass 3; C5 B2 clarification 4): a counted rejection that is not a stop keeps
+        // the digest of the access token it rejected, and a restart owes the forced
+        // refresh of a count exactly while the fuse window is open and the stored pair
+        // still holds that token. Additive: the column is NULL for a row that counted
+        // nothing. A row stored before this step at count 1 or 2 outside a stop has no
+        // digest and the pair is encrypted, so the unit fills the digest from the stored
+        // pair when it first starts (what the row owed under the rule it was written by
+        // is owed against the token the pair holds now).
+        connection
+            .execute_batch(
+                "BEGIN IMMEDIATE;
+                ALTER TABLE collector_auth_state ADD COLUMN fuse_rejected_access_digest TEXT
+                    CHECK(fuse_rejected_access_digest IS NULL
+                          OR length(fuse_rejected_access_digest) = 36);
+                PRAGMA user_version = 72;
+                COMMIT;",
+            )
+            .map_err(StoreError::Migrate)?;
+        version = 72;
+    }
     if version == SCHEMA_VERSION {
         Ok(())
     } else {
@@ -2494,12 +2646,50 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
     }
 }
 
+/// Test fixtures that rewind a current catalogue to the shape before the v72
+/// step run this: it drops the rejected-access-digest column of the credential
+/// status table (hub fix pass 3). Every older rewind drops the whole table.
+#[cfg(test)]
+pub(crate) const REWIND_V72_SQL: &str = "
+    ALTER TABLE collector_auth_state DROP COLUMN fuse_rejected_access_digest;
+";
+
+/// Test fixtures that rewind a current catalogue to the shape before the v71
+/// step run this: it drops the legacy credential unit's status table (C5
+/// section 3.3). Every older rewind starts with the same drop.
+#[cfg(test)]
+pub(crate) const REWIND_V71_SQL: &str = "
+    DROP TABLE IF EXISTS collector_auth_state;
+";
+
+/// Test fixtures that rewind a current catalogue to the shape before the v70
+/// step run this: it drops the legacy credential status table of the v71 step
+/// and the five collector state tables (C3 R4). A fixture that rewinds further
+/// runs [`REWIND_V69_SQL`], which starts with the same drops.
+#[cfg(test)]
+pub(crate) const REWIND_V70_SQL: &str = "
+    DROP TABLE IF EXISTS collector_auth_state;
+    DROP TABLE IF EXISTS collector_owner_actions;
+    DROP TABLE IF EXISTS collection_gaps;
+    DROP TABLE IF EXISTS collector_request_counters;
+    DROP TABLE IF EXISTS collector_vehicle_state;
+    DROP TABLE IF EXISTS collector_account_state;
+";
+
 /// Test fixtures that rewind a current catalogue to an older shape run this
-/// first: it undoes everything the v69 step adds (G2-3e: the lookup columns;
-/// G2-3f: the terrain tile digest table). Every older rewind starts here, so
-/// migrating the rewound catalogue forward adds them again.
+/// first: it undoes everything the v71 step adds (the credential status
+/// table), the v70 step (the collector state tables) and then everything the
+/// v69 step adds (G2-3e: the lookup columns; G2-3f: the terrain tile digest
+/// table). Every older rewind starts here, so migrating the rewound catalogue
+/// forward adds them again.
 #[cfg(test)]
 pub(crate) const REWIND_V69_SQL: &str = "
+    DROP TABLE IF EXISTS collector_auth_state;
+    DROP TABLE IF EXISTS collector_owner_actions;
+    DROP TABLE IF EXISTS collection_gaps;
+    DROP TABLE IF EXISTS collector_request_counters;
+    DROP TABLE IF EXISTS collector_vehicle_state;
+    DROP TABLE IF EXISTS collector_account_state;
     DROP TABLE IF EXISTS terrain_tile_digests;
     ALTER TABLE address_lookup_cache DROP COLUMN provider;
     ALTER TABLE address_lookup_cache DROP COLUMN endpoint;

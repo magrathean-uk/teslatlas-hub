@@ -25,19 +25,22 @@ use teslatlas_hub::protocol::CursorKey;
 use teslatlas_hub::teslamate_import::derive_effective_import_profile;
 use teslatlas_hub::{
     collector,
-    config::{CollectorProvider, HubConfig},
+    config::{CollectorProvider, HubConfig, collector_mode},
     credential_recovery::{RECOVERY_ENCRYPTION_KEY_BYTES, export_credentials, restore_credentials},
     credentials::{OwnerTokens, TeslaMatePostgresPassword},
     current_state::build_current_vehicle_summary,
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
-    db::{HubStore, ObservationVerificationError, StoreError, TeslaMateLegacyTokenStore},
+    db::{
+        HubStore, ObservationVerificationError, ReadinessContext, StoreError,
+        TeslaMateLegacyTokenStore,
+    },
     diagnostics::{inspect_hub, log_runtime_inventory},
     edge_delivery,
     fleet_api::FleetRegion,
     fleet_credentials::{
-        FleetCredentialError, FleetSetupCredentials, migrate_legacy_fleet_credentials,
-        persist_fleet_setup_credentials, remove_fleet_key_and_tokens, stored_fleet_scope_summary,
-        validate_stored_fleet_credentials,
+        FleetCredentialError, FleetSetupCredentials, inspect_stored_fleet_credentials,
+        migrate_legacy_fleet_credentials, persist_fleet_setup_credentials,
+        remove_fleet_key_and_tokens, stored_fleet_scope_summary,
     },
     gpx::export_drive_gpx,
     hub_pack::GeofenceBillingType,

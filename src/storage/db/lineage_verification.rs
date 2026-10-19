@@ -333,6 +333,7 @@ impl HubStore {
                 Uuid::new_v4()
             )),
         };
+        inspection.note_attempt();
         let mut output = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -342,11 +343,13 @@ impl HubStore {
                 path: inspection.path.clone(),
                 source,
             })?;
+        inspection.note_attempt();
         let decoded = std::io::copy(&mut decoder.take(maximum), &mut output)
             .map_err(StoreError::DecodeLineagePack)?;
         if decoded != pack.uncompressed_bytes {
             return Err(StoreError::LineageCatalogConflict);
         }
+        inspection.note_attempt();
         output
             .sync_all()
             .map_err(StoreError::SyncLineagePackInspection)?;
@@ -892,6 +895,7 @@ impl HubStore {
                 .packs_dir
                 .join(format!(".lineage-inspection-{}.sqlite", Uuid::new_v4())),
         };
+        inspection.note_attempt();
         let mut output = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -901,11 +905,13 @@ impl HubStore {
                 path: inspection.path.clone(),
                 source,
             })?;
+        inspection.note_attempt();
         let decoded = std::io::copy(&mut decoder.take(maximum), &mut output)
             .map_err(StoreError::DecodeLineagePack)?;
         if decoded != delta.pack.uncompressed_bytes {
             return Err(StoreError::LineageCatalogConflict);
         }
+        inspection.note_attempt();
         output
             .sync_all()
             .map_err(StoreError::SyncLineagePackInspection)?;

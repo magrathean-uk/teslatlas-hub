@@ -692,7 +692,7 @@ fn decode_geofence_v2_2(row: &Row) -> Result<TeslaMateGeofencePhysicalV2_2, Tesl
 }
 
 fn decode_car_settings_row(row: &Row) -> Result<ProjectionCarSettings, TeslaMateReaderError> {
-    let defaults = ProjectionCarSettings::default();
+    let defaults = ProjectionCarSettings::source_column_defaults();
     Ok(ProjectionCarSettings {
         suspend_min_resolved: true,
         suspend_min: optional_smallint(row, "car_settings", "suspend_min")?

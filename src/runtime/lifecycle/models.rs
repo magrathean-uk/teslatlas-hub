@@ -455,6 +455,7 @@ fn open_drive_from_source(row: &TeslaMateDrive, positions: &[TeslaMatePosition])
         elevation_count: 0,
         odometer_coarse: false,
         still_checkpoint: None,
+        lead_checkpoints: Vec::new(),
         positions: Vec::new(),
     };
 
@@ -748,11 +749,28 @@ pub struct OpenDrive {
     /// taken at the first still fold after the last motion (R44).
     #[serde(default)]
     pub still_checkpoint: Option<Box<OpenDrive>>,
+    /// Copies of the drive taken immediately before each lead fold (a fold of a
+    /// fresh position with no fresh motion family, dated after the motion
+    /// watermark), ordered by `cut_ms` ascending and at most
+    /// [`K_LEAD_CHECKPOINTS`] long (C1 R87). They let a Park or plugged-in fact
+    /// dated before such folds end the drive at its own time. Absent in blobs
+    /// from before R87, which decode with none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lead_checkpoints: Vec<LeadCheckpoint>,
     /// In-memory child buffer for pure unit tests and single-batch close. The
     /// durable db path clears this before encoding and never rehydrates the full
     /// history into active state on every observation.
     #[serde(default)]
     pub positions: Vec<ProjectionPosition>,
+}
+
+/// One lead checkpoint of an open drive (C1 R87): the drive as it stood just
+/// before a lead fold dated `cut_ms`, without positions, still checkpoint or
+/// lead checkpoints of its own.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LeadCheckpoint {
+    pub cut_ms: i64,
+    pub drive: OpenDrive,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1164,8 +1182,64 @@ pub fn calculate_charge_cost(
     cost_fits_pack_scale(cost).then_some(cost)
 }
 
+/// The facts the cost rules read from a charge's samples (C2 R43a, R44a), kept in
+/// constant space: the first sample, the last two in sample order (`timestamp_ms`,
+/// then id) and the largest usable energy counter. A close or a fill folds the
+/// stored samples into it one at a time, in any order, so the memory of the step
+/// does not grow with the length of the charge, and it needs no sorted copy of the
+/// samples. The result is the one the rules give over the sorted slice.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct ChargeSampleFacts {
+    /// `(timestamp_ms, id)` of the first sample.
+    first: Option<(i64, i64)>,
+    /// `(timestamp_ms, id)` of the sample before the last.
+    previous: Option<(i64, i64)>,
+    /// `(timestamp_ms, id)` of the last sample.
+    last: Option<(i64, i64)>,
+    largest_counter: Option<f64>,
+}
+
+impl ChargeSampleFacts {
+    /// Folds one sample in. Each sample must be offered once: the caller drops a
+    /// stored sample that the delta carries again, by id.
+    pub(crate) fn observe(&mut self, sample: &ProjectionChargeSample) {
+        let key = (sample.timestamp_ms, sample.id);
+        if self.first.is_none_or(|first| key < first) {
+            self.first = Some(key);
+        }
+        match self.last {
+            None => self.last = Some(key),
+            Some(last) if key > last => {
+                self.previous = Some(last);
+                self.last = Some(key);
+            }
+            Some(_) => {
+                if self.previous.is_none_or(|previous| key > previous) {
+                    self.previous = Some(key);
+                }
+            }
+        }
+        if let Some(counter) = usable_energy_counter(sample) {
+            self.largest_counter = Some(
+                self.largest_counter
+                    .map_or(counter, |best| best.max(counter)),
+            );
+        }
+    }
+
+    /// The facts of a slice of samples, in any order.
+    #[cfg(test)]
+    pub(crate) fn of(samples: &[ProjectionChargeSample]) -> Self {
+        let mut facts = Self::default();
+        for sample in samples {
+            facts.observe(sample);
+        }
+        facts
+    }
+}
+
 /// True when the stored times of a charge are observed, not bounds (C2 R43a).
-/// `samples` are the row's samples in sample order (`timestamp_ms`, then id).
+/// `samples` are the row's samples.
 ///
 /// With no samples the row's times are its own record (an imported row, for
 /// example), so true. Otherwise false iff the first sample is more than
@@ -1174,25 +1248,36 @@ pub fn calculate_charge_cost(
 /// the unobserved stretches at either end (an after-gap start, a gap-closed
 /// end); a shorter one is ordinary polling granularity, and a gap in the
 /// middle that later samples close is connected time. Only stored rows and
-/// samples are read, so close, fill and manual entry agree (R6).
+/// samples are read, so close, fill and manual entry agree (R6). The slice form is
+/// a test convenience over the production fold (`ChargeSampleFacts::of`); the folded
+/// form is checked against an independently stated sorted-samples rule in
+/// `r43a_r44a_the_folded_facts_equal_the_rule_over_the_sorted_samples`.
+#[cfg(test)]
 pub(crate) fn charge_span_observed(
     charge: &ProjectionCharge,
     samples: &[ProjectionChargeSample],
 ) -> bool {
-    let (Some(first), Some(last)) = (samples.first(), samples.last()) else {
+    charge_span_observed_from(charge, &ChargeSampleFacts::of(samples))
+}
+
+/// [`charge_span_observed`] over folded facts.
+pub(crate) fn charge_span_observed_from(
+    charge: &ProjectionCharge,
+    facts: &ChargeSampleFacts,
+) -> bool {
+    let (Some((first, _)), Some((last, _))) = (facts.first, facts.last) else {
         return true;
     };
-    if first.timestamp_ms.saturating_sub(charge.start_date_ms) > K_INT_MAX_MS {
+    if first.saturating_sub(charge.start_date_ms) > K_INT_MAX_MS {
         return false;
     }
-    if samples.len() >= 2 {
-        let previous = &samples[samples.len() - 2];
-        if last.timestamp_ms.saturating_sub(previous.timestamp_ms) > K_INT_MAX_MS {
-            return false;
-        }
+    if let Some((previous, _)) = facts.previous
+        && last.saturating_sub(previous) > K_INT_MAX_MS
+    {
+        return false;
     }
     if let Some(end) = charge.end_date_ms
-        && end.saturating_sub(last.timestamp_ms) > K_INT_MAX_MS
+        && end.saturating_sub(last) > K_INT_MAX_MS
     {
         return false;
     }
@@ -1208,21 +1293,29 @@ pub(crate) fn charge_span_observed(
 /// `Complete` with no unplug, drive or movement; the second row of a
 /// continuity split). A baseline lowered to zero, an unknown counter or a
 /// restart carry makes it false, and the session fee is then charged as for
-/// any session.
+/// any session. The slice form is a test convenience over the production fold
+/// (`ChargeSampleFacts::of`); the folded form is checked against an independently
+/// stated sorted-samples rule in
+/// `r43a_r44a_the_folded_facts_equal_the_rule_over_the_sorted_samples`.
+#[cfg(test)]
 pub(crate) fn charge_continues_plug_in(
     charge: &ProjectionCharge,
     samples: &[ProjectionChargeSample],
 ) -> bool {
+    charge_continues_plug_in_from(charge, &ChargeSampleFacts::of(samples))
+}
+
+/// [`charge_continues_plug_in`] over folded facts.
+pub(crate) fn charge_continues_plug_in_from(
+    charge: &ProjectionCharge,
+    facts: &ChargeSampleFacts,
+) -> bool {
     let Some(added) = finite_reading(charge.charge_energy_added) else {
         return false;
     };
-    let largest = samples
-        .iter()
-        .filter_map(usable_energy_counter)
-        .fold(None, |best: Option<f64>, counter| {
-            Some(best.map_or(counter, |best| best.max(counter)))
-        });
-    largest.is_some_and(|largest| largest - added >= K_ENERGY_EPS_KWH)
+    facts
+        .largest_counter
+        .is_some_and(|largest| largest - added >= K_ENERGY_EPS_KWH)
 }
 
 #[derive(Debug, Clone, PartialEq)]

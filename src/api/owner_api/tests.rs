@@ -22,6 +22,8 @@ use crate::credentials::{CredentialError, LegacyAuthManager};
 
 const TEST_TOKEN: &str = "test-owner-token";
 const TEST_VIN: &str = "5YJ3E1EA7KF000001";
+/// The exact `vehicle_data` query of C3 R23 (CT7).
+const CT7_EXPECTED_QUERY: &str = "endpoints=charge_state%3Bclimate_state%3Bdrive_state%3Blocation_data%3Bvehicle_config%3Bvehicle_state";
 
 #[derive(Clone, Default)]
 struct FakeState {
@@ -108,15 +110,195 @@ fn vehicle_data_endpoint_preserves_provider_path_and_encodes_only_the_endpoint_q
         endpoint.path(),
         "/owner-proxy/api/1/vehicles/7/vehicle_data"
     );
+    // CT7: the endpoint groups of C3 R23, alphabetical, with the semicolons
+    // encoded as %3B and nothing else in the query.
     assert_eq!(
         endpoint.query(),
         Some(
-            "endpoints=charge_state%3Bclimate_state%3Bclosures_state%3Bdrive_state%3Bgui_settings%3Blocation_data%3Bvehicle_config%3Bvehicle_state%3Bvehicle_data_combo"
+            "endpoints=charge_state%3Bclimate_state%3Bdrive_state%3Blocation_data%3Bvehicle_config%3Bvehicle_state"
         )
     );
     assert!(endpoint.username().is_empty());
     assert!(endpoint.password().is_none());
     assert!(!endpoint.query().unwrap().contains(TEST_TOKEN));
+}
+
+#[test]
+fn ct59_the_allow_list_keeps_every_field_the_phase_and_sleep_rules_read() {
+    // Every group C3 R23 requests, with the fields R15 and R29 read.
+    let body = serde_json::json!({
+        "response": {
+            "vehicle_id": 7,
+            "vin": TEST_VIN,
+            "state": "online",
+            "drive_state": {
+                "shift_state": "D",
+                "speed": 42,
+                "power": 11,
+                "latitude": 51.5,
+                "longitude": -0.12,
+                "timestamp": 1_800_000_000_123_i64
+            },
+            "charge_state": {
+                "charging_state": "Charging",
+                "battery_level": 63,
+                "timestamp": 1_800_000_001_456_i64
+            },
+            "climate_state": {
+                "is_climate_on": true,
+                "climate_keeper_mode": "dog",
+                "inside_temp": 21.5
+            },
+            "vehicle_state": {
+                "odometer": 1234.5,
+                "is_user_present": true,
+                "remote_start": true,
+                "locked": false,
+                "sentry_mode": true,
+                "service_mode": false,
+                "software_update": {"status": "installing", "version": "2026.20"}
+            },
+            "vehicle_config": {"car_type": "model3", "trim_badging": "74d"}
+        }
+    });
+    let filtered = allowlisted_provider_response_v1(&body).expect("allow-listed response");
+    let value = |group: &str, field: &str| filtered[group][field].clone();
+
+    assert_eq!(value("drive_state", "shift_state"), "D");
+    assert_eq!(value("drive_state", "speed"), 42);
+    assert_eq!(value("drive_state", "timestamp"), 1_800_000_000_123_i64);
+    assert_eq!(value("charge_state", "charging_state"), "Charging");
+    assert_eq!(value("charge_state", "timestamp"), 1_800_000_001_456_i64);
+    assert_eq!(value("climate_state", "is_climate_on"), true);
+    assert_eq!(value("climate_state", "climate_keeper_mode"), "dog");
+    assert_eq!(value("vehicle_state", "is_user_present"), true);
+    assert_eq!(value("vehicle_state", "remote_start"), true);
+    assert_eq!(value("vehicle_state", "locked"), false);
+    assert_eq!(value("vehicle_state", "sentry_mode"), true);
+    assert_eq!(value("vehicle_state", "service_mode"), false);
+    assert_eq!(
+        filtered["vehicle_state"]["software_update"]["status"],
+        "installing"
+    );
+    // The location and model metadata the data model needs survive as well.
+    assert_eq!(value("drive_state", "latitude"), 51.5);
+    assert_eq!(value("drive_state", "longitude"), -0.12);
+    assert_eq!(value("vehicle_config", "car_type"), "model3");
+    assert_eq!(value("vehicle_config", "trim_badging"), "74d");
+}
+
+/// 06 Nov 1994 08:49:37 GMT, the example instant of RFC 9110 section 5.6.7.
+const RFC_EXAMPLE_EPOCH_SECONDS: u64 = 784_111_777;
+
+fn headers_of(pairs: &[(&'static str, &str)]) -> reqwest::header::HeaderMap {
+    let mut headers = reqwest::header::HeaderMap::new();
+    for (name, value) in pairs {
+        headers.insert(
+            reqwest::header::HeaderName::from_static(name),
+            reqwest::header::HeaderValue::from_str(value).expect("header value"),
+        );
+    }
+    headers
+}
+
+#[test]
+fn retry_after_reads_delay_seconds_and_clamps_to_one_hour() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(RFC_EXAMPLE_EPOCH_SECONDS);
+    let wait = |pairs: &[(&'static str, &str)]| retry_after_seconds_at(&headers_of(pairs), now);
+    assert_eq!(wait(&[("retry-after", "17")]), 17);
+    assert_eq!(wait(&[("retry-after", " 120 ")]), 120);
+    assert_eq!(wait(&[("retry-after", "3600")]), 3_600);
+    assert_eq!(
+        wait(&[("retry-after", "3601")]),
+        3_600,
+        "clamped to one hour"
+    );
+    assert_eq!(wait(&[("retry-after", "18446744073709551615")]), 3_600);
+    // Zero means "absent": an immediate retry lands in the same window.
+    assert_eq!(wait(&[("retry-after", "0")]), 0);
+    assert_eq!(wait(&[]), 0);
+    // Not delay-seconds and not a date, or a value beyond u64: invalid.
+    for invalid in ["soon", "-5", "1.5", "", "18446744073709551616", "12abc"] {
+        assert_eq!(wait(&[("retry-after", invalid)]), 0, "{invalid:?}");
+    }
+}
+
+#[test]
+fn retry_after_falls_back_to_the_rate_limit_reset_header_when_absent_or_invalid() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(RFC_EXAMPLE_EPOCH_SECONDS);
+    let wait = |pairs: &[(&'static str, &str)]| retry_after_seconds_at(&headers_of(pairs), now);
+    assert_eq!(wait(&[("ratelimit-reset", "45")]), 45);
+    assert_eq!(
+        wait(&[("retry-after", "invalid"), ("ratelimit-reset", "45")]),
+        45
+    );
+    assert_eq!(
+        wait(&[("retry-after", "30"), ("ratelimit-reset", "45")]),
+        30
+    );
+    // A valid Retry-After of 0 is a valid value, so it does not fall through.
+    assert_eq!(wait(&[("retry-after", "0"), ("ratelimit-reset", "45")]), 0);
+    // `RateLimit-Reset` is read only as delay-seconds, never as a date.
+    assert_eq!(
+        wait(&[("ratelimit-reset", "Sun, 06 Nov 1994 08:50:37 GMT")]),
+        0
+    );
+    assert_eq!(wait(&[("ratelimit-reset", "999999")]), 3_600);
+}
+
+#[test]
+fn retry_after_reads_the_three_http_date_forms_and_rounds_up() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(RFC_EXAMPLE_EPOCH_SECONDS);
+    let wait_at = |value: &str, at: SystemTime| {
+        retry_after_seconds_at(&headers_of(&[("retry-after", value)]), at)
+    };
+    // IMF-fixdate, rfc850-date and asctime-date for later instants.
+    assert_eq!(wait_at("Sun, 06 Nov 1994 08:49:57 GMT", now), 20);
+    assert_eq!(wait_at("Sunday, 06-Nov-94 08:50:37 GMT", now), 60);
+    assert_eq!(wait_at("Sun Nov  6 08:51:37 1994", now), 120);
+    assert_eq!(
+        wait_at("Sun Nov 16 08:49:37 1994", now),
+        3_600,
+        "ten days, clamped"
+    );
+    // Whole seconds, rounded up.
+    let half_second_later = now + Duration::from_millis(500);
+    assert_eq!(
+        wait_at("Sun, 06 Nov 1994 08:49:38 GMT", half_second_later),
+        1
+    );
+    assert_eq!(wait_at("Sun, 06 Nov 1994 08:49:38 GMT", now), 1);
+    // A date that is not in the future is "absent".
+    assert_eq!(wait_at("Sun, 06 Nov 1994 08:49:37 GMT", now), 0);
+    assert_eq!(wait_at("Sun, 06 Nov 1994 08:49:36 GMT", now), 0);
+    // Impossible dates, wrong shapes and an unknown weekday are invalid.
+    for invalid in [
+        "Sun, 31 Nov 1994 08:49:57 GMT",
+        "Sun, 06 Nov 1994 24:00:00 GMT",
+        "Sun, 06 Nov 1994 08:49:57 UTC",
+        "Sun, 6 Nov 1994 08:49:57 GMT",
+        "Fun, 06 Nov 1994 08:49:57 GMT",
+        "06 Nov 1994 08:49:57 GMT",
+    ] {
+        assert_eq!(wait_at(invalid, now), 0, "{invalid:?}");
+    }
+    // 29 February exists in a leap year only.
+    let leap = SystemTime::UNIX_EPOCH + Duration::from_secs(1_709_164_800 - 10);
+    assert_eq!(wait_at("Thu, 29 Feb 2024 00:00:00 GMT", leap), 10);
+    assert_eq!(wait_at("Thu, 29 Feb 2023 00:00:00 GMT", leap), 0);
+}
+
+#[test]
+fn retry_after_reads_a_two_digit_rfc850_year_by_the_fifty_year_rule() {
+    // 2027-01-15 08:00:00 UTC.
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_800_000_000);
+    let wait = |value: &str| retry_after_seconds_at(&headers_of(&[("retry-after", value)]), now);
+    // 2099 would be 72 years ahead, so it is 1999: in the past.
+    assert_eq!(wait("Friday, 01-Jan-99 00:00:00 GMT"), 0);
+    // 2060 is 33 years ahead, so it stays 2060: far in the future, clamped.
+    assert_eq!(wait("Friday, 01-Jan-60 00:00:00 GMT"), 3_600);
+    // The current year is read in the current century.
+    assert_eq!(wait("Friday, 15-Jan-27 08:00:30 GMT"), 30);
 }
 
 #[test]
@@ -573,12 +755,12 @@ async fn data_handler(
         &format!("/api/1/vehicles/{vehicle_id}/vehicle_data"),
         query,
     );
-    if query
-        != "endpoints=charge_state%3Bclimate_state%3Bclosures_state%3Bdrive_state%3Bgui_settings%3Blocation_data%3Bvehicle_config%3Bvehicle_state%3Bvehicle_data_combo"
-    {
+    // CT7: a client that asks for any other group list is refused, so every
+    // test that reads vehicle data through this fake proves the query.
+    if query != CT7_EXPECTED_QUERY {
         return (
             StatusCode::BAD_REQUEST,
-            r#"{"error":"vehicle_data endpoints query mismatch"}"#,
+            r#"{"error":"bad_request"}"#.to_owned(),
         )
             .into_response();
     }
@@ -662,31 +844,6 @@ fn record_with_method(
             query: query.to_owned(),
             authorization_is_expected,
         });
-}
-
-#[test]
-fn retry_after_is_integer_exact_and_safe_on_bad_input() {
-    let mut headers = HeaderMap::new();
-    headers.insert("retry-after", HeaderValue::from_static("17"));
-    assert_eq!(parse_retry_after(&headers), 17);
-
-    headers.insert("retry-after", HeaderValue::from_static("bad"));
-    assert_eq!(parse_retry_after(&headers), 300);
-    headers.remove("retry-after");
-    assert_eq!(parse_retry_after(&headers), 300);
-}
-
-#[test]
-fn exact_exceeded_limit_and_not_found_bodies_are_typed() {
-    assert!(is_owner_error_body(
-        br#"{"error":"account disabled: EXCEEDED_LIMIT"}"#,
-        "account disabled: EXCEEDED_LIMIT"
-    ));
-    assert!(is_owner_error_body(
-        br#"{"error":"not_found"}"#,
-        "not_found"
-    ));
-    assert!(!is_owner_error_body(br#"{"error":"other"}"#, "not_found"));
 }
 
 // Bearer reflection (csf_2a9d): a provider response that echoes a live
@@ -1531,5 +1688,351 @@ fn legacy_refresh_token_accessor_is_fenced_by_the_same_admission_as_the_access_t
             .access_token_for_sensitive_use()
             .expect("admitted access token"),
         LONG_REFLECTED_ACCESS
+    );
+}
+
+// ---- C3 part K5: the error classes of the wire (R42, R45, R55) ----------------
+
+/// A fake Owner wire that answers every request with one configured status,
+/// headers and body, and counts the requests.
+#[derive(Clone)]
+struct StatusReply {
+    status: StatusCode,
+    headers: Vec<(&'static str, String)>,
+    body: Arc<Vec<u8>>,
+    hits: Arc<std::sync::atomic::AtomicUsize>,
+    delay: Duration,
+}
+
+async fn status_handler(State(reply): State<StatusReply>) -> axum::response::Response {
+    reply.hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    if !reply.delay.is_zero() {
+        tokio::time::sleep(reply.delay).await;
+    }
+    let mut response = (reply.status, reply.body.as_ref().clone()).into_response();
+    for (name, value) in &reply.headers {
+        response.headers_mut().insert(
+            reqwest::header::HeaderName::from_static(name),
+            reqwest::header::HeaderValue::from_str(value).expect("header value"),
+        );
+    }
+    response
+}
+
+impl FakeServer {
+    /// Answer every request with `status`, `headers` and `body`.
+    async fn status(
+        status: u16,
+        headers: &[(&'static str, &str)],
+        body: &[u8],
+    ) -> (Self, Arc<std::sync::atomic::AtomicUsize>) {
+        Self::status_after(status, headers, body, Duration::ZERO).await
+    }
+
+    async fn status_after(
+        status: u16,
+        headers: &[(&'static str, &str)],
+        body: &[u8],
+        delay: Duration,
+    ) -> (Self, Arc<std::sync::atomic::AtomicUsize>) {
+        let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let reply = StatusReply {
+            status: StatusCode::from_u16(status).expect("status"),
+            headers: headers
+                .iter()
+                .map(|(name, value)| (*name, (*value).to_owned()))
+                .collect(),
+            body: Arc::new(body.to_vec()),
+            hits: Arc::clone(&hits),
+            delay,
+        };
+        let server = Self::start(Router::new().fallback(status_handler).with_state(reply)).await;
+        (server, hits)
+    }
+}
+
+/// The error one request of a scheduled kind gets from a wire that answers with
+/// the given status.
+async fn owner_error_of(
+    status: u16,
+    headers: &[(&'static str, &str)],
+    body: &[u8],
+) -> OwnerApiError {
+    let (server, hits) = FakeServer::status(status, headers, body).await;
+    let client = server.client(Duration::from_secs(2));
+    let url = client.vehicle_probe_endpoint(VehicleId(7)).expect("URL");
+    let error = client
+        .execute_envelope_request::<Value>(client.envelope_request(TEST_TOKEN, url))
+        .await
+        .expect_err("an error status");
+    assert_eq!(
+        hits.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "one request, never retried"
+    );
+    error
+}
+
+#[tokio::test]
+async fn r42_owner_wire_statuses_become_typed_errors() {
+    use OwnerApiError::*;
+    let cases: Vec<(u16, &[u8], OwnerApiError)> = vec![
+        (404, b"{}", VehicleNotFound),
+        (410, b"{}", Gone),
+        (401, b"{}", HttpStatus(401)),
+        (402, b"{}", HttpStatus(402)),
+        (408, br#"{"error":"vehicle unavailable"}"#, HttpStatus(408)),
+        (412, b"", HttpStatus(412)),
+        (451, b"", HttpStatus(451)),
+        (500, b"", HttpStatus(500)),
+        (503, b"", HttpStatus(503)),
+        (540, b"", HttpStatus(540)),
+        // 405: only an error text that says "in service" is the car's state.
+        (
+            405,
+            br#"{"response":null,"error":"vehicle is in service"}"#,
+            VehicleInService,
+        ),
+        (
+            405,
+            br#"{"error":"Vehicle IS IN SERVICE","error_description":""}"#,
+            VehicleInService,
+        ),
+        (
+            405,
+            br#"{"error":"","error_description":"car in service"}"#,
+            VehicleInService,
+        ),
+        (405, b"the car is in service", VehicleInService),
+        (405, br#"{"error":"method not allowed"}"#, HttpStatus(405)),
+        (405, b"", HttpStatus(405)),
+        // 403: whether the body names the Fleet API.
+        (
+            403,
+            br#"{"error":"forbidden"}"#,
+            Forbidden {
+                fleet_api_named: false,
+            },
+        ),
+        (
+            403,
+            b"",
+            Forbidden {
+                fleet_api_named: false,
+            },
+        ),
+        (
+            403,
+            br#"{"error":"Fleet API required"}"#,
+            Forbidden {
+                fleet_api_named: true,
+            },
+        ),
+        (
+            403,
+            b"Use the Fleet-API instead",
+            Forbidden {
+                fleet_api_named: true,
+            },
+        ),
+    ];
+    for (status, body, expected) in cases {
+        assert_eq!(
+            owner_error_of(status, &[], body).await,
+            expected,
+            "status {status}, body {:?}",
+            String::from_utf8_lossy(body)
+        );
+    }
+}
+
+#[tokio::test]
+async fn ct39_a_429_carries_the_wait_its_headers_ask_for() {
+    // One request, never retried (R56); the value is the one RFC 9110 gives.
+    for (headers, expected) in [
+        (vec![("retry-after", "120")], 120),
+        (vec![("retry-after", "0")], 0),
+        (vec![("retry-after", "abc")], 0),
+        (vec![("retry-after", "7200")], 3_600),
+        (vec![("ratelimit-reset", "30")], 30),
+        (vec![], 0),
+    ] {
+        assert_eq!(
+            owner_error_of(429, &headers, b"").await,
+            OwnerApiError::RateLimited {
+                retry_after_seconds: expected
+            },
+            "{headers:?}"
+        );
+    }
+}
+
+#[test]
+fn ct39_retry_after_parsing_follows_rfc_9110() {
+    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(RFC_EXAMPLE_EPOCH_SECONDS);
+    let wait = |pairs: &[(&'static str, &str)]| retry_after_seconds_at(&headers_of(pairs), now);
+    assert_eq!(wait(&[("retry-after", "120")]), 120);
+    assert_eq!(wait(&[("retry-after", "0")]), 0, "zero means absent");
+    assert_eq!(wait(&[("retry-after", "abc")]), 0);
+    // An HTTP-date 90 s ahead, and one in the past.
+    assert_eq!(
+        wait(&[("retry-after", "Sun, 06 Nov 1994 08:51:07 GMT")]),
+        90
+    );
+    assert_eq!(wait(&[("retry-after", "Sun, 06 Nov 1994 08:40:00 GMT")]), 0);
+    assert_eq!(wait(&[("retry-after", "7200")]), 3_600);
+    assert_eq!(wait(&[("ratelimit-reset", "30")]), 30);
+}
+
+#[tokio::test]
+async fn r42_the_error_body_scan_is_bounded_and_the_body_is_never_kept() {
+    // The first 4,096 bytes are read: a name inside them counts, one beyond them
+    // does not, however large the body.
+    assert_eq!(
+        MAX_ERROR_BODY_BYTES, 4_096,
+        "R42 names the first 4,096 bytes"
+    );
+    let filler = vec![b' '; 4_096 - 16];
+    let mut inside = filler.clone();
+    inside.extend_from_slice(b"FLEET API");
+    inside.extend(std::iter::repeat_n(b'x', 1 << 20));
+    assert_eq!(
+        owner_error_of(403, &[], &inside).await,
+        OwnerApiError::Forbidden {
+            fleet_api_named: true
+        }
+    );
+    let mut beyond = vec![b' '; 4_096];
+    beyond.extend_from_slice(b"fleet api");
+    assert_eq!(
+        owner_error_of(403, &[], &beyond).await,
+        OwnerApiError::Forbidden {
+            fleet_api_named: false
+        }
+    );
+    // The error carries no text of the body.
+    let error = owner_error_of(403, &[], br#"{"error":"Fleet API secret-marker-77"}"#).await;
+    assert!(!format!("{error:?} {error}").contains("secret-marker-77"));
+}
+
+#[test]
+fn r42_fleet_api_naming_ignores_case_and_separators_and_reads_each_field_alone() {
+    assert!(is_fleet_api_named(br#"{"error":"Fleet API"}"#));
+    assert!(is_fleet_api_named(br#"{"error":"fleet-api"}"#));
+    assert!(is_fleet_api_named(br#"{"error":"fleet_api"}"#));
+    assert!(is_fleet_api_named(br#"{"error":"FleetAPI"}"#));
+    assert!(is_fleet_api_named(
+        br#"{"error":"forbidden","error_description":"see https://developer.tesla.com/docs/fleet-api"}"#
+    ));
+    // A word cannot form across the boundary of two fields.
+    assert!(!is_fleet_api_named(
+        br#"{"error":"fleet","error_description":"api"}"#
+    ));
+    // A JSON object is read by its two fields only.
+    assert!(!is_fleet_api_named(br#"{"message":"Fleet API"}"#));
+    // Anything else is text.
+    assert!(is_fleet_api_named(b"<html>Fleet API</html>"));
+    assert!(is_fleet_api_named(br#"["Fleet API"]"#));
+    assert!(!is_fleet_api_named(b""));
+    assert!(!is_fleet_api_named(br#"{"error":"fleet"}"#));
+}
+
+#[test]
+fn r42_error_body_text_matches_ascii_case_insensitively() {
+    assert!(is_owner_error_body(
+        br#"{"error":"Vehicle Is In Service"}"#,
+        "in service"
+    ));
+    assert!(is_vehicle_in_service_body(b"IN SERVICE"));
+    assert!(!is_vehicle_in_service_body(br#"{"error":"in  service"}"#));
+    assert!(!is_vehicle_in_service_body(br#"{"note":"in service"}"#));
+    assert!(!is_owner_error_body(b"", "in service"));
+}
+
+#[tokio::test]
+async fn r42_a_transport_failure_and_a_timeout_are_not_http_answers() {
+    // Nothing listens: no HTTP status was received.
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("port");
+    let address = listener.local_addr().expect("address");
+    drop(listener);
+    let client = OwnerApi::for_fake_http(
+        Url::parse(&format!("http://{address}/")).expect("URL"),
+        Duration::from_millis(500),
+    )
+    .expect("client");
+    let url = client.vehicle_probe_endpoint(VehicleId(7)).expect("URL");
+    assert_eq!(
+        client
+            .execute_envelope_request::<Value>(client.envelope_request(TEST_TOKEN, url))
+            .await
+            .expect_err("refused connection"),
+        OwnerApiError::Transport
+    );
+    // A response that never starts within the request timeout.
+    let (server, _) = FakeServer::status_after(200, &[], b"{}", Duration::from_secs(5)).await;
+    let client = server.client(Duration::from_millis(200));
+    let url = client.vehicle_probe_endpoint(VehicleId(7)).expect("URL");
+    assert_eq!(
+        client
+            .execute_envelope_request::<Value>(client.envelope_request(TEST_TOKEN, url))
+            .await
+            .expect_err("timeout"),
+        OwnerApiError::RequestTimeout
+    );
+}
+
+#[tokio::test]
+async fn r55_an_oversized_response_is_discarded_unparsed() {
+    let body = vec![b'x'; MAX_RESPONSE_BYTES + 1];
+    let (server, _) = FakeServer::status(200, &[], &body).await;
+    let client = server.client(Duration::from_secs(5));
+    let url = client.vehicle_probe_endpoint(VehicleId(7)).expect("URL");
+    let error = client
+        .execute_envelope_request::<Value>(client.envelope_request(TEST_TOKEN, url))
+        .await
+        .expect_err("over the size limit");
+    assert_eq!(error, OwnerApiError::ResponseTooLarge);
+    assert!(!format!("{error:?}").contains('x'));
+}
+
+#[tokio::test]
+async fn r55_a_list_with_one_malformed_record_is_rejected_whole() {
+    // The list is one answer: a record that is vehicle-shaped but invalid makes
+    // the whole list a failure, so no car is judged absent from a partial list.
+    let state = FakeState::with_vehicles(
+        r#"{"response":[
+            {"vehicle_id":71,"id":70,"vin":"5YJ3E1EA7KF000001","state":"online"},
+            {"id":72,"vin":"5YJ3E1EA7KF000002","state":"online"}
+        ],"count":2}"#,
+    );
+    let fake = FakeServer::spawn(state).await;
+    let auth = crate::legacy_auth::LegacyAuth::for_test(
+        fake.base_url.clone(),
+        TEST_TOKEN,
+        "test-refresh-token",
+    );
+    assert_eq!(
+        fake.client(Duration::from_secs(2))
+            .list_vehicles_with_legacy_auth_once(&auth)
+            .await
+            .expect_err("malformed record"),
+        OwnerApiError::InvalidVehicleRecord
+    );
+    // A count that disagrees with the records is a failure too.
+    let state = FakeState::with_vehicles(
+        r#"{"response":[{"vehicle_id":71,"id":70,"vin":"5YJ3E1EA7KF000001","state":"online"}],"count":2}"#,
+    );
+    let fake = FakeServer::spawn(state).await;
+    let auth = crate::legacy_auth::LegacyAuth::for_test(
+        fake.base_url.clone(),
+        TEST_TOKEN,
+        "test-refresh-token",
+    );
+    assert_eq!(
+        fake.client(Duration::from_secs(2))
+            .list_vehicles_with_legacy_auth_once(&auth)
+            .await
+            .expect_err("inconsistent count"),
+        OwnerApiError::InvalidVehicleListCount
     );
 }

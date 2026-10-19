@@ -30,10 +30,12 @@ use url::Url;
 use crate::{
     credentials::{LegacyAuthManager, LegacyAuthManagerError},
     hub_pack::ProjectionCarSettings,
-    legacy_auth::{LegacyAuth, LegacyAuthFuse},
+    legacy_auth::{LegacyAuth, LegacyAuthError, LegacyAuthFuse},
     tesla_stream::{StreamPowerGate, StreamRegion},
 };
 
+mod legacy_requests;
+use legacy_requests::AnswerMeta;
 pub(crate) mod provider_secrets;
 pub use provider_secrets::ProviderSecrets;
 
@@ -42,9 +44,50 @@ pub use provider_secrets::ProviderSecrets;
 /// allocation.
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_PROVIDER_TELEMETRY_TEXT_BYTES: usize = 512;
-const LEGACY_AUTH_TIMEOUT: Duration = Duration::from_secs(60);
 const ACCEPT_JSON: HeaderValue = HeaderValue::from_static("application/json");
-const VEHICLE_DATA_ENDPOINTS: &str = "charge_state;climate_state;closures_state;drive_state;gui_settings;location_data;vehicle_config;vehicle_state;vehicle_data_combo";
+
+/// The most of an error response body that the status rules read (C3 R42): the
+/// first 4,096 bytes, as the Fleet-naming test names. A bound this small keeps
+/// the scan of a hostile or accidental large error page cheap, and the body is
+/// never kept, parsed beyond its `error` strings or logged.
+pub(crate) const MAX_ERROR_BODY_BYTES: usize = 4_096;
+
+/// The text of Tesla's 405 refusal of a car in service (C3 R42, R52), matched
+/// ASCII case-insensitively: "405 whose error text contains \"in service\"".
+const IN_SERVICE_TEXT: &str = "in service";
+
+/// The text, reduced to ASCII letters and digits, that makes a 403 body
+/// Fleet-named (C3 R42): it accepts "Fleet API", "fleet-api" and "fleet_api"
+/// alike, and a documentation link that names the API.
+const FLEET_API_NAME: &str = "fleetapi";
+
+/// The `vehicle_data` endpoint groups the Hub's data model uses (C3 R23), in
+/// Tesla's semicolon-separated `endpoints` form and in alphabetical order so
+/// request logs and test vectors are stable. The same constant serves the
+/// Owner-wire and Fleet requests; the query builder encodes the semicolons as
+/// `%3B`. One group per Hub need:
+///
+/// - `charge_state`: charging state, levels, ranges, energy added, charger
+///   power, voltage, current and phases (charge sessions, poll phase);
+/// - `climate_state`: temperatures, set points, `is_climate_on` and
+///   `climate_keeper_mode` (use evidence, C3 R29);
+/// - `drive_state`: gear, speed, power, heading and the group timestamp
+///   (drive evidence and folds, poll phase);
+/// - `location_data`: latitude and longitude, which Tesla returns only for
+///   this group on firmware 2023.38 and later;
+/// - `vehicle_config`: `car_type` and `trim_badging` for the car's model
+///   metadata, in the same request so it costs nothing extra;
+/// - `vehicle_state`: odometer, `car_version`, `software_update`,
+///   `service_mode`, tyre pressures, `locked`, `is_user_present`,
+///   `remote_start` and `sentry_mode`.
+///
+/// Not requested: `gui_settings` (Tesla returns ranges in miles and speeds in
+/// mph whatever the display setting and the Hub converts with fixed factors,
+/// so display preferences are not data, and no published field is fed only
+/// from it), `closures_state`, `charge_schedule_data`,
+/// `preconditioning_schedule_data` and `vehicle_data_combo`.
+pub(crate) const VEHICLE_DATA_ENDPOINTS: &str =
+    "charge_state;climate_state;drive_state;location_data;vehicle_config;vehicle_state";
 
 /// A validated, explicit HTTPS Owner API base URL.
 ///
@@ -207,16 +250,10 @@ impl OwnerApi {
             .timeout(options.request_timeout)
             .build()
             .map_err(|_| OwnerApiConfigError::ClientBuild)?;
-        let legacy_auth_client = Client::builder()
-            .https_only(!allow_insecure_test_base)
-            // A refresh response is credential-bearing. Never replay the
-            // refresh body or headers after a redirect, even same-origin.
-            // The admission guard covers the original request only; following
-            // a redirect would create an unguarded second transport.
-            .redirect(Policy::none())
-            .timeout(LEGACY_AUTH_TIMEOUT)
-            .read_timeout(LEGACY_AUTH_TIMEOUT)
-            .build()
+        // The token endpoint is a separate client with its own policy: no
+        // redirects, which would resend the refresh body to a host nobody
+        // chose, and its own timeouts (C5 R11, R12, R33).
+        let legacy_auth_client = crate::legacy_auth::build_auth_client(allow_insecure_test_base)
             .map_err(|_| OwnerApiConfigError::ClientBuild)?;
 
         Ok(Self {
@@ -224,39 +261,6 @@ impl OwnerApi {
             legacy_auth_client,
             base_url: options.base_url,
         })
-    }
-
-    /// Legacy owner-authenticated discovery performs one Owner request. The
-    /// collector owns any asynchronous recovery after a wrapped 401.
-    #[cfg(test)]
-    pub(crate) async fn list_vehicles_with_legacy_auth(
-        &self,
-        auth: &mut LegacyAuthManager,
-    ) -> Result<Vec<Vehicle>, OwnerApiAuthError> {
-        let mut fuse = LegacyAuthFuse::default();
-        self.list_vehicles_with_legacy_auth_fused(auth, &mut fuse)
-            .await
-    }
-
-    pub(crate) async fn list_vehicles_with_legacy_auth_fused(
-        &self,
-        auth: &mut LegacyAuthManager,
-        fuse: &mut LegacyAuthFuse,
-    ) -> Result<Vec<Vehicle>, OwnerApiAuthError> {
-        let endpoint = self
-            .base_url
-            .endpoint("api/1/products")
-            .map_err(OwnerApiAuthError::Owner)?;
-        let envelope: ResponseEnvelope<Vec<ProductWire>> = self
-            .get_envelope_with_legacy_auth_url_fused(auth, fuse, endpoint, None)
-            .await?;
-        let mut vehicles = parse_vehicle_list(envelope).map_err(OwnerApiAuthError::Owner)?;
-        ProviderSecrets::new(&[
-            auth.access_token_for_sensitive_use()?,
-            auth.refresh_token_for_sensitive_use()?,
-        ])
-        .scrub_vehicle_list(&mut vehicles);
-        Ok(vehicles)
     }
 
     /// Native first-run discovery performs one bounded products request with
@@ -274,34 +278,6 @@ impl OwnerApi {
         ProviderSecrets::new(&[auth.access_token(), auth.refresh_token()])
             .scrub_vehicle_list(&mut vehicles);
         Ok(vehicles)
-    }
-
-    /// Execute one explicit legacy Owner API action using the resident
-    /// credential owner. A rejected action is never retried: repeating a
-    /// mutation after an ambiguous response would be unsafe.
-    pub(crate) async fn execute_vehicle_action_with_legacy_auth_fused(
-        &self,
-        auth: &mut LegacyAuthManager,
-        fuse: &mut LegacyAuthFuse,
-        vehicle_id: VehicleId,
-        action: LegacyVehicleAction,
-    ) -> Result<LegacyVehicleActionResult, OwnerApiAuthError> {
-        self.prepare_legacy_auth(auth, fuse).await?;
-        let endpoint = self.vehicle_action_endpoint(vehicle_id, action)?;
-        let body = action.request_body_bytes()?;
-        let request = self
-            .client
-            .post(endpoint)
-            .header(ACCEPT, ACCEPT_JSON.clone())
-            .header(CONTENT_TYPE, ACCEPT_JSON.clone())
-            .bearer_auth(auth.access_token_for_sensitive_use()?)
-            .body(body);
-        auth.assert_sensitive_access()?;
-        let result = self.execute_vehicle_action_request(request, action).await;
-        if matches!(result, Err(OwnerApiError::HttpStatus(401))) {
-            fuse.record_unauthorized(SystemTime::now());
-        }
-        result.map_err(OwnerApiAuthError::Owner)
     }
 
     /// Execute one explicit legacy Owner API action without refresh or retry.
@@ -340,15 +316,26 @@ impl OwnerApi {
         ))
     }
 
+    #[cfg(test)]
     async fn execute_vehicle_action_request(
         &self,
         request: reqwest::RequestBuilder,
         action: LegacyVehicleAction,
     ) -> Result<LegacyVehicleActionResult, OwnerApiError> {
+        self.execute_vehicle_action_request_with(request, action, &mut AnswerMeta::default())
+            .await
+    }
+
+    async fn execute_vehicle_action_request_with(
+        &self,
+        request: reqwest::RequestBuilder,
+        action: LegacyVehicleAction,
+        meta: &mut AnswerMeta,
+    ) -> Result<LegacyVehicleActionResult, OwnerApiError> {
         match action {
             LegacyVehicleAction::Wake => {
                 let envelope: ResponseEnvelope<Map<String, Value>> =
-                    self.execute_envelope_request(request).await?;
+                    self.execute_envelope_request_with(request, meta).await?;
                 if envelope.count.is_some() || envelope.response.is_empty() {
                     return Err(OwnerApiError::InvalidCommandResponse);
                 }
@@ -362,7 +349,7 @@ impl OwnerApi {
             }
             _ => {
                 let envelope: ResponseEnvelope<CommandResponseWire> =
-                    self.execute_envelope_request(request).await?;
+                    self.execute_envelope_request_with(request, meta).await?;
                 if envelope.count.is_some() {
                     return Err(OwnerApiError::InvalidCommandResponse);
                 }
@@ -374,66 +361,10 @@ impl OwnerApi {
         }
     }
 
-    pub(crate) async fn vehicle_data_with_legacy_auth_fused(
-        &self,
-        auth: &mut LegacyAuthManager,
-        fuse: &mut LegacyAuthFuse,
-        vehicle_id: VehicleId,
-        power_gate: Option<&StreamPowerGate>,
-    ) -> Result<VehicleData, OwnerApiAuthError> {
-        let endpoint = self.vehicle_data_endpoint(vehicle_id)?;
-        let envelope: Value = self
-            .get_envelope_with_legacy_auth_url_fused(auth, fuse, endpoint, power_gate)
-            .await?;
-        // Refresh happens only before the request, so the pair read here is
-        // exactly the pair that was sent and the one a provider could echo.
-        let secrets = ProviderSecrets::new(&[
-            auth.access_token_for_sensitive_use()?,
-            auth.refresh_token_for_sensitive_use()?,
-        ]);
-        parse_vehicle_data(vehicle_id, envelope, &secrets).map_err(OwnerApiAuthError::Owner)
-    }
-
-    pub(crate) async fn vehicle_probe_with_legacy_auth_fused(
-        &self,
-        auth: &mut LegacyAuthManager,
-        fuse: &mut LegacyAuthFuse,
-        vehicle_id: VehicleId,
-    ) -> Result<bool, OwnerApiAuthError> {
-        let endpoint = self.vehicle_probe_endpoint(vehicle_id)?;
-        let envelope: ResponseEnvelope<Map<String, Value>> = self
-            .get_envelope_with_legacy_auth_url_fused(auth, fuse, endpoint, None)
-            .await?;
-        Ok(envelope
-            .response
-            .get("in_service")
-            .and_then(Value::as_bool)
-            .unwrap_or(false))
-    }
-
-    pub(crate) async fn vehicle_state_with_legacy_auth_fused(
-        &self,
-        auth: &mut LegacyAuthManager,
-        fuse: &mut LegacyAuthFuse,
-        vehicle_id: VehicleId,
-    ) -> Result<String, OwnerApiAuthError> {
-        let endpoint = self.vehicle_probe_endpoint(vehicle_id)?;
-        let envelope: ResponseEnvelope<Map<String, Value>> = self
-            .get_envelope_with_legacy_auth_url_fused(auth, fuse, endpoint, None)
-            .await?;
-        let state = parse_vehicle_state(envelope.response).map_err(OwnerApiAuthError::Owner)?;
-        // The state is stored as the vehicle's source state and served as its current state, so
-        // a credential echoed into it is replaced here, before the scheduler or the store sees it.
-        let secrets = ProviderSecrets::new(&[
-            auth.access_token_for_sensitive_use()?,
-            auth.refresh_token_for_sensitive_use()?,
-        ]);
-        Ok(secrets.scrub_vehicle_state(state))
-    }
-
     fn vehicle_data_endpoint(&self, vehicle_id: VehicleId) -> Result<Url, OwnerApiError> {
-        let suffix = format!("api/1/vehicles/{vehicle_id}/vehicle_data");
-        let mut endpoint = self.base_url.endpoint(&suffix)?;
+        let mut endpoint = self
+            .base_url
+            .endpoint(&format!("api/1/vehicles/{vehicle_id}/vehicle_data"))?;
         endpoint
             .query_pairs_mut()
             .append_pair("endpoints", VEHICLE_DATA_ENDPOINTS);
@@ -443,83 +374,6 @@ impl OwnerApi {
     fn vehicle_probe_endpoint(&self, vehicle_id: VehicleId) -> Result<Url, OwnerApiError> {
         self.base_url
             .endpoint(&format!("api/1/vehicles/{vehicle_id}"))
-    }
-
-    async fn get_envelope_with_legacy_auth_url_fused<T>(
-        &self,
-        auth: &mut LegacyAuthManager,
-        fuse: &mut LegacyAuthFuse,
-        endpoint: Url,
-        power_gate: Option<&StreamPowerGate>,
-    ) -> Result<T, OwnerApiAuthError>
-    where
-        T: DeserializeOwned,
-    {
-        self.prepare_legacy_auth(auth, fuse).await?;
-        let first = self
-            .get_envelope_url_with_legacy_auth(auth, endpoint, power_gate)
-            .await;
-        if !matches!(
-            first,
-            Err(OwnerApiAuthError::Owner(OwnerApiError::HttpStatus(401)))
-        ) {
-            return first;
-        }
-        fuse.record_unauthorized(SystemTime::now());
-        if fuse.is_blown() {
-            return Err(OwnerApiAuthError::NotSignedIn);
-        }
-        first
-    }
-
-    async fn get_envelope_url_with_legacy_auth<T>(
-        &self,
-        auth: &LegacyAuthManager,
-        url: Url,
-        power_gate: Option<&StreamPowerGate>,
-    ) -> Result<T, OwnerApiAuthError>
-    where
-        T: DeserializeOwned,
-    {
-        if power_gate.is_some_and(|gate| !gate.is_confirmed()) {
-            return Err(OwnerApiAuthError::Owner(
-                OwnerApiError::StreamPowerNotConfirmed,
-            ));
-        }
-        let request = self.envelope_request(auth.access_token_for_sensitive_use()?, url);
-        auth.assert_sensitive_access()?;
-        self.execute_envelope_request(request)
-            .await
-            .map_err(OwnerApiAuthError::Owner)
-    }
-
-    async fn prepare_legacy_auth(
-        &self,
-        auth: &mut LegacyAuthManager,
-        fuse: &mut LegacyAuthFuse,
-    ) -> Result<(), OwnerApiAuthError> {
-        if fuse.is_blown() {
-            return Err(OwnerApiAuthError::NotSignedIn);
-        }
-        auth.assert_sensitive_access()?;
-        // The API timer in pinned TeslaMate refreshes independently of an
-        // Owner API 401. Check the same persisted schedule before each bounded
-        // compatibility request; refresh failure retains the current pair.
-        if let Err(error) = auth
-            .refresh_if_due(&self.legacy_auth_client, SystemTime::now())
-            .await
-        {
-            if error.is_sensitive_access_failure() {
-                return Err(error.into());
-            }
-            if !matches!(
-                &error,
-                LegacyAuthManagerError::Auth(crate::legacy_auth::LegacyAuthError::RefreshDeferred)
-            ) {
-                tracing::warn!(error = %error, "scheduled legacy token refresh failed; current pair retained");
-            }
-        }
-        Ok(())
     }
 
     fn envelope_request(&self, bearer: &str, url: Url) -> reqwest::RequestBuilder {
@@ -536,64 +390,274 @@ impl OwnerApi {
     where
         T: DeserializeOwned,
     {
-        let response = request.send().await.map_err(classify_transport_error)?;
+        self.execute_envelope_request_with(request, &mut AnswerMeta::default())
+            .await
+    }
+}
 
-        if !response.status().is_success() {
-            let status = response.status().as_u16();
-            if status == 408 || status == 504 {
-                return Err(OwnerApiError::RequestTimeout);
+/// The error status of an Owner-wire response as a typed error (C3 R42), read
+/// once, in whole, from the status and headers and, for the two statuses whose
+/// meaning depends on the words of the body, from at most
+/// [`MAX_ERROR_BODY_BYTES`] of it:
+///
+/// - 429 is `RateLimited` with the wait the headers ask for (R45);
+/// - 404 is `VehicleNotFound`;
+/// - 410 is `Gone`, RFC 9110's "no longer available, likely permanent";
+/// - 403 is `Forbidden`, with whether its body names the Fleet API (R42);
+/// - 405 is `VehicleInService` when its error text says so, else a plain
+///   status;
+/// - every other status, 401 and 408 included, stays `HttpStatus`, so the
+///   classifier reads the number and no caller needs a variant.
+///
+/// Neither the body nor a header other than the numeric wait leaves this
+/// function (C3 R9).
+async fn owner_error_for_response(response: reqwest::Response) -> OwnerApiError {
+    let status = response.status().as_u16();
+    match status {
+        429 => OwnerApiError::RateLimited {
+            retry_after_seconds: parse_retry_after(response.headers()),
+        },
+        404 => OwnerApiError::VehicleNotFound,
+        410 => OwnerApiError::Gone,
+        403 => OwnerApiError::Forbidden {
+            fleet_api_named: is_fleet_api_named(&read_error_body(response).await),
+        },
+        405 => {
+            if is_vehicle_in_service_body(&read_error_body(response).await) {
+                OwnerApiError::VehicleInService
+            } else {
+                OwnerApiError::HttpStatus(405)
             }
-            if status == 429 {
-                let retry_after_seconds = parse_retry_after(response.headers());
-                return Err(OwnerApiError::RateLimited {
-                    retry_after_seconds,
-                });
-            }
-            if matches!(status, 403..=405) {
-                let bytes = read_limited_response(response).await?;
-                if status == 405 && is_vehicle_in_service_body(&bytes) {
-                    return Err(OwnerApiError::VehicleInService);
-                }
-                if status == 404 && is_owner_error_body(&bytes, "not_found") {
-                    return Err(OwnerApiError::VehicleNotFound);
-                }
-                if status == 403 && is_owner_error_body(&bytes, "account disabled: EXCEEDED_LIMIT")
-                {
-                    return Err(OwnerApiError::RateLimited {
-                        retry_after_seconds: 900,
-                    });
-                }
-            }
-            return Err(OwnerApiError::HttpStatus(status));
         }
-
-        let bytes = read_limited_response(response).await?;
-        serde_json::from_slice(&bytes).map_err(|_| OwnerApiError::InvalidResponseEnvelope)
+        _ => OwnerApiError::HttpStatus(status),
     }
 }
 
+/// At most [`MAX_ERROR_BODY_BYTES`] of an error response body. A body that
+/// cannot be read, or is longer, simply yields what was read: an error body only
+/// ever refines a status that is already known.
+async fn read_error_body(response: reqwest::Response) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut stream = response.bytes_stream();
+    while bytes.len() < MAX_ERROR_BODY_BYTES {
+        let Some(Ok(chunk)) = stream.next().await else {
+            break;
+        };
+        let room = MAX_ERROR_BODY_BYTES - bytes.len();
+        bytes.extend_from_slice(&chunk[..chunk.len().min(room)]);
+    }
+    bytes
+}
+
+/// The strings of an error body that the status rules read (C3 R42): for a JSON
+/// object, its `error` and `error_description` strings, each on its own so a
+/// word cannot form across their boundary; for anything else, the first
+/// [`MAX_ERROR_BODY_BYTES`] bytes as text.
+fn error_body_texts(bytes: &[u8]) -> Vec<String> {
+    let bytes = &bytes[..bytes.len().min(MAX_ERROR_BODY_BYTES)];
+    match serde_json::from_slice::<Value>(bytes) {
+        Ok(Value::Object(fields)) => ["error", "error_description"]
+            .into_iter()
+            .filter_map(|key| fields.get(key).and_then(Value::as_str))
+            .map(str::to_owned)
+            .collect(),
+        _ => vec![String::from_utf8_lossy(bytes).into_owned()],
+    }
+}
+
+/// Whether an error body's text contains `expected`, ASCII case-insensitively
+/// (C3 R42). The text is matched in memory and never logged.
 fn is_owner_error_body(bytes: &[u8], expected: &str) -> bool {
-    if bytes == expected.as_bytes() {
-        return true;
-    }
-    serde_json::from_slice::<Value>(bytes)
-        .ok()
-        .and_then(|value| match value {
-            Value::String(value) => Some(value),
-            Value::Object(mut object) => object
-                .remove("error")
-                .and_then(|value| value.as_str().map(str::to_owned)),
-            _ => None,
-        })
-        .is_some_and(|value| value == expected)
+    let expected = expected.to_ascii_lowercase();
+    error_body_texts(bytes)
+        .iter()
+        .any(|text| text.to_ascii_lowercase().contains(&expected))
 }
 
-fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> u64 {
-    headers
-        .get("retry-after")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(300)
+/// The one test that a 403 body names the Fleet API (C3 R42), shared with the
+/// token endpoint's classification (C5 R45 row 10) so the two cannot disagree
+/// about the same words: the body's text, lowercased and reduced to ASCII
+/// letters and digits, contains `fleetapi`.
+pub(crate) fn is_fleet_api_named(bytes: &[u8]) -> bool {
+    error_body_texts(bytes).iter().any(|text| {
+        text.chars()
+            .filter(char::is_ascii_alphanumeric)
+            .map(|character| character.to_ascii_lowercase())
+            .collect::<String>()
+            .contains(FLEET_API_NAME)
+    })
+}
+
+/// C3 R45 `K_RETRY_AFTER_MAX`: the longest wait a `Retry-After` or
+/// `RateLimit-Reset` header may ask for, one hour. It bounds the damage of a
+/// wrong or hostile header: one request an hour then re-asks.
+pub(crate) const RETRY_AFTER_MAX_SECONDS: u64 = 3_600;
+
+/// The wait a 429 response asks for, in whole seconds, or 0 when it names none
+/// (C3 R45). Shared by the Owner and Fleet clients.
+pub(crate) fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> u64 {
+    retry_after_seconds_at(headers, SystemTime::now())
+}
+
+/// [`parse_retry_after`] against a given wall time.
+///
+/// RFC 9110 section 10.2.3: `Retry-After` is `delay-seconds` (ASCII digits, up
+/// to `u64`) or an HTTP-date (IMF-fixdate, and the two obsolete forms section
+/// 5.6.7 requires recipients to accept), whose wait is the date minus `now`
+/// rounded up to whole seconds. When `Retry-After` is absent or invalid,
+/// `RateLimit-Reset` is used the same way if it is `delay-seconds` (Tesla names
+/// both headers). A result of 0, a date that is not in the future or no usable
+/// header returns 0, meaning "absent", because an immediate retry lands in the
+/// same rate-limit window. Larger values are clamped to
+/// [`RETRY_AFTER_MAX_SECONDS`].
+pub(crate) fn retry_after_seconds_at(headers: &reqwest::header::HeaderMap, now: SystemTime) -> u64 {
+    let header = |name: &str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+    };
+    header("retry-after")
+        .and_then(|value| retry_after_wait(value, now, true))
+        .or_else(|| header("ratelimit-reset").and_then(|value| retry_after_wait(value, now, false)))
+        .unwrap_or(0)
+        .min(RETRY_AFTER_MAX_SECONDS)
+}
+
+fn retry_after_wait(value: &str, now: SystemTime, allow_http_date: bool) -> Option<u64> {
+    if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return value.parse::<u64>().ok();
+    }
+    if !allow_http_date {
+        return None;
+    }
+    let now_ms =
+        i128::try_from(now.duration_since(SystemTime::UNIX_EPOCH).ok()?.as_millis()).ok()?;
+    let date_ms = i128::from(parse_http_date(value, now_ms)?) * 1_000;
+    let wait_ms = date_ms - now_ms;
+    if wait_ms <= 0 {
+        return Some(0);
+    }
+    u64::try_from((wait_ms + 999) / 1_000).ok()
+}
+
+/// HTTP-date to Unix seconds (RFC 9110 section 5.6.7): IMF-fixdate
+/// (`Sun, 06 Nov 1994 08:49:37 GMT`), rfc850-date (`Sunday, 06-Nov-94
+/// 08:49:37 GMT`) and asctime-date (`Sun Nov  6 08:49:37 1994`). A two-digit
+/// year more than 50 years ahead of `now_ms` is read as the most recent past
+/// year with the same last two digits, compared by calendar year. The weekday
+/// must be a valid name; it is not checked against the date.
+fn parse_http_date(value: &str, now_ms: i128) -> Option<i64> {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    const SHORT_DAYS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const LONG_DAYS: [&str; 7] = [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "Sunday",
+    ];
+    let month_number = |name: &str| {
+        MONTHS
+            .iter()
+            .position(|month| *month == name)
+            .and_then(|index| i64::try_from(index + 1).ok())
+    };
+    let digits = |text: &str, length: usize| -> Option<i64> {
+        (text.len() == length && text.bytes().all(|byte| byte.is_ascii_digit()))
+            .then(|| text.parse().ok())
+            .flatten()
+    };
+    let parts: Vec<&str> = value.split_whitespace().collect();
+    let (day, month, year, time) = match parts.as_slice() {
+        [weekday, day, month, year, time, "GMT"]
+            if weekday
+                .strip_suffix(',')
+                .is_some_and(|name| SHORT_DAYS.contains(&name)) =>
+        {
+            (
+                digits(day, 2)?,
+                month_number(month)?,
+                digits(year, 4)?,
+                *time,
+            )
+        }
+        [weekday, date, time, "GMT"]
+            if weekday
+                .strip_suffix(',')
+                .is_some_and(|name| LONG_DAYS.contains(&name)) =>
+        {
+            let mut fields = date.split('-');
+            let (day, month, short_year) = (fields.next()?, fields.next()?, fields.next()?);
+            if fields.next().is_some() {
+                return None;
+            }
+            let now_year = civil_from_days(i64::try_from(now_ms.div_euclid(86_400_000)).ok()?).0;
+            let mut year = now_year.div_euclid(100) * 100 + digits(short_year, 2)?;
+            if year - now_year > 50 {
+                year -= 100;
+            }
+            (digits(day, 2)?, month_number(month)?, year, *time)
+        }
+        [weekday, month, day, time, year] if SHORT_DAYS.contains(weekday) => {
+            let day_length = if day.len() == 1 { 1 } else { 2 };
+            (
+                digits(day, day_length)?,
+                month_number(month)?,
+                digits(year, 4)?,
+                *time,
+            )
+        }
+        _ => return None,
+    };
+    let mut clock = time.split(':');
+    let (hour, minute, second) = (
+        digits(clock.next()?, 2)?,
+        digits(clock.next()?, 2)?,
+        digits(clock.next()?, 2)?,
+    );
+    if clock.next().is_some() || hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+    let days = days_from_civil(year, month, day);
+    if civil_from_days(days) != (year, month, day) {
+        return None;
+    }
+    Some(days * 86_400 + hour * 3_600 + minute * 60 + second)
+}
+
+/// Days since 1970-01-01 of a proleptic Gregorian date.
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = year.div_euclid(400);
+    let year_of_era = year - era * 400;
+    let month_from_march = (month + 9) % 12;
+    let day_of_year = (153 * month_from_march + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
+/// The date (year, month, day) of a number of days since 1970-01-01.
+fn civil_from_days(days: i64) -> (i64, i64, i64) {
+    let days = days + 719_468;
+    let era = days.div_euclid(146_097);
+    let day_of_era = days - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_from_march = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_from_march + 2) / 5 + 1;
+    let month = if month_from_march < 10 {
+        month_from_march + 3
+    } else {
+        month_from_march - 9
+    };
+    (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
 fn parse_vehicle_list(
@@ -920,6 +984,14 @@ pub enum OwnerApiError {
     HttpStatus(u16),
     #[error("owner API rate limited; retry after {retry_after_seconds}s")]
     RateLimited { retry_after_seconds: u64 },
+    /// HTTP 403 (C3 R42). `fleet_api_named` is whether the body names the Fleet
+    /// API, which is Tesla's way of saying this wire no longer serves the
+    /// request; the body itself is never kept.
+    #[error("owner API refused the request (HTTP 403)")]
+    Forbidden { fleet_api_named: bool },
+    /// HTTP 410 (C3 R42): RFC 9110's "no longer available, likely permanent".
+    #[error("owner API reports the resource gone (HTTP 410)")]
+    Gone,
     #[error("owner API vehicle was not found")]
     VehicleNotFound,
     #[error("owner API vehicle is in service")]
@@ -1046,7 +1118,7 @@ impl ProductWire {
             vin,
             state,
             display_name,
-            settings: ProjectionCarSettings::default(),
+            settings: ProjectionCarSettings::new_live(),
         }))
     }
 }
@@ -1111,7 +1183,9 @@ fn parse_vehicle_state(fields: Map<String, Value>) -> Result<String, OwnerApiErr
         .ok_or(OwnerApiError::InvalidVehicleRecord)
 }
 
-fn allowlisted_provider_response_v1(raw_json: &Value) -> Result<Map<String, Value>, OwnerApiError> {
+pub(crate) fn allowlisted_provider_response_v1(
+    raw_json: &Value,
+) -> Result<Map<String, Value>, OwnerApiError> {
     const ROOT_FIELDS: &[&str] = &["id", "vehicle_id", "vin", "display_name", "state"];
     const DRIVE_STATE_FIELDS: &[&str] = &[
         "active_route_destination",
@@ -1450,6 +1524,10 @@ fn scrub_sensitive_value(value: &mut Value) {
     }
 }
 
+/// A request that produced no HTTP status: a timeout before a response is
+/// `RequestTimeout`; DNS, connect, TLS and every other transport fault is
+/// `Transport` (C3 R42, R43). The scheduler treats both as "Tesla not
+/// reachable", never as a fault of one car.
 fn classify_transport_error(error: reqwest::Error) -> OwnerApiError {
     if error.is_timeout() {
         OwnerApiError::RequestTimeout
@@ -1458,12 +1536,9 @@ fn classify_transport_error(error: reqwest::Error) -> OwnerApiError {
     }
 }
 
-fn is_vehicle_in_service_body(bytes: &[u8]) -> bool {
-    let Ok(Value::Object(fields)) = serde_json::from_slice::<Value>(bytes) else {
-        return false;
-    };
-    fields.len() == 1
-        && fields.get("error").and_then(Value::as_str) == Some("vehicle is currently in service")
+/// Whether a 405 body says the car is in service (C3 R42, R52).
+pub(crate) fn is_vehicle_in_service_body(bytes: &[u8]) -> bool {
+    is_owner_error_body(bytes, IN_SERVICE_TEXT)
 }
 
 async fn read_limited_response(response: reqwest::Response) -> Result<Vec<u8>, OwnerApiError> {

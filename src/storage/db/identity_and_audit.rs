@@ -767,6 +767,31 @@ impl HubStore {
         inventory: &[VehicleDescriptor],
         observed_at_ms: i64,
     ) -> Result<(), StoreError> {
+        self.reconcile_provider_inventory_with(source_id, inventory, observed_at_ms, true)
+    }
+
+    /// The presence half of [`Self::reconcile_provider_inventory`]: returned known
+    /// identities are reactivated and nothing is retired. The scheduled collector
+    /// uses it, because one list that lacks a car proves nothing: the scheduler
+    /// confirms a removal only after spaced absences (C3 R53) and keeps a removed
+    /// car in its set, so the lifecycle closure of R40 still covers it. A car
+    /// leaves the active set only by an owner action or an explicit setup.
+    pub fn reactivate_provider_inventory(
+        &self,
+        source_id: Uuid,
+        inventory: &[VehicleDescriptor],
+        observed_at_ms: i64,
+    ) -> Result<(), StoreError> {
+        self.reconcile_provider_inventory_with(source_id, inventory, observed_at_ms, false)
+    }
+
+    fn reconcile_provider_inventory_with(
+        &self,
+        source_id: Uuid,
+        inventory: &[VehicleDescriptor],
+        observed_at_ms: i64,
+        retire_missing: bool,
+    ) -> Result<(), StoreError> {
         if source_id.is_nil() {
             return Err(StoreError::NilSourceId);
         }
@@ -840,7 +865,7 @@ impl HubStore {
                         )
                         .map_err(StoreError::RegisterVehicle)?;
                 }
-            } else if retired_at_ms.is_none() {
+            } else if retire_missing && retired_at_ms.is_none() {
                 transaction
                     .execute(
                         "UPDATE vehicles SET retired_at_ms = ?1 WHERE vehicle_id = ?2",

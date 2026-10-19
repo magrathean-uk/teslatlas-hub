@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 #[test]
-fn standalone_preflight_allows_only_known_v66_to_v68_forward_upgrades_without_writes() {
+fn standalone_preflight_allows_only_known_v66_to_v70_forward_upgrades_without_writes() {
     use crate::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
     let temporary = crate::private_tempdir().unwrap();
     let data_dir = temporary.path().join("state");
@@ -19,7 +19,39 @@ fn standalone_preflight_allows_only_known_v66_to_v68_forward_upgrades_without_wr
         .current_observations_for_vehicle(vehicle.vehicle_id)
         .unwrap();
     let connection = store.open().unwrap();
-    // Rewind the v69 geocoder lookup columns first: a v68 store is the shape
+    // Rewind the v71 credential status table first: a v70 store is the shape
+    // of the development catalogues before it, and standalone Serve migrates
+    // it itself.
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {} PRAGMA user_version=70; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
+            crate::db::REWIND_V71_SQL
+        ))
+        .unwrap();
+    let v70_bytes = fs::read(config.database_path()).unwrap();
+    assert!(matches!(
+        HubStore::open_read_only(&data_dir),
+        Err(crate::db::StoreError::UnsupportedSchema(70))
+    ));
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
+    assert_eq!(fs::read(config.database_path()).unwrap(), v70_bytes);
+    // Rewind the v70 collector state tables next: a v69 store is the shape of
+    // the development catalogues before them, and standalone Serve migrates it
+    // itself.
+    connection
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {} PRAGMA user_version=69; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);",
+            crate::db::REWIND_V70_SQL
+        ))
+        .unwrap();
+    let v69_bytes = fs::read(config.database_path()).unwrap();
+    assert!(matches!(
+        HubStore::open_read_only(&data_dir),
+        Err(crate::db::StoreError::UnsupportedSchema(69))
+    ));
+    preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
+    assert_eq!(fs::read(config.database_path()).unwrap(), v69_bytes);
+    // Rewind the v69 geocoder lookup columns next: a v68 store is the shape
     // the previous release left, and standalone Serve migrates it itself.
     connection
         .execute_batch(&format!(
@@ -100,10 +132,10 @@ fn standalone_preflight_allows_only_known_v66_to_v68_forward_upgrades_without_wr
         connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
             .unwrap(),
-        69
+        crate::db::SCHEMA_VERSION
     );
     preflight_hub_for_serve(&config, Some(DevelopmentServeMode::Standalone)).unwrap();
-    for unsupported in [65_i32, 70] {
+    for unsupported in [65_i32, crate::db::SCHEMA_VERSION + 1] {
         connection
             .pragma_update(None, "user_version", unsupported)
             .unwrap();
@@ -398,6 +430,215 @@ fn provider_preflight_accepts_only_the_selected_usable_credentials() {
         .expect("Fleet preflight");
     preflight_hub(temporary.path()).expect("generic provider preflight");
     assert!(preflight_hub_for_provider(temporary.path(), CollectorProvider::Legacy).is_err());
+}
+
+/// The Fleet-only hub of the install fixtures, with an identified unresolved
+/// refresh: a started token receipt bound to the stored pair, with its input fence.
+fn seed_fleet_unresolved_hub(data_dir: &Path) -> (HubStore, uuid::Uuid) {
+    seed_fleet_ready_hub(data_dir);
+    let store = HubStore::initialize(data_dir).expect("store");
+    let generation = store
+        .load_fleet_tokens()
+        .expect("Fleet tokens")
+        .expect("a stored pair")
+        .credential_generation()
+        .expect("a bound generation");
+    store
+        .begin_fleet_refresh(generation)
+        .expect("an unresolved Fleet refresh");
+    (store, generation)
+}
+
+/// Everything a preflight must leave alone: the stored pair, the receipts and
+/// fences of the refresh, the collector rows and the data directory's files.
+fn preflight_snapshot(store: &HubStore, data_dir: &Path) -> String {
+    let connection = store.open().expect("catalogue");
+    let receipts: Vec<(i64, String)> = connection
+        .prepare("SELECT id, outcome FROM outbound_request_receipts ORDER BY id")
+        .expect("receipts")
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("receipt rows")
+        .collect::<Result<_, _>>()
+        .expect("receipt values");
+    let fences: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM fleet_refresh_input_fences",
+            [],
+            |row| row.get(0),
+        )
+        .expect("fences");
+    let pair = store.load_fleet_tokens().expect("tokens").map(|pair| {
+        (
+            pair.access().to_vec(),
+            pair.refresh().to_vec(),
+            pair.credential_generation(),
+        )
+    });
+    let mut files: Vec<String> = fs::read_dir(data_dir)
+        .expect("data directory")
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| !name.starts_with("hub.sqlite"))
+        .collect();
+    files.sort();
+    format!(
+        "{receipts:?}|{fences}|{pair:?}|{:?}|{files:?}",
+        store.load_collector_state_rows().expect("rows").account
+    )
+}
+
+#[test]
+fn fleet_unresolved_refresh_passes_production_and_gui_start_preflight() {
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data_dir = temporary.path().join("state");
+    let (store, _generation) = seed_fleet_unresolved_hub(&data_dir);
+    let home = temporary.path().join("home");
+    let mut config = source_run_config(temporary.path(), &data_dir);
+    config.collector.provider = CollectorProvider::Fleet;
+    config.collector.interval_seconds = 30;
+    // The pair, key, cipher, generation, claims and scopes are sound, and the
+    // refresh is the identified unresolved one; the operational predicate still
+    // fences it.
+    assert!(
+        crate::fleet_credentials::inspect_stored_fleet_credentials(&store, &data_dir)
+            .expect("an independently valid pair")
+            .unresolved_refresh
+    );
+    assert!(matches!(
+        crate::fleet_credentials::validate_stored_fleet_credentials(&store, &data_dir),
+        Err(crate::fleet_credentials::FleetCredentialError::RotationOutcomeUnknown)
+    ));
+    let before = preflight_snapshot(&store, &data_dir);
+    // The provider preflight, the generic one, the production configuration
+    // preflight, the Serve preflight and the GUI Start path (which reaches the
+    // configuration preflight through the service Start command) all pass, read
+    // only, with no fallback to Legacy credentials.
+    preflight_hub_for_provider(&data_dir, CollectorProvider::Fleet)
+        .expect("the provider preflight admits the reconnect stop");
+    preflight_hub(&data_dir).expect("the generic preflight admits it");
+    preflight_hub_for_config(&config).expect("the production configuration preflight");
+    preflight_hub_for_serve(&config, None).expect("the production Serve preflight");
+    assert!(
+        preflight_hub_for_provider(&data_dir, CollectorProvider::Legacy).is_err(),
+        "there is no Legacy fallback"
+    );
+    assert_eq!(
+        preflight_snapshot(&store, &data_dir),
+        before,
+        "nothing was written"
+    );
+    assert_no_install_artifacts(&data_dir, &home);
+    assert!(
+        store.has_unresolved_fleet_refresh().expect("receipts"),
+        "nothing was settled"
+    );
+}
+
+#[test]
+fn fleet_unresolved_preflight_rejects_independent_credential_failures() {
+    const UNSCOPED_ACCESS: &str = "e30.eyJzY3AiOlsib3BlbmlkIl19.sig";
+    #[allow(clippy::type_complexity)]
+    let faults: [(&str, fn(&Path, &HubStore, uuid::Uuid)); 4] = [
+        ("missing key", |directory, _, _| {
+            fs::remove_file(crate::fleet_credentials::fleet_key_path(directory))
+                .expect("remove key");
+        }),
+        ("bad ciphertext", |_, store, _| {
+            store
+                .open()
+                .expect("catalogue")
+                .execute(
+                    "UPDATE fleet_tokens SET access = X'0102030405060708090a0b0c0d0e0f1011'",
+                    [],
+                )
+                .expect("damage ciphertext");
+        }),
+        ("generation mismatch", |_, store, generation| {
+            store
+                .open()
+                .expect("catalogue")
+                .execute(
+                    "UPDATE fleet_tokens SET credential_generation = ?1",
+                    rusqlite::params![uuid::Uuid::from_u128(generation.as_u128() ^ 1).to_string()],
+                )
+                .expect("mismatch");
+        }),
+        ("missing collection scopes", |directory, store, _| {
+            // A pair that lacks `vehicle_location` carries its own generation: fence it
+            // afresh, so the refresh is unresolved and identified but the scopes fail.
+            store.clear_fleet_tokens().expect("clear");
+            persist_fleet_setup_credentials(
+                store,
+                directory,
+                &FleetSetupCredentials::new(
+                    UNSCOPED_ACCESS.to_owned(),
+                    "fleet-refresh-two".to_owned(),
+                    "fleet-client".to_owned(),
+                    FleetRegion::EuropeMiddleEastAndAfrica,
+                    3_600,
+                )
+                .expect("credentials"),
+                SystemTime::now(),
+            )
+            .expect("replacement pair");
+            let generation = store
+                .load_fleet_tokens()
+                .expect("tokens")
+                .expect("a pair")
+                .credential_generation()
+                .expect("generation");
+            store
+                .begin_fleet_refresh(generation)
+                .expect("unresolved refresh");
+        }),
+    ];
+    for (label, fault) in faults {
+        let temporary = crate::private_tempdir().expect("temporary directory");
+        let data_dir = temporary.path().join("state");
+        let (store, generation) = seed_fleet_unresolved_hub(&data_dir);
+        fault(&data_dir, &store, generation);
+        let mut config = source_run_config(temporary.path(), &data_dir);
+        config.collector.provider = CollectorProvider::Fleet;
+        config.collector.interval_seconds = 30;
+        let before = preflight_snapshot(&store, &data_dir);
+        assert!(
+            preflight_hub_for_provider(&data_dir, CollectorProvider::Fleet).is_err(),
+            "{label}"
+        );
+        assert!(preflight_hub_for_config(&config).is_err(), "{label}");
+        assert!(preflight_hub_for_serve(&config, None).is_err(), "{label}");
+        assert!(preflight_hub(&data_dir).is_err(), "{label}");
+        assert_eq!(
+            preflight_snapshot(&store, &data_dir),
+            before,
+            "{label}: no write"
+        );
+    }
+    // A generation mismatch with no unresolved receipt is the same error and fails
+    // too: the unknown-outcome error is never accepted blindly.
+    let temporary = crate::private_tempdir().expect("temporary directory");
+    let data_dir = temporary.path().join("state");
+    seed_fleet_ready_hub(&data_dir);
+    let store = HubStore::initialize(&data_dir).expect("store");
+    let generation = store
+        .load_fleet_tokens()
+        .expect("tokens")
+        .expect("a pair")
+        .credential_generation()
+        .expect("generation");
+    store
+        .open()
+        .expect("catalogue")
+        .execute(
+            "UPDATE fleet_tokens SET credential_generation = ?1",
+            rusqlite::params![uuid::Uuid::from_u128(generation.as_u128() ^ 1).to_string()],
+        )
+        .expect("mismatch");
+    assert!(!store.has_unresolved_fleet_refresh().expect("receipts"));
+    let before = preflight_snapshot(&store, &data_dir);
+    assert!(preflight_hub_for_provider(&data_dir, CollectorProvider::Fleet).is_err());
+    assert!(preflight_hub(&data_dir).is_err());
+    assert_eq!(preflight_snapshot(&store, &data_dir), before);
 }
 
 fn assert_no_install_artifacts(data: &Path, home: &Path) {

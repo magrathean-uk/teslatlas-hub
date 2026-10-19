@@ -438,6 +438,21 @@ fn retired_lineage_clock_ms() -> Result<i64, StoreError> {
     i64::try_from(elapsed.as_millis()).map_err(|_| StoreError::RetiredLineageClockOverflow)
 }
 
+/// Delete the receipts that are past retention.
+///
+/// The receipts of the legacy credential unit's own completed refreshes that
+/// lead from the last externally written pair to the stored pair are kept for
+/// as long as that pair is stored (C5 section 3.3, the Owner-wire credential
+/// identity). A binding is deleted with its receipt (`ON DELETE CASCADE`), and
+/// the identity is read by following the completed bindings back from the
+/// stored generation to the generation no binding produced, so a binding
+/// pruned from the middle of that chain would make the identity jump to the
+/// refresh that followed it, and C3's configuration fingerprint would change
+/// about four times a day without the owner doing anything. Only the chain
+/// behind the stored pair is held: once an external write stores another pair
+/// the old chain is unreachable and expires with the rest. The chain grows by
+/// one receipt for each refresh of the stored pair (about four a day for
+/// Tesla's token lifetime), so it takes decades to use the shared budget.
 fn prune_expired_outbound_request_receipts(
     transaction: &Transaction<'_>,
 ) -> Result<(), StoreError> {
@@ -446,7 +461,19 @@ fn prune_expired_outbound_request_receipts(
         .execute(
             "DELETE FROM outbound_request_receipts
               WHERE outcome <> 'started'
-                AND completed_at_ms < ?1",
+                AND completed_at_ms < ?1
+                AND id NOT IN (
+                    WITH RECURSIVE chain(generation) AS (
+                        SELECT credential_generation FROM teslamate_legacy_tokens
+                         WHERE singleton_id = 1 AND credential_generation IS NOT NULL
+                        UNION
+                        SELECT b.input_credential_generation
+                          FROM legacy_refresh_receipt_bindings AS b
+                          JOIN chain ON b.output_credential_generation = chain.generation
+                    )
+                    SELECT b.receipt_id FROM legacy_refresh_receipt_bindings AS b
+                     WHERE b.output_credential_generation IN (SELECT generation FROM chain)
+                )",
             params![cutoff_ms],
         )
         .map_err(StoreError::OutboundRequestReceipt)?;

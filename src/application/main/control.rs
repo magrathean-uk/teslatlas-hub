@@ -346,6 +346,53 @@ fn run_set_geofence(
     }))
 }
 
+/// The control CLI's collector actions (C3 R65, R66, section 8 item 5). `retry` and
+/// `resume` insert a row the running collector reads at its next settings refresh
+/// and applies in one tick transaction; `gaps acknowledge` marks the alert gaps as
+/// notified, which on Linux and Docker is how the owner answers the readiness detail
+/// `collector_gap_unnotified`. Nothing here contacts Tesla, and the printed document
+/// holds only the action, a count and Hub ids.
+fn run_collector_command(
+    config_path: &Path,
+    command: &CollectorCommand,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let config = HubConfig::load(config_path)?;
+    let store = HubStore::open_existing(&config.data_dir)?;
+    let now_ms = current_epoch_ms()?;
+    let document = match command {
+        CollectorCommand::Retry => {
+            let action_id =
+                store.insert_collector_owner_action("retry_collection", None, now_ms)?;
+            serde_json::json!({"status": "requested", "action": "retry_collection", "actionId": action_id})
+        }
+        CollectorCommand::Resume { vehicle } => {
+            if !store
+                .configured_tesla_vehicles()?
+                .iter()
+                .any(|(hub_id, _, _)| hub_id == vehicle)
+            {
+                return Err("the vehicle UUID does not identify a configured car".into());
+            }
+            let action_id =
+                store.insert_collector_owner_action("resume_vehicle", Some(*vehicle), now_ms)?;
+            serde_json::json!({
+                "status": "requested",
+                "action": "resume_vehicle",
+                "vehicleId": vehicle,
+                "actionId": action_id,
+            })
+        }
+        CollectorCommand::Gaps {
+            command: CollectorGapsCommand::Acknowledge,
+        } => {
+            let acknowledged = store.acknowledge_collection_gaps(now_ms)?;
+            serde_json::json!({"status": "acknowledged", "gaps": acknowledged})
+        }
+    };
+    println!("{document}");
+    Ok(())
+}
+
 async fn run_control(
     config_path: &Path,
     requested_vehicle_id: Option<uuid::Uuid>,

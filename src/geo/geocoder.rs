@@ -295,6 +295,12 @@ impl Geocoder {
         }
 
         let address = self.reverse_with_egress_guard(point, egress_guard).await?;
+        // The cache row is a store mutation after the lookup's awaits: the guard that
+        // stood in front of the request stands in front of it too (B2 fix round, P3b
+        // fix 2, R-P3bF2-1).
+        egress_guard
+            .assert_egress_allowed()
+            .map_err(|_| GeocoderError::EgressDenied)?;
         store
             .put_address_cache(&AddressCacheRecord {
                 osm_type: address.osm_type.clone(),

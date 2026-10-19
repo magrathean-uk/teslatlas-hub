@@ -129,7 +129,21 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
-        let before = load_car_settings_row(&transaction, vehicle_id)?;
+        Self::upsert_car_settings_in_transaction(&transaction, vehicle_id, car_id, settings)?;
+        transaction.commit().map_err(StoreError::Query)?;
+        Ok(())
+    }
+
+    /// [`Self::upsert_car_settings`] inside the caller's transaction, which owns
+    /// the commit (C3 R5, the collector's tick transaction). Returns whether the
+    /// stored settings changed.
+    pub(crate) fn upsert_car_settings_in_transaction(
+        transaction: &Transaction<'_>,
+        vehicle_id: Uuid,
+        car_id: i64,
+        settings: &ProjectionCarSettings,
+    ) -> Result<bool, StoreError> {
+        let before = load_car_settings_row(transaction, vehicle_id)?;
         transaction
             .execute(
                 "INSERT INTO car_settings(
@@ -163,12 +177,11 @@ impl HubStore {
             )
             .map_err(StoreError::Query)?;
         let (effective_car_id, effective_settings) =
-            load_car_settings_row(&transaction, vehicle_id)?
+            load_car_settings_row(transaction, vehicle_id)?
                 .ok_or_else(|| StoreError::Query(rusqlite::Error::QueryReturnedNoRows))?;
         let changed = before.as_ref() != Some(&(effective_car_id, effective_settings.clone()));
         if !changed {
-            transaction.commit().map_err(StoreError::Query)?;
-            return Ok(());
+            return Ok(false);
         }
         let current_car: Option<String> = transaction
             .query_row(
@@ -194,7 +207,7 @@ impl HubStore {
         let payload = serde_json::to_string(&effective_settings)
             .map_err(StoreError::SerializeLifecycleRow)?;
         record_sync_mutation_in_transaction(
-            &transaction,
+            transaction,
             vehicle_id,
             "car_setting",
             effective_car_id,
@@ -202,9 +215,8 @@ impl HubStore {
             "upsert",
             &payload,
         )?;
-        mark_export_dirty_in_transaction(&transaction, vehicle_id)?;
-        transaction.commit().map_err(StoreError::Query)?;
-        Ok(())
+        mark_export_dirty_in_transaction(transaction, vehicle_id)?;
+        Ok(true)
     }
 
     /// Replace operator-controlled settings exactly. Collector discovery uses
@@ -305,11 +317,27 @@ impl HubStore {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
-        let car_json = serde_json::to_string(car).map_err(StoreError::SerializeLifecycleRow)?;
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        Self::persist_materialised_car_if_absent_in_transaction(&transaction, vehicle_id, car)?;
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        Ok(())
+    }
+
+    /// [`Self::persist_materialised_car_if_absent`] inside the caller's
+    /// transaction, which owns the commit (C3 R5). Returns whether a row was
+    /// inserted.
+    pub(crate) fn persist_materialised_car_if_absent_in_transaction(
+        transaction: &Transaction<'_>,
+        vehicle_id: Uuid,
+        car: &crate::hub_pack::ProjectionCar,
+    ) -> Result<bool, StoreError> {
+        if vehicle_id.is_nil() {
+            return Err(StoreError::NilVehicleId);
+        }
+        let car_json = serde_json::to_string(car).map_err(StoreError::SerializeLifecycleRow)?;
         let inserted = transaction
             .execute(
                 "INSERT INTO materialised_cars(vehicle_id, car_id, car_json)
@@ -319,7 +347,7 @@ impl HubStore {
             .map_err(StoreError::LifecycleWrite)?;
         if inserted != 0 {
             record_sync_mutation_in_transaction(
-                &transaction,
+                transaction,
                 vehicle_id,
                 "car",
                 car.id,
@@ -328,8 +356,7 @@ impl HubStore {
                 &car_json,
             )?;
         }
-        transaction.commit().map_err(StoreError::LifecycleWrite)?;
-        Ok(())
+        Ok(inserted != 0)
     }
 
     pub fn load_car_settings(&self, vehicle_id: Uuid) -> Result<ProjectionCarSettings, StoreError> {
@@ -359,28 +386,82 @@ impl HubStore {
             .map_err(StoreError::Query)
     }
 
-    pub fn resolve_car_suspend_min(
-        &self,
+    /// Give a row that still awaits a suspend-length lookup the Hub default
+    /// once (C3 R60). A row with `suspend_min_resolved = 0` was written by an
+    /// earlier Hub version that planned a model lookup; no Hub measurement
+    /// shows a model dependence (C3 R39), so it gets
+    /// `ProjectionCarSettings::new_live().suspend_min` and is marked final.
+    /// Returns true when a row changed. Imported rows (`suspend_min_resolved`
+    /// defaults to 1) and owner-set values are never changed, and a vehicle
+    /// without a settings row is left alone.
+    pub fn resolve_car_suspend_min(&self, vehicle_id: Uuid) -> Result<bool, StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let changed = Self::resolve_car_suspend_min_in_transaction(&transaction, vehicle_id)?;
+        transaction.commit().map_err(StoreError::Query)?;
+        Ok(changed)
+    }
+
+    /// [`Self::resolve_car_suspend_min`] inside the caller's transaction, which
+    /// owns the commit (C3 R5).
+    pub(crate) fn resolve_car_suspend_min_in_transaction(
+        transaction: &Transaction<'_>,
         vehicle_id: Uuid,
-        model: Option<&str>,
-        trim_badging: Option<&str>,
-        marketing_name: Option<&str>,
     ) -> Result<bool, StoreError> {
-        let Some(suspend_min) =
-            crate::hub_pack::teslamate_suspend_min_default(model, trim_badging, marketing_name)
-        else {
+        let Some((car_id, before)) = load_car_settings_row(transaction, vehicle_id)? else {
             return Ok(false);
         };
-        let connection = self.open()?;
-        let changed = connection
+        if before.suspend_min_resolved {
+            return Ok(false);
+        }
+        transaction
             .execute(
-                "UPDATE car_settings
-                 SET suspend_min = ?1, suspend_min_resolved = 1
-                 WHERE vehicle_id = ?2 AND suspend_min_resolved = 0",
-                params![suspend_min, vehicle_id.to_string()],
+                "UPDATE car_settings SET suspend_min = ?2, suspend_min_resolved = 1
+                 WHERE vehicle_id = ?1 AND suspend_min_resolved = 0",
+                params![
+                    vehicle_id.to_string(),
+                    ProjectionCarSettings::new_live().suspend_min
+                ],
             )
             .map_err(StoreError::Query)?;
-        Ok(changed != 0)
+        let (_, effective) = load_car_settings_row(transaction, vehicle_id)?
+            .ok_or(StoreError::UnknownVehicle(vehicle_id))?;
+        let current_car: Option<String> = transaction
+            .query_row(
+                "SELECT car_json FROM materialised_cars WHERE vehicle_id = ?1",
+                params![vehicle_id.to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StoreError::Query)?;
+        if let Some(current_car) = current_car {
+            let mut car: ProjectionCar =
+                serde_json::from_str(&current_car).map_err(StoreError::DeserializeLifecycleRow)?;
+            car.settings = effective.clone();
+            let car_json =
+                serde_json::to_string(&car).map_err(StoreError::SerializeLifecycleRow)?;
+            transaction
+                .execute(
+                    "UPDATE materialised_cars SET car_json = ?1 WHERE vehicle_id = ?2",
+                    params![car_json, vehicle_id.to_string()],
+                )
+                .map_err(StoreError::LifecycleWrite)?;
+        }
+        let payload =
+            serde_json::to_string(&effective).map_err(StoreError::SerializeLifecycleRow)?;
+        record_sync_mutation_in_transaction(
+            transaction,
+            vehicle_id,
+            "car_setting",
+            car_id,
+            car_id,
+            "upsert",
+            &payload,
+        )?;
+        mark_export_dirty_in_transaction(transaction, vehicle_id)?;
+        Ok(true)
     }
 
     /// Create one consistent SQLite catalogue backup through SQLite's online
@@ -625,12 +706,15 @@ impl HubStore {
             private_import_spool_dir: private_import_spool_root(destination),
             publication_lock_path: publication_lock_path(destination),
             immutable_snapshot: None,
+            stream_audit_failed_cars: std::sync::Arc::default(),
             #[cfg(test)]
             stream_fault: Arc::new(Mutex::new(None)),
             #[cfg(test)]
             projection_state_detach_fault: Arc::new(Mutex::new(false)),
             #[cfg(test)]
             credential_write_hook: Arc::new(Mutex::new(None)),
+            #[cfg(test)]
+            sink_attempts: Arc::default(),
             #[cfg(test)]
             lineage_pack_hashes: Arc::new(Mutex::new(Vec::new())),
         };
@@ -786,8 +870,15 @@ impl HubStore {
         let lease = SupervisedCollectorLease {
             instance_id: Uuid::new_v4(),
         };
-        let connection = self.open()?;
-        let changed = connection
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        // The predecessor's heartbeat is the only record of when it fell silent and
+        // the replacement overwrites it, so the downtime it starts is made durable in
+        // this same transaction (C3 R8, B2 round 3, MIG-R3-1).
+        Self::record_predecessor_downtime_in_transaction(&transaction, now_ms)?;
+        let changed = transaction
             .execute(
                 "INSERT INTO supervised_collector_lease(
                     singleton_id, instance_id, state, started_at_ms,
@@ -804,6 +895,9 @@ impl HubStore {
             )
             .map_err(StoreError::SupervisedCollectorLeaseWrite)?;
         if changed == 1 {
+            transaction
+                .commit()
+                .map_err(StoreError::SupervisedCollectorLeaseWrite)?;
             Ok(lease)
         } else {
             Err(StoreError::SupervisedCollectorLeaseHeld)
@@ -933,16 +1027,14 @@ impl HubStore {
         }
     }
 
-    /// Fast, redacted service readiness used by `/readyz`. This deliberately
-    /// stops at catalogue/manifest validation and file metadata. Same-size
-    /// content corruption remains a `doctor` / [`Self::catalogue_check`] gate;
-    /// hashing a multi-gigabyte published corpus on every HTTP probe would
-    /// itself make the service unavailable.
-    pub fn service_readiness_at(
-        &self,
-        supervised_collector_required: bool,
-        now_ms: i64,
-    ) -> Result<(), ReadinessFailure> {
+    /// Fast, redacted catalogue and published-content readiness: the first two
+    /// service checks of `/readyz`. This deliberately stops at catalogue/manifest
+    /// validation and file metadata. Same-size content corruption remains a
+    /// `doctor` / [`Self::catalogue_check`] gate; hashing a multi-gigabyte
+    /// published corpus on every HTTP probe would itself make the service
+    /// unavailable. The collector's lease and credential checks follow in
+    /// [`Self::collector_readiness_view`].
+    fn base_service_readiness(&self) -> Result<(), ReadinessFailure> {
         match self.readiness_check() {
             Ok(()) => {}
             Err(StoreError::QuarantinedLifecycle(_)) => {
@@ -959,75 +1051,7 @@ impl HubStore {
         self.verify_active_published_content_metadata()
             .map_err(|_| ReadinessFailure {
                 code: ReadinessReasonCode::PublishedContentUnservable,
-            })?;
-        if supervised_collector_required {
-            self.verify_supervised_collector_readiness_at(now_ms)?;
-        }
-        Ok(())
-    }
-
-    fn verify_supervised_collector_readiness_at(
-        &self,
-        now_ms: i64,
-    ) -> Result<(), ReadinessFailure> {
-        if now_ms < 0 {
-            return Err(ReadinessFailure {
-                code: ReadinessReasonCode::CatalogueUnavailable,
-            });
-        }
-        let connection = self
-            .open_read_only_connection()
-            .map_err(|_| ReadinessFailure {
-                code: ReadinessReasonCode::CatalogueUnavailable,
-            })?;
-        let row: Option<(String, String, i64, i64, i64)> = connection
-            .query_row(
-                "SELECT instance_id, state, started_at_ms,
-                        heartbeat_at_ms, lease_until_ms
-                   FROM supervised_collector_lease WHERE singleton_id = 1",
-                [],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                    ))
-                },
-            )
-            .optional()
-            .map_err(|_| ReadinessFailure {
-                code: ReadinessReasonCode::CatalogueUnavailable,
-            })?;
-        let Some((instance_id, state, started_at_ms, heartbeat_at_ms, lease_until_ms)) = row else {
-            return Err(ReadinessFailure {
-                code: ReadinessReasonCode::CollectorAbsent,
-            });
-        };
-        if Uuid::parse_str(&instance_id)
-            .ok()
-            .is_none_or(|value| value.is_nil())
-            || started_at_ms < 0
-            || heartbeat_at_ms < started_at_ms
-            || lease_until_ms <= heartbeat_at_ms
-            || !matches!(state.as_str(), "active" | "auth_terminal")
-        {
-            return Err(ReadinessFailure {
-                code: ReadinessReasonCode::CatalogueUnavailable,
-            });
-        }
-        if lease_until_ms <= now_ms {
-            return Err(ReadinessFailure {
-                code: ReadinessReasonCode::CollectorStale,
-            });
-        }
-        if state == SupervisedCollectorState::AuthenticationTerminal.as_str() {
-            return Err(ReadinessFailure {
-                code: ReadinessReasonCode::CollectorAuthTerminal,
-            });
-        }
-        Ok(())
+            })
     }
 
     fn verify_active_published_content_metadata(&self) -> Result<(), StoreError> {

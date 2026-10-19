@@ -1329,7 +1329,7 @@ mod stream_fixture_tests {
 
     fn sample(id: i64, timestamp_ms: i64, odometer: f64, shift_state: &str) -> LifecycleSample {
         let frame = format!(
-            r#"{{"msg_type":"data:update","tag":"9","timestamp":{timestamp_ms},"value":"{speed},{odometer},80,25,180,51.5,-0.1,120,{shift_state},200,210,180"}}"#,
+            r#"{{"msg_type":"data:update","tag":"9","value":"{timestamp_ms},25,51.5,-0.1,210,180,{odometer},120,200,{shift_state},80,{speed}"}}"#,
             speed = if shift_state == "P" { 0 } else { 10 },
         );
         let update = parse_data_update(&frame).unwrap();
@@ -1419,7 +1419,7 @@ mod stream_fixture_tests {
 
     fn stream_sample(id: i64, timestamp_ms: i64, speed: i64, shift_state: &str) -> LifecycleSample {
         let frame = format!(
-            r#"{{"msg_type":"data:update","tag":"9","timestamp":{timestamp_ms},"value":"{speed},100.0,80,25,180,51.5,-0.1,120,{shift_state},200,210,180"}}"#,
+            r#"{{"msg_type":"data:update","tag":"9","value":"{timestamp_ms},25,51.5,-0.1,210,180,100.0,120,200,{shift_state},80,{speed}"}}"#,
         );
         let update = parse_data_update(&frame).unwrap();
         LifecycleSample {

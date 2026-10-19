@@ -19,7 +19,7 @@ pub(crate) const T0: i64 = 1_760_000_000_000;
 pub(crate) const MIN: i64 = 60_000;
 pub(crate) const SEC: i64 = 1_000;
 
-fn vd(id: i64, t: i64, data: Value) -> LifecycleSample {
+pub(crate) fn vd(id: i64, t: i64, data: Value) -> LifecycleSample {
     LifecycleSample {
         observation_id: id,
         observed_at_ms: t,
@@ -111,9 +111,9 @@ pub(crate) fn frame(
     let update = StreamUpdate {
         tag: "9".to_owned(),
         timestamp_ms: t,
-        speed,
+        speed: speed.map(|mph| mph as f64),
         odometer: odometer_mi,
-        soc: Some(80),
+        soc: Some(80.0),
         elevation: None,
         est_heading: None,
         est_lat: Some(latitude),

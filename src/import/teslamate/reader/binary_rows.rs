@@ -81,7 +81,7 @@ fn decode_binary_car(row: &BinaryCopyOutRow) -> Result<TeslaMateCar, TeslaMateRe
 fn decode_car_settings_binary(
     row: &BinaryCopyOutRow,
 ) -> Result<ProjectionCarSettings, TeslaMateReaderError> {
-    let defaults = ProjectionCarSettings::default();
+    let defaults = ProjectionCarSettings::source_column_defaults();
     Ok(ProjectionCarSettings {
         suspend_min_resolved: true,
         suspend_min: binary_optional_smallint(row, 7, "car_settings", "suspend_min")?

@@ -522,7 +522,10 @@ async fn a_tile_rewritten_after_admission_fails_the_final_identity_check() {
     fs::write(&path, hgt_bytes()).unwrap();
     record_digest(&store, tile, &hgt_bytes());
     let cache = TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/", &store)).unwrap();
-    let admitted = cache.admit(tile).unwrap().expect("recorded tile");
+    let admitted = cache
+        .admit(tile, &crate::geocoder::UnguardedEgress)
+        .unwrap()
+        .expect("recorded tile");
     admitted.confirm_unchanged().unwrap();
 
     std::thread::sleep(Duration::from_millis(30));
@@ -645,15 +648,15 @@ fn decompression_reads_the_archive_it_was_handed_not_the_entry_name() {
 
     // The archive as the downloader leaves it: written, with the offset at the
     // end of the file.
-    let (mut archive, name) = create_private_temp(&root, "archive").unwrap();
+    let (mut archive, name, _lease) = create_private_temp(&root, "archive").unwrap();
     archive.write_all(&zip_of(&written)).unwrap();
     // Someone replaces the entry by name with a valid archive of other bytes.
-    let (mut other, other_name) = create_private_temp(&root, "archive").unwrap();
+    let (mut other, other_name, _other_lease) = create_private_temp(&root, "archive").unwrap();
     other.write_all(&zip_of(&substitute)).unwrap();
     drop(other);
     root.rename(&other_name, &name).unwrap();
 
-    let staged = decompress_to_hgt(&root, archive, false, "N51W001").unwrap();
+    let staged = decompress_to_hgt(&root, archive, false, "N51W001", &|| true).unwrap();
 
     assert_eq!(staged.sha256, sha256_hex(&written));
     assert_ne!(staged.sha256, sha256_hex(&substitute));
@@ -668,7 +671,7 @@ fn the_downloader_hands_the_written_descriptor_to_decompression() {
     let source = include_str!("../terrain_cache.rs");
     for call in [
         "let archive = output.into_std().await;",
-        "decompress_to_hgt(&self.root, archive, aws, &name)",
+        "decompress_to_hgt(&self.root, archive, aws, &name, &may_remove)",
     ] {
         assert!(
             source.contains(call),
@@ -695,10 +698,10 @@ fn a_gzip_archive_is_read_from_its_start_though_it_was_left_at_its_end() {
     let root =
         Arc::new(crate::platform::private_directory::open_validated(base.path(), true).unwrap());
     let written = tile_with_elevation(150);
-    let (mut archive, _name) = create_private_temp(&root, "archive").unwrap();
+    let (mut archive, _name, _lease) = create_private_temp(&root, "archive").unwrap();
     archive.write_all(&gzip_of(&written)).unwrap();
 
-    let staged = decompress_to_hgt(&root, archive, true, "N51W001").unwrap();
+    let staged = decompress_to_hgt(&root, archive, true, "N51W001", &|| true).unwrap();
 
     assert_eq!(staged.sha256, sha256_hex(&written));
 }

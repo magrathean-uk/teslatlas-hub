@@ -338,35 +338,128 @@ const K_EFF_SCAN_ROWS: i64 = 200;
 /// of sample sets loaded at every close.
 const K_EFF_CANDIDATES: usize = 20;
 
-/// One candidate session's samples for the efficiency figure, in sample order,
-/// or `None` when any stored sample does not decode (C2 R63: the session then
-/// gives no figure). SQL errors still fail.
-fn load_efficiency_samples(
+/// Rows of one charge's samples the efficiency recomputation reads at once
+/// (C2 R71): 1,000.
+///
+/// (1) Memory: a stored sample is about 0.6 KiB of JSON (22 named fields; 578
+/// bytes with every field set), so a page holds about 0.6 MiB of row text in
+/// SQLite's sorter, a fixed amount far inside the 200 MiB steady budget
+/// whatever the session's length. (2) Work: each page query walks every index
+/// entry of the charge and evaluates each row's time once, so a session of n
+/// samples costs about n x (floor(n / 1,000) + 1) row visits; a session of up
+/// to 999 samples (8 h 19 min at the Owner wire's 30 s charging cadence, 33 h
+/// at Fleet polling's 120 s) is read by one query, and extra visits arise only
+/// for longer sessions. (3) It equals the read API's own default charge-sample
+/// page, so the Hub's two readers of one charge's samples have one page bound.
+const K_EFF_SAMPLE_PAGE: i64 = 1_000;
+
+/// The result of reading one session's samples for its efficiency figure
+/// (C2 R71 (c)).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SessionEfficiencyRead {
+    /// The session's figure, or `None` (R62), or when `undecodable`.
+    figure: Option<f64>,
+    /// A stored sample did not decode, had a decoded id other than its key, or
+    /// had no time (R63: the session then gives no figure).
+    undecodable: bool,
+    /// Rows placed into the fold.
+    rows: u64,
+    /// Page queries run.
+    queries: u64,
+    /// The largest number of rows one query returned.
+    largest_page: u64,
+}
+
+/// One keyset page of a charge's samples in sample order, written as the read
+/// API's page query writes it.
+const EFFICIENCY_SAMPLE_PAGE_SQL: &str = "SELECT
+        CAST(json_extract(sample_json, '$.timestamp_ms') AS INTEGER), sample_id, sample_json
+     FROM materialised_charge_samples
+     WHERE vehicle_id = ?1 AND charge_id = ?2
+       AND (CAST(json_extract(sample_json, '$.timestamp_ms') AS INTEGER), sample_id) > (?3, ?4)
+     ORDER BY CAST(json_extract(sample_json, '$.timestamp_ms') AS INTEGER) ASC, sample_id ASC
+     LIMIT ?5";
+
+/// Read one candidate session's samples in sample order, `page_rows` at a time,
+/// through the fixed-size fold of [`crate::lifecycle::EfficiencyFold`] (C2 R71).
+/// A page is folded and dropped before the next is read, so the memory used
+/// does not grow with the session. SQL errors still fail. `page_rows >= 1`;
+/// production passes [`K_EFF_SAMPLE_PAGE`] and tests pass smaller values.
+fn read_session_efficiency(
     connection: &Connection,
     vehicle_id: Uuid,
     charge_id: i64,
-) -> Result<Option<Vec<crate::hub_pack::ProjectionChargeSample>>, StoreError> {
-    let mut statement = connection
-        .prepare(
-            "SELECT sample_json FROM materialised_charge_samples
+    page_rows: i64,
+) -> Result<SessionEfficiencyRead, StoreError> {
+    let vehicle_key = vehicle_id.to_string();
+    let counted: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM materialised_charge_samples
              WHERE vehicle_id = ?1 AND charge_id = ?2",
+            params![vehicle_key, charge_id],
+            |row| row.get(0),
         )
         .map_err(StoreError::Query)?;
-    let rows = statement
-        .query_map(params![vehicle_id.to_string(), charge_id], |row| {
-            row.get::<_, String>(0)
-        })
+    let mut statement = connection
+        .prepare(EFFICIENCY_SAMPLE_PAGE_SQL)
         .map_err(StoreError::Query)?;
-    let mut samples = Vec::new();
-    for row in rows {
-        let json = row.map_err(StoreError::Query)?;
-        match serde_json::from_str::<crate::hub_pack::ProjectionChargeSample>(&json) {
-            Ok(sample) => samples.push(sample),
-            Err(_) => return Ok(None),
+    let limit = page_rows.max(1);
+    let mut fold = crate::lifecycle::EfficiencyFold::new();
+    let mut read = SessionEfficiencyRead {
+        figure: None,
+        undecodable: false,
+        rows: 0,
+        queries: 0,
+        largest_page: 0,
+    };
+    let mut keyset = (i64::MIN, 0_i64);
+    'pages: loop {
+        // The page's rows go to the fold one at a time, as SQLite returns them (R71
+        // (c) step 3: each row goes to `observe` and is dropped), so no second copy
+        // of the page's row text is held beside the sorter's.
+        let mapped = statement
+            .query_map(
+                params![vehicle_key, charge_id, keyset.0, keyset.1, limit],
+                |row| {
+                    Ok((
+                        row.get::<_, Option<i64>>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                },
+            )
+            .map_err(StoreError::Query)?;
+        read.queries += 1;
+        let mut in_page: i64 = 0;
+        for mapped_row in mapped {
+            let (time, sample_id, json) = mapped_row.map_err(StoreError::Query)?;
+            in_page += 1;
+            read.largest_page = read.largest_page.max(in_page as u64);
+            read.rows += 1;
+            let decoded = serde_json::from_str::<crate::hub_pack::ProjectionChargeSample>(&json);
+            let Ok(sample) = decoded else {
+                read.undecodable = true;
+                break 'pages;
+            };
+            if sample.id != sample_id {
+                read.undecodable = true;
+                break 'pages;
+            }
+            fold.observe(&sample);
+            keyset = (time.unwrap_or(i64::MIN), sample_id);
+        }
+        if in_page < limit {
+            break;
         }
     }
-    samples.sort_by_key(|sample| (sample.timestamp_ms, sample.id));
-    Ok(Some(samples))
+    // A row without a time is never admitted by the keyset comparison, so the
+    // rows the pages placed fall short of the rows counted: the session is
+    // undecodable, as the whole-session reader would have found it.
+    if !read.undecodable && read.rows != counted as u64 {
+        read.undecodable = true;
+    }
+    read.figure = if read.undecodable { None } else { fold.finish() };
+    Ok(read)
 }
 
 /// Recompute the car's efficiency from its closed Hub charges (C2 R63 to R67)
@@ -380,8 +473,10 @@ fn load_efficiency_samples(
 ///    energy of a DC session overstates stored energy by several per cent
 ///    (current 10 to 30 times AC, resistive loss with its square), and an
 ///    unknown kind is excluded rather than guessed.
-/// 2. Each candidate's samples go through
-///    [`crate::lifecycle::session_efficiency_wh_per_km`].
+/// 2. Each candidate's samples are read in pages of [`K_EFF_SAMPLE_PAGE`]
+///    rows through the fixed-size fold of [`crate::lifecycle::EfficiencyFold`]
+///    (R71), which gives [`crate::lifecycle::session_efficiency_wh_per_km`]'s
+///    figure bit for bit without holding the session.
 /// 3. [`crate::lifecycle::car_efficiency_from_figures`] gives the car value, or
 ///    nothing below three figures, in which case the stored value (imported,
 ///    earlier or `None`) stays (R65, R68).
@@ -445,11 +540,11 @@ fn recompute_car_efficiency(
             continue;
         }
         candidates += 1;
-        match load_efficiency_samples(transaction, vehicle_id, charge_id)? {
-            Some(samples) => {
-                figures.extend(crate::lifecycle::session_efficiency_wh_per_km(&samples));
-            }
-            None => skipped += 1,
+        let read = read_session_efficiency(transaction, vehicle_id, charge_id, K_EFF_SAMPLE_PAGE)?;
+        if read.undecodable {
+            skipped += 1;
+        } else {
+            figures.extend(read.figure);
         }
         if candidates >= K_EFF_CANDIDATES {
             break;
@@ -652,7 +747,9 @@ fn raise_id_cursors_above_watermarks(
 /// Seed the installed version of a freshly seeded lifecycle state from the
 /// newest imported update that has a comparable version (C1 R14, section 7
 /// item 9), so an update installed between the source's last record and live
-/// collection is recorded instead of silently adopted.
+/// collection is recorded instead of silently adopted. Both seeding paths call
+/// this after the session's own watermark rows are written in the same
+/// transaction (C1 R89).
 fn seed_imported_version_from_updates(
     connection: &Connection,
     vehicle_id: Uuid,
@@ -687,21 +784,50 @@ fn seed_imported_version_from_updates(
     // Import finalisation materialises the car and its drives, and leaves the
     // newest imported update's version on the car row; the update rows stay in
     // the import projection and its packs, which this seed cannot read. The
-    // newest imported drive's end bounds when the source last saw the car.
+    // version is that text, and its time is a lower bound of when the source
+    // last saw it installed (C1 R89).
     let version = imported_car_firmware(connection, vehicle_id)?;
     if version.is_none() {
         return Ok(());
     }
-    let known_since_ms: Option<i64> = connection
+    let known_since_ms = imported_version_known_since_ms(connection, vehicle_id)?;
+    crate::lifecycle::seed_version_from_car_row(state, version.as_deref(), known_since_ms);
+    Ok(())
+}
+
+/// The time a version seeded from the car row is known to have been installed
+/// by (C1 R89 step 2): the greatest non-null `max_timestamp_ms` among the
+/// vehicle's `updates` watermark rows, whichever source wrote them. That is the
+/// import's own record of how far its updates class reached, so it belongs to
+/// the same imported class as the version and is a true lower bound even when
+/// the source missed a later update. Only when the import recorded no time for
+/// its updates class is it the greatest end of the vehicle's materialised
+/// drives (known limit 12); a value that is not positive counts as none.
+fn imported_version_known_since_ms(
+    connection: &Connection,
+    vehicle_id: Uuid,
+) -> Result<Option<i64>, StoreError> {
+    let vehicle_key = vehicle_id.to_string();
+    let watermark: Option<i64> = connection
         .query_row(
-            "SELECT MAX(json_extract(drive_json, '$.end_date_ms'))
-             FROM materialised_drives WHERE vehicle_id = ?1",
-            params![vehicle_id.to_string()],
+            "SELECT MAX(max_timestamp_ms) FROM lifecycle_source_watermarks
+             WHERE vehicle_id = ?1 AND domain = 'updates'",
+            params![vehicle_key],
             |row| row.get(0),
         )
         .map_err(StoreError::Query)?;
-    crate::lifecycle::seed_version_from_car_row(state, version.as_deref(), known_since_ms);
-    Ok(())
+    if let Some(at) = watermark.filter(|at| *at > 0) {
+        return Ok(Some(at));
+    }
+    let drive_end: Option<i64> = connection
+        .query_row(
+            "SELECT MAX(json_extract(drive_json, '$.end_date_ms'))
+             FROM materialised_drives WHERE vehicle_id = ?1",
+            params![vehicle_key],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)?;
+    Ok(drive_end.filter(|at| *at > 0))
 }
 
 /// The `firmware_version` of the vehicle's materialised car row, when it has
@@ -812,36 +938,37 @@ fn materialised_charge_page(
         .map_err(StoreError::Query)
 }
 
-/// The stored samples of one materialised charge, in sample order
-/// (`timestamp_ms`, then id), as the continuation and span checks read them
-/// (C2 R43a, R44a, R50, R54). Reads `materialised_charge_samples` through the
-/// `(vehicle_id, charge_id)` index. A row that does not decode is an error
+/// The cost-rule facts of a stored charge's samples (C2 R43a, R44a), as the
+/// fill (R50) and manual entry (R54) read them: `materialised_charge_samples`
+/// through the `(vehicle_id, charge_id)` index, folded one row at a time in any
+/// order, so the memory of the step does not grow with the length of the
+/// charge and no sorted copy is made. A row that does not decode is an error
 /// here: a fill or a manual entry must not price a row from a partial view of
 /// its samples.
-fn load_materialised_charge_samples(
+fn fold_materialised_charge_samples(
     connection: &Connection,
     vehicle_id: Uuid,
     charge_id: i64,
-) -> Result<Vec<crate::hub_pack::ProjectionChargeSample>, StoreError> {
+) -> Result<crate::lifecycle::ChargeSampleFacts, StoreError> {
     let mut statement = connection
         .prepare(
             "SELECT sample_json FROM materialised_charge_samples
              WHERE vehicle_id = ?1 AND charge_id = ?2",
         )
         .map_err(StoreError::Query)?;
-    let mut samples = statement
+    let rows = statement
         .query_map(params![vehicle_id.to_string(), charge_id], |row| {
             row.get::<_, String>(0)
         })
-        .map_err(StoreError::Query)?
-        .map(|row| {
-            let json = row.map_err(StoreError::Query)?;
-            serde_json::from_str::<crate::hub_pack::ProjectionChargeSample>(&json)
-                .map_err(StoreError::DeserializeLifecycleRow)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    samples.sort_by_key(|sample| (sample.timestamp_ms, sample.id));
-    Ok(samples)
+        .map_err(StoreError::Query)?;
+    let mut facts = crate::lifecycle::ChargeSampleFacts::default();
+    for row in rows {
+        let json = row.map_err(StoreError::Query)?;
+        let sample = serde_json::from_str::<crate::hub_pack::ProjectionChargeSample>(&json)
+            .map_err(StoreError::DeserializeLifecycleRow)?;
+        facts.observe(&sample);
+    }
+    Ok(facts)
 }
 
 fn materialised_drive_page(

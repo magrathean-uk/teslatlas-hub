@@ -2,75 +2,46 @@
 
 use std::{
     fmt,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(all(test, unix))]
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use futures_util::StreamExt;
-use reqwest::{
-    Client,
-    header::{ACCEPT, CONTENT_TYPE, HeaderName, USER_AGENT},
-};
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::tesla_stream::StreamRegion;
 
-pub const REFRESH_RETRY_DELAY: Duration = Duration::from_secs(5 * 60);
-pub const STARTUP_REFRESH_RETRY_DELAY: Duration = Duration::from_secs(450);
-const AUTH_FUSE_FAILURES: usize = 5;
-const AUTH_FUSE_WINDOW: Duration = Duration::from_secs(10 * 60);
-/// Product token the Hub sends as `User-Agent` on its own outbound requests.
-pub(crate) const HUB_USER_AGENT: &str = concat!("Teslatlas-Hub/", env!("CARGO_PKG_VERSION"));
-/// Every header the token refresh sets. The refresh_token grant needs a content
-/// type for the JSON body it posts and an `Accept` for the JSON reply; the
-/// `User-Agent` names the Hub itself. Nothing else is added by hand.
-pub(crate) const REFRESH_REQUEST_HEADERS: [(HeaderName, &str); 3] = [
-    (CONTENT_TYPE, "application/json"),
-    (ACCEPT, "application/json"),
-    (USER_AGENT, HUB_USER_AGENT),
-];
+pub(crate) mod attempt;
+pub(crate) mod authority;
+pub(crate) mod effective;
+mod endpoint;
+mod http_date;
+pub(crate) mod rejection;
+pub(crate) mod schedule;
+pub(crate) mod state;
+mod vocabulary;
+mod wire;
 
-#[derive(Debug, Default)]
-pub(crate) struct LegacyAuthFuse {
-    unauthorized_at: Vec<SystemTime>,
-    blown: bool,
-}
-
-impl LegacyAuthFuse {
-    pub(crate) fn record_unauthorized(&mut self, now: SystemTime) {
-        if self.blown {
-            return;
-        }
-        self.unauthorized_at.retain(|at| {
-            now.duration_since(*at)
-                .map(|age| age < AUTH_FUSE_WINDOW)
-                .unwrap_or(true)
-        });
-        self.unauthorized_at.push(now);
-        // Pinned TeslaMate tolerates five melts and blows on the sixth.
-        if self.unauthorized_at.len() > AUTH_FUSE_FAILURES {
-            self.blown = true;
-        }
-    }
-
-    pub(crate) fn is_blown(&self) -> bool {
-        self.blown
-    }
-
-    pub(crate) fn reset(&mut self) {
-        self.unauthorized_at.clear();
-        self.blown = false;
-    }
-}
-const REFRESH_SCOPE: &str = "openid email offline_access";
-const CLIENT_ID: &str = "ownerapi";
-const MAX_TOKEN_RESPONSE_BYTES: usize = 64 * 1024;
+use attempt::SuccessorPair;
+pub use endpoint::{AuthEndpointConfig, AuthMode, EndpointSource};
+pub(crate) use endpoint::{parse_jwt, trim_token_whitespace};
+pub(crate) use rejection::{
+    HolderKind, LegacyAuthFuse, RejectionAction, RejectionContext, RequestScope,
+};
+use state::AuthStop;
+pub use vocabulary::{
+    ConfigurationReason, LoadFailureState, RefusalReason, RetryReason, SignOutReason,
+};
+pub(crate) use wire::build_auth_client;
+#[cfg(test)]
+pub(crate) use wire::{
+    AUTH_CONNECT_TIMEOUT, AUTH_TOTAL_TIMEOUT, AnswerBody, Exchange, HUB_USER_AGENT,
+    MAX_TOKEN_RESPONSE_BYTES, REFRESH_REQUEST_HEADERS, RawAnswer,
+    auth_client_builder_with_timeouts,
+};
 
 // This exists only in libtest builds. The parent characterisation test starts
 // a clean-environment child with this exact value, then verifies that SIGKILL
@@ -114,6 +85,8 @@ fn test_kill_after_validated_rotation_if_armed() {
     std::process::abort();
 }
 
+/// Why a legacy auth operation failed (C5 R56). Every `Display` text is fixed
+/// and carries no token, URL, response body or vehicle (R53).
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum LegacyAuthError {
     #[error("legacy access token is invalid")]
@@ -146,6 +119,121 @@ pub enum LegacyAuthError {
     SensitivePersistenceUnavailable,
     #[error("legacy credential authority is unavailable")]
     SensitiveAccessUnavailable,
+    /// R5: the token's issuer and the configured region name different regions.
+    #[error("legacy auth token region conflicts with the configured region")]
+    RegionConflict,
+    /// R5: Tesla mode, an opaque token and no configured region.
+    #[error("legacy auth region is required for this token")]
+    RegionRequired,
+    /// R7: provider mode without a usable `token_url`.
+    #[error("legacy auth token url is invalid")]
+    TokenUrlInvalid,
+    /// R7: Tesla mode with `token_url` set.
+    #[error("legacy auth token url is not allowed in this mode")]
+    TokenUrlNotAllowed,
+    /// R45 row 8: the refresh token is dead.
+    #[error("legacy refresh token was rejected")]
+    RefreshTokenRejected,
+    /// R45 row 7: the token endpoint refused the client id.
+    #[error("legacy auth client was refused by the token endpoint")]
+    ClientRefused,
+    /// R45 rows 7 (second answer) and 10, R49: the Owner API refused the account.
+    #[error("legacy owner api refused the account ({})", .reason.code())]
+    OwnerApiRefused { reason: RefusalReason },
+    /// R41: the access token was rejected enough times to stop.
+    #[error("legacy access token was rejected")]
+    AccessTokenRejected,
+    /// R8a: an access-token-only provider token was refused.
+    #[error("legacy provider token was rejected")]
+    ProviderTokenRejected,
+    /// R8a: an access-token-only provider token expired.
+    #[error("legacy provider token has expired")]
+    ProviderTokenExpired,
+    /// R45 row 14: the endpoint returned the pair it was given.
+    #[error("legacy refresh returned the pair it was given")]
+    RefreshNotRenewed,
+    /// R14: the pair has no refresh path (observer or access-token-only).
+    #[error("legacy refresh is not possible for this pair")]
+    RefreshNotPossible,
+    /// R41a: one vehicle's 401 was disproved by an account-wide read.
+    #[error("legacy vehicle access was rejected")]
+    VehicleAccessRejected,
+    /// R29, R39: no token can be sent now; try again at `retry_at`.
+    #[error("legacy auth is unavailable")]
+    AuthUnavailable { retry_at: Option<i64> },
+    /// R44: the owner's retry cannot lift this stop.
+    #[error("legacy auth retry is not possible ({})", .reason.code())]
+    RetryNotPossible { reason: SignOutReason },
+    /// R43, R45, R57: the account is signed out for a reason that has no
+    /// variant of its own above (a refresh token that was rejected, whose
+    /// outcome is unknown or whose answer was unusable, or a stored pair that
+    /// is invalid). Every request stops until credentials change.
+    #[error("legacy auth is signed out ({})", .reason.code())]
+    SignedOut { reason: SignOutReason },
+}
+
+impl LegacyAuthError {
+    /// The configuration reason when this error puts the account in
+    /// `configuration_error` (R5, R7).
+    pub fn configuration_reason(&self) -> Option<ConfigurationReason> {
+        match self {
+            Self::RegionConflict => Some(ConfigurationReason::RegionConflict),
+            Self::RegionRequired => Some(ConfigurationReason::RegionRequired),
+            Self::InvalidIssuer => Some(ConfigurationReason::IssuerNotAllowed),
+            Self::TokenUrlInvalid => Some(ConfigurationReason::TokenUrlInvalid),
+            Self::TokenUrlNotAllowed => Some(ConfigurationReason::TokenUrlNotAllowed),
+            _ => None,
+        }
+    }
+
+    /// The state and reason a failure at load puts the account in: a
+    /// configuration error (R5, R7) or `signed_out(stored_pair_invalid)` for a
+    /// pair that fails the token grammar (R46). `None` for any other error.
+    pub fn load_failure_state(&self) -> Option<LoadFailureState> {
+        if let Some(reason) = self.configuration_reason() {
+            return Some(LoadFailureState::configuration(reason));
+        }
+        matches!(self, Self::InvalidAccessToken | Self::InvalidRefreshToken)
+            .then(|| LoadFailureState::signed_out(SignOutReason::StoredPairInvalid))
+    }
+
+    /// True for the errors of an account that is signed out (R43): the lease is
+    /// `auth_terminal` exactly then. A configuration error and a refusal stop
+    /// the account too, but the lease stays active for them (R52), and
+    /// `InvalidAccessToken` and `InvalidRefreshToken` are load failures that the
+    /// state, not the error, calls signed out.
+    pub fn is_signed_out(&self) -> bool {
+        matches!(
+            self,
+            Self::AccessTokenRejected
+                | Self::ProviderTokenRejected
+                | Self::ProviderTokenExpired
+                | Self::SignedOut { .. }
+        )
+    }
+
+    /// True exactly for errors that set `configuration_error`, `signed_out` or
+    /// `api_refused` (R56): the collector must tell a stop from a wait without
+    /// parsing text.
+    ///
+    /// `RefreshTokenRejected` is not terminal: it sets `sign_in_required`,
+    /// which keeps collecting while the access token is usable (R45 rows 4, 6
+    /// and 8). `ClientRefused` is not terminal either: its first answer only
+    /// starts a confirmation, and the second answer is
+    /// `OwnerApiRefused { reason: Client }`. `RetryNotPossible` reports that a
+    /// stop continues; it does not set one.
+    pub fn is_terminal_auth_failure(&self) -> bool {
+        self.configuration_reason().is_some()
+            || self.load_failure_state().is_some()
+            || matches!(
+                self,
+                Self::AccessTokenRejected
+                    | Self::ProviderTokenRejected
+                    | Self::ProviderTokenExpired
+                    | Self::OwnerApiRefused { .. }
+                    | Self::SignedOut { .. }
+            )
+    }
 }
 
 /// The single in-memory owner-auth authority. It is intentionally not cloneable.
@@ -154,85 +242,354 @@ pub enum LegacyAuthError {
 /// fn requires_clone<T: Clone>() {}
 /// requires_clone::<teslatlas_hub::legacy_auth::LegacyAuth>();
 /// ```
-#[derive(PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct LegacyAuth {
+    /// A b64token (R46).
     access_token: Zeroizing<String>,
+    /// 1*VSCHAR (R46); empty only for an access-token-only provider pair (R8a).
     refresh_token: Zeroizing<String>,
+    /// Always `"Bearer"` after validation (R47).
     token_type: String,
     expires_at: i64,
     next_refresh_at: i64,
+    /// The exact URL the refresh is POSTed to (R6, R8); `None` only for an
+    /// access-token-only provider pair (R8a).
     #[zeroize(skip)]
-    issuer: Url,
+    token_endpoint: Option<Url>,
+    /// Where the endpoint came from; for diagnostics (section 3.1).
+    #[zeroize(skip)]
+    endpoint_source: EndpointSource,
+    /// The issuer a JWT successor must carry (R9); `None` in provider mode.
+    #[zeroize(skip)]
+    pinned_issuer: Option<String>,
     #[zeroize(skip)]
     region: StreamRegion,
-    retry_at: Option<i64>,
-    /// A newly imported pair has no trusted schedule and must refresh once.
-    /// A pair persisted by Hub keeps its schedule across process restarts.
-    startup_refresh_pending: bool,
-    /// A token response was accepted, but the rotated pair has not yet been
-    /// durably committed. While this is set, refresh calls retry persistence
-    /// only; they must never submit the now-consumed previous refresh token.
-    persistence_pending: bool,
-}
-
-async fn read_bounded_token_response(
-    response: reqwest::Response,
-) -> Result<Vec<u8>, LegacyAuthError> {
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_TOKEN_RESPONSE_BYTES as u64)
-    {
-        return Err(LegacyAuthError::ResponseTooLarge);
-    }
-
-    let mut bytes = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| LegacyAuthError::Transport)?;
-        let remaining = MAX_TOKEN_RESPONSE_BYTES
-            .checked_sub(bytes.len())
-            .ok_or(LegacyAuthError::ResponseTooLarge)?;
-        if chunk.len() > remaining {
-            return Err(LegacyAuthError::ResponseTooLarge);
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    Ok(bytes)
+    /// Epoch second after which the access token is not sent (R29); `None`
+    /// means unknown. Set at load from the token's own `exp` (R25) and after a
+    /// refresh from its lifetime (R21).
+    pub(crate) usable_until: Option<i64>,
+    /// The earliest next token attempt while a retry is pending (R31, R32).
+    /// `retry_at` and `retry_reason` are `Some` exactly while one is pending.
+    pub(crate) retry_at: Option<i64>,
+    /// The index into the R31 schedule.
+    pub(crate) retry_step: u8,
+    #[zeroize(skip)]
+    pub(crate) retry_reason: Option<RetryReason>,
+    pub(crate) startup_refresh_pending: bool,
+    /// Send time of the last successful refresh in this process (R19).
+    pub(crate) last_success_at: Option<i64>,
+    /// Consecutive answers that refused the client id (R45 row 7).
+    pub(crate) client_refusals: u8,
+    /// The one stop every path sees (R43); the fuse no longer holds it.
+    #[zeroize(skip)]
+    pub(crate) stop: Option<AuthStop>,
+    /// R55: the host clock differs from the server's by more than 300 s.
+    pub(crate) clock_skew: bool,
+    /// A validated successor that is not yet persisted (R23, R24). It is held
+    /// for the single-flight object and zeroised on drop; the previous pair
+    /// stays in use until the write succeeds.
+    #[zeroize(skip)]
+    pub(crate) pending_successor: Option<Box<SuccessorPair>>,
+    /// Failed writes of the pending successor: the index into the R24 schedule.
+    pub(crate) persist_failures: usize,
+    /// When the pending successor is written again (R24).
+    pub(crate) persist_retry_at: Option<i64>,
+    /// A closing of an attempt that failed and is still owed (C5-S1). No new
+    /// attempt begins while it is set.
+    #[zeroize(skip)]
+    pub(crate) pending_close: Option<attempt::PendingClose>,
+    /// Failed tries of the pending closing: the index into the R24 schedule.
+    pub(crate) close_failures: usize,
+    /// When the pending closing is tried again.
+    pub(crate) close_retry_at: Option<i64>,
+    /// No token request before this epoch second after a restart (R58); 0 when
+    /// no receipt holds one back.
+    pub(crate) token_requests_not_before: i64,
+    /// No token request before this epoch second while the confirmation pause
+    /// of R41 runs; set by the rejection handling.
+    pub(crate) hold_until: Option<i64>,
+    /// The forced refresh that follows the confirmation pause is owed (R41
+    /// count 2): it is made once when the pause has ended, before the next
+    /// request, whether or not the schedule has made one due.
+    pub(crate) forced_after_hold: bool,
+    /// An observer's counted rejection (R28, R41): the Hub waits for the refresh
+    /// owner's next pair and sends nothing until the stored generation changes.
+    pub(crate) observer_rejected: bool,
+    /// Set when the stored schedule failed the table's invariants and the pair
+    /// loaded as the imported form instead (R25). Not a secret.
+    #[zeroize(skip)]
+    schedule_diagnostic: Option<LegacyAuthError>,
+    /// Test only: the loopback URL the request is really sent to when the
+    /// selected endpoint is a pinned Tesla host (section 8 fixtures). The
+    /// selected endpoint stays the one asserted.
+    #[cfg(test)]
+    #[zeroize(skip)]
+    wire_override: Option<Url>,
 }
 
 impl fmt::Debug for LegacyAuth {
+    /// Only non-secret scheduling facts and the endpoint host (section 3.1,
+    /// R53): never a token, a JWT segment or a URL path.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("LegacyAuth")
-            .field("region", &self.region)
+            .field("token_type", &self.token_type)
             .field("expires_at", &self.expires_at)
             .field("next_refresh_at", &self.next_refresh_at)
+            .field(
+                "endpoint_host",
+                &self.token_endpoint.as_ref().and_then(Url::host_str),
+            )
+            .field("endpoint_source", &self.endpoint_source)
+            .field("region", &self.region)
+            .field("usable_until", &self.usable_until)
             .field("retry_at", &self.retry_at)
+            .field("retry_step", &self.retry_step)
+            .field("retry_reason", &self.retry_reason.map(RetryReason::code))
+            .field("stop", &self.stop.map(|stop| stop.reason().code()))
+            .field("startup_refresh_pending", &self.startup_refresh_pending)
+            .field("persistence_pending", &self.pending_successor.is_some())
+            .field("clock_skew", &self.clock_skew)
             .finish()
     }
 }
 
+/// Whether the stored schedule is the imported form `(0, 0)`, a sound refreshed
+/// form `expires_at > next_refresh_at > 0`, or neither (R25).
+enum StoredSchedule {
+    Imported,
+    Refreshed,
+    Invalid,
+}
+
+fn classify_stored_schedule(expires_at: i64, next_refresh_at: i64) -> StoredSchedule {
+    if expires_at == 0 && next_refresh_at == 0 {
+        StoredSchedule::Imported
+    } else if next_refresh_at > 0 && expires_at > next_refresh_at {
+        StoredSchedule::Refreshed
+    } else {
+        StoredSchedule::Invalid
+    }
+}
+
+/// R25: the epoch second after which a stored access token is not sent, or
+/// `None` when unknown. Both forms apply the token's own `exp`, less the skew
+/// allowance; a refreshed pair is also bounded by its stored expiry.
+fn usable_until_of(access_token: &str, refreshed: bool, expires_at: i64) -> Option<i64> {
+    let exp_limit = parse_jwt(access_token)
+        .and_then(|claims| claims.exp)
+        .map(|exp| exp - state::SKEW_ALLOWANCE_SECONDS);
+    if refreshed {
+        Some(exp_limit.map_or(expires_at, |limit| limit.min(expires_at)))
+    } else {
+        exp_limit
+    }
+}
+
+/// [`usable_until_of`] for a stored pair read without loading the manager: the
+/// stored schedule decides the form, exactly as `from_persisted_state` does
+/// (an unsound schedule loads as the imported form). Surrounding whitespace is
+/// trimmed as the load trims it. Read-only, secret-free output (B2
+/// clarification 3, C5 effective auth).
+pub(crate) fn stored_usable_until(
+    access_token: &str,
+    expires_at: i64,
+    next_refresh_at: i64,
+) -> Option<i64> {
+    let refreshed = matches!(
+        classify_stored_schedule(expires_at, next_refresh_at),
+        StoredSchedule::Refreshed
+    );
+    usable_until_of(
+        endpoint::trim_token_whitespace(access_token),
+        refreshed,
+        expires_at,
+    )
+}
+
+/// Whether a stored pair passes the token grammar of R46 under `mode`, with the
+/// same trimming and the same check the load applies (`PairLoad::Invalid` is the
+/// opposite answer). Configuration faults are not part of it: they never make a
+/// pair invalid. Read-only and secret-free output (B2 clarification 3, C5
+/// effective auth).
+pub(crate) fn stored_pair_passes_grammar(
+    access_token: &str,
+    refresh_token: &str,
+    mode: state::StoppedMode,
+) -> bool {
+    let mode = match mode {
+        state::StoppedMode::Legacy => AuthMode::Tesla,
+        state::StoppedMode::Provider => AuthMode::Provider,
+    };
+    endpoint::check_token_grammar(
+        endpoint::trim_token_whitespace(access_token),
+        endpoint::trim_token_whitespace(refresh_token),
+        mode,
+    )
+    .is_ok()
+}
+
 impl LegacyAuth {
+    /// Build the pair for a one-off use such as native setup, in imported form.
+    /// Tokens are trimmed and checked (R46) and the endpoint is selected
+    /// (R4 to R8a) before any network use (R5). No startup refresh is pending:
+    /// the caller reads once and never refreshes.
     pub fn from_access_token(
         access_token: impl Into<String>,
         refresh_token: impl Into<String>,
+        endpoint: &AuthEndpointConfig,
+    ) -> Result<Self, LegacyAuthError> {
+        let mut auth = Self::from_persisted_state(access_token, refresh_token, 0, 0, endpoint)?;
+        auth.startup_refresh_pending = false;
+        Ok(auth)
+    }
+
+    /// Load a stored pair (R25, R46).
+    ///
+    /// Surrounding ASCII whitespace is trimmed from both tokens in memory (the
+    /// generation the caller computed from the stored bytes is unchanged),
+    /// then the tokens are checked (R46) and the endpoint is selected (R4 to
+    /// R8a). A schedule that fails the table's invariants loads as the imported
+    /// form with an `InvalidPersistedSchedule` diagnostic.
+    pub(crate) fn from_persisted_state(
+        access_token: impl Into<String>,
+        refresh_token: impl Into<String>,
+        expires_at: i64,
+        next_refresh_at: i64,
+        endpoint: &AuthEndpointConfig,
     ) -> Result<Self, LegacyAuthError> {
         let access_token = Zeroizing::new(access_token.into());
         let refresh_token = Zeroizing::new(refresh_token.into());
-        validate_refresh_token(&refresh_token)?;
-        let (issuer, region) = issuer_from_access_token(&access_token)?;
+        let access_token =
+            Zeroizing::new(endpoint::trim_token_whitespace(&access_token).to_owned());
+        let refresh_token =
+            Zeroizing::new(endpoint::trim_token_whitespace(&refresh_token).to_owned());
+        let selection = endpoint::select_endpoint(&access_token, &refresh_token, endpoint)?;
+        let (expires_at, next_refresh_at, schedule_diagnostic, refreshed) =
+            match classify_stored_schedule(expires_at, next_refresh_at) {
+                StoredSchedule::Refreshed => (expires_at, next_refresh_at, None, true),
+                StoredSchedule::Imported => (0, 0, None, false),
+                StoredSchedule::Invalid => {
+                    (0, 0, Some(LegacyAuthError::InvalidPersistedSchedule), false)
+                }
+            };
+        let usable_until = usable_until_of(&access_token, refreshed, expires_at);
         Ok(Self {
+            startup_refresh_pending: !refreshed && !refresh_token.is_empty(),
             access_token,
             refresh_token,
             token_type: "Bearer".to_owned(),
+            expires_at,
+            next_refresh_at,
+            token_endpoint: selection.token_endpoint,
+            endpoint_source: selection.source,
+            pinned_issuer: selection.pinned_issuer,
+            region: selection.region,
+            usable_until,
+            retry_at: None,
+            retry_step: 0,
+            retry_reason: None,
+            last_success_at: None,
+            client_refusals: 0,
+            stop: None,
+            clock_skew: false,
+            pending_successor: None,
+            persist_failures: 0,
+            persist_retry_at: None,
+            pending_close: None,
+            close_failures: 0,
+            close_retry_at: None,
+            token_requests_not_before: 0,
+            hold_until: None,
+            forced_after_hold: false,
+            observer_rejected: false,
+            schedule_diagnostic,
+            #[cfg(test)]
+            wire_override: None,
+        })
+    }
+
+    /// A pair that holds no token, for an account that stopped before any
+    /// request could be made (C5-B2): a configuration error (R5, R7), a stored
+    /// pair that fails the grammar (R46) or an unresolved attempt that is
+    /// restored as a stop (R57). The collector must start in these states, take
+    /// its lease and wait for the owner (R43, R39), so the manager exists
+    /// without a usable pair. Every path that could hand out its empty token is
+    /// stopped by the state that made it, and [`token_available`] refuses an
+    /// empty token as well, so nothing can be sent with it. `region` is the
+    /// configured region, or the global one, which only names the data hosts the
+    /// stopped collector does not call.
+    pub(crate) fn inert(region: StreamRegion) -> Self {
+        Self {
+            access_token: Zeroizing::new(String::new()),
+            refresh_token: Zeroizing::new(String::new()),
+            token_type: "Bearer".to_owned(),
             expires_at: 0,
             next_refresh_at: 0,
-            issuer,
+            token_endpoint: None,
+            endpoint_source: EndpointSource::ConfiguredRegion,
+            pinned_issuer: None,
             region,
+            usable_until: None,
             retry_at: None,
+            retry_step: 0,
+            retry_reason: None,
             startup_refresh_pending: false,
-            persistence_pending: false,
-        })
+            last_success_at: None,
+            client_refusals: 0,
+            stop: None,
+            clock_skew: false,
+            pending_successor: None,
+            persist_failures: 0,
+            persist_retry_at: None,
+            pending_close: None,
+            close_failures: 0,
+            close_retry_at: None,
+            token_requests_not_before: 0,
+            hold_until: None,
+            forced_after_hold: false,
+            observer_rejected: false,
+            schedule_diagnostic: None,
+            #[cfg(test)]
+            wire_override: None,
+        }
+    }
+
+    /// The exact URL a refresh is POSTed to, `None` for an access-token-only
+    /// provider pair (R6, R8, R8a).
+    pub(crate) fn token_endpoint(&self) -> Option<&Url> {
+        self.token_endpoint.as_ref()
+    }
+
+    /// Where the token endpoint came from (section 3.1).
+    pub fn endpoint_source(&self) -> EndpointSource {
+        self.endpoint_source
+    }
+
+    /// The epoch second after which the access token is not sent, if known.
+    pub fn usable_until(&self) -> Option<i64> {
+        self.usable_until
+    }
+
+    /// `InvalidPersistedSchedule` when the stored schedule was unsound and the
+    /// pair loaded as the imported form (R25).
+    pub fn schedule_diagnostic(&self) -> Option<&LegacyAuthError> {
+        self.schedule_diagnostic.as_ref()
+    }
+
+    /// The URL a request is really sent to: the selected endpoint, or in tests
+    /// the loopback stand-in for a pinned Tesla host.
+    pub(crate) fn request_url(&self) -> Option<Url> {
+        #[cfg(test)]
+        if let (Some(_), Some(wire_override)) = (&self.token_endpoint, &self.wire_override) {
+            return Some(wire_override.clone());
+        }
+        self.token_endpoint.clone()
+    }
+
+    /// The issuer a JWT successor must carry (R9); `None` in provider mode.
+    pub(crate) fn pinned_issuer(&self) -> Option<&str> {
+        self.pinned_issuer.as_deref()
     }
 
     pub fn access_token(&self) -> &str {
@@ -263,327 +620,59 @@ impl LegacyAuth {
         self.retry_at
     }
 
+    /// Whether a refresh is due at `now` (R26, R27): owed to an imported pair
+    /// until one succeeds, due when a retry's time is reached, and due for a
+    /// pair of the refreshed form by the rule of R27. This is the due rule only;
+    /// whether a request may start is the gates' (R16).
     pub fn refresh_due(&self, now: SystemTime) -> Result<bool, LegacyAuthError> {
-        let now = epoch_seconds(now)?;
-        Ok(self.persistence_pending || self.startup_refresh_pending || now >= self.next_refresh_at)
+        Ok(self.is_due(epoch_seconds(now)?))
     }
 
-    pub async fn refresh_if_due(
-        &mut self,
-        client: &Client,
-        now: SystemTime,
-    ) -> Result<(), LegacyAuthError> {
-        if self.persistence_pending {
-            return Err(LegacyAuthError::Persistence);
-        }
-        self.refresh_if_due_persisted(client, now, |_, _, _, _| Ok(()))
-            .await
-    }
-
-    pub async fn refresh_if_due_persisted<F>(
-        &mut self,
-        client: &Client,
-        now: SystemTime,
-        persist: F,
-    ) -> Result<(), LegacyAuthError>
-    where
-        F: FnOnce(&str, &str, i64, i64) -> Result<(), LegacyAuthError>,
-    {
-        let now = epoch_seconds(now)?;
-        if self.retry_at.is_some_and(|retry_at| now < retry_at) {
-            return Err(LegacyAuthError::RefreshDeferred);
-        }
-        if self.persistence_pending {
-            return self.retry_pending_persistence(now, persist);
-        }
-        if !self.startup_refresh_pending && self.retry_at.is_none() && now < self.next_refresh_at {
-            return Ok(());
-        }
-        self.refresh_at(client, now, persist).await
-    }
-
-    pub async fn refresh_now(
-        &mut self,
-        client: &Client,
-        now: SystemTime,
-    ) -> Result<(), LegacyAuthError> {
-        if self.persistence_pending {
-            return Err(LegacyAuthError::Persistence);
-        }
-        self.refresh_now_persisted(client, now, |_, _, _, _| Ok(()))
-            .await
-    }
-
-    pub async fn refresh_now_persisted<F>(
-        &mut self,
-        client: &Client,
-        now: SystemTime,
-        persist: F,
-    ) -> Result<(), LegacyAuthError>
-    where
-        F: FnOnce(&str, &str, i64, i64) -> Result<(), LegacyAuthError>,
-    {
-        let now = epoch_seconds(now)?;
-        if self.retry_at.is_some_and(|retry_at| now < retry_at) {
-            return Err(LegacyAuthError::RefreshDeferred);
-        }
-        if self.persistence_pending {
-            return self.retry_pending_persistence(now, persist);
-        }
-        self.refresh_at(client, now, persist).await
-    }
-
-    /// Run the refresh state machine with an audit receipt already bound by the
-    /// credential journal manager. The caller must have persisted both the
-    /// journal's `RefreshAttempted` state and its durable receipt binding before
-    /// this method can reach the HTTP send.
-    #[cfg(test)]
-    pub(crate) async fn refresh_persisted_with_bound_audit<F>(
-        &mut self,
-        client: &Client,
-        now: SystemTime,
-        force: bool,
-        persist: F,
-    ) -> Result<(), LegacyAuthError>
-    where
-        F: FnOnce(&str, &str, i64, i64) -> Result<(), LegacyAuthError>,
-    {
-        self.refresh_persisted_with_bound_audit_guarded(client, now, force, || Ok(()), persist)
-            .await
-    }
-
-    /// Same bound-audit refresh path, with a caller-owned authority check at
-    /// the deepest possible boundary: after request construction and directly
-    /// before the token endpoint send.
-    pub(crate) async fn refresh_persisted_with_bound_audit_guarded<F, G>(
-        &mut self,
-        client: &Client,
-        now: SystemTime,
-        force: bool,
-        assert_sensitive_access: G,
-        persist: F,
-    ) -> Result<(), LegacyAuthError>
-    where
-        F: FnOnce(&str, &str, i64, i64) -> Result<(), LegacyAuthError>,
-        G: FnOnce() -> Result<(), LegacyAuthError>,
-    {
-        let now = epoch_seconds(now)?;
-        if !force && self.retry_at.is_some_and(|retry_at| now < retry_at) {
-            return Err(LegacyAuthError::RefreshDeferred);
-        }
-        if self.persistence_pending {
-            return self.retry_pending_persistence(now, persist);
-        }
-        if !force
-            && !self.startup_refresh_pending
-            && self.retry_at.is_none()
-            && now < self.next_refresh_at
-        {
-            return Ok(());
-        }
-        self.refresh_at_unchecked(client, now, assert_sensitive_access, persist)
-            .await
-    }
-
-    async fn refresh_at<F>(
-        &mut self,
-        client: &Client,
-        now: i64,
-        persist: F,
-    ) -> Result<(), LegacyAuthError>
-    where
-        F: FnOnce(&str, &str, i64, i64) -> Result<(), LegacyAuthError>,
-    {
-        self.refresh_at_unchecked(client, now, || Ok(()), persist)
-            .await
-    }
-
-    /// This is the final guarded boundary before the single-use refresh POST.
-    async fn refresh_at_unchecked<F, G>(
-        &mut self,
-        client: &Client,
-        receipt_epoch: i64,
-        assert_sensitive_access: G,
-        persist: F,
-    ) -> Result<(), LegacyAuthError>
-    where
-        F: FnOnce(&str, &str, i64, i64) -> Result<(), LegacyAuthError>,
-        G: FnOnce() -> Result<(), LegacyAuthError>,
-    {
-        let endpoint = match self.issuer.join("token") {
-            Ok(endpoint) => endpoint,
-            Err(_) => {
-                return self.failed_refresh(receipt_epoch, LegacyAuthError::InvalidIssuer);
-            }
-        };
-        let body = TokenRequest {
-            grant_type: "refresh_token",
-            scope: REFRESH_SCOPE,
-            client_id: CLIENT_ID,
-            refresh_token: &self.refresh_token,
-        };
-        let body = match serde_json::to_vec(&body) {
-            Ok(body) => body,
-            Err(_) => {
-                return self.failed_refresh(receipt_epoch, LegacyAuthError::InvalidResponse);
-            }
-        };
-        let mut request = client.post(endpoint);
-        for (name, value) in REFRESH_REQUEST_HEADERS {
-            request = request.header(name, value);
-        }
-        let request = request.body(body);
-        assert_sensitive_access()?;
-        let response = match request.send().await {
-            Ok(response) => response,
-            Err(_) => return self.failed_refresh(receipt_epoch, LegacyAuthError::Transport),
-        };
-        if response.status() != reqwest::StatusCode::OK {
-            return self.failed_refresh(
-                receipt_epoch,
-                LegacyAuthError::HttpStatus(response.status().as_u16()),
-            );
-        }
-        let bytes = match read_bounded_token_response(response).await {
-            Ok(bytes) => bytes,
-            Err(error) => return self.failed_refresh(receipt_epoch, error),
-        };
-        let response: TokenResponse = match serde_json::from_slice(&bytes) {
-            Ok(response) => response,
-            Err(_) => return self.failed_refresh(receipt_epoch, LegacyAuthError::InvalidResponse),
-        };
-        let rotated = match self.validate_response(response, receipt_epoch) {
-            Ok(rotated) => rotated,
-            Err(error) => return self.failed_refresh(receipt_epoch, error),
-        };
-        #[cfg(all(test, unix))]
-        test_kill_after_validated_rotation_if_armed();
-        // Install the validated rotation in memory before attempting durable
-        // persistence. Tesla refresh tokens are single-use: falling back to
-        // the previous pair after this point can strand authentication. A
-        // failed sink therefore leaves the new pair pending and every later
-        // refresh call retries only that persistence operation.
-        self.access_token = rotated.access_token;
-        self.refresh_token = rotated.refresh_token;
-        self.token_type = rotated.token_type;
-        self.expires_at = rotated.expires_at;
-        self.next_refresh_at = rotated.next_refresh_at;
-        self.persistence_pending = true;
-        self.startup_refresh_pending = false;
-        if let Err(error) = persist(
-            &self.access_token,
-            &self.refresh_token,
-            self.expires_at,
-            self.next_refresh_at,
-        ) {
-            return self.failed_refresh(receipt_epoch, error);
-        }
-        self.persistence_pending = false;
-        self.retry_at = None;
-        Ok(())
-    }
-
-    fn retry_pending_persistence<F>(&mut self, now: i64, persist: F) -> Result<(), LegacyAuthError>
-    where
-        F: FnOnce(&str, &str, i64, i64) -> Result<(), LegacyAuthError>,
-    {
-        debug_assert!(self.persistence_pending);
-        if let Err(error) = persist(
-            &self.access_token,
-            &self.refresh_token,
-            self.expires_at,
-            self.next_refresh_at,
-        ) {
-            return self.failed_refresh(now, error);
-        }
-        self.persistence_pending = false;
-        self.retry_at = None;
-        Ok(())
-    }
-
-    fn failed_refresh<T>(
-        &mut self,
-        now: i64,
-        error: LegacyAuthError,
-    ) -> Result<T, LegacyAuthError> {
-        let delay = if self.startup_refresh_pending {
-            STARTUP_REFRESH_RETRY_DELAY
-        } else {
-            REFRESH_RETRY_DELAY
-        };
-        self.startup_refresh_pending = false;
-        self.retry_at = now.checked_add(delay.as_secs() as i64);
-        Err(error)
-    }
-
-    fn validate_response(
-        &self,
-        mut response: TokenResponse,
-        receipt_epoch: i64,
-    ) -> Result<ValidatedTokens, LegacyAuthError> {
-        validate_nonempty(&response.access_token)?;
-        validate_refresh_token(&response.refresh_token)
-            .map_err(|_| LegacyAuthError::InvalidResponse)?;
-        if response.expires_in == 0 {
-            return Err(LegacyAuthError::InvalidResponse);
-        }
-        if receipt_epoch <= 0 {
-            return Err(LegacyAuthError::InvalidResponse);
-        }
-        let expires_at = receipt_epoch
-            .checked_add(
-                i64::try_from(response.expires_in).map_err(|_| LegacyAuthError::InvalidResponse)?,
-            )
-            .ok_or(LegacyAuthError::InvalidResponse)?;
-        let refresh_offset = teslamate_refresh_delay_seconds(response.expires_in)?;
-        let next_refresh_at = receipt_epoch
-            .checked_add(
-                i64::try_from(refresh_offset).map_err(|_| LegacyAuthError::InvalidResponse)?,
-            )
-            .ok_or(LegacyAuthError::InvalidResponse)?;
-        Ok(ValidatedTokens {
-            access_token: Zeroizing::new(std::mem::take(&mut response.access_token)),
-            refresh_token: Zeroizing::new(std::mem::take(&mut response.refresh_token)),
-            token_type: std::mem::take(&mut response.token_type)
-                .unwrap_or_else(|| "Bearer".to_owned()),
-            expires_at,
-            next_refresh_at,
-        })
-    }
-
-    pub(crate) fn from_persisted_state(
-        access_token: impl Into<String>,
-        refresh_token: impl Into<String>,
-        expires_at: i64,
-        next_refresh_at: i64,
-    ) -> Result<Self, LegacyAuthError> {
-        let mut auth = Self::from_access_token(access_token, refresh_token)?;
-        if expires_at == 0 && next_refresh_at == 0 {
-            auth.startup_refresh_pending = true;
-            return Ok(auth);
-        }
-        if expires_at <= 0 || next_refresh_at <= 0 || next_refresh_at >= expires_at {
-            return Err(LegacyAuthError::InvalidPersistedSchedule);
-        }
-        auth.expires_at = expires_at;
-        auth.next_refresh_at = next_refresh_at;
-        Ok(auth)
-    }
-
+    /// Test constructor (section 3.4): endpoint is the issuer with `token`
+    /// appended, region Global, imported form, no token checks.
     #[cfg(test)]
     pub(crate) fn for_test(issuer: Url, access_token: &str, refresh_token: &str) -> Self {
+        let selection = endpoint::test_override_selection(&issuer);
         Self {
             access_token: Zeroizing::new(access_token.to_owned()),
             refresh_token: Zeroizing::new(refresh_token.to_owned()),
             token_type: "Bearer".to_owned(),
             expires_at: 0,
             next_refresh_at: 0,
-            region: StreamRegion::Global,
-            issuer,
+            token_endpoint: selection.token_endpoint,
+            endpoint_source: selection.source,
+            pinned_issuer: selection.pinned_issuer,
+            region: selection.region,
+            usable_until: None,
             retry_at: None,
+            retry_step: 0,
+            retry_reason: None,
             startup_refresh_pending: false,
-            persistence_pending: false,
+            last_success_at: None,
+            client_refusals: 0,
+            stop: None,
+            clock_skew: false,
+            pending_successor: None,
+            persist_failures: 0,
+            persist_retry_at: None,
+            pending_close: None,
+            close_failures: 0,
+            close_retry_at: None,
+            token_requests_not_before: 0,
+            hold_until: None,
+            forced_after_hold: false,
+            observer_rejected: false,
+            schedule_diagnostic: None,
+            wire_override: None,
         }
+    }
+
+    /// Test only: send to `loopback` instead of the selected Tesla host while
+    /// the selection stays the one asserted (section 8 fixtures).
+    #[cfg(test)]
+    pub(crate) fn with_wire_override_for_test(mut self, loopback: Url) -> Self {
+        self.wire_override = Some(loopback);
+        self
     }
 
     #[cfg(test)]
@@ -593,129 +682,6 @@ impl LegacyAuth {
         self.next_refresh_at = next_refresh_at;
         self
     }
-}
-
-#[derive(Serialize)]
-struct TokenRequest<'a> {
-    grant_type: &'static str,
-    scope: &'static str,
-    client_id: &'static str,
-    refresh_token: &'a str,
-}
-
-#[derive(Deserialize, Zeroize, ZeroizeOnDrop)]
-struct TokenResponse {
-    access_token: String,
-    refresh_token: String,
-    token_type: Option<String>,
-    expires_in: u64,
-    #[serde(rename = "created_at")]
-    _created_at: Option<i64>,
-}
-
-struct ValidatedTokens {
-    access_token: Zeroizing<String>,
-    refresh_token: Zeroizing<String>,
-    token_type: String,
-    expires_at: i64,
-    next_refresh_at: i64,
-}
-
-fn issuer_from_access_token(access_token: &str) -> Result<(Url, StreamRegion), LegacyAuthError> {
-    if access_token.trim().is_empty() || access_token.chars().any(char::is_control) {
-        return Err(LegacyAuthError::InvalidAccessToken);
-    }
-    if let Some(issuer) = opaque_access_token_issuer(access_token)? {
-        return validated_issuer(issuer);
-    }
-    let mut segments = access_token.split('.');
-    let (_header, payload, signature, extra) = (
-        segments.next(),
-        segments.next(),
-        segments.next(),
-        segments.next(),
-    );
-    if let (Some(_), Some(payload), Some(_), None) = (_header, payload, signature, extra)
-        && let Ok(payload) = URL_SAFE_NO_PAD.decode(payload)
-        && let Ok(claims) = serde_json::from_slice::<serde_json::Value>(&payload)
-        && let Some(issuer) = claims.get("iss").and_then(serde_json::Value::as_str)
-    {
-        return validated_issuer(issuer);
-    }
-
-    // Pinned TeslaMate falls back to the canonical global Owner API issuer
-    // when an access token is neither a recognised opaque token nor a usable
-    // JWT. Legacy tokens are intentionally not rejected merely for that.
-    validated_issuer("https://auth.tesla.com/oauth2/v3")
-}
-
-// TeslaMate accepts current opaque access tokens before attempting JWT payload
-// decoding. Hub has no arbitrary issuer override, so prefix handling selects only
-// Tesla's canonical regional issuer; the token itself never supplies a URL.
-fn opaque_access_token_issuer(access_token: &str) -> Result<Option<&'static str>, LegacyAuthError> {
-    // `cn-` also uses the global issuer: opaque tokens do not authorize
-    // regional routing.
-    if !(access_token.starts_with("qts-")
-        || access_token.starts_with("eu-")
-        || access_token.starts_with("cn-"))
-    {
-        return Ok(None);
-    }
-    Ok(Some("https://auth.tesla.com/oauth2/v3"))
-}
-
-fn validated_issuer(issuer: &str) -> Result<(Url, StreamRegion), LegacyAuthError> {
-    let mut issuer = Url::parse(issuer).map_err(|_| LegacyAuthError::InvalidIssuer)?;
-    if issuer.scheme() != "https"
-        || issuer.username() != ""
-        || issuer.password().is_some()
-        || issuer.port().is_some_and(|port| port != 443)
-        || issuer.query().is_some()
-        || issuer.fragment().is_some()
-    {
-        return Err(LegacyAuthError::InvalidIssuer);
-    }
-    if issuer.port() == Some(443) {
-        issuer
-            .set_port(None)
-            .map_err(|_| LegacyAuthError::InvalidIssuer)?;
-    }
-    let region = match issuer.host_str() {
-        Some("auth.tesla.com") => StreamRegion::Global,
-        Some("auth.tesla.cn") => StreamRegion::China,
-        _ => return Err(LegacyAuthError::InvalidIssuer),
-    };
-    if issuer.path() != "/oauth2/v3" && issuer.path() != "/oauth2/v3/" {
-        return Err(LegacyAuthError::InvalidIssuer);
-    }
-    if !issuer.path().ends_with('/') {
-        issuer.set_path(&format!("{}/", issuer.path()));
-    }
-    Ok((issuer, region))
-}
-
-fn validate_nonempty(value: &str) -> Result<(), LegacyAuthError> {
-    if value.trim().is_empty() {
-        Err(LegacyAuthError::InvalidResponse)
-    } else {
-        Ok(())
-    }
-}
-
-fn validate_refresh_token(value: &str) -> Result<(), LegacyAuthError> {
-    if value.trim().is_empty() || value.chars().any(char::is_control) {
-        Err(LegacyAuthError::InvalidRefreshToken)
-    } else {
-        Ok(())
-    }
-}
-
-fn teslamate_refresh_delay_seconds(expires_in: u64) -> Result<u64, LegacyAuthError> {
-    expires_in
-        .checked_mul(3)
-        .and_then(|seconds| seconds.checked_add(2))
-        .map(|seconds| seconds / 4)
-        .ok_or(LegacyAuthError::InvalidResponse)
 }
 
 fn epoch_seconds(now: SystemTime) -> Result<i64, LegacyAuthError> {

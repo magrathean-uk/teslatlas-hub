@@ -9,7 +9,7 @@
 //! argv.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     future::Future,
     io::Read,
     os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt},
@@ -40,7 +40,10 @@ use uuid::Uuid;
 
 use crate::{
     config::{CollectorCadence, CollectorProvider, ConfigError, HubConfig, TerrainConfig},
-    credentials::{CredentialError, LegacyAuthManager, LegacyAuthManagerError, OwnerTokens},
+    credentials::{
+        AuthWait, CollectorStartView, CredentialError, LegacyAuthManager, LegacyAuthManagerError,
+        OwnerTokens, RefusalRefresh,
+    },
     db::{
         HubStore, ObservationInput, OutboundRequestCompletion, OutboundRequestOperation,
         OutboundRequestOutcome, OutboundRequestPrecondition, OutboundRequestSafetyClass,
@@ -60,7 +63,10 @@ use crate::{
         ProjectionBinding, ProjectionCar, ProjectionDeltaPackRequest, ProjectionPackError,
         ProjectionPackRequest, ProjectionPackWriter, ProjectionSnapshot,
     },
-    legacy_auth::{LegacyAuth, LegacyAuthError, LegacyAuthFuse},
+    legacy_auth::{
+        AuthEndpointConfig, LegacyAuth, LegacyAuthError, LegacyAuthFuse, RefusalReason,
+        state::{AuthState, AuthStatus, AuthStop},
+    },
     lifecycle::{
         LifecycleError, LifecycleSample, OpenSessionState, apply_sample, stream_observation_payload,
     },
@@ -82,6 +88,8 @@ use crate::{
 
 #[cfg(test)]
 use crate::db::StreamFaultPoint;
+#[cfg(test)]
+use std::sync::atomic::AtomicUsize;
 const OWNER_API_SOURCE_KIND: &str = "owner_api_compat";
 const OWNER_API_SOURCE_KEY: &str = "local_installation_v1";
 const FLEET_API_SOURCE_KIND: &str = "fleet_api_compat";
@@ -97,12 +105,19 @@ const FLEET_TELEMETRY_CONFIG_RETRY_INTERVAL: Duration = Duration::from_secs(6 * 
 const FLEET_REFRESH_REQUEST_NOT_SENT_RETRY: Duration = Duration::from_secs(5 * 60);
 
 include!("collector/authentication.rs");
+include!("collector/supervised_test_support.rs");
 include!("collector/fleet_setup.rs");
 include!("collector/terrain.rs");
 include!("collector/fleet_supervision.rs");
 include!("collector/owner_supervision.rs");
 include!("collector/streaming.rs");
 include!("collector/scheduler.rs");
+include!("collector/scheduler_sleep.rs");
+include!("collector/scheduler_state.rs");
+include!("collector/scheduler_errors.rs");
+include!("collector/scheduler_holds.rs");
+include!("collector/scheduler_counters.rs");
+include!("collector/tick.rs");
 include!("collector/projection.rs");
 include!("collector/errors.rs");
 

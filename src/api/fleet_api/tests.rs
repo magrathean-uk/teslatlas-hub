@@ -45,6 +45,14 @@ enum FakeResponse {
     ProviderError,
     OversizedProviderError,
     UnauthorizedProviderError,
+    /// 401 with Tesla's `mobile_access_disabled` error (C3 R42).
+    MobileAccessDisabled,
+    /// 405 whose error text says the car is in service (C3 R42).
+    VehicleInService,
+    /// 401 with an allowlisted code other than the mobile-access one.
+    UnauthorizedInvalidToken,
+    /// 403 with a body, which the client never reads.
+    Forbidden,
     Redirect,
     RateLimited,
     GatewayTimeout,
@@ -162,6 +170,34 @@ async fn fake_handler(State(state): State<FakeState>, request: Request<Body>) ->
             return (
                 StatusCode::UNAUTHORIZED,
                 r#"{"error":"token rejected","error_description":"not retained"}"#,
+            )
+                .into_response();
+        }
+        FakeResponse::MobileAccessDisabled => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                r#"{"error":"mobile_access_disabled","error_description":"not retained"}"#,
+            )
+                .into_response();
+        }
+        FakeResponse::VehicleInService => {
+            return (
+                StatusCode::METHOD_NOT_ALLOWED,
+                r#"{"response":null,"error":"Vehicle is IN SERVICE: do not retain this text","error_description":""}"#,
+            )
+                .into_response();
+        }
+        FakeResponse::UnauthorizedInvalidToken => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                r#"{"error":"invalid_token","error_description":"not retained"}"#,
+            )
+                .into_response();
+        }
+        FakeResponse::Forbidden => {
+            return (
+                StatusCode::FORBIDDEN,
+                r#"{"error":"forbidden","error_description":"not retained"}"#,
             )
                 .into_response();
         }
@@ -398,9 +434,9 @@ async fn fleet_reads_discovery_and_vehicle_data_without_wake() {
     assert_eq!(requests[0].path, "/api/1/vehicles");
     assert_eq!(
         requests[1].path,
+        // CT7: the literal query of C3 R23, not derived from the constant.
         format!(
-            "/api/1/vehicles/{TEST_VIN}/vehicle_data?endpoints={}",
-            VEHICLE_DATA_ENDPOINTS.replace(';', "%3B")
+            "/api/1/vehicles/{TEST_VIN}/vehicle_data?endpoints=charge_state%3Bclimate_state%3Bdrive_state%3Blocation_data%3Bvehicle_config%3Bvehicle_state"
         )
     );
     assert!(requests.iter().all(|request| request.method == "GET"));
@@ -732,6 +768,92 @@ async fn provider_errors_are_bounded_allowlisted_and_keep_auth_status_plain() {
     );
 }
 
+#[tokio::test]
+async fn r42_a_401_keeps_only_the_mobile_access_code_and_a_405_in_service_becomes_a_fixed_code() {
+    let token = FleetAccessToken::new(TEST_TOKEN).expect("token");
+    let vin = VehicleVin::parse(TEST_VIN).expect("VIN");
+
+    // One car's refusal: the code survives, so the scheduler can pause that car.
+    let disabled = FakeServer::spawn(FakeResponse::MobileAccessDisabled).await;
+    let error = disabled
+        .fleet_client()
+        .wake(&token, &vin)
+        .await
+        .expect_err("mobile access refusal");
+    assert_eq!(error.http_status(), Some(401));
+    assert_eq!(
+        error.provider_error(),
+        Some(("mobile_access_disabled", None))
+    );
+    assert!(!format!("{error:?}").contains("not retained"));
+
+    // Tesla's own text is uncontrolled prose: only the fixed code is kept.
+    let service = FakeServer::spawn(FakeResponse::VehicleInService).await;
+    let error = service
+        .fleet_client()
+        .wake(&token, &vin)
+        .await
+        .expect_err("car in service");
+    assert_eq!(error.http_status(), Some(405));
+    assert_eq!(error.provider_error(), Some(("vehicle_in_service", None)));
+    assert!(
+        !format!("{error:?}")
+            .to_ascii_lowercase()
+            .contains("do not retain")
+    );
+
+    // Every other 401 stays a plain status, so the retained refresh recovery is
+    // matched exactly as before, whatever allowlisted code the body carries.
+    let invalid = FakeServer::spawn(FakeResponse::UnauthorizedInvalidToken).await;
+    assert_eq!(
+        invalid
+            .fleet_client()
+            .wake(&token, &vin)
+            .await
+            .expect_err("plain 401"),
+        FleetApiError::HttpStatus(401)
+    );
+
+    // A 403 stays a plain status: the client never reads its body.
+    let forbidden = FakeServer::spawn(FakeResponse::Forbidden).await;
+    assert_eq!(
+        forbidden
+            .fleet_client()
+            .wake(&token, &vin)
+            .await
+            .expect_err("forbidden"),
+        FleetApiError::HttpStatus(403)
+    );
+}
+
+#[tokio::test]
+async fn ct39_the_fleet_client_reads_retry_after_like_the_owner_client() {
+    let token = FleetAccessToken::new(TEST_TOKEN).expect("token");
+    let vin = VehicleVin::parse(TEST_VIN).expect("VIN");
+    let limited = FakeServer::spawn(FakeResponse::RateLimited).await;
+    assert_eq!(
+        limited
+            .fleet_client()
+            .wake(&token, &vin)
+            .await
+            .expect_err("rate limited"),
+        FleetApiError::RateLimited {
+            retry_after_seconds: 17,
+        }
+    );
+    // The parser is the Owner client's: the same header gives the same wait.
+    let headers = |value: &'static str| {
+        let mut headers = HeaderMap::new();
+        headers.insert("retry-after", value.parse().expect("header value"));
+        headers
+    };
+    assert_eq!(parse_retry_after(&headers("120")), 120);
+    assert_eq!(parse_retry_after(&headers("0")), 0);
+    assert_eq!(parse_retry_after(&headers("abc")), 0);
+    assert_eq!(parse_retry_after(&headers("7200")), 3_600);
+    assert_eq!(parse_retry_after(&HeaderMap::new()), 0);
+}
+
 #[test]
 fn sensitive_or_non_printable_provider_error_text_is_not_retained() {
     for body in [
@@ -1040,4 +1162,168 @@ async fn fleet_discovery_replaces_a_short_credential_in_state_only_by_equality()
     let log = log.contents();
     assert_eq!(log.matches("WARN").count(), 1, "{log}");
     assert_no_credential_bytes(&log, &[SHORT_ACCESS, SHORT_REFRESH]);
+}
+
+// ---------------------------------------------------------------------------
+// B2 fix round, P3b.2 (Codex R06): the Fleet token request is bounded at 60
+// seconds, headers and body included, whatever longer timeout is configured.
+// Vehicle and list requests keep the timeout they are given.
+// ---------------------------------------------------------------------------
+
+/// The temporary Hub store the new tests of this section hold, as every new test of
+/// the fix round does (the clients below never reach a store or a host: their
+/// endpoints are an unroutable loopback port or an in-test socket).
+fn temporary_hub() -> (tempfile::TempDir, crate::db::HubStore) {
+    let temporary = crate::private_tempdir().expect("temporary Hub");
+    let store = crate::db::HubStore::initialize(temporary.path()).expect("Hub store");
+    (temporary, store)
+}
+
+#[test]
+fn r06_fleet_auth_builder_clamps_the_effective_timeout() {
+    let _hub = temporary_hub();
+    let endpoint = Url::parse("http://127.0.0.1:9/oauth2/v3/token").expect("endpoint");
+    for (configured, effective) in [(120, 60), (61, 60), (60, 60), (15, 15), (1, 1)] {
+        let auth = FleetAuthApi::for_fake_http(endpoint.clone(), Duration::from_secs(configured))
+            .expect("Fleet auth client");
+        assert_eq!(
+            auth.effective_timeout(),
+            Duration::from_secs(effective),
+            "a configured {configured} seconds"
+        );
+    }
+    // The production constructor shares this builder (`FleetAuthApi::build`), so the
+    // clamp is proved here without constructing a client for a production host.
+    assert_eq!(FLEET_TOKEN_REQUEST_MAX_TIMEOUT, Duration::from_secs(60));
+    // A zero timeout is still invalid, and the sub-second values are untouched.
+    assert!(matches!(
+        FleetAuthApi::for_fake_http(endpoint.clone(), Duration::ZERO),
+        Err(FleetApiConfigError::ZeroTimeout)
+    ));
+    assert_eq!(
+        FleetAuthApi::for_fake_http(endpoint, Duration::from_millis(250))
+            .expect("client")
+            .effective_timeout(),
+        Duration::from_millis(250)
+    );
+}
+
+/// How a raw token endpoint answers, once it has read the request.
+#[derive(Clone, Copy)]
+enum RawAnswer {
+    /// The whole answer after `delay`.
+    WholeAfter(Duration),
+    /// The status line, the headers and the first bytes of the body at once, the
+    /// rest of the body after `delay`.
+    PartialBodyThenRestAfter(Duration),
+}
+
+const RAW_TOKEN_BODY: &str = r#"{"access_token":"fleet-next-access","refresh_token":"fleet-next-refresh","expires_in":28800,"token_type":"Bearer"}"#;
+
+/// A one-connection token endpoint on a raw socket, so a test controls exactly
+/// when the headers and the body bytes are written.
+async fn raw_token_endpoint(answer: RawAnswer) -> (Url, JoinHandle<()>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("raw listener");
+    let address = listener.local_addr().expect("raw address");
+    let task = tokio::spawn(async move {
+        let Ok((mut socket, _)) = listener.accept().await else {
+            return;
+        };
+        let mut request = Vec::new();
+        let mut chunk = [0_u8; 512];
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            match socket.read(&mut chunk).await {
+                Ok(0) | Err(_) => return,
+                Ok(read) => request.extend_from_slice(&chunk[..read]),
+            }
+            if request.len() > 4096 {
+                return;
+            }
+        }
+        let head = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n",
+            RAW_TOKEN_BODY.len()
+        );
+        match answer {
+            RawAnswer::WholeAfter(delay) => {
+                tokio::time::sleep(delay).await;
+                let _ = socket.write_all(head.as_bytes()).await;
+                let _ = socket.write_all(RAW_TOKEN_BODY.as_bytes()).await;
+            }
+            RawAnswer::PartialBodyThenRestAfter(delay) => {
+                let _ = socket.write_all(head.as_bytes()).await;
+                let _ = socket.write_all(&RAW_TOKEN_BODY.as_bytes()[..20]).await;
+                let _ = socket.flush().await;
+                tokio::time::sleep(delay).await;
+                let _ = socket.write_all(&RAW_TOKEN_BODY.as_bytes()[20..]).await;
+            }
+        }
+        let _ = socket.flush().await;
+    });
+    (
+        Url::parse(&format!("http://{address}/oauth2/v3/token")).expect("raw URL"),
+        task,
+    )
+}
+
+#[tokio::test]
+async fn r06_fleet_auth_client_caps_headers_and_body_at_60_seconds() {
+    // The client is configured for 120 seconds and takes 60. The three cases run
+    // together on real sockets and the real timer: a whole answer at 59 seconds
+    // succeeds, a first byte of the answer at 62 seconds is a request timeout, and
+    // a body that stalls until 62 seconds is a failed read. Every body is under a
+    // kibibyte, and the servers are aborted and joined at the end.
+    const CAP: Duration = Duration::from_secs(60);
+    let _hub = temporary_hub();
+    let began = std::time::Instant::now();
+    let (valid_url, valid_server) =
+        raw_token_endpoint(RawAnswer::WholeAfter(Duration::from_secs(59))).await;
+    let (slow_headers_url, slow_headers_server) =
+        raw_token_endpoint(RawAnswer::WholeAfter(Duration::from_secs(62))).await;
+    let (slow_body_url, slow_body_server) =
+        raw_token_endpoint(RawAnswer::PartialBodyThenRestAfter(Duration::from_secs(62))).await;
+    let refresh = |endpoint: Url| async move {
+        let auth = FleetAuthApi::for_fake_http(endpoint, Duration::from_secs(120))
+            .expect("Fleet auth client");
+        assert_eq!(auth.effective_timeout(), CAP);
+        let result = auth
+            .refresh(
+                &FleetClientId::parse("client-id").expect("client id"),
+                &FleetRefreshToken::new("old-refresh").expect("refresh token"),
+            )
+            .await;
+        (result, began.elapsed())
+    };
+    let ((valid, valid_at), (slow_headers, slow_headers_at), (slow_body, slow_body_at)) = tokio::join!(
+        refresh(valid_url),
+        refresh(slow_headers_url),
+        refresh(slow_body_url)
+    );
+
+    let refreshed = valid.expect("an answer inside the cap is accepted");
+    assert_eq!(refreshed.access_token.expose(), "fleet-next-access");
+    assert!(valid_at >= Duration::from_secs(59), "{valid_at:?}");
+    assert_eq!(
+        slow_headers.expect_err("headers after the cap"),
+        FleetApiError::RequestTimeout
+    );
+    assert_eq!(
+        slow_body.expect_err("a body that stalls past the cap"),
+        FleetApiError::ResponseRead
+    );
+    assert!(slow_headers_at >= CAP, "{slow_headers_at:?}");
+    assert!(slow_body_at >= CAP, "{slow_body_at:?}");
+    for server in [valid_server, slow_headers_server, slow_body_server] {
+        server.abort();
+        let _ = server.await;
+    }
+    assert!(
+        began.elapsed() <= Duration::from_secs(70),
+        "{:?}",
+        began.elapsed()
+    );
 }

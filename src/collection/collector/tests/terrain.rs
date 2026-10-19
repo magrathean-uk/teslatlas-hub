@@ -31,7 +31,8 @@ async fn terrain_pass_uses_an_explicit_private_cache_root() {
             &CursorKey::from_bytes([4; 32]),
             1,
             &mut fuse,
-            None,
+            &RunWriteGuard::from(AdmissionFence::default()),
+            TERRAIN_LOOKUP_BUDGET,
         )
         .await
         .expect("terrain pass"),
@@ -50,13 +51,13 @@ async fn terrain_startup_with_an_untrusted_cache_root_is_nonfatal_and_writes_not
         cache_dir: Some(link),
         ..TerrainConfig::default()
     };
-    let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(data.path()).expect("admit runtime");
+    let run_store = HubStore::initialize(data.path()).expect("run store");
     let mut worker = spawn_terrain_worker(
         data.path().to_path_buf(),
         config,
         CursorKey::from_bytes([7; 32]),
-        Some(admission),
+        RunWriteGuard::from(AdmissionFence::default()),
+        run_store,
     );
 
     worker
@@ -84,13 +85,13 @@ async fn terrain_startup_failure_is_nonfatal_with_runtime_admission() {
         min_free_bytes: 0,
         ..TerrainConfig::default()
     };
-    let admission =
-        crate::hub_user_process::AdmittedUserHub::for_test(data.path()).expect("admit runtime");
+    let run_store = HubStore::initialize(data.path()).expect("run store");
     let mut worker = spawn_terrain_worker(
         data.path().to_path_buf(),
         config,
         CursorKey::from_bytes([5; 32]),
-        Some(admission),
+        RunWriteGuard::from(AdmissionFence::default()),
+        run_store,
     );
 
     worker
@@ -113,8 +114,15 @@ async fn disabled_terrain_worker_does_not_open_store_or_cache() {
         enabled: false,
         ..TerrainConfig::default()
     };
-    let mut worker =
-        spawn_terrain_worker(data.clone(), config, CursorKey::from_bytes([6; 32]), None);
+    let elsewhere = crate::private_tempdir().expect("elsewhere");
+    let run_store = HubStore::initialize(elsewhere.path()).expect("run store");
+    let mut worker = spawn_terrain_worker(
+        data.clone(),
+        config,
+        CursorKey::from_bytes([6; 32]),
+        RunWriteGuard::from(AdmissionFence::default()),
+        run_store,
+    );
 
     worker
         .wait_until_initialized()
@@ -184,6 +192,12 @@ fn terrain_trust_failures_have_stable_persisted_codes() {
             PrivateDirectoryError::InvalidPath
         )),
         "untrusted_root"
+    );
+    assert_eq!(
+        terrain_error_code(&TerrainCacheError::LockingUnsupported(
+            std::io::Error::from_raw_os_error(1)
+        )),
+        "locking_unsupported"
     );
     assert_eq!(
         terrain_error_code(&TerrainCacheError::Store(Box::new(

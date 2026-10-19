@@ -31,7 +31,7 @@ That record is historical: discovery now names the profile the Hub serves,
 | Method | Route | Purpose |
 |---|---|---|
 | `GET` | `/healthz` | Process and store health. |
-| `GET` | `/readyz` | Collector and serving readiness. |
+| `GET` | `/readyz` | Service readiness: `{"status":"ready"}` or `{"status":"not_ready","reason":"<reason>"}` with one of six reasons. Collection attention never appears here. |
 | `GET` | `/.well-known/teslatlas-hub` | Stable Hub identity, API versions, capabilities, build, sync protocol, and configured source route. |
 | `POST` | `/v1/pairings/{pairing_id}/claim` | Claim one pairing invitation. |
 | `POST` | `/v1/device/rotate` | Rotate the current device bearer. The prior bearer keeps serving for 24 hours, and retrying with it returns the same successor. Once the device's stored expiry has reached its absolute maximum lifetime, and until that time arrives, it returns the current bearer unchanged with `"reason": "max_lifetime"`; from the maximum on the bearer is 401. |
@@ -46,6 +46,17 @@ That record is historical: discovery now names the profile the Hub serves,
 | `GET` | `/v1/vehicles/{vehicle_id}/sync/prepared-artefacts/{artifact_id}` | Get an available, signed prepared-map receipt for the current physical head. |
 | `GET` | `/v1/packs/sha256/{object_name}` | Stream one manifest-authorized immutable pack. |
 | `POST` | `/v1/internal/fleet-telemetry` | Private supervised Fleet Telemetry ingestion. |
+
+`/readyz` answers 200 `{"status":"ready"}` or 503 `{"status":"not_ready","reason":R}`,
+where `R` is `catalogue_unavailable`, `lifecycle_quarantined`,
+`published_content_unservable`, `collector_absent`, `collector_stale` or
+`collector_auth_terminal`. Conditions you can fix while the Hub stays up (a refusal from
+Tesla or a provider, a sign-in that still works but must be renewed, a Fleet refresh whose
+outcome is unknown, a broken collector cadence and the like) are collection attention: they
+appear in `teslatlas-hub status`, `doctor` and the Mac app, never in this body, and never
+change the status code. The body and its headers keep the published 1.2.0 shape; an
+optional detail member and a cadence diagnostic are held for the next protocol
+declaration. See [Configuration](configuration.md#sign-in-status).
 
 Pack objects are content-addressed and served only when an authorized manifest
 references the digest and one of the vehicles that owns it is granted to the

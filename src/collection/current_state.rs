@@ -393,9 +393,16 @@ fn number(map: Option<&Map<String, Value>>, key: &str) -> Option<f64> {
 
 fn integer(map: Option<&Map<String, Value>>, key: &str) -> Option<i64> {
     let value = map.and_then(|map| map.get(key))?;
+    // The stream delivers fractional values as JSON numbers (C4 R16, R48), and an
+    // integer column reads any finite number rounded to the nearest whole value.
     value
         .as_i64()
         .or_else(|| value.as_u64().and_then(|value| i64::try_from(value).ok()))
+        .or_else(|| {
+            let rounded = value.as_f64()?.round();
+            (rounded.is_finite() && rounded >= i64::MIN as f64 && rounded < i64::MAX as f64)
+                .then_some(rounded as i64)
+        })
 }
 
 fn boolean(map: Option<&Map<String, Value>>, key: &str) -> Option<bool> {
@@ -520,24 +527,47 @@ mod tests {
             crate::lifecycle::stream_observation_payload(&crate::tesla_stream::StreamUpdate {
                 tag: "9".into(),
                 timestamp_ms: 2_000,
-                speed: Some(10),
+                speed: Some(10.0),
                 odometer: Some(100.0),
-                soc: Some(79),
-                elevation: Some(10),
-                est_heading: Some(90),
+                soc: Some(79.0),
+                elevation: Some(10.0),
+                est_heading: None,
                 est_lat: Some(1.0),
                 est_lng: Some(2.0),
                 power: Some(5),
                 shift_state: Some("D".into()),
-                range: Some(200),
-                est_range: Some(190),
-                heading: Some(90),
+                range: Some(200.0),
+                est_range: Some(190.0),
+                heading: Some(90.0),
             }),
         );
         let summary =
             build_current_vehicle_summary(Uuid::from_u128(2), &[owner, stream], None, None, None);
         assert_eq!(summary.battery_level, Some(79));
         assert_eq!(summary.ideal_battery_range_km, Some(321.87));
+    }
+
+    /// The integer reader takes any finite number and rounds it to the nearest
+    /// whole value (C4 R16, R48): the stream delivers fractions, so a truncating
+    /// reader would read 79.6 % as 79, and a reader without the range guard
+    /// would wrap an enormous number.
+    #[test]
+    fn the_integer_reader_rounds_fractions_and_refuses_what_does_not_fit() {
+        let read = |value: Value| {
+            let map = json!({ "k": value });
+            integer(map.as_object(), "k")
+        };
+        assert_eq!(read(json!(79)), Some(79));
+        assert_eq!(read(json!(79.6)), Some(80));
+        assert_eq!(read(json!(79.4)), Some(79));
+        assert_eq!(read(json!(-79.6)), Some(-80));
+        assert_eq!(read(json!(-0.4)), Some(0));
+        assert_eq!(read(json!(1e300)), None);
+        assert_eq!(read(json!(-1e300)), None);
+        assert_eq!(read(json!(9.3e18)), None);
+        assert_eq!(read(json!(18_446_744_073_709_551_615_u64)), None);
+        assert_eq!(read(json!("80")), None);
+        assert_eq!(read(Value::Null), None);
     }
 
     #[test]

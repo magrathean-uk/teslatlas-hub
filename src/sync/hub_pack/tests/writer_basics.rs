@@ -44,31 +44,110 @@ fn model_3_base_trim_uses_the_vin_model_year() {
 }
 
 #[test]
-fn teslamate_suspend_default_matches_creation_conditions() {
+fn ct4_live_car_defaults_are_one_set_of_values() {
+    let live = ProjectionCarSettings::new_live();
     assert_eq!(
-        teslamate_suspend_min_default(Some("3"), Some("74D"), None),
-        Some(12)
+        live,
+        ProjectionCarSettings {
+            enabled: true,
+            use_streaming_api: true,
+            suspend_after_idle_min: 15,
+            suspend_min: 30,
+            suspend_min_resolved: true,
+            req_not_unlocked: false,
+            free_supercharging: false,
+            lfp_battery: false,
+        }
     );
+    // The storage fallbacks (`unwrap_or_default`, `#[serde(default)]`) agree
+    // with live discovery.
+    assert_eq!(live, ProjectionCarSettings::default());
+    validate_car_settings(&live).expect("live defaults are valid");
+    assert!(default_suspend_min_resolved());
+}
+
+#[test]
+fn ct4_the_importer_keeps_the_source_column_defaults_for_absent_values() {
+    // C3 R63: imported history is copied, never recomputed, so the importer's
+    // fallback is not the live default.
+    let source = ProjectionCarSettings::source_column_defaults();
     assert_eq!(
-        teslamate_suspend_min_default(Some("Y"), None, None),
-        Some(12)
+        source,
+        ProjectionCarSettings {
+            enabled: true,
+            use_streaming_api: true,
+            suspend_after_idle_min: 15,
+            suspend_min: 21,
+            suspend_min_resolved: true,
+            req_not_unlocked: false,
+            free_supercharging: false,
+            lfp_battery: false,
+        }
     );
+    assert_ne!(source, ProjectionCarSettings::new_live());
+    validate_car_settings(&source).expect("source defaults are valid");
+}
+
+#[test]
+fn r61_effective_suspend_values_are_clamped_to_one_minute_to_one_day() {
+    let with = |idle, suspend| ProjectionCarSettings {
+        suspend_after_idle_min: idle,
+        suspend_min: suspend,
+        ..ProjectionCarSettings::new_live()
+    };
+    let settings = with(15, 30);
+    assert_eq!(settings.effective_suspend_after_idle_min(), 15);
+    assert_eq!(settings.effective_suspend_min(), 30);
+    for (stored, effective) in [
+        (i64::MIN, 1),
+        (-5, 1),
+        (0, 1),
+        (1, 1),
+        (1_440, 1_440),
+        (1_441, 1_440),
+        (i64::MAX, 1_440),
+    ] {
+        assert_eq!(
+            with(stored, stored).effective_suspend_after_idle_min(),
+            effective
+        );
+        assert_eq!(with(stored, stored).effective_suspend_min(), effective);
+    }
+}
+
+#[test]
+fn ct5_a_stored_settings_object_without_the_resolution_flag_decodes_as_resolved() {
+    let old: ProjectionCarSettings = serde_json::from_value(serde_json::json!({
+        "enabled": false,
+        "use_streaming_api": true,
+        "suspend_after_idle_min": 20,
+        "suspend_min": 21,
+        "req_not_unlocked": true,
+        "free_supercharging": true,
+        "lfp_battery": true
+    }))
+    .expect("blob written before the flag existed");
     assert_eq!(
-        teslamate_suspend_min_default(Some("S"), None, None),
-        Some(12)
+        old,
+        ProjectionCarSettings {
+            enabled: false,
+            use_streaming_api: true,
+            suspend_after_idle_min: 20,
+            suspend_min: 21,
+            suspend_min_resolved: true,
+            req_not_unlocked: true,
+            free_supercharging: true,
+            lfp_battery: true,
+        }
     );
-    assert_eq!(
-        teslamate_suspend_min_default(Some("X"), Some("100D"), Some("LR")),
-        Some(12)
-    );
-    assert_eq!(
-        teslamate_suspend_min_default(Some("S"), Some("100D"), None),
-        Some(21)
-    );
-    assert_eq!(
-        teslamate_suspend_min_default(Some("Cybertruck"), None, None),
-        Some(12)
-    );
+    // An object with no settings at all takes the live defaults.
+    let empty: ProjectionCarSettings = serde_json::from_value(serde_json::json!({})).unwrap();
+    assert_eq!(empty, ProjectionCarSettings::new_live());
+    // An explicit flag is kept.
+    let unresolved: ProjectionCarSettings =
+        serde_json::from_value(serde_json::json!({"suspend_min_resolved": false})).unwrap();
+    assert!(!unresolved.suspend_min_resolved);
+    assert_eq!(unresolved.suspend_min, 30);
 }
 
 fn binding() -> ProjectionBinding {
@@ -97,7 +176,9 @@ fn snapshot() -> ProjectionSnapshot {
             spoiler_type: Some("None".into()),
             firmware_version: Some("2026.1.1".into()),
             efficiency_wh_per_km: Some(145.0),
-            settings: ProjectionCarSettings::default(),
+            // Frozen fixture packs were generated with the source column
+            // defaults, which are not the live defaults (C3 R63).
+            settings: ProjectionCarSettings::source_column_defaults(),
         }],
         drives: vec![ProjectionDrive {
             id: 20,
@@ -462,4 +543,84 @@ fn existing_content_retry_repeats_the_final_directory_sync() {
         .expect("normal retry durably converges");
     assert_eq!(built.ownership(), ProjectionPackOwnership::ReusedExisting);
     assert_eq!(built.cleanup_state(), ProjectionPackCleanupState::Complete);
+}
+
+#[test]
+fn pack_output_staging_and_publication_attempts_are_counted_for_the_run_guard_proofs() {
+    // B2 fix round, P3b fix 4 (R-P3bF4-7): the writer's staging directory, its temporary
+    // files, the hard link of the final name and the removal of the staging name are file
+    // mutation attempts counted at the helpers they go through, whatever any guard says.
+    let temporary = crate::private_tempdir().expect("pack store");
+    let source = snapshot();
+    assert_eq!(
+        crate::platform::file_attempts::count_under(temporary.path()),
+        0
+    );
+    ProjectionPackWriter::new(temporary.path())
+        .write_full_snapshot(&request(&source))
+        .expect("a pack");
+    let written = crate::platform::file_attempts::count_under(temporary.path());
+    // The staging directory (checked by the writer, by the verification and by the
+    // validation: three), the content directory, the SQLite temporary file (created,
+    // filled, removed on drop) and the zstd one (created, filled, permissions, removed),
+    // the hard link of the final name, and the syncs of the content directory and of the
+    // staging directory (fix 5, R-P3bF5-3): fourteen.
+    assert_eq!(
+        written,
+        14,
+        "{:#?}",
+        crate::platform::file_attempts::entries_under(temporary.path())
+    );
+    // A reuse of the same bytes publishes nothing new, and still attempts: the proof that
+    // an idempotent rewrite of a pack file cannot hide.
+    ProjectionPackWriter::new(temporary.path())
+        .write_full_snapshot(&request(&source))
+        .expect("the same pack again");
+    assert_eq!(
+        crate::platform::file_attempts::count_under(temporary.path()),
+        2 * written
+    );
+}
+
+#[test]
+fn a_pack_directory_sync_that_changes_nothing_moves_the_file_counter() {
+    // B2 fix round, P3b fix 5 (R-P3bF5-3): the sync of a pack directory flushes what is
+    // there and leaves the file image as it was; the counter still moves, once.
+    let temporary = crate::private_tempdir().expect("pack root");
+    let file = temporary.path().join("kept");
+    fs::write(&file, b"unchanged").unwrap();
+    let before = crate::platform::file_attempts::count_under(temporary.path());
+
+    sync_parent_directory(&file).expect("sync");
+
+    assert_eq!(fs::read(&file).unwrap(), b"unchanged");
+    assert_eq!(
+        crate::platform::file_attempts::count_under(temporary.path()),
+        before + 1
+    );
+}
+
+#[test]
+fn the_stale_staging_cleanup_counts_each_removal_and_its_directory_sync() {
+    // The staging directory is checked (one attempt), each owned temporary file is
+    // removed (two) and the directory is synced once afterwards: four attempts.
+    let temporary = crate::private_tempdir().expect("pack root");
+    let staging = temporary.path().join(".staging");
+    ensure_private_staging_directory(&staging).expect("private staging");
+    for kind in ["projection.sqlite", "projection.zst"] {
+        let path = staging.join(format!("{}.{kind}.tmp", Uuid::new_v4()));
+        fs::write(&path, b"stale").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    let before = crate::platform::file_attempts::count_under(temporary.path());
+
+    let (removed, _) = cleanup_stale_pack_staging(temporary.path()).expect("cleanup");
+
+    assert_eq!(removed, 2);
+    assert_eq!(
+        crate::platform::file_attempts::count_under(temporary.path()) - before,
+        4,
+        "{:#?}",
+        crate::platform::file_attempts::entries_under(temporary.path())
+    );
 }

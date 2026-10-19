@@ -17,7 +17,7 @@ use std::{
 use axum::{
     Json, Router,
     extract::{Path as AxumPath, State},
-    http::{Method, StatusCode, Uri},
+    http::{HeaderMap, Method, StatusCode, Uri},
     response::IntoResponse,
     routing::{any, get, post},
 };
@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use thiserror::Error;
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
     sync::{oneshot, watch},
     task::{JoinHandle, JoinSet},
@@ -165,6 +165,37 @@ pub struct StreamSessionStats {
     pub rejected_connections: usize,
 }
 
+/// How the fake stream answers the next connections (C4 spec 7 item 3). The default
+/// is the canonical scenario; every other mode is scripted for one policy rule
+/// and stays until changed. Error tokens and texts are synthetic and chosen to
+/// exercise a rule, not claimed to be real server tokens.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum StreamScript {
+    /// Hello with `connection_timeout` 0, then the scenario's telemetry.
+    #[default]
+    Normal,
+    /// Answer the WebSocket upgrade with an HTTP status and, when given, a
+    /// `Retry-After` header text (delay-seconds or an HTTP-date).
+    UpgradeStatus {
+        status: u16,
+        retry_after: Option<String>,
+    },
+    /// A hello with these members (an absent one is omitted), then the
+    /// scenario's telemetry.
+    Hello {
+        code: Option<i64>,
+        connection_timeout: Option<i64>,
+    },
+    /// After the subscribe, a hello, then a `data:error` frame with this
+    /// `error_type` and `value` text and no telemetry.
+    ErrorFrame { error_type: String, value: String },
+    /// After the subscribe, stop reading and writing: no hello, no data, no
+    /// pongs, so the Hub sees a socket that is open but silent.
+    Silent,
+    /// Close the socket right after accepting the subscribe.
+    CloseAfterSubscribe,
+}
+
 #[derive(Debug, Clone)]
 struct FakeInner {
     step_index: usize,
@@ -178,6 +209,7 @@ struct FakeInner {
     /// fixtures retain their original behaviour.
     owner_vehicle_data_available: bool,
     stream_available: bool,
+    stream_script: StreamScript,
     active_stream_sessions: BTreeSet<u64>,
     max_concurrent_stream_sessions: usize,
     accepted_stream_connections: usize,
@@ -197,7 +229,7 @@ struct FakeInner {
     /// Last valid interpolated telemetry range. Exact no-op Owner samples have
     /// no open interval, so the fake replays this range; the production
     /// collector rejects it as old while one-shot no-wake probes can still
-    /// observe a numeric-power frame.
+    /// observe a frame that confirms the stream power gate (C4 R50).
     last_stream_timestamps: Vec<i64>,
     /// Additive fixture offset applied to every Owner API and stream odometer.
     odometer_offset_miles: f64,
@@ -214,6 +246,7 @@ impl Default for FakeInner {
             stream_connection_attempts: 0,
             owner_vehicle_data_available: true,
             stream_available: true,
+            stream_script: StreamScript::Normal,
             active_stream_sessions: BTreeSet::new(),
             max_concurrent_stream_sessions: 0,
             accepted_stream_connections: 0,
@@ -463,6 +496,12 @@ impl FakeTeslaSource {
         if changed_to_unavailable {
             interrupt_stream_connections(&self.state);
         }
+    }
+
+    /// Script the stream's answers for the connections that follow (C4 spec 7
+    /// item 3). Sessions already connected are not changed.
+    pub fn set_stream_script(&self, script: StreamScript) {
+        self.state.inner.lock().expect("fake lock").stream_script = script;
     }
 
     pub fn stream_available(&self) -> bool {
@@ -1051,6 +1090,31 @@ async fn reject_stream_handshake(mut tcp: tokio::net::TcpStream) {
     let _ = tcp.shutdown().await;
 }
 
+/// Reads the upgrade request head and answers it with a plain HTTP status, so the
+/// client sees a refused upgrade rather than a reset connection.
+async fn answer_upgrade_with_status(
+    mut tcp: tokio::net::TcpStream,
+    status: u16,
+    retry_after: Option<&str>,
+) {
+    let mut head = Vec::new();
+    let mut chunk = [0_u8; 1024];
+    while head.len() < 16 * 1024 && !head.windows(4).any(|window| window == b"\r\n\r\n") {
+        match tcp.read(&mut chunk).await {
+            Ok(0) | Err(_) => break,
+            Ok(read) => head.extend_from_slice(&chunk[..read]),
+        }
+    }
+    let mut response =
+        format!("HTTP/1.1 {status} Scripted\r\nConnection: close\r\nContent-Length: 0\r\n");
+    if let Some(value) = retry_after {
+        response.push_str(&format!("Retry-After: {value}\r\n"));
+    }
+    response.push_str("\r\n");
+    let _ = tcp.write_all(response.as_bytes()).await;
+    let _ = tcp.shutdown().await;
+}
+
 async fn serve_stream_connection(
     tcp: tokio::net::TcpStream,
     state: &AppState,
@@ -1059,6 +1123,17 @@ async fn serve_stream_connection(
     let session_id = next_stream_session(state);
     if classify_prehandshake_unavailability(state, session_id) {
         reject_stream_handshake(tcp).await;
+        return;
+    }
+
+    let script = state.inner.lock().expect("fake lock").stream_script.clone();
+    if let StreamScript::UpgradeStatus {
+        status,
+        retry_after,
+    } = &script
+    {
+        answer_upgrade_with_status(tcp, *status, retry_after.as_deref()).await;
+        classify_failed_stream_handshake(state, session_id, "stream_upgrade_status");
         return;
     }
 
@@ -1113,13 +1188,47 @@ fn exact_subscribe_fields(frame: &str) -> Result<(String, String), &'static str>
     {
         return Err("unexpected_subscribe");
     }
-    if wire.value != crate::tesla_stream::TESLAMATE_STREAM_FIELDS.join(",") {
+    if wire.value != expected_subscribe_value() {
         return Err("unexpected_subscribe_fields");
     }
     Ok((FIXTURE_VID_TAG.to_owned(), wire.value.to_owned()))
 }
 
+/// The `value` the fake accepts in a subscribe frame: the Hub's column list in
+/// its order (C4 R15). Any other order or list is rejected.
+fn expected_subscribe_value() -> String {
+    crate::tesla_stream::STREAM_COLUMNS.join(",")
+}
+
+/// The `value` of one `data:update` frame: the sample time, then the eleven
+/// column values in `STREAM_COLUMNS` order (C4 R19). The scenario supplies the
+/// per-sample quantities; the others are fixed synthetic values: elevation 40 m,
+/// heading 90 degrees, and ranges that follow the battery level (3.0 and 3.2
+/// miles per percent).
+#[allow(clippy::too_many_arguments)]
+fn stream_update_value(
+    timestamp_ms: i64,
+    speed: i64,
+    odometer_miles: f64,
+    soc: i64,
+    lat: f64,
+    lng: f64,
+    power: i64,
+    shift: &str,
+) -> String {
+    let est_range = soc as f64 * 3.0;
+    let range = soc as f64 * 3.2;
+    // elevation, est_lat, est_lng, est_range, heading, odometer, power, range,
+    // shift_state, soc, speed
+    format!(
+        "{timestamp_ms},40.0,{lat},{lng},{est_range},90.0,{odometer_miles},{power},{range},{shift},{soc},{speed}"
+    )
+}
+
+/// The refresh request body of C5 R10: exactly these four members and no
+/// others, so a stray member is a rejected request.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FakeRefreshRequest {
     grant_type: String,
     scope: String,
@@ -1127,16 +1236,31 @@ struct FakeRefreshRequest {
     refresh_token: String,
 }
 
+/// The policy headers of C5 R11: the Hub's own product token and version, and
+/// JSON for both the body and the answer.
+fn fake_refresh_headers_valid(headers: &HeaderMap) -> bool {
+    let value = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    value("content-type") == Some("application/json")
+        && value("accept") == Some("application/json")
+        && value("user-agent").is_some_and(|agent| agent.starts_with("Teslatlas-Hub/"))
+}
+
 /// Deterministic local stand-in for Tesla's legacy refresh endpoint. It
 /// validates the request shape and required constants, but never records the
 /// submitted refresh token or returns it in a ledger.
-async fn token_handler(State(state): State<AppState>, uri: Uri, body: String) -> impl IntoResponse {
-    let valid = serde_json::from_str::<FakeRefreshRequest>(&body).is_ok_and(|request| {
-        request.grant_type == "refresh_token"
-            && request.scope == "openid email offline_access"
-            && request.client_id == "ownerapi"
-            && !request.refresh_token.trim().is_empty()
-    });
+async fn token_handler(
+    State(state): State<AppState>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: String,
+) -> impl IntoResponse {
+    let valid = fake_refresh_headers_valid(&headers)
+        && serde_json::from_str::<FakeRefreshRequest>(&body).is_ok_and(|request| {
+            request.grant_type == "refresh_token"
+                && request.scope == "openid email offline_access"
+                && request.client_id == "ownerapi"
+                && !request.refresh_token.trim().is_empty()
+        });
     if !valid {
         record(
             &state,
@@ -1664,8 +1788,10 @@ async fn serve_stream_session(
     let session_id = session.session_id;
 
     // A stream session is useful proof only when it starts with the exact
-    // TeslaMate subscription contract for the fixture vehicle.  Do not send a
-    // hello or telemetry for a malformed, wrong-tag, or widened field set.
+    // subscribe frame of C4 R8: four members, the fixture vehicle's tag, and
+    // the value equal to `STREAM_COLUMNS` joined per R15. Any other frame is
+    // recorded as a rejection and the socket is closed: no hello or telemetry
+    // for a malformed, wrong-tag, or widened field set.
     let subscribe = tokio::select! {
         received = socket.next() => received,
         changed = stream_interrupt.changed() => {
@@ -1706,8 +1832,40 @@ async fn serve_stream_session(
         None,
     );
     session.accept_subscription(tag.clone());
+    let script = state.inner.lock().expect("fake lock").stream_script.clone();
+    match &script {
+        StreamScript::Silent => {
+            session.set_disconnect_reason("scripted_silence");
+            // Hold the socket without reading or writing until the fake interrupts it.
+            let _ = stream_interrupt.changed().await;
+            return;
+        }
+        StreamScript::CloseAfterSubscribe => {
+            session.set_disconnect_reason("scripted_close");
+            let _ = socket.close(None).await;
+            return;
+        }
+        _ => {}
+    }
+    let hello = match &script {
+        StreamScript::Hello {
+            code,
+            connection_timeout,
+        } => {
+            let mut members = serde_json::Map::new();
+            members.insert("msg_type".to_owned(), json!("control:hello"));
+            if let Some(code) = code {
+                members.insert("code".to_owned(), json!(code));
+            }
+            if let Some(timeout) = connection_timeout {
+                members.insert("connection_timeout".to_owned(), json!(timeout));
+            }
+            serde_json::Value::Object(members).to_string()
+        }
+        _ => r#"{"msg_type":"control:hello","connection_timeout":0}"#.to_owned(),
+    };
     let hello_sent = tokio::select! {
-        result = socket.send(Message::Text(r#"{"msg_type":"control:hello","connection_timeout":0}"#.into())) => result.is_ok(),
+        result = socket.send(Message::Text(hello.into())) => result.is_ok(),
         changed = stream_interrupt.changed() => {
             let _ = changed;
             session.set_disconnect_reason("stream_unavailable");
@@ -1728,69 +1886,14 @@ async fn serve_stream_session(
         true,
         None,
     );
-
-    // Emit enough telemetry with numeric power so pre-online confirmation
-    // and drive/charge streaming succeed. Place the frames between the last
-    // returned Owner API sample and the next deterministic sample. This keeps
-    // reconnects newer than the durable stream watermark without letting
-    // stream telemetry overtake the next Owner API observation.
-    let (step, timestamps, previous_owner_odometer_miles, next_owner_odometer_miles) = {
-        let mut inner = state.inner.lock().expect("fake lock");
-        let step = ScenarioStep::ALL[inner.step_index.min(ScenarioStep::ALL.len() - 1)];
-        let next_owner = vehicle_data_timestamp_ms(step, inner.substep, inner.base_ts_ms);
-        let fresh =
-            stream_telemetry_timestamps(inner.last_owner_data_ts_ms, next_owner, inner.base_ts_ms);
-        let timestamps = if fresh.is_empty() {
-            inner.last_stream_timestamps.clone()
-        } else {
-            inner.last_stream_timestamps.clone_from(&fresh);
-            fresh
-        };
-        let next_owner_odometer_miles =
-            owner_odometer_miles(step, inner.substep, inner.odometer_offset_miles);
-        let previous_owner_odometer_miles = inner
-            .last_owner_odometer_miles
-            // Before the first Owner sample there is no measured interval. A
-            // stable value is the only truthful interpolation.
-            .unwrap_or(next_owner_odometer_miles);
-        (
-            step,
-            timestamps,
-            previous_owner_odometer_miles,
-            next_owner_odometer_miles,
-        )
-    };
-    let stream_sample_count = timestamps.len();
-    for (i, ts) in timestamps.into_iter().enumerate() {
-        let (speed, power, shift, lat, lng, soc) = match step {
-            ScenarioStep::DrivePositions => (
-                20 + i as i64,
-                15 + i as i64,
-                "D",
-                47.4979 + i as f64 * 0.001,
-                19.0402 + i as f64 * 0.001,
-                64,
-            ),
-            ScenarioStep::ChargeSamples => (0, -11, "P", 47.5, 19.05, 64 + i as i64),
-            _ => (0, 1, "P", 47.4979, 19.0402, 64),
-        };
-        // TeslaMate stream field order:
-        // speed,odometer,soc,elevation,est_heading,est_lat,est_lng,power,shift_state,range,est_range,heading
-        let value = format!(
-            "{speed},{},{soc},100,90,{lat},{lng},{power},{shift},220,210,90",
-            stream_odometer_miles(
-                previous_owner_odometer_miles,
-                next_owner_odometer_miles,
-                i,
-                stream_sample_count,
-            ),
-        );
-        let frame = format!(
-            r#"{{"msg_type":"data:update","tag":"{tag}","timestamp":{ts},"value":"{value}"}}"#,
-            tag = FIXTURE_VID,
-            ts = ts,
-            value = value
-        );
+    let telemetry_enabled = if let StreamScript::ErrorFrame { error_type, value } = &script {
+        let frame = json!({
+            "msg_type": "data:error",
+            "tag": FIXTURE_VID_TAG,
+            "error_type": error_type,
+            "value": value,
+        })
+        .to_string();
         let sent = tokio::select! {
             result = socket.send(Message::Text(frame.into())) => result.is_ok(),
             changed = stream_interrupt.changed() => {
@@ -1804,13 +1907,102 @@ async fn serve_stream_session(
             session.set_disconnect_reason("stream_send_failed");
             return;
         }
-        tokio::select! {
-            _ = tokio::time::sleep(Duration::from_millis(5)) => {}
-            changed = stream_interrupt.changed() => {
-                let _ = changed;
-                session.set_disconnect_reason("stream_unavailable");
-                let _ = socket.close(None).await;
+        false
+    } else {
+        true
+    };
+
+    if telemetry_enabled {
+        // Emit enough telemetry with frames that confirm the stream power gate
+        // (C4 R50) so the gated request and drive/charge streaming succeed. Place the frames between the last
+        // returned Owner API sample and the next deterministic sample. This keeps
+        // reconnects newer than the durable stream watermark without letting
+        // stream telemetry overtake the next Owner API observation.
+        let (step, timestamps, previous_owner_odometer_miles, next_owner_odometer_miles) = {
+            let mut inner = state.inner.lock().expect("fake lock");
+            let step = ScenarioStep::ALL[inner.step_index.min(ScenarioStep::ALL.len() - 1)];
+            let next_owner = vehicle_data_timestamp_ms(step, inner.substep, inner.base_ts_ms);
+            let fresh = stream_telemetry_timestamps(
+                inner.last_owner_data_ts_ms,
+                next_owner,
+                inner.base_ts_ms,
+            );
+            let timestamps = if fresh.is_empty() {
+                inner.last_stream_timestamps.clone()
+            } else {
+                inner.last_stream_timestamps.clone_from(&fresh);
+                fresh
+            };
+            let next_owner_odometer_miles =
+                owner_odometer_miles(step, inner.substep, inner.odometer_offset_miles);
+            let previous_owner_odometer_miles = inner
+                .last_owner_odometer_miles
+                // Before the first Owner sample there is no measured interval. A
+                // stable value is the only truthful interpolation.
+                .unwrap_or(next_owner_odometer_miles);
+            (
+                step,
+                timestamps,
+                previous_owner_odometer_miles,
+                next_owner_odometer_miles,
+            )
+        };
+        let stream_sample_count = timestamps.len();
+        for (i, ts) in timestamps.into_iter().enumerate() {
+            let (speed, power, shift, lat, lng, soc) = match step {
+                ScenarioStep::DrivePositions => (
+                    20 + i as i64,
+                    15 + i as i64,
+                    "D",
+                    47.4979 + i as f64 * 0.001,
+                    19.0402 + i as f64 * 0.001,
+                    64,
+                ),
+                ScenarioStep::ChargeSamples => (0, -11, "P", 47.5, 19.05, 64 + i as i64),
+                _ => (0, 1, "P", 47.4979, 19.0402, 64),
+            };
+            let value = stream_update_value(
+                ts,
+                speed,
+                stream_odometer_miles(
+                    previous_owner_odometer_miles,
+                    next_owner_odometer_miles,
+                    i,
+                    stream_sample_count,
+                ),
+                soc,
+                lat,
+                lng,
+                power,
+                shift,
+            );
+            let frame = format!(
+                r#"{{"msg_type":"data:update","tag":"{tag}","timestamp":{ts},"value":"{value}"}}"#,
+                tag = FIXTURE_VID,
+                ts = ts,
+                value = value
+            );
+            let sent = tokio::select! {
+                result = socket.send(Message::Text(frame.into())) => result.is_ok(),
+                changed = stream_interrupt.changed() => {
+                    let _ = changed;
+                    session.set_disconnect_reason("stream_unavailable");
+                    let _ = socket.close(None).await;
+                    return;
+                }
+            };
+            if !sent {
+                session.set_disconnect_reason("stream_send_failed");
                 return;
+            }
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(5)) => {}
+                changed = stream_interrupt.changed() => {
+                    let _ = changed;
+                    session.set_disconnect_reason("stream_unavailable");
+                    let _ = socket.close(None).await;
+                    return;
+                }
             }
         }
     }

@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! `control set-charge-cost` (C2-P4, R52 to R54, R53a): the `--mode` values,
-//! the deprecated aliases and the required-mode rule, the store call each mode
-//! makes and the document the command prints. Spec tests T37, T38 and T40 (as
-//! the command makes them), T41 (the usage error), T47 and T35 (the
-//! `--recalculate-missing-costs` wiring). Synthetic data only.
+//! `control set-charge-cost` (C2-P4, R52 to R54, R53a, R72): the `--mode`
+//! values, the `total` default of an absent `--mode`, the deprecated-alias
+//! mechanism, the store call each mode makes and the document the command
+//! prints. Spec tests T37, T38 and T40 (as the command makes them), T41 (the
+//! usage error), T47 (a) to (d) and T35 (the `--recalculate-missing-costs`
+//! wiring). Synthetic data only.
 
 use clap::Parser;
 use teslatlas_hub::db::{HubStore, SourceDescriptor, VehicleDescriptor};
@@ -277,21 +278,131 @@ fn r53_a_manual_total_may_be_negative_on_the_command_line() {
 }
 
 #[test]
-fn r53a_the_mode_is_required_in_this_release_and_the_error_names_the_modes() {
-    let error =
-        set_charge_cost(&["--charge-id", "7", "--cost", "18.4"]).expect_err("--mode is required");
-    let message = error.to_string();
-    assert!(message.contains("--mode"), "{message}");
-    for name in ["total", "per_kwh", "per_minute"] {
-        assert!(message.contains(name), "{message}");
+fn t47_a_the_three_old_values_are_current_names_with_no_deprecation_line() {
+    let cases = [
+        (
+            "total",
+            "18.4",
+            18.4,
+            "per_kwh",
+            Some(0.3),
+            "set_charge_cost",
+        ),
+        (
+            "per_kwh",
+            "0.25",
+            5.0,
+            "per_kwh",
+            Some(0.25),
+            "set_charge_cost_rate",
+        ),
+        (
+            "per_minute",
+            "0.25",
+            23.88,
+            "per_minute",
+            Some(0.25),
+            "set_charge_cost_rate",
+        ),
+    ];
+    for (mode, cost, stored_cost, billing, rate, call) in cases {
+        let (_, _, choice) =
+            set_charge_cost(&["--charge-id", "7", "--cost", cost, "--mode", mode]).expect("parses");
+        assert_eq!(choice.deprecated_alias, None, "{mode} is not an alias");
+        let fixture = fixture();
+        let (result, diagnostics) = run(
+            &fixture,
+            &["--charge-id", "7", "--cost", cost, "--mode", mode],
+        );
+        let document = result.expect(call);
+        assert_eq!(diagnostics, "", "{mode}: stderr stays empty");
+        assert_eq!(document["status"], "updated", "{mode}");
+        assert_eq!(document["charge"]["cost"], stored_cost, "{mode}");
+        assert_eq!(document["charge"]["billing_type"], billing, "{mode}");
+        assert_eq!(document["charge"]["cost_per_unit"], rate.unwrap(), "{mode}");
+        if mode == "total" {
+            // The total call leaves the tariff copy unchanged.
+            assert_eq!(document["charge"]["session_fee"], 1.0);
+        } else {
+            // A rate call replaces the copy with the rate alone.
+            assert!(document["charge"]["session_fee"].is_null(), "{mode}");
+        }
     }
+}
+
+#[test]
+fn t47_b_an_absent_mode_means_total_and_is_never_required() {
+    let (charge_id, cost, choice) =
+        set_charge_cost(&["--charge-id", "7", "--cost", "18.4"]).expect("--mode is optional");
+    assert_eq!((charge_id, cost), (7, 18.4));
+    assert_eq!(
+        choice,
+        ChargeCostModeChoice {
+            mode: ChargeCostMode::Total,
+            deprecated_alias: None
+        },
+        "the default is the current name, not an alias"
+    );
+    // The same call, row, document and (empty) stderr as `--mode total`.
+    let explicit = fixture();
+    let (explicit_result, explicit_diagnostics) = run(
+        &explicit,
+        &["--charge-id", "7", "--cost", "18.4", "--mode", "total"],
+    );
+    let absent = fixture();
+    let (absent_result, absent_diagnostics) = run(&absent, &["--charge-id", "7", "--cost", "18.4"]);
+    let absent_document = absent_result.expect("absent mode");
+    assert_eq!(absent_diagnostics, "");
+    assert_eq!(explicit_diagnostics, "");
+    assert_eq!(absent_document["charge"]["cost"], 18.4);
+    assert_eq!(
+        absent_document["charge"]["session_fee"], 1.0,
+        "copy unchanged"
+    );
+    let mut expected = explicit_result.expect("explicit total");
+    // The two stores are different, so compare the documents without the
+    // vehicle id.
+    expected["vehicleId"] = absent_document["vehicleId"].clone();
+    assert_eq!(absent_document, expected);
+    assert_eq!(mutation_count(&absent), 1);
+    // The help text names `total` as the default.
+    let mut command = <Cli as clap::CommandFactory>::command();
+    let control = command.find_subcommand_mut("control").expect("control");
+    let set = control
+        .find_subcommand_mut("set-charge-cost")
+        .expect("set-charge-cost");
+    let help = set.render_long_help().to_string();
+    assert!(help.contains("total` (the default)"), "{help}");
     // The charge id and cost keep their own checks.
     assert!(set_charge_cost(&["--charge-id", "0", "--cost", "1", "--mode", "total"]).is_err());
     assert!(set_charge_cost(&["--charge-id", "7", "--mode", "total"]).is_err());
 }
 
 #[test]
-fn t47_a_deprecated_alias_means_its_new_mode_and_says_so_once() {
+fn t47_c_values_the_old_release_also_rejected_stay_usage_errors_before_any_store_call() {
+    let fixture = fixture();
+    for text in [
+        "TOTAL", "Total", "per-kwh", "perkwh", "per_hour", "hourly", "",
+    ] {
+        let error = set_charge_cost(&["--charge-id", "7", "--cost", "1", "--mode", text])
+            .expect_err("not a mode");
+        let message = error.to_string();
+        for name in ["total", "per_kwh", "per_minute"] {
+            assert!(message.contains(name), "{text:?}: {message}");
+        }
+    }
+    // No store call was made: row 7 is unchanged and nothing was recorded.
+    assert_eq!(mutation_count(&fixture), 0);
+    let row = fixture
+        .store
+        .materialised_charge_for_vehicle(fixture.vehicle, 7)
+        .expect("read")
+        .expect("row");
+    assert_eq!(row.cost, None);
+}
+
+#[test]
+fn t47_d_a_deprecated_alias_means_its_new_mode_and_says_so_once() {
     // The old release's value set is the dirty side's to supply (C2 section 12
     // item 9) and the shipped table is empty until it is, so the mechanism is
     // tested with a synthetic table: one alias for each of the three modes.
@@ -320,6 +431,12 @@ fn t47_a_deprecated_alias_means_its_new_mode_and_says_so_once() {
             "{line}"
         );
     }
+    // The exact line of the deprecation rule (R72).
+    assert_eq!(
+        deprecated_charge_cost_mode_line("synthetic-kwh", ChargeCostMode::PerKwh),
+        "teslatlas-hub: --mode synthetic-kwh is deprecated and will stop working in the next \
+         release; use --mode per_kwh"
+    );
     // An old value with no such meaning is a usage error naming the modes.
     let error = parse_charge_cost_mode_in("synthetic-other", &aliases).expect_err("not listed");
     assert!(error.contains("total, per_kwh or per_minute"), "{error}");
@@ -339,10 +456,11 @@ fn mode_name(mode: ChargeCostMode) -> &'static str {
 }
 
 #[test]
-fn t47_an_alias_makes_the_store_call_of_its_new_mode_with_one_stderr_line() {
+fn t47_d_an_alias_makes_the_store_call_of_its_new_mode_with_one_stderr_line() {
     let fixture = fixture();
     let aliases = [("synthetic-kwh", ChargeCostMode::PerKwh)];
     let choice = parse_charge_cost_mode_in("synthetic-kwh", &aliases).expect("alias");
+    assert_eq!(choice.deprecated_alias.as_deref(), Some("synthetic-kwh"));
     let mut diagnostics = Vec::new();
     let document = run_set_charge_cost(
         &fixture.store,
@@ -357,15 +475,15 @@ fn t47_an_alias_makes_the_store_call_of_its_new_mode_with_one_stderr_line() {
     assert_eq!(document["charge"]["cost"], 5.0);
     assert_eq!(document["charge"]["cost_per_unit"], 0.25);
     let text = String::from_utf8(diagnostics).expect("UTF-8");
-    assert_eq!(text.lines().count(), 1, "{text}");
-    assert!(
-        text.contains("synthetic-kwh") && text.contains("--mode per_kwh"),
-        "{text}"
+    assert_eq!(
+        text,
+        "teslatlas-hub: --mode synthetic-kwh is deprecated and will stop working in the next \
+         release; use --mode per_kwh\n"
     );
 }
 
 #[test]
-fn the_shipped_alias_table_is_empty_until_the_dirty_side_supplies_the_old_values() {
+fn t47_d_the_shipped_alias_table_is_empty_because_no_old_value_differs_from_a_current_name() {
     assert!(crate::DEPRECATED_CHARGE_COST_MODES.is_empty());
     // With it empty, only the three current names parse.
     assert!(set_charge_cost(&["--charge-id", "7", "--cost", "1", "--mode", "kwh"]).is_err());

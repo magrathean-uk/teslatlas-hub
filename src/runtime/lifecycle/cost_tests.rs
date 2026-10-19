@@ -661,3 +661,114 @@ fn r40_the_row_tariff_is_present_iff_the_row_names_a_billing_type() {
         None
     );
 }
+
+/// C2 R43a, R44a (Codex R10): the close and the fill fold a charge's samples into
+/// four facts one row at a time, in the order the store returns them, with no sorted
+/// copy. The facts must give what the rule gives over the sorted list, whatever the
+/// order and for ties of time, so the check below states the rule again over a list
+/// it sorts itself and compares it with every rotation, the reversal and a number of
+/// shuffles of the same samples.
+#[test]
+fn r43a_r44a_the_folded_facts_equal_the_rule_over_the_sorted_samples() {
+    let m5 = 5 * MIN_MS;
+    let h3 = 3 * 60 * MIN_MS;
+    let samples = vec![
+        counter_sample(1, 0, Some(1.0)),
+        counter_sample(2, m5, None),
+        // The same time as sample 2: the id breaks the tie.
+        counter_sample(3, m5, Some(7.5)),
+        counter_sample(4, 2 * m5, Some(f64::NAN)),
+        counter_sample(5, h3, Some(3.0)),
+        counter_sample(6, h3 + m5, Some(-4.0)),
+        counter_sample(7, h3 + 2 * m5, Some(9.25)),
+    ];
+    let reference = |charge: &ProjectionCharge, samples: &[ProjectionChargeSample]| {
+        let mut sorted = samples.to_vec();
+        sorted.sort_by_key(|sample| (sample.timestamp_ms, sample.id));
+        let span = match (sorted.first(), sorted.last()) {
+            (Some(first), Some(last)) => {
+                let gap_before_last = sorted
+                    .len()
+                    .checked_sub(2)
+                    .map(|index| last.timestamp_ms - sorted[index].timestamp_ms);
+                !(first.timestamp_ms - charge.start_date_ms > K_INT_MAX_MS
+                    || gap_before_last.is_some_and(|gap| gap > K_INT_MAX_MS)
+                    || charge
+                        .end_date_ms
+                        .is_some_and(|end| end - last.timestamp_ms > K_INT_MAX_MS))
+            }
+            _ => true,
+        };
+        let largest = sorted
+            .iter()
+            .filter_map(|sample| sample.charge_energy_added_kwh)
+            .filter(|counter| counter.is_finite() && *counter >= 0.0)
+            .fold(None::<f64>, |best, counter| {
+                Some(best.map_or(counter, |best| best.max(counter)))
+            });
+        let continues = charge
+            .charge_energy_added
+            .filter(|added| added.is_finite())
+            .is_some_and(|added| largest.is_some_and(|m| m - added >= K_ENERGY_EPS_KWH));
+        (span, continues)
+    };
+    let mut orders: Vec<Vec<ProjectionChargeSample>> = Vec::new();
+    for rotation in 0..samples.len() {
+        let mut rotated = samples.clone();
+        rotated.rotate_left(rotation);
+        orders.push(rotated);
+    }
+    let mut reversed = samples.clone();
+    reversed.reverse();
+    orders.push(reversed);
+    let mut state = 0x2545_f491_u64;
+    for _ in 0..40 {
+        let mut shuffled = samples.clone();
+        for index in (1..shuffled.len()).rev() {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            shuffled.swap(index, (state % (index as u64 + 1)) as usize);
+        }
+        orders.push(shuffled);
+    }
+    // Prefixes too: a two-sample, a one-sample and an empty list.
+    orders.push(samples[..2].to_vec());
+    orders.push(samples[..1].to_vec());
+    orders.push(Vec::new());
+    for charge in [
+        spanned(Some(h3 + 2 * m5)),
+        spanned(Some(h3 + 2 * m5 + K_INT_MAX_MS + 1)),
+        spanned(Some(h3 + 2 * m5 + K_INT_MAX_MS)),
+        spanned(None),
+        {
+            let mut charge = spanned(Some(h3 + 2 * m5));
+            charge.start_date_ms = T0 - K_INT_MAX_MS - 1;
+            charge
+        },
+        {
+            let mut charge = spanned(Some(h3 + 2 * m5));
+            charge.charge_energy_added = Some(9.0);
+            charge
+        },
+        {
+            let mut charge = spanned(Some(h3 + 2 * m5));
+            charge.charge_energy_added = Some(f64::NAN);
+            charge
+        },
+    ] {
+        for order in &orders {
+            let facts = ChargeSampleFacts::of(order);
+            assert_eq!(
+                (
+                    charge_span_observed_from(&charge, &facts),
+                    charge_continues_plug_in_from(&charge, &facts)
+                ),
+                reference(&charge, order),
+                "{} samples, end {:?}",
+                order.len(),
+                charge.end_date_ms
+            );
+        }
+    }
+}

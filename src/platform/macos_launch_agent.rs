@@ -529,14 +529,18 @@ fn provider_credentials_are_usable(
             )?;
         }
         crate::config::CollectorProvider::Fleet => {
-            crate::fleet_credentials::validate_stored_fleet_credentials(store, data_dir).map_err(
-                |error| {
+            // Diagnostic admission (C3 R47, B2 clarification 3): the pair, key,
+            // ciphertext, generation, claims and scopes must be sound, but an
+            // identified unresolved refresh passes: the Hub then starts as a
+            // running reconnect stop and sends nothing. The inspection reads only.
+            crate::fleet_credentials::inspect_stored_fleet_credentials(store, data_dir)
+                .map(drop)
+                .map_err(|error| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
                         format!("Fleet credentials are unusable: {error}"),
                     )
-                },
-            )?;
+                })?;
         }
     }
     Ok(())

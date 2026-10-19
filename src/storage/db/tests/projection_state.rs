@@ -1886,6 +1886,19 @@ fn schema_35_upgrade_recovers_v2_binding_from_immutable_base_not_mutable_source(
         binding,
         "upgrade must use the stored base identity and packed source car"
     );
+    // The decoded copy of the base pack that the recovery inspected is transient: gone,
+    // and counted (create, write, sync, removal) at the helper it goes through (B2 fix
+    // round, P3b fix 5, R-P3bF5-3).
+    let inspected: Vec<_> = crate::platform::file_attempts::entries_under(upgraded.packs_dir())
+        .into_iter()
+        .filter(|(path, _)| {
+            path.file_name()
+                .is_some_and(|name| name.to_string_lossy().starts_with(".legacy-binding-inspection-"))
+        })
+        .collect();
+    assert_eq!(inspected.len(), 1, "{inspected:?}");
+    assert_eq!(inspected[0].1, 4, "{inspected:?}");
+    assert!(!inspected[0].0.exists(), "the inspection file is removed");
     assert!(
         upgraded
             .lineage_manifest_for_vehicle(vehicle.vehicle_id)

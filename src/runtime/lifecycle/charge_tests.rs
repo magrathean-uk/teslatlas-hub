@@ -157,15 +157,15 @@ fn sframe(id: i64, t: i64, soc: i64, odometer_mi: Option<f64>) -> LifecycleSampl
         timestamp_ms: t,
         speed: None,
         odometer: odometer_mi,
-        soc: Some(soc),
+        soc: Some(soc as f64),
         elevation: None,
         est_heading: None,
         est_lat: Some(10.0),
         est_lng: Some(20.0),
         power: None,
         shift_state: None,
-        range: Some(200),
-        est_range: Some(190),
+        range: Some(200.0),
+        est_range: Some(190.0),
         heading: None,
     };
     LifecycleSample {

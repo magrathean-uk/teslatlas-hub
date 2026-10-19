@@ -477,7 +477,9 @@ fn fixture_lineage(root: &Path) -> (LineageManifestV2, Vec<(String, Vec<u8>)>) {
         spoiler_type: None,
         firmware_version: None,
         efficiency_wh_per_km: None,
-        settings: ProjectionCarSettings::default(),
+        // The frozen fixture packs were generated with the source column
+        // defaults, which are not the live defaults (C3 R63).
+        settings: ProjectionCarSettings::source_column_defaults(),
     };
     let second_delta = ProjectionDelta {
         binding: binding(),

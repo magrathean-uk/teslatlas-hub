@@ -1192,72 +1192,19 @@ fn t45_the_fill_and_manual_entry_touch_only_the_asked_vehicle() {
     ));
 }
 
-/// Log capture for T44. The capture is a process-wide subscriber installed
-/// once, with one buffer per armed test thread. A scoped subscriber would not
-/// be reliable here: while exactly one scoped subscriber exists, a callsite
-/// that another test thread reaches first is registered against that thread's
-/// own (empty) view and is then cached as disabled for every thread, so the
-/// events of this test would be lost whenever other store tests run beside it.
-/// A global subscriber is seen by every thread, and a thread that has not armed
-/// a buffer writes to none.
-static FILL_LOG_BUFFERS: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<std::thread::ThreadId, Vec<u8>>>,
-> = std::sync::LazyLock::new(Default::default);
-
-#[derive(Clone, Copy)]
-struct FillLogs;
-
-impl std::io::Write for FillLogs {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        if let Some(captured) = FILL_LOG_BUFFERS
-            .lock()
-            .expect("log buffers")
-            .get_mut(&std::thread::current().id())
-        {
-            captured.extend_from_slice(buffer);
-        }
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for FillLogs {
-    type Writer = FillLogs;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        *self
-    }
-}
-
-/// Install the capture subscriber (once) and arm this thread's buffer.
+/// Log capture for T44: the process-wide capture shared with the collector's log
+/// tests (`crate::test_log_capture`), armed for this thread. A process can install
+/// one global subscriber only, and a scoped one would not be reliable here: while
+/// exactly one scoped subscriber exists, a callsite that another test thread
+/// reaches first is registered against that thread's own (empty) view and is then
+/// cached as disabled for every thread.
 fn arm_fill_log_capture() {
-    static INSTALL: std::sync::Once = std::sync::Once::new();
-    INSTALL.call_once(|| {
-        tracing::subscriber::set_global_default(
-            tracing_subscriber::fmt()
-                .with_max_level(tracing::Level::TRACE)
-                .with_writer(FillLogs)
-                .finish(),
-        )
-        .expect("no other test installs a global subscriber");
-    });
-    FILL_LOG_BUFFERS
-        .lock()
-        .expect("log buffers")
-        .insert(std::thread::current().id(), Vec::new());
+    crate::test_log_capture::arm();
 }
 
 /// The text this thread logged since `arm_fill_log_capture`.
 fn take_fill_logs() -> String {
-    let captured = FILL_LOG_BUFFERS
-        .lock()
-        .expect("log buffers")
-        .remove(&std::thread::current().id())
-        .expect("the thread was armed");
-    String::from_utf8(captured).expect("log text is UTF-8")
+    crate::test_log_capture::disarm()
 }
 
 #[test]

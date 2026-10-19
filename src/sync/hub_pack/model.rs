@@ -333,19 +333,130 @@ pub struct ProjectionDeltaPackRequest<'a> {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProjectionCarSettings {
+    /// Collect this car (API name `collection_enabled`, C3 R67). Off holds the
+    /// car in `Disabled`: no requests and no observations (C3 R62).
     pub enabled: bool,
+    /// Use the legacy or provider push stream (API name `streaming_enabled`).
+    /// Ignored in Fleet polling (C3 R64).
     pub use_streaming_api: bool,
+    /// Idle window in minutes before the Hub stops reading a parked car (API
+    /// name `sleep_after_idle_min`, C3 R31).
     pub suspend_after_idle_min: i64,
+    /// Length of a suspension in minutes, in which the car is left to fall
+    /// asleep (API name `sleep_window_min`, C3 R32 and R33).
     pub suspend_min: i64,
+    /// `suspend_min` is final (API name `sleep_window_min_resolved`, C3 R60).
     #[serde(default = "default_suspend_min_resolved")]
     pub suspend_min_resolved: bool,
+    /// True means an unlocked car counts as in use, so a suspension requires
+    /// it locked (API name `sleep_requires_locked`, C3 R29).
     pub req_not_unlocked: bool,
+    /// Supercharger sessions cost nothing (C2 R41).
     pub free_supercharging: bool,
+    /// The pack is LFP; it changes no C2 rule in v7 (C2 R62a).
     pub lfp_battery: bool,
 }
 
+/// C3 R58: default idle window before the Hub stops reading a parked car, in
+/// minutes. The window is the time in which a parked car's next use most
+/// often begins (plugging in after arrival, the return leg of a short
+/// errand), and while the Hub reads the car cannot sleep, so a longer window
+/// costs battery and, in Fleet polling, money (C3 R31). Gate M-S3 checks it
+/// against the Hub's own history. Equal to `idle_suspend_after_seconds` / 60,
+/// the ignored `[collector]` key's default (C3 R21).
+pub(crate) const LIVE_SUSPEND_AFTER_IDLE_MIN: i64 = 15;
+
+/// C3 R58: default length of a suspension in minutes, **provisional** until
+/// gate M-S1 measures how long a car needs without requests to fall asleep
+/// (C3 R39). The sleep policy rests on one inequality, `suspend_min` greater
+/// than that time, because the Hub reads once at the end of every suspension
+/// (C3 R33); a value well above the settling time keeps it on the safe side,
+/// and erring long only delays REST-only detection of a drive by a car that
+/// never slept, while erring short keeps cars awake. No model dependence
+/// (C3 R39, R60).
+pub(crate) const LIVE_SUSPEND_MIN: i64 = 30;
+
+/// C3 R61: smallest effective `suspend_after_idle_min` and `suspend_min`,
+/// one minute. A stored value of zero or less (validation rejects it for
+/// owner edits, but an old row may hold one) would make the window vanish.
+pub(crate) const EFFECTIVE_SETTING_MIN_MINUTES: i64 = 1;
+
+/// C3 R61: largest effective `suspend_after_idle_min` and `suspend_min`, one
+/// day. A day is a generous upper bound for either setting and keeps the
+/// scheduler's millisecond arithmetic far from overflow.
+pub(crate) const EFFECTIVE_SETTING_MAX_MINUTES: i64 = 1_440;
+
 impl Default for ProjectionCarSettings {
+    /// One default for every path that is not the importer (C3 R59): live
+    /// discovery, `car_json` blobs that lack settings and the storage
+    /// fallbacks all agree with `new_live`. The importer takes
+    /// `source_column_defaults` instead (C3 R63).
     fn default() -> Self {
+        Self::new_live()
+    }
+}
+
+fn default_suspend_min_resolved() -> bool {
+    // A blob written before the flag existed held a final value, as the
+    // column's `DEFAULT 1` already records (C3 R59).
+    true
+}
+
+impl ProjectionCarSettings {
+    /// Hub-native defaults for a car the Hub discovers live (C3 R58).
+    ///
+    /// - `enabled`: a car the owner selected for collection should be
+    ///   collected; stopping is an explicit owner action.
+    /// - `use_streaming_api`: Legacy with its stream is the default path; the
+    ///   stream gives near real-time positions without request cost and is
+    ///   the main use evidence that lets a car sleep (C3 R34 to R36). It has
+    ///   no effect in Fleet polling (C3 R64).
+    /// - `suspend_after_idle_min` and `suspend_min`: the two constants above.
+    /// - `suspend_min_resolved`: true, the value is final, so no model lookup
+    ///   is needed (C3 R60).
+    /// - `req_not_unlocked`: false; many owners leave a parked car unlocked at
+    ///   home, and counting that as use would keep such a car awake for as
+    ///   long as it stays unlocked (C3 R29); owners who want it opt in.
+    /// - `free_supercharging`: false; most cars pay, a wrong `false` shows a
+    ///   cost the owner can correct, a wrong `true` hides a real cost.
+    /// - `lfp_battery`: false; the chemistry is not in the requested Tesla
+    ///   fields, so the owner sets it (it changes no C2 rule in v7, C2 R62a).
+    pub fn new_live() -> Self {
+        Self {
+            enabled: true,
+            use_streaming_api: true,
+            suspend_after_idle_min: LIVE_SUSPEND_AFTER_IDLE_MIN,
+            suspend_min: LIVE_SUSPEND_MIN,
+            suspend_min_resolved: true,
+            req_not_unlocked: false,
+            free_supercharging: false,
+            lfp_battery: false,
+        }
+    }
+
+    /// `suspend_after_idle_min` as the scheduler uses it: clamped to 1..=1440
+    /// minutes (C3 R61). Per-car settings are the owner's control and the one source of the
+    /// idle policy; the `[collector]` key `idle_suspend_after_seconds` is
+    /// ignored.
+    pub fn effective_suspend_after_idle_min(&self) -> i64 {
+        self.suspend_after_idle_min
+            .clamp(EFFECTIVE_SETTING_MIN_MINUTES, EFFECTIVE_SETTING_MAX_MINUTES)
+    }
+
+    /// `suspend_min` as the scheduler uses it, clamped like
+    /// [`Self::effective_suspend_after_idle_min`] (C3 R61).
+    pub fn effective_suspend_min(&self) -> i64 {
+        self.suspend_min
+            .clamp(EFFECTIVE_SETTING_MIN_MINUTES, EFFECTIVE_SETTING_MAX_MINUTES)
+    }
+
+    /// The source database's column defaults, which the importer applies only
+    /// where a source row leaves a value absent (C3 R63, brief decision 7).
+    /// Imported history is copied, never recomputed, so these are the values
+    /// the importer already carried for the source schema's public column
+    /// defaults and are not a decision of the live collector. `suspend_min` is
+    /// final (`suspend_min_resolved` true) for an imported row.
+    pub fn source_column_defaults() -> Self {
         Self {
             enabled: true,
             use_streaming_api: true,
@@ -355,19 +466,6 @@ impl Default for ProjectionCarSettings {
             req_not_unlocked: false,
             free_supercharging: false,
             lfp_battery: false,
-        }
-    }
-}
-
-fn default_suspend_min_resolved() -> bool {
-    true
-}
-
-impl ProjectionCarSettings {
-    pub fn new_live() -> Self {
-        Self {
-            suspend_min_resolved: false,
-            ..Self::default()
         }
     }
 }
@@ -574,19 +672,6 @@ pub fn normalize_tesla_model_code(value: &str) -> String {
         "Cybertruck".to_owned()
     } else {
         trimmed.to_owned()
-    }
-}
-
-pub fn teslamate_suspend_min_default(
-    model: Option<&str>,
-    trim_badging: Option<&str>,
-    marketing_name: Option<&str>,
-) -> Option<i64> {
-    match normalize_tesla_model_code(model?).as_str() {
-        "3" | "Y" | "Cybertruck" => Some(12),
-        "S" | "X" if trim_badging.is_none() || marketing_name.is_some() => Some(12),
-        "S" | "X" => Some(21),
-        _ => None,
     }
 }
 

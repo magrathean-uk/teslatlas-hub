@@ -3,6 +3,47 @@
 All notable released changes are recorded here. From 2026.36.1, Hub follows
 [calendar versioning](versioning.md): `YEAR.WEEK.REVISION`.
 
+## Unreleased
+
+- Separated service readiness from collection attention. `/readyz` keeps its published
+  bodies and six reasons; status, doctor and the Mac app show the one condition you can
+  fix, including a usable sign-in that must be renewed, an unknown Fleet token refresh and
+  a broken collector cadence.
+- Loading a configuration no longer refuses a collector cadence that breaks a rule. An
+  otherwise eligible Serve waits, holding its lease and collecting nothing, until the
+  setting is corrected and the service restarted; a bounded `observe` refuses at once.
+- Collector defaults changed: driving reads every 10 s (was 2.5 s), charging every 30 s
+  (was 5 s), the vehicle list every 300 s (was 60 s), state checks of a sleeping car every
+  30 s (was 21 min), updating every 120 s (was 15 s), request timeout 15 s (was 20 s),
+  longest back-off 300 s (was 900 s). An owner relying on the defaults collects at a
+  different density.
+- Fleet polling now follows `[collector.fleet_polling]` (30, 120, 300 and 120 s) with a
+  default monthly cap of 1,000 cents, which stops collection around day 14 of the month.
+- A Legacy token without a readable issuer needs `stream_region`; a non-Tesla
+  `owner_api_base_url` is Provider mode and needs `[collector.legacy_auth] token_url`.
+  Otherwise the collector sends nothing (`collector_auth_configuration_error`).
+- New commands `collector retry`, `collector resume <vehicle UUID>` and
+  `collector gaps acknowledge`.
+- A `max_backoff_seconds` at or above `offline_drive_timeout_seconds` (the previous
+  default of 900, the old guide's example, or this release's default of 300 under a lower
+  timeout) is moved to one second below it, with one `config_value_clamped` notice, for
+  this release. The other limits now enforced
+  are errors: `driving_poll_milliseconds` below 1000, `request_timeout_seconds` above 120,
+  charging intervals of 600 s or more, and session intervals at or above the offline
+  timeout.
+- A Hub restored from a backup older than its last token renewal must sign in again and
+  shows `collector_auth_terminal` until it does.
+- Readers use the loaded configuration, and the sign-in state in force now (new
+  credentials, a refusal's mode and the token's usability), without writing anything.
+- Documented the restore of Fleet request counts and the `store_unavailable` sign-in
+  reason.
+- A start that changes the mode, the provider or credential identity lifts a standing
+  refusal in one transaction, Fleet included, and a refusal does not come back when you
+  return to the earlier mode; a waiting cadence fault lifts nothing. A resident vehicle
+  action is refused while a refusal for the configured mode stands. A Fleet token refresh
+  with an unknown outcome no longer stops the service from starting: it runs as a stopped
+  collector until the credentials are reconnected.
+
 ## 2026.36.1 — 2026-09-05
 
 - Redesigned the macOS AppKit interface, native windows, keyboard navigation,

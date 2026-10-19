@@ -9,6 +9,7 @@ impl StagedFile {
     fn create(directory: &Path, extension: &str) -> Result<Self, ProjectionPackError> {
         for _ in 0..32 {
             let path = directory.join(format!("{}.{}.tmp", Uuid::new_v4(), extension));
+            crate::platform::file_attempts::note(&path);
             match OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -48,6 +49,7 @@ impl StagedFile {
 impl Drop for StagedFile {
     fn drop(&mut self) {
         if self.cleanup_on_drop {
+            crate::platform::file_attempts::note(&self.path);
             let _ = fs::remove_file(&self.path);
         }
     }

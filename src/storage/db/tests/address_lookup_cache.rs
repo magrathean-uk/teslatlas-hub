@@ -508,7 +508,7 @@ fn a_v68_store_migrates_and_its_old_lookup_rows_stay_readable_but_are_never_matc
 
     let migrated = HubStore::initialize(temporary.path()).unwrap();
     let connection = migrated.open().unwrap();
-    assert_eq!(schema_version(&connection).unwrap(), 69);
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     connection
         .execute_batch("PRAGMA foreign_key_check;")
         .unwrap();

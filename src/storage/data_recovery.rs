@@ -18,7 +18,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use rustix::fs::{Mode, OFlags, open, statvfs};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::{Digest, Sha256};
@@ -44,6 +44,10 @@ const LEGACY_COMPLETION_KIND: &str = "teslatlas-hub-data-backup-complete-v3";
 const LEGACY_BACKUP_SCOPE: &str = "hub_data_and_pairing_without_keys";
 const LEGACY_MANIFEST_NAME: &str = "backup-v3.json";
 const COMPLETION_NAME: &str = "BACKUP_COMPLETE";
+const STATUS_DATA_RESTORED: &str = "data_restored";
+/// Carried by a successful restore report only (C3 R7, R25, R27): the restore
+/// returns the Fleet counts and reservations of the backup and forces no cap.
+const FLEET_REQUEST_COUNTS_NOTICE: &str = "Fleet request counts and reservations come from the backup. A restore from earlier in the same UTC calendar month can undercount requests already billed and allow the Hub's local monthly cap to be exceeded. No cap has been forced. Tesla's billing remains authoritative.";
 const DATA_DIRECTORY: &str = "data";
 const CATALOGUE_MEMBER: &str = "data/hub.sqlite";
 const PACK_DIRECTORY: &str = "data/packs/sha256";
@@ -196,6 +200,11 @@ pub struct DataRecoveryReport {
     pub clean_host_ready: bool,
     pub collector_authority: &'static str,
     pub excluded_host_state: Vec<&'static str>,
+    /// Present only on a successful restore (C3 R7, R25, R27): the Fleet request
+    /// counts and reservations come from the backup, and a restore from earlier
+    /// in the same UTC month can undercount requests already billed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fleet_request_counts_notice: Option<&'static str>,
 }
 
 struct StagingDirectory {
@@ -472,7 +481,7 @@ pub fn restore_data_backup(
     validate_restored_data_tree(&staging.path, &manifest.members, true)?;
     sync_restored_data(&staging.path, &manifest.members)?;
 
-    let report = report("data_restored", &destination, &manifest)?;
+    let report = report(STATUS_DATA_RESTORED, &destination, &manifest)?;
     staging.publish(&destination)?;
     Ok(report)
 }
@@ -513,6 +522,8 @@ fn report(
         clean_host_ready: false,
         collector_authority: "absent",
         excluded_host_state: EXCLUDED_HOST_STATE.to_vec(),
+        fleet_request_counts_notice: (status == STATUS_DATA_RESTORED)
+            .then_some(FLEET_REQUEST_COUNTS_NOTICE),
     })
 }
 
@@ -699,9 +710,16 @@ fn protect_payload_tree(payload: &Path) -> Result<(), DataRecoveryError> {
 }
 
 fn seal_staged_catalogue(payload: &Path) -> Result<(), DataRecoveryError> {
+    // The wall clock is sampled once: it is the creation time of the stop gap
+    // that the sealing writes (C3 R8). The gap itself starts at the retained
+    // lease's heartbeat, whatever this time is.
+    seal_staged_catalogue_at(payload, current_epoch_ms()?)
+}
+
+fn seal_staged_catalogue_at(payload: &Path, sealed_at_ms: i64) -> Result<(), DataRecoveryError> {
     let catalogue = payload.join("hub.sqlite");
     require_regular_file(&catalogue, "staged backup catalogue")?;
-    let connection = Connection::open_with_flags(
+    let mut connection = Connection::open_with_flags(
         &catalogue,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
@@ -714,18 +732,31 @@ fn seal_staged_catalogue(payload: &Path) -> Result<(), DataRecoveryError> {
     // from their parents, but the pairing authority must not depend on
     // `foreign_keys` being on (the pragma is a no-op inside a transaction, so
     // it precedes BEGIN).
+    // A retained lease is evidence of a silence, so it becomes a stop gap in
+    // the same transaction that removes it (C3 R8): the gap and the removal of
+    // every host authority commit together or not at all, and the copy's first
+    // collector start closes the gap instead of recording a second downtime.
     connection
+        .execute_batch("PRAGMA foreign_keys = ON;")
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    let transaction = connection
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    transaction
         .execute_batch(
-            "PRAGMA foreign_keys = ON;
-             BEGIN IMMEDIATE;
-             DELETE FROM device_vehicle_grants;
+            "DELETE FROM device_vehicle_grants;
              DELETE FROM pairing_challenge_vehicles;
              DELETE FROM paired_device_token_grace;
              DELETE FROM pairing_challenges;
-             DELETE FROM paired_devices;
-             DELETE FROM supervised_collector_lease;
-             COMMIT;",
+             DELETE FROM paired_devices;",
         )
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    HubStore::seal_collector_lease_gap_in_transaction(&transaction, sealed_at_ms)?;
+    transaction
+        .execute("DELETE FROM supervised_collector_lease", [])
+        .map_err(DataRecoveryError::CatalogueIdentity)?;
+    transaction
+        .commit()
         .map_err(DataRecoveryError::CatalogueIdentity)?;
     let journal_mode: String = connection
         .query_row("PRAGMA journal_mode = DELETE", [], |row| row.get(0))

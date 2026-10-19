@@ -185,14 +185,63 @@ pub fn persist_fleet_setup_credentials(
 }
 
 /// Validate persisted Fleet credentials without claiming refresh ownership or
-/// changing their stored generation. Used by read-only service preflight.
+/// changing their stored generation. This is the operational predicate: any
+/// unresolved refresh, identified or not, fences the stored input and the
+/// credential cannot collect. Production and GUI preflight use the diagnostic
+/// admission of [`inspect_stored_fleet_credentials`] instead, which lets an
+/// identified unresolved refresh start as a running reconnect stop.
 pub fn validate_stored_fleet_credentials(
     store: &HubStore,
     data_dir: &Path,
 ) -> Result<(), FleetCredentialError> {
+    validate_stored_fleet_credentials_after(store, data_dir, || {})
+}
+
+/// [`validate_stored_fleet_credentials`] with a seam between its first
+/// unresolved-refresh check and the inspection, where a refresh can begin
+/// concurrently. The inspection's own finding counts: a refresh it reports as
+/// unresolved fences the input, so the operational answer is never success.
+fn validate_stored_fleet_credentials_after(
+    store: &HubStore,
+    data_dir: &Path,
+    after_first_check: impl FnOnce(),
+) -> Result<(), FleetCredentialError> {
     if store.has_unresolved_fleet_refresh()? {
         return Err(FleetCredentialError::RotationOutcomeUnknown);
     }
+    after_first_check();
+    if inspect_stored_fleet_credentials(store, data_dir)?.unresolved_refresh {
+        return Err(FleetCredentialError::RotationOutcomeUnknown);
+    }
+    Ok(())
+}
+
+/// What a read-only inspection of the stored Fleet credential found once its
+/// independent integrity held.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FleetCredentialInspection {
+    /// An identified refresh whose outcome is unknown: a started token receipt
+    /// bound to this pair's generation, with its input fence (C5 R47). The
+    /// stored input is fenced, so the credential cannot collect, but the pair,
+    /// key, ciphertext, generation, claims and scopes are all sound and the owner
+    /// can reconnect.
+    pub unresolved_refresh: bool,
+}
+
+/// Inspect persisted Fleet credentials for diagnostic admission, without
+/// claiming refresh ownership, writing, or settling anything.
+///
+/// The pair, its key, its ciphertext, its generation, its access-token claims
+/// and its collection scopes are validated independently of any unresolved
+/// refresh. Only after they hold can an unresolved refresh be reported, and only
+/// an identified one (see [`FleetCredentialInspection`]). A generation mismatch
+/// is a failure in its own right: `RotationOutcomeUnknown` is never accepted
+/// blindly, because the same error also means a mismatched pair, and an
+/// unresolved receipt that does not identify this pair is refused as well.
+pub fn inspect_stored_fleet_credentials(
+    store: &HubStore,
+    data_dir: &Path,
+) -> Result<FleetCredentialInspection, FleetCredentialError> {
     let stored = store
         .load_fleet_tokens()?
         .ok_or(FleetCredentialError::Missing)?;
@@ -238,7 +287,11 @@ pub fn validate_stored_fleet_credentials(
     FleetRefreshToken::new(plaintext.refresh_token().to_owned())?;
     FleetClientId::parse(stored.client_id())?;
     FleetRegion::from_storage_code(stored.region())?;
-    Ok(())
+    let unresolved_refresh = store.identified_unresolved_fleet_refresh()?;
+    if !unresolved_refresh && store.has_unresolved_fleet_refresh()? {
+        return Err(FleetCredentialError::RotationOutcomeUnknown);
+    }
+    Ok(FleetCredentialInspection { unresolved_refresh })
 }
 
 pub fn stored_fleet_scope_summary(
@@ -304,8 +357,207 @@ pub(crate) struct FleetAuthManager {
     next_refresh_at: i64,
     credential_generation: Uuid,
     refresh_terminal: bool,
+    /// Startup found an identified unresolved refresh (C5 R47, C3 R47, B2
+    /// clarification 3): the stored pair is sound but its refresh input is fenced,
+    /// so this manager hands out no token, refreshes nothing and every use ends in
+    /// the unknown-outcome error the loops turn into the reconnect stop. It holds
+    /// for the life of the manager: the owner's external credential write and a
+    /// restart are the recovery, never a replay of the fenced input.
+    input_fenced: bool,
+    /// The token exchange that has started and not yet been applied (C3 R8, Codex
+    /// R06). It runs in a task of its own, so dropping the caller (a shutdown that
+    /// drops the collection future) does not cancel it: if Tesla rotated the refresh
+    /// token before the drop, the successor is still written. The handle stays here,
+    /// so the next caller, or a graceful shutdown, awaits it and applies its outcome.
+    in_flight: Option<tokio::task::JoinHandle<FleetExchange>>,
     #[cfg(unix)]
     admission: Option<Arc<crate::hub_user_process::AdmittedUserHub>>,
+    /// The run's irreversible loss fence (B2 fix round, P3b fix 1, R-P3bF-1), shared
+    /// by the supervisor: once it answers `true` this manager hands out nothing and
+    /// its exchange jobs persist nothing, whatever the admission says afterwards.
+    loss: Option<crate::credentials::LossObserver>,
+    /// Test only: counts the entries of the exchange jobs' encryption step, the
+    /// one that follows the response (setup encryption is not counted).
+    #[cfg(test)]
+    encryption_entries: Option<Arc<std::sync::atomic::AtomicUsize>>,
+}
+
+/// What a detached token exchange hands back.
+enum FleetExchange {
+    /// Tesla issued a pair and it is stored under `output_generation`.
+    Refreshed {
+        access_token: FleetAccessToken,
+        refresh_token: FleetRefreshToken,
+        schedule: FleetRefreshSchedule,
+        output_generation: Uuid,
+    },
+    /// The exchange failed. `terminal` fences the manager: the refresh token may have
+    /// been consumed, so nothing further is sent with it.
+    Failed {
+        error: FleetCredentialError,
+        terminal: bool,
+    },
+}
+
+/// Everything a token exchange needs, owned, so it can outlive its caller.
+struct FleetExchangeJob {
+    store: HubStore,
+    api: FleetAuthApi,
+    encryption_key: Zeroizing<Vec<u8>>,
+    client_id: FleetClientId,
+    refresh_token: FleetRefreshToken,
+    region: FleetRegion,
+    generation: Uuid,
+    receipt_id: crate::db::OutboundRequestReceiptId,
+    now: SystemTime,
+    /// The manager's retained admission (C3 R47, CL-15): the job outlives its
+    /// caller, so it checks the admission itself before it encrypts and writes.
+    #[cfg(unix)]
+    admission: Option<Arc<crate::hub_user_process::AdmittedUserHub>>,
+    /// The manager's loss fence: the job outlives the supervisor's observation of the
+    /// loss, so it consults the fence itself before every store mutation.
+    loss: Option<crate::credentials::LossObserver>,
+    #[cfg(test)]
+    encryption_entries: Option<Arc<std::sync::atomic::AtomicUsize>>,
+    #[cfg(test)]
+    scripted: Option<ScriptedExchange>,
+    /// Test only: a failure the request ends in once its hold is released (the
+    /// request never went out, a refusal, ...), in place of the network.
+    #[cfg(test)]
+    scripted_failure: Option<ScriptedFailure>,
+}
+
+/// Test only: the answer a job takes in place of the network, and the hold it
+/// waits out first. The rest of the job, the validation, the admission check, the
+/// encryption and the guarded write, is the real one.
+#[cfg(test)]
+pub(crate) struct ScriptedExchange {
+    pub(crate) refreshed: crate::fleet_api::FleetRefreshedTokens,
+    pub(crate) hold: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>,
+}
+
+/// Test only: the failure a job's request ends in, and the hold it waits out first.
+#[cfg(test)]
+pub(crate) struct ScriptedFailure {
+    pub(crate) error: FleetApiError,
+    pub(crate) hold: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>,
+}
+
+impl FleetExchangeJob {
+    /// The answer to the token request.
+    async fn request(&mut self) -> Result<crate::fleet_api::FleetRefreshedTokens, FleetApiError> {
+        #[cfg(test)]
+        if let Some(scripted) = self.scripted.take() {
+            scripted.hold.await;
+            return Ok(scripted.refreshed);
+        }
+        #[cfg(test)]
+        if let Some(scripted) = self.scripted_failure.take() {
+            scripted.hold.await;
+            return Err(scripted.error);
+        }
+        self.api.refresh(&self.client_id, &self.refresh_token).await
+    }
+
+    /// The retained admission, checked at the last point before the pair is
+    /// encrypted and written. Nothing is awaited between this check and the end of
+    /// the job, so a denial that arrived while the request was out is met here (a
+    /// boundary check, not protection against a denial during the synchronous work).
+    fn assert_sensitive_access(&self) -> Result<(), FleetCredentialError> {
+        if self.loss.as_ref().is_some_and(|lost| lost()) {
+            return Err(FleetCredentialError::SensitiveAccessUnavailable);
+        }
+        #[cfg(unix)]
+        if let Some(admission) = &self.admission {
+            admission
+                .assert_sensitive_access()
+                .map_err(|_| FleetCredentialError::SensitiveAccessUnavailable)?;
+        }
+        Ok(())
+    }
+
+    /// The encrypted row of a pair. A test counts the entries of this step.
+    fn encrypt(
+        &self,
+        refreshed: &crate::fleet_api::FleetRefreshedTokens,
+        schedule: FleetRefreshSchedule,
+    ) -> Result<FleetTokenStore, FleetCredentialError> {
+        #[cfg(test)]
+        if let Some(entries) = &self.encryption_entries {
+            entries.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        encrypt_store(
+            &self.encryption_key,
+            refreshed.access_token.expose(),
+            refreshed.refresh_token.expose(),
+            self.client_id.as_str(),
+            self.region,
+            schedule,
+        )
+    }
+
+    /// The request, the schedule, the encrypted pair and its write: the part of a
+    /// refresh that must finish once the request has gone out.
+    async fn run(mut self) -> FleetExchange {
+        let failed = |error, terminal| FleetExchange::Failed { error, terminal };
+        let refreshed = match self.request().await {
+            Ok(refreshed) => refreshed,
+            Err(error) => {
+                if let Some(completion) = retryable_refresh_completion(&error) {
+                    // Completing the receipt is a store write: after the loss it is not
+                    // made, and the attempt stays unresolved for the next start (R-P3bF-1).
+                    if let Err(denied) = self.assert_sensitive_access() {
+                        return failed(denied, true);
+                    }
+                    if self
+                        .store
+                        .complete_retryable_fleet_refresh_failure(
+                            self.receipt_id,
+                            self.generation,
+                            &completion,
+                        )
+                        .is_err()
+                    {
+                        return failed(FleetCredentialError::RotationOutcomeUnknown, true);
+                    }
+                    return failed(FleetCredentialError::Api(error), false);
+                }
+                return failed(FleetCredentialError::Api(error), true);
+            }
+        };
+        let schedule = match refresh_schedule(self.now, refreshed.expires_in_seconds) {
+            Ok(schedule) => schedule,
+            Err(error) => return failed(error, true),
+        };
+        // CL-15: a denial of the retained admission skips the encryption and the
+        // write and drops the successor. The receipt, its binding and the input
+        // fence stay as they are, because the request went out and the outcome is
+        // unknown: the failure is terminal and sensitive.
+        if let Err(error) = self.assert_sensitive_access() {
+            return failed(error, true);
+        }
+        let stored = match self.encrypt(&refreshed, schedule) {
+            Ok(stored) => stored,
+            Err(error) => return failed(error, true),
+        };
+        let Some(output_generation) = stored.credential_generation() else {
+            return failed(FleetCredentialError::RotationOutcomeUnknown, true);
+        };
+        if let Err(error) = self.store.complete_fleet_refresh(
+            self.receipt_id,
+            self.generation,
+            output_generation,
+            &stored,
+        ) {
+            return failed(FleetCredentialError::Store(error), true);
+        }
+        FleetExchange::Refreshed {
+            access_token: refreshed.access_token,
+            refresh_token: refreshed.refresh_token,
+            schedule,
+            output_generation,
+        }
+    }
 }
 
 impl FleetAuthManager {
@@ -313,8 +565,35 @@ impl FleetAuthManager {
         self.next_refresh_at = 0;
     }
 
-    fn from_store_inner(store: HubStore, data_dir: &Path) -> Result<Self, FleetCredentialError> {
-        if store.has_unresolved_fleet_refresh()? {
+    /// The generation of the stored pair: it changes exactly when a refresh
+    /// installs a new pair. It is an identifier, never a secret, so the
+    /// collector can tell whether a tick's request refreshed the token (C3 R47).
+    pub(crate) const fn credential_generation(&self) -> Uuid {
+        self.credential_generation
+    }
+
+    fn from_store_inner(
+        store: HubStore,
+        data_dir: &Path,
+        loss: Option<crate::credentials::LossObserver>,
+    ) -> Result<Self, FleetCredentialError> {
+        Self::build(store, data_dir, false, loss)
+    }
+
+    /// Build the manager. With `fenced` the unresolved refresh the inspection
+    /// identified is accepted, nothing is bound or written, and the manager is
+    /// fenced (see `input_fenced`); otherwise any unresolved refresh refuses.
+    ///
+    /// `loss` is the run's guard (B2 fix round, P3b fix 3, R-P3bF3-1): it is consulted
+    /// immediately before the generation bind, with no await between, and the manager
+    /// keeps it as its loss observer from then on.
+    fn build(
+        store: HubStore,
+        data_dir: &Path,
+        fenced: bool,
+        loss: Option<crate::credentials::LossObserver>,
+    ) -> Result<Self, FleetCredentialError> {
+        if !fenced && store.has_unresolved_fleet_refresh()? {
             return Err(FleetCredentialError::RotationOutcomeUnknown);
         }
         let stored = store
@@ -329,7 +608,12 @@ impl FleetAuthManager {
             decrypt_legacy_owner_tokens(&encryption_key, stored.access(), stored.refresh())?;
         let credential_generation =
             crate::teslamate_token::legacy_refresh_credential_generation(&plaintext);
-        store.bind_fleet_credential_generation(&stored, credential_generation)?;
+        if !fenced {
+            if loss.as_ref().is_some_and(|lost| lost()) {
+                return Err(FleetCredentialError::SensitiveAccessUnavailable);
+            }
+            store.bind_fleet_credential_generation(&stored, credential_generation)?;
+        }
         Ok(Self {
             store,
             encryption_key,
@@ -341,16 +625,30 @@ impl FleetAuthManager {
             next_refresh_at: stored.next_refresh_at(),
             credential_generation,
             refresh_terminal: false,
+            input_fenced: fenced,
+            in_flight: None,
             #[cfg(unix)]
             admission: None,
+            loss,
+            #[cfg(test)]
+            encryption_entries: None,
         })
     }
 
+    /// The manager of the supervised collector's start (C3 R47, B2 clarification
+    /// 3): an identified unresolved refresh, found by the read-only inspection
+    /// after the pair, key, ciphertext, generation, claims and scopes proved sound,
+    /// yields a fenced manager, so the run starts with an active lease and the
+    /// reconnect attention and sends nothing. Every other case, including an
+    /// unresolved refresh the inspection does not identify and every independent
+    /// failure, goes the ordinary way and keeps its ordinary error. The low-level
+    /// constructors still refuse an unresolved refresh.
     #[cfg(unix)]
-    pub(crate) fn from_store_for_admitted_user(
+    pub(crate) fn from_store_for_supervised_start(
         store: HubStore,
         data_dir: &Path,
         admission: Arc<crate::hub_user_process::AdmittedUserHub>,
+        loss: Option<crate::credentials::LossObserver>,
     ) -> Result<Self, FleetCredentialError> {
         admission
             .assert_sensitive_access()
@@ -358,7 +656,48 @@ impl FleetAuthManager {
         admission
             .assert_store_path(data_dir)
             .map_err(|_| FleetCredentialError::SensitiveAccessUnavailable)?;
-        let mut manager = Self::from_store_inner(store, data_dir)?;
+        let identified = matches!(
+            inspect_stored_fleet_credentials(&store, data_dir),
+            Ok(FleetCredentialInspection {
+                unresolved_refresh: true
+            })
+        );
+        if !identified {
+            return Self::from_store_for_admitted_user(store, data_dir, admission, loss);
+        }
+        let mut manager = Self::build(store, data_dir, true, loss)?;
+        manager.admission = Some(admission);
+        Ok(manager)
+    }
+
+    /// Hand the run's irreversible loss fence to the manager and its detached
+    /// exchange jobs (B2 fix round, P3b fix 1, R-P3bF-1): once the supervisor has
+    /// observed the loss of the retained admission, no token is handed out and no job
+    /// encrypts, writes or completes a receipt, even if the admission passes again.
+    pub(crate) fn share_loss_fence(&mut self, observer: crate::credentials::LossObserver) {
+        self.loss = Some(observer);
+    }
+
+    /// Whether this manager was built over an identified unresolved refresh and
+    /// is fenced for good.
+    pub(crate) const fn is_input_fenced(&self) -> bool {
+        self.input_fenced
+    }
+
+    #[cfg(unix)]
+    pub(crate) fn from_store_for_admitted_user(
+        store: HubStore,
+        data_dir: &Path,
+        admission: Arc<crate::hub_user_process::AdmittedUserHub>,
+        loss: Option<crate::credentials::LossObserver>,
+    ) -> Result<Self, FleetCredentialError> {
+        admission
+            .assert_sensitive_access()
+            .map_err(|_| FleetCredentialError::SensitiveAccessUnavailable)?;
+        admission
+            .assert_store_path(data_dir)
+            .map_err(|_| FleetCredentialError::SensitiveAccessUnavailable)?;
+        let mut manager = Self::from_store_inner(store, data_dir, loss)?;
         manager.admission = Some(admission);
         Ok(manager)
     }
@@ -368,7 +707,7 @@ impl FleetAuthManager {
         store: HubStore,
         data_dir: &Path,
     ) -> Result<Self, FleetCredentialError> {
-        Self::from_store_inner(store, data_dir)
+        Self::from_store_inner(store, data_dir, None)
     }
 
     #[cfg(test)]
@@ -377,6 +716,9 @@ impl FleetAuthManager {
     }
 
     fn assert_sensitive_access(&self) -> Result<(), FleetCredentialError> {
+        if self.loss.as_ref().is_some_and(|lost| lost()) {
+            return Err(FleetCredentialError::SensitiveAccessUnavailable);
+        }
         #[cfg(unix)]
         if let Some(admission) = &self.admission {
             admission
@@ -386,11 +728,20 @@ impl FleetAuthManager {
         Ok(())
     }
 
+    /// A fenced manager (see `input_fenced`) hands out nothing and sends nothing.
+    fn assert_input_unfenced(&self) -> Result<(), FleetCredentialError> {
+        if self.input_fenced {
+            return Err(FleetCredentialError::RotationOutcomeUnknown);
+        }
+        Ok(())
+    }
+
     /// Revalidate retained user admission at the last bearer-use boundary.
     pub(crate) fn access_token_for_sensitive_use(
         &self,
     ) -> Result<&FleetAccessToken, FleetCredentialError> {
         self.assert_sensitive_access()?;
+        self.assert_input_unfenced()?;
         Ok(&self.access_token)
     }
 
@@ -401,6 +752,7 @@ impl FleetAuthManager {
         &self,
     ) -> Result<&FleetRefreshToken, FleetCredentialError> {
         self.assert_sensitive_access()?;
+        self.assert_input_unfenced()?;
         Ok(&self.refresh_token)
     }
 
@@ -414,6 +766,7 @@ impl FleetAuthManager {
         now: SystemTime,
     ) -> Result<(), FleetCredentialError> {
         self.assert_sensitive_access()?;
+        self.assert_input_unfenced()?;
         let now_seconds = epoch_seconds(now)?;
         if now_seconds < self.next_refresh_at {
             return Ok(());
@@ -430,6 +783,26 @@ impl FleetAuthManager {
             return Err(FleetCredentialError::RotationOutcomeUnknown);
         }
         self.assert_sensitive_access()?;
+        self.assert_input_unfenced()?;
+        if self.in_flight.is_none() {
+            let job = self.begin_exchange(api, now)?;
+            // Detached: the exchange finishes, and persists its successor, even when
+            // this call is dropped before it returns.
+            self.in_flight = Some(tokio::spawn(job.run()));
+        }
+        self.finish_exchange().await
+    }
+
+    /// Reserve the single-use input and build the job that sends and stores.
+    fn begin_exchange(
+        &mut self,
+        api: &FleetAuthApi,
+        now: SystemTime,
+    ) -> Result<FleetExchangeJob, FleetCredentialError> {
+        // The reservation is a store mutation: the run's fence and the retained
+        // admission are consulted immediately before it (B2 fix round, P3b fix 2,
+        // R-P3bF2-1, Opus N2).
+        self.assert_sensitive_access()?;
         let receipt_id = self
             .store
             .begin_fleet_refresh(self.credential_generation)
@@ -437,74 +810,126 @@ impl FleetAuthManager {
                 self.refresh_terminal = true;
                 FleetCredentialError::Store(error)
             })?;
-        if self.assert_sensitive_access().is_err() {
-            if self
-                .store
-                .cancel_unsent_fleet_refresh(receipt_id, self.credential_generation)
-                .is_err()
-            {
-                self.refresh_terminal = true;
-                return Err(FleetCredentialError::RotationOutcomeUnknown);
-            }
-            return Err(FleetCredentialError::SensitiveAccessUnavailable);
-        }
-        let refreshed = match api.refresh(&self.client_id, &self.refresh_token).await {
-            Ok(refreshed) => refreshed,
-            Err(error) => {
-                if let Some(completion) = retryable_refresh_completion(&error) {
-                    if self
-                        .store
-                        .complete_retryable_fleet_refresh_failure(
-                            receipt_id,
-                            self.credential_generation,
-                            &completion,
-                        )
-                        .is_err()
-                    {
-                        self.refresh_terminal = true;
-                        return Err(FleetCredentialError::RotationOutcomeUnknown);
-                    }
-                    return Err(FleetCredentialError::Api(error));
-                }
-                self.refresh_terminal = true;
-                return Err(FleetCredentialError::Api(error));
-            }
-        };
-        let schedule = refresh_schedule(now, refreshed.expires_in_seconds).inspect_err(|_| {
-            self.refresh_terminal = true;
-        })?;
-        let stored = encrypt_store(
-            &self.encryption_key,
-            refreshed.access_token.expose(),
-            refreshed.refresh_token.expose(),
-            self.client_id.as_str(),
-            self.region,
-            schedule,
-        )
-        .inspect_err(|_| {
-            self.refresh_terminal = true;
-        })?;
-        let output_generation = stored.credential_generation().ok_or_else(|| {
-            self.refresh_terminal = true;
-            FleetCredentialError::RotationOutcomeUnknown
-        })?;
-        self.store
-            .complete_fleet_refresh(
-                receipt_id,
-                self.credential_generation,
-                output_generation,
-                &stored,
-            )
-            .map_err(|error| {
-                self.refresh_terminal = true;
-                FleetCredentialError::Store(error)
-            })?;
-        self.access_token = refreshed.access_token;
-        self.refresh_token = refreshed.refresh_token;
-        self.expires_at = schedule.expires_at;
-        self.next_refresh_at = schedule.next_refresh_at;
-        self.credential_generation = output_generation;
+        // A denial that arrives between the reservation and the job leaves the receipt
+        // as it is: the cancellation would be a second receipt write after the loss,
+        // and the started receipt, its binding and its fence are what the next start
+        // reads (R-P3bF2-1; the request was not sent, and no later write is made).
+        self.assert_sensitive_access()?;
+        Ok(FleetExchangeJob {
+            store: self.store.clone(),
+            api: api.clone(),
+            encryption_key: Zeroizing::new(self.encryption_key.to_vec()),
+            client_id: self.client_id.clone(),
+            refresh_token: FleetRefreshToken::new(self.refresh_token.expose().to_owned()).map_err(
+                |_| {
+                    self.refresh_terminal = true;
+                    FleetCredentialError::RotationOutcomeUnknown
+                },
+            )?,
+            region: self.region,
+            generation: self.credential_generation,
+            receipt_id,
+            now,
+            #[cfg(unix)]
+            admission: self.admission.clone(),
+            loss: self.loss.clone(),
+            #[cfg(test)]
+            encryption_entries: self.encryption_entries.clone(),
+            #[cfg(test)]
+            scripted: None,
+            #[cfg(test)]
+            scripted_failure: None,
+        })
+    }
+
+    /// Test only: start a detached exchange that takes `scripted` in place of the
+    /// network, through the same reservation and job as `refresh_now`.
+    #[cfg(test)]
+    pub(crate) fn start_scripted_exchange(
+        &mut self,
+        api: &FleetAuthApi,
+        now: SystemTime,
+        scripted: ScriptedExchange,
+    ) -> Result<(), FleetCredentialError> {
+        self.assert_sensitive_access()?;
+        self.assert_input_unfenced()?;
+        let mut job = self.begin_exchange(api, now)?;
+        job.scripted = Some(scripted);
+        self.in_flight = Some(tokio::spawn(job.run()));
         Ok(())
+    }
+
+    /// Test only: start a detached exchange whose request ends in `scripted`'s
+    /// failure once its hold ends, through the same reservation and job as
+    /// `refresh_now`.
+    #[cfg(test)]
+    pub(crate) fn start_scripted_failure(
+        &mut self,
+        api: &FleetAuthApi,
+        now: SystemTime,
+        scripted: ScriptedFailure,
+    ) -> Result<(), FleetCredentialError> {
+        self.assert_sensitive_access()?;
+        self.assert_input_unfenced()?;
+        let mut job = self.begin_exchange(api, now)?;
+        job.scripted_failure = Some(scripted);
+        self.in_flight = Some(tokio::spawn(job.run()));
+        Ok(())
+    }
+
+    /// Test only: count the entries of the encryption step of every exchange job
+    /// this manager starts from now on.
+    #[cfg(test)]
+    pub(crate) fn observe_exchange_encryption(&mut self) -> Arc<std::sync::atomic::AtomicUsize> {
+        let entries = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        self.encryption_entries = Some(Arc::clone(&entries));
+        entries
+    }
+
+    /// Test only: abort the detached exchange and wait for its task to end.
+    #[cfg(test)]
+    pub(crate) async fn abort_exchange_for_test(&mut self) {
+        if let Some(handle) = self.in_flight.take() {
+            handle.abort();
+            let _ = handle.await;
+        }
+    }
+
+    /// Awaits the exchange that has started, if any, and applies its outcome. A
+    /// graceful shutdown calls it so that a refresh Tesla has answered is stored
+    /// before the clients are dropped. Cancel-safe: the handle stays in the manager
+    /// until the exchange has been applied.
+    pub(crate) async fn finish_exchange(&mut self) -> Result<(), FleetCredentialError> {
+        let Some(handle) = self.in_flight.as_mut() else {
+            return Ok(());
+        };
+        let outcome = handle.await;
+        self.in_flight = None;
+        match outcome {
+            Ok(FleetExchange::Refreshed {
+                access_token,
+                refresh_token,
+                schedule,
+                output_generation,
+            }) => {
+                self.access_token = access_token;
+                self.refresh_token = refresh_token;
+                self.expires_at = schedule.expires_at;
+                self.next_refresh_at = schedule.next_refresh_at;
+                self.credential_generation = output_generation;
+                Ok(())
+            }
+            Ok(FleetExchange::Failed { error, terminal }) => {
+                self.refresh_terminal |= terminal;
+                Err(error)
+            }
+            Err(_task_failed) => {
+                // The task panicked or was aborted: whether the token was consumed
+                // is unknown, so the manager is fenced.
+                self.refresh_terminal = true;
+                Err(FleetCredentialError::RotationOutcomeUnknown)
+            }
+        }
     }
 }
 
@@ -682,6 +1107,8 @@ fn load_or_create_fleet_key(data_dir: &Path) -> Result<Zeroizing<Vec<u8>>, Fleet
     let destination = fleet_key_path(data_dir);
     let temporary = pending_key_path(data_dir);
     if checked_path_exists(&temporary, false)? {
+        crate::platform::file_attempts::note(&temporary);
+        crate::platform::file_attempts::note(&destination);
         renameat_with(CWD, &temporary, CWD, &destination, RenameFlags::NOREPLACE).map_err(
             |source| {
                 fleet_key_io(
@@ -698,12 +1125,15 @@ fn load_or_create_fleet_key(data_dir: &Path) -> Result<Zeroizing<Vec<u8>>, Fleet
     getrandom::fill(key.as_mut_slice()).map_err(|_| FleetCredentialError::EntropyUnavailable)?;
     let result = (|| {
         write_private_file(&temporary, &key)?;
+        crate::platform::file_attempts::note(&temporary);
+        crate::platform::file_attempts::note(&destination);
         match renameat_with(CWD, &temporary, CWD, &destination, RenameFlags::NOREPLACE) {
             Ok(()) => {
                 sync_directory(&secrets)?;
                 Ok(key)
             }
             Err(Errno::EXIST) => {
+                crate::platform::file_attempts::note(&temporary);
                 let _ = fs::remove_file(&temporary);
                 load_existing_fleet_key_bytes(data_dir)?.ok_or(FleetCredentialError::KeyMissing)
             }
@@ -715,6 +1145,7 @@ fn load_or_create_fleet_key(data_dir: &Path) -> Result<Zeroizing<Vec<u8>>, Fleet
         }
     })();
     if result.is_err() {
+        crate::platform::file_attempts::note(&temporary);
         let _ = fs::remove_file(&temporary);
     }
     result
@@ -750,6 +1181,7 @@ pub fn remove_fleet_key_and_tokens(
     let mut removed = false;
     for (path, marker_file) in [(&key, false), (&pending, false), (&marker, true)] {
         if checked_path_exists(path, marker_file)? {
+            crate::platform::file_attempts::note(path);
             fs::remove_file(path)
                 .map_err(|source| fleet_key_io("removing Fleet credential key", path, source))?;
             removed = true;
@@ -764,6 +1196,7 @@ pub fn remove_fleet_key_and_tokens(
 fn create_migration_marker(data_dir: &Path) -> Result<(), FleetCredentialError> {
     let secrets = ensure_secrets_directory(data_dir)?;
     let marker = migration_marker_path(data_dir);
+    crate::platform::file_attempts::note(&marker);
     match OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -794,6 +1227,7 @@ fn create_migration_marker(data_dir: &Path) -> Result<(), FleetCredentialError> 
 fn finish_key_migration(data_dir: &Path) -> Result<(), FleetCredentialError> {
     let marker = migration_marker_path(data_dir);
     read_checked_private_file(&marker, 0, true)?;
+    crate::platform::file_attempts::note(&marker);
     fs::remove_file(&marker)
         .map_err(|source| fleet_key_io("removing Fleet migration marker", &marker, source))?;
     sync_directory(&data_dir.join("secrets"))
@@ -806,6 +1240,7 @@ fn ensure_secrets_directory(data_dir: &Path) -> Result<PathBuf, FleetCredentialE
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let mut builder = fs::DirBuilder::new();
             builder.mode(PRIVATE_DIRECTORY_MODE);
+            crate::platform::file_attempts::note(&path);
             match builder.create(&path) {
                 Ok(()) => {}
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -848,6 +1283,7 @@ fn checked_path_exists(path: &Path, marker: bool) -> Result<bool, FleetCredentia
 }
 
 fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), FleetCredentialError> {
+    crate::platform::file_attempts::note(path);
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -856,8 +1292,10 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), FleetCredentialEr
         .map_err(|source| fleet_key_io("creating Fleet credential key", path, source))?;
     file.set_permissions(fs::Permissions::from_mode(PRIVATE_FILE_MODE))
         .map_err(|source| fleet_key_io("protecting Fleet credential key", path, source))?;
+    crate::platform::file_attempts::note(path);
     file.write_all(bytes)
         .map_err(|source| fleet_key_io("writing Fleet credential key", path, source))?;
+    crate::platform::file_attempts::note(path);
     file.sync_all()
         .map_err(|source| fleet_key_io("syncing Fleet credential key", path, source))
 }
@@ -905,6 +1343,7 @@ fn read_checked_private_file(
 }
 
 fn sync_directory(path: &Path) -> Result<(), FleetCredentialError> {
+    crate::platform::file_attempts::note(path);
     File::open(path)
         .map_err(|source| fleet_key_io("opening secrets directory", path, source))?
         .sync_all()
@@ -997,23 +1436,12 @@ pub enum FleetCredentialError {
 }
 
 impl FleetCredentialError {
-    pub(crate) fn is_sensitive_access_failure(&self) -> bool {
-        matches!(
-            self,
-            Self::Missing
-                | Self::KeyMissing
-                | Self::MigrationRequired
-                | Self::UnsafeKeyMaterial
-                | Self::UnsafeMigrationState
-                | Self::InvalidAccessTokenClaims
-                | Self::MissingCollectionScopes
-                | Self::KeyIo { .. }
-                | Self::Cipher(_)
-                | Self::Key(_)
-                | Self::Store(_)
-                | Self::RotationOutcomeUnknown
-                | Self::SensitiveAccessUnavailable
-        )
+    /// Whether this is the denial of the retained runtime admission itself (C3 R47,
+    /// B2 clarification 3). A credential that is missing, lacks its scopes or claims,
+    /// cannot be decrypted or has an unknown refresh outcome is a credential
+    /// condition with the admission intact, and is not this.
+    pub(crate) const fn is_admission_loss(&self) -> bool {
+        matches!(self, Self::SensitiveAccessUnavailable)
     }
 }
 

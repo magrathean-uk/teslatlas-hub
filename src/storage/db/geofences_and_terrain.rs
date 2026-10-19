@@ -319,6 +319,48 @@ impl HubStore {
         Ok(())
     }
 
+    /// [`Self::commit_lifecycle_delta`] with the page size of the stored-children
+    /// reads given and the page statistics returned (C1 R88, tests).
+    #[cfg(test)]
+    pub(crate) fn commit_lifecycle_delta_with_page_rows(
+        &self,
+        commit: &LifecycleCommit<'_>,
+        page_rows: usize,
+    ) -> Result<(usize, usize, ClosePageStats), StoreError> {
+        let mut connection = self.open()?;
+        let transaction = connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(StoreError::Begin)?;
+        let mut stats = ClosePageStats::default();
+        let (positions, samples) =
+            Self::commit_lifecycle_delta_paged(&transaction, commit, page_rows, &mut stats)?;
+        transaction.commit().map_err(StoreError::LifecycleWrite)?;
+        Ok((positions, samples, stats))
+    }
+
+    /// Add the ids of one parent's stored open children to `ids`, reading ids
+    /// only, `page_rows` at a time (C1 R88, the collector's count).
+    pub(crate) fn open_child_ids_paged(
+        &self,
+        vehicle_id: Uuid,
+        kind: OpenChildKind,
+        parent_id: i64,
+        page_rows: usize,
+        ids: &mut std::collections::HashSet<i64>,
+        stats: &mut ClosePageStats,
+    ) -> Result<(), StoreError> {
+        let connection = self.open()?;
+        collect_open_child_ids(
+            &connection,
+            &vehicle_id.to_string(),
+            kind,
+            parent_id,
+            page_rows,
+            ids,
+            stats,
+        )
+    }
+
     fn maybe_stream_fault(&self, point: StreamFaultPoint) -> Result<(), StoreError> {
         #[cfg(test)]
         {
@@ -353,9 +395,27 @@ impl HubStore {
     /// Write one lifecycle commit and return how many positions and charge
     /// samples it materialised, counting the open children of closed and
     /// discarded sessions it pulled from `lifecycle_open_rows` (C1 R11, R48).
-    fn commit_lifecycle_delta_in_transaction(
+    pub(crate) fn commit_lifecycle_delta_in_transaction(
         transaction: &Transaction<'_>,
         commit: &LifecycleCommit<'_>,
+    ) -> Result<(usize, usize), StoreError> {
+        let mut stats = ClosePageStats::default();
+        Self::commit_lifecycle_delta_paged(
+            transaction,
+            commit,
+            crate::lifecycle::K_CLOSE_PAGE_ROWS,
+            &mut stats,
+        )
+    }
+
+    /// The commit of [`Self::commit_lifecycle_delta_in_transaction`] with the
+    /// page size of the stored-children reads as an argument (C1 R88).
+    /// Production passes `K_CLOSE_PAGE_ROWS`.
+    fn commit_lifecycle_delta_paged(
+        transaction: &Transaction<'_>,
+        commit: &LifecycleCommit<'_>,
+        page_rows: usize,
+        stats: &mut ClosePageStats,
     ) -> Result<(usize, usize), StoreError> {
         let mut delta = commit.delta.clone();
         let session = crate::lifecycle::OpenSessionState::decode(commit.open_session_json)
@@ -394,8 +454,9 @@ impl HubStore {
                 sample,
             )?;
         }
-        // When a drive/charge closes without a full in-memory child buffer
-        // (incremental path), pull durable open children once for materialization.
+        // A drive or charge that closes without a full in-memory child buffer
+        // has its stored children materialised after the closing rows, a page at
+        // a time (C1 R88), never all at once.
         //
         // Child placement (C1 R48, R48a): a closed drive keeps the children
         // dated at or before its end; those dated later (the stationary tail a
@@ -403,6 +464,10 @@ impl HubStore {
         // are materialised as standalone positions (`drive_id` NULL) instead of
         // being kept under the drive or deleted. The Hub stores positions
         // losslessly and the observations behind them are pruned after commit.
+        //
+        // The in-delta rows are written first, in delta order; the set of
+        // placed ids starts with their ids and receives each stored child's id
+        // as it is placed, so a stored child already in the delta is skipped.
         let mut placed_position_ids = delta
             .positions
             .iter()
@@ -419,45 +484,11 @@ impl HubStore {
                 position.drive_id = None;
             }
         }
-        let mut standalone_children = Vec::new();
-        for drive in &delta.drives {
-            let open_positions =
-                load_open_positions_for_parent(transaction, &vehicle_key, drive.id)?;
-            for mut position in open_positions {
-                if !placed_position_ids.insert(position.id) {
-                    continue;
-                }
-                if position.date_ms > drive.end_date_ms {
-                    position.drive_id = None;
-                }
-                standalone_children.push(position);
-            }
-        }
-        for drive_id in &delta.discarded_drive_ids {
-            let open_positions =
-                load_open_positions_for_parent(transaction, &vehicle_key, *drive_id)?;
-            for mut position in open_positions {
-                if !placed_position_ids.insert(position.id) {
-                    continue;
-                }
-                position.drive_id = None;
-                standalone_children.push(position);
-            }
-        }
-        delta.positions.extend(standalone_children);
-        for charge in &delta.charges {
-            let open_samples =
-                load_open_charge_samples_for_parent(transaction, &vehicle_key, charge.id)?;
-            for sample in open_samples {
-                if !delta
-                    .charge_samples
-                    .iter()
-                    .any(|existing| existing.id == sample.id)
-                {
-                    delta.charge_samples.push(sample);
-                }
-            }
-        }
+        let mut placed_sample_ids = delta
+            .charge_samples
+            .iter()
+            .map(|sample| sample.id)
+            .collect::<std::collections::HashSet<_>>();
         let fences = load_geofence_fences(transaction, commit.vehicle_id)?;
         // Only closed drives carry labels, so a delta without drives needs no
         // matching pass (C1 R59).
@@ -617,103 +648,81 @@ impl HubStore {
                 &drive_json,
             )?;
         }
+        let mut positions_written = 0usize;
         for position in &delta.positions {
-            let position_json =
-                serde_json::to_string(position).map_err(StoreError::SerializeLifecycleRow)?;
-            transaction
-                .execute(
-                    "INSERT INTO materialised_positions(
-                        vehicle_id, position_id, drive_id, car_id, position_json,
-                        speed, power, est_battery_range_km, fan_status,
-                        driver_temp_setting, passenger_temp_setting,
-                        is_climate_on, is_rear_defroster_on, is_front_defroster_on,
-                        battery_heater, battery_heater_on, battery_heater_no_power,
-                        tpms_pressure_fl, tpms_pressure_fr, tpms_pressure_rl, tpms_pressure_rr
-                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-                               ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
-                     ON CONFLICT(vehicle_id, position_id) DO UPDATE SET
-                        drive_id = excluded.drive_id,
-                        car_id = excluded.car_id,
-                        position_json = excluded.position_json,
-                        speed = excluded.speed,
-                        power = excluded.power,
-                        est_battery_range_km = excluded.est_battery_range_km,
-                        fan_status = excluded.fan_status,
-                        driver_temp_setting = excluded.driver_temp_setting,
-                        passenger_temp_setting = excluded.passenger_temp_setting,
-                        is_climate_on = excluded.is_climate_on,
-                        is_rear_defroster_on = excluded.is_rear_defroster_on,
-                        is_front_defroster_on = excluded.is_front_defroster_on,
-                        battery_heater = excluded.battery_heater,
-                        battery_heater_on = excluded.battery_heater_on,
-                        battery_heater_no_power = excluded.battery_heater_no_power,
-                        tpms_pressure_fl = excluded.tpms_pressure_fl,
-                        tpms_pressure_fr = excluded.tpms_pressure_fr,
-                        tpms_pressure_rl = excluded.tpms_pressure_rl,
-                        tpms_pressure_rr = excluded.tpms_pressure_rr",
-                    params![
-                        commit.vehicle_id.to_string(),
-                        position.id,
-                        position.drive_id,
-                        commit.car_id,
-                        position_json,
-                        position.speed,
-                        position.power,
-                        position.est_battery_range_km,
-                        position.fan_status,
-                        position.driver_temp_setting,
-                        position.passenger_temp_setting,
-                        position.is_climate_on.map(i64::from),
-                        position.is_rear_defroster_on.map(i64::from),
-                        position.is_front_defroster_on.map(i64::from),
-                        position.battery_heater.map(i64::from),
-                        position.battery_heater_on.map(i64::from),
-                        position.battery_heater_no_power.map(i64::from),
-                        position.tpms_pressure_fl,
-                        position.tpms_pressure_fr,
-                        position.tpms_pressure_rl,
-                        position.tpms_pressure_rr,
-                    ],
-                )
-                .map_err(StoreError::LifecycleWrite)?;
-            record_sync_mutation_in_transaction(
+            Self::write_materialised_position(transaction, commit, position)?;
+            positions_written += 1;
+        }
+        for drive in &delta.drives {
+            for_each_open_child_page(
                 transaction,
-                commit.vehicle_id,
-                "position",
-                position.id,
-                commit.car_id,
-                "upsert",
-                &position_json,
+                &vehicle_key,
+                OpenChildKind::Position,
+                drive.id,
+                page_rows,
+                stats,
+                |_, json| {
+                    let mut position: crate::hub_pack::ProjectionPosition =
+                        serde_json::from_str(json).map_err(StoreError::DeserializeLifecycleRow)?;
+                    if !placed_position_ids.insert(position.id) {
+                        return Ok(());
+                    }
+                    if position.date_ms > drive.end_date_ms {
+                        position.drive_id = None;
+                    }
+                    Self::write_materialised_position(transaction, commit, &position)?;
+                    positions_written += 1;
+                    Ok(())
+                },
+            )?;
+        }
+        for drive_id in &delta.discarded_drive_ids {
+            for_each_open_child_page(
+                transaction,
+                &vehicle_key,
+                OpenChildKind::Position,
+                *drive_id,
+                page_rows,
+                stats,
+                |_, json| {
+                    let mut position: crate::hub_pack::ProjectionPosition =
+                        serde_json::from_str(json).map_err(StoreError::DeserializeLifecycleRow)?;
+                    if !placed_position_ids.insert(position.id) {
+                        return Ok(());
+                    }
+                    position.drive_id = None;
+                    Self::write_materialised_position(transaction, commit, &position)?;
+                    positions_written += 1;
+                    Ok(())
+                },
             )?;
         }
         close_charges_in_transaction(transaction, commit)?;
+        // Samples follow the same order after the close step: the in-delta
+        // rows, then each closed charge's stored samples in `delta.charges`
+        // order and id order, a page at a time (C1 R88).
+        let mut samples_written = 0usize;
         for sample in &delta.charge_samples {
-            let sample_json =
-                serde_json::to_string(sample).map_err(StoreError::SerializeLifecycleRow)?;
-            transaction
-                .execute(
-                    "INSERT INTO materialised_charge_samples(
-                        vehicle_id, sample_id, charge_id, sample_json
-                    ) VALUES (?1, ?2, ?3, ?4)
-                    ON CONFLICT(vehicle_id, sample_id) DO UPDATE SET
-                        charge_id = excluded.charge_id,
-                        sample_json = excluded.sample_json",
-                    params![
-                        commit.vehicle_id.to_string(),
-                        sample.id,
-                        sample.charge_process_id,
-                        sample_json
-                    ],
-                )
-                .map_err(StoreError::LifecycleWrite)?;
-            record_sync_mutation_in_transaction(
+            Self::write_materialised_charge_sample(transaction, commit, sample)?;
+            samples_written += 1;
+        }
+        for charge in &delta.charges {
+            for_each_open_child_page(
                 transaction,
-                commit.vehicle_id,
-                "charge_sample",
-                sample.id,
-                commit.car_id,
-                "upsert",
-                &sample_json,
+                &vehicle_key,
+                OpenChildKind::ChargeSample,
+                charge.id,
+                page_rows,
+                stats,
+                |_, json| {
+                    let sample = parse_open_charge_sample(json)?;
+                    if !placed_sample_ids.insert(sample.id) {
+                        return Ok(());
+                    }
+                    Self::write_materialised_charge_sample(transaction, commit, &sample)?;
+                    samples_written += 1;
+                    Ok(())
+                },
             )?;
         }
         // R67: once per commit that closes at least one charge, after the
@@ -847,7 +856,119 @@ impl HubStore {
         enqueue_address_jobs(transaction, commit.vehicle_id, &delta)?;
         prune_processed_observations(transaction, commit.vehicle_id, commit.last_observation_id)?;
 
-        Ok((delta.positions.len(), delta.charge_samples.len()))
+        Ok((positions_written, samples_written))
+    }
+
+    /// Write one materialised position and its sync mutation (C1 R11, R48).
+    fn write_materialised_position(
+        transaction: &Transaction<'_>,
+        commit: &LifecycleCommit<'_>,
+        position: &crate::hub_pack::ProjectionPosition,
+    ) -> Result<(), StoreError> {
+        let position_json =
+            serde_json::to_string(position).map_err(StoreError::SerializeLifecycleRow)?;
+        transaction
+            .execute(
+                "INSERT INTO materialised_positions(
+                    vehicle_id, position_id, drive_id, car_id, position_json,
+                    speed, power, est_battery_range_km, fan_status,
+                    driver_temp_setting, passenger_temp_setting,
+                    is_climate_on, is_rear_defroster_on, is_front_defroster_on,
+                    battery_heater, battery_heater_on, battery_heater_no_power,
+                    tpms_pressure_fl, tpms_pressure_fr, tpms_pressure_rl, tpms_pressure_rr
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                           ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+                 ON CONFLICT(vehicle_id, position_id) DO UPDATE SET
+                    drive_id = excluded.drive_id,
+                    car_id = excluded.car_id,
+                    position_json = excluded.position_json,
+                    speed = excluded.speed,
+                    power = excluded.power,
+                    est_battery_range_km = excluded.est_battery_range_km,
+                    fan_status = excluded.fan_status,
+                    driver_temp_setting = excluded.driver_temp_setting,
+                    passenger_temp_setting = excluded.passenger_temp_setting,
+                    is_climate_on = excluded.is_climate_on,
+                    is_rear_defroster_on = excluded.is_rear_defroster_on,
+                    is_front_defroster_on = excluded.is_front_defroster_on,
+                    battery_heater = excluded.battery_heater,
+                    battery_heater_on = excluded.battery_heater_on,
+                    battery_heater_no_power = excluded.battery_heater_no_power,
+                    tpms_pressure_fl = excluded.tpms_pressure_fl,
+                    tpms_pressure_fr = excluded.tpms_pressure_fr,
+                    tpms_pressure_rl = excluded.tpms_pressure_rl,
+                    tpms_pressure_rr = excluded.tpms_pressure_rr",
+                params![
+                    commit.vehicle_id.to_string(),
+                    position.id,
+                    position.drive_id,
+                    commit.car_id,
+                    position_json,
+                    position.speed,
+                    position.power,
+                    position.est_battery_range_km,
+                    position.fan_status,
+                    position.driver_temp_setting,
+                    position.passenger_temp_setting,
+                    position.is_climate_on.map(i64::from),
+                    position.is_rear_defroster_on.map(i64::from),
+                    position.is_front_defroster_on.map(i64::from),
+                    position.battery_heater.map(i64::from),
+                    position.battery_heater_on.map(i64::from),
+                    position.battery_heater_no_power.map(i64::from),
+                    position.tpms_pressure_fl,
+                    position.tpms_pressure_fr,
+                    position.tpms_pressure_rl,
+                    position.tpms_pressure_rr,
+                ],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        record_sync_mutation_in_transaction(
+            transaction,
+            commit.vehicle_id,
+            "position",
+            position.id,
+            commit.car_id,
+            "upsert",
+            &position_json,
+        )?;
+        Ok(())
+    }
+
+    /// Write one materialised charge sample and its sync mutation (C1 R11).
+    fn write_materialised_charge_sample(
+        transaction: &Transaction<'_>,
+        commit: &LifecycleCommit<'_>,
+        sample: &crate::hub_pack::ProjectionChargeSample,
+    ) -> Result<(), StoreError> {
+        let sample_json =
+            serde_json::to_string(sample).map_err(StoreError::SerializeLifecycleRow)?;
+        transaction
+            .execute(
+                "INSERT INTO materialised_charge_samples(
+                    vehicle_id, sample_id, charge_id, sample_json
+                ) VALUES (?1, ?2, ?3, ?4)
+                ON CONFLICT(vehicle_id, sample_id) DO UPDATE SET
+                    charge_id = excluded.charge_id,
+                    sample_json = excluded.sample_json",
+                params![
+                    commit.vehicle_id.to_string(),
+                    sample.id,
+                    sample.charge_process_id,
+                    sample_json
+                ],
+            )
+            .map_err(StoreError::LifecycleWrite)?;
+        record_sync_mutation_in_transaction(
+            transaction,
+            commit.vehicle_id,
+            "charge_sample",
+            sample.id,
+            commit.car_id,
+            "upsert",
+            &sample_json,
+        )?;
+        Ok(())
     }
 
     /// Load completed history used when publishing a phone snapshot.
@@ -1144,6 +1265,23 @@ impl HubStore {
         cursor_key: &CursorKey,
         minimum_free_bytes: u64,
     ) -> Result<bool, StoreError> {
+        self.publish_terrain_revision_guarded(vehicle_id, cursor_key, minimum_free_bytes, &mut |_| {
+            false
+        })
+    }
+
+    /// [`Self::publish_terrain_revision`] for a caller that must not write after it lost
+    /// the right to: `refused` is asked immediately before each independent mutation
+    /// (the sequence reservation, the pack output and the snapshot's finalisation),
+    /// with the name of the boundary, and a `true` ends the publication with
+    /// [`StoreError::WriteRefused`] before that mutation.
+    pub fn publish_terrain_revision_guarded(
+        &self,
+        vehicle_id: Uuid,
+        cursor_key: &CursorKey,
+        minimum_free_bytes: u64,
+        refused: &mut dyn FnMut(&'static str) -> bool,
+    ) -> Result<bool, StoreError> {
         if self.vehicle_has_v2_base(vehicle_id)? {
             // The durable terrain mutations are already in the live sync
             // journal. Once an immutable base exists, the normal export
@@ -1188,6 +1326,9 @@ impl HubStore {
         }
         // The collector invokes terrain publication under the same outer
         // publication gate as its outbox and lifecycle writes.
+        if refused("terrain-publish-sequence") {
+            return Err(StoreError::WriteRefused("terrain-publish-sequence"));
+        }
         let sequence = self.next_full_snapshot_sequence_while_gated(vehicle_id)?;
         let binding = ProjectionBinding {
             installation_id: self.installation_id()?,
@@ -1209,6 +1350,9 @@ impl HubStore {
         };
         let writer =
             ProjectionPackWriter::new(self.packs_dir()).with_minimum_free_bytes(minimum_free_bytes);
+        if refused("terrain-publish-pack") {
+            return Err(StoreError::WriteRefused("terrain-publish-pack"));
+        }
         let built = writer
             .write_full_snapshot_with_states_and_updates(
                 &request,
@@ -1224,6 +1368,9 @@ impl HubStore {
                 cursor_key,
             )
             .map_err(StoreError::TerrainPack)?;
+        if refused("terrain-publish-finalize") {
+            return Err(StoreError::WriteRefused("terrain-publish-finalize"));
+        }
         self.finalize_import_snapshot_with_binding(&manifest, fingerprint, &[], &binding)?;
         Ok(true)
     }
@@ -1349,7 +1496,9 @@ impl HubStore {
 /// transaction for every charge in `commit.delta.charges`, in delta order.
 ///
 /// 1. The row's samples: its stored open samples plus the delta's own, by id,
-///    in sample order (`timestamp_ms`, then id).
+///    folded in constant space into the facts the cost rules read (the first
+///    sample, the last two in sample order, the largest counter), never held
+///    or sorted as a list.
 /// 2. Label and tariff copy from the start-coordinates entry of the delta, by
 ///    the one geofence rule over the vehicle's fences (C1 R72): the label is
 ///    the fence name; the copy is the fence's tariff when complete and valid
@@ -1387,19 +1536,30 @@ fn close_charges_in_transaction(
     };
     for charge in &commit.delta.charges {
         let mut row = charge.clone();
-        let mut samples = commit
+        // The cost rules read four facts of the samples, so they are folded in
+        // constant space: the delta's own samples first, then the stored open
+        // samples one row at a time, skipping the ones the delta carries again
+        // (by id, in a set the size of the delta). The close of a long charge
+        // therefore holds no sample list and sorts nothing (C2 R46 step 1).
+        let mut facts = crate::lifecycle::ChargeSampleFacts::default();
+        let mut carried_by_delta = std::collections::HashSet::new();
+        for sample in commit
             .delta
             .charge_samples
             .iter()
             .filter(|sample| sample.charge_process_id == row.id)
-            .cloned()
-            .collect::<Vec<_>>();
-        for stored in load_open_charge_samples_for_parent(transaction, &vehicle_key, row.id)? {
-            if !samples.iter().any(|sample| sample.id == stored.id) {
-                samples.push(stored);
+        {
+            if carried_by_delta.insert(sample.id) {
+                facts.observe(sample);
             }
         }
-        samples.sort_by_key(|sample| (sample.timestamp_ms, sample.id));
+        fold_open_charge_samples_for_parent(
+            transaction,
+            &vehicle_key,
+            row.id,
+            &carried_by_delta,
+            &mut facts,
+        )?;
 
         let fence = commit
             .delta
@@ -1410,7 +1570,7 @@ fn close_charges_in_transaction(
                 crate::lifecycle::match_geofence(*latitude, *longitude, &fences)
             });
         row.geofence = fence.map(|fence| fence.name.clone());
-        let continues = crate::lifecycle::charge_continues_plug_in(&row, &samples);
+        let continues = crate::lifecycle::charge_continues_plug_in_from(&row, &facts);
         let tariff = fence
             .and_then(crate::lifecycle::ChargeTariff::of_fence)
             .map(|tariff| if continues { tariff.waive_fee() } else { tariff });
@@ -1442,7 +1602,7 @@ fn close_charges_in_transaction(
             None => {
                 let context = crate::lifecycle::ChargeCostContext {
                     free_supercharging,
-                    span_observed: crate::lifecycle::charge_span_observed(&row, &samples),
+                    span_observed: crate::lifecycle::charge_span_observed_from(&row, &facts),
                 };
                 row.cost = crate::lifecycle::calculate_charge_cost(
                     &row,
@@ -1522,8 +1682,8 @@ fn fill_missing_charge_costs_in_transaction(
             if !in_target {
                 continue;
             }
-            let samples = load_materialised_charge_samples(transaction, vehicle_id, charge_id)?;
-            let tariff = if crate::lifecycle::charge_continues_plug_in(&row, &samples) {
+            let facts = fold_materialised_charge_samples(transaction, vehicle_id, charge_id)?;
+            let tariff = if crate::lifecycle::charge_continues_plug_in_from(&row, &facts) {
                 tariff.waive_fee()
             } else {
                 tariff
@@ -1535,7 +1695,7 @@ fn fill_missing_charge_costs_in_transaction(
             });
             let context = crate::lifecycle::ChargeCostContext {
                 free_supercharging,
-                span_observed: crate::lifecycle::charge_span_observed(&row, &samples),
+                span_observed: crate::lifecycle::charge_span_observed_from(&row, &facts),
             };
             let Some(cost) = crate::lifecycle::calculate_charge_cost(&row, Some(tariff), context)
             else {

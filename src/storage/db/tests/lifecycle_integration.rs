@@ -275,8 +275,10 @@ fn st87_the_installed_version_of_a_real_import_seeds_the_first_update_row() {
         let seeded =
             crate::lifecycle::OpenSessionState::decode(&record.open_session_json).expect("decode");
         assert_eq!(seeded.last_car_version.as_deref(), Some("2024.14.3 aa"));
-        // The importer keeps the version text but not the update's end date,
-        // so the lower bound is the end of the newest imported drive.
+        // The importer keeps the version text but not the update's end date.
+        // This fixture stages a session whose `updates` watermark records no
+        // time, so the lower bound is the end of the newest imported drive
+        // (C1 R89 step 2, the fallback; ST104 covers the watermark time).
         assert_eq!(seeded.last_car_version_at_ms, Some(drive.end_date_ms));
 
         let at = drive.end_date_ms + 2 * 24 * COST_HOUR;
@@ -311,4 +313,339 @@ fn st87_the_installed_version_of_a_real_import_seeds_the_first_update_row() {
             assert_eq!(updates[0].version, "2024.20.1 bb");
         }
     }
+}
+
+// ------------------------------------------- C1 B2 amendment C (R89, ST104)
+
+const R89_DAY: i64 = 24 * COST_HOUR;
+
+/// A store with an import-kind source and vehicle whose materialised car row
+/// carries the installed-version text import finalisation leaves, no
+/// materialised update row, and optionally one materialised drive.
+fn st104_store(
+    label: &str,
+    drive_end_ms: Option<i64>,
+) -> (tempfile::TempDir, HubStore, SourceRecord, VehicleRecord) {
+    let (directory, store, source, vehicle) = watermark_store(label);
+    let connection = store.open().expect("connection");
+    let key = vehicle.vehicle_id.to_string();
+    connection
+        .execute(
+            "INSERT INTO materialised_cars(vehicle_id, car_id, car_json) VALUES (?1, 1, ?2)",
+            params![
+                key,
+                serde_json::json!({"id": 1, "firmware_version": "2024.14.3 aa"}).to_string()
+            ],
+        )
+        .expect("car row");
+    if let Some(end) = drive_end_ms {
+        connection
+            .execute(
+                "INSERT INTO materialised_drives(vehicle_id, drive_id, car_id, drive_json)
+                 VALUES (?1, 1, 1, ?2)",
+                params![
+                    key,
+                    serde_json::json!({
+                        "id": 1, "car_id": 1, "start_date_ms": end - 60_000, "end_date_ms": end
+                    })
+                    .to_string()
+                ],
+            )
+            .expect("drive row");
+    }
+    (directory, store, source, vehicle)
+}
+
+fn put_watermark_time(store: &HubStore, source: Uuid, vehicle: Uuid, domain: &str, at: i64) {
+    store
+        .open()
+        .expect("connection")
+        .execute(
+            "INSERT INTO lifecycle_source_watermarks(
+                source_id, vehicle_id, domain, max_source_row_id, max_timestamp_ms
+             ) VALUES (?1, ?2, ?3, NULL, ?4)
+             ON CONFLICT(source_id, vehicle_id, domain) DO UPDATE SET
+                max_timestamp_ms = excluded.max_timestamp_ms",
+            params![source.to_string(), vehicle.to_string(), domain, at],
+        )
+        .expect("watermark row");
+}
+
+/// Seed the session through the named path: `seed_imported_open_session`, or
+/// `promote_imported_open_session_in_transaction` in an Immediate transaction
+/// as import finalisation calls it.
+fn seed_by(
+    path: &str,
+    store: &HubStore,
+    source: &SourceRecord,
+    vehicle: &VehicleRecord,
+    session: &crate::teslamate_projection::TeslaMateOpenSession,
+    at_ms: i64,
+) {
+    match path {
+        "seed" => {
+            store
+                .seed_imported_open_session(source.source_id, vehicle.vehicle_id, 1, session, at_ms)
+                .expect("seed");
+        }
+        "promote" => {
+            let mut connection = store.open().expect("connection");
+            let transaction = connection
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("begin");
+            promote_imported_open_session_in_transaction(
+                &transaction,
+                source.source_id,
+                vehicle.vehicle_id,
+                1,
+                session,
+                at_ms,
+                None,
+            )
+            .expect("promote");
+            transaction.commit().expect("commit");
+        }
+        other => panic!("unknown path {other}"),
+    }
+}
+
+fn stored_version(store: &HubStore, vehicle: Uuid) -> (Option<String>, Option<i64>) {
+    let record = store
+        .load_lifecycle_state(vehicle)
+        .expect("state")
+        .expect("seeded state");
+    let state =
+        crate::lifecycle::OpenSessionState::decode(&record.open_session_json).expect("decode");
+    (state.last_car_version, state.last_car_version_at_ms)
+}
+
+/// The update rows and the version time after one live observation carrying
+/// `version` at `COST_T0` is applied to the stored state.
+fn live_version(
+    store: &HubStore,
+    vehicle: Uuid,
+    version: &str,
+) -> (Vec<(i64, i64, String)>, Option<i64>) {
+    let record = store
+        .load_lifecycle_state(vehicle)
+        .expect("state")
+        .expect("seeded state");
+    let state =
+        crate::lifecycle::OpenSessionState::decode(&record.open_session_json).expect("decode");
+    let sample = crate::lifecycle::drive_tests::vd(
+        1,
+        COST_T0,
+        serde_json::json!({"vehicle_state": {"timestamp": COST_T0, "car_version": version}}),
+    );
+    let step = crate::lifecycle::apply_sample(state, 1, &sample).expect("live observation");
+    (
+        step.delta
+            .updates
+            .iter()
+            .map(|row| (row.start_date_ms, row.end_date_ms, row.version.clone()))
+            .collect(),
+        step.state.last_car_version_at_ms,
+    )
+}
+
+fn st104_session(updates_time: Option<i64>) -> crate::teslamate_projection::TeslaMateOpenSession {
+    let mut session = st93_session(COST_T0 - COST_HOUR);
+    session.watermarks.updates.max_timestamp_ms = updates_time;
+    session
+}
+
+#[test]
+fn st104_a_seeded_car_row_version_takes_the_updates_watermark_time() {
+    for path in ["seed", "promote"] {
+        let (_directory, store, source, vehicle) = st104_store("st104-a", Some(COST_T0 - R89_DAY));
+        let v = vehicle.vehicle_id;
+        seed_by(
+            path,
+            &store,
+            &source,
+            &vehicle,
+            &st104_session(Some(COST_T0 - 2 * R89_DAY)),
+            COST_T0 - COST_HOUR,
+        );
+        assert_eq!(
+            stored_version(&store, v),
+            (Some("2024.14.3 aa".to_owned()), Some(COST_T0 - 2 * R89_DAY)),
+            "{path}"
+        );
+        let (rows, _) = live_version(&store, v, "2024.20.1 bb");
+        assert_eq!(
+            rows,
+            vec![(COST_T0 - 2 * R89_DAY, COST_T0, "2024.20.1 bb".to_owned())],
+            "{path}"
+        );
+        let (rows, at) = live_version(&store, v, "2024.14.3 aa");
+        assert!(rows.is_empty(), "{path}");
+        assert_eq!(at, Some(COST_T0), "{path}");
+    }
+}
+
+#[test]
+fn st104_the_greatest_updates_watermark_time_of_any_source_is_the_bound() {
+    for path in ["seed", "promote"] {
+        for (other_time, expected) in [
+            (COST_T0 - 3 * R89_DAY, COST_T0 - 2 * R89_DAY),
+            (COST_T0 - COST_HOUR, COST_T0 - COST_HOUR),
+        ] {
+            let (_directory, store, source, vehicle) =
+                st104_store("st104-c", Some(COST_T0 - R89_DAY));
+            let other = store
+                .register_source(&SourceDescriptor::new("teslamate", "st104-other"), 1_002)
+                .expect("other source")
+                .source_id;
+            put_watermark_time(&store, other, vehicle.vehicle_id, "updates", other_time);
+            seed_by(
+                path,
+                &store,
+                &source,
+                &vehicle,
+                &st104_session(Some(COST_T0 - 2 * R89_DAY)),
+                COST_T0 - COST_HOUR,
+            );
+            assert_eq!(
+                stored_version(&store, vehicle.vehicle_id).1,
+                Some(expected),
+                "{path}, other source at {other_time}"
+            );
+        }
+    }
+}
+
+#[test]
+fn st104_without_a_watermark_time_the_newest_drive_end_is_the_bound() {
+    for path in ["seed", "promote"] {
+        // (d) The session records no updates time and no other source does.
+        let (_directory, store, source, vehicle) = st104_store("st104-d", Some(COST_T0 - R89_DAY));
+        seed_by(path, &store, &source, &vehicle, &st104_session(None), COST_T0 - COST_HOUR);
+        assert_eq!(
+            stored_version(&store, vehicle.vehicle_id),
+            (Some("2024.14.3 aa".to_owned()), Some(COST_T0 - R89_DAY)),
+            "{path}"
+        );
+        let (rows, _) = live_version(&store, vehicle.vehicle_id, "2024.20.1 bb");
+        assert_eq!(rows, vec![(COST_T0 - R89_DAY, COST_T0, "2024.20.1 bb".to_owned())]);
+
+        // (d') A watermark time that is not positive counts as none.
+        let (_directory, store, source, vehicle) = st104_store("st104-d2", Some(COST_T0 - R89_DAY));
+        seed_by(path, &store, &source, &vehicle, &st104_session(Some(0)), COST_T0 - COST_HOUR);
+        assert_eq!(
+            stored_version(&store, vehicle.vehicle_id).1,
+            Some(COST_T0 - R89_DAY),
+            "{path}"
+        );
+
+        // (e) Neither a watermark time nor a materialised drive: no time, and
+        // the missed update's row starts at its own end.
+        let (_directory, store, source, vehicle) = st104_store("st104-e", None);
+        seed_by(path, &store, &source, &vehicle, &st104_session(None), COST_T0 - COST_HOUR);
+        assert_eq!(
+            stored_version(&store, vehicle.vehicle_id),
+            (Some("2024.14.3 aa".to_owned()), None),
+            "{path}"
+        );
+        let (rows, _) = live_version(&store, vehicle.vehicle_id, "2024.20.1 bb");
+        assert_eq!(rows, vec![(COST_T0, COST_T0, "2024.20.1 bb".to_owned())]);
+    }
+}
+
+#[test]
+fn st104_an_imported_update_row_takes_precedence_over_the_car_row() {
+    for path in ["seed", "promote"] {
+        let (_directory, store, source, vehicle) = st104_store("st104-f", Some(COST_T0 - R89_DAY));
+        store
+            .open()
+            .expect("connection")
+            .execute(
+                "INSERT INTO materialised_updates(vehicle_id, update_id, car_id, update_json)
+                 VALUES (?1, 1, 1, ?2)",
+                params![
+                    vehicle.vehicle_id.to_string(),
+                    serde_json::json!({
+                        "id": 1, "car_id": 1, "start_date_ms": COST_T0 - 6 * R89_DAY,
+                        "end_date_ms": COST_T0 - 5 * R89_DAY, "version": "2024.14.3 aa"
+                    })
+                    .to_string()
+                ],
+            )
+            .expect("update row");
+        seed_by(
+            path,
+            &store,
+            &source,
+            &vehicle,
+            &st104_session(Some(COST_T0 - 2 * R89_DAY)),
+            COST_T0 - COST_HOUR,
+        );
+        assert_eq!(
+            stored_version(&store, vehicle.vehicle_id),
+            (Some("2024.14.3 aa".to_owned()), Some(COST_T0 - 5 * R89_DAY)),
+            "{path}"
+        );
+    }
+}
+
+// ------------------------------------------- C1 B2 amendment D (R90, ST105)
+
+/// ST105: the cursor raise of the promotion path, through
+/// `promote_imported_open_session_in_transaction` itself and a second source's
+/// watermark rows. The tree's ST93 tests reach only `seed_imported_open_session`.
+fn promote_st93(
+    store: &HubStore,
+    source: &SourceRecord,
+    vehicle: &VehicleRecord,
+    updated_at_ms: i64,
+) {
+    seed_by(
+        "promote",
+        store,
+        source,
+        vehicle,
+        &st93_session(COST_T0 - COST_HOUR),
+        updated_at_ms,
+    );
+}
+
+#[test]
+fn st105_a_promotion_raises_the_cursors_above_every_sources_watermarks() {
+    let start = COST_T0 - COST_HOUR;
+    let (_directory, store, source, vehicle) = watermark_store("st105-a");
+    let v = vehicle.vehicle_id;
+    let second = store
+        .register_source(&SourceDescriptor::new("teslamate", "st105-a-second"), 1_002)
+        .expect("second source")
+        .source_id;
+    put_watermark(&store, second, v, "positions", Some(2_000));
+    put_watermark(&store, second, v, "charges", Some(1_500));
+    put_watermark(&store, second, v, "drives", None);
+    promote_st93(&store, &source, &vehicle, start);
+    assert_eq!(id_cursors(&store, v), [41, 2_001, 51, 1_501, 31, 13]);
+}
+
+#[test]
+fn st105_a_promotion_raises_the_cursors_of_a_state_seeded_before_and_never_lowers_them() {
+    let start = COST_T0 - COST_HOUR;
+    let (_directory, store, source, vehicle) = watermark_store("st105-b");
+    let v = vehicle.vehicle_id;
+    store
+        .seed_imported_open_session(source.source_id, v, 1, &st93_session(start), start)
+        .expect("seed");
+    assert_eq!(id_cursors(&store, v), [41, 501, 51, 901, 31, 13]);
+    let second = store
+        .register_source(&SourceDescriptor::new("teslamate", "st105-b-second"), 1_002)
+        .expect("second source")
+        .source_id;
+    put_watermark(&store, second, v, "positions", Some(2_000));
+    put_watermark(&store, second, v, "updates", Some(20));
+    // The state was seeded before, and the session is the same; the raise
+    // still reads every source's rows as they stand in the transaction.
+    promote_st93(&store, &source, &vehicle, start + COST_MIN);
+    assert_eq!(id_cursors(&store, v), [41, 2_001, 51, 901, 31, 21]);
+    // (c) A lowered watermark row lowers no cursor.
+    put_watermark(&store, second, v, "positions", Some(600));
+    promote_st93(&store, &source, &vehicle, start + 2 * COST_MIN);
+    assert_eq!(id_cursors(&store, v), [41, 2_001, 51, 901, 31, 21]);
 }

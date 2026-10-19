@@ -18,6 +18,8 @@ use thiserror::Error;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
+use crate::platform::file_attempts::note as attempt;
+
 const SECRETS_DIRECTORY_MODE: u32 = 0o700;
 const KEY_FILE_MODE: u32 = 0o600;
 const MAX_KEY_BYTES: usize = 16 * 1024;
@@ -74,6 +76,26 @@ pub fn load_or_create_cursor_key(
         }
         Err(error) => Err(TeslaMateCredentialError::InspectCursorKey(error)),
     }
+}
+
+/// Test only: leave a previous key generation next to the current one, as an interrupted
+/// replacement does after its commit (B2 fix round, P3b fix 4, R-P3bF4-4).
+#[cfg(test)]
+pub(crate) fn leave_previous_key_for_test(
+    data_dir: &Path,
+    previous: &[u8],
+) -> Result<(), TeslaMateCredentialError> {
+    write_private_key_file(&previous_key_path(data_dir), previous)
+}
+
+/// Test only: begin a key replacement and never commit it, as a crash before the commit
+/// leaves it: `key` is the current generation, the old one the previous.
+#[cfg(test)]
+pub(crate) fn begin_key_replacement_for_test(
+    data_dir: &Path,
+    key: &[u8],
+) -> Result<(), TeslaMateCredentialError> {
+    begin_key_replacement(data_dir, key).map(drop)
 }
 
 /// Test helper for constructing an already-persisted key fixture. Production
@@ -179,11 +201,29 @@ pub fn load_key_for_tokens(
     data_dir: &Path,
     tokens: &crate::db::TeslaMateLegacyTokenStore,
 ) -> Result<TeslaMateEncryptionKey, TeslaMateCredentialError> {
+    load_key_for_tokens_with(data_dir, tokens, &|| true)
+}
+
+/// [`load_key_for_tokens`] for a supervised run (B2 fix round, P3b fix 4, R-P3bF4-4):
+/// `may_settle` is the run's guard, consulted immediately before every key-file mutation
+/// of the settlement (removing the previous generation, deleting the current one,
+/// restoring the previous over it), with nothing awaited in between. The key is selected
+/// without writing first; a refusal ends the call with
+/// [`TeslaMateCredentialError::SettlementRefused`] and leaves both key files as they
+/// were, to be settled by the next admitted start.
+pub(crate) fn load_key_for_tokens_with(
+    data_dir: &Path,
+    tokens: &crate::db::TeslaMateLegacyTokenStore,
+    may_settle: &dyn Fn() -> bool,
+) -> Result<TeslaMateEncryptionKey, TeslaMateCredentialError> {
     let previous = previous_key_path(data_dir);
     let previous_exists = path_exists(&previous)?;
     match load_key(data_dir) {
         Ok(current) if key_matches_tokens(&current, tokens) => {
             if previous_exists {
+                if !may_settle() {
+                    return Err(TeslaMateCredentialError::SettlementRefused);
+                }
                 remove_checked_key_file(&previous)?;
                 sync_directory(&data_dir.join("secrets"))?;
             }
@@ -194,7 +234,7 @@ pub fn load_key_for_tokens(
             if !key_matches_tokens(&prior, tokens) {
                 return Err(TeslaMateCredentialError::NoMatchingKeyGeneration);
             }
-            restore_previous_key(data_dir)?;
+            restore_previous_key(data_dir, may_settle)?;
             load_key(data_dir)
         }
         Ok(_) => Err(TeslaMateCredentialError::NoMatchingKeyGeneration),
@@ -208,22 +248,33 @@ pub fn validate_stored_legacy_credentials_read_only(
     data_dir: &Path,
     tokens: &crate::db::TeslaMateLegacyTokenStore,
 ) -> Result<(), TeslaMateCredentialError> {
+    select_stored_legacy_key_read_only(data_dir, tokens).map(drop)
+}
+
+/// Select, without writing, the existing current or previous key generation
+/// that opens the committed legacy pair, exactly as
+/// [`validate_stored_legacy_credentials_read_only`] proves it. An interrupted
+/// replacement is neither settled nor deleted; real key faults stay errors.
+pub(crate) fn select_stored_legacy_key_read_only(
+    data_dir: &Path,
+    tokens: &crate::db::TeslaMateLegacyTokenStore,
+) -> Result<TeslaMateEncryptionKey, TeslaMateCredentialError> {
     let current_exists = path_exists(&key_path(data_dir))?;
     let current = load_key(data_dir);
     if current
         .as_ref()
         .is_ok_and(|key| key_matches_tokens(key, tokens))
     {
-        return Ok(());
+        return current;
     }
     let previous = previous_key_path(data_dir);
     if path_exists(&previous)? {
         let previous = load_key_file(&previous)?;
         if key_matches_tokens(&previous, tokens) {
             if current_exists && current.is_err() {
-                return current.map(drop);
+                return current;
             }
-            return Ok(());
+            return Ok(previous);
         }
         return Err(TeslaMateCredentialError::NoMatchingKeyGeneration);
     }
@@ -284,6 +335,8 @@ impl KeyReplacement {
             remove_checked_key_file(&current)?;
         }
         if self.had_previous {
+            attempt(&previous_key_path(&self.data_dir));
+            attempt(&current);
             fs::rename(previous_key_path(&self.data_dir), &current)
                 .map_err(TeslaMateCredentialError::RestoreKey)?;
         }
@@ -311,17 +364,25 @@ fn begin_key_replacement(
     let temporary = secrets_dir.join(format!(".teslamate-encryption-{}.tmp", Uuid::new_v4()));
     write_private_key_file(&temporary, key)?;
     if had_previous {
+        attempt(&current);
+        attempt(&previous);
         if let Err(error) = fs::rename(&current, &previous) {
+            attempt(&temporary);
             let _ = fs::remove_file(&temporary);
             return Err(TeslaMateCredentialError::ReplaceKey(error));
         }
         sync_directory(&secrets_dir)?;
     }
+    attempt(&temporary);
+    attempt(&current);
     if let Err(error) = fs::rename(&temporary, &current) {
         if had_previous {
+            attempt(&previous);
+            attempt(&current);
             let _ = fs::rename(&previous, &current);
             let _ = sync_directory(&secrets_dir);
         }
+        attempt(&temporary);
         let _ = fs::remove_file(&temporary);
         return Err(TeslaMateCredentialError::ReplaceKey(error));
     }
@@ -333,6 +394,7 @@ fn begin_key_replacement(
 }
 
 fn write_private_key_file(path: &Path, key: &[u8]) -> Result<(), TeslaMateCredentialError> {
+    attempt(path);
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -341,8 +403,10 @@ fn write_private_key_file(path: &Path, key: &[u8]) -> Result<(), TeslaMateCreden
         .map_err(TeslaMateCredentialError::CreateTemporaryKey)?;
     file.set_permissions(fs::Permissions::from_mode(KEY_FILE_MODE))
         .map_err(TeslaMateCredentialError::ProtectTemporaryKey)?;
+    attempt(path);
     file.write_all(key)
         .map_err(TeslaMateCredentialError::WriteTemporaryKey)?;
+    attempt(path);
     file.sync_all()
         .map_err(TeslaMateCredentialError::SyncTemporaryKey)
 }
@@ -357,16 +421,28 @@ fn path_exists(path: &Path) -> Result<bool, TeslaMateCredentialError> {
 
 fn remove_checked_key_file(path: &Path) -> Result<(), TeslaMateCredentialError> {
     validate_key_file(path)?;
+    attempt(path);
     fs::remove_file(path).map_err(TeslaMateCredentialError::RemoveKey)
 }
 
-fn restore_previous_key(data_dir: &Path) -> Result<(), TeslaMateCredentialError> {
+fn restore_previous_key(
+    data_dir: &Path,
+    may_settle: &dyn Fn() -> bool,
+) -> Result<(), TeslaMateCredentialError> {
     let current = key_path(data_dir);
     let previous = previous_key_path(data_dir);
     validate_key_file(&previous)?;
     if path_exists(&current)? {
+        if !may_settle() {
+            return Err(TeslaMateCredentialError::SettlementRefused);
+        }
         remove_checked_key_file(&current)?;
     }
+    if !may_settle() {
+        return Err(TeslaMateCredentialError::SettlementRefused);
+    }
+    attempt(&previous);
+    attempt(&current);
     fs::rename(&previous, &current).map_err(TeslaMateCredentialError::RestoreKey)?;
     sync_directory(&data_dir.join("secrets"))
 }
@@ -396,6 +472,7 @@ fn create_cursor_key_once(
     let mut bytes = [0_u8; CURSOR_KEY_BYTES];
     getrandom::fill(&mut bytes).map_err(|_| TeslaMateCredentialError::EntropyUnavailable)?;
     let created = (|| {
+        attempt(&temporary);
         let mut file = OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -404,18 +481,23 @@ fn create_cursor_key_once(
             .map_err(TeslaMateCredentialError::CreateTemporaryCursorKey)?;
         file.set_permissions(fs::Permissions::from_mode(KEY_FILE_MODE))
             .map_err(TeslaMateCredentialError::ProtectTemporaryCursorKey)?;
+        attempt(&temporary);
         file.write_all(&bytes)
             .map_err(TeslaMateCredentialError::WriteTemporaryCursorKey)?;
+        attempt(&temporary);
         file.sync_all()
             .map_err(TeslaMateCredentialError::SyncTemporaryCursorKey)?;
+        attempt(destination);
         match fs::hard_link(&temporary, destination) {
             Ok(()) => {
+                attempt(&temporary);
                 fs::remove_file(&temporary)
                     .map_err(TeslaMateCredentialError::RemoveTemporaryCursorKey)?;
                 sync_directory(secrets_dir)?;
                 Ok(crate::protocol::CursorKey::from_bytes(bytes))
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                attempt(&temporary);
                 let _ = fs::remove_file(&temporary);
                 load_cursor_key_file(destination)
             }
@@ -423,6 +505,7 @@ fn create_cursor_key_once(
         }
     })();
     if created.is_err() {
+        attempt(&temporary);
         let _ = fs::remove_file(&temporary);
     }
     created
@@ -445,6 +528,7 @@ fn ensure_secrets_directory(path: &Path) -> Result<(), TeslaMateCredentialError>
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             let mut builder = fs::DirBuilder::new();
             builder.mode(SECRETS_DIRECTORY_MODE);
+            attempt(path);
             match builder.create(path) {
                 Ok(()) => validate_secrets_directory(path),
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -636,6 +720,7 @@ fn validate_key(key: &[u8]) -> Result<(), TeslaMateCredentialError> {
 }
 
 fn sync_directory(path: &Path) -> Result<(), TeslaMateCredentialError> {
+    attempt(path);
     File::open(path)
         .map_err(TeslaMateCredentialError::OpenSecretsDirectory)?
         .sync_all()
@@ -680,6 +765,8 @@ pub enum TeslaMateCredentialError {
     PendingKeyReplacementWithoutTokens,
     #[error("neither private TeslaMate key generation decrypts the committed token pair")]
     NoMatchingKeyGeneration,
+    #[error("the run's guard refused the settlement of an interrupted TeslaMate key replacement")]
+    SettlementRefused,
     #[error("cannot open TeslaMate secrets directory: {0}")]
     OpenSecretsDirectory(std::io::Error),
     #[error("cannot sync TeslaMate secrets directory: {0}")]

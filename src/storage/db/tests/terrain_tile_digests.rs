@@ -167,7 +167,7 @@ fn a_v68_store_migrates_to_an_empty_tile_digest_table_without_backfill() {
     let migrated = HubStore::initialize(temporary.path()).unwrap();
     let connection = migrated.open().unwrap();
 
-    assert_eq!(schema_version(&connection).unwrap(), 69);
+    assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     assert!(table_exists(&connection));
     assert!(
         digest_rows(&connection).is_empty(),

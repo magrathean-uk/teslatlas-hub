@@ -67,6 +67,12 @@ pub enum CollectorError {
     TerrainWorkerStartup,
     #[error("runtime sensitive-access admission is unavailable")]
     SensitiveAccessUnavailable,
+    /// A Fleet request's resend after the tick's token refresh was not sent: the
+    /// persisted reservation or the cap does not cover a second billed request
+    /// (C3 R27, R47). It is no answer, no failure and no wait: the request stays
+    /// due and goes out after the next commit raises the reservation.
+    #[error("Fleet request resend withheld until the reservation covers it")]
+    FleetResendWithheld,
     #[error("supervised collector startup receiver closed")]
     SupervisedStartupReadyDropped,
     #[cfg(unix)]

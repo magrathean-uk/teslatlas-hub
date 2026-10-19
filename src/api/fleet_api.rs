@@ -27,12 +27,24 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use crate::{
     hub_pack::ProjectionCarSettings,
-    owner_api::{ProviderSecrets, StreamVehicleId, Vehicle, VehicleData, VehicleId},
+    owner_api::{
+        ProviderSecrets, StreamVehicleId, VEHICLE_DATA_ENDPOINTS, Vehicle, VehicleData, VehicleId,
+        is_vehicle_in_service_body,
+    },
 };
 
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_ERROR_RESPONSE_BYTES: usize = 16 * 1024;
 const MAX_PROVIDER_ERROR_BYTES: usize = 64;
+
+/// Tesla's 401 error code for a car whose mobile access is switched off (C3
+/// R42): the one 401 body the Hub keeps, because it is one car's refusal and
+/// no token refresh can answer it.
+pub(crate) const MOBILE_ACCESS_DISABLED_CODE: &str = "mobile_access_disabled";
+
+/// The fixed code a 405 body that says the car is in service is reduced to
+/// (C3 R42, R52). Tesla's own text is uncontrolled prose and is never kept.
+pub(crate) const VEHICLE_IN_SERVICE_CODE: &str = "vehicle_in_service";
 const MAX_TOKEN_BYTES: usize = 16 * 1024;
 const MAX_REASON_BYTES: usize = 1024;
 const MAX_CA_CERTIFICATE_BYTES: usize = 128 * 1024;
@@ -45,8 +57,13 @@ const MAX_TELEMETRY_FIELD_INTERVAL_SECONDS: u32 = 365 * 24 * 60 * 60;
 const FLEET_TELEMETRY_DELIVERY_POLICY: &str = "latest";
 const MIN_TOKEN_LIFETIME_SECONDS: u64 = 60;
 const MAX_TOKEN_LIFETIME_SECONDS: u64 = 365 * 24 * 60 * 60;
+/// The longest a Fleet token request may take, headers and body included (C3
+/// R47, Codex R06, B2 clarification 3). The effective timeout is the smaller of
+/// this and the configured request timeout. Vehicle and list requests keep the
+/// configured timeout. The collector's exchange settlement allowance is longer
+/// than this and shorter than the platform shutdown allowance.
+pub(crate) const FLEET_TOKEN_REQUEST_MAX_TIMEOUT: Duration = Duration::from_secs(60);
 const ACCEPT_JSON: HeaderValue = HeaderValue::from_static("application/json");
-const VEHICLE_DATA_ENDPOINTS: &str = "location_data;charge_state;climate_state;drive_state;gui_settings;vehicle_config;vehicle_state";
 const CONTENT_TYPE_JSON: HeaderValue = HeaderValue::from_static("application/json");
 const CONTENT_TYPE_FORM: HeaderValue =
     HeaderValue::from_static("application/x-www-form-urlencoded");
@@ -201,6 +218,13 @@ impl fmt::Debug for FleetRefreshedTokens {
 pub struct FleetAuthApi {
     client: Client,
     endpoint: Url,
+    /// Test only: the awaited in-process handler that replaces the socket.
+    #[cfg(test)]
+    in_process: Option<in_process::InProcessTransport>,
+    /// The timeout the client was built with, kept so a test can compare it with
+    /// the applied value.
+    #[cfg(test)]
+    effective_timeout: Duration,
 }
 
 impl FleetAuthApi {
@@ -220,6 +244,9 @@ impl FleetAuthApi {
         if request_timeout.is_zero() {
             return Err(FleetApiConfigError::ZeroTimeout);
         }
+        // One bound for the token request, headers and body: shadow the binding
+        // once, so the client and the recorded value cannot disagree.
+        let request_timeout = request_timeout.min(FLEET_TOKEN_REQUEST_MAX_TIMEOUT);
         if endpoint.scheme() != "https" && !(allow_insecure_loopback && is_loopback_http(&endpoint))
         {
             return Err(FleetApiConfigError::HttpsRequired);
@@ -239,7 +266,20 @@ impl FleetAuthApi {
             .timeout(request_timeout)
             .build()
             .map_err(|_| FleetApiConfigError::ClientBuild)?;
-        Ok(Self { client, endpoint })
+        Ok(Self {
+            client,
+            endpoint,
+            #[cfg(test)]
+            in_process: None,
+            #[cfg(test)]
+            effective_timeout: request_timeout,
+        })
+    }
+
+    /// The timeout the client applies to a token request.
+    #[cfg(test)]
+    pub(crate) const fn effective_timeout(&self) -> Duration {
+        self.effective_timeout
     }
 
     pub async fn refresh(
@@ -252,14 +292,16 @@ impl FleetAuthApi {
             .append_pair("client_id", client_id.as_str())
             .append_pair("refresh_token", refresh_token.expose())
             .finish();
-        let response: FleetTokenWire = execute_json(
-            self.client
-                .post(self.endpoint.clone())
-                .header(ACCEPT, ACCEPT_JSON.clone())
-                .header(CONTENT_TYPE, CONTENT_TYPE_FORM.clone())
-                .body(body),
-        )
-        .await?;
+        let request = self
+            .client
+            .post(self.endpoint.clone())
+            .header(ACCEPT, ACCEPT_JSON.clone())
+            .header(CONTENT_TYPE, CONTENT_TYPE_FORM.clone())
+            .body(body);
+        #[cfg(test)]
+        let response: FleetTokenWire = execute_json_via(self.in_process.as_ref(), request).await?;
+        #[cfg(not(test))]
+        let response: FleetTokenWire = execute_json(request).await?;
         if !response.token_type.eq_ignore_ascii_case("bearer")
             || !(MIN_TOKEN_LIFETIME_SECONDS..=MAX_TOKEN_LIFETIME_SECONDS)
                 .contains(&response.expires_in)
@@ -281,6 +323,18 @@ impl FleetAuthApi {
         request_timeout: Duration,
     ) -> Result<Self, FleetApiConfigError> {
         Self::build(endpoint, request_timeout, true)
+    }
+
+    /// A client whose requests never leave the process: `transport` answers each
+    /// one in the caller's task (R-P3bF4-1).
+    #[cfg(test)]
+    pub(crate) fn for_in_process_test(
+        endpoint: Url,
+        transport: in_process::InProcessTransport,
+    ) -> Result<Self, FleetApiConfigError> {
+        let mut api = Self::build(endpoint, Duration::from_secs(5), true)?;
+        api.in_process = Some(transport);
+        Ok(api)
     }
 }
 
@@ -795,6 +849,9 @@ pub struct FleetCommandResult {
 pub struct FleetApi {
     client: Client,
     base_url: Url,
+    /// Test only: the awaited in-process handler that replaces the socket.
+    #[cfg(test)]
+    in_process: Option<in_process::InProcessTransport>,
 }
 
 impl FleetApi {
@@ -827,7 +884,12 @@ impl FleetApi {
             .timeout(request_timeout)
             .build()
             .map_err(|_| FleetApiConfigError::ClientBuild)?;
-        Ok(Self { client, base_url })
+        Ok(Self {
+            client,
+            base_url,
+            #[cfg(test)]
+            in_process: None,
+        })
     }
 
     pub async fn wake(
@@ -836,13 +898,12 @@ impl FleetApi {
         vin: &VehicleVin,
     ) -> Result<WakeResult, FleetApiError> {
         let endpoint = endpoint(&self.base_url, &format!("api/1/vehicles/{vin}/wake_up"))?;
-        let envelope: ResponseEnvelope<WakeWire> = execute_json(
-            self.client
-                .post(endpoint)
-                .header(ACCEPT, ACCEPT_JSON.clone())
-                .bearer_auth(access_token.expose()),
-        )
-        .await?;
+        let request = self
+            .client
+            .post(endpoint)
+            .header(ACCEPT, ACCEPT_JSON.clone())
+            .bearer_auth(access_token.expose());
+        let envelope: ResponseEnvelope<WakeWire> = self.execute_json(request).await?;
         if !valid_short_text(&envelope.response.state) {
             return Err(FleetApiError::InvalidResponse);
         }
@@ -860,13 +921,12 @@ impl FleetApi {
         refresh_token: &FleetRefreshToken,
     ) -> Result<Vec<Vehicle>, FleetApiError> {
         let endpoint = endpoint(&self.base_url, "api/1/vehicles")?;
-        let envelope: ResponseEnvelope<Vec<FleetVehicleWire>> = execute_json(
-            self.client
-                .get(endpoint)
-                .header(ACCEPT, ACCEPT_JSON.clone())
-                .bearer_auth(access_token.expose()),
-        )
-        .await?;
+        let request = self
+            .client
+            .get(endpoint)
+            .header(ACCEPT, ACCEPT_JSON.clone())
+            .bearer_auth(access_token.expose());
+        let envelope: ResponseEnvelope<Vec<FleetVehicleWire>> = self.execute_json(request).await?;
         if envelope
             .count
             .is_some_and(|count| count != envelope.response.len())
@@ -898,14 +958,13 @@ impl FleetApi {
             &self.base_url,
             &format!("api/1/vehicles/{vin}/vehicle_data"),
         )?;
-        let raw_json: Value = execute_json(
-            self.client
-                .get(endpoint)
-                .query(&[("endpoints", VEHICLE_DATA_ENDPOINTS)])
-                .header(ACCEPT, ACCEPT_JSON.clone())
-                .bearer_auth(access_token.expose()),
-        )
-        .await?;
+        let request = self
+            .client
+            .get(endpoint)
+            .query(&[("endpoints", VEHICLE_DATA_ENDPOINTS)])
+            .header(ACCEPT, ACCEPT_JSON.clone())
+            .bearer_auth(access_token.expose());
+        let raw_json: Value = self.execute_json(request).await?;
         let secrets = ProviderSecrets::new(&[access_token.expose(), refresh_token.expose()]);
         VehicleData::from_provider_raw_json(vehicle_id, raw_json, &secrets)
             .map_err(|_| FleetApiError::InvalidResponse)
@@ -917,6 +976,32 @@ impl FleetApi {
         request_timeout: Duration,
     ) -> Result<Self, FleetApiConfigError> {
         Self::build(base_url, request_timeout, true)
+    }
+
+    /// A client whose requests never leave the process: `transport` answers each
+    /// one in the caller's task (R-P3bF4-1).
+    #[cfg(test)]
+    pub(crate) fn for_in_process_test(
+        base_url: Url,
+        transport: in_process::InProcessTransport,
+    ) -> Result<Self, FleetApiConfigError> {
+        let mut api = Self::build(base_url, Duration::from_secs(5), true)?;
+        api.in_process = Some(transport);
+        Ok(api)
+    }
+
+    async fn execute_json<T: DeserializeOwned>(
+        &self,
+        request: reqwest::RequestBuilder,
+    ) -> Result<T, FleetApiError> {
+        #[cfg(test)]
+        {
+            execute_json_via(self.in_process.as_ref(), request).await
+        }
+        #[cfg(not(test))]
+        {
+            execute_json(request).await
+        }
     }
 }
 
@@ -1303,7 +1388,7 @@ impl FleetVehicleWire {
             vin: vin.to_string(),
             state: self.state,
             display_name: self.display_name,
-            settings: ProjectionCarSettings::default(),
+            settings: ProjectionCarSettings::new_live(),
         })
     }
 }
@@ -1492,7 +1577,36 @@ async fn execute_json<T>(request: reqwest::RequestBuilder) -> Result<T, FleetApi
 where
     T: DeserializeOwned,
 {
+    #[cfg(test)]
+    crate::api::test_egress_guard::refuse_production_request(&request);
     let response = request.send().await.map_err(classify_transport_error)?;
+    decode_json_response(response).await
+}
+
+/// The send path of a test client: the in-process handler when the client has
+/// one, the real socket otherwise. The response goes through the same decoding.
+#[cfg(test)]
+async fn execute_json_via<T>(
+    transport: Option<&in_process::InProcessTransport>,
+    request: reqwest::RequestBuilder,
+) -> Result<T, FleetApiError>
+where
+    T: DeserializeOwned,
+{
+    let Some(transport) = transport else {
+        return execute_json(request).await;
+    };
+    crate::api::test_egress_guard::refuse_production_request(&request);
+    let request = request
+        .build()
+        .map_err(|_| FleetApiError::InvalidEndpoint)?;
+    decode_json_response(transport.call(request).await?).await
+}
+
+async fn decode_json_response<T>(response: reqwest::Response) -> Result<T, FleetApiError>
+where
+    T: DeserializeOwned,
+{
     if !response.status().is_success() {
         let status = response.status().as_u16();
         if status == 429 {
@@ -1500,17 +1614,28 @@ where
                 retry_after_seconds: parse_retry_after(response.headers()),
             });
         }
-        // Keep existing auth recovery and plain-status matching exact. Other
-        // Tesla/proxy failures may carry a useful bounded JSON error envelope.
-        if !matches!(status, 401 | 403)
+        // Keep existing auth recovery and plain-status matching exact: a 403 and
+        // every 401 but one stay a plain status. Other Tesla/proxy failures may
+        // carry a useful bounded JSON error envelope.
+        if status != 403
             && let Ok(bytes) = read_response_with_limit(response, MAX_ERROR_RESPONSE_BYTES).await
-            && let Some((error, description)) = parse_provider_error(&bytes)
         {
-            return Err(FleetApiError::ProviderHttpStatus {
-                status,
-                error,
-                description,
-            });
+            if status == 405 && is_vehicle_in_service_body(&bytes) {
+                return Err(FleetApiError::ProviderHttpStatus {
+                    status,
+                    error: VEHICLE_IN_SERVICE_CODE.to_owned(),
+                    description: None,
+                });
+            }
+            if let Some((error, description)) = parse_provider_error(&bytes)
+                && (status != 401 || error == MOBILE_ACCESS_DISABLED_CODE)
+            {
+                return Err(FleetApiError::ProviderHttpStatus {
+                    status,
+                    error,
+                    description,
+                });
+            }
         }
         return Err(FleetApiError::HttpStatus(status));
     }
@@ -1544,6 +1669,7 @@ fn safe_provider_error_code(value: &str) -> bool {
                 | "invalid_request"
                 | "invalid_scope"
                 | "invalid_token"
+                | "mobile_access_disabled"
                 | "not_found"
                 | "rate_limited"
                 | "service_unavailable"
@@ -1551,6 +1677,7 @@ fn safe_provider_error_code(value: &str) -> bool {
                 | "timeout"
                 | "unauthorized"
                 | "unsupported_grant_type"
+                | "vehicle_in_service"
                 | "vehicle_not_found"
                 | "vehicle_offline"
                 | "vehicle_unavailable"
@@ -1567,12 +1694,11 @@ fn classify_transport_error(error: reqwest::Error) -> FleetApiError {
     }
 }
 
+/// The wait a 429 asks for, in whole seconds, or 0 when it names none (C3 R45).
+/// The rule is the Owner client's: one parser serves both, so they cannot
+/// disagree about the same header.
 fn parse_retry_after(headers: &HeaderMap) -> u64 {
-    headers
-        .get("retry-after")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(300)
+    crate::owner_api::parse_retry_after(headers)
 }
 
 fn valid_short_text(value: &str) -> bool {
@@ -1620,6 +1746,8 @@ async fn read_response_with_limit(
     Ok(bytes)
 }
 
+#[cfg(test)]
+pub(crate) mod in_process;
 #[cfg(test)]
 #[path = "fleet_api/tests.rs"]
 mod tests;

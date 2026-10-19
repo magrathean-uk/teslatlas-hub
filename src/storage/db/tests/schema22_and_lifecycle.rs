@@ -1217,72 +1217,6 @@ fn car_settings_are_idempotent_and_survive_reopen() {
 }
 
 #[test]
-fn unresolved_live_default_resolves_once_and_explicit_value_wins() {
-    let temp = crate::private_tempdir().expect("tempdir");
-    let store = HubStore::initialize(temp.path()).expect("store");
-    let (_, vehicle) = test_registered_vehicle(&store);
-    let live = ProjectionCarSettings::new_live();
-    store
-        .upsert_car_settings(vehicle.vehicle_id, 1, &live)
-        .expect("live settings");
-    assert!(
-        store
-            .resolve_car_suspend_min(vehicle.vehicle_id, Some("3"), Some("74D"), None)
-            .expect("resolve model 3")
-    );
-    let resolved = store.load_car_settings(vehicle.vehicle_id).unwrap();
-    assert_eq!(resolved.suspend_min, 12);
-    assert!(resolved.suspend_min_resolved);
-    drop(store);
-    let reopened = HubStore::initialize(temp.path()).expect("restart");
-    assert!(
-        !reopened
-            .resolve_car_suspend_min(vehicle.vehicle_id, Some("Y"), None, None)
-            .expect("metadata must not rewrite")
-    );
-    assert_eq!(
-        reopened
-            .load_car_settings(vehicle.vehicle_id)
-            .unwrap()
-            .suspend_min,
-        12
-    );
-
-    let explicit_source = reopened
-        .register_source(
-            &SourceDescriptor::new("tesla_owner_api", "explicit-test"),
-            2_000,
-        )
-        .expect("explicit source");
-    let explicit_vehicle = reopened
-        .register_vehicle(
-            &VehicleDescriptor::new(explicit_source.source_id, "explicit-vehicle"),
-            2_001,
-        )
-        .expect("explicit vehicle");
-    let explicit = ProjectionCarSettings {
-        suspend_min: 7,
-        suspend_min_resolved: true,
-        ..ProjectionCarSettings::default()
-    };
-    reopened
-        .upsert_car_settings(explicit_vehicle.vehicle_id, 1, &explicit)
-        .expect("explicit settings");
-    assert_eq!(
-        reopened
-            .load_car_settings(explicit_vehicle.vehicle_id)
-            .unwrap()
-            .suspend_min,
-        7
-    );
-    assert!(
-        !reopened
-            .resolve_car_suspend_min(explicit_vehicle.vehicle_id, Some("3"), None, None)
-            .expect("explicit value must stay authoritative")
-    );
-}
-
-#[test]
 fn stream_watermark_is_strictly_increasing_and_survives_reopen() {
     let temp = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(temp.path()).expect("store");
@@ -1382,6 +1316,89 @@ fn verify_no_wake_applies_the_captured_receipt_watermark() {
     assert_eq!(verification.direct_wake_receipts, 0);
     assert_eq!(verification.unresolved_receipts, 0);
     assert!(verification.verified());
+}
+
+#[test]
+fn ct6_suspend_length_resolution_gives_an_unresolved_row_the_hub_default_once() {
+    let temp = crate::private_tempdir().expect("tempdir");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let (_, vehicle) = test_registered_vehicle(&store);
+    let id = vehicle.vehicle_id;
+
+    // A vehicle without a settings row is left alone.
+    assert!(!store.resolve_car_suspend_min(id).expect("no row"));
+
+    // A row written by an earlier Hub version, awaiting a model lookup.
+    store
+        .upsert_car_settings(
+            id,
+            1,
+            &ProjectionCarSettings {
+                enabled: false,
+                req_not_unlocked: true,
+                suspend_min: 21,
+                suspend_min_resolved: false,
+                ..ProjectionCarSettings::new_live()
+            },
+        )
+        .expect("unresolved row");
+    assert!(store.resolve_car_suspend_min(id).expect("resolve"));
+    assert_eq!(
+        store.load_car_settings(id).expect("resolved row"),
+        ProjectionCarSettings {
+            enabled: false,
+            req_not_unlocked: true,
+            suspend_min: 30,
+            suspend_min_resolved: true,
+            ..ProjectionCarSettings::new_live()
+        },
+        "only the suspend length and the flag change"
+    );
+    assert!(
+        !store.resolve_car_suspend_min(id).expect("second call"),
+        "a resolved row is never changed again"
+    );
+
+    // An owner-set, resolved value is never changed.
+    store
+        .replace_car_settings(
+            id,
+            &ProjectionCarSettings {
+                suspend_min: 45,
+                suspend_min_resolved: true,
+                ..ProjectionCarSettings::new_live()
+            },
+        )
+        .expect("owner value");
+    assert!(!store.resolve_car_suspend_min(id).expect("owner value kept"));
+    assert_eq!(store.load_car_settings(id).expect("row").suspend_min, 45);
+}
+
+#[test]
+fn ct6_an_imported_row_defaults_to_resolved_and_is_never_changed() {
+    let temp = crate::private_tempdir().expect("tempdir");
+    let store = HubStore::initialize(temp.path()).expect("store");
+    let (_, vehicle) = test_registered_vehicle(&store);
+    store
+        .upsert_car_settings(
+            vehicle.vehicle_id,
+            1,
+            &ProjectionCarSettings::source_column_defaults(),
+        )
+        .expect("imported row");
+    assert!(
+        !store
+            .resolve_car_suspend_min(vehicle.vehicle_id)
+            .expect("imported row")
+    );
+    assert_eq!(
+        store
+            .load_car_settings(vehicle.vehicle_id)
+            .expect("row")
+            .suspend_min,
+        21,
+        "the source column default stays"
+    );
 }
 
 #[test]

@@ -238,7 +238,7 @@ impl HubStore {
             return Err(StoreError::InvalidFleetRefreshGeneration);
         }
         let started_at_ms = outbound_request_clock_ms()?;
-        let mut connection = self.open()?;
+        let mut connection = self.open_for_credential_commit()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
@@ -318,12 +318,13 @@ impl HubStore {
         Ok(receipt_id)
     }
 
+    #[cfg(test)]
     pub(crate) fn cancel_unsent_fleet_refresh(
         &self,
         receipt_id: OutboundRequestReceiptId,
         input_generation: Uuid,
     ) -> Result<(), StoreError> {
-        let mut connection = self.open()?;
+        let mut connection = self.open_for_credential_commit()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
@@ -385,7 +386,7 @@ impl HubStore {
         {
             return Err(StoreError::InvalidFleetRefreshFailure);
         }
-        let mut connection = self.open()?;
+        let mut connection = self.open_for_credential_commit()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
@@ -477,7 +478,7 @@ impl HubStore {
         {
             return Err(StoreError::InvalidFleetRefreshGeneration);
         }
-        let mut connection = self.open()?;
+        let mut connection = self.open_for_credential_commit()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;

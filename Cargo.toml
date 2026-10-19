@@ -71,6 +71,13 @@ toml = "1"
 tower = { version = "0.5", features = ["limit", "util"] }
 tower-http = { version = "0.7.0", features = ["request-id", "timeout", "trace"] }
 tracing = "0.1"
+# The WebSocket crate logs every frame it reads and writes at trace level through
+# the `log` crate, and `tracing-subscriber` bridges those records into the Hub's
+# log. A trace record carries the subscribe frame (the access token), the stream
+# tag and the sample values, which the stream's logging rule keeps out of every
+# log (C4 R52). The cap is compiled in, so no environment variable or filter
+# directive can lift it; `tesla_stream/session.rs` fails the build if it goes.
+log = { version = "0.4", features = ["max_level_info"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 time = { version = "0.3.55", features = ["formatting"] }
 url = { version = "2", features = ["serde"] }
@@ -81,4 +88,13 @@ zeroize = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 http-body-util = "0.1"
+# The authorizer and update hooks of SQLite (no commit hook), installed by the store in tests only:
+# the zero-write proofs of the collector count the mutations a connection attempts,
+# independently of any guard (B2 fix round, P3b fix 3, R-P3bF3-4). No new package.
+rusqlite = { version = "0.40.2", features = ["hooks"] }
 tempfile = "3"
+# The `log` bridge of `tracing-subscriber`, installed by the stream's logging test
+# so that library records reach the captured log as they do in the binary.
+tracing-log = "0.2"
+# Paused virtual time for the collector's timing tests (C3 section 9 notation).
+tokio = { version = "1.53.1", features = ["test-util"] }

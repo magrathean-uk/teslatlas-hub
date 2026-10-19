@@ -314,6 +314,53 @@ fn live_delta_publication_does_not_rehash_every_historical_pack() {
     assert_eq!(published.deltas, vec![delta]);
 }
 
+/// The attempts recorded for the transient inspection files of `packs_dir` whose names
+/// start with `prefix`: (name, attempts), and whether any such file is still there.
+fn inspection_attempts(packs_dir: &Path, prefix: &str) -> (Vec<(String, usize)>, bool) {
+    let attempts = crate::platform::file_attempts::entries_under(packs_dir)
+        .into_iter()
+        .filter_map(|(path, count)| {
+            let name = path.file_name()?.to_str()?.to_owned();
+            name.starts_with(prefix).then_some((name, count))
+        })
+        .collect();
+    let left = fs::read_dir(packs_dir)
+        .expect("packs directory")
+        .flatten()
+        .any(|entry| entry.file_name().to_string_lossy().starts_with(prefix));
+    (attempts, left)
+}
+
+#[test]
+fn p3bf5_a_delta_commit_counts_the_creation_write_sync_and_removal_of_its_inspection_file() {
+    // B2 fix round, P3b fix 5 (R-P3bF5-3): the decoded copy of the delta pack that the
+    // commit inspects is created, filled, synced and removed under the packs directory.
+    // It is gone when the commit returns and the pack files are as they were; the
+    // counter records the four attempts all the same.
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let store = HubStore::initialize(temporary.path()).expect("store");
+    let (vehicle, binding, _base) = imported_v2_base(&store);
+    let (claim, delta) = claimed_collector_delta(&store, vehicle.vehicle_id, &binding);
+    assert_eq!(
+        inspection_attempts(store.packs_dir(), ".lineage-inspection-").0,
+        Vec::new()
+    );
+
+    store
+        .commit_v2_delta_claim(
+            &claim,
+            &delta,
+            &import_delta_test_cursor_key(),
+            &import_delta_test_cursor(&binding, delta.to_sequence),
+        )
+        .expect("commit");
+
+    let (attempts, left) = inspection_attempts(store.packs_dir(), ".lineage-inspection-");
+    assert!(!left, "the inspection file is removed");
+    assert_eq!(attempts.len(), 1, "{attempts:?}");
+    assert_eq!(attempts[0].1, 4, "create, write, sync and removal: {attempts:?}");
+}
+
 fn sync_claim_publication_state(
     store: &HubStore,
     claim: &SyncMutationClaim,

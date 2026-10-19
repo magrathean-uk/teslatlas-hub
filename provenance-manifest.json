@@ -643,6 +643,8 @@
         "src/api/server/tests/drive_byte_budget.rs",
         "src/api/server/tests/lineage_manifest.rs",
         "src/api/server/tests/public_history.rs",
+        "src/api/server/tests/readiness.rs",
+        "src/api/server/tests/server_limits.rs",
         "src/api/server/tests/vehicle_grants.rs",
         "src/collection/teslamate_current.rs",
         "src/collection/teslamate_current/tests.rs"

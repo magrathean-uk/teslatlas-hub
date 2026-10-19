@@ -292,3 +292,244 @@ fn the_car_figure_is_rounded_to_a_tenth() {
         Some(150.0)
     );
 }
+
+// ------------------------------------------------ C2 B2 amendment B (R71)
+
+/// The R62 steps 1 to 5 written out over a whole ordered slice, as the
+/// definition states them: the oracle the fold is compared with.
+fn reference_figure(samples: &[ProjectionChargeSample]) -> Option<f64> {
+    let mut ordered = samples.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|sample| (sample.timestamp_ms, sample.id));
+    let in_window = |sample: &ProjectionChargeSample| {
+        sample.battery_level.is_some_and(|level| level <= 90)
+            && sample.rated_range_km.is_some_and(f64::is_finite)
+            && sample
+                .charge_energy_added_kwh
+                .is_some_and(|counter| counter.is_finite() && counter >= 0.0)
+    };
+    let first = ordered.iter().position(|sample| in_window(sample))?;
+    let last = ordered.iter().rposition(|sample| in_window(sample))?;
+    if first == last {
+        return None;
+    }
+    let span = &ordered[first..=last];
+    if span
+        .iter()
+        .any(|sample| sample.battery_heater_on == Some(true) || sample.battery_heater == Some(true))
+    {
+        return None;
+    }
+    let counters = span
+        .iter()
+        .filter(|sample| in_window(sample))
+        .map(|sample| sample.charge_energy_added_kwh.unwrap())
+        .collect::<Vec<_>>();
+    if counters.windows(2).any(|pair| pair[1] < pair[0]) {
+        return None;
+    }
+    let (a, b) = (ordered[first], ordered[last]);
+    let level_span = b.battery_level? - a.battery_level?;
+    let energy_added = b.charge_energy_added_kwh? - a.charge_energy_added_kwh?;
+    let range_gained = b.rated_range_km? - a.rated_range_km?;
+    if level_span < 10 || energy_added <= 0.0 || range_gained <= 0.0 {
+        return None;
+    }
+    let figure = (1000.0 * energy_added) / range_gained;
+    (figure.is_finite() && figure > 0.0).then_some(figure)
+}
+
+/// Feed the fold one sample at a time in sample order and finish.
+fn folded(samples: &[ProjectionChargeSample]) -> Option<f64> {
+    let mut ordered = samples.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|sample| (sample.timestamp_ms, sample.id));
+    let mut fold = EfficiencyFold::new();
+    for sample in ordered {
+        fold.observe(sample);
+    }
+    fold.finish()
+}
+
+/// `sample` at `T0` plus `minutes` with the given id.
+fn placed(mut sample: ProjectionChargeSample, id: i64, minutes: i64) -> ProjectionChargeSample {
+    sample.id = id;
+    sample.timestamp_ms = T0 + minutes * 60_000;
+    sample
+}
+
+/// T50's six samples at `T0 + 10 min * k` with ids `k + 1`.
+fn t66_base() -> Vec<ProjectionChargeSample> {
+    t50()
+        .into_iter()
+        .enumerate()
+        .map(|(k, sample)| placed(sample, k as i64 + 1, 10 * k as i64))
+        .collect()
+}
+
+/// A case checks the fold against the stated value, bit for bit against the
+/// slice function given the samples in reverse order, and against the oracle.
+fn t66_case(samples: &[ProjectionChargeSample], expected: Option<f64>, label: &str) {
+    assert_eq!(folded(samples), expected, "{label}");
+    let mut reversed = samples.to_vec();
+    reversed.reverse();
+    assert_eq!(
+        session_efficiency_wh_per_km(&reversed).map(f64::to_bits),
+        folded(samples).map(f64::to_bits),
+        "{label}: the slice function"
+    );
+    assert_eq!(
+        reference_figure(samples).map(f64::to_bits),
+        folded(samples).map(f64::to_bits),
+        "{label}: the definition"
+    );
+}
+
+#[test]
+fn t66_a_the_inputs_of_t50_to_t55_give_their_stated_values() {
+    // T50.
+    t66_case(&t66_base(), Some(150.0), "T50");
+    // T51: a span under ten points.
+    let t51 = vec![
+        placed(fig(1, 80, 300.00, 0.00), 1, 0),
+        placed(fig(2, 89, 336.00, 5.40), 2, 10),
+    ];
+    t66_case(&t51, None, "T51");
+    // T52: a sample above the window is ignored.
+    let mut t52 = t66_base();
+    t52.push(placed(fig(7, 99, 300.00, 40.00), 7, 60));
+    t66_case(&t52, Some(150.0), "T52");
+    // T53: heater at level 70 gives None; only at level 95, 150.0.
+    let mut t53 = t66_base();
+    t53[2].battery_heater_on = Some(true);
+    t66_case(&t53, None, "T53 heater at 70");
+    let mut t53b = t66_base();
+    t53b[5].battery_heater_on = Some(true);
+    t66_case(&t53b, Some(150.0), "T53 heater at 95");
+    // T54: a counter decrease between window samples.
+    let mut t54 = t66_base();
+    t54[3].charge_energy_added_kwh = Some(5.00);
+    t66_case(&t54, None, "T54");
+    // T55: no rated range.
+    let mut t55 = t66_base();
+    for sample in &mut t55 {
+        sample.rated_range_km = None;
+    }
+    t66_case(&t55, None, "T55");
+}
+
+#[test]
+fn t66_b_to_d_a_heater_counts_from_the_first_window_sample_to_the_last() {
+    // (b) A heater before A does not count.
+    let mut before = t66_base();
+    let mut early = placed(bare(100), 100, -10);
+    early.battery_level = Some(45);
+    early.charge_energy_added_kwh = Some(0.00);
+    early.battery_heater_on = Some(true);
+    before.push(early);
+    t66_case(&before, Some(150.0), "(b) heater before A");
+    // (c) A heater between A and B on a sample that is not a window sample.
+    let mut between = t66_base();
+    let mut middle = placed(bare(101), 101, 25);
+    middle.battery_level = Some(75);
+    middle.charge_energy_added_kwh = Some(15.00);
+    middle.battery_heater = Some(true);
+    between.push(middle);
+    t66_case(&between, None, "(c) heater between");
+    // (d) On A only, on B only, and on the level-95 sample only.
+    let mut on_a = t66_base();
+    on_a[0].battery_heater = Some(true);
+    t66_case(&on_a, None, "(d) on A");
+    let mut on_b = t66_base();
+    on_b[4].battery_heater = Some(true);
+    t66_case(&on_b, None, "(d) on B");
+    let mut after = t66_base();
+    after[5].battery_heater = Some(true);
+    t66_case(&after, Some(150.0), "(d) after B");
+}
+
+#[test]
+fn t66_e_to_g_equal_times_one_window_sample_and_only_window_samples_compared() {
+    // (e) The level-60 and level-70 samples at the same time, the level-70
+    // sample with id 2 and the level-60 sample with id 3: sample order puts
+    // c 12.00 before c 6.00 between window samples.
+    let mut swapped = t66_base();
+    swapped[2] = placed(swapped[2].clone(), 2, 10);
+    swapped[1] = placed(swapped[1].clone(), 3, 10);
+    t66_case(&swapped, None, "(e) decrease in sample order");
+    let mut ordered = t66_base();
+    ordered[1] = placed(ordered[1].clone(), 2, 10);
+    ordered[2] = placed(ordered[2].clone(), 3, 10);
+    t66_case(&ordered, Some(150.0), "(e) ids swapped back");
+    // (f) One window sample: the level-90 and level-95 samples only.
+    let base = t66_base();
+    t66_case(&[base[4].clone(), base[5].clone()], None, "(f)");
+    // (g) A sample without rated range is not a window sample, so its lower
+    // counter is not compared.
+    let mut lower = t66_base();
+    let mut stray = placed(bare(102), 102, 35);
+    stray.battery_level = Some(85);
+    stray.charge_energy_added_kwh = Some(1.00);
+    lower.push(stray);
+    t66_case(&lower, Some(150.0), "(g)");
+}
+
+#[test]
+fn t66_h_the_fold_equals_the_definition_on_generated_sequences() {
+    // A deterministic generator over short sequences with every feature that
+    // can change a figure: levels around the window edges, missing readings,
+    // counter steps down, heater flags and equal times.
+    let mut state = 0x9E37_79B9_7F4A_7C15_u64;
+    let mut next = move |bound: u64| {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 33) % bound
+    };
+    let (mut with_figure, mut without_figure) = (0, 0);
+    for round in 0..20_000 {
+        let length = next(9) as usize;
+        let mut samples = Vec::new();
+        let mut level = 40 + next(15) as i64;
+        let mut counter = 0.0_f64;
+        let mut rated = 150.0_f64;
+        for index in 0..length {
+            let mut sample = bare(index as i64 + 1);
+            sample.timestamp_ms = T0 + (index as i64 / (1 + next(2) as i64)) * 60_000;
+            level += next(9) as i64 - 1;
+            counter += (next(7) as f64 - 1.0) * 1.37;
+            rated += (next(9) as f64 - 2.0) * 8.0;
+            sample.battery_level = (next(12) != 0).then_some(level.clamp(0, 100));
+            sample.rated_range_km = match next(14) {
+                0 => None,
+                1 => Some(f64::NAN),
+                _ => Some(rated),
+            };
+            sample.charge_energy_added_kwh = match next(14) {
+                0 => None,
+                1 => Some(-0.5),
+                _ => Some(counter.max(0.0)),
+            };
+            sample.battery_heater_on = match next(12) {
+                0 => Some(true),
+                1 => Some(false),
+                _ => None,
+            };
+            sample.battery_heater = (next(25) == 0).then_some(true);
+            samples.push(sample);
+        }
+        assert_eq!(
+            folded(&samples).map(f64::to_bits),
+            reference_figure(&samples).map(f64::to_bits),
+            "round {round}: {samples:?}"
+        );
+        if folded(&samples).is_some() {
+            with_figure += 1;
+        } else {
+            without_figure += 1;
+        }
+    }
+    // The generator reaches both outcomes often enough to mean something.
+    assert!(
+        with_figure > 500 && without_figure > 500,
+        "{with_figure} {without_figure}"
+    );
+}

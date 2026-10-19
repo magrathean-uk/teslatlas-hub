@@ -3879,6 +3879,32 @@ final class HubController {
         HubAppLog.regularFileTail(of: url, maximumBytes: maximumBytes)
     }
 
+    /// Plain words for the registry of collection attention the Hub reports in
+    /// `status` as `collectionAttention`. An unknown word, from a newer Hub, gets
+    /// the general line. These are diagnostic lines like the others, not catalog
+    /// strings, and the stable code stays the only thing parsed.
+    static func collectionAttentionLabel(_ code: String) -> String {
+        switch code {
+        case "collector_api_refused": return "Owner API has refused collection"
+        case "collector_provider_refused": return "The provider has refused collection"
+        case "collector_fleet_access_refused": return "Fleet access has been refused"
+        case "collector_billing_suspended": return "Fleet billing is suspended"
+        case "collector_cap_reached": return "The local monthly cap has been reached"
+        case "collector_config_error": return "Fleet configuration needs attention"
+        case "collector_account_locked": return "The account is locked"
+        case "collector_stream_audit_failed": return "Stream receipts cannot be written"
+        case "collector_auth_waiting": return "Collection is waiting for credentials"
+        case "collector_auth_configuration_error": return "Sign-in configuration needs attention"
+        case "collector_auth_sign_in_required":
+            return "Sign in again; collection can continue until the token expires"
+        case "collector_cadence_invalid":
+            return "Collection cadence needs attention; correct the setting and restart"
+        case "collector_fleet_refresh_outcome_unknown":
+            return "Reconnect Fleet credentials; the last refresh outcome is unknown"
+        default: return "Collection needs attention"
+        }
+    }
+
     private func parseStatus(_ output: String) -> HubSnapshot? {
         guard let data = output.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
@@ -3962,6 +3988,15 @@ final class HubController {
         ]
         if let fleetScope {
             diagnosticLines.append("Fleet scopes: \(fleetScope)")
+        }
+        // The one condition that needs the owner while the service stays up. It is
+        // shown beside the readiness line and never changes `health`: only `ready`
+        // does (B2: service readiness and collection attention are separate).
+        if let attention = root["collectionAttention"] as? String {
+            let readinessIndex = diagnosticLines.firstIndex { $0.hasPrefix("Readiness:") }
+                ?? diagnosticLines.endIndex - 1
+            diagnosticLines.insert("Collection attention: \(Self.collectionAttentionLabel(attention))",
+                                   at: readinessIndex + 1)
         }
         return HubSnapshot(health: ready ? .running : .degraded,
                            service: service,

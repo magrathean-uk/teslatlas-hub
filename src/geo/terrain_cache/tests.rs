@@ -19,6 +19,8 @@ use tempfile::tempdir;
 use super::*;
 use crate::{geocoder::EgressGuardError, terrain::SRTM3_SIDE};
 
+#[path = "guard_tests.rs"]
+mod guard;
 #[path = "trust_tests.rs"]
 mod trust;
 
@@ -134,7 +136,11 @@ fn cache_quota_evicts_the_oldest_complete_tile_before_a_download() {
     let cache = TerrainCache::new(opts).unwrap();
 
     cache
-        .enforce_cache_quota(None, MAX_TILE_CACHE_BYTES)
+        .enforce_cache_quota(
+            None,
+            MAX_TILE_CACHE_BYTES,
+            &crate::geocoder::UnguardedEgress,
+        )
         .unwrap();
 
     assert!(!cache.tile_path(old).exists());
@@ -237,7 +243,10 @@ fn production_sources_are_https_only() {
 }
 
 #[test]
-fn startup_removes_only_stale_owned_temporary_files() {
+fn startup_reclaims_every_abandoned_owned_temporary_file_whatever_its_age() {
+    // B2 fix round, P3b fix 4 (R-P3bF4-6): an owned temporary entry no live writer of
+    // this process owns is reclaimed at an admitted construction, stale or fresh; a file
+    // that is not an owned temporary name stays.
     let dir = tempdir().unwrap();
     let (_data, store) = test_store();
     let stale = dir.path().join(".archive.123.0.tmp");
@@ -256,7 +265,7 @@ fn startup_removes_only_stale_owned_temporary_files() {
     TerrainCache::new(options(dir.path(), "http://127.0.0.1:1/", &store)).unwrap();
 
     assert!(!stale.exists());
-    assert!(fresh.exists());
+    assert!(!fresh.exists());
     assert!(unrelated.exists());
 }
 
@@ -264,13 +273,19 @@ fn startup_removes_only_stale_owned_temporary_files() {
 fn cache_quota_counts_fresh_temporary_files() {
     let dir = tempdir().unwrap();
     let (_data, store) = test_store();
-    fs::write(dir.path().join(".source.123.0.tmp"), b"x").unwrap();
     let mut opts = options(dir.path(), "http://127.0.0.1:1/", &store);
     opts.max_cache_bytes = MAX_TILE_CACHE_BYTES;
     let cache = TerrainCache::new(opts).unwrap();
+    // A temporary file that appears after construction (a writer's own) is counted; the
+    // construction itself reclaims what it finds abandoned (R-P3bF4-6).
+    fs::write(dir.path().join(".source.123.0.tmp"), b"x").unwrap();
 
     assert!(matches!(
-        cache.enforce_cache_quota(None, MAX_TILE_CACHE_BYTES),
+        cache.enforce_cache_quota(
+            None,
+            MAX_TILE_CACHE_BYTES,
+            &crate::geocoder::UnguardedEgress
+        ),
         Err(TerrainCacheError::CacheQuotaExceeded)
     ));
 }
@@ -508,4 +523,82 @@ async fn corrupt_zip_and_low_space_are_rejected() {
         cache.get(tile).await,
         Err(TerrainCacheError::InsufficientSpace)
     ));
+}
+
+/// An egress guard that allows its first `allowed` checks and refuses every later one.
+struct AllowsFirst {
+    checks: Arc<AtomicUsize>,
+    allowed: usize,
+}
+
+impl EgressGuard for AllowsFirst {
+    fn assert_egress_allowed(&self) -> Result<(), EgressGuardError> {
+        let seen = self.checks.fetch_add(1, Ordering::SeqCst);
+        (seen < self.allowed).then_some(()).ok_or(EgressGuardError)
+    }
+}
+
+#[tokio::test]
+async fn a_guard_that_refuses_after_the_download_records_no_digest_and_keeps_no_tile() {
+    // B2 fix round, P3b fix 2, R-P3bF2-1: the tile's digest is a store mutation after
+    // the download's awaits. The lookup's locks pass (check 1), the AWS request is
+    // refused by the server (check 2), the ESA request goes out (check 3), the archive's
+    // temporary file is created (check 4), its one chunk is written (check 5) and synced
+    // (check 6), and the check in front of the staged tile and its digest is the seventh
+    // (P3b fix 3 added the checks in front of the locks' work and of every file; fix 4
+    // those in front of each chunk and the sync).
+    let dir = tempdir().unwrap();
+    let (_data, store) = test_store();
+    let (endpoint, task) = server(move |uri| {
+        if uri.path().ends_with(".gz") {
+            Response::builder()
+                .status(StatusCode::NOT_FOUND)
+                .body(Body::empty())
+                .unwrap()
+        } else {
+            Response::new(Body::from(zip_bytes()))
+        }
+    })
+    .await;
+    let mut opts = options(dir.path(), &endpoint, &store);
+    opts.esa_base = endpoint.clone();
+    let cache = TerrainCache::new(opts).unwrap();
+    let tile = TileId::from_coordinates(51.5, -0.1).unwrap();
+
+    let checks = Arc::new(AtomicUsize::new(0));
+    let refused = cache
+        .get_with_egress_guard(
+            tile,
+            &AllowsFirst {
+                checks: Arc::clone(&checks),
+                allowed: 6,
+            },
+        )
+        .await;
+    assert!(matches!(refused, Err(TerrainCacheError::EgressDenied)));
+    assert_eq!(checks.load(Ordering::SeqCst), 7);
+    assert!(
+        store.terrain_tile_digest(&tile.name()).unwrap().is_none(),
+        "no digest was recorded"
+    );
+    assert!(
+        !cache.tile_path(tile).exists(),
+        "the tile was not put in place"
+    );
+
+    // The control: a guard that allows all nine checks (the seven above, the removal of
+    // the archive when its entry is dropped, and the source marker) admits the tile.
+    let admitted = cache
+        .get_with_egress_guard(
+            tile,
+            &AllowsFirst {
+                checks: Arc::new(AtomicUsize::new(0)),
+                allowed: 9,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(admitted.side(), SRTM3_SIDE);
+    assert!(store.terrain_tile_digest(&tile.name()).unwrap().is_some());
+    task.abort();
 }

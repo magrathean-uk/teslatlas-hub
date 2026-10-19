@@ -171,6 +171,8 @@ pub enum StoreError {
     InvalidSourceId,
     #[error("terrain materialised car is missing for {0}")]
     TerrainCarMissing(Uuid),
+    #[error("the caller's write guard refused the store write at {0}")]
+    WriteRefused(&'static str),
     #[error("cannot publish terrain projection pack: {0}")]
     TerrainPack(ProjectionPackError),
     #[error("cannot repair projection pack staging: {0}")]
@@ -191,6 +193,13 @@ pub enum StoreError {
     LegacyRefreshOutcomeUnknown,
     #[error("legacy refresh generation is invalid")]
     InvalidLegacyRefreshGeneration,
+    #[error("stored credential status is invalid")]
+    InvalidStoredAuthStatus,
+    /// The read-only effective credential status could not be derived: the
+    /// stored pair, its key or the store failed. It carries no cause so that no
+    /// path or secret can travel with it.
+    #[error("effective credential status is unavailable")]
+    EffectiveCollectorAuthUnavailable,
     #[error("cannot rotate paired device bearer: {0}")]
     RotateDevice(rusqlite::Error),
     #[error("cannot revoke paired device: {0}")]

@@ -300,3 +300,73 @@ fn parse_keeps_only_a_printable_bounded_licence() {
         parse_response(br#"{"osm_type":"node","osm_id":1,"display_name":"Place"}"#).unwrap();
     assert_eq!(absent.licence, None);
 }
+
+/// An egress guard that allows its first `allowed` checks and refuses every later one:
+/// the admission is lost between the request and the write of its answer.
+struct AllowsFirst {
+    checks: Arc<std::sync::atomic::AtomicUsize>,
+    allowed: usize,
+}
+
+impl EgressGuard for AllowsFirst {
+    fn assert_egress_allowed(&self) -> Result<(), EgressGuardError> {
+        let seen = self
+            .checks
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        (seen < self.allowed).then_some(()).ok_or(EgressGuardError)
+    }
+}
+
+#[tokio::test]
+async fn a_guard_that_refuses_after_the_answer_leaves_the_cache_empty() {
+    // B2 fix round, P3b fix 2, R-P3bF2-1: the cache row is a store mutation after the
+    // lookup's awaits, so the guard that stood in front of the request stands in front
+    // of the write too.
+    let (endpoint, seen, server) = place_server("guarded").await;
+    let temp = crate::private_tempdir().unwrap();
+    let store = HubStore::initialize(temp.path()).unwrap();
+    let geocoder = geocoder_for(&endpoint, "en");
+    let point = Wgs84Point::new(51.5, -0.1).unwrap();
+
+    let checks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let refused = geocoder
+        .reverse_cached_with_egress_guard(
+            &store,
+            point,
+            10,
+            &AllowsFirst {
+                checks: Arc::clone(&checks),
+                allowed: 1,
+            },
+        )
+        .await;
+    assert!(
+        matches!(refused, Err(GeocoderError::EgressDenied)),
+        "{refused:?}"
+    );
+    assert_eq!(
+        request_count(&seen),
+        1,
+        "the request went out while it was allowed"
+    );
+    assert_eq!(checks.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(lookup_rows(&store).is_empty(), "no lookup row");
+    assert!(shared_names(&store).is_empty(), "no shared identity row");
+
+    // The control: a guard that allows both checks caches the answer.
+    let allowed = geocoder
+        .reverse_cached_with_egress_guard(
+            &store,
+            point,
+            20,
+            &AllowsFirst {
+                checks: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+                allowed: 2,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(allowed.display_name, "Alpha via guarded in en");
+    assert_eq!(lookup_rows(&store).len(), 1);
+    server.abort();
+}

@@ -201,7 +201,9 @@ async fn legacy_collection_stores_and_serves_no_reflected_credential() {
     let snapshot = vehicle_data_for_auth(&client, &auth, VehicleId::from_test(9), None)
         .await
         .expect("vehicle data");
-    shutdown_legacy_refresh(&auth).await;
+    shutdown_legacy_refresh(&auth)
+        .await
+        .expect("the shutdown keeps its admission");
     server.abort();
 
     assert_eq!(vehicles.len(), 1);
@@ -318,12 +320,21 @@ async fn fleet_collection_stores_and_serves_no_reflected_credential() {
     )
     .expect("Fleet auth client");
 
-    let vehicles = fleet_list_vehicles_with_auth(&api, &auth_api, &manager, false)
+    let vehicles = fleet_list_vehicles_with_auth(&api, &auth_api, &manager, false, None, &TickRefresh::default())
         .await
         .expect("discovery");
-    let snapshot = fleet_vehicle_data_with_auth(&api, &auth_api, &manager, &vehicles[0], false)
-        .await
-        .expect("vehicle data");
+    let snapshot =
+        fleet_vehicle_data_with_auth(
+            &api,
+            &auth_api,
+            &manager,
+            &vehicles[0],
+            false,
+            CountedStart::admitted(None, RequestCategory::Data),
+            &TickRefresh::default(),
+        )
+            .await
+            .expect("vehicle data");
     server.abort();
 
     assert_eq!(vehicles.len(), 1);
@@ -404,6 +415,8 @@ async fn fleet_retry_after_refresh_scrubs_against_the_refreshed_pair() {
         &manager,
         &Vehicle::for_test(70, SCRUB_VIN, "online"),
         true,
+        CountedStart::admitted(None, RequestCategory::Data),
+        &TickRefresh::default(),
     )
     .await
     .expect("retried vehicle data");
@@ -503,7 +516,9 @@ async fn legacy_collection_stores_no_credential_that_carries_a_space_of_its_own(
     let snapshot = vehicle_data_for_auth(&client, &auth, VehicleId::from_test(9), None)
         .await
         .expect("vehicle data");
-    shutdown_legacy_refresh(&auth).await;
+    shutdown_legacy_refresh(&auth)
+        .await
+        .expect("the shutdown keeps its admission");
     server.abort();
 
     assert_eq!(vehicles.len(), 1);
@@ -682,7 +697,9 @@ async fn legacy_list_state_that_reflects_a_credential_is_stored_and_served_as_un
     let vehicles = list_vehicles_for_auth(&client, &auth)
         .await
         .expect("discovery");
-    shutdown_legacy_refresh(&auth).await;
+    shutdown_legacy_refresh(&auth)
+        .await
+        .expect("the shutdown keeps its admission");
     server.abort();
 
     assert_eq!(
@@ -749,7 +766,7 @@ async fn fleet_list_state_that_reflects_a_credential_is_stored_and_served_as_unk
     )
     .expect("Fleet auth client");
 
-    let vehicles = fleet_list_vehicles_with_auth(&api, &auth_api, &manager, false)
+    let vehicles = fleet_list_vehicles_with_auth(&api, &auth_api, &manager, false, None, &TickRefresh::default())
         .await
         .expect("discovery");
     server.abort();
@@ -825,7 +842,9 @@ async fn legacy_state_probe_that_reflects_a_credential_is_stored_and_served_as_u
     let state = vehicle_state_for_auth(&client, &auth, id)
         .await
         .expect("state probe");
-    shutdown_legacy_refresh(&auth).await;
+    shutdown_legacy_refresh(&auth)
+        .await
+        .expect("the shutdown keeps its admission");
     server.abort();
     assert_eq!(state, SCRUB_UNKNOWN_STATE);
     let events = scheduler.accept_vehicle_state(id, state, now);

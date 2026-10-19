@@ -570,6 +570,13 @@ fn ensure_installation_id(connection: &Connection) -> Result<Uuid, StoreError> {
     parse_stored_uuid("installation_id", &value)
 }
 
+/// Every writable catalogue connection asks SQLite, on macOS, to flush the drive's
+/// cache when it checkpoints (`F_FULLFSYNC`: a plain `fsync` there does not reach the
+/// disk). The frames of a credential commit are copied into the database file by
+/// whichever connection's commit crosses the automatic checkpoint, which is usually an
+/// ordinary one, so the flush at checkpoint is a property of all of them (B2 apply,
+/// R3C-02). A checkpoint is rare (about every thousand pages of change), so the cost is
+/// one flush then; the per-commit flush stays with the credential commits alone.
 fn configure(connection: &Connection) -> Result<(), StoreError> {
     connection
         .execute_batch(
@@ -579,6 +586,29 @@ fn configure(connection: &Connection) -> Result<(), StoreError> {
             PRAGMA foreign_keys = ON;
             PRAGMA trusted_schema = OFF;
             PRAGMA busy_timeout = 5000;
+            ",
+        )
+        .map_err(StoreError::Configure)?;
+    #[cfg(target_os = "macos")]
+    connection
+        .execute_batch("PRAGMA checkpoint_fullfsync = ON;")
+        .map_err(StoreError::Configure)?;
+    Ok(())
+}
+
+/// Ask SQLite to flush the drive's cache at commit, which on macOS is `F_FULLFSYNC`
+/// (a plain `fsync` there does not reach the disk). Only for the connections of the
+/// credential commits, whose record is the one protection against presenting a
+/// consumed refresh token again after a power cut (B2 round 3, C5-R3-03); the flush
+/// at checkpoint is set on every connection (`configure`). The cost is one cache
+/// flush per such commit, which happens a few times a day at most.
+#[cfg(target_os = "macos")]
+fn configure_full_fsync(connection: &Connection) -> Result<(), StoreError> {
+    connection
+        .execute_batch(
+            "
+            PRAGMA fullfsync = ON;
+            PRAGMA checkpoint_fullfsync = ON;
             ",
         )
         .map_err(StoreError::Configure)

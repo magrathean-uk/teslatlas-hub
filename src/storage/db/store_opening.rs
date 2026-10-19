@@ -35,12 +35,15 @@ impl HubStore {
             private_import_spool_dir: private_import_spool_root(data_dir),
             publication_lock_path: publication_lock_path(data_dir),
             immutable_snapshot: None,
+            stream_audit_failed_cars: std::sync::Arc::default(),
             #[cfg(test)]
             stream_fault: Arc::new(Mutex::new(None)),
             #[cfg(test)]
             projection_state_detach_fault: Arc::new(Mutex::new(false)),
             #[cfg(test)]
             credential_write_hook: Arc::new(Mutex::new(None)),
+            #[cfg(test)]
+            sink_attempts: Arc::default(),
             #[cfg(test)]
             lineage_pack_hashes: Arc::new(Mutex::new(Vec::new())),
         };
@@ -57,6 +60,27 @@ impl HubStore {
         store.recover_stale_import_projection_state_spools(&publication_gate, &connection)?;
         cleanup_abandoned_import_generations(&connection)?;
         Ok(store)
+    }
+
+    /// A catalogue connection for the commits that record that a refresh token was
+    /// presented and what came back: the reservation (receipt, input fence and
+    /// binding), the successor and the closing of an attempt, of Legacy and Fleet.
+    /// Such a record is the only protection against presenting a consumed refresh
+    /// token again, so on macOS, where a plain `fsync` does not flush the drive's
+    /// cache, the connection asks SQLite for `F_FULLFSYNC` at commit and at
+    /// checkpoint (`fullfsync`, `checkpoint_fullfsync`; B2 round 3, C5-R3-03). The
+    /// cost is one cache flush per credential commit, which is rare (a refresh a few
+    /// hours apart). Ordinary connections keep the cheaper default at commit, and
+    /// every writable connection flushes at checkpoint (`configure`, B2 apply,
+    /// R3C-02), so the frames of a credential commit that another connection's
+    /// checkpoint copies into the database file reach the drive too.
+    pub(crate) fn open_for_credential_commit(&self) -> Result<Connection, StoreError> {
+        let connection = self.open()?;
+        #[cfg(target_os = "macos")]
+        configure_full_fsync(&connection)?;
+        #[cfg(test)]
+        record_credential_commit_pragmas(&connection)?;
+        Ok(connection)
     }
 
     pub fn open(&self) -> Result<Connection, StoreError> {
@@ -81,7 +105,63 @@ impl HubStore {
         admit_or_repair_shared_sqlite_sidecars(&self.database_path)?;
         configure(&connection)?;
         admit_or_repair_shared_sqlite_sidecars(&self.database_path)?;
+        #[cfg(test)]
+        self.watch_sink(&connection)?;
         Ok(connection)
+    }
+
+    /// Test only (B2 fix round, P3b fix 3, R-P3bF3-4): count what the connection
+    /// attempts to mutate, at the SQLite boundary, whoever calls it and whether or not
+    /// a guard was consulted: each statement that inserts, updates, deletes or changes
+    /// the schema when it is prepared (the authorizer), and each row it changes (the
+    /// update hook, which a cached statement reaches too). There is no commit hook, and
+    /// a transaction's begin is not counted. The limit: a statement cached on a
+    /// connection held across calls that changes no row would not be seen again; every
+    /// `HubStore` call opens its own connection, so none is cached. The lease's own
+    /// heartbeat is left out: the renewal and release semantics are fixed by the specs
+    /// (C3 R8, R47; C5 R33a) and the renewal writes until it meets the fence.
+    #[cfg(test)]
+    fn watch_sink(&self, connection: &Connection) -> Result<(), StoreError> {
+        use rusqlite::hooks::{AuthAction, Authorization};
+        use std::sync::atomic::Ordering;
+        const LEASE: &str = "supervised_collector_lease";
+        let attempts = Arc::clone(&self.sink_attempts);
+        connection
+            .authorizer(Some(move |context: rusqlite::hooks::AuthContext<'_>| {
+                let counted = match context.action {
+                    AuthAction::Select
+                    | AuthAction::Read { .. }
+                    | AuthAction::Function { .. }
+                    | AuthAction::Recursive
+                    | AuthAction::Pragma { .. }
+                    | AuthAction::Transaction { .. }
+                    | AuthAction::Savepoint { .. } => false,
+                    AuthAction::Insert { table_name }
+                    | AuthAction::Delete { table_name }
+                    | AuthAction::Update { table_name, .. } => table_name != LEASE,
+                    _ => true,
+                };
+                if counted {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                }
+                Authorization::Allow
+            }))
+            .map_err(StoreError::Query)?;
+        let attempts = Arc::clone(&self.sink_attempts);
+        connection
+            .update_hook(Some(move |_action, _database: &str, table: &str, _row| {
+                if table != LEASE {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                }
+            }))
+            .map_err(StoreError::Query)?;
+        Ok(())
+    }
+
+    /// Test only: how many mutations this store's connections have attempted so far.
+    #[cfg(test)]
+    pub(crate) fn sink_attempts(&self) -> usize {
+        self.sink_attempts.load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Schema 36 introduced immutable V2 projection bindings, but historical
@@ -276,10 +356,11 @@ impl HubStore {
     }
 
     /// Standalone Serve can migrate the known v66 current-cache shape, the v67
-    /// shape (before per-device vehicle grants) and the v68 shape (before
+    /// shape (before per-device vehicle grants), the v68 shape (before
     /// geocoder lookups were bound to their provider and terrain tile digests
-    /// were recorded) to v69. Return no store
-    /// handle: consumers still require a fully migrated schema.
+    /// were recorded), the v69 shape (before the collector state tables), the v70
+    /// shape (before the credential status table) and the v71 shape (before its
+    /// rejected-access digest) to v72. Return no store handle: consumers still require a fully migrated schema.
     pub(crate) fn preflight_standalone_schema_read_only(data_dir: &Path) -> Result<(), StoreError> {
         Self::open_read_only_with_mode(data_dir, false, true).map(|_| ())
     }
@@ -301,12 +382,15 @@ impl HubStore {
             private_import_spool_dir: private_import_spool_root(data_dir),
             publication_lock_path: publication_lock_path(data_dir),
             immutable_snapshot,
+            stream_audit_failed_cars: std::sync::Arc::default(),
             #[cfg(test)]
             stream_fault: Arc::new(Mutex::new(None)),
             #[cfg(test)]
             projection_state_detach_fault: Arc::new(Mutex::new(false)),
             #[cfg(test)]
             credential_write_hook: Arc::new(Mutex::new(None)),
+            #[cfg(test)]
+            sink_attempts: Arc::default(),
             #[cfg(test)]
             lineage_pack_hashes: Arc::new(Mutex::new(Vec::new())),
         };
@@ -319,7 +403,7 @@ impl HubStore {
         }
         let version = schema_version(&connection)?;
         let known_forward_upgrade =
-            standalone_migration_candidate && SCHEMA_VERSION == 69 && matches!(version, 66..=68);
+            standalone_migration_candidate && SCHEMA_VERSION == 72 && matches!(version, 66..=71);
         if version != SCHEMA_VERSION && !known_forward_upgrade {
             return Err(StoreError::UnsupportedSchema(version));
         }
@@ -386,4 +470,24 @@ impl HubStore {
         }
         Ok(())
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// `(fullfsync, checkpoint_fullfsync)` as each credential-commit connection of
+    /// this thread had them when it was handed out (test observation only).
+    pub(crate) static CREDENTIAL_COMMIT_PRAGMAS: std::cell::RefCell<Vec<(i64, i64)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(test)]
+fn record_credential_commit_pragmas(connection: &Connection) -> Result<(), StoreError> {
+    let read = |name: &str| -> Result<i64, StoreError> {
+        connection
+            .query_row(&format!("PRAGMA {name}"), [], |row| row.get(0))
+            .map_err(StoreError::Query)
+    };
+    let seen = (read("fullfsync")?, read("checkpoint_fullfsync")?);
+    CREDENTIAL_COMMIT_PRAGMAS.with(|cell| cell.borrow_mut().push(seen));
+    Ok(())
 }
