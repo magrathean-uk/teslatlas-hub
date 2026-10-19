@@ -63,7 +63,6 @@ appear in process arguments.
 |---|---|
 | `teslamate-check` | Read-only TeslaMate compatibility and inventory check. |
 | `migrate` | Read-only TeslaMate history and credential transfer. |
-| `write-back charge-cost` | Dry-run or explicitly apply one allow-listed charge-cost update. |
 | `observation-watermark` | Capture a durable cutover watermark. |
 | `verify-observation` | Prove a newer observation was committed. |
 

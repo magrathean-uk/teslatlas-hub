@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! TeslaMate compatibility, capture, projection, and write-back.
+//! TeslaMate compatibility, capture, and projection.
 
 pub mod direct;
 pub mod fragments;
@@ -18,4 +18,3 @@ pub mod reader;
 pub mod schema;
 pub mod source;
 pub mod stage;
-pub mod writeback;

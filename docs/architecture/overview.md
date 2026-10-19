@@ -77,9 +77,7 @@ repeated while preserving Hub's stored provider credentials; unchanged source
 content does not advance the signed physical head. TeslaMate is not bundled,
 started, stopped, or required after migration.
 
-The explicit `write-back` command is outside migration and collection. It can
-update only one selected TeslaMate charging-process cost, starts as a locked-row
-dry run, and requires `--apply` to commit.
+Hub never writes to the source database; migration is read-only.
 
 ## Failure model
 

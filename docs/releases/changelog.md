@@ -69,6 +69,8 @@ All notable released changes are recorded here. From 2026.36.1, Hub follows
   action is refused while a refusal for the configured mode stands. A Fleet token refresh
   with an unknown outcome no longer stops the service from starting: it runs as a stopped
   collector until the credentials are reconnected.
+- Removed the `write-back charge-cost` command. Hub never writes to the source
+  database; migration stays read-only.
 
 ## 2026.36.1 — 2026-09-05
 

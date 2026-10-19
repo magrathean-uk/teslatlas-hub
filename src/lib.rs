@@ -34,7 +34,7 @@ pub use import::teslamate::{
     physical_publication as teslamate_physical_publication, progress as teslamate_progress,
     projection as teslamate_projection, projection_state as teslamate_projection_state,
     reader as teslamate_reader, schema as teslamate_schema, source as teslamate,
-    stage as teslamate_stage, writeback as teslamate_writeback,
+    stage as teslamate_stage,
 };
 #[cfg(unix)]
 #[doc(hidden)]

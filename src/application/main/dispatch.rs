@@ -273,40 +273,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }.into());
     }
 
-    #[cfg(unix)]
-    if let Command::WriteBack {
-        source,
-        car_id,
-        postgres_password_file,
-        command,
-    } = &cli.command
-    {
-        let source = ReadOnlySource::parse(source)?;
-        let password = TeslaMatePostgresPassword::from_bytes(&read_migration_secret(
-            postgres_password_file,
-            MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES,
-        )?)?;
-        match command {
-            WriteBackCommand::ChargeCost {
-                charging_process_id,
-                cost,
-                apply,
-            } => {
-                let receipt = write_back_charge_cost(
-                    &source,
-                    &password,
-                    *car_id,
-                    *charging_process_id,
-                    *cost,
-                    *apply,
-                )
-                .await?;
-                println!("{}", serde_json::to_string(&receipt)?);
-            }
-        }
-        return Ok(());
-    }
-
     #[cfg(target_os = "macos")]
     if let Command::Service { command } = &cli.command {
         match command {
@@ -977,10 +943,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         Command::Migrate { .. } => {
             unreachable!("migration returns before opening common Hub state")
-        }
-        #[cfg(unix)]
-        Command::WriteBack { .. } => {
-            unreachable!("write-back returns before opening common Hub state")
         }
         Command::Pair {
             label,

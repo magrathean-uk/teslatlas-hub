@@ -728,7 +728,6 @@ fn no_collecting_read_is_left_on_the_unbounded_client_query() {
         ("v2_rows.rs", include_str!("v2_rows.rs")),
         ("../reader.rs", include_str!("../reader.rs")),
         ("../direct.rs", include_str!("../direct.rs")),
-        ("../writeback.rs", include_str!("../writeback.rs")),
         ("../importer.rs", include_str!("../importer.rs")),
     ];
     for (name, source) in reader_sources {

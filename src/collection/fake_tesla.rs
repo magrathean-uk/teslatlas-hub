@@ -367,10 +367,10 @@ impl FakeTeslaSource {
 
         let router = Router::new()
             .route("/api/1/products", get(products_handler))
-            .route("/oauth2/v3/token", post(token_handler))
+            .route("/oauth2/v3/token", post(fake_token_route))
             .route(
                 "/api/1/vehicles/{vehicle_id}/vehicle_data",
-                get(vehicle_data_handler),
+                get(fake_vehicle_snapshot_route),
             )
             .fallback(any(reject_handler))
             .with_state(state.clone());
@@ -1248,7 +1248,7 @@ fn fake_refresh_headers_valid(headers: &HeaderMap) -> bool {
 /// Deterministic local stand-in for Tesla's legacy refresh endpoint. It
 /// validates the request shape and required constants, but never records the
 /// submitted refresh token or returns it in a ledger.
-async fn token_handler(
+async fn fake_token_route(
     State(state): State<AppState>,
     uri: Uri,
     headers: HeaderMap,
@@ -1342,7 +1342,7 @@ async fn products_handler(State(state): State<AppState>) -> impl IntoResponse {
     (StatusCode::OK, body).into_response()
 }
 
-async fn vehicle_data_handler(
+async fn fake_vehicle_snapshot_route(
     State(state): State<AppState>,
     AxumPath(vehicle_id): AxumPath<String>,
     uri: Uri,

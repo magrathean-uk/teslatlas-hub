@@ -192,10 +192,9 @@ cardinality, car/settings relationship, or migration history is unsupported and
 causes admission to fail. Remove or separately export unsupported custom data;
 Hub does not silently coerce it.
 
-## Separate bounded write-back
+## Never writes back to the source
 
-Migration is always read-only and is not live replication. A separate,
-explicit `write-back charge-cost` command can lock and update one selected
-TeslaMate charging-process cost. It defaults to rollback and requires
-`--apply` to commit. Ordinary migration and collection never call it; no other
-TeslaMate table or field is writable through Hub.
+Migration is always read-only and is not live replication. Hub never writes to
+the source database: no command, migration step or collection path updates
+any table or field of the source database. The former `write-back charge-cost` command was
+removed.

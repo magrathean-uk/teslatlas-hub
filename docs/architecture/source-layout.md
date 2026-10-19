@@ -13,7 +13,7 @@ the narrowest owning domain; `src/lib.rs` is the only Rust file permitted at the
 | Authentication | `src/auth/` | Credential custody, encryption, recovery, and refresh inputs |
 | Collection | `src/collection/` | Discovery, polling, streaming, Fleet Telemetry, and scheduling |
 | Geography | `src/geo/` | Location enrichment, terrain, geofences, and GPX export |
-| Import | `src/import/teslamate/` | TeslaMate capture, schema compatibility, projection, PhysicalV3 comparison/publication, optional prepared maps, and write-back |
+| Import | `src/import/teslamate/` | TeslaMate capture, schema compatibility, projection, PhysicalV3 comparison/publication, and optional prepared maps |
 | Platform | `src/platform/` | macOS launchd, Linux systemd, and process ownership |
 | Runtime | `src/runtime/` | Configuration, diagnostics, and vehicle lifecycle projection |
 | Storage | `src/storage/` | SQLite catalogue, recovery, transactions, and durable models |

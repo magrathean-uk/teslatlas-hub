@@ -317,22 +317,6 @@ enum CollectorGapsCommand {
 }
 
 #[derive(Debug, Subcommand)]
-enum WriteBackCommand {
-    /// Copy one total cost into a TeslaMate charging process.
-    #[command(name = "charge-cost")]
-    ChargeCost {
-        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
-        charging_process_id: i64,
-        /// Exact numeric(14,2) value, for example 12.34.
-        #[arg(long)]
-        cost: TeslaMateCost,
-        /// Commit. Omit for a locked-row dry run and rollback.
-        #[arg(long)]
-        apply: bool,
-    },
-}
-
-#[derive(Debug, Subcommand)]
 enum Command {
     /// Print licence, source, and independence notices.
     #[command(visible_aliases = ["licence", "license"])]
@@ -528,21 +512,6 @@ enum Command {
         /// Confirm TeslaMate 4.2.0+ and accept that its database schema alone cannot prove the app version.
         #[arg(long, required = true)]
         acknowledge_v4_2_compatible_schema: bool,
-    },
-    /// Explicit allow-listed write-back to TeslaMate PostgreSQL.
-    #[cfg(unix)]
-    WriteBack {
-        /// Password-free PostgreSQL URL. Password is read from a file or stdin.
-        #[arg(long)]
-        source: String,
-        /// Positive TeslaMate car id owning the target row.
-        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
-        car_id: i64,
-        /// PostgreSQL password file, or `-` for stdin.
-        #[arg(long)]
-        postgres_password_file: PathBuf,
-        #[command(subcommand)]
-        command: WriteBackCommand,
     },
     /// Display one short-lived, single-use device pairing QR.
     #[command(alias = "create-pairing")]

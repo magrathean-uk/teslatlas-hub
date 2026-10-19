@@ -248,7 +248,7 @@ fn into_response(reply: &Reply, server_now: i64) -> Response {
     response.body(body).unwrap()
 }
 
-async fn token_handler(State(backend): State<Backend>, request: Request) -> Response {
+async fn fake_token_route(State(backend): State<Backend>, request: Request) -> Response {
     let (parts, body) = request.into_parts();
     let bytes = to_bytes(body, 1 << 20).await.unwrap_or_default();
     let refresh = serde_json::from_slice::<serde_json::Value>(&bytes)
@@ -332,7 +332,7 @@ async fn new_rig() -> Rig {
         .expect("loopback listener");
     let address = listener.local_addr().expect("address");
     let router = Router::new()
-        .route("/oauth2/v3/token", post(token_handler))
+        .route("/oauth2/v3/token", post(fake_token_route))
         .route("/api/1/products", get(products_handler))
         .with_state(backend.clone());
     let server = tokio::spawn(async move {

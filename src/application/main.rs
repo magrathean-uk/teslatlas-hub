@@ -71,7 +71,6 @@ use teslatlas_hub::{
     teslamate_token::{
         decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files, encrypt_legacy_owner_tokens,
     },
-    teslamate_writeback::{TeslaMateCost, write_back_charge_cost},
 };
 use tracing_subscriber::EnvFilter;
 
