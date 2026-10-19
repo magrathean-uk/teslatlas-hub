@@ -25,8 +25,8 @@ paths and the digest with your actual binaries and exported profile;
   "seed_binary": "/absolute/build/examples/interop_fixture",
   "output_dir": "/private/new-fixture",
   "lifetime_seconds": 3600,
-  "profile_id": "hub-http-v1@1.0.0",
-  "profile_path": "/absolute/hub/protocol/profiles/hub-http-v1/1.0.0",
+  "profile_id": "hub-http-v1@1.2.0",
+  "profile_path": "/absolute/hub/protocol/profiles/hub-http-v1/1.2.0",
   "profile_sha256": "SHA256 of the exact SHA256SUMS file bytes"
 }
 ```
@@ -38,23 +38,22 @@ python3 tools/interop/fixture.py --config /private/config.json
 The config binds the Hub binary, seed harness, fresh output directory, profile
 ID and path, profile checksum, and optional loopback port. The launcher stages
 and hashes both executables, creates a supported one-use pairing invitation,
-starts the TLS server, and writes a private `ready.json` descriptor. Use that
-descriptor for acceptance. Run this command from the `protocol/` directory of
-this repository:
+starts the TLS server, and writes a private `ready.json` evidence record. The
+`hub-http-v1@1.2.0` runner does not accept that file as its descriptor.
+
+The `1.2.0` descriptor is documented in `protocol/docs/guides/conformance.md`.
+This repository's `fixture.py` does not yet write it, so `fixture.py` and
+`smoke.py` cannot pass unaided. Native acceptance uses an externally produced
+lab descriptor until `fixture.py` is ported to write it. Run this command from
+the `protocol/` directory of this repository:
 
 ```sh
-./conformance/run --profile hub-http-v1@1.0.0 \
-  --adapter /absolute/hub/protocol/conformance/adapters/actual-hub \
-  --config /private/new-fixture/ready.json --json
+./conformance/run --profile hub-http-v1@1.2.0 \
+  --config /private/<run>/descriptor.json --timeout-seconds 600 --json
 ```
 
-This `1.0.0` lane, and `smoke.py` below, predate the Hub's discovery flip: a Hub
-built from this source names `hub-http-v1@1.2.0` in discovery, which the `1.0.0`
-and `1.1.0` discovery schemas reject, so these runs fail at discovery against it.
-The `1.2.0` native cases in `protocol/docs/guides/conformance.md` are the
-acceptance path for the current Hub.
-
-Or, from the Hub root, save a redacted smoke receipt:
+Or, from the Hub root, save the redacted `hub-http-v1@1.2.0` summary of a
+complete native run:
 
 ```sh
 python3 tools/interop/smoke.py \
@@ -83,7 +82,8 @@ vehicle was retired, is never granted it and sees a 404 for it, even after
 `--restore-dynamic`. Pair the client while the dynamic vehicle is exposed.
 
 Keep invitations, pairing URIs, bearer values, claim secrets, and opaque cursors
-out of logs and diagnostics. The adapter checks staged-file hashes, executable
-identity, process ownership, configuration binding, and fresh readiness before
-issuing a successful receipt. Retain private evidence and stopped records for
-review.
+out of logs and diagnostics. The `1.2.0` runner checks the descriptor's profile
+binding, certificate and optional TLS pin, and `smoke.py` issues a receipt only
+for a complete run in which every check passed. Binary identity and process
+ownership come from the external lab descriptor writer until `fixture.py` is
+ported. Retain private evidence and stopped records for review.

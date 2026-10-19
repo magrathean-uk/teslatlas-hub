@@ -50,6 +50,7 @@ EDGE_ALLOWED_BASE_URLS = frozenset((
 ))
 DEFAULT_SCENARIO_ID = "b1-five-drives"
 PHYSICAL_V3_SCENARIO_ID = "physical-v3-public-513"
+HTTP_PROFILE_ID = "hub-http-v1@1.2.0"
 PHYSICAL_V3_PROFILE_ID = "hub-sync-v1@1.3.0"
 PHYSICAL_V3_PORT = 21445
 PHYSICAL_V3_SNAPSHOT_ID = "51351351-5135-4135-8135-513513513513"
@@ -111,7 +112,7 @@ def load_config(path):
     scenario_id = config.get("scenario_id", DEFAULT_SCENARIO_ID)
     expected_profile = (PHYSICAL_V3_PROFILE_ID
                         if scenario_id == PHYSICAL_V3_SCENARIO_ID
-                        else "hub-http-v1@1.0.0")
+                        else HTTP_PROFILE_ID)
     if config.get("profile_id") != expected_profile:
         raise ValueError("scenario profile binding required")
     profile_path = config.get("profile_path")

@@ -1,10 +1,13 @@
 """Fixture runner checks; the native-process smoke is a separate gate."""
+import contextlib
 import importlib.util
 import hashlib
+import io
 import subprocess
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -23,9 +26,9 @@ class ConfigTests(unittest.TestCase):
         self.executable = self.root / "binary"
         self.executable.write_text("fixture")
         self.executable.chmod(0o700)
-        profile = MODULE.resolve().parents[2] / "protocol/profiles/hub-http-v1/1.0.0"
+        profile = MODULE.resolve().parents[2] / "protocol/profiles/hub-http-v1/1.2.0"
         self.config = {
-            "profile_id":"hub-http-v1@1.0.0",
+            "profile_id":fixture.HTTP_PROFILE_ID,
             "profile_path":str(profile),
             "profile_sha256":hashlib.sha256((profile / "SHA256SUMS").read_bytes()).hexdigest(),
             "binary": str(self.executable),
@@ -44,6 +47,16 @@ class ConfigTests(unittest.TestCase):
         result = self.load()
         self.assertEqual(result["output_dir"], self.config["output_dir"])
         self.assertFalse(Path(result["output_dir"]).exists())
+
+    def test_default_scenario_accepts_hub_http_1_2_0(self):
+        result = self.load()
+        self.assertEqual(result["profile_id"], "hub-http-v1@1.2.0")
+        self.assertEqual(fixture.HTTP_PROFILE_ID, "hub-http-v1@1.2.0")
+
+    def test_default_scenario_refuses_hub_http_1_0_0(self):
+        self.config["profile_id"] = "hub-http-v1@1.0.0"
+        with self.assertRaisesRegex(ValueError, "scenario profile binding"):
+            self.load()
 
     def test_staged_executable_survives_source_replacement(self):
         original = b"#!/bin/sh\nprintf staged-original"
@@ -572,6 +585,140 @@ class ConfigTests(unittest.TestCase):
         alias.symlink_to(path)
         with self.assertRaises(ValueError):
             fixture.load_config(alias)
+
+
+PASS = {
+    "profile_id": "hub-http-v1@1.2.0",
+    "complete": True,
+    "runs": 61,
+    "passed": 61,
+    "failed": 0,
+    "not_run": 0,
+    "profile_sha256": hashlib.sha256(b"profile").hexdigest(),
+}
+
+
+class SmokeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.interop_dir = str(MODULE.parent)
+        cls.had_fixture_module = "fixture" in sys.modules
+        sys.path.insert(0, cls.interop_dir)
+        smoke_spec = importlib.util.spec_from_file_location(
+            "interop_smoke", MODULE.with_name("smoke.py")
+        )
+        cls.smoke = importlib.util.module_from_spec(smoke_spec)
+        smoke_spec.loader.exec_module(cls.smoke)
+
+    @classmethod
+    def tearDownClass(cls):
+        sys.path.remove(cls.interop_dir)
+        if not cls.had_fixture_module:
+            sys.modules.pop("fixture", None)
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.descriptor = self.root / "descriptor.json"
+        self.descriptor.write_text("{}")
+        self.descriptor.chmod(0o600)
+        self.output = self.root / "receipt.json"
+
+    def run_smoke(self, summary=PASS, returncode=0):
+        completed = subprocess.CompletedProcess(
+            args=[],
+            returncode=returncode,
+            stdout=json.dumps(summary).encode(),
+            stderr=b"runner-stderr-secret",
+        )
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(self.smoke.subprocess, "run", return_value=completed) as runner:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                status = self.smoke.main(
+                    ["--descriptor", str(self.descriptor), "--output", str(self.output)]
+                )
+        return status, out.getvalue(), err.getvalue(), runner
+
+    def assert_refused(self, summary=PASS, returncode=0):
+        status, out, err, runner = self.run_smoke(summary, returncode)
+        runner.assert_called_once()
+        self.assertEqual(status, 1)
+        self.assertEqual(out, "")
+        self.assertEqual(err, self.smoke.REFUSAL + "\n")
+        self.assertFalse(self.output.exists())
+
+    def test_passes_a_complete_run(self):
+        status, out, err, _ = self.run_smoke(PASS)
+        self.assertEqual(status, 0)
+        self.assertEqual(err, "")
+        self.assertEqual(json.loads(self.output.read_text()), PASS)
+        self.assertEqual(self.output.stat().st_mode & 0o777, 0o600)
+        printed = json.loads(out)
+        self.assertEqual(set(printed), {"status", "runs", "profile_sha256", "receipt"})
+        self.assertEqual(printed["status"], "passed")
+        self.assertEqual(printed["runs"], 61)
+        self.assertEqual(printed["profile_sha256"], PASS["profile_sha256"])
+        self.assertEqual(printed["receipt"], str(self.output))
+
+    def test_runs_the_1_2_0_profile_without_an_adapter(self):
+        _, _, _, runner = self.run_smoke(PASS)
+        runner.assert_called_once()
+        args, kwargs = runner.call_args
+        runner_path = MODULE.resolve().parents[2] / "protocol/conformance/run"
+        self.assertEqual(args[0], [
+            str(runner_path),
+            "--profile", "hub-http-v1@1.2.0",
+            "--config", str(self.descriptor),
+            "--timeout-seconds", "600",
+            "--json",
+        ])
+        self.assertNotIn("--adapter", args[0])
+        self.assertEqual(kwargs["timeout"], 660)
+        self.assertIs(kwargs["stdin"], subprocess.DEVNULL)
+        self.assertIs(kwargs["stdout"], subprocess.PIPE)
+        self.assertIs(kwargs["stderr"], subprocess.PIPE)
+
+    def test_refuses_nonzero_exit(self):
+        self.assert_refused(PASS, returncode=3)
+
+    def test_refuses_cases_not_run(self):
+        self.assert_refused(dict(PASS, not_run=1))
+
+    def test_refuses_the_offline_preflight_summary(self):
+        self.assert_refused(dict(PASS, complete=False, passed=11, not_run=50))
+
+    def test_refuses_incomplete_run(self):
+        self.assert_refused(dict(PASS, complete=False))
+
+    def test_refuses_another_profile(self):
+        self.assert_refused(dict(PASS, profile_id="hub-http-v1@1.1.0"))
+
+    def test_refuses_failures(self):
+        self.assert_refused(dict(PASS, failed=1, detail="bearer-secret-value"))
+
+    def test_refuses_empty_runs(self):
+        self.assert_refused(dict(PASS, runs=0, passed=0))
+
+    def test_refuses_a_pass_count_short_of_runs(self):
+        self.assert_refused(dict(PASS, passed=60))
+
+    def test_refuses_non_integer_runs(self):
+        self.assert_refused(dict(PASS, runs="61", passed="61"))
+
+    def test_refuses_a_shared_descriptor_before_running(self):
+        self.descriptor.chmod(0o644)
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(self.smoke.subprocess, "run") as runner:
+            with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+                status = self.smoke.main(
+                    ["--descriptor", str(self.descriptor), "--output", str(self.output)]
+                )
+        runner.assert_not_called()
+        self.assertEqual(status, 1)
+        self.assertEqual(out.getvalue(), "")
+        self.assertEqual(err.getvalue(), self.smoke.REFUSAL + "\n")
+        self.assertFalse(self.output.exists())
 
 
 if __name__ == "__main__":
