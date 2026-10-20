@@ -158,15 +158,46 @@ pub(crate) fn seed_version_from_updates(
     }
 }
 
+/// The time an import records for the `updates` domain's watermark (C1 R94):
+/// the latest time at which one of the vehicle's imported software updates is
+/// known to have become installed. `updates` holds each update's
+/// `(start_ms, end_ms)`. An update's time is its `end_ms` when that is known
+/// and positive, else its `start_ms` when that is known and positive, else
+/// none (R89: a value that is not positive counts as none); an end before its
+/// start is taken as recorded. The result is the greatest such time, `None`
+/// when no update has one, whatever the input order. R89 step 2 reads this
+/// value back as the time of a version seeded from the car row.
+///
+/// Known limit 15: an imported update without an end time counts from its
+/// start (R94). If it never completed, the car kept its earlier version, and
+/// the source also missed an update that started before it, then a later
+/// missed-update row starts after that update's true start, as in known
+/// limit 12.
+// The import writer (G2-4 bulk M5) is its only production caller.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn updates_watermark_time_ms(
+    updates: impl IntoIterator<Item = (Option<i64>, Option<i64>)>,
+) -> Option<i64> {
+    updates
+        .into_iter()
+        .filter_map(|(start_ms, end_ms)| {
+            end_ms
+                .filter(|at| *at > 0)
+                .or(start_ms.filter(|at| *at > 0))
+        })
+        .max()
+}
+
 /// Seed `last_car_version` from the installed-version text an import left on
 /// the car row (C1 R14, section 7 item 9), when the imported updates
 /// themselves are no longer at hand: the importer keeps the newest imported
 /// update's version on the car row but not the update row, so its end date is
-/// unknown. `known_since_ms` is then the latest time the Hub knows the source
-/// was recording the car (the end of its newest imported drive), the lower
-/// bound R31 item 2 uses as the start of an update the Hub missed; without it
-/// the row of a missed update starts at its own end. A state that already knows
-/// a version, and a text that does not parse (R30), are left alone.
+/// unknown. `known_since_ms` is then the time the import recorded for its
+/// updates class (the `updates` watermark time, C1 R89 step 2 with R94), or
+/// failing that the end of its newest imported drive: the lower bound R31
+/// item 2 uses as the start of an update the Hub missed; without it the row of
+/// a missed update starts at its own end. A state that already knows a
+/// version, and a text that does not parse (R30), are left alone.
 pub(crate) fn seed_version_from_car_row(
     state: &mut OpenSessionState,
     version: Option<&str>,

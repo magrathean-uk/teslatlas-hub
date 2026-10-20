@@ -113,3 +113,7 @@ mod b3_c2_c;
 #[cfg(test)]
 #[path = "lifecycle/inherited_drive_tests.rs"]
 pub(crate) mod b3_c1_b;
+
+#[cfg(test)]
+#[path = "lifecycle/b3_c1_c_tests.rs"]
+mod b3_c1_c;
