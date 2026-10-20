@@ -36,7 +36,7 @@ paths or their existing components may be symbolic links or world-writable.
 Private leaves remain owner-only. Executable and configuration paths require every
 ancestor to disallow group and world writes, because launchd later resolves these
 absolute paths. On this Mac use private runtime executable/configuration copies
-under the existing `~/dev/runtime`, following the accepted source-run runtime pattern;
+under the existing `~/dev/machine/runtime`, following the accepted source-run runtime pattern;
 the original build artifacts and data remain external. State and journal ancestors
 may be group-writable only when their UID and primary GID are the current owner's.
 The readiness certificate read uses that same descriptor-checked ancestor policy:
@@ -50,7 +50,7 @@ Set these variables in the Xcode scheme, or run the built app executable directl
 from the configured shell. Do not rely on Finder to inherit shell variables.
 
 On **Start Hub**, the app writes a mode-0600 LaunchAgent property list inside the
-existing mode-0700 control directory (`~/dev/runtime` by default). That directory
+existing mode-0700 control directory (`~/dev/machine/runtime` by default). That directory
 and all ancestors must have no group or world write permission; it is opened through
 descriptor-anchored `openat` calls without following symlinks. The directory is not
 created automatically. This keeps launchd control files away from the external

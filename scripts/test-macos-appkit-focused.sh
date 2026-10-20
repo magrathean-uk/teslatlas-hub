@@ -12,8 +12,8 @@ set -eu
 }
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-if [ -z "${DEV_ENV_LOADED:-}" ] && [ -r "$HOME/dev/env.zsh" ]; then . "$HOME/dev/env.zsh" || exit 1; fi
-: "${TMPDIR:?Load ~/dev/env.zsh to select scratch storage}"
+if [ -z "${DEV_ENV_LOADED:-}" ] && [ -r "$HOME/dev/machine/env.zsh" ]; then . "$HOME/dev/machine/env.zsh" || exit 1; fi
+: "${TMPDIR:?Load ~/dev/machine/env.zsh to select scratch storage}"
 source_root="$root/macos/TeslatlasHubApp"
 stage=$(mktemp -d "$TMPDIR/teslatlas-appkit-focused.XXXXXX")
 # R-E1F6-22: test fixtures live in <per-user Darwin temp dir>/teslatlas-hub-tests (never under the home);

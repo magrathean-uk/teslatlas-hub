@@ -251,7 +251,7 @@ final class OnboardingHubControllerTests: XCTestCase {
                 config: home.appendingPathComponent("config.toml"),
                 stateDirectory: home.appendingPathComponent("state", isDirectory: true),
                 logDirectory: home.appendingPathComponent("logs", isDirectory: true),
-                controlDirectory: home.appendingPathComponent("dev/runtime", isDirectory: true),
+                controlDirectory: home.appendingPathComponent("dev/machine/runtime", isDirectory: true),
                 ownerUID: 0,
                 mode: mode
             )

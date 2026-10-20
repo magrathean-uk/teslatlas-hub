@@ -275,7 +275,7 @@ struct DevelopmentHubConfiguration: Equatable {
             stateDirectory: try requiredPath(stateVariable),
             logDirectory: try requiredPath(logVariable),
             controlDirectory: environment[controlVariable] == nil
-                ? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("dev/runtime", isDirectory: true)
+                ? URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).appendingPathComponent("dev/machine/runtime", isDirectory: true)
                 : try requiredPath(controlVariable),
             ownerUID: ownerUID,
             mode: mode
