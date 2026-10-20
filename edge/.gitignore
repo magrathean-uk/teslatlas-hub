@@ -4,3 +4,8 @@
 .docker-build/
 *.swp
 .DS_Store
+
+# secrets (clean-development)
+.env
+.env.*
+!.env.example
