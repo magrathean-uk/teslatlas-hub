@@ -693,6 +693,17 @@ impl HubStore {
                 },
             )?;
         }
+        // C1 R93: a drive that was open across the upgrade is recomputed once
+        // every position of the commit is written (in-delta positions, then
+        // each closed drive's stored children, then each discarded drive's),
+        // and before the charge close.
+        recompute_inherited_drives_in_transaction(
+            transaction,
+            commit.vehicle_id,
+            commit.car_id,
+            &delta.drives,
+            &delta.recompute_drive_ids,
+        )?;
         close_charges_in_transaction(transaction, commit)?;
         // Samples follow the same order after the close step: the in-delta
         // rows, then each closed charge's stored samples in `delta.charges`

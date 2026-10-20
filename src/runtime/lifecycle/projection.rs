@@ -730,6 +730,7 @@ pub(crate) fn merge_step_delta(total: &mut LifecycleDelta, step: LifecycleDelta)
     let LifecycleDelta {
         drives,
         discarded_drive_ids,
+        recompute_drive_ids,
         positions,
         charges,
         charge_samples,
@@ -760,6 +761,9 @@ pub(crate) fn merge_step_delta(total: &mut LifecycleDelta, step: LifecycleDelta)
     total.positions.extend(positions);
     total.drives.extend(drives);
     total.discarded_drive_ids.extend(discarded_drive_ids);
+    // C1 R93: the inherited drives to recompute at their close, in step order,
+    // as the discarded ids are kept.
+    total.recompute_drive_ids.extend(recompute_drive_ids);
     total.charges.extend(charges);
     total.charge_samples.extend(charge_samples);
     total.states.extend(states);

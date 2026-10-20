@@ -167,9 +167,9 @@ struct DrivePoint {
 /// `elevation_descent`).
 ///
 /// A drive that was open across the upgrade carries walk state this function
-/// did not produce, so it is exempt from "live equals recomputed" until C9
-/// fills it, which happens only for drives without car elevations; a drive
-/// with car elevations stays exempt (R52, R85).
+/// did not produce (`OpenDrive::walk_inherited`). It is recomputed once from
+/// its stored positions in the commit that closes it (R93), after which "live
+/// equals recomputed" holds for it as for every other drive (R52, R85).
 ///
 /// Whole-metre readings that flip between neighbours are quantisation, so a
 /// reading only counts when it is at least [`K_ELEV_BAND`] from the reference;
@@ -262,6 +262,7 @@ impl OpenDrive {
             max_displacement_m: 0.0,
             elevation_count: 0,
             odometer_coarse: false,
+            walk_inherited: false,
             still_checkpoint: None,
             lead_checkpoints: Vec::new(),
             positions: Vec::new(),
@@ -1695,6 +1696,10 @@ fn fold_into_open_drive(
 /// end source (R87): folds dated after the end are left out, and a position
 /// folded earlier but dated later stays a child dated after the end (R48a).
 ///
+/// A kept drive whose end source carries `walk_inherited` is also listed in
+/// `LifecycleDelta::recompute_drive_ids` (C1 R93); a discarded drive has no row
+/// and is not listed.
+///
 /// The close also leaves the parked snapshot (R69) and the references of the
 /// standalone rule (R53) at the drive's latest emitted position.
 fn close_open_drive(
@@ -1739,8 +1744,14 @@ fn close_open_drive(
     // Children kept in memory by pure tests travel in the delta like any
     // other child (R11); the unit itself never fills the buffer.
     let buffered = std::mem::take(&mut source.positions);
+    // C1 R93: the flag of the copy the row comes from (the open drive, its
+    // still checkpoint or a lead checkpoint), read before `source` is consumed.
+    let inherited = source.walk_inherited;
     match finalize_drive(source, imported, explicit_end)? {
         Some(closed) => {
+            if inherited {
+                delta.recompute_drive_ids.push(drive_id);
+            }
             delta.drives.push(closed.drive);
             delta.open_drive_positions.extend(buffered);
             delta.open_drive_positions.extend(closing_position);

@@ -176,6 +176,9 @@ fn st74_worst_case_blob_stays_under_half_the_storage_limit() {
     drive.max_displacement_m = real;
     drive.elevation_count = u32::MAX;
     drive.odometer_coarse = true;
+    // C1 R93 (ST74 gains one boolean): the flag is written only when true, so
+    // the worst case sets it on the drive and on every checkpoint copy.
+    drive.walk_inherited = true;
     let mut checkpoint = drive.clone();
     checkpoint.still_checkpoint = None;
     // R87 (ST74 amended): K_LEAD_CHECKPOINTS lead checkpoints, each a copy of

@@ -207,7 +207,7 @@ impl OpenSessionState {
                 maximum: MAX_OPEN_SESSION_BYTES,
             });
         }
-        let state: Self =
+        let mut state: Self =
             serde_json::from_slice(bytes).map_err(|_| LifecycleError::SessionDecode)?;
         if state.version != Self::CURRENT_VERSION {
             return Err(LifecycleError::UnsupportedSessionVersion(state.version));
@@ -221,6 +221,10 @@ impl OpenSessionState {
             || state.last_observation_id < 0
         {
             return Err(LifecycleError::CorruptSession);
+        }
+        // C1 R93: a drive with no fold time carries an earlier build's walk.
+        if let Some(drive) = state.open_drive.as_mut() {
+            drive.mark_inherited_walks();
         }
         Ok(state)
     }
@@ -454,6 +458,7 @@ fn open_drive_from_source(row: &TeslaMateDrive, positions: &[TeslaMatePosition])
         max_displacement_m: 0.0,
         elevation_count: 0,
         odometer_coarse: false,
+        walk_inherited: false,
         still_checkpoint: None,
         lead_checkpoints: Vec::new(),
         positions: Vec::new(),
@@ -668,6 +673,36 @@ impl OpenDrive {
             self.elevation_count
         }
     }
+
+    /// Flag the drive, its still checkpoint copy and each lead checkpoint copy
+    /// whose `last_folded_at_ms` is absent as carrying a walk this build did
+    /// not produce (C1 R93). `OpenSessionState::decode` is the one caller: no
+    /// fold, open or encode sets the flag, so a drive this build opens (its
+    /// first fold fills `last_folded_at_ms`) is never flagged, and a decode
+    /// that follows an encode with no step between flags the same drive again.
+    /// The flag is only ever raised here; a copy already flagged keeps it.
+    pub(crate) fn mark_inherited_walks(&mut self) {
+        if self.last_folded_at_ms.is_none() {
+            self.walk_inherited = true;
+        }
+        if let Some(checkpoint) = self.still_checkpoint.as_mut()
+            && checkpoint.last_folded_at_ms.is_none()
+        {
+            checkpoint.walk_inherited = true;
+        }
+        for lead in &mut self.lead_checkpoints {
+            if lead.drive.last_folded_at_ms.is_none() {
+                lead.drive.walk_inherited = true;
+            }
+        }
+    }
+}
+
+/// `skip_serializing_if` of [`OpenDrive::walk_inherited`]: a drive this build
+/// opened writes no member, so every stored blob and every size budget that
+/// does not involve an inherited drive is unchanged.
+fn walk_inherited_is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -748,6 +783,14 @@ pub struct OpenDrive {
     /// and may be too coarse to decide the keep rule (R47).
     #[serde(default)]
     pub odometer_coarse: bool,
+    /// The ascent and descent of this drive come from a walk an earlier build
+    /// produced, so the Hub recomputes them once from the stored positions in
+    /// the commit that closes the drive (C1 R93). Raised only by
+    /// `OpenSessionState::decode` on a drive (or checkpoint copy) with no
+    /// `last_folded_at_ms`; false, and not written, for every drive this build
+    /// opens. A checkpoint taken later copies the drive with its flag.
+    #[serde(default, skip_serializing_if = "walk_inherited_is_false")]
+    pub walk_inherited: bool,
     /// Copy of the drive (without positions and without its own checkpoint)
     /// taken at the first still fold after the last motion (R44).
     #[serde(default)]
@@ -889,6 +932,12 @@ pub struct LifecycleDelta {
     /// Drive IDs rejected during close. The durable path uses these to remove
     /// provisional children instead of leaving orphaned open rows.
     pub discarded_drive_ids: Vec<i64>,
+    /// Ids of the closed drives in `drives` whose walk was inherited from an
+    /// earlier build (C1 R93), in step order. The durable path recomputes each
+    /// one's ascent and descent from its stored positions once every position
+    /// of the commit is written. Not persisted; empty for every drive this
+    /// build opened.
+    pub recompute_drive_ids: Vec<i64>,
     pub positions: Vec<ProjectionPosition>,
     pub charges: Vec<ProjectionCharge>,
     pub charge_samples: Vec<ProjectionChargeSample>,

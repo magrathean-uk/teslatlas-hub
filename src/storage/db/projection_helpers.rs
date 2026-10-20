@@ -582,41 +582,63 @@ fn recompute_car_efficiency(
     )
 }
 
+/// The one statement that reads a drive's stored positions for
+/// [`recompute_terrain_drive`] (C1 R93, ST111 (k)). It selects the primary key
+/// and the JSON of each row of one drive and has no `ORDER BY`: nothing indexes
+/// the JSON date, and an order by it, or by `position_id` within the drive,
+/// would make SQLite sort the selected rows, JSON included, in a temporary
+/// B-tree that holds the whole drive's JSON before the first row is returned.
+/// The rows come from `materialised_positions_drive` in any order; the sort of
+/// the kept triples fixes the order.
+const TERRAIN_DRIVE_POSITIONS_SQL: &str = "SELECT position_id, position_json
+     FROM materialised_positions
+     WHERE vehicle_id = ?1 AND drive_id = ?2";
+
 /// Recompute a drive's ascent and descent after terrain elevation arrives later
-/// (C1 R52, R85).
+/// (C1 R52, R85) and for a drive that was open across the upgrade (C1 R93).
 ///
 /// It calls the one shared function, [`crate::lifecycle::elevation_totals`],
-/// over the drive's materialised positions in `(date_ms, id)` order, the order
-/// the live fold emits them in. It writes only that drive's
+/// over the drive's materialised positions in `(date_ms, position_id)` order,
+/// the order the live fold emits them in. It writes only that drive's
 /// `materialised_drives` row, and only `ascent`, `descent` and `drive_json`
 /// (the stored row JSON with only its `ascent` and `descent` members
 /// replaced). It writes no other column, row or table and records no
 /// `sync_mutations` row: its caller records the change.
+///
+/// Memory (C1 R93): the positions are read by [`TERRAIN_DRIVE_POSITIONS_SQL`],
+/// one row at a time. Each row's JSON is decoded by the existing
+/// `ProjectionPosition` decoder, only `(date_ms, position_id, elevation)` is
+/// kept, and the row and its decoded position are dropped before the next row
+/// is read. The triples, 32 bytes each, are the only collection that grows with
+/// the drive. A row the decoder refuses returns `DeserializeLifecycleRow` at
+/// once, before anything is written.
 fn recompute_terrain_drive(
     transaction: &Transaction<'_>,
     vehicle_id: &str,
     drive_id: i64,
 ) -> Result<(), StoreError> {
-    let mut statement = transaction
-        .prepare(
-            "SELECT position_json FROM materialised_positions
-             WHERE vehicle_id = ?1 AND drive_id = ?2",
-        )
-        .map_err(StoreError::LifecycleWrite)?;
-    let rows = statement
-        .query_map(params![vehicle_id, drive_id], |row| row.get::<_, String>(0))
-        .map_err(StoreError::LifecycleWrite)?;
-    let mut positions: Vec<ProjectionPosition> = rows
-        .map(|row| {
-            let json = row.map_err(StoreError::LifecycleWrite)?;
-            serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)
-        })
-        .collect::<Result<_, _>>()?;
+    let mut triples: Vec<(i64, i64, Option<i64>)> = Vec::new();
+    {
+        let mut statement = transaction
+            .prepare(TERRAIN_DRIVE_POSITIONS_SQL)
+            .map_err(StoreError::LifecycleWrite)?;
+        let mut rows = statement
+            .query(params![vehicle_id, drive_id])
+            .map_err(StoreError::LifecycleWrite)?;
+        while let Some(row) = rows.next().map_err(StoreError::LifecycleWrite)? {
+            let position_id: i64 = row.get(0).map_err(StoreError::LifecycleWrite)?;
+            let json: String = row.get(1).map_err(StoreError::LifecycleWrite)?;
+            let position: ProjectionPosition =
+                serde_json::from_str(&json).map_err(StoreError::DeserializeLifecycleRow)?;
+            triples.push((position.date_ms, position_id, position.elevation));
+        }
+    }
     // The shared walk reads the positions in `(date_ms, id)` order, the order
-    // the live fold emits them in (C1 R51, R52); the table has no date column.
-    positions.sort_by_key(|position| (position.date_ms, position.id));
+    // the live fold emits them in (C1 R51, R52); the table has no date column,
+    // so the order is fixed here, by the date and then the primary key.
+    triples.sort_unstable_by_key(|(date_ms, position_id, _)| (*date_ms, *position_id));
     let (ascent, descent) =
-        crate::lifecycle::elevation_totals(positions.iter().map(|position| position.elevation));
+        crate::lifecycle::elevation_totals(triples.iter().map(|(_, _, elevation)| *elevation));
     let drive_json: String = transaction
         .query_row(
             "SELECT drive_json FROM materialised_drives
@@ -637,6 +659,65 @@ fn recompute_terrain_drive(
             params![vehicle_id, drive_id, drive_json, ascent, descent],
         )
         .map_err(StoreError::LifecycleWrite)?;
+    Ok(())
+}
+
+/// The stored `(ascent, descent)` and `drive_json` of one materialised drive.
+fn stored_drive_totals(
+    transaction: &Transaction<'_>,
+    vehicle_id: &str,
+    drive_id: i64,
+) -> Result<(Option<i64>, Option<i64>, String), StoreError> {
+    transaction
+        .query_row(
+            "SELECT ascent, descent, drive_json FROM materialised_drives
+             WHERE vehicle_id = ?1 AND drive_id = ?2",
+            params![vehicle_id, drive_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(StoreError::Query)
+}
+
+/// Recompute the drives of a commit that were open across the upgrade (C1
+/// R93), after every position of the commit is written and before the commit
+/// writes anything else that follows the positions (the charge close).
+///
+/// For each id in `recompute_drive_ids`, in that order, whose drive row this
+/// commit wrote (`written`): read the stored `(ascent, descent)`, call
+/// [`recompute_terrain_drive`], read the row again, and record one `drive`
+/// `upsert` sync mutation carrying the `drive_json` just read when the pair
+/// changed, and none when it did not. It is the caller's duty that C1 R85
+/// states for the recompute function. A refusal of a stored position returns
+/// before this function writes for that drive.
+fn recompute_inherited_drives_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    car_id: i64,
+    written: &[ProjectionDrive],
+    recompute_drive_ids: &[i64],
+) -> Result<(), StoreError> {
+    let vehicle_key = vehicle_id.to_string();
+    for &drive_id in recompute_drive_ids {
+        if !written.iter().any(|drive| drive.id == drive_id) {
+            continue;
+        }
+        let (ascent_before, descent_before, _) =
+            stored_drive_totals(transaction, &vehicle_key, drive_id)?;
+        recompute_terrain_drive(transaction, &vehicle_key, drive_id)?;
+        let (ascent, descent, drive_json) =
+            stored_drive_totals(transaction, &vehicle_key, drive_id)?;
+        if (ascent, descent) != (ascent_before, descent_before) {
+            record_sync_mutation_in_transaction(
+                transaction,
+                vehicle_id,
+                "drive",
+                drive_id,
+                car_id,
+                "upsert",
+                &drive_json,
+            )?;
+        }
+    }
     Ok(())
 }
 
