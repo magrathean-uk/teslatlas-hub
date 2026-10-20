@@ -511,7 +511,8 @@ fn online_response_projects_mergeable_car_metadata() {
             model: Some("3".into()),
             vin: Some("5YJTESTVIN1234567".into()),
             trim_badging: Some("74D".into()),
-            marketing_name: Some("LR AWD".into()),
+            // C6 R10: a live patch never derives a marketing name.
+            marketing_name: None,
             exterior_color: Some("Pearl White".into()),
             wheel_type: Some("Apollo".into()),
             spoiler_type: Some("None".into()),
@@ -540,7 +541,8 @@ fn online_response_projects_mergeable_car_metadata() {
             model: Some("3".into()),
             vin: Some("5YJTESTVIN1234567".into()),
             trim_badging: Some("74D".into()),
-            marketing_name: Some("LR AWD".into()),
+            // C6 R10: a live patch never derives a marketing name.
+            marketing_name: None,
             exterior_color: Some("Pearl White".into()),
             wheel_type: Some("Apollo".into()),
             spoiler_type: Some("None".into()),

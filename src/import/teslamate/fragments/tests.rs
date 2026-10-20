@@ -533,6 +533,7 @@ fn dropped_candidate_sink_removes_unpublished_pack() {
             exterior_color: None,
             wheel_type: None,
             spoiler_type: None,
+            source_model_text: None,
             firmware_version: None,
             efficiency_wh_per_km: None,
             settings: Default::default(),

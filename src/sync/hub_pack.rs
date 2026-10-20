@@ -718,6 +718,7 @@ const HUB_PROJECTION_SCHEMA_V1_SQL: &str = r#"
 pub const HUB_PROJECTION_SCHEMA_V2: SchemaVersion = SchemaVersion { major: 2, minor: 1 };
 
 include!("hub_pack/model.rs");
+include!("hub_pack/vehicle_identity.rs");
 include!("hub_pack/manifest.rs");
 include!("hub_pack/writer.rs");
 include!("hub_pack/validation.rs");
@@ -733,3 +734,7 @@ include!("hub_pack/staging_and_errors.rs");
 #[cfg(test)]
 #[path = "hub_pack/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "hub_pack/vehicle_identity_tests.rs"]
+mod b3_c6_i1;

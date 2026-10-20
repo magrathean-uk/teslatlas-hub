@@ -46,3 +46,5 @@ mod b3_c2_a;
 mod b3_c2_b;
 #[path = "tests/b3_c2_c.rs"]
 mod b3_c2_c;
+#[path = "tests/b3_c6_i1.rs"]
+mod b3_c6_i1;

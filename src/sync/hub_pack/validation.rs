@@ -26,7 +26,9 @@ fn validate_request(
         return Err(invalid("selected_car_id does not match car.id"));
     }
     validate_required_text(&car.name, "car.name")?;
-    validate_required_text(&car.model, "car.model")?;
+    // The stored model is the Hub code or the empty string when no source states a
+    // model (C6 R13, R14), and a pack copies it verbatim (C6 R16): empty is valid.
+    validate_optional_text(Some(&car.model), "car.model")?;
     validate_optional_text(car.vin.as_deref(), "car.vin")?;
     validate_optional_text(car.firmware_version.as_deref(), "car.firmware_version")?;
     validate_optional_nonnegative(car.efficiency_wh_per_km, "car.efficiency_wh_per_km")?;
@@ -713,7 +715,9 @@ fn validate_delta(
         require_unique_positive(&mut car_ids, car.id, "car.id")?;
         require_same_car(car.id, selected_car_id, "car.id")?;
         validate_required_text(&car.name, "car.name")?;
-        validate_required_text(&car.model, "car.model")?;
+        // The stored model is the Hub code or the empty string when no source states a
+        // model (C6 R13, R14), and a pack copies it verbatim (C6 R16): empty is valid.
+        validate_optional_text(Some(&car.model), "car.model")?;
         validate_optional_text(car.vin.as_deref(), "car.vin")?;
         validate_optional_text(car.firmware_version.as_deref(), "car.firmware_version")?;
         validate_optional_nonnegative(car.efficiency_wh_per_km, "car.efficiency_wh_per_km")?;

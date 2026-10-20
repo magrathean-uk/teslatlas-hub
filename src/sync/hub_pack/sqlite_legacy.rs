@@ -264,7 +264,7 @@ fn insert_legacy_cars(
             .execute(params![
                 row.id,
                 row.name,
-                normalize_tesla_model_code(&row.model),
+                row.model,
                 row.vin,
                 row.firmware_version,
                 row.efficiency_wh_per_km,
@@ -562,12 +562,11 @@ fn insert_cars(
         )
         .map_err(ProjectionPackError::Prepare)?;
     for row in &rows {
-        let model = normalize_tesla_model_code(&row.model);
         statement
             .execute(params![
                 row.id,
                 row.name,
-                model,
+                row.model,
                 row.vin,
                 row.source_eid,
                 row.source_vid,

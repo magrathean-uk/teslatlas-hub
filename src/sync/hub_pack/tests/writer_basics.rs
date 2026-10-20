@@ -15,35 +15,6 @@ fn unbounded_full_snapshot_capacity_uses_the_protocol_ceiling_without_overflow()
 }
 
 #[test]
-fn owner_api_model_codes_are_normalized_like_teslamate() {
-    assert_eq!(normalize_tesla_model_code("model3"), "3");
-    assert_eq!(normalize_tesla_model_code("models2"), "S");
-    assert_eq!(normalize_tesla_model_code("modely"), "Y");
-    assert_eq!(normalize_tesla_model_code("cybertruck"), "Cybertruck");
-    assert_eq!(
-        normalize_tesla_model_code("cybertruckpremium"),
-        "Cybertruck"
-    );
-    assert_eq!(normalize_tesla_model_code("Model 3"), "3");
-}
-
-#[test]
-fn model_3_base_trim_uses_the_vin_model_year() {
-    assert_eq!(
-        derive_tesla_marketing_name("3", Some("50"), Some("model3"), Some("5YJ3E1EA7NF000001")),
-        Some("RWD".to_owned())
-    );
-    assert_eq!(
-        derive_tesla_marketing_name("3", Some("50"), Some("model3"), Some("5YJ3E1EA7MF000001")),
-        Some("SR+".to_owned())
-    );
-    assert_eq!(
-        derive_tesla_marketing_name("3", Some("50"), Some("model3"), None),
-        Some("SR+".to_owned())
-    );
-}
-
-#[test]
 fn ct4_live_car_defaults_are_one_set_of_values() {
     let live = ProjectionCarSettings::new_live();
     assert_eq!(
@@ -165,7 +136,9 @@ fn snapshot() -> ProjectionSnapshot {
         cars: vec![ProjectionCar {
             id: 10,
             name: "Road car".into(),
-            model: "Model 3".into(),
+            // The stored model is the Hub code, which the pack copies verbatim (C6
+            // R16); the frozen fixture packs carry "3".
+            model: "3".into(),
             vin: Some("5YJTESTVIN1234567".into()),
             source_eid: Some(101),
             source_vid: Some(201),
@@ -174,6 +147,7 @@ fn snapshot() -> ProjectionSnapshot {
             exterior_color: Some("Pearl White".into()),
             wheel_type: Some("Apollo".into()),
             spoiler_type: Some("None".into()),
+            source_model_text: None,
             firmware_version: Some("2026.1.1".into()),
             efficiency_wh_per_km: Some(145.0),
             // Frozen fixture packs were generated with the source column

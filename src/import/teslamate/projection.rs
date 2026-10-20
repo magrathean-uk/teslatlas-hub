@@ -1036,23 +1036,11 @@ pub fn project_car(
         });
     }
     let name = first_nonblank([car.name.as_deref()]).unwrap_or_else(|| format!("Car {}", car.id));
-    let raw_model = first_nonblank([car.model.as_deref()]);
-    let model = raw_model
-        .as_deref()
-        .map(crate::hub_pack::normalize_tesla_model_code)
-        .unwrap_or_else(|| "Unknown Tesla".to_owned());
-    let trim_badging = car
-        .trim_badging
-        .as_deref()
-        .map(crate::hub_pack::normalize_tesla_trim);
-    let marketing_name = car.marketing_name.clone().or_else(|| {
-        crate::hub_pack::derive_tesla_marketing_name(
-            &model,
-            trim_badging.as_deref(),
-            raw_model.as_deref(),
-            car.vin.as_deref(),
-        )
-    });
+    // C6 R13: the stored model is the Hub code (the VIN, else the source text),
+    // or the empty string; the source's own text, trim, variant, colour, wheel
+    // and spoiler stay exactly as the source stated them.
+    let model = crate::hub_pack::vehicle_model_code(car.vin.as_deref(), car.model.as_deref())
+        .unwrap_or_default();
     Ok(ProjectionCar {
         id: car.id,
         name,
@@ -1060,11 +1048,12 @@ pub fn project_car(
         vin: car.vin.clone(),
         source_eid: Some(car.eid),
         source_vid: car.vid,
-        trim_badging,
-        marketing_name,
+        trim_badging: car.trim_badging.clone(),
+        marketing_name: car.marketing_name.clone(),
         exterior_color: car.exterior_color.clone(),
         wheel_type: car.wheel_type.clone(),
         spoiler_type: car.spoiler_type.clone(),
+        source_model_text: car.model.clone(),
         firmware_version,
         efficiency_wh_per_km: normalise_efficiency(car.efficiency_wh_per_km)?,
         settings: car.settings.clone(),

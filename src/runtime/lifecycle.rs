@@ -17,7 +17,6 @@ use thiserror::Error;
 use crate::hub_pack::{
     GeofenceBillingType, ProjectionCarPatch, ProjectionCharge, ProjectionChargeSample,
     ProjectionDrive, ProjectionPosition, ProjectionState, ProjectionUpdate,
-    normalize_tesla_model_code,
 };
 use crate::teslamate_projection::{
     TeslaMateCharge, TeslaMateChargingProcess, TeslaMateDrive, TeslaMateOpenSession,
@@ -117,3 +116,7 @@ pub(crate) mod b3_c1_b;
 #[cfg(test)]
 #[path = "lifecycle/b3_c1_c_tests.rs"]
 mod b3_c1_c;
+
+#[cfg(test)]
+#[path = "lifecycle/b3_c6_i1_tests.rs"]
+mod b3_c6_i1;

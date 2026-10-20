@@ -1109,22 +1109,16 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
         && vehicle_data.is_some()
         && vehicle_state.is_some()
     {
-        let raw_car_type = text_field(vehicle_config, "car_type");
-        let model = raw_car_type.as_deref().map(normalize_tesla_model_code);
-        let trim_badging = text_field(vehicle_config, "trim_badging")
-            .map(|value| crate::hub_pack::normalize_tesla_trim(&value));
+        // C6 R14: the model is the Hub code (the VIN decides on a filed WMI,
+        // else the car's own text), the descriptor texts stay as Tesla stated
+        // them, trimmed and bounded, and no variant is derived (C6 R10).
         let vin = text_field(Some(root), "vin")
             .or_else(|| vehicle_data.and_then(|fields| text_field(Some(fields), "vin")));
-        let marketing_name = raw_car_type.as_deref().and_then(|raw| {
-            model.as_deref().and_then(|model| {
-                crate::hub_pack::derive_tesla_marketing_name(
-                    model,
-                    trim_badging.as_deref(),
-                    Some(raw),
-                    vin.as_deref(),
-                )
-            })
-        });
+        let model = crate::hub_pack::vehicle_model_code(
+            vin.as_deref(),
+            text_field(vehicle_config, "car_type").as_deref(),
+        );
+        let trim_badging = live_text_field(vehicle_config, "trim_badging");
         // A sparse source's `car_version` can be an available, not installed,
         // version (R32), so it never names the installed firmware.
         let firmware_version = if kind == SourceKind::Sparse {
@@ -1141,10 +1135,10 @@ fn parse_sample(sample: &LifecycleSample) -> Result<ParsedSample, LifecycleError
             model,
             vin,
             trim_badging,
-            marketing_name,
-            exterior_color: text_field(vehicle_config, "exterior_color"),
-            wheel_type: text_field(vehicle_config, "wheel_type"),
-            spoiler_type: text_field(vehicle_config, "spoiler_type"),
+            marketing_name: None,
+            exterior_color: live_text_field(vehicle_config, "exterior_color"),
+            wheel_type: live_text_field(vehicle_config, "wheel_type"),
+            spoiler_type: live_text_field(vehicle_config, "spoiler_type"),
             firmware_version,
         };
         parsed.car_metadata = (!patch.is_empty()).then_some(patch);
@@ -1302,6 +1296,17 @@ fn text_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<String> 
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
+}
+
+/// A live descriptor text (C6 R11, R14): the string value of `key`, trimmed,
+/// `None` when it is absent, not a string, empty after trimming or longer than
+/// the 256-byte bound, with its case unchanged.
+fn live_text_field(fields: Option<&Map<String, Value>>, key: &str) -> Option<String> {
+    crate::hub_pack::live_config_text(
+        fields
+            .and_then(|fields| fields.get(key))
+            .and_then(Value::as_str),
+    )
 }
 
 /// A timestamp field (C1 R5): a positive integer, integral float or numeric

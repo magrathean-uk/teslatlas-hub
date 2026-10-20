@@ -689,7 +689,7 @@ impl HubStore {
             .query_row(
                 "SELECT
                     EXISTS(SELECT 1 FROM cars
-                           WHERE id <= 0 OR length(name) = 0 OR length(model) = 0)
+                           WHERE id <= 0 OR length(name) = 0 OR model IS NULL)
                     OR EXISTS(SELECT 1 FROM cars AS car
                                 LEFT JOIN car_settings AS settings
                                   ON settings.car_id = car.id
@@ -807,7 +807,9 @@ impl HubStore {
         }
         for (table, column, required) in [
             ("cars", "name", true),
-            ("cars", "model", true),
+            // The stored model is the Hub code or the empty string (C6 R13, R14, R16):
+            // empty is valid here, a missing value is not (checked with the cars query).
+            ("cars", "model", false),
             ("cars", "vin", false),
             ("cars", "firmware_version", false),
             ("drives", "start_address", false),

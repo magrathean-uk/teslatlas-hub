@@ -466,7 +466,9 @@ fn fixture_lineage(root: &Path) -> (LineageManifestV2, Vec<(String, Vec<u8>)>) {
     let sparse_car = ProjectionCar {
         id: 10,
         name: "Road car renamed".into(),
-        model: "Model 3".into(),
+        // The stored model is the Hub code, which the pack copies verbatim (C6 R16);
+        // the committed golden packs carry "3".
+        model: "3".into(),
         vin: None,
         source_eid: None,
         source_vid: None,
@@ -475,6 +477,7 @@ fn fixture_lineage(root: &Path) -> (LineageManifestV2, Vec<(String, Vec<u8>)>) {
         exterior_color: None,
         wheel_type: None,
         spoiler_type: None,
+        source_model_text: None,
         firmware_version: None,
         efficiency_wh_per_km: None,
         // The frozen fixture packs were generated with the source column

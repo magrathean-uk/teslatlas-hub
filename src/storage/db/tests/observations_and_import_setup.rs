@@ -374,6 +374,7 @@ fn import_delta_test_car(car_id: i64) -> ProjectionCar {
         exterior_color: None,
         wheel_type: None,
         spoiler_type: None,
+        source_model_text: None,
         firmware_version: None,
         efficiency_wh_per_km: None,
         settings: ProjectionCarSettings::default(),

@@ -544,7 +544,7 @@ fn publish_typed_snapshot(
         cars: vec![ProjectionCar {
             id: selected_car_id,
             name: "E2E Model 3".to_owned(),
-            model: "model3".to_owned(),
+            model: "3".to_owned(),
             vin: Some("5YJ3E1EA7KF000001".to_owned()),
             source_eid: Some(9),
             source_vid: None,
@@ -553,6 +553,7 @@ fn publish_typed_snapshot(
             exterior_color: None,
             wheel_type: None,
             spoiler_type: None,
+            source_model_text: None,
             firmware_version: Some("2026.20".to_owned()),
             efficiency_wh_per_km: None,
             settings: Default::default(),

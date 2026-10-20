@@ -589,6 +589,7 @@ fn deduplicates_exact_rows_rejects_conflicts_and_cleans_up_private_file() {
         exterior_color: None,
         wheel_type: None,
         spoiler_type: None,
+        source_model_text: None,
         firmware_version: None,
         efficiency_wh_per_km: None,
         settings: ProjectionCarSettings::default(),

@@ -825,6 +825,7 @@ fn lifecycle_car_metadata_is_durable_and_preserves_imported_efficiency() {
         exterior_color: Some("Pearl White".into()),
         wheel_type: Some("Apollo".into()),
         spoiler_type: Some("None".into()),
+        source_model_text: None,
         firmware_version: Some("2026.0".into()),
         efficiency_wh_per_km: Some(145.0),
         settings: Default::default(),
@@ -909,10 +910,7 @@ fn lifecycle_car_metadata_is_durable_and_preserves_imported_efficiency() {
         .expect("load metadata");
     let car = history.car.expect("materialised car");
     assert_eq!(car.name, "Road car");
-    assert_eq!(car.model, "3");
     assert_eq!(car.vin.as_deref(), Some("5YJNEWVIN1234567"));
-    assert_eq!(car.trim_badging.as_deref(), Some("74D"));
-    assert_eq!(car.marketing_name.as_deref(), Some("LR AWD"));
     assert_eq!(car.exterior_color.as_deref(), Some("Pearl White"));
     assert_eq!(car.wheel_type.as_deref(), Some("Apollo"));
     assert_eq!(car.spoiler_type.as_deref(), Some("None"));
@@ -1418,6 +1416,7 @@ fn sync_mutations_are_durable_monotonic_and_coalescible() {
         exterior_color: None,
         wheel_type: None,
         spoiler_type: None,
+        source_model_text: None,
         firmware_version: None,
         efficiency_wh_per_km: None,
         settings: ProjectionCarSettings::default(),

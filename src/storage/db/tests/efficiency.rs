@@ -27,6 +27,7 @@ fn eff_car(efficiency: Option<f64>) -> crate::hub_pack::ProjectionCar {
         exterior_color: Some("Pearl White".into()),
         wheel_type: Some("Apollo".into()),
         spoiler_type: Some("None".into()),
+        source_model_text: None,
         firmware_version: Some("2026.0".into()),
         efficiency_wh_per_km: efficiency,
         settings: Default::default(),

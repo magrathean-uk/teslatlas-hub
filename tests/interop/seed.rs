@@ -312,7 +312,7 @@ fn prepare_with_vehicle_identities(
         descriptor.vin = Some(vin.into());
         store.register_vehicle_with_id(&descriptor, OBSERVED_AT_MS, vehicle_id)?;
         let car: ProjectionCar = serde_json::from_value(json!({
-            "id":car_id,"name":name,"model":"model3","vin":vin,"source_eid":car_id,"firmware_version":"2026.20"
+            "id":car_id,"name":name,"model":"3","vin":vin,"source_eid":car_id,"firmware_version":"2026.20"
         }))?;
         let mut drives = Vec::new();
         if index == 0 {
@@ -976,7 +976,7 @@ pub fn expose_dynamic_vehicle(root: &Path) -> Result<DynamicVehicleMutation> {
     let car: ProjectionCar = serde_json::from_value(json!({
         "id": DYNAMIC_CAR_ID,
         "name": "Interop dynamic third",
-        "model": "model3",
+        "model": "3",
         "vin": DYNAMIC_VIN,
         "source_eid": DYNAMIC_CAR_ID,
         "firmware_version": "2026.20"

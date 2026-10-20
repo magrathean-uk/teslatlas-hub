@@ -1049,42 +1049,37 @@ fn publish_resolved_vehicle(
     Ok(1)
 }
 
-fn compatibility_car(
+/// The car a live vehicle's first materialisation stores (C6 R14).
+pub(crate) fn compatibility_car(
     vehicle: &crate::owner_api::Vehicle,
     snapshot: Option<&VehicleData>,
     selected_car_id: i64,
 ) -> ProjectionCar {
     let raw_car_type =
         snapshot.and_then(|snapshot| nested_text(snapshot, "vehicle_config", "car_type"));
-    let model = raw_car_type
-        .map(crate::hub_pack::normalize_tesla_model_code)
-        .unwrap_or_else(|| "Tesla".to_owned());
-    let trim_badging = snapshot
-        .and_then(|snapshot| nested_text(snapshot, "vehicle_config", "trim_badging"))
-        .map(crate::hub_pack::normalize_tesla_trim);
+    // C6 R14: the Hub code (the VIN decides on a filed WMI, else the text), the
+    // empty string when neither states a model, and the raw configuration texts
+    // trimmed; no derived marketing name and no source text.
+    let model =
+        crate::hub_pack::vehicle_model_code(Some(&vehicle.vin), raw_car_type).unwrap_or_default();
+    let config_text = |field: &str| {
+        crate::hub_pack::live_config_text(
+            snapshot.and_then(|snapshot| nested_text(snapshot, "vehicle_config", field)),
+        )
+    };
     ProjectionCar {
         id: selected_car_id,
         name: clean_required_text(vehicle.display_name.as_deref(), "Tesla"),
-        model: model.clone(),
+        model,
         vin: clean_optional_text(Some(&vehicle.vin)),
         source_eid: Some(vehicle.id.get() as i64),
         source_vid: None,
-        trim_badging: trim_badging.clone(),
-        marketing_name: crate::hub_pack::derive_tesla_marketing_name(
-            &model,
-            trim_badging.as_deref(),
-            raw_car_type,
-            Some(&vehicle.vin),
-        ),
-        exterior_color: snapshot
-            .and_then(|snapshot| nested_text(snapshot, "vehicle_config", "exterior_color"))
-            .map(ToOwned::to_owned),
-        wheel_type: snapshot
-            .and_then(|snapshot| nested_text(snapshot, "vehicle_config", "wheel_type"))
-            .map(ToOwned::to_owned),
-        spoiler_type: snapshot
-            .and_then(|snapshot| nested_text(snapshot, "vehicle_config", "spoiler_type"))
-            .map(ToOwned::to_owned),
+        trim_badging: config_text("trim_badging"),
+        marketing_name: None,
+        exterior_color: config_text("exterior_color"),
+        wheel_type: config_text("wheel_type"),
+        spoiler_type: config_text("spoiler_type"),
+        source_model_text: None,
         firmware_version: clean_optional_text(
             snapshot.and_then(|snapshot| nested_text(snapshot, "vehicle_state", "car_version")),
         ),

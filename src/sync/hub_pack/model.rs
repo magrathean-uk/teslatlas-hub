@@ -536,6 +536,12 @@ pub struct ProjectionCar {
     pub wheel_type: Option<String>,
     #[serde(default)]
     pub spoiler_type: Option<String>,
+    /// The model text an import copied verbatim from its source (C6 R13a).
+    /// Only the import path sets it; every live producer leaves it `None`, and
+    /// `None` is never serialised so that every existing and every live car
+    /// keeps its stored bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_model_text: Option<String>,
     pub firmware_version: Option<String>,
     pub efficiency_wh_per_km: Option<f64>,
     #[serde(default)]
@@ -606,6 +612,11 @@ impl ProjectionCarPatch {
         fallback_name: Option<String>,
         fallback_vin: Option<String>,
     ) -> ProjectionCar {
+        let vin = self
+            .vin
+            .clone()
+            .or_else(|| existing.and_then(|car| car.vin.clone()))
+            .or(fallback_vin);
         ProjectionCar {
             id: car_id,
             name: self
@@ -614,38 +625,36 @@ impl ProjectionCarPatch {
                 .or_else(|| existing.map(|car| car.name.clone()))
                 .or(fallback_name)
                 .unwrap_or_else(|| "Tesla".to_owned()),
-            model: self
-                .model
-                .clone()
-                .or_else(|| existing.map(|car| car.model.clone()))
-                .unwrap_or_else(|| "Unknown Tesla".to_owned()),
-            vin: self
-                .vin
-                .clone()
-                .or_else(|| existing.and_then(|car| car.vin.clone()))
-                .or(fallback_vin),
+            // C6 R15: a stored model is kept; an empty or absent one is filled
+            // with the Hub code the patch's VIN, the stored VIN or the fallback
+            // VIN and the patch's model text give (C6 R6), or stays empty.
+            model: match existing
+                .map(|car| car.model.as_str())
+                .filter(|model| !model.is_empty())
+            {
+                Some(stored) => stored.to_owned(),
+                None => {
+                    vehicle_model_code(vin.as_deref(), self.model.as_deref()).unwrap_or_default()
+                }
+            },
+            vin,
             source_eid: existing.and_then(|car| car.source_eid),
             source_vid: existing.and_then(|car| car.source_vid),
-            trim_badging: self
-                .trim_badging
-                .clone()
-                .or_else(|| existing.and_then(|car| car.trim_badging.clone())),
-            marketing_name: self
-                .marketing_name
-                .clone()
-                .or_else(|| existing.and_then(|car| car.marketing_name.clone())),
-            exterior_color: self
-                .exterior_color
-                .clone()
+            // A stored trim, including an imported empty one, is kept (C6 R15); a
+            // stored marketing name is kept and the patch's is never used (C6 R10).
+            trim_badging: existing
+                .and_then(|car| car.trim_badging.clone())
+                .or_else(|| live_config_text(self.trim_badging.as_deref())),
+            marketing_name: existing.and_then(|car| car.marketing_name.clone()),
+            // Colour, wheels and spoiler are physical configuration: the newest
+            // live statement replaces the stored value (C6 R15).
+            exterior_color: live_config_text(self.exterior_color.as_deref())
                 .or_else(|| existing.and_then(|car| car.exterior_color.clone())),
-            wheel_type: self
-                .wheel_type
-                .clone()
+            wheel_type: live_config_text(self.wheel_type.as_deref())
                 .or_else(|| existing.and_then(|car| car.wheel_type.clone())),
-            spoiler_type: self
-                .spoiler_type
-                .clone()
+            spoiler_type: live_config_text(self.spoiler_type.as_deref())
                 .or_else(|| existing.and_then(|car| car.spoiler_type.clone())),
+            source_model_text: existing.and_then(|car| car.source_model_text.clone()),
             firmware_version: self
                 .firmware_version
                 .clone()
@@ -654,89 +663,6 @@ impl ProjectionCarPatch {
             settings: existing.map(|car| car.settings.clone()).unwrap_or_default(),
         }
     }
-}
-
-pub fn normalize_tesla_model_code(value: &str) -> String {
-    let trimmed = value.trim();
-    let lower = trimmed.to_ascii_lowercase();
-    let compact = lower.replace(' ', "");
-    if compact.starts_with("models") || compact == "lychee" {
-        "S".to_owned()
-    } else if compact.starts_with("model3") {
-        "3".to_owned()
-    } else if compact.starts_with("modelx") || compact == "tamarind" {
-        "X".to_owned()
-    } else if compact.starts_with("modely") {
-        "Y".to_owned()
-    } else if compact.starts_with("cybertruck") {
-        "Cybertruck".to_owned()
-    } else {
-        trimmed.to_owned()
-    }
-}
-
-pub fn normalize_tesla_trim(value: &str) -> String {
-    value.trim().to_ascii_uppercase()
-}
-
-pub fn derive_tesla_marketing_name(
-    model: &str,
-    trim_badging: Option<&str>,
-    raw_car_type: Option<&str>,
-    vin: Option<&str>,
-) -> Option<String> {
-    let model = normalize_tesla_model_code(model);
-    let trim = trim_badging.map(normalize_tesla_trim);
-    let raw = raw_car_type.unwrap_or_default().to_ascii_lowercase();
-    match (model.as_str(), trim.as_deref(), raw.as_str()) {
-        ("S", Some("100D"), "lychee") => Some("LR".to_owned()),
-        ("S", Some("P100D"), "lychee") => Some("Plaid".to_owned()),
-        ("S", Some("100D"), "models2") => Some("LR+".to_owned()),
-        ("3", Some("P74D"), _) => Some("LR AWD Performance".to_owned()),
-        ("3", Some("74D"), _) => Some("LR AWD".to_owned()),
-        ("3", Some("74"), _) => Some("LR".to_owned()),
-        ("3", Some("62"), _) => Some("MR".to_owned()),
-        ("3", Some("50"), _) => Some(model_3_base_trim(vin).to_owned()),
-        ("X", Some("100D"), "tamarind") => Some("LR".to_owned()),
-        ("X", Some("P100D"), "tamarind") => Some("Plaid".to_owned()),
-        ("Y", Some("P74D"), _) => Some("LR AWD Performance".to_owned()),
-        ("Y", Some("74D"), _) => Some("LR AWD".to_owned()),
-        ("Y", Some("74"), _) => Some("LR".to_owned()),
-        ("Y", Some("50"), _) => Some("SR".to_owned()),
-        _ => None,
-    }
-}
-
-fn model_3_base_trim(vin: Option<&str>) -> &'static str {
-    let Some(vin) = vin.filter(|vin| vin.len() == 17 && vin.is_ascii()) else {
-        return "SR+";
-    };
-    let model_year = match vin.as_bytes()[9] {
-        b'A' => 2010,
-        b'B' => 2011,
-        b'C' => 2012,
-        b'D' => 2013,
-        b'E' => 2014,
-        b'F' => 2015,
-        b'G' => 2016,
-        b'H' => 2017,
-        b'J' => 2018,
-        b'K' => 2019,
-        b'L' => 2020,
-        b'M' => 2021,
-        b'N' => 2022,
-        b'P' => 2023,
-        b'R' => 2024,
-        b'S' => 2025,
-        b'T' => 2026,
-        b'V' => 2027,
-        b'W' => 2028,
-        b'X' => 2029,
-        b'Y' => 2030,
-        b'1'..=b'9' => 2030 + i32::from(vin.as_bytes()[9] - b'0'),
-        _ => return "SR+",
-    };
-    if model_year >= 2022 { "RWD" } else { "SR+" }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

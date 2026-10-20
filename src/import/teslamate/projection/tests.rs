@@ -885,7 +885,9 @@ fn refuses_duplicate_source_identity_and_uses_safe_car_fallbacks() {
     source.cars[0].trim_badging = None;
     let projected = project_vehicle(&source, 1).unwrap();
     assert_eq!(projected.snapshot.cars[0].name, "Car 1");
-    assert_eq!(projected.snapshot.cars[0].model, "Unknown Tesla");
+    // C6 R13: no model text and no usable VIN give the empty string, not an
+    // invented name.
+    assert_eq!(projected.snapshot.cars[0].model, "");
 }
 
 #[test]
