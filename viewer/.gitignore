@@ -9,3 +9,8 @@ test-results/
 artifacts/*.tgz
 !artifacts/teslatlas-sdk-*.tgz
 tools/__pycache__/
+
+# secrets (clean-development)
+.env
+.env.*
+!.env.example
