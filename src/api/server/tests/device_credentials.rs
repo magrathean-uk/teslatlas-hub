@@ -400,6 +400,7 @@ async fn the_tls_router_takes_the_claim_lifetime_from_the_configuration() {
             &grant_key(),
             Sha256Digest::of_bytes(b"configuration"),
             &config,
+            None,
         )
     };
     for (table, days) in [

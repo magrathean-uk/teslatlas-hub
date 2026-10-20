@@ -56,6 +56,14 @@ mod device_revoke;
 #[path = "server/discovery.rs"]
 mod discovery;
 
+#[path = "server/summary_clock.rs"]
+mod summary_clock;
+#[cfg(unix)]
+pub use summary_clock::serve_for_admitted_user;
+#[cfg(all(test, unix))]
+use summary_clock::serve_with_cursor_key;
+pub use summary_clock::{FIXTURE_SUMMARY_CLOCK_FILE, paired_router_at};
+
 #[path = "server/vehicle_access.rs"]
 mod vehicle_access;
 use vehicle_access::{VehicleAccessDenied, json_sync_route_vehicle, require_vehicle_access};
@@ -364,7 +372,7 @@ impl OwnedServer {
 
 impl Drop for OwnedServer {
     fn drop(&mut self) {
-        // This covers abort/drop of serve_with_cursor_key while the outer
+        // This covers abort/drop of serve_with_cursor_key_at while the outer
         // Serve supervisor is being cancelled. Signal the accept loop before
         // aborting so any already-observed shutdown path is unambiguous.
         self.handle.shutdown();
@@ -405,6 +413,10 @@ pub struct AppState {
     /// Tests step the readiness clock; zero means the system clock.
     #[cfg(test)]
     readiness_test_now_ms: Arc<std::sync::atomic::AtomicI64>,
+    /// Fixture and test pin of the clock the current summary reads as `now_ms`
+    /// (C6 R28 (c)); zero means the system clock. Only [`paired_router_at`] and
+    /// the Fixture-mode Serve path set it; production never does.
+    summary_test_now_ms: Arc<std::sync::atomic::AtomicI64>,
     sync_control_slots: Arc<tokio::sync::Semaphore>,
     pack_stream_slots: Arc<tokio::sync::Semaphore>,
     pack_streams_by_device: Arc<Mutex<HashMap<Uuid, usize>>>,
@@ -606,6 +618,7 @@ impl AppState {
             readiness_singleflight: Arc::new(tokio::sync::Semaphore::new(1)),
             #[cfg(test)]
             readiness_test_now_ms: Arc::new(std::sync::atomic::AtomicI64::new(0)),
+            summary_test_now_ms: Arc::new(std::sync::atomic::AtomicI64::new(0)),
             sync_control_slots: Arc::new(tokio::sync::Semaphore::new(1)),
             pack_stream_slots: Arc::new(tokio::sync::Semaphore::new(MAX_ACTIVE_PACK_STREAMS)),
             pack_streams_by_device: Arc::new(Mutex::new(HashMap::new())),
@@ -774,15 +787,7 @@ fn trusted_local_router(
 /// token; only the one-time pairing claim itself is unauthenticated. Requiring
 /// the protected cursor key here makes an unsigned paired router impossible.
 pub fn paired_router(store: HubStore, cursor_key: &CursorKey) -> Router {
-    router_with_access(
-        store,
-        false,
-        true,
-        true,
-        Some(ManifestSigning::from_cursor_key(cursor_key)),
-        Some(cursor_key.clone()),
-        None,
-    )
+    paired_router_at(store, cursor_key, None)
 }
 
 fn router_with_access(
@@ -866,6 +871,7 @@ fn tls_router_for_config(
     cursor_key: &CursorKey,
     native_config_digest: Sha256Digest,
     config: &HubConfig,
+    summary_now_ms: Option<i64>,
 ) -> Router {
     router_for_state(
         AppState::new(
@@ -882,7 +888,8 @@ fn tls_router_for_config(
         .with_offline_drive_timeout_ms(crate::current_state::offline_drive_timeout_ms(
             config.collector.offline_drive_timeout_seconds,
         ))
-        .with_readiness_mode(crate::config::collector_mode(&config.collector)),
+        .with_readiness_mode(crate::config::collector_mode(&config.collector))
+        .with_summary_now_ms(summary_now_ms),
         CorsPolicy::for_config(config),
     )
 }
@@ -1057,14 +1064,20 @@ where
 
 /// Serve from the one admitted Hub process. Its durable cursor key is kept
 /// under the admitted data directory after the local lock is revalidated.
+/// `summary_now_ms` pins the clock of the current summary on the Serve router,
+/// TLS or plain loopback when no TLS is configured (epoch milliseconds; `None`
+/// keeps the system clock): only a Fixture-mode
+/// source run passes `Some`, from the fixture's own marker. Callers that keep
+/// the system clock use [`serve_for_admitted_user`].
 #[cfg(unix)]
 #[doc(hidden)]
-pub async fn serve_for_admitted_user<F>(
+pub async fn serve_for_admitted_user_at<F>(
     store: HubStore,
     config: &HubConfig,
     native_config_digest: Sha256Digest,
     admission: std::sync::Arc<crate::hub_user_process::AdmittedUserHub>,
     cursor_key: Option<CursorKey>,
+    summary_now_ms: Option<i64>,
     shutdown: F,
 ) -> std::io::Result<()>
 where
@@ -1126,12 +1139,13 @@ where
             },
         ))
     });
-    let result = serve_with_cursor_key(
+    let result = serve_with_cursor_key_at(
         store,
         config,
         native_config_digest,
         cursor_key,
         Some(admission),
+        summary_now_ms,
         shutdown,
     )
     .await;
@@ -1159,12 +1173,13 @@ where
 }
 
 #[cfg(unix)]
-async fn serve_with_cursor_key<F>(
+async fn serve_with_cursor_key_at<F>(
     store: HubStore,
     config: &HubConfig,
     native_config_digest: Sha256Digest,
     cursor_key: Option<crate::protocol::CursorKey>,
     admission: Option<ServerAdmission>,
+    summary_now_ms: Option<i64>,
     shutdown: F,
 ) -> std::io::Result<()>
 where
@@ -1233,6 +1248,7 @@ where
                             &cursor_key,
                             native_config_digest,
                             config,
+                            summary_now_ms,
                         )
                         .into_make_service(),
                     ),
@@ -1268,6 +1284,7 @@ where
                             &cursor_key,
                             native_config_digest,
                             config,
+                            summary_now_ms,
                         )
                         .into_make_service(),
                     ),
@@ -1310,7 +1327,8 @@ where
                                 config.collector.offline_drive_timeout_seconds,
                             ),
                         )
-                        .with_readiness_mode(crate::config::collector_mode(&config.collector)),
+                        .with_readiness_mode(crate::config::collector_mode(&config.collector))
+                        .with_summary_now_ms(summary_now_ms),
                         CorsPolicy::for_config(config),
                     )
                     .layer(axum::middleware::from_fn_with_state(
@@ -1529,7 +1547,7 @@ async fn current_vehicle(State(state): State<AppState>, uri: Uri, headers: Heade
             return StatusCode::SERVICE_UNAVAILABLE.into_response();
         }
     };
-    let Ok(now_ms) = current_epoch_ms() else {
+    let Ok(now_ms) = state.summary_now_ms() else {
         tracing::error!(%vehicle_id, "cannot read the clock for the current vehicle summary");
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };

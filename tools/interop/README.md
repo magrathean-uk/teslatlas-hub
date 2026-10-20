@@ -41,6 +41,11 @@ and hashes both executables, creates a supported one-use pairing invitation,
 starts the TLS server, and writes a private `ready.json` evidence record. The
 `hub-http-v1@1.2.0` runner does not accept that file as its descriptor.
 
+The seed writes an owner-private marker, `hub/fixture-summary-clock-ms`, in the
+fixture root; only a source run in development mode `fixture` reads it, to serve
+the current summary at the fixture's own measurement time (the newest seeded
+observation), and production never does.
+
 The `1.2.0` descriptor is documented in `protocol/docs/guides/conformance.md`.
 This repository's `fixture.py` does not yet write it, so `fixture.py` and
 `smoke.py` cannot pass unaided. Native acceptance uses an externally produced

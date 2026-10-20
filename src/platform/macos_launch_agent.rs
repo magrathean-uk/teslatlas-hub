@@ -15,6 +15,10 @@ use std::{
 #[cfg(unix)]
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
+#[path = "macos_launch_agent/fixture_clock.rs"]
+mod fixture_clock;
+pub use fixture_clock::fixture_summary_now_ms;
+
 const LABEL: &str = "com.teslatlas.hub";
 const PLIST_NAME: &str = "com.teslatlas.hub.plist";
 const BINARY_NAME: &str = "teslatlas-hub";

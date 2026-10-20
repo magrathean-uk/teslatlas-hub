@@ -16,7 +16,10 @@ use serde_json::Value;
 use teslatlas_hub::db::VehicleDescriptor;
 #[cfg(feature = "interop-fixture")]
 use teslatlas_hub::protocol::Sha256Digest;
-use teslatlas_hub::{db::HubStore, server::paired_router};
+use teslatlas_hub::{
+    db::HubStore,
+    server::{paired_router, paired_router_at},
+};
 use tower::ServiceExt;
 
 #[test]
@@ -590,6 +593,33 @@ fn standard_fixture_is_admitted_for_fixture_source_run_not_production() {
         .expect("empty standalone source-run");
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn only_a_fixture_source_run_reads_the_seeded_summary_clock() {
+    use teslatlas_hub::macos_launch_agent::{DevelopmentServeMode, fixture_summary_now_ms};
+
+    let parent = tempfile::tempdir().unwrap();
+    let root = parent.path().join("isolated");
+    seed::prepare(&root, 18443).unwrap();
+    let data_dir = root.join("hub");
+    let marker = data_dir.join(teslatlas_hub::server::FIXTURE_SUMMARY_CLOCK_FILE);
+    assert_eq!(
+        std::fs::read_to_string(&marker).unwrap(),
+        format!("{}\n", seed::LATER_OBSERVED_AT_MS)
+    );
+    for (mode, expected) in [
+        (
+            Some(DevelopmentServeMode::Fixture),
+            Some(seed::LATER_OBSERVED_AT_MS),
+        ),
+        (Some(DevelopmentServeMode::Standalone), None),
+        (Some(DevelopmentServeMode::PrivateLan), None),
+        (None, None),
+    ] {
+        assert_eq!(fixture_summary_now_ms(mode, &data_dir).unwrap(), expected);
+    }
+}
+
 #[tokio::test]
 async fn fixture_has_two_vehicles_and_three_exact_drive_pages() {
     let scenario: Value = serde_json::from_str(include_str!("interop/scenario.json")).unwrap();
@@ -599,7 +629,30 @@ async fn fixture_has_two_vehicles_and_three_exact_drive_pages() {
     let store = HubStore::initialize(root.join("hub")).unwrap();
     let key =
         teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub")).unwrap();
-    let app = paired_router(store, &key);
+    // C6 R28 (c) measures class T freshness from the Hub's clock and the seeded
+    // observations are fixed past times. The seed records the time its values
+    // are measured at in the fixture directory; a Fixture-mode source run
+    // (macOS) serves at it, so this router is pinned exactly as that Serve is.
+    // Off macOS there is no source run; the pin is the seed's own constant.
+    #[cfg(target_os = "macos")]
+    let pin = teslatlas_hub::macos_launch_agent::fixture_summary_now_ms(
+        Some(teslatlas_hub::macos_launch_agent::DevelopmentServeMode::Fixture),
+        &root.join("hub"),
+    )
+    .unwrap()
+    .expect("the seed records its summary clock");
+    #[cfg(not(target_os = "macos"))]
+    let pin = seed::LATER_OBSERVED_AT_MS;
+    assert_eq!(pin, seed::LATER_OBSERVED_AT_MS);
+    assert_eq!(
+        std::fs::read_to_string(
+            root.join("hub")
+                .join(teslatlas_hub::server::FIXTURE_SUMMARY_CLOCK_FILE)
+        )
+        .unwrap(),
+        format!("{pin}\n")
+    );
+    let app = paired_router_at(store, &key, Some(pin));
     let invitation: Value =
         serde_json::from_slice(&std::fs::read(&prepared.invitation_path).unwrap()).unwrap();
     let claim = app

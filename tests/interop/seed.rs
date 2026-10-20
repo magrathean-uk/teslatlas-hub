@@ -51,6 +51,9 @@ use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const OBSERVED_AT_MS: i64 = 1_788_566_400_000;
+/// The later observation `advance` writes: the newest time any fixture
+/// observation carries, and the time the fixture's summary clock is pinned at.
+pub const LATER_OBSERVED_AT_MS: i64 = 1_788_566_460_000;
 
 #[derive(Clone, Copy)]
 pub enum FixtureScenario {
@@ -262,6 +265,13 @@ fn prepare_with_vehicle_identities(
     fs::DirBuilder::new().mode(0o700).create(root)?;
     let data_dir = root.join("hub");
     let store = HubStore::initialize(&data_dir)?;
+    // C6 R28 (c) measures class T freshness from the Hub's clock, and the
+    // fixture's observations are fixed past times. A Fixture-mode source run
+    // serves the summary at this time, so every pinned value stays served.
+    write_private(
+        &data_dir.join(teslatlas_hub::server::FIXTURE_SUMMARY_CLOCK_FILE),
+        format!("{LATER_OBSERVED_AT_MS}\n").as_bytes(),
+    )?;
     let key = load_or_create_cursor_key(&data_dir)?;
     let mut source = store.register_source(
         &SourceDescriptor::new("owner_api_compat", "local_installation_v1"),
@@ -1180,16 +1190,16 @@ pub fn advance(root: &Path) -> Result<()> {
     )?;
     let vehicle_id = Uuid::parse_str("11111111-1111-4111-8111-111111111111")?;
     store.append_observation(&ObservationInput {
-        source_id: source.source_id, vehicle_id, observed_at_ms: 1_788_566_460_000,
+        source_id: source.source_id, vehicle_id, observed_at_ms: LATER_OBSERVED_AT_MS,
         payload: json!({"record_type":"owner_api_vehicle_data_v1","source_vehicle_state":"online",
             "vehicle_data":{"charge_state":{"battery_level":1},
                 "climate_state":{"inside_temp":22.5,"outside_temp":null}}})
-    }, 1_788_566_460_000)?;
+    }, LATER_OBSERVED_AT_MS)?;
     store.checkpoint_catalogue_for_immutable_read()?;
     drop(store);
     let reopened = HubStore::initialize(&data_dir)?;
     let observations = reopened.current_observations_for_vehicle(vehicle_id)?;
-    if observations.iter().map(|item| item.observed_at_ms).max() != Some(1_788_566_460_000) {
+    if observations.iter().map(|item| item.observed_at_ms).max() != Some(LATER_OBSERVED_AT_MS) {
         return Err("later observation did not survive reopen".into());
     }
     let db = rusqlite::Connection::open_with_flags(
@@ -1215,7 +1225,7 @@ pub fn advance(root: &Path) -> Result<()> {
     write_private(
         &root.join("advance.json"),
         &serde_json::to_vec(&json!({
-        "status":"passed","observed_at_ms":1788566460000_i64,"charge":preserved,
+        "status":"passed","observed_at_ms":LATER_OBSERVED_AT_MS,"charge":preserved,
         "provenance":"synthetic-owned-store-reopen"}))?,
     )?;
     Ok(())

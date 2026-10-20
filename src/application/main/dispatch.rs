@@ -821,7 +821,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(unix)]
             {
                 #[cfg(target_os = "macos")]
-                {
+                let summary_now_ms = {
                     store.checkpoint_catalogue_for_immutable_read()?;
                     let development_mode =
                         teslatlas_hub::macos_launch_agent::development_serve_mode(
@@ -838,7 +838,15 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         &config,
                         development_mode,
                     )?;
-                }
+                    // The Fixture mode serves the fixture's own measurement
+                    // time (C6 R28 (c)); every other mode keeps the system clock.
+                    teslatlas_hub::macos_launch_agent::fixture_summary_now_ms(
+                        development_mode,
+                        &config.data_dir,
+                    )?
+                };
+                #[cfg(not(target_os = "macos"))]
+                let summary_now_ms: Option<i64> = None;
                 let admission =
                     admitted_user_hub.ok_or("Serve reached runtime without user admission")?;
                 admission.assert_sensitive_access()?;
@@ -887,12 +895,13 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                         .map_err(std::io::Error::other)
                     },
                     move |cursor_key, shutdown| async move {
-                        server::serve_for_admitted_user(
+                        server::serve_for_admitted_user_at(
                             store,
                             &server_config,
                             config_sha256,
                             server_admission,
                             cursor_key,
+                            summary_now_ms,
                             async move {
                                 let _ = shutdown.await;
                             },

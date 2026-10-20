@@ -19,6 +19,8 @@ TESLATLAS_HUB_DEVELOPMENT_MODE=standalone
 - `standalone` runs an empty or import-only Hub with every collector disabled.
 - `fixture` retains the historical seeded-fixture checks. It is the compatibility
   default when the mode variable is absent, but it is not the ordinary fresh setup.
+  Only this mode reads the fixture's owner-private marker `fixture-summary-clock-ms`
+  in the Hub data directory, which pins the clock the current summary is served at.
 - `private-lan` admits an explicitly selected RFC1918 IPv4 listener with strict
   TLS and an exact matching HTTPS public URL. It can serve an existing valid
   Hub store with collection disabled, or use the normal native Legacy provider
