@@ -450,18 +450,18 @@
   "scope": "Current source-only authority succession for the exact approved HA corpus; actor identities and refs are source declarations, not runtime observations",
   "source_evidence": [
     {
-      "path": "/Users/bolyki/dev/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/teslatlas-home-assistant/continuation/intake-verification.json",
+      "path": "/Users/bolyki/dev/machine/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/teslatlas-home-assistant/continuation/intake-verification.json",
       "scope": "2026-10-07 exact approved source/document/component custody only"
     },
     {
-      "path": "/Users/bolyki/dev/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/hub/boundary/current32-receiver-acceptance-v2.json",
+      "path": "/Users/bolyki/dev/machine/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/hub/boundary/current32-receiver-acceptance-v2.json",
       "scope": "Prior current32 archive/tree admission with old-document full-source refusal; not acceptance of this successor or installed runtime"
     }
   ],
   "source_verification": {
-    "approved_inputs": "/Users/bolyki/dev/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/hub/boundary/approved-inputs.json",
+    "approved_inputs": "/Users/bolyki/dev/machine/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/hub/boundary/approved-inputs.json",
     "basis": "Current exact approved44-file corpus verified byte-for-byte against retained approved copies and approved sizes/current modes before succession",
-    "refresh_inputs": "/Users/bolyki/dev/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/hub/boundary/owner-refresh-inputs.json"
+    "refresh_inputs": "/Users/bolyki/dev/machine/documents/reviews/teslatlas-bayesian-2026-10-07/next-round/hub/boundary/owner-refresh-inputs.json"
   },
   "supersedes": {
     "handoff": {
