@@ -283,7 +283,8 @@ fn parse_keeps_only_a_printable_bounded_licence() {
         parse_response(body.as_bytes()).unwrap().licence
     };
     assert_eq!(parse(r#""ODbL 1.0""#).as_deref(), Some("ODbL 1.0"));
-    assert_eq!(parse(r#""  ODbL 1.0  ""#).as_deref(), Some("ODbL 1.0"));
+    // R45: an accepted licence is kept verbatim, padding included.
+    assert_eq!(parse(r#""  ODbL 1.0  ""#).as_deref(), Some("  ODbL 1.0  "));
     let longest = "l".repeat(512);
     assert_eq!(
         parse(&format!("\"{longest}\"")).as_deref(),

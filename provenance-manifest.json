@@ -362,6 +362,7 @@
         "src/collection/tesla_stream/*.rs",
         "src/geo/*.rs",
         "src/geo/*/*.rs",
+        "src/geo/*/tests/*.rs",
         "src/platform/*.rs",
         "src/platform/*/*.rs",
         "src/runtime/*.rs",

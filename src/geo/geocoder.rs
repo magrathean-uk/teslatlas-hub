@@ -8,7 +8,6 @@
 //! coordinates and response bodies.
 
 use std::{
-    collections::BTreeMap,
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
 };
@@ -19,17 +18,16 @@ use reqwest::{
     header::{ACCEPT, ACCEPT_LANGUAGE, HeaderValue, USER_AGENT},
     redirect::Policy,
 };
-use serde::Deserialize;
 use thiserror::Error;
 use url::Url;
 
 use crate::{
     config::{ConfigError, GeocoderConfig},
-    db::{
-        AddressCacheRecord, AddressLookupBinding, HubStore, MAX_ADDRESS_LICENCE_BYTES, StoreError,
-    },
+    db::{AddressCacheRecord, AddressLookupBinding, HubStore, StoreError},
     location::Wgs84Point,
 };
+
+mod response_mapping;
 
 pub const FIXED_USER_AGENT: &str = concat!("teslatlas-hub/", env!("CARGO_PKG_VERSION"));
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
@@ -111,8 +109,8 @@ pub struct GeocodedAddress {
     pub state_district: Option<String>,
     pub country: Option<String>,
     pub raw_json: Option<String>,
-    /// The provider's `licence` member when it is printable text of at most
-    /// 512 bytes; anything else is dropped.
+    /// The provider's licence text, verbatim, when it is not blank, is at most
+    /// 512 bytes and has no control character; otherwise `None`.
     pub licence: Option<String>,
 }
 
@@ -371,146 +369,10 @@ async fn read_limited_response(response: reqwest::Response) -> Result<Vec<u8>, G
     Ok(body)
 }
 
-#[derive(Debug, Deserialize)]
-struct NominatimAddress {
-    osm_type: Option<String>,
-    osm_id: Option<i64>,
-    display_name: Option<String>,
-    name: Option<String>,
-    namedetails: Option<BTreeMap<String, serde_json::Value>>,
-    lat: Option<String>,
-    lon: Option<String>,
-    address: Option<NominatimAddressDetails>,
-    licence: Option<serde_json::Value>,
-    error: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-struct NominatimAddressDetails {
-    #[serde(flatten)]
-    fields: BTreeMap<String, serde_json::Value>,
-}
-
-impl NominatimAddressDetails {
-    fn first(&self, names: &[&str]) -> Option<String> {
-        names.iter().find_map(|name| {
-            self.fields
-                .get(*name)
-                .and_then(serde_json::Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-        })
-    }
-}
-
+/// The response mapping of the request path: the one pure function in
+/// `response_mapping`.
 fn parse_response(body: &[u8]) -> Result<GeocodedAddress, GeocoderError> {
-    let raw: NominatimAddress =
-        serde_json::from_slice(body).map_err(|_| GeocoderError::MalformedResponse)?;
-    if raw.error.is_some() {
-        return Err(GeocoderError::NoResult);
-    }
-    let osm_type = raw
-        .osm_type
-        .filter(|value| matches!(value.as_str(), "node" | "way" | "relation"))
-        .ok_or(GeocoderError::MalformedResponse)?;
-    let osm_id = raw
-        .osm_id
-        .filter(|value| *value > 0)
-        .ok_or(GeocoderError::MalformedResponse)?;
-    let display_name = raw
-        .display_name
-        .filter(|value| !value.trim().is_empty())
-        .ok_or(GeocoderError::MalformedResponse)?
-        .trim()
-        .to_owned();
-    let name = raw
-        .name
-        .or_else(|| {
-            raw.namedetails.as_ref().and_then(|details| {
-                ["name", "alt_name"].iter().find_map(|name| {
-                    details
-                        .get(*name)
-                        .and_then(serde_json::Value::as_str)
-                        .map(str::to_owned)
-                })
-            })
-        })
-        .and_then(|value| (!value.trim().is_empty()).then(|| value.trim().to_owned()));
-    let licence = raw
-        .licence
-        .as_ref()
-        .and_then(serde_json::Value::as_str)
-        .filter(|value| {
-            value.len() <= MAX_ADDRESS_LICENCE_BYTES && !value.chars().any(char::is_control)
-        })
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-    let latitude = raw.lat.and_then(|value| value.parse::<f64>().ok());
-    let longitude = raw.lon.and_then(|value| value.parse::<f64>().ok());
-    let details = raw.address.unwrap_or_default();
-    let raw_json = if body.len() <= MAX_RAW_JSON_BYTES {
-        String::from_utf8(body.to_vec()).ok()
-    } else {
-        None
-    };
-    Ok(GeocodedAddress {
-        osm_type,
-        osm_id,
-        display_name,
-        name,
-        latitude,
-        longitude,
-        house_number: details.first(&["house_number", "street_number"]),
-        road: details.first(&[
-            "road",
-            "footway",
-            "street",
-            "street_name",
-            "residential",
-            "path",
-            "pedestrian",
-            "road_reference",
-            "road_reference_intl",
-            "square",
-            "place",
-        ]),
-        neighbourhood: details.first(&[
-            "neighbourhood",
-            "suburb",
-            "city_district",
-            "district",
-            "quarter",
-            "borough",
-            "city_block",
-            "residential",
-            "commercial",
-            "houses",
-            "subdistrict",
-            "subdivision",
-            "ward",
-        ]),
-        city: details.first(&[
-            "city",
-            "town",
-            "township",
-            "village",
-            "municipality",
-            "hamlet",
-            "locality",
-            "croft",
-            "local_administrative_area",
-            "subcounty",
-        ]),
-        county: details.first(&["county", "county_code", "department"]),
-        postcode: details.first(&["postcode"]),
-        state: details.first(&["state", "province", "territory", "state_code"]),
-        state_district: details.first(&["state_district"]),
-        country: details.first(&["country", "country_name"]),
-        raw_json,
-        licence,
-    })
+    response_mapping::parse_response(body)
 }
 
 fn classify_request_error(error: reqwest::Error) -> GeocoderError {
@@ -565,6 +427,10 @@ mod tests {
     };
 
     use axum::{Router, body::Body, response::Response, routing::any};
+
+    // Reverse-geocoder response mapping tests (C7 part B).
+    #[path = "b3_c7_b_tests.rs"]
+    mod b3_c7_b;
 
     #[derive(Clone)]
     struct RevocableEgressGuard(Arc<AtomicBool>);
@@ -676,17 +542,19 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_malformed_and_no_result_without_leaking_body() {
-        for body in ["[]", r#"{"error":"Unable to geocode"}"#] {
+        // A top-level array is not a reverse answer at all: `ResponseRead`, which the caller
+        // retries (R21). An `error` member is `NoResult` (R23).
+        for (body, expected) in [
+            ("[]", "ResponseRead"),
+            (r#"{"error":"Unable to geocode"}"#, "NoResult"),
+        ] {
             let (endpoint, _, handle) = server(body, 1);
             let geocoder = Geocoder::for_test(&config(endpoint)).unwrap();
             let error = geocoder
                 .reverse(Wgs84Point::new(1.0, 2.0).unwrap())
                 .await
                 .unwrap_err();
-            assert!(matches!(
-                error,
-                GeocoderError::MalformedResponse | GeocoderError::NoResult
-            ));
+            assert_eq!(format!("{error:?}"), expected, "{body}");
             assert!(!error.to_string().contains("1.0"));
             assert!(!error.to_string().contains("Unable"));
             handle.join().unwrap();
@@ -728,49 +596,6 @@ mod tests {
                 .unwrap(),
             1
         );
-    }
-
-    #[test]
-    fn parse_retains_teslamate_address_metadata() {
-        let body = br#"{"osm_type":"relation","osm_id":9,"display_name":"9 Main Street","lat":"1.25","lon":"2.5","address":{"house_number":"9","road":"Main Street","neighbourhood":"Centre","city":"Test City","county":"Test County","postcode":"T1 2AB","state":"Test State","state_district":"Test District","country":"Testland"}}"#;
-        let parsed = parse_response(body).unwrap();
-        assert_eq!(parsed.latitude, Some(1.25));
-        assert_eq!(parsed.longitude, Some(2.5));
-        assert_eq!(parsed.house_number.as_deref(), Some("9"));
-        assert_eq!(parsed.road.as_deref(), Some("Main Street"));
-        assert_eq!(parsed.neighbourhood.as_deref(), Some("Centre"));
-        assert_eq!(parsed.city.as_deref(), Some("Test City"));
-        assert_eq!(parsed.county.as_deref(), Some("Test County"));
-        assert_eq!(parsed.postcode.as_deref(), Some("T1 2AB"));
-        assert_eq!(parsed.state.as_deref(), Some("Test State"));
-        assert_eq!(parsed.state_district.as_deref(), Some("Test District"));
-        assert_eq!(parsed.country.as_deref(), Some("Testland"));
-        assert_eq!(
-            parsed.raw_json,
-            Some(String::from_utf8(body.to_vec()).unwrap())
-        );
-    }
-
-    #[test]
-    fn parse_uses_teslamate_v4_1_1_address_aliases() {
-        let body = br#"{
-            "osm_type":"relation","osm_id":10,"display_name":"Darwin NT",
-            "namedetails":{"alt_name":"Darwin"},"lat":"-12.46","lon":"130.84",
-            "address":{
-                "street_number":"7","footway":"Esplanade Path","suburb":"Darwin City",
-                "town":"Darwin","department":"Top End","postcode":"0800",
-                "territory":"Northern Territory","country_name":"Australia"
-            }
-        }"#;
-        let parsed = parse_response(body).expect("alias response");
-        assert_eq!(parsed.name.as_deref(), Some("Darwin"));
-        assert_eq!(parsed.house_number.as_deref(), Some("7"));
-        assert_eq!(parsed.road.as_deref(), Some("Esplanade Path"));
-        assert_eq!(parsed.neighbourhood.as_deref(), Some("Darwin City"));
-        assert_eq!(parsed.city.as_deref(), Some("Darwin"));
-        assert_eq!(parsed.county.as_deref(), Some("Top End"));
-        assert_eq!(parsed.state.as_deref(), Some("Northern Territory"));
-        assert_eq!(parsed.country.as_deref(), Some("Australia"));
     }
 
     #[tokio::test]
