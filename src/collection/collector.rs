@@ -80,6 +80,7 @@ use crate::{
         CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V2, LineageDelta, OpaqueCursor, PROTOCOL_V1,
         ProtocolError, ProtocolLimits, SequenceRange, Sha256Digest, canonical_delta_chain_digest,
     },
+    terrain::{HgtTile, TerrainError, TileId},
     terrain_cache::{TerrainCache, TerrainCacheError},
     tesla_stream::{
         StreamEvent, StreamPowerGate, StreamRegion, TeslaStreamSupervisor, streaming_endpoint,
@@ -110,6 +111,7 @@ include!("collector/authentication.rs");
 include!("collector/supervised_test_support.rs");
 include!("collector/fleet_setup.rs");
 include!("collector/terrain.rs");
+include!("collector/terrain_sampling.rs");
 include!("collector/fleet_supervision.rs");
 include!("collector/owner_supervision.rs");
 include!("collector/streaming.rs");

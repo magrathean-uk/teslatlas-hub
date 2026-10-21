@@ -25,6 +25,12 @@ pub const SRTM1_SIDE: usize = 3_601;
 pub const SRTM3_BYTES: u64 = (SRTM3_SIDE as u64) * (SRTM3_SIDE as u64) * 2;
 pub const SRTM1_BYTES: u64 = (SRTM1_SIDE as u64) * (SRTM1_SIDE as u64) * 2;
 pub const TERRAIN_DATASET_VERSION: &str = "srtm-0.8.0-hgt";
+/// The void marker of the HGT format.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
+)]
+pub(crate) const K_HGT_VOID: i16 = i16::MIN;
 
 #[derive(Debug, Error)]
 pub enum TerrainError {
@@ -283,6 +289,46 @@ impl HgtTile {
             }
         }
         Ok(hex::encode(digest.finalize()))
+    }
+
+    /// Raw node read (C9 R31): the big-endian `i16` at byte `(row * side + column) * 2`,
+    /// `None` for the void marker. A position outside the grid is an error, never a
+    /// void, and so is a failed read of a file-backed tile, because a void is a
+    /// terminal outcome for a position (C9 R46).
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
+    )]
+    pub(crate) fn try_cell(&self, row: usize, column: usize) -> Result<Option<i16>, TerrainError> {
+        let side = self.side.side();
+        if row >= side || column >= side {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "HGT node outside the tile",
+            )
+            .into());
+        }
+        let offset = (row * side + column) * 2;
+        let mut raw = [0_u8; 2];
+        match &self.storage {
+            HgtStorage::Bytes(bytes) => raw.copy_from_slice(&bytes[offset..offset + 2]),
+            HgtStorage::File(file) => file.read_exact_at(&mut raw, offset as u64)?,
+        }
+        let value = i16::from_be_bytes(raw);
+        Ok((value != K_HGT_VOID).then_some(value))
+    }
+
+    /// The raw node of C9 R31 as an option: `None` for a void and for a node that
+    /// cannot be read. Callers that must tell the two apart use [`Self::try_cell`].
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "raw accessor of C9 section 8 item 1; production sampling uses try_cell"
+        )
+    )]
+    pub(crate) fn cell(&self, row: usize, column: usize) -> Option<i16> {
+        self.try_cell(row, column).ok().flatten()
     }
 
     /// Return the raw HGT cell selected by TeslaMate's SRTM dependency.

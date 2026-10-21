@@ -258,33 +258,6 @@ async fn terrain_lookup_guarded(
         .await
 }
 
-fn terrain_error_code(error: &TerrainCacheError) -> &'static str {
-    match error {
-        TerrainCacheError::Timeout => "timeout",
-        TerrainCacheError::Network(_) => "source_unavailable",
-        TerrainCacheError::BadResponse => "invalid_response",
-        TerrainCacheError::InvalidArchive => "invalid_archive",
-        TerrainCacheError::InsufficientSpace => "insufficient_free_space",
-        TerrainCacheError::CacheQuotaExceeded => "cache_quota_exceeded",
-        TerrainCacheError::Io(_) => "io",
-        TerrainCacheError::InvalidConfig => "invalid_config",
-        TerrainCacheError::EgressDenied => "egress_denied",
-        TerrainCacheError::UntrustedRoot(_) => "untrusted_root",
-        TerrainCacheError::LockingUnsupported(_) => "locking_unsupported",
-        TerrainCacheError::Store(_) => "store",
-        TerrainCacheError::UnprovenTile => "unproven_tile",
-        TerrainCacheError::InvalidTile(error) => match error {
-            crate::terrain::TerrainError::NonFiniteCoordinate => "nonfinite_coordinate",
-            crate::terrain::TerrainError::InvalidLatitude => "invalid_latitude",
-            crate::terrain::TerrainError::InvalidLongitude => "invalid_longitude",
-            crate::terrain::TerrainError::InvalidTileName => "invalid_tile_name",
-            crate::terrain::TerrainError::WrongTile => "wrong_tile",
-            crate::terrain::TerrainError::InvalidHgtLength => "invalid_hgt_length",
-            crate::terrain::TerrainError::Io(_) => "io",
-        },
-    }
-}
-
 /// Run the no-wake collector inside the exact admitted Unix Serve process.
 /// The Hub-owned token pair and cursor key are loaded from the selected data
 /// directory.
