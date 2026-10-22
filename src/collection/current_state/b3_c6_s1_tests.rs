@@ -3,7 +3,8 @@
 //! C6 Part S1 spec tests (synthetic data only): the summary engine, merge,
 //! visibility, activity and configured time. Test ids carry their unit prefix
 //! (C6 R65). The tests marked † in C6 section 8 assert here only the fields
-//! that C6-S1 owns; C6-S2 extends them with its own fields.
+//! that C6-S1 owns; C6-S2 extends them with its own fields (the S2 blocks are
+//! marked in place and the S2 spec tests are in `b3_c6_s2_tests.rs`).
 
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -25,10 +26,10 @@ use crate::{
     tesla_stream::StreamUpdate,
 };
 
-const T0: i64 = 1_760_000_000_000;
+pub(super) const T0: i64 = 1_760_000_000_000;
 /// The default `transient_max_age_ms` of the spec tests (C6 section 8).
-const T: i64 = 600_000;
-const V3: &str = "5YJ3E1EA0KFTEST01";
+pub(super) const T: i64 = 600_000;
+pub(super) const V3: &str = "5YJ3E1EA0KFTEST01";
 const GROUPS: [&str; 6] = [
     "drive_state",
     "charge_state",
@@ -38,12 +39,12 @@ const GROUPS: [&str; 6] = [
     "gui_settings",
 ];
 
-fn vehicle() -> Uuid {
+pub(super) fn vehicle() -> Uuid {
     Uuid::from_u128(2)
 }
 
 /// `P0` (C6 section 8): a parked vehicle-data response.
-fn p0() -> Value {
+pub(super) fn p0() -> Value {
     json!({
         "display_name": "Test Car",
         "vin": V3,
@@ -78,13 +79,13 @@ fn p0() -> Value {
 }
 
 /// `response` with `group.key` set (a JSON null stays a stated key).
-fn with(mut response: Value, group: &str, key: &str, value: Value) -> Value {
+pub(super) fn with(mut response: Value, group: &str, key: &str, value: Value) -> Value {
     response[group][key] = value;
     response
 }
 
 /// `response` without `group.key`.
-fn without(mut response: Value, group: &str, key: &str) -> Value {
+pub(super) fn without(mut response: Value, group: &str, key: &str) -> Value {
     response[group]
         .as_object_mut()
         .expect("group object")
@@ -93,7 +94,7 @@ fn without(mut response: Value, group: &str, key: &str) -> Value {
 }
 
 /// Every group of `response` stamped `time_ms`, unless a group states its own.
-fn stamped(mut response: Value, time_ms: i64) -> Value {
+pub(super) fn stamped(mut response: Value, time_ms: i64) -> Value {
     for group in GROUPS {
         if let Some(members) = response.get_mut(group).and_then(Value::as_object_mut) {
             members.entry("timestamp").or_insert(json!(time_ms));
@@ -103,12 +104,17 @@ fn stamped(mut response: Value, time_ms: i64) -> Value {
 }
 
 /// `VD(id, t, {..})`: an Owner-wire vehicle-data row, every group stamped `t`.
-fn vd(id: i64, t: i64, response: Value) -> ObservationRecord {
+pub(super) fn vd(id: i64, t: i64, response: Value) -> ObservationRecord {
     vd_stamped(id, t, t, response)
 }
 
 /// A vehicle-data row whose groups are stamped `group_time_ms`.
-fn vd_stamped(id: i64, t: i64, group_time_ms: i64, response: Value) -> ObservationRecord {
+pub(super) fn vd_stamped(
+    id: i64,
+    t: i64,
+    group_time_ms: i64,
+    response: Value,
+) -> ObservationRecord {
     record(
         id,
         t,
@@ -122,14 +128,14 @@ fn vd_stamped(id: i64, t: i64, group_time_ms: i64, response: Value) -> Observati
 }
 
 /// `FD(id, t, {..})`: the Fleet variant.
-fn fd(id: i64, t: i64, response: Value) -> ObservationRecord {
+pub(super) fn fd(id: i64, t: i64, response: Value) -> ObservationRecord {
     let mut row = vd(id, t, response);
     row.payload["record_type"] = json!("fleet_api_vehicle_data_v1");
     row
 }
 
 /// A Fleet row from a sparse source (a non-empty `provider_feed`).
-fn fd_sparse(id: i64, t: i64, response: Value) -> ObservationRecord {
+pub(super) fn fd_sparse(id: i64, t: i64, response: Value) -> ObservationRecord {
     let mut row = fd(id, t, response);
     row.payload["provider_feed"] = json!("provider_stream");
     row
@@ -137,7 +143,7 @@ fn fd_sparse(id: i64, t: i64, response: Value) -> ObservationRecord {
 
 /// `S(id, t, {..})`: a stream payload in the stored shape, group times `t`,
 /// unlisted keys null.
-fn stream(id: i64, t: i64, edit: impl FnOnce(&mut StreamUpdate)) -> ObservationRecord {
+pub(super) fn stream(id: i64, t: i64, edit: impl FnOnce(&mut StreamUpdate)) -> ObservationRecord {
     let mut update = StreamUpdate {
         tag: "1".to_owned(),
         timestamp_ms: t,
@@ -159,7 +165,7 @@ fn stream(id: i64, t: i64, edit: impl FnOnce(&mut StreamUpdate)) -> ObservationR
 }
 
 /// `D(id, t, s)`: a discovery row.
-fn discovery(id: i64, t: i64, state: &str) -> ObservationRecord {
+pub(super) fn discovery(id: i64, t: i64, state: &str) -> ObservationRecord {
     record(
         id,
         t,
@@ -173,7 +179,7 @@ fn discovery(id: i64, t: i64, state: &str) -> ObservationRecord {
 
 /// `IP(id, t, {..})`: an import-source position row; its type comes from the
 /// one definition (C6 R64), never from a literal.
-fn import_position(id: i64, t: i64, keys: Value) -> ObservationRecord {
+pub(super) fn import_position(id: i64, t: i64, keys: Value) -> ObservationRecord {
     let mut payload = json!({"record_type": IMPORT_POSITION_RECORD_TYPE, "position_id": 7});
     for (key, value) in keys.as_object().expect("keys") {
         payload[key] = value.clone();
@@ -181,14 +187,14 @@ fn import_position(id: i64, t: i64, keys: Value) -> ObservationRecord {
     record(id, t, payload)
 }
 
-fn open_state(state: &str, start_date_ms: i64) -> OpenState {
+pub(super) fn open_state(state: &str, start_date_ms: i64) -> OpenState {
     serde_json::from_value(
         json!({"id": 1, "car_id": 1, "state": state, "start_date_ms": start_date_ms}),
     )
     .expect("open state")
 }
 
-fn open_drive(start_date_ms: i64) -> OpenDrive {
+pub(super) fn open_drive(start_date_ms: i64) -> OpenDrive {
     serde_json::from_value(json!({
         "id": 1, "car_id": 1, "start_date_ms": start_date_ms,
         "outside_temp_sum": 0.0, "outside_temp_count": 0
@@ -196,7 +202,7 @@ fn open_drive(start_date_ms: i64) -> OpenDrive {
     .expect("open drive")
 }
 
-fn open_charge(start_date_ms: i64) -> OpenCharge {
+pub(super) fn open_charge(start_date_ms: i64) -> OpenCharge {
     serde_json::from_value(json!({
         "id": 1, "car_id": 1, "start_date_ms": start_date_ms,
         "outside_temp_sum": 0.0, "outside_temp_count": 0
@@ -204,20 +210,20 @@ fn open_charge(start_date_ms: i64) -> OpenCharge {
     .expect("open charge")
 }
 
-fn open_update(start_date_ms: i64) -> OpenUpdate {
+pub(super) fn open_update(start_date_ms: i64) -> OpenUpdate {
     serde_json::from_value(json!({"id": 1, "car_id": 1, "start_date_ms": start_date_ms}))
         .expect("open update")
 }
 
 /// An open-session state in `phase` (the stored vocabulary) with its interval.
-fn session(phase: &str, interval: Option<(&str, i64)>) -> OpenSessionState {
+pub(super) fn session(phase: &str, interval: Option<(&str, i64)>) -> OpenSessionState {
     let mut state = OpenSessionState::new();
     state.phase = serde_json::from_value::<VehiclePhase>(json!(phase)).expect("phase");
     state.open_state = interval.map(|(name, start)| open_state(name, start));
     state
 }
 
-fn lifecycle_record(state: &OpenSessionState) -> LifecycleStateRecord {
+pub(super) fn lifecycle_record(state: &OpenSessionState) -> LifecycleStateRecord {
     LifecycleStateRecord {
         vehicle_id: vehicle(),
         car_id: 1,
@@ -229,13 +235,13 @@ fn lifecycle_record(state: &OpenSessionState) -> LifecycleStateRecord {
 }
 
 /// `L_on`: online, its interval open from `t0 - 3,600,000`.
-fn l_on() -> LifecycleStateRecord {
+pub(super) fn l_on() -> LifecycleStateRecord {
     lifecycle_record(&session("online", Some(("online", T0 - 3_600_000))))
 }
 
 /// The summary at `now` = the newest row's `observed_at_ms` (`t0` without
 /// rows) and `T` = 600,000, the default of the spec tests.
-fn summary(
+pub(super) fn summary(
     rows: &[ObservationRecord],
     lifecycle: Option<&LifecycleStateRecord>,
 ) -> CurrentVehicleSummary {
@@ -247,7 +253,7 @@ fn summary(
     summary_at(rows, lifecycle, now, T)
 }
 
-fn summary_at(
+pub(super) fn summary_at(
     rows: &[ObservationRecord],
     lifecycle: Option<&LifecycleStateRecord>,
     now_ms: i64,
@@ -258,12 +264,12 @@ fn summary_at(
 
 /// The summary of one fresh vehicle-data row that states only `group.key`
 /// (ST-S29's "awake, fresh" setting: no lifecycle, so nothing hides a value).
-fn one(group: &str, key: &str, value: Value) -> CurrentVehicleSummary {
+pub(super) fn one(group: &str, key: &str, value: Value) -> CurrentVehicleSummary {
     summary(&[vd(1, T0, json!({ group: { key: value } }))], None)
 }
 
 /// Equal to within the last digits of a conversion product.
-fn close(actual: Option<f64>, expected: f64) -> bool {
+pub(super) fn close(actual: Option<f64>, expected: f64) -> bool {
     actual.is_some_and(|value| (value - expected).abs() < 1e-9)
 }
 
@@ -321,6 +327,27 @@ fn c6_st_s01_s02_basics() {
     assert_eq!(s.software_update_download_perc, Some(0));
     assert_eq!(s.software_update_install_perc, Some(1));
     assert_eq!(s.geofence_name, None);
+    // ... and C6-S2's fields of the same row (C6 ST-S1, S2 additions).
+    assert_eq!(s.display_name.as_deref(), Some("Test Car"));
+    assert_eq!(s.charging_state.as_deref(), Some("Disconnected"));
+    assert_eq!(s.charge_cable_connected, Some(false));
+    assert_eq!(s.any_door_open, Some(false));
+    assert_eq!(s.any_window_open, Some(false));
+    assert_eq!(s.front_trunk_open, Some(false));
+    assert_eq!(s.rear_trunk_open, Some(false));
+    assert_eq!(s.software_version.as_deref(), Some("2024.14.3"));
+    assert_eq!(s.software_update_status, None);
+    assert_eq!(s.software_update_available, Some(false));
+    assert_eq!(s.software_update_version, None);
+    assert_eq!(s.service_mode, Some(false));
+    assert_eq!(s.model_code.as_deref(), Some("3"));
+    assert_eq!(s.model_name, Some("Model 3"));
+    assert_eq!(s.model_year, Some(2019));
+    assert_eq!(s.trim_badging.as_deref(), Some("74d"));
+    assert_eq!(s.exterior_color.as_deref(), Some("MidnightSilver"));
+    assert_eq!(s.wheel_type.as_deref(), Some("Pinwheel18"));
+    assert_eq!(s.spoiler_type.as_deref(), Some("None"));
+    assert!(s.car.is_none());
 
     // C6 ST-S2 (C6-S1 fields): the newest statement of each field wins across
     // the vehicle-data row and the stream row.
@@ -351,6 +378,8 @@ fn c6_st_s01_s02_basics() {
     assert_eq!(s.longitude, Some(20.8));
     assert!(close(s.odometer_km, 1610.148672));
     assert_eq!(s.inside_temp, Some(21.3));
+    // ... and C6-S2's field (C6 ST-S2, S2 addition).
+    assert_eq!(s.charging_state.as_deref(), Some("Disconnected"));
 }
 
 #[test]
@@ -623,6 +652,10 @@ fn c6_st_s07_to_s11_visibility() {
     assert_eq!(s.inside_temp, None);
     assert_eq!(s.sentry_mode, None);
     assert_eq!(s.speed_kmh, None);
+    // C6-S2 additions to C6 ST-S7: a sleeping car is not charging, and the plug
+    // state persists through sleep (C6 R34, R35).
+    assert_eq!(s.charging_state, None);
+    assert_eq!(s.charge_cable_connected, Some(true));
 
     // C6 ST-S8 (C6-S1 fields): the same under `offline`.
     let rows = [vd(1, T0, awake), discovery(2, T0 + 7_200_000, "offline")];
@@ -632,6 +665,8 @@ fn c6_st_s07_to_s11_visibility() {
     assert_eq!(s.charger_power, None);
     assert_eq!(s.inside_temp, None);
     assert_eq!(s.battery_level, Some(80));
+    // C6-S2 addition to C6 ST-S8: an unreachable car may still be charging.
+    assert_eq!(s.charging_state.as_deref(), Some("Charging"));
 
     // A fresh reading hidden by the reachability alone (C6 R28 (a)): the
     // vehicle-data row is a minute older than the newest row, far inside the
@@ -651,12 +686,14 @@ fn c6_st_s07_to_s11_visibility() {
     }
 
     // C6 ST-S9: a group older than T_gap against the newest row is stale.
+    let stale = with(
+        with(p0(), "charge_state", "charger_power", json!(7.4)),
+        "charge_state",
+        "charging_state",
+        json!("Complete"),
+    );
     let rows = [
-        vd(
-            1,
-            T0,
-            with(p0(), "charge_state", "charger_power", json!(7.4)),
-        ),
+        vd(1, T0, stale),
         stream(2, T0 + 900_000, |update| {
             update.speed = Some(30.0);
             update.shift_state = Some("D".to_owned());
@@ -669,6 +706,8 @@ fn c6_st_s07_to_s11_visibility() {
     assert_eq!(s.charger_power, None);
     assert_eq!(s.inside_temp, None);
     assert_eq!(s.speed_kmh, Some(48));
+    // C6-S2 addition to C6 ST-S9: the plug and end states persist.
+    assert_eq!(s.charging_state.as_deref(), Some("Complete"));
 
     // C6 ST-S10: the age bound is inclusive, against the newest row.
     let lifecycle = l_on();

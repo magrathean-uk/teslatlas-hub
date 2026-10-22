@@ -151,13 +151,11 @@ fn scrub_assert_nothing_stored_or_served(
         600_000,
     );
     assert_eq!(summary.battery_level, Some(80));
-    // C6-S1 interim: the charging state and the update status are C6-S2's
-    // fields (`Some("Charging")` and `Some("available")` before the C6 summary).
-    assert_eq!(summary.charging_state.as_deref(), None);
+    assert_eq!(summary.charging_state.as_deref(), Some("Charging"));
     assert_eq!(summary.display_name, None);
     assert_eq!(summary.software_version, None);
     assert_eq!(summary.software_update_version, None);
-    assert_eq!(summary.software_update_status.as_deref(), None);
+    assert_eq!(summary.software_update_status.as_deref(), Some("available"));
     let served = serde_json::to_string(&summary).expect("summary JSON");
     for secret in secrets {
         assert!(

@@ -14,8 +14,9 @@
 //! `HubStore::initialize` is the first read-write open of a store the replaced
 //! code wrote.
 //!
-//! Carried to C6-S2 (it owns the served car view): the "current view" half of
-//! C6 ST-I23 (`car.model_code` "3", `variant_name` null).
+//! The "current view" half of C6 ST-I23 (`car.model_code` "3", `variant_name`
+//! null) was carried to C6-S2, which owns the served car view; it is asserted
+//! in `c6_st_i23_tidy_live` through the served summary's `car` view.
 
 use super::*;
 use crate::collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE;
@@ -530,8 +531,7 @@ fn c6_st_i23_tidy_live() {
     let store = ts.open_ok();
     let after = snap(&store, &ts.vid());
     assert_st_i23_result(&store, &ts.vid(), &before, &after);
-    // The next legacy pack writes the tidied model and no marketing name; the
-    // served `current` view half is C6-S2's.
+    // The next legacy pack writes the tidied model and no marketing name.
     let stored: ProjectionCar =
         serde_json::from_str(after.car.as_deref().expect("a car")).expect("stored car");
     assert_eq!(legacy_pack_car_row(&stored), ("3".to_owned(), None));
@@ -539,6 +539,35 @@ fn c6_st_i23_tidy_live() {
     assert_eq!(
         legacy_pack_car_row(&before_car()),
         ("M3 stand-in".to_owned(), Some("Derived Name".to_owned()))
+    );
+    // C6 ST-I23, served-view half (carried to C6-S2): the `current` view's
+    // `car`, built from the stored car as the HTTP route reads it, has
+    // `model_code` "3" and a null `variant_name`; the same view of the car
+    // before the tidy shows the derived variant name, so the null is read.
+    let served = |car: ProjectionCar| {
+        crate::current_state::build_current_vehicle_summary(
+            ts.vehicle.vehicle_id,
+            &[],
+            Some(car),
+            None,
+            None,
+            T0,
+            600_000,
+        )
+        .car
+        .expect("a stored car gives a car view")
+    };
+    let stored_for_view = store
+        .materialised_car_for_vehicle(ts.vehicle.vehicle_id)
+        .expect("read the stored car")
+        .expect("the stored car");
+    assert_eq!(stored_for_view, stored);
+    let view = served(stored_for_view);
+    assert_eq!(view.model_code.as_deref(), Some("3"));
+    assert_eq!(view.variant_name, None);
+    assert_eq!(
+        served(before_car()).variant_name.as_deref(),
+        Some("Derived Name")
     );
 }
 

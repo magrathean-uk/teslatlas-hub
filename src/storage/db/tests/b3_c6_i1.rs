@@ -118,6 +118,24 @@ fn served_summaries(car: &ProjectionCar) -> [serde_json::Value; 2] {
     [serve(&none), serve(&one)]
 }
 
+/// The `car` view the served current-vehicle summary builds from the stored
+/// `car` (C6 R40, R48): the real `build_current_vehicle_summary`, no
+/// observations. This is the served-view half carried from C6 ST-I11 and C6
+/// ST-I12 to C6-S2, which owns the view.
+fn served_car_view(car: &ProjectionCar) -> crate::current_state::CurrentCarView {
+    crate::current_state::build_current_vehicle_summary(
+        Uuid::from_u128(2),
+        &[],
+        Some(car.clone()),
+        None,
+        None,
+        2_000,
+        600_000,
+    )
+    .car
+    .expect("a stored car gives a car view")
+}
+
 /// Whether any object inside `value`, at any depth, has the key `key`.
 fn contains_key_deep(value: &serde_json::Value, key: &str) -> bool {
     match value {
@@ -401,12 +419,32 @@ fn c6_st_i11_to_i14_import_live() {
         );
     }
     assert_eq!(imported.source_model_text, some("Model 3"));
+    // C6 ST-I11, served-view half (carried to C6-S2): the `car` view names the
+    // code, the model and the model year of the VIN, the imported variant name,
+    // and the stored model as the alias `car.model`.
+    let view = served_car_view(&imported);
+    assert_eq!(view.model_code.as_deref(), Some("3"));
+    assert_eq!(view.model_name, Some("Model 3"));
+    assert_eq!(view.model_year, Some(2019));
+    assert_eq!(view.variant_name.as_deref(), Some("Long Range AWD"));
+    assert_eq!(view.stored_model_text, "3");
+    for served in served_summaries(&imported) {
+        assert_eq!(served["car"]["model"], "3");
+        assert_eq!(served["car"]["marketing_name"], "Long Range AWD");
+        assert_eq!(served["car"]["trim_badging"], "LR");
+    }
 
     // C6 ST-I12: gaps. A missing marketing name is not derived; the code falls
     // back to the VIN, then to the empty string; an unrecognised text passes
     // through; the source text is kept whenever the source stated one.
     let gap = project(Some("Model 3"), Some(V3), Some("LR"), None);
     assert_eq!(gap.marketing_name, None);
+    // Served-view half of C6 ST-I12 (carried to C6-S2): a missing marketing
+    // name is a null `variant_name`.
+    assert_eq!(served_car_view(&gap).variant_name, None);
+    for served in served_summaries(&gap) {
+        assert!(served["car"]["marketing_name"].is_null());
+    }
     let no_model = project(None, Some(V3), None, None);
     assert_eq!(
         (no_model.model.as_str(), &no_model.source_model_text),
@@ -417,12 +455,25 @@ fn c6_st_i11_to_i14_import_live() {
         (nothing.model.as_str(), &nothing.source_model_text),
         ("", &None)
     );
+    let view = served_car_view(&nothing);
+    assert_eq!((view.model_code, view.model_name), (None, None));
+    assert_eq!(view.stored_model_text, "");
+    for served in served_summaries(&nothing) {
+        assert_eq!(served["car"]["model"], "");
+    }
     let empty_model = project(Some(""), Some(V3), None, None);
     assert_eq!(empty_model.model, "3");
     assert_eq!(empty_model.source_model_text, some(""));
+    let view = served_car_view(&empty_model);
+    assert_eq!(view.model_code.as_deref(), Some("3"));
+    assert_eq!(view.model_year, Some(2019));
     let unknown = project(Some("lychee"), None, None, None);
     assert_eq!(unknown.model, "lychee");
     assert_eq!(unknown.source_model_text, some("lychee"));
+    let view = served_car_view(&unknown);
+    assert_eq!(view.model_code.as_deref(), Some("lychee"));
+    assert_eq!(view.model_name, None);
+    assert_eq!(view.model_year, None);
     let empty_trim = project(Some("Model 3"), Some(V3), Some(""), None);
     assert_eq!(empty_trim.trim_badging, some(""));
     // Imported bytes are retained verbatim: case, whitespace, empty strings,

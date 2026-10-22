@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! The current-vehicle summary (C6 Part S1, with Part S2's fields still to
-//! come): one pure function of the stored current rows, the stored car, the
-//! lifecycle record, a geofence label, the Hub's clock and the configured
-//! silence tolerance (C6 R21). Statements, merge, field readers and
-//! transient visibility are in `summary_fields`.
+//! The current-vehicle summary (C6 Parts S1 and S2): one pure function of the
+//! stored current rows, the stored car, the lifecycle record, a geofence label,
+//! the Hub's clock and the configured silence tolerance (C6 R21). Statements,
+//! merge, field readers and transient visibility are in `summary_fields`; the
+//! composite and descriptor fields are in `summary_composites`.
 
 use serde::Serialize;
 use uuid::Uuid;
@@ -15,7 +15,12 @@ use crate::{
     lifecycle::{miles_to_km, miles_to_km_rounded, mph_to_kmh, round_to_precision},
 };
 
+mod summary_composites;
 mod summary_fields;
+use summary_composites::{
+    car_view, charging, descriptor, display_name, openings, service_mode, software_update,
+    software_version,
+};
 use summary_fields::{
     Class, Fields, Statements, Visibility, accepted_rows, activity_state, exact_integer,
     lifecycle_view, newest_observed_at_ms, number, shift_state, state_since_ms,
@@ -47,39 +52,59 @@ impl ActivityState {
     }
 }
 
-/// The settings view of the stored car under its served names (C6 R49).
-/// Filled by C6-S2 with the car view.
+/// The settings view of the stored car under its served names (C6 R49), built
+/// by `summary_composites`. Until C6-C1 writes the hand-made serialiser with
+/// the aliases (C6 R50), the derived `Serialize` keeps serving the 1.2.0 key
+/// names of `car.settings`, as it does for the summary itself.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CurrentCarSettingsView {
+    #[serde(rename = "enabled")]
     pub collection_enabled: bool,
+    #[serde(rename = "use_streaming_api")]
     pub streaming_enabled: bool,
+    #[serde(rename = "suspend_min")]
     pub sleep_window_min: i64,
+    #[serde(rename = "suspend_after_idle_min")]
     pub sleep_after_idle_min: i64,
+    #[serde(rename = "suspend_min_resolved")]
     pub sleep_window_min_resolved: bool,
+    #[serde(rename = "req_not_unlocked")]
     pub sleep_requires_locked: bool,
+    #[serde(rename = "free_supercharging")]
     pub supercharging_free: bool,
+    #[serde(rename = "lfp_battery")]
     pub battery_lfp: bool,
 }
 
-/// The stored car as the summary shows it (C6 R40, R48). Filled by C6-S2.
+/// The stored car as the summary shows it (C6 R40, R48), built from the stored
+/// `ProjectionCar` only by `summary_composites`. Fields are held under their
+/// 1.3.0 names; until C6-C1 writes the hand-made serialiser (C6 R50), the
+/// derived `Serialize` below serves the 1.2.0 `car` keys and values: `model` is
+/// the stored model text, and the keys that 1.2.0 has no name for are skipped.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct CurrentCarView {
     pub id: i64,
     pub name: String,
     pub vin: Option<String>,
+    #[serde(skip)]
     pub model_code: Option<String>,
     /// The stored model text, served under the alias `car.model` (C6 R50).
-    #[serde(skip)]
+    #[serde(rename = "model")]
     pub stored_model_text: String,
+    #[serde(skip)]
     pub model_name: Option<&'static str>,
+    #[serde(skip)]
     pub model_year: Option<i32>,
     pub trim_badging: Option<String>,
+    #[serde(rename = "marketing_name")]
     pub variant_name: Option<String>,
     pub exterior_color: Option<String>,
     pub wheel_type: Option<String>,
     pub spoiler_type: Option<String>,
     pub firmware_version: Option<String>,
+    #[serde(rename = "source_eid")]
     pub api_vehicle_id: Option<i64>,
+    #[serde(rename = "source_vid")]
     pub stream_vehicle_id: Option<i64>,
     pub efficiency_wh_per_km: Option<f64>,
     pub settings: CurrentCarSettingsView,
@@ -103,7 +128,7 @@ pub struct CurrentVehicleSummary {
     pub processing_healthy: Option<bool>,
     #[serde(rename = "geofence")]
     pub geofence_name: Option<String>,
-    // Descriptor and car view: C6-S2.
+    // Descriptor and car view (C6 R39, R40).
     pub display_name: Option<String>,
     #[serde(rename = "model")]
     pub model_code: Option<String>,
@@ -149,7 +174,7 @@ pub struct CurrentVehicleSummary {
     pub charge_current_request_max: Option<i64>,
     pub scheduled_charging_start_time: Option<i64>,
     pub charge_port_door_open: Option<bool>,
-    // C6-S2.
+    // Charging state and cable (C6 R34, R35).
     pub charging_state: Option<String>,
     #[serde(rename = "plugged_in")]
     pub charge_cable_connected: Option<bool>,
@@ -182,7 +207,7 @@ pub struct CurrentVehicleSummary {
     pub tpms_pressure_rl: Option<f64>,
     pub tpms_pressure_rr: Option<f64>,
     pub sun_roof_installed: Option<bool>,
-    // Doors, windows and trunks: C6-S2.
+    // Doors, windows and trunks (C6 R33).
     #[serde(rename = "doors_open")]
     pub any_door_open: Option<bool>,
     #[serde(rename = "driver_front_door_open")]
@@ -207,7 +232,8 @@ pub struct CurrentVehicleSummary {
     pub front_trunk_open: Option<bool>,
     #[serde(rename = "trunk_open")]
     pub rear_trunk_open: Option<bool>,
-    // Software and service: C6-S2, except the two progress values.
+    // Software, update and service (C6 R36 to R38); the two progress values are
+    // class T fields.
     #[serde(rename = "version")]
     pub software_version: Option<String>,
     #[serde(rename = "update_available")]
@@ -238,12 +264,13 @@ pub fn offline_drive_timeout_ms(offline_drive_timeout_seconds: u64) -> i64 {
 /// storage, configuration or randomness and logs nothing, and its output does
 /// not depend on the order of `observations`. `now_ms` is the Hub's wall clock;
 /// `transient_max_age_ms` is the configured `T_gap` (a value of 0 or less reads
-/// as the default, C1's `DEFAULT_OFFLINE_DRIVE_TIMEOUT`). `car` is read by C6-S2.
-/// The label in `geofence` is kept only for a known coordinate pair (C6 R41).
+/// as the default, C1's `DEFAULT_OFFLINE_DRIVE_TIMEOUT`). `car` is the stored
+/// car (C6 R39, R40). The label in `geofence` is kept only for a known
+/// coordinate pair (C6 R41).
 pub fn build_current_vehicle_summary(
     vehicle_id: Uuid,
     observations: &[ObservationRecord],
-    _car: Option<ProjectionCar>,
+    car: Option<ProjectionCar>,
     lifecycle: Option<&LifecycleStateRecord>,
     geofence: Option<String>,
     now_ms: i64,
@@ -265,6 +292,11 @@ pub fn build_current_vehicle_summary(
         ),
     );
     let (persistent, transient) = (Class::Persistent, Class::Transient);
+    let car = car.as_ref();
+    let descriptor = descriptor(&fields, car);
+    let openings = openings(&fields);
+    let charging = charging(&fields, activity);
+    let update = software_update(&fields);
 
     let coordinates = fields.pair(persistent, "drive_state.latitude", "drive_state.longitude");
     let route = fields.pair(
@@ -296,15 +328,15 @@ pub fn build_current_vehicle_summary(
         state_since_ms: state_since_ms(activity, lifecycle.state.as_ref()),
         processing_healthy: lifecycle.processing_healthy,
         geofence_name: coordinates.and(geofence),
-        display_name: None,
-        model_code: None,
-        model_name: None,
-        model_year: None,
-        trim_badging: None,
-        exterior_color: None,
-        wheel_type: None,
-        spoiler_type: None,
-        car: None,
+        display_name: display_name(&fields, car),
+        model_code: descriptor.model_code,
+        model_name: descriptor.model_name,
+        model_year: descriptor.model_year,
+        trim_badging: descriptor.trim_badging,
+        exterior_color: descriptor.exterior_color,
+        wheel_type: descriptor.wheel_type,
+        spoiler_type: descriptor.spoiler_type,
+        car: car_view(car),
         latitude: coordinates.map(|(latitude, _)| latitude),
         longitude: coordinates.map(|(_, longitude)| longitude),
         heading: fields.plain(persistent, "drive_state.heading", 0.0..=360.0),
@@ -397,8 +429,8 @@ pub fn build_current_vehicle_summary(
             i64::MAX,
         ),
         charge_port_door_open: fields.flag(persistent, "charge_state.charge_port_door_open"),
-        charging_state: None,
-        charge_cable_connected: None,
+        charging_state: charging.state,
+        charge_cable_connected: charging.cable_connected,
         charger_power: fields.int_number(transient, "charge_state.charger_power", -32_768, 32_767),
         charger_voltage: fields.int_number(
             transient,
@@ -474,22 +506,22 @@ pub fn build_current_vehicle_summary(
                 None => exact_integer(statement.value).map(|code| code != 0.0),
             },
         ),
-        any_door_open: None,
-        door_driver_front_open: None,
-        door_driver_rear_open: None,
-        door_passenger_front_open: None,
-        door_passenger_rear_open: None,
-        any_window_open: None,
-        window_driver_front_open: None,
-        window_driver_rear_open: None,
-        window_passenger_front_open: None,
-        window_passenger_rear_open: None,
-        front_trunk_open: None,
-        rear_trunk_open: None,
-        software_version: None,
-        software_update_available: None,
-        software_update_status: None,
-        software_update_version: None,
+        any_door_open: openings.any_door_open,
+        door_driver_front_open: openings.door_driver_front_open,
+        door_driver_rear_open: openings.door_driver_rear_open,
+        door_passenger_front_open: openings.door_passenger_front_open,
+        door_passenger_rear_open: openings.door_passenger_rear_open,
+        any_window_open: openings.any_window_open,
+        window_driver_front_open: openings.window_driver_front_open,
+        window_driver_rear_open: openings.window_driver_rear_open,
+        window_passenger_front_open: openings.window_passenger_front_open,
+        window_passenger_rear_open: openings.window_passenger_rear_open,
+        front_trunk_open: openings.front_trunk_open,
+        rear_trunk_open: openings.rear_trunk_open,
+        software_version: software_version(lifecycle.state.as_ref(), &fields, car),
+        software_update_available: update.available,
+        software_update_status: update.status,
+        software_update_version: update.version,
         software_update_download_perc: fields.int(
             transient,
             "vehicle_state.software_update.download_perc",
@@ -502,13 +534,17 @@ pub fn build_current_vehicle_summary(
             0,
             100,
         ),
-        service_mode: None,
+        service_mode: service_mode(lifecycle.state.as_ref(), &fields),
     }
 }
 
 #[cfg(test)]
 #[path = "current_state/b3_c6_s1_tests.rs"]
 mod b3_c6_s1;
+
+#[cfg(test)]
+#[path = "current_state/b3_c6_s2_tests.rs"]
+mod b3_c6_s2;
 
 #[cfg(test)]
 mod tests {

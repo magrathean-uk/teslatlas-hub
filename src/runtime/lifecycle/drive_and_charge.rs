@@ -652,7 +652,12 @@ fn observe_charge_sample(open: &mut OpenCharge, sample: &ProjectionChargeSample)
     open.sample_count = open.sample_count.saturating_add(1);
 }
 
-fn valid_coordinates(latitude: Option<f64>, longitude: Option<f64>) -> Option<(f64, f64)> {
+/// A coordinate pair both of whose halves are present, finite and inside
+/// latitude -90..=90 and longitude -180..=180 (C1 `valid_coordinates`, shared with C6 R26).
+pub(crate) fn valid_coordinates(
+    latitude: Option<f64>,
+    longitude: Option<f64>,
+) -> Option<(f64, f64)> {
     match (latitude, longitude) {
         (Some(latitude), Some(longitude))
             if latitude.is_finite()

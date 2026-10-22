@@ -122,6 +122,16 @@ fn version_key(text: &str) -> Option<Vec<u32>> {
     (components.len() >= 2).then_some(components)
 }
 
+/// The user-visible part of a Tesla version text for the current summary (C6
+/// R36, R37): the text before the first whitespace, when the whole text is
+/// usable under the C1 R30 grammar of [`version_key`] (the build hash is
+/// dropped). One definition, so the summary and the lifecycle read the same
+/// versions.
+pub(crate) fn usable_car_version(text: &str) -> Option<String> {
+    version_key(text)?;
+    text.split_whitespace().next().map(str::to_owned)
+}
+
 /// Component-wise comparison of two version keys; a missing trailing component
 /// counts as 0, so `2024.14` equals `2024.14.0` (C1 R30).
 fn compare_version_keys(left: &[u32], right: &[u32]) -> std::cmp::Ordering {

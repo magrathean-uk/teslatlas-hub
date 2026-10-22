@@ -18,7 +18,7 @@ use crate::{
     db::{LifecycleStateRecord, ObservationRecord},
     lifecycle::{
         DEFAULT_OFFLINE_DRIVE_TIMEOUT, K_SKEW_MS, OpenSessionState, VehiclePhase, group_time,
-        normalise_enum_text, round_to_precision,
+        normalise_enum_text, round_to_precision, valid_coordinates,
     },
 };
 
@@ -149,6 +149,9 @@ pub(super) struct Statement<'a> {
     pub(super) time_ms: i64,
     pub(super) row_observed_at_ms: i64,
     pub(super) observation_id: i64,
+    /// The row is a vehicle-data row of a full source: a vehicle-data record
+    /// type without a non-empty root `provider_feed` (C6 R36, C1 R32, R76).
+    pub(super) full_vehicle_data: bool,
 }
 
 impl Statement<'_> {
@@ -181,6 +184,7 @@ impl<'a> Statements<'a> {
         for row in rows {
             let observed = row.record.observed_at_ms;
             let id = row.record.observation_id;
+            let full_vehicle_data = row.kind == RowKind::VehicleData && !row.is_sparse();
             let mut push = |group: &'static str, key: &'a str, value: &'a Value, time_ms: i64| {
                 statements.push(Statement {
                     group,
@@ -189,6 +193,7 @@ impl<'a> Statements<'a> {
                     time_ms,
                     row_observed_at_ms: observed,
                     observation_id: id,
+                    full_vehicle_data,
                 });
             };
             match row.kind {
@@ -250,6 +255,18 @@ impl<'a> Statements<'a> {
             .max_by_key(|statement| statement.order())
     }
 
+    /// The newest statement among the dotted `candidates` that comes from a
+    /// vehicle-data row of a full source (C6 R36 item 2).
+    pub(super) fn newest_full_source(&self, candidates: &[&str]) -> Option<&Statement<'a>> {
+        self.0
+            .iter()
+            .filter(|statement| {
+                statement.full_vehicle_data
+                    && candidates.iter().any(|candidate| statement.is(candidate))
+            })
+            .max_by_key(|statement| statement.order())
+    }
+
     /// The newest group that states both keys of a pair (C6 R26): both
     /// statements come from the same observation and the same group.
     fn newest_pair(&self, first: &str, second: &str) -> Option<(&Statement<'a>, &Statement<'a>)> {
@@ -297,28 +314,6 @@ impl<'a> Statements<'a> {
     }
 }
 
-/// C1 `valid_coordinates` (C6 R26): both halves present, finite and inside
-/// latitude -90..=90 and longitude -180..=180. HOLD: C1's own function is
-/// private to the lifecycle module in the B2 tree, and its visibility edit
-/// waits on C1/C2 (the same file is rewritten by those parts). This private
-/// copy keeps the C6-S1 reader independent of that edit; once C1/C2 has
-/// integrated, the serial writer deletes it and imports
-/// `crate::lifecycle::valid_coordinates` made `pub(crate)` (C6 section 7
-/// item 3), and reports that visibility change in the Part I or S1 receipt.
-fn valid_coordinates(latitude: Option<f64>, longitude: Option<f64>) -> Option<(f64, f64)> {
-    match (latitude, longitude) {
-        (Some(latitude), Some(longitude))
-            if latitude.is_finite()
-                && longitude.is_finite()
-                && (-90.0..=90.0).contains(&latitude)
-                && (-180.0..=180.0).contains(&longitude) =>
-        {
-            Some((latitude, longitude))
-        }
-        _ => None,
-    }
-}
-
 /// A numeric field (C1 R4a): a finite JSON number, or a JSON string whose
 /// trimmed text parses as a finite decimal number.
 pub(super) fn number(value: &Value) -> Option<f64> {
@@ -357,7 +352,13 @@ pub(super) fn boolean(value: &Value) -> Option<bool> {
 /// The text rule (C6 R27): a trimmed string, `None` when empty or longer than
 /// [`K_TEXT_MAX`] scalar values.
 pub(super) fn text(value: &Value) -> Option<String> {
-    let trimmed = value.as_str()?.trim();
+    text_str(value.as_str()?)
+}
+
+/// The text rule on a string already read (C6 R27): trimmed, `None` when empty
+/// or longer than [`K_TEXT_MAX`] scalar values.
+pub(super) fn text_str(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
     (!trimmed.is_empty() && trimmed.chars().count() <= K_TEXT_MAX).then(|| trimmed.to_owned())
 }
 
@@ -448,6 +449,28 @@ impl<'s, 'a> Fields<'s, 'a> {
             .shows(class, newest)
             .then(|| read(newest))
             .flatten()
+    }
+
+    /// Like [`Fields::with`], over the newest statement from a vehicle-data row
+    /// of a full source only (C6 R36 item 2).
+    pub(super) fn with_full_source<T>(
+        &self,
+        class: Class,
+        candidates: &[&str],
+        read: impl FnOnce(&Statement<'a>) -> Option<T>,
+    ) -> Option<T> {
+        let newest = self.statements.newest_full_source(candidates)?;
+        self.visibility
+            .shows(class, newest)
+            .then(|| read(newest))
+            .flatten()
+    }
+
+    /// The newest statement of `candidate` when it is shown, so a caller can
+    /// tell "no statement" from "a statement that reads as null" (C6 R40).
+    pub(super) fn stated(&self, class: Class, candidate: &str) -> Option<&'s Statement<'a>> {
+        let newest = self.statements.newest(&[candidate])?;
+        self.visibility.shows(class, newest).then_some(newest)
     }
 
     pub(super) fn flag(&self, class: Class, candidate: &str) -> Option<bool> {

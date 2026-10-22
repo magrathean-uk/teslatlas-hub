@@ -642,8 +642,6 @@
         "src/api/server/tests/receiver.rs",
         "src/api/server/tests/server_limits.rs",
         "src/api/server/tests/vehicle_grants.rs",
-        "src/collection/current_state/b3_c6_s1_tests.rs",
-        "src/collection/current_state/summary_fields.rs",
         "src/collection/teslamate_current.rs",
         "src/collection/teslamate_current/tests.rs",
         "src/runtime/lifecycle/gate_tests/c2_a_tests.rs",
@@ -655,6 +653,10 @@
         "src/runtime/lifecycle/gate_tests/reader.rs",
         "src/runtime/lifecycle/gate_tests/report.rs",
         "src/runtime/lifecycle/gate_tests/support.rs"
+      ],
+      "globs": [
+        "src/collection/current_state/b3_c6_s?_tests.rs",
+        "src/collection/current_state/summary_*.rs"
       ]
     },
     {
