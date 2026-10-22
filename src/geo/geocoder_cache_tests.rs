@@ -322,7 +322,9 @@ impl EgressGuard for AllowsFirst {
 async fn a_guard_that_refuses_after_the_answer_leaves_the_cache_empty() {
     // B2 fix round, P3b fix 2, R-P3bF2-1: the cache row is a store mutation after the
     // lookup's awaits, so the guard that stood in front of the request stands in front
-    // of the write too.
+    // of the write too. C7 R3 puts two checks in front of the request (before the rate
+    // wait and after the slot is reserved), so the write is the third check; this test
+    // was amended from allowed 1 and 2 checks to allowed 2 and 3 for that reason.
     let (endpoint, seen, server) = place_server("guarded").await;
     let temp = crate::private_tempdir().unwrap();
     let store = HubStore::initialize(temp.path()).unwrap();
@@ -337,7 +339,7 @@ async fn a_guard_that_refuses_after_the_answer_leaves_the_cache_empty() {
             10,
             &AllowsFirst {
                 checks: Arc::clone(&checks),
-                allowed: 1,
+                allowed: 2,
             },
         )
         .await;
@@ -350,11 +352,11 @@ async fn a_guard_that_refuses_after_the_answer_leaves_the_cache_empty() {
         1,
         "the request went out while it was allowed"
     );
-    assert_eq!(checks.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(checks.load(std::sync::atomic::Ordering::SeqCst), 3);
     assert!(lookup_rows(&store).is_empty(), "no lookup row");
     assert!(shared_names(&store).is_empty(), "no shared identity row");
 
-    // The control: a guard that allows both checks caches the answer.
+    // The control: a guard that allows all three checks caches the answer.
     let allowed = geocoder
         .reverse_cached_with_egress_guard(
             &store,
@@ -362,7 +364,7 @@ async fn a_guard_that_refuses_after_the_answer_leaves_the_cache_empty() {
             20,
             &AllowsFirst {
                 checks: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
-                allowed: 2,
+                allowed: 3,
             },
         )
         .await

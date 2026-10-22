@@ -27,7 +27,15 @@ use crate::{
     location::Wgs84Point,
 };
 
+mod request;
 mod response_mapping;
+
+#[cfg(test)]
+use request::is_public_host;
+use request::{
+    ACCEPT_JSON, RequestFailure, accept_language_value, request_interval, retry_after_seconds,
+    reverse_request_url,
+};
 
 pub const FIXED_USER_AGENT: &str = concat!("teslatlas-hub/", env!("CARGO_PKG_VERSION"));
 const MAX_RESPONSE_BYTES: usize = 256 * 1024;
@@ -217,52 +225,71 @@ impl Geocoder {
             .await
     }
 
-    /// Reverse geocode after one final egress-admission check.
+    /// Reverse geocode with an egress-admission check before the rate wait and a
+    /// final one after the slot is reserved.
     ///
-    /// This check comes after the shared rate-limit reservation, so a revoked
-    /// user admission cannot issue a delayed request.
+    /// The final check comes after the shared rate-limit reservation, so a
+    /// revoked user admission cannot issue a delayed request.
     pub async fn reverse_with_egress_guard<G: EgressGuard + ?Sized>(
         &self,
         point: Wgs84Point,
         egress_guard: &G,
     ) -> Result<GeocodedAddress, GeocoderError> {
-        wait_for_slot(&self.limiter).await?;
+        self.send_reverse(point, egress_guard)
+            .await
+            .map_err(|failure| failure.error)
+    }
 
-        let url = self
-            .endpoint
-            .join("reverse")
-            .map_err(|_| GeocoderError::InvalidEndpoint)?;
-        let query = vec![
-            ("format", "jsonv2".to_owned()),
-            ("addressdetails", "1".to_owned()),
-            ("extratags", "1".to_owned()),
-            ("namedetails", "1".to_owned()),
-            ("zoom", "19".to_owned()),
-            ("lat", point.latitude.to_string()),
-            ("lon", point.longitude.to_string()),
-        ];
-        let accept_language = HeaderValue::from_str(&self.language)
-            .map_err(|_| GeocoderError::InvalidConfig(ConfigError::InvalidGeocoderLanguage))?;
-        let user_agent = HeaderValue::from_static(FIXED_USER_AGENT);
-        egress_guard
-            .assert_egress_allowed()
-            .map_err(|_| GeocoderError::EgressDenied)?;
+    /// C7 R1 and R53: the whole request path. It returns at the first failure and
+    /// never retries; a refusal status 403 or 429 also carries the provider's
+    /// requested delay for the caller's back-off.
+    async fn send_reverse<G: EgressGuard + ?Sized>(
+        &self,
+        point: Wgs84Point,
+        egress_guard: &G,
+    ) -> Result<GeocodedAddress, RequestFailure> {
+        // C7 R1 step 1: the URL, the header value and, in test builds, the public-host guard.
+        let url = reverse_request_url(&self.endpoint, point, &self.language)?;
+        #[cfg(test)]
+        if is_public_host(&self.endpoint) {
+            return Err(GeocoderError::InvalidEndpoint.into());
+        }
+        let accept_language = accept_language_value(&self.language)?;
+
+        // C7 R1 steps 2 to 4: admission, the reserved slot, admission again.
+        admit(egress_guard)?;
+        wait_for_slot_every(&self.limiter, request_interval(&self.endpoint)).await?;
+        admit(egress_guard)?;
+
+        // C7 R1 step 5: one GET with exactly three headers (R13, R14).
         let response = self
             .client
             .get(url)
-            .query(&query)
-            .header(ACCEPT, "application/json")
+            .header(USER_AGENT, HeaderValue::from_static(FIXED_USER_AGENT))
+            .header(ACCEPT, HeaderValue::from_static(ACCEPT_JSON))
             .header(ACCEPT_LANGUAGE, accept_language)
-            .header(USER_AGENT, user_agent)
             .send()
             .await
             .map_err(classify_request_error)?;
-        let status = response.status().as_u16();
-        if !response.status().is_success() {
-            return Err(GeocoderError::HttpStatus(status));
+
+        // C7 R1 step 6 and R16: the status comes before any body byte is read.
+        let status = response.status();
+        if !status.is_success() {
+            let code = status.as_u16();
+            let retry_after_seconds = if code == 403 || code == 429 {
+                retry_after_seconds(response.headers())
+            } else {
+                None
+            };
+            return Err(RequestFailure {
+                error: GeocoderError::HttpStatus(code),
+                retry_after_seconds,
+            });
         }
+
+        // C7 R1 steps 7 and 8.
         let body = read_limited_response(response).await?;
-        parse_response(&body)
+        Ok(parse_response(&body)?)
     }
 
     #[cfg(any(not(target_os = "macos"), test))]
@@ -276,8 +303,8 @@ impl Geocoder {
             .await
     }
 
-    /// Cached reverse geocoding with the same final egress-admission check as
-    /// [`Self::reverse_with_egress_guard`].
+    /// Cached reverse geocoding with the same egress-admission checks as
+    /// [`Self::reverse_with_egress_guard`], and one more before the cache write.
     pub async fn reverse_cached_with_egress_guard<G: EgressGuard + ?Sized>(
         &self,
         store: &HubStore,
@@ -330,17 +357,64 @@ impl Geocoder {
 
 fn global_limiter() -> SharedLimiter {
     static LIMITER: OnceLock<SharedLimiter> = OnceLock::new();
-    LIMITER.get_or_init(|| Arc::new(Mutex::new(None))).clone()
+    LIMITER
+        .get_or_init(|| seeded_limiter(Instant::now()))
+        .clone()
 }
 
+/// C7 R55: a limiter that behaves as if a request slot started at `instant`, so
+/// the first request of a process waits one full interval and the spacing also
+/// holds across a restart.
+fn seeded_limiter(instant: Instant) -> SharedLimiter {
+    Arc::new(Mutex::new(Some(instant)))
+}
+
+/// C7 R55: whether a request could start at `now` without waiting. It reads the
+/// limiter and reserves nothing.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "C7 Part C: the pre-claim gate uses it")
+)]
+fn slot_free(
+    limiter: &SharedLimiter,
+    interval: Duration,
+    now: Instant,
+) -> Result<bool, GeocoderError> {
+    let last = limiter
+        .lock()
+        .map_err(|_| GeocoderError::RateLimiterPoisoned)?;
+    Ok(last.is_none_or(|previous| {
+        previous
+            .checked_add(interval)
+            .is_some_and(|next_slot| next_slot <= now)
+    }))
+}
+
+/// C7 R4: the default one-second interval, `wait_for_slot_every` with
+/// `MIN_REQUEST_INTERVAL`. The request path calls `wait_for_slot_every` with the
+/// endpoint's interval, so only the kept spacing test calls this.
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the request path uses wait_for_slot_every")
+)]
 async fn wait_for_slot(limiter: &SharedLimiter) -> Result<(), GeocoderError> {
+    wait_for_slot_every(limiter, MIN_REQUEST_INTERVAL).await
+}
+
+/// C7 R4: reserve the slot `max(previous slot + interval, now)` under the lock,
+/// then sleep until it. The lock is never held across the sleep and a reserved
+/// slot is never given back.
+async fn wait_for_slot_every(
+    limiter: &SharedLimiter,
+    interval: Duration,
+) -> Result<(), GeocoderError> {
     let now = Instant::now();
     let scheduled = {
         let mut last = limiter
             .lock()
             .map_err(|_| GeocoderError::RateLimiterPoisoned)?;
         let scheduled = last
-            .map(|previous| previous + MIN_REQUEST_INTERVAL)
+            .map(|previous| previous + interval)
             .unwrap_or(now)
             .max(now);
         *last = Some(scheduled);
@@ -348,6 +422,13 @@ async fn wait_for_slot(limiter: &SharedLimiter) -> Result<(), GeocoderError> {
     };
     tokio::time::sleep(scheduled.saturating_duration_since(now)).await;
     Ok(())
+}
+
+/// C7 R3: the last-moment admission check, as the geocoder's own error.
+fn admit<G: EgressGuard + ?Sized>(egress_guard: &G) -> Result<(), GeocoderError> {
+    egress_guard
+        .assert_egress_allowed()
+        .map_err(|_| GeocoderError::EgressDenied)
 }
 
 async fn read_limited_response(response: reqwest::Response) -> Result<Vec<u8>, GeocoderError> {
@@ -427,6 +508,10 @@ mod tests {
     };
 
     use axum::{Router, body::Body, response::Response, routing::any};
+
+    // Reverse-geocoder request, admission and pacing tests (C7 part A).
+    #[path = "b3_c7_a_tests.rs"]
+    mod b3_c7_a;
 
     // Reverse-geocoder response mapping tests (C7 part B).
     #[path = "b3_c7_b_tests.rs"]
@@ -512,32 +597,6 @@ mod tests {
             axum::serve(listener, app).await.unwrap();
         });
         (endpoint, count, task)
-    }
-
-    #[tokio::test]
-    async fn sends_exact_nominatim_query_and_headers() {
-        let (endpoint, captured, handle) = server(
-            r#"{"osm_type":"way","osm_id":42,"display_name":"Main Road","name":"Main Road","lat":"51.5001","lon":"-0.1001","address":{"road":"Main Street","house_number":"7","city":"London","country":"United Kingdom"}}"#,
-            1,
-        );
-        let geocoder = Geocoder::for_test(&config(endpoint)).unwrap();
-        let result = geocoder
-            .reverse(Wgs84Point::new(51.5, -0.1).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(result.osm_type, "way");
-        assert_eq!(result.osm_id, 42);
-        assert_eq!(result.latitude, Some(51.5001));
-        assert_eq!(result.road.as_deref(), Some("Main Street"));
-        assert_eq!(result.house_number.as_deref(), Some("7"));
-        assert_eq!(result.city.as_deref(), Some("London"));
-        assert!(result.raw_json.is_some());
-        handle.join().unwrap();
-        let request = captured.lock().unwrap().join("\n");
-        assert!(request.contains("GET /reverse?format=jsonv2&addressdetails=1&extratags=1&namedetails=1&zoom=19&lat=51.5&lon=-0.1 HTTP/1.1"));
-        assert!(request.contains("accept-language: en-GB"));
-        assert!(request.contains(&format!("user-agent: {FIXED_USER_AGENT}")));
-        assert!(!request.contains("ignored"));
     }
 
     #[tokio::test]
