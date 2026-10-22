@@ -670,9 +670,10 @@ fn c6_st_s12_telemetry_only() {
     // No stored car, no view.
     assert!(summary_with(&[], None, None).car.is_none());
 
-    // The served car (C6 R13a, R50): until C6-C1 writes the aliased serialiser
-    // it is the 1.2.0 shape, whose `model` is the stored model text. The text an
-    // import kept in `source_model_text` is not served, at any depth.
+    // The served car (C6 R13a, C6 R48, C6 R50): the 14 keys of 1.2.0 and the 6 keys
+    // 1.3.0 adds, and the eight settings under both their spellings. `model` is
+    // the stored model text. The text an import kept in `source_model_text` is
+    // not served, at any depth.
     let imported = car(json!({
         "source_eid": 11, "source_vid": 22, "marketing_name": "Long Range",
         "source_model_text": "Model 3 Long Range"
@@ -686,18 +687,24 @@ fn c6_st_s12_telemetry_only() {
     assert_eq!(
         keys(&served["car"]),
         [
+            "api_vehicle_id",
             "efficiency_wh_per_km",
             "exterior_color",
             "firmware_version",
             "id",
             "marketing_name",
             "model",
+            "model_code",
+            "model_name",
+            "model_year",
             "name",
             "settings",
             "source_eid",
             "source_vid",
             "spoiler_type",
+            "stream_vehicle_id",
             "trim_badging",
+            "variant_name",
             "vin",
             "wheel_type"
         ]
@@ -705,16 +712,28 @@ fn c6_st_s12_telemetry_only() {
     assert_eq!(
         keys(&served["car"]["settings"]),
         [
+            "battery_lfp",
+            "collection_enabled",
             "enabled",
             "free_supercharging",
             "lfp_battery",
             "req_not_unlocked",
+            "sleep_after_idle_min",
+            "sleep_requires_locked",
+            "sleep_window_min",
+            "sleep_window_min_resolved",
+            "streaming_enabled",
+            "supercharging_free",
             "suspend_after_idle_min",
             "suspend_min",
             "suspend_min_resolved",
             "use_streaming_api"
         ]
     );
+    assert_eq!(served["car"]["model_code"], "3");
+    assert_eq!(served["car"]["variant_name"], "Long Range");
+    assert_eq!(served["car"]["api_vehicle_id"], 11);
+    assert_eq!(served["car"]["stream_vehicle_id"], 22);
     assert_eq!(served["car"]["model"], "3");
     assert_eq!(served["car"]["marketing_name"], "Long Range");
     assert_eq!(served["car"]["source_eid"], 11);
@@ -932,11 +951,9 @@ fn c6_st_s31_geofence() {
     };
     let s = named(&rows, Some(&lifecycle));
     assert_eq!(s.geofence_name.as_deref(), Some("Home"));
-    // The old key serves the same name. CARRY to C6-C1: the JSON half of C6
-    // ST-S31 (a non-null label is written as both `geofence_name` and
-    // `geofence`, each equal to "Home") is asserted by C6-C1 in
-    // `c6_st_s30_aliases` on this fixture, with a mutant that writes
-    // `geofence_name` as null; the C6 ST-S30 and C6 ST-S33 fixtures carry no label.
+    // The old key serves the same name. The JSON half of C6 ST-S31 (a non-null
+    // label is written as both `geofence_name` and `geofence`, each equal to
+    // "Home") is asserted in `c6_st_s30_aliases` on this fixture.
     let body = serde_json::to_value(&s).expect("summary JSON");
     assert_eq!(body["geofence"], "Home");
     // A position is class P: the label is also kept while the car sleeps.

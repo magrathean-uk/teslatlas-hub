@@ -6,8 +6,8 @@
 //! its order, its rollback, and the served names of the labelled fields.
 //! Synthetic data only. The relabel half of C8 T15 and C8 T42 and the import
 //! half of C8 T48 are asserted in `b3_c8_sb`.
-//! The neutral served-key half of C8 T46 moves to C6 Part C (see
-//! `c8_t46_served_names_tariff_snapshot`).
+//! The neutral served-key half of C8 T46 (C6 Part C, C6-C1) is asserted in
+//! `c8_t46_served_names_tariff_snapshot` through the four item routes.
 
 use super::b3_c8_sa::{
     Fence, c8_store, c8_vehicle, count, fence, imported, predecessor_radius_bound,
@@ -1235,19 +1235,111 @@ fn c8_t32_no_upgrade_relabel() {
     assert_eq!(end_label(&migrated, vehicle, 1).as_deref(), Some("Old"));
 }
 
-/// The stored half of C8 T46 (C8 R48): the relabel reaches both served items
-/// under the current keys, the tariff copy stays at its close-time value after
-/// a later price edit, and stored rows and sync payloads hold the stored names
-/// and none of the neutral keys.
+/// The four item routes of one vehicle through the real paired router: the
+/// bearer of a claimed device, a published vehicle, and one runtime.
+struct Routes {
+    runtime: tokio::runtime::Runtime,
+    router: axum::Router,
+    bearer: String,
+    vehicle: Uuid,
+}
+
+impl Routes {
+    fn new(store: &HubStore, vehicle: Uuid) -> Self {
+        store
+            .open()
+            .expect("connection")
+            .execute(
+                "INSERT INTO sync_manifests(snapshot_id, vehicle_id, head_sequence, manifest_json)
+                 VALUES (?1, ?2, 1, ?3)",
+                params![
+                    Uuid::new_v4().to_string(),
+                    vehicle.to_string(),
+                    b"{}".as_slice()
+                ],
+            )
+            .expect("publish the vehicle");
+        let now_ms = i64::try_from(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_millis(),
+        )
+        .expect("epoch milliseconds");
+        let invitation = store
+            .create_pairing("c8 t46", now_ms - 1, i64::MAX)
+            .expect("pairing");
+        let access = store
+            .claim_pairing(invitation.pairing_id, invitation.secret(), "c8 t46", now_ms)
+            .expect("claim");
+        Self {
+            runtime: tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime"),
+            router: crate::server::paired_router(
+                store.clone(),
+                &crate::protocol::CursorKey::from_bytes([61; 32]),
+            ),
+            bearer: access.access_token.as_bearer().to_owned(),
+            vehicle,
+        }
+    }
+
+    fn get(&self, path: &str) -> serde_json::Value {
+        use axum::{body::Body, http::Request};
+        use http_body_util::BodyExt;
+        use tower::ServiceExt;
+        self.runtime.block_on(async {
+            let response = self
+                .router
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .uri(format!("/v1/vehicles/{}/{path}", self.vehicle))
+                        .header("authorization", format!("Bearer {}", self.bearer))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), 200, "{path}");
+            let body = response
+                .into_body()
+                .collect()
+                .await
+                .expect("body")
+                .to_bytes();
+            serde_json::from_slice(&body).expect("JSON body")
+        })
+    }
+
+    /// The drive and charge 1 as served by each route: `drive`, the first item
+    /// of `drives`, `charge`, the first item of `charges`.
+    fn items(&self) -> [(&'static str, serde_json::Value); 4] {
+        let first = |page: serde_json::Value| page["items"][0].clone();
+        [
+            ("drive", self.get("drives/1")),
+            ("drives", first(self.get("drives?limit=5"))),
+            ("charge", self.get("charges/1")),
+            ("charges", first(self.get("charges?limit=5"))),
+        ]
+    }
+}
+
+/// C8 T46 (C8 R48): the relabel reaches both served items under the current
+/// keys, the tariff copy stays at its close-time value after a later price
+/// edit, and stored rows and sync payloads hold the stored names and none of
+/// the neutral keys.
 ///
-/// Carried to C6 Part C (C6-C1): under C8 section 11 the neutral served-key
-/// half of C8 T46 is written by whichever of C8 Part L and C6 Part C lands second,
-/// and C6 Part C lands second. Through the drive and charge routes, after the
-/// rename, `start_geofence_name`, `end_geofence_name`, `geofence_name`,
-/// `tariff_type`, `tariff_rate` and `tariff_session_fee` each equal their alias
-/// (`start_geofence`, `end_geofence`, `geofence`, `billing_type`,
-/// `cost_per_unit`, `session_fee`), and `tariff_rate` and `cost_per_unit` stay
-/// 0.3 after the price edit to 0.40. This test does not claim that half.
+/// The neutral served-key half (C6 Part C, carried from C8 Part L under C8
+/// section 11) is asserted here through the `drive`, `drives`,
+/// `charge` and `charges` routes: after the rename, `start_geofence_name`,
+/// `end_geofence_name`, `geofence_name`, `tariff_type`, `tariff_rate` and
+/// `tariff_session_fee` equal the stored names and tariff copy and each equals
+/// its alias (`start_geofence`, `end_geofence`, `geofence`, `billing_type`,
+/// `cost_per_unit`, `session_fee`); `tariff_rate` and `cost_per_unit` stay 0.3
+/// after the price edit to 0.40.
 #[test]
 fn c8_t46_served_names_tariff_snapshot() {
     use crate::api::public_query::{PublicCharge, PublicDrive};
@@ -1307,6 +1399,53 @@ fn c8_t46_served_names_tariff_snapshot() {
     assert_eq!(charge["billing_type"], "per_kwh");
     assert_eq!(charge["cost_per_unit"], 0.3);
     assert_eq!(charge["session_fee"], 1.0);
+    // C8 T46's neutral served keys through the routes (C6 R58): each equals its
+    // alias and the stored name or tariff copy.
+    let routes = Routes::new(&store, vehicle);
+    let stored_drive: serde_json::Value =
+        serde_json::from_str(&raw_rows(&store, vehicle, "materialised_drives")[0].1)
+            .expect("drive json");
+    let stored_charge: serde_json::Value =
+        serde_json::from_str(&raw_rows(&store, vehicle, "materialised_charges")[0].1)
+            .expect("charge json");
+    let neutral_pairs = [
+        ("start_geofence_name", "start_geofence"),
+        ("end_geofence_name", "end_geofence"),
+        ("geofence_name", "geofence"),
+        ("tariff_type", "billing_type"),
+        ("tariff_rate", "cost_per_unit"),
+        ("tariff_session_fee", "session_fee"),
+    ];
+    let served_neutral = |routes: &Routes| {
+        for (route, item) in routes.items() {
+            let stored = if route.starts_with("drive") {
+                &stored_drive
+            } else {
+                &stored_charge
+            };
+            for (new, old) in neutral_pairs {
+                if stored.get(old).is_none() {
+                    // A key of the other item type.
+                    assert!(item.get(new).is_none(), "{route} serves no {new}");
+                    continue;
+                }
+                assert_eq!(item[new], stored[old], "{route}: {new} is the stored {old}");
+                assert_eq!(item[old], item[new], "{route}: {old} equals {new}");
+            }
+        }
+    };
+    served_neutral(&routes);
+    for (route, item) in routes.items() {
+        if route.starts_with("drive") {
+            assert_eq!(item["start_geofence_name"], "Garage", "{route}");
+            assert_eq!(item["end_geofence_name"], "Garage", "{route}");
+        } else {
+            assert_eq!(item["geofence_name"], "Garage", "{route}");
+            assert_eq!(item["tariff_type"], "per_kwh", "{route}");
+            assert_eq!(item["tariff_rate"], 0.3, "{route}");
+            assert_eq!(item["tariff_session_fee"], 1.0, "{route}");
+        }
+    }
     // A later price on the fence never reaches the charge.
     let outcome = run_step(&store, vehicle, || {
         save(
@@ -1326,6 +1465,14 @@ fn c8_t46_served_names_tariff_snapshot() {
         store.geofences(vehicle).expect("fences")[0].cost_per_unit,
         Some(0.4)
     );
+    // The routes keep serving the close-time copy under both keys.
+    served_neutral(&routes);
+    for (route, item) in routes.items() {
+        if route.starts_with("charge") {
+            assert_eq!(item["tariff_rate"], 0.3, "{route} after the price edit");
+            assert_eq!(item["cost_per_unit"], 0.3, "{route} after the price edit");
+        }
+    }
     // The stored rows and the mutation payloads hold the stored names and none
     // of the neutral served keys (C8 R48).
     let neutral = [

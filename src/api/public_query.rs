@@ -12,6 +12,8 @@ use crate::{
     protocol::CursorKey,
 };
 
+mod history_aliases;
+
 pub(crate) const DEFAULT_DRIVE_PAGE_LIMIT: u32 = 100;
 pub(crate) const MAX_DRIVE_PAGE_LIMIT: u32 = 500;
 pub(crate) const DEFAULT_CHARGE_PAGE_LIMIT: u32 = 100;
@@ -86,8 +88,8 @@ pub(crate) struct PageQueryParameters {
 }
 
 /// A validated page request. `after` is the (key A, key B) of the last item of
-/// the previous page; the keys are `(start_date_ms, id)` for drives and
-/// charges, `(date_ms, id)` for positions and `(timestamp_ms, id)` for samples.
+/// the previous page; the keys are `(started_at_ms, id)` for drives and
+/// charges, `(timestamp_ms, id)` for positions and samples.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PageQuery {
     pub(crate) kind: PageKind,
@@ -114,36 +116,38 @@ pub(crate) trait PageItem {
 
 /// Source-neutral public shape for one materialised drive. Internal source
 /// identifiers and projection-maintenance timestamps are deliberately absent.
-#[derive(Debug, serde::Serialize)]
+/// Fields are held under their neutral names (C6 R58); `history_aliases` writes
+/// each under its new key and under its 1.2.0 alias.
+#[derive(Debug)]
 pub(crate) struct PublicDrive {
     pub(crate) id: i64,
     pub(crate) vehicle_id: Uuid,
-    pub(crate) start_date_ms: i64,
-    pub(crate) end_date_ms: i64,
+    pub(crate) started_at_ms: i64,
+    pub(crate) ended_at_ms: i64,
     pub(crate) distance_km: Option<f64>,
     pub(crate) duration_min: Option<i64>,
     pub(crate) efficiency: Option<f64>,
-    pub(crate) outside_temp_avg: Option<f64>,
-    pub(crate) inside_temp_avg: Option<f64>,
-    pub(crate) speed_max: Option<i64>,
-    pub(crate) power_max: Option<f64>,
-    pub(crate) power_min: Option<f64>,
-    pub(crate) start_ideal_range_km: Option<f64>,
-    pub(crate) end_ideal_range_km: Option<f64>,
+    pub(crate) outside_temp_avg_c: Option<f64>,
+    pub(crate) inside_temp_avg_c: Option<f64>,
+    pub(crate) speed_max_kmh: Option<i64>,
+    pub(crate) power_max_kw: Option<f64>,
+    pub(crate) power_min_kw: Option<f64>,
+    pub(crate) start_ideal_battery_range_km: Option<f64>,
+    pub(crate) end_ideal_battery_range_km: Option<f64>,
     pub(crate) start_address: Option<String>,
     pub(crate) end_address: Option<String>,
-    pub(crate) start_geofence: Option<String>,
-    pub(crate) end_geofence: Option<String>,
+    pub(crate) start_geofence_name: Option<String>,
+    pub(crate) end_geofence_name: Option<String>,
     pub(crate) start_latitude: Option<f64>,
     pub(crate) start_longitude: Option<f64>,
     pub(crate) end_latitude: Option<f64>,
     pub(crate) end_longitude: Option<f64>,
     pub(crate) start_soc: Option<i64>,
     pub(crate) end_soc: Option<i64>,
-    pub(crate) start_rated_range_km: Option<f64>,
-    pub(crate) end_rated_range_km: Option<f64>,
-    pub(crate) ascent: Option<i64>,
-    pub(crate) descent: Option<i64>,
+    pub(crate) start_battery_range_km: Option<f64>,
+    pub(crate) end_battery_range_km: Option<f64>,
+    pub(crate) ascent_m: Option<i64>,
+    pub(crate) descent_m: Option<i64>,
 }
 
 impl PublicDrive {
@@ -151,39 +155,39 @@ impl PublicDrive {
         Self {
             id: drive.id,
             vehicle_id,
-            start_date_ms: drive.start_date_ms,
-            end_date_ms: drive.end_date_ms,
+            started_at_ms: drive.start_date_ms,
+            ended_at_ms: drive.end_date_ms,
             distance_km: drive.distance_km,
             duration_min: drive.duration_min,
             efficiency: drive.efficiency,
-            outside_temp_avg: drive.outside_temp_avg,
-            inside_temp_avg: drive.inside_temp_avg,
-            speed_max: drive.speed_max,
-            power_max: drive.power_max,
-            power_min: drive.power_min,
-            start_ideal_range_km: drive.start_ideal_range_km,
-            end_ideal_range_km: drive.end_ideal_range_km,
+            outside_temp_avg_c: drive.outside_temp_avg,
+            inside_temp_avg_c: drive.inside_temp_avg,
+            speed_max_kmh: drive.speed_max,
+            power_max_kw: drive.power_max,
+            power_min_kw: drive.power_min,
+            start_ideal_battery_range_km: drive.start_ideal_range_km,
+            end_ideal_battery_range_km: drive.end_ideal_range_km,
             start_address: drive.start_address,
             end_address: drive.end_address,
-            start_geofence: drive.start_geofence,
-            end_geofence: drive.end_geofence,
+            start_geofence_name: drive.start_geofence,
+            end_geofence_name: drive.end_geofence,
             start_latitude: drive.start_latitude,
             start_longitude: drive.start_longitude,
             end_latitude: drive.end_latitude,
             end_longitude: drive.end_longitude,
             start_soc: drive.start_soc,
             end_soc: drive.end_soc,
-            start_rated_range_km: drive.start_rated_range_km,
-            end_rated_range_km: drive.end_rated_range_km,
-            ascent: drive.ascent,
-            descent: drive.descent,
+            start_battery_range_km: drive.start_rated_range_km,
+            end_battery_range_km: drive.end_rated_range_km,
+            ascent_m: drive.ascent,
+            descent_m: drive.descent,
         }
     }
 }
 
 impl PageItem for PublicDrive {
     fn page_key(&self) -> (i64, i64) {
-        (self.start_date_ms, self.id)
+        (self.started_at_ms, self.id)
     }
 }
 
@@ -198,23 +202,24 @@ pub(crate) struct PublicElevationProvenance {
 }
 
 /// One drive position as hub-http-v1@1.2.0 `position`. `power` is a number
-/// (f64 projection), not an integer.
-#[derive(Debug, serde::Serialize)]
+/// (f64 projection), not an integer. Fields are held under their neutral names
+/// (C6 R58); `history_aliases` writes the 1.2.0 aliases.
+#[derive(Debug)]
 pub(crate) struct PublicPosition {
     pub(crate) id: i64,
     pub(crate) drive_id: i64,
-    pub(crate) date_ms: i64,
+    pub(crate) timestamp_ms: i64,
     pub(crate) latitude: f64,
     pub(crate) longitude: f64,
-    pub(crate) speed: Option<i64>,
+    pub(crate) speed_kmh: Option<i64>,
     pub(crate) power: Option<f64>,
     pub(crate) battery_level: Option<i64>,
     pub(crate) usable_battery_level: Option<i64>,
     pub(crate) elevation: Option<i64>,
-    pub(crate) odometer: Option<f64>,
+    pub(crate) odometer_km: Option<f64>,
     pub(crate) ideal_battery_range_km: Option<f64>,
     pub(crate) est_battery_range_km: Option<f64>,
-    pub(crate) rated_battery_range_km: Option<f64>,
+    pub(crate) battery_range_km: Option<f64>,
     pub(crate) inside_temp: Option<f64>,
     pub(crate) outside_temp: Option<f64>,
     pub(crate) is_climate_on: Option<bool>,
@@ -252,18 +257,18 @@ impl PublicPosition {
         Self {
             id: position.id,
             drive_id,
-            date_ms: position.date_ms,
+            timestamp_ms: position.date_ms,
             latitude: position.latitude,
             longitude: position.longitude,
-            speed: position.speed,
+            speed_kmh: position.speed,
             power: position.power,
             battery_level: position.battery_level,
             usable_battery_level: position.usable_battery_level,
             elevation: position.elevation,
-            odometer: position.odometer,
+            odometer_km: position.odometer,
             ideal_battery_range_km: position.ideal_battery_range_km,
             est_battery_range_km: position.est_battery_range_km,
-            rated_battery_range_km: position.rated_battery_range_km,
+            battery_range_km: position.rated_battery_range_km,
             inside_temp: position.inside_temp,
             outside_temp: position.outside_temp,
             is_climate_on: position.is_climate_on,
@@ -283,41 +288,43 @@ impl PublicPosition {
 
 impl PageItem for PublicPosition {
     fn page_key(&self) -> (i64, i64) {
-        (self.date_ms, self.id)
+        (self.timestamp_ms, self.id)
     }
 }
 
 /// One closed charge session as hub-http-v1@1.2.0 `charge`. The address
 /// provenance member is not emitted: the Hub keeps no truthful record yet.
-#[derive(Debug, serde::Serialize)]
+/// Fields are held under their neutral names (C6 R58); `history_aliases` writes
+/// the 1.2.0 aliases.
+#[derive(Debug)]
 pub(crate) struct PublicCharge {
     pub(crate) id: i64,
     pub(crate) vehicle_id: Uuid,
-    pub(crate) start_date_ms: i64,
-    pub(crate) end_date_ms: i64,
+    pub(crate) started_at_ms: i64,
+    pub(crate) ended_at_ms: i64,
     pub(crate) duration_min: Option<i64>,
-    pub(crate) charge_energy_added: Option<f64>,
+    pub(crate) charge_energy_added_kwh: Option<f64>,
     pub(crate) charge_energy_used_kwh: Option<f64>,
     pub(crate) start_battery_level: Option<i64>,
     pub(crate) end_battery_level: Option<i64>,
-    pub(crate) start_ideal_range_km: Option<f64>,
-    pub(crate) end_ideal_range_km: Option<f64>,
-    pub(crate) start_rated_range_km: Option<f64>,
-    pub(crate) end_rated_range_km: Option<f64>,
+    pub(crate) start_ideal_battery_range_km: Option<f64>,
+    pub(crate) end_ideal_battery_range_km: Option<f64>,
+    pub(crate) start_battery_range_km: Option<f64>,
+    pub(crate) end_battery_range_km: Option<f64>,
     pub(crate) start_latitude: Option<f64>,
     pub(crate) start_longitude: Option<f64>,
     pub(crate) address: Option<String>,
     pub(crate) location_name: Option<String>,
-    pub(crate) geofence: Option<String>,
+    pub(crate) geofence_name: Option<String>,
     pub(crate) fast_charger_type: Option<String>,
     pub(crate) is_dc: Option<bool>,
     pub(crate) charge_rate_km_per_hour: Option<f64>,
     pub(crate) max_charger_power_kw: Option<f64>,
-    pub(crate) outside_temp_avg: Option<f64>,
+    pub(crate) outside_temp_avg_c: Option<f64>,
     pub(crate) cost: Option<f64>,
-    pub(crate) billing_type: Option<GeofenceBillingType>,
-    pub(crate) cost_per_unit: Option<f64>,
-    pub(crate) session_fee: Option<f64>,
+    pub(crate) tariff_type: Option<GeofenceBillingType>,
+    pub(crate) tariff_rate: Option<f64>,
+    pub(crate) tariff_session_fee: Option<f64>,
 }
 
 impl PublicCharge {
@@ -326,44 +333,46 @@ impl PublicCharge {
         Some(Self {
             id: charge.id,
             vehicle_id,
-            start_date_ms: charge.start_date_ms,
-            end_date_ms: charge.end_date_ms?,
+            started_at_ms: charge.start_date_ms,
+            ended_at_ms: charge.end_date_ms?,
             duration_min: charge.duration_min,
-            charge_energy_added: charge.charge_energy_added,
+            charge_energy_added_kwh: charge.charge_energy_added,
             charge_energy_used_kwh: charge.charge_energy_used_kwh,
             start_battery_level: charge.start_battery_level,
             end_battery_level: charge.end_battery_level,
-            start_ideal_range_km: charge.start_ideal_range_km,
-            end_ideal_range_km: charge.end_ideal_range_km,
-            start_rated_range_km: charge.start_rated_range_km,
-            end_rated_range_km: charge.end_rated_range_km,
+            start_ideal_battery_range_km: charge.start_ideal_range_km,
+            end_ideal_battery_range_km: charge.end_ideal_range_km,
+            start_battery_range_km: charge.start_rated_range_km,
+            end_battery_range_km: charge.end_rated_range_km,
             start_latitude: charge.start_latitude,
             start_longitude: charge.start_longitude,
             address: charge.address,
             location_name: charge.location_name,
-            geofence: charge.geofence,
+            geofence_name: charge.geofence,
             fast_charger_type: charge.fast_charger_type,
             is_dc: charge.is_dc,
             charge_rate_km_per_hour: charge.charge_rate_km_per_hour,
             max_charger_power_kw: charge.max_charger_power_kw,
-            outside_temp_avg: charge.outside_temp_avg,
+            outside_temp_avg_c: charge.outside_temp_avg,
             cost: charge.cost,
-            billing_type: charge.billing_type,
-            cost_per_unit: charge.cost_per_unit,
-            session_fee: charge.session_fee,
+            tariff_type: charge.billing_type,
+            tariff_rate: charge.cost_per_unit,
+            tariff_session_fee: charge.session_fee,
         })
     }
 }
 
 impl PageItem for PublicCharge {
     fn page_key(&self) -> (i64, i64) {
-        (self.start_date_ms, self.id)
+        (self.started_at_ms, self.id)
     }
 }
 
 /// One charge sample as hub-http-v1@1.2.0 `charge_sample`. The charger power,
 /// voltage and current fields are numbers (f64 projections), not integers.
-#[derive(Debug, serde::Serialize)]
+/// Fields are held under their neutral names (C6 R58); `history_aliases` writes
+/// the 1.2.0 aliases.
+#[derive(Debug)]
 pub(crate) struct PublicChargeSample {
     pub(crate) id: i64,
     pub(crate) charge_id: i64,
@@ -376,8 +385,8 @@ pub(crate) struct PublicChargeSample {
     pub(crate) charger_actual_current: Option<f64>,
     pub(crate) charger_pilot_current: Option<f64>,
     pub(crate) charger_phases: Option<i64>,
-    pub(crate) ideal_range_km: Option<f64>,
-    pub(crate) rated_range_km: Option<f64>,
+    pub(crate) ideal_battery_range_km: Option<f64>,
+    pub(crate) battery_range_km: Option<f64>,
     pub(crate) outside_temp_c: Option<f64>,
     pub(crate) battery_heater_on: Option<bool>,
     pub(crate) fast_charger_present: Option<bool>,
@@ -400,8 +409,8 @@ impl PublicChargeSample {
             charger_actual_current: sample.charger_actual_current,
             charger_pilot_current: sample.charger_pilot_current,
             charger_phases: sample.charger_phases,
-            ideal_range_km: sample.ideal_range_km,
-            rated_range_km: sample.rated_range_km,
+            ideal_battery_range_km: sample.ideal_range_km,
+            battery_range_km: sample.rated_range_km,
             outside_temp_c: sample.outside_temp_c,
             battery_heater_on: sample.battery_heater_on,
             fast_charger_present: sample.fast_charger_present,
@@ -627,6 +636,10 @@ fn lowercase_hex(value: &str) -> bool {
         .bytes()
         .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
+
+#[cfg(test)]
+#[path = "public_query/b3_c6_c1_tests.rs"]
+mod b3_c6_c1;
 
 #[cfg(test)]
 mod tests {
@@ -1267,7 +1280,7 @@ mod tests {
         };
         assert!(PublicCharge::from_projection(vehicle(), charge(None)).is_none());
         let closed = PublicCharge::from_projection(vehicle(), charge(Some(9))).unwrap();
-        assert_eq!(closed.end_date_ms, 9);
+        assert_eq!(closed.ended_at_ms, 9);
         assert_eq!(closed.vehicle_id, vehicle());
     }
 }

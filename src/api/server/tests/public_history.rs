@@ -553,18 +553,71 @@ fn schema_allows(schema: &serde_json::Value, value: &serde_json::Value) -> bool 
     }
 }
 
+/// The keys C6's minor adds to each 1.2.0 item (C6 R58 (a)): the new key and
+/// the 1.2.0 key it is an alias of, whose schema it shares (C6 R58 (e)).
+fn c6_added_keys(definition: &str) -> &'static [(&'static str, &'static str)] {
+    match definition {
+        "drive" => &[
+            ("started_at_ms", "start_date_ms"),
+            ("ended_at_ms", "end_date_ms"),
+            ("start_ideal_battery_range_km", "start_ideal_range_km"),
+            ("end_ideal_battery_range_km", "end_ideal_range_km"),
+            ("start_battery_range_km", "start_rated_range_km"),
+            ("end_battery_range_km", "end_rated_range_km"),
+            ("start_geofence_name", "start_geofence"),
+            ("end_geofence_name", "end_geofence"),
+            ("speed_max_kmh", "speed_max"),
+            ("power_max_kw", "power_max"),
+            ("power_min_kw", "power_min"),
+            ("outside_temp_avg_c", "outside_temp_avg"),
+            ("inside_temp_avg_c", "inside_temp_avg"),
+            ("ascent_m", "ascent"),
+            ("descent_m", "descent"),
+        ],
+        "charge" => &[
+            ("started_at_ms", "start_date_ms"),
+            ("ended_at_ms", "end_date_ms"),
+            ("start_ideal_battery_range_km", "start_ideal_range_km"),
+            ("end_ideal_battery_range_km", "end_ideal_range_km"),
+            ("start_battery_range_km", "start_rated_range_km"),
+            ("end_battery_range_km", "end_rated_range_km"),
+            ("geofence_name", "geofence"),
+            ("tariff_type", "billing_type"),
+            ("tariff_rate", "cost_per_unit"),
+            ("tariff_session_fee", "session_fee"),
+            ("charge_energy_added_kwh", "charge_energy_added"),
+            ("outside_temp_avg_c", "outside_temp_avg"),
+        ],
+        "position" => &[
+            ("timestamp_ms", "date_ms"),
+            ("speed_kmh", "speed"),
+            ("odometer_km", "odometer"),
+            ("battery_range_km", "rated_battery_range_km"),
+        ],
+        "charge_sample" => &[
+            ("ideal_battery_range_km", "ideal_range_km"),
+            ("battery_range_km", "rated_range_km"),
+        ],
+        _ => &[],
+    }
+}
+
 /// An item carries exactly the contract's property names (less the optional
-/// members this batch deliberately omits) and every value has a contract type.
+/// members this batch deliberately omits) plus the keys C6's minor adds (each
+/// with the schema of its 1.2.0 key, which stays served as the alias), and
+/// every value has a contract type.
 fn assert_item_matches_contract(item: &serde_json::Value, definition: &str, omitted: &[&str]) {
     let defs = contract_defs();
     let properties = defs[definition]["properties"]
         .as_object()
         .unwrap_or_else(|| panic!("contract definition {definition}"));
-    let expected: BTreeSet<String> = properties
+    let added = c6_added_keys(definition);
+    let mut expected: BTreeSet<String> = properties
         .keys()
         .filter(|name| !omitted.contains(&name.as_str()))
         .cloned()
         .collect();
+    expected.extend(added.iter().map(|(new, _)| (*new).to_owned()));
     let object = item.as_object().expect("item object");
     let actual: BTreeSet<String> = object.keys().cloned().collect();
     assert_eq!(
@@ -581,10 +634,14 @@ fn assert_item_matches_contract(item: &serde_json::Value, definition: &str, omit
         );
     }
     for (name, value) in object {
+        let schema_name = added
+            .iter()
+            .find(|(new, _)| new == name)
+            .map_or(name.as_str(), |(_, old)| old);
         assert!(
-            schema_allows(&properties[name], value),
+            schema_allows(&properties[schema_name], value),
             "{definition}.{name} = {value} violates {}",
-            properties[name]
+            properties[schema_name]
         );
     }
 }

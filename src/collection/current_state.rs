@@ -15,6 +15,7 @@ use crate::{
     lifecycle::{miles_to_km, miles_to_km_rounded, mph_to_kmh, round_to_precision},
 };
 
+mod http_serializers;
 mod summary_composites;
 mod summary_fields;
 use summary_composites::{
@@ -53,58 +54,41 @@ impl ActivityState {
 }
 
 /// The settings view of the stored car under its served names (C6 R49), built
-/// by `summary_composites`. Until C6-C1 writes the hand-made serialiser with
-/// the aliases (C6 R50), the derived `Serialize` keeps serving the 1.2.0 key
-/// names of `car.settings`, as it does for the summary itself.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// by `summary_composites`. Each value is held once; `http_serializers` writes
+/// it under its new key and under the 1.2.0 alias (C6 R50).
+#[derive(Debug, Clone, PartialEq)]
 pub struct CurrentCarSettingsView {
-    #[serde(rename = "enabled")]
     pub collection_enabled: bool,
-    #[serde(rename = "use_streaming_api")]
     pub streaming_enabled: bool,
-    #[serde(rename = "suspend_min")]
     pub sleep_window_min: i64,
-    #[serde(rename = "suspend_after_idle_min")]
     pub sleep_after_idle_min: i64,
-    #[serde(rename = "suspend_min_resolved")]
     pub sleep_window_min_resolved: bool,
-    #[serde(rename = "req_not_unlocked")]
     pub sleep_requires_locked: bool,
-    #[serde(rename = "free_supercharging")]
     pub supercharging_free: bool,
-    #[serde(rename = "lfp_battery")]
     pub battery_lfp: bool,
 }
 
 /// The stored car as the summary shows it (C6 R40, R48), built from the stored
 /// `ProjectionCar` only by `summary_composites`. Fields are held under their
-/// 1.3.0 names; until C6-C1 writes the hand-made serialiser (C6 R50), the
-/// derived `Serialize` below serves the 1.2.0 `car` keys and values: `model` is
-/// the stored model text, and the keys that 1.2.0 has no name for are skipped.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// 1.3.0 names; `http_serializers` writes each under its new key and under its
+/// 1.2.0 alias (C6 R50), where `model` is the stored model text.
+#[derive(Debug, Clone, PartialEq)]
 pub struct CurrentCarView {
     pub id: i64,
     pub name: String,
     pub vin: Option<String>,
-    #[serde(skip)]
     pub model_code: Option<String>,
     /// The stored model text, served under the alias `car.model` (C6 R50).
-    #[serde(rename = "model")]
     pub stored_model_text: String,
-    #[serde(skip)]
     pub model_name: Option<&'static str>,
-    #[serde(skip)]
     pub model_year: Option<i32>,
     pub trim_badging: Option<String>,
-    #[serde(rename = "marketing_name")]
     pub variant_name: Option<String>,
     pub exterior_color: Option<String>,
     pub wheel_type: Option<String>,
     pub spoiler_type: Option<String>,
     pub firmware_version: Option<String>,
-    #[serde(rename = "source_eid")]
     pub api_vehicle_id: Option<i64>,
-    #[serde(rename = "source_vid")]
     pub stream_vehicle_id: Option<i64>,
     pub efficiency_wh_per_km: Option<f64>,
     pub settings: CurrentCarSettingsView,
@@ -112,29 +96,21 @@ pub struct CurrentCarView {
 
 /// The summary. Every field is one key of the published contract and is
 /// emitted as JSON null when unknown (C6 R42). Fields are held under their
-/// 1.3.0 names (C6 R47); until C6-C1 writes the hand-made serialiser with the
-/// aliases (C6 R50), the derived `Serialize` below keeps serving the 1.2.0 key
-/// names and shape, so the HTTP body stays a valid 1.2.0 body in between. The
-/// keys that 1.2.0 has no name for are skipped.
-#[derive(Debug, Clone, PartialEq, Serialize)]
+/// 1.3.0 names (C6 R47); `http_serializers` writes each under its new key and
+/// under its 1.2.0 alias with the same value (C6 R50), so a 1.2.0 client reads
+/// the body unchanged.
+#[derive(Debug, Clone, PartialEq)]
 pub struct CurrentVehicleSummary {
     pub vehicle_id: Uuid,
     pub observed_at_ms: Option<i64>,
-    #[serde(rename = "state")]
     pub activity_state: Option<ActivityState>,
-    #[serde(rename = "since")]
     pub state_since_ms: Option<i64>,
-    #[serde(rename = "healthy")]
     pub processing_healthy: Option<bool>,
-    #[serde(rename = "geofence")]
     pub geofence_name: Option<String>,
     // Descriptor and car view (C6 R39, R40).
     pub display_name: Option<String>,
-    #[serde(rename = "model")]
     pub model_code: Option<String>,
-    #[serde(skip)]
     pub model_name: Option<&'static str>,
-    #[serde(skip)]
     pub model_year: Option<i32>,
     pub trim_badging: Option<String>,
     pub exterior_color: Option<String>,
@@ -146,17 +122,14 @@ pub struct CurrentVehicleSummary {
     pub longitude: Option<f64>,
     pub heading: Option<f64>,
     pub elevation: Option<f64>,
-    #[serde(rename = "speed")]
     pub speed_kmh: Option<i64>,
     pub power: Option<f64>,
     pub shift_state: Option<String>,
     pub active_route_destination: Option<String>,
     pub active_route_latitude: Option<f64>,
     pub active_route_longitude: Option<f64>,
-    #[serde(skip)]
     pub active_route_km_to_arrival: Option<f64>,
     /// Tesla's miles value, the alias value of C6 R50.
-    #[serde(rename = "active_route_miles_to_arrival")]
     pub active_route_miles_to_arrival_raw: Option<f64>,
     pub active_route_minutes_to_arrival: Option<f64>,
     pub active_route_traffic_minutes_delay: Option<f64>,
@@ -164,7 +137,6 @@ pub struct CurrentVehicleSummary {
     // Charge state.
     pub battery_level: Option<i64>,
     pub usable_battery_level: Option<i64>,
-    #[serde(rename = "rated_battery_range_km")]
     pub battery_range_km: Option<f64>,
     pub ideal_battery_range_km: Option<f64>,
     pub est_battery_range_km: Option<f64>,
@@ -176,7 +148,6 @@ pub struct CurrentVehicleSummary {
     pub charge_port_door_open: Option<bool>,
     // Charging state and cable (C6 R34, R35).
     pub charging_state: Option<String>,
-    #[serde(rename = "plugged_in")]
     pub charge_cable_connected: Option<bool>,
     pub charger_power: Option<f64>,
     pub charger_voltage: Option<f64>,
@@ -190,7 +161,6 @@ pub struct CurrentVehicleSummary {
     pub is_preconditioning: Option<bool>,
     pub climate_keeper_mode: Option<String>,
     // Vehicle state.
-    #[serde(rename = "odometer")]
     pub odometer_km: Option<f64>,
     pub locked: Option<bool>,
     pub tpms_soft_warning_fl: Option<bool>,
@@ -208,43 +178,25 @@ pub struct CurrentVehicleSummary {
     pub tpms_pressure_rr: Option<f64>,
     pub sun_roof_installed: Option<bool>,
     // Doors, windows and trunks (C6 R33).
-    #[serde(rename = "doors_open")]
     pub any_door_open: Option<bool>,
-    #[serde(rename = "driver_front_door_open")]
     pub door_driver_front_open: Option<bool>,
-    #[serde(rename = "driver_rear_door_open")]
     pub door_driver_rear_open: Option<bool>,
-    #[serde(rename = "passenger_front_door_open")]
     pub door_passenger_front_open: Option<bool>,
-    #[serde(rename = "passenger_rear_door_open")]
     pub door_passenger_rear_open: Option<bool>,
-    #[serde(rename = "windows_open")]
     pub any_window_open: Option<bool>,
-    #[serde(rename = "driver_front_window_open")]
     pub window_driver_front_open: Option<bool>,
-    #[serde(rename = "driver_rear_window_open")]
     pub window_driver_rear_open: Option<bool>,
-    #[serde(rename = "passenger_front_window_open")]
     pub window_passenger_front_open: Option<bool>,
-    #[serde(rename = "passenger_rear_window_open")]
     pub window_passenger_rear_open: Option<bool>,
-    #[serde(rename = "frunk_open")]
     pub front_trunk_open: Option<bool>,
-    #[serde(rename = "trunk_open")]
     pub rear_trunk_open: Option<bool>,
     // Software, update and service (C6 R36 to R38); the two progress values are
     // class T fields.
-    #[serde(rename = "version")]
     pub software_version: Option<String>,
-    #[serde(rename = "update_available")]
     pub software_update_available: Option<bool>,
-    #[serde(rename = "update_status")]
     pub software_update_status: Option<String>,
-    #[serde(rename = "update_version")]
     pub software_update_version: Option<String>,
-    #[serde(rename = "download_perc")]
     pub software_update_download_perc: Option<i64>,
-    #[serde(rename = "install_perc")]
     pub software_update_install_perc: Option<i64>,
     pub service_mode: Option<bool>,
 }
@@ -545,6 +497,10 @@ mod b3_c6_s1;
 #[cfg(test)]
 #[path = "current_state/b3_c6_s2_tests.rs"]
 mod b3_c6_s2;
+
+#[cfg(test)]
+#[path = "current_state/b3_c6_c1_tests.rs"]
+mod b3_c6_c1;
 
 #[cfg(test)]
 mod tests {

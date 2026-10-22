@@ -491,6 +491,9 @@ mod loopback_access;
 #[path = "tests/b3_c6_s1.rs"]
 mod b3_c6_s1;
 
+#[path = "tests/b3_c6_c1.rs"]
+mod b3_c6_c1;
+
 #[tokio::test]
 async fn native_readiness_binds_the_loaded_config_contract_digest() {
     let temporary = crate::private_tempdir().expect("temporary store");

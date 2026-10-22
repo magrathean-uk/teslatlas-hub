@@ -137,7 +137,8 @@ as other non-loopback mirror reads. Query parameters are:
 
 The time bounds must be nonnegative and `from_ms` must be less than `to_ms`.
 There is no duration cap; the indexed keyset query and result limit bound every
-request. Pages sort by `(start_date_ms, id)` descending. A cursor is bound to
+request. Pages sort by `(started_at_ms, id)` descending (`start_date_ms` carries
+the same value until the alias removal). A cursor is bound to
 the vehicle and exact time bounds. Clients must not parse, manufacture, log, or
 reuse it with different filters. Pagination is never offset based.
 
