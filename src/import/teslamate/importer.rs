@@ -25,7 +25,7 @@ use uuid::Uuid;
 use crate::{
     credentials::TeslaMatePostgresPassword,
     db::{
-        HubStore, PublicationGate, SourceDescriptor, StoreError,
+        HubStore, IMPORT_SOURCE_KIND, PublicationGate, SourceDescriptor, StoreError,
         TeslaMateIdentityRegistrationCheckpoint, TeslaMateImportProjectionInventory,
         VehicleDescriptor,
     },
@@ -935,7 +935,7 @@ async fn import_from_postgres_with_updates_capture_policy(
     let selected_car_id = selected_car_id(request)?;
     let car = read_selected_car(source, password, selected_car_id, limits).await?;
     let source_vehicle_key = stable_vehicle_key_for_car(&car)?;
-    let source_descriptor = SourceDescriptor::new("teslamate", request.source_key.clone());
+    let source_descriptor = SourceDescriptor::new(IMPORT_SOURCE_KIND, request.source_key.clone());
     let (registered_source, source_created) =
         store.register_teslamate_import_source(&source_descriptor, request.imported_at_ms)?;
     let deterministic_vehicle_id =
@@ -1537,7 +1537,7 @@ fn publish_staged_history_with_limits(
         .get::<TeslaMateCar>(TeslaMateStageTable::Cars, selected_car_id)?
         .ok_or(TeslaMateImportError::SelectedCarMissing)?;
     let source = store.register_source(
-        &SourceDescriptor::new("teslamate", request.source_key.clone()),
+        &SourceDescriptor::new(IMPORT_SOURCE_KIND, request.source_key.clone()),
         request.imported_at_ms,
     )?;
     let source_vehicle_key = stable_vehicle_key_for_car(&car)?;
@@ -2008,7 +2008,7 @@ pub fn publish_history(
         .first()
         .expect("projection guarantees one selected car");
     let source = store.register_source(
-        &SourceDescriptor::new("teslamate", request.source_key.clone()),
+        &SourceDescriptor::new(IMPORT_SOURCE_KIND, request.source_key.clone()),
         request.imported_at_ms,
     )?;
     let source_vehicle_key = stable_vehicle_key_for_car(

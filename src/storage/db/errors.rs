@@ -116,6 +116,11 @@ pub enum StoreError {
     BackupPackDigestMismatch { path: PathBuf },
     #[error("cannot migrate hub database: {0}")]
     Migrate(rusqlite::Error),
+    /// C6 R57: the one-time identity tidy failed and its transaction rolled back.
+    /// The text names the step and holds no VIN, name, vehicle id or stored
+    /// value; the storage error that caused it stays in the source chain.
+    #[error("cannot run the vehicle identity tidy (step vehicle_identity_tidy_v1)")]
+    VehicleIdentityTidy(#[source] Box<StoreError>),
     #[error("database query failed: {0}")]
     Query(rusqlite::Error),
     #[error("cannot begin local transaction: {0}")]

@@ -2535,6 +2535,14 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         migrate_retire_delivery_tables(connection)?;
         version = 74;
     }
+
+    // C6 Part I (C6 R57, R63): the table of completed one-time data steps. The
+    // identity tidy that follows the last migration (`HubStore::initialize`)
+    // inserts its first row.
+    if version == STORE_DATA_STEPS_SCHEMA_VERSION - 1 {
+        migrate_store_data_steps_table(connection)?;
+        version = STORE_DATA_STEPS_SCHEMA_VERSION;
+    }
     if version == SCHEMA_VERSION {
         Ok(())
     } else {
@@ -2542,11 +2550,13 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
     }
 }
 
+include!("migrations/b3.rs");
+
 /// Test fixtures that rewind a current catalogue to the shape before the v72
 /// step run this: it drops the rejected-access-digest column of the credential
 /// status table (hub fix pass 3). Every older rewind drops the whole table. It
-/// starts with the rewind of the receiver-state and retirement steps (v73 and
-/// v74), which come after this step.
+/// starts with the rewind of the table-of-data-steps, receiver-state and
+/// retirement steps (v75, v73 and v74), which come after this step.
 #[cfg(test)]
 pub(crate) const REWIND_V72_SQL: &str = concat!(
     rewind_v73_sql!(),
@@ -2558,9 +2568,9 @@ pub(crate) const REWIND_V72_SQL: &str = concat!(
 /// Test fixtures that rewind a current catalogue to the shape before the v71
 /// step run this: it drops the legacy credential unit's status table (C5
 /// section 3.3), which also removes the v72 digest column. It starts with the
-/// v74 and v73 rewinds (`rewind_v73_sql!`), which undo the retirement and
-/// receiver-state steps that come after it. Every older rewind starts with the
-/// same drop.
+/// v75, v74 and v73 rewinds (`rewind_v73_sql!`), which undo the data-steps table,
+/// retirement and receiver-state steps that come after it. Every older rewind
+/// starts with the same drop.
 #[cfg(test)]
 pub(crate) const REWIND_V71_SQL: &str = concat!(
     rewind_v73_sql!(),
@@ -2571,9 +2581,9 @@ pub(crate) const REWIND_V71_SQL: &str = concat!(
 
 /// Test fixtures that rewind a current catalogue to the shape before the v70
 /// step run this: it drops the legacy credential status table of the v71 step
-/// and the five collector state tables (C3 R4). It starts with the v74 and v73
-/// rewinds (`rewind_v73_sql!`), which undo the retirement and receiver-state
-/// steps that come after them. A fixture that rewinds further runs
+/// and the five collector state tables (C3 R4). It starts with the v75, v74 and
+/// v73 rewinds (`rewind_v73_sql!`), which undo the data-steps table, retirement
+/// and receiver-state steps that come after them. A fixture that rewinds further runs
 /// [`REWIND_V69_SQL`], which starts with the same rewinds and drops.
 #[cfg(test)]
 pub(crate) const REWIND_V70_SQL: &str = concat!(
@@ -2589,8 +2599,8 @@ pub(crate) const REWIND_V70_SQL: &str = concat!(
 );
 
 /// Test fixtures that rewind a current catalogue to an older shape run this
-/// first: it undoes the v74 retirement and v73 receiver-state steps
-/// (`rewind_v73_sql!`), everything the v71 step adds (the credential status
+/// first: it undoes the v75 data-steps table (C6 R63), the v74 retirement and
+/// the v73 receiver-state steps (`rewind_v73_sql!`), everything the v71 step adds (the credential status
 /// table, with the v72 digest column), the v70 step (the collector state
 /// tables) and then everything the v69 step adds (G2-3e: the lookup columns;
 /// G2-3f: the terrain tile digest table). Every older rewind starts here, so
@@ -2629,6 +2639,8 @@ pub(crate) const REWIND_V69_SQL: &str = concat!(
 );
 
 /// The v74 and v73 rewinds, for fixtures that step back one version at a time.
+/// Both also undo the v75 step (C6 R63 (b) 3), which comes after them; its own
+/// rewind is [`REWIND_V75_SQL`].
 #[cfg(test)]
 pub(crate) const REWIND_V74_SQL: &str = rewind_v74_sql!();
 #[cfg(test)]

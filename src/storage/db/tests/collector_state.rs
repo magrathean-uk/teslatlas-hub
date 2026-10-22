@@ -277,9 +277,10 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
         }
         assert_eq!(&after[table], rows, "{table}");
     }
-    // Eight tables are new: the five of C3 are empty, the credential status table
-    // is present and its singleton row is absent, and the receiver state and
-    // retired gap tables are empty.
+    // Nine tables are new: the five of C3 are empty, the credential status table
+    // is present and its singleton row is absent, the receiver state and retired gap
+    // tables are empty, and the table of completed one-time data steps (C6 R63) holds
+    // the one marker that the identity tidy of the first read-write open inserted.
     let added: Vec<&String> = after.keys().filter(|name| !before.contains_key(*name)).collect();
     assert_eq!(
         added,
@@ -292,11 +293,20 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
             "collector_vehicle_state",
             "fleet_telemetry_accumulator_states",
             "retired_delivery_gaps",
+            "store_data_steps",
         ]
         .iter()
         .collect::<Vec<_>>()
     );
     for table in added {
+        if table == "store_data_steps" {
+            assert_eq!(after[table].len(), 1, "only the identity tidy's marker");
+            assert_eq!(
+                after[table][0][0],
+                format!("t:{VEHICLE_IDENTITY_TIDY_STEP_KEY}")
+            );
+            continue;
+        }
         assert!(after[table].is_empty(), "{table} is not backfilled");
     }
     assert_eq!(migrated.load_collector_auth_row().unwrap(), None);

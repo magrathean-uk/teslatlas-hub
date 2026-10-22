@@ -601,7 +601,8 @@ fn each_step_writes_its_own_schema_version() {
 
     migrate_retire_delivery_tables(&connection).unwrap();
     assert_eq!(rr_user_version(&connection), 74, "the retirement step writes 74");
-    assert_eq!(SCHEMA_VERSION, 74);
+    // C6 R63 (b) 4: not a ceiling pin, so that every later step leaves it valid.
+    const { assert!(SCHEMA_VERSION > 73) };
     assert!(rr_table_exists(&connection, "retired_delivery_gaps"));
     for table in RR_EDGE_TABLES {
         assert!(!rr_table_exists(&connection, table), "{table} dropped at 74");
@@ -645,7 +646,8 @@ fn a_failed_retirement_after_the_receiver_step_keeps_schema_73_and_retries() {
 
     let store = HubStore::initialize(temporary.path()).expect("retry succeeds");
     let connection = store.open().unwrap();
-    assert_eq!(rr_user_version(&connection), 74);
+    // C6 R63 (b) 4: the retry migrates on through every later step, so the version is
+    // no longer 74 exactly; it is the current one.
     assert_eq!(rr_user_version(&connection), SCHEMA_VERSION);
     assert!(rr_table_exists(&connection, "retired_delivery_gaps"));
     for table in RR_EDGE_TABLES {

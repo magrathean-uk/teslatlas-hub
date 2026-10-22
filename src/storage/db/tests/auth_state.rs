@@ -74,7 +74,9 @@ fn as_exists(store: &HubStore, table: &str) -> bool {
 #[test]
 fn the_v71_step_adds_the_credential_status_table_and_a_v70_catalogue_migrates_to_it() {
     // The v72 step (hub fix pass 2, F2-1) follows it; its own test is in `r3_fix_round.rs`.
-    assert_eq!(SCHEMA_VERSION, 74);
+    // C6 R63 (b) 4: a ceiling pin fails at every later version, so the step only asserts
+    // that it lies below the current one.
+    const { assert!(SCHEMA_VERSION > 71) };
     let (temporary, store) = as_store();
     assert!(as_exists(&store, "collector_auth_state"));
     assert_eq!(store.load_collector_auth_row().unwrap(), None, "nothing is backfilled");

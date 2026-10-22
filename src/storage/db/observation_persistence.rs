@@ -9,7 +9,8 @@ impl HubStore {
     ) -> Result<bool, StoreError> {
         input.validate()?;
         validate_timestamp("current received_at_ms", received_at_ms)?;
-        if input.payload.get("record_type").and_then(Value::as_str) != Some("teslamate_position_v1")
+        if input.payload.get("record_type").and_then(Value::as_str)
+            != Some(crate::collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE)
         {
             return Err(StoreError::InvalidCurrentDiscovery);
         }
@@ -33,7 +34,7 @@ impl HubStore {
                     "INSERT INTO current_observations(
                 vehicle_id, record_type, observation_id, source_id, observed_at_ms,
                 received_at_ms, payload_sha256, payload_json
-             ) VALUES (?1, 'teslamate_position_v1', ",
+             ) VALUES (?1, ?7, ",
                     next_observation_id_sql!(),
                     ",
                 ?2, ?3, ?4, ?5, ?6)
@@ -51,7 +52,10 @@ impl HubStore {
                     input.observed_at_ms,
                     received_at_ms,
                     digest.as_bytes().as_slice(),
-                    payload
+                    payload,
+                    // C6 R70: the record type binds as the seventh parameter so
+                    // that the statement's other parameters keep their numbers.
+                    crate::collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE
                 ],
             )
             .map_err(StoreError::AppendObservation)?
@@ -75,10 +79,17 @@ impl HubStore {
                 "SELECT DISTINCT a.source_id FROM source_identities s
              JOIN vehicle_identity_aliases a ON a.source_id = s.source_id
              JOIN vehicles v ON v.vehicle_id = a.vehicle_id
-             WHERE s.source_kind = 'teslamate' AND s.source_key = ?1
+             WHERE s.source_kind = ?5 AND s.source_key = ?1
                AND a.vehicle_id = ?2 AND a.source_vehicle_key = ?3
                AND (v.vin IS NULL OR v.vin = ?4) AND v.retired_at_ms IS NULL",
-                params![source_key, vehicle_id.to_string(), stable_key, vin],
+                // C6 R70: the import source kind binds as the fifth parameter.
+                params![
+                    source_key,
+                    vehicle_id.to_string(),
+                    stable_key,
+                    vin,
+                    IMPORT_SOURCE_KIND
+                ],
                 |row| row.get(0),
             )
             .optional()
@@ -119,7 +130,7 @@ fn append_observation_in_transaction(
                     | "fleet_api_discovery_v1"
                     | "fleet_api_vehicle_data_v1"
                     | "tesla_stream_update_v1"
-                    | "teslamate_position_v1"
+                    | crate::collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE
             )
         });
     if let Some(record_type) = record_type

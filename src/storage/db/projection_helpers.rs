@@ -269,7 +269,16 @@ fn upsert_terrain_provenance(
 
 /// The source kind the importer registers, the only kind whose
 /// `charging_processes` watermark marks charge rows as imported (C2 R5).
-const IMPORT_SOURCE_KIND: &str = "teslamate";
+///
+/// This is the one definition of the stored value (C6 R64, R70); no other
+/// production code holds a copy of it, so a rename is this line and the stored
+/// rows. Its users are the three importer sites that register a source of this
+/// kind, the current-source lookup in `observation_persistence.rs` that binds
+/// it, C2 R5's import-bound reader (`charge_import_bound`), C6 Part I's
+/// identity tidy (the evidence of C6 R55 (c)), C6 Part S1, and C9 Part Q's
+/// reads. The schema's CHECK text and the stored rows are not changed here
+/// (N1's).
+pub(crate) const IMPORT_SOURCE_KIND: &str = "teslamate";
 
 /// Which charge rows of one vehicle are imported (C2 R5): those with
 /// `charge_id <= max_imported_charge_id`, the vehicle's `W(V)`; zero means

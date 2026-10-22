@@ -53,6 +53,13 @@ impl HubStore {
         let mut connection = store.open()?;
         store.ensure_schema_22_noop_directory()?;
         migrate(&connection)?;
+        // C6 R54, R57 (C6 section 7 item 11): the one-time identity tidy runs
+        // here and nowhere else, on the read-write opening sequence that
+        // migrates, after the last migration and before any collector, import,
+        // publication, live-sync or HTTP work starts. A read-only open, a
+        // diagnostic open and `open_existing` never reach it. Once its marker
+        // row exists the call reads that row and nothing else.
+        run_vehicle_identity_tidy(&mut connection, migration_clock_ms)?;
         ensure_installation_id(&connection)?;
         store.recover_legacy_v2_base_bindings(&mut connection)?;
         // Never discard a staged import while another process owns its
@@ -365,8 +372,9 @@ impl HubStore {
     /// were recorded), the v69 shape (before the collector state tables), the v70
     /// shape (before the credential status table), the v71 shape (before its
     /// rejected-access digest), the v72 shape (before the receiver accumulator-state
-    /// table) and the v73 shape (before the retired delivery objects were dropped) to
-    /// v74. Return no store handle: consumers still require a fully migrated schema.
+    /// table), the v73 shape (before the retired delivery objects were dropped) and
+    /// the v74 shape (before the table of completed one-time data steps, C6 R63) to
+    /// v75. Return no store handle: consumers still require a fully migrated schema.
     pub(crate) fn preflight_standalone_schema_read_only(data_dir: &Path) -> Result<(), StoreError> {
         Self::open_read_only_with_mode(data_dir, false, true).map(|_| ())
     }
@@ -411,7 +419,7 @@ impl HubStore {
         }
         let version = schema_version(&connection)?;
         let known_forward_upgrade =
-            standalone_migration_candidate && SCHEMA_VERSION == 74 && matches!(version, 66..=73);
+            standalone_migration_candidate && SCHEMA_VERSION == 75 && matches!(version, 66..=74);
         if version != SCHEMA_VERSION && !known_forward_upgrade {
             return Err(StoreError::UnsupportedSchema(version));
         }

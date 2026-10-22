@@ -16,10 +16,13 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-/// The stored record type of the import-source current-position row. SCAFFOLD
-/// of C6-I2's constant (C6 R64, R70), added beside its producer so that C6-S1's
-/// reader compiles in this mirror; the serial writer owns its final name and
-/// the remaining reader switches.
+/// The stored record type of the import-source current-position row: the one
+/// definition of the value (C6 R64, R70), beside its producer (the `observation` function below).
+/// The storage readers and the INSERT in `observation_persistence.rs` (the
+/// current-position writer and the observation appender), C6 Part S1's row
+/// reader and C6 Part I's identity tidy (C6 R55 (b)) read it through
+/// this constant. The schema's CHECK text and the stored rows are not changed
+/// here (N1's, which also moves this definition).
 pub(crate) const IMPORT_POSITION_RECORD_TYPE: &str = "teslamate_position_v1";
 
 const MAX_AGE_MS: i64 = 300_000;
