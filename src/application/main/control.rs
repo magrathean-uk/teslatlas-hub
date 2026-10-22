@@ -39,16 +39,25 @@ async fn main() -> ExitCode {
     if !dev::flush() {
         eprintln!("teslatlas-hub: development journal incomplete");
     }
+    ExitCode::from(report_outcome(result, &mut std::io::stderr()))
+}
+
+/// The exit status of a finished command (0, or 1 for an error) after the error
+/// and each of its causes are written to `stderr` (C8 R40).
+fn report_outcome(
+    result: Result<(), Box<dyn std::error::Error>>,
+    stderr: &mut impl std::io::Write,
+) -> u8 {
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => 0,
         Err(error) => {
-            eprintln!("teslatlas-hub: {error}");
+            let _ = writeln!(stderr, "teslatlas-hub: {error}");
             let mut source = error.source();
             while let Some(cause) = source {
-                eprintln!("caused by: {cause}");
+                let _ = writeln!(stderr, "caused by: {cause}");
                 source = cause.source();
             }
-            ExitCode::FAILURE
+            1
         }
     }
 }
@@ -292,7 +301,23 @@ fn run_set_charge_cost(
     }))
 }
 
-/// `control set-geofence` after the vehicle is chosen: save the fence, then,
+/// A billing type outside the stored vocabulary. The option's value parser
+/// already refuses one, so this only guards a directly built command; it names
+/// no value and no vocabulary (C8 R35).
+#[derive(Debug)]
+struct UnknownBillingType;
+
+impl std::fmt::Display for UnknownBillingType {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("unsupported billing type")
+    }
+}
+
+impl std::error::Error for UnknownBillingType {}
+
+/// `control set-geofence` after the vehicle is chosen (C8 R37): save the fence,
+/// with every omitted option left omitted so the store applies its own rule
+/// (C8 table 5.2) and `--clear-tariff` removes the stored tariff first; then,
 /// only when `--recalculate-missing-costs` is set, fill the unknown costs of
 /// the Hub's own charges that started inside it (C2 R49, R50). The document
 /// carries the number of rows priced as `recalculatedChargeCosts` (0 without
@@ -311,14 +336,19 @@ fn run_set_geofence(
         billing_type,
         cost_per_unit,
         session_fee,
+        clear_tariff,
         recalculate_missing_costs,
     } = command
     else {
         return Err("not a set-geofence command".into());
     };
+    // C8 R35, C8 R37: an omitted billing type stays omitted, so the store keeps
+    // the stored one (edit) or takes its own default (create).
     let billing_type = billing_type
-        .parse::<GeofenceBillingType>()
-        .map_err(|_| "--billing-type must be per_kwh or per_minute")?;
+        .as_deref()
+        .map(str::parse::<GeofenceBillingType>)
+        .transpose()
+        .map_err(|()| UnknownBillingType)?;
     let geofence = store.save_geofence(
         vehicle_id,
         *id,
@@ -327,12 +357,12 @@ fn run_set_geofence(
             name: name.clone(),
             latitude: Some(*latitude),
             longitude: Some(*longitude),
-            radius_m: Some(*radius_m),
-            billing_type: Some(billing_type),
+            radius_m: *radius_m,
+            billing_type,
             cost_per_unit: *cost_per_unit,
             session_fee: *session_fee,
         },
-        false,
+        *clear_tariff,
     )?;
     let recalculated_charge_costs = if *recalculate_missing_costs {
         store.recalculate_missing_charge_costs(vehicle_id, geofence.id)?

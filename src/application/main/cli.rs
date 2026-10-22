@@ -230,25 +230,41 @@ enum ControlCommand {
     },
     /// List configured geofences.
     Geofences,
-    /// Create a geofence, or replace one by id.
+    /// Create a geofence, or edit one by id; omitted options keep the stored values.
     #[command(name = "set-geofence")]
     SetGeofence {
-        #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
+        #[arg(
+            long,
+            value_parser = clap::value_parser!(i64).range(1..),
+            help = "Id of an existing fence to edit; omit to create a new fence."
+        )]
         id: Option<i64>,
         #[arg(long)]
         name: String,
-        #[arg(long)]
+        // Negative numbers are values, so `--latitude -33.5` parses and a typed
+        // negative amount reaches the store and its own refusal text.
+        #[arg(long, allow_negative_numbers = true)]
         latitude: f64,
-        #[arg(long)]
+        #[arg(long, allow_negative_numbers = true)]
         longitude: f64,
-        #[arg(long, default_value_t = 20.0)]
-        radius_m: f64,
-        #[arg(long, default_value = "per_kwh")]
-        billing_type: String,
-        #[arg(long)]
+        // C8 R34: no clap default, so the store can tell an omitted radius
+        // (a new fence takes the product default, an edit keeps its own) from
+        // a typed one.
+        #[arg(long, allow_negative_numbers = true, help = geofence_radius_help())]
+        radius_m: Option<f64>,
+        // C8 R35: the exact stored vocabulary; another value is a usage error
+        // before the store is opened.
+        #[arg(long, value_parser = ["per_kwh", "per_minute"], help = geofence_billing_type_help())]
+        billing_type: Option<String>,
+        #[arg(long, allow_negative_numbers = true, help = geofence_cost_per_unit_help())]
         cost_per_unit: Option<f64>,
-        #[arg(long)]
+        #[arg(long, allow_negative_numbers = true, help = geofence_session_fee_help())]
         session_fee: Option<f64>,
+        #[arg(
+            long,
+            help = "Remove the stored billing type, cost per unit and session fee; tariff options given with this flag are applied afterwards."
+        )]
+        clear_tariff: bool,
         /// After saving the fence, price the past Hub charges that started in
         /// it and have no cost yet, with this fence's tariff (C2 R49, R50).
         /// Charges that already have a cost, and imported charges, are never
@@ -577,4 +593,41 @@ enum Command {
         #[arg(long)]
         recovery_key_file: PathBuf,
     },
+}
+
+/// Help for `set-geofence --radius-m` (C8 R39), formatted from the C8 R19
+/// constants so the text and the validation never disagree.
+fn geofence_radius_help() -> String {
+    use teslatlas_hub::location::{
+        DEFAULT_GEOFENCE_RADIUS_METRES, MAX_GEOFENCE_RADIUS_METRES, MIN_SAVED_GEOFENCE_RADIUS_METRES,
+    };
+    format!(
+        "Radius in whole metres, {MIN_SAVED_GEOFENCE_RADIUS_METRES} to {MAX_GEOFENCE_RADIUS_METRES}. Default {DEFAULT_GEOFENCE_RADIUS_METRES} for a new fence; an edit keeps the stored radius."
+    )
+}
+
+/// Help for `set-geofence --billing-type` (C8 R39).
+fn geofence_billing_type_help() -> String {
+    format!(
+        "Unit of --cost-per-unit: {} or {}. Default {} when a cost is given and no type is stored; an edit keeps the stored type unless this is given.",
+        GeofenceBillingType::PerKwh.as_str(),
+        GeofenceBillingType::PerMinute.as_str(),
+        GeofenceBillingType::PerKwh.as_str(),
+    )
+}
+
+/// Help for `set-geofence --cost-per-unit` (C8 R39).
+fn geofence_cost_per_unit_help() -> String {
+    format!(
+        "Price per kWh or per minute, 0 to {}. An edit keeps the stored price unless this is given.",
+        teslatlas_hub::location::MAX_GEOFENCE_COST_PER_UNIT
+    )
+}
+
+/// Help for `set-geofence --session-fee` (C8 R39).
+fn geofence_session_fee_help() -> String {
+    format!(
+        "Flat fee per charging session, 0 to {}. An edit keeps the stored fee unless this is given.",
+        teslatlas_hub::location::MAX_GEOFENCE_SESSION_FEE
+    )
 }

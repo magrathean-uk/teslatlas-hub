@@ -63,6 +63,8 @@ use teslatlas_hub::{
 };
 use uuid::Uuid;
 
+#[path = "b3_c8_k_tests.rs"]
+mod b3_c8_k;
 #[path = "charge_cost_cli_tests.rs"]
 mod charge_cost_cli_tests;
 #[path = "collector_cli_tests.rs"]
