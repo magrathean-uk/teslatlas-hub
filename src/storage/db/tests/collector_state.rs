@@ -277,10 +277,11 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
         }
         assert_eq!(&after[table], rows, "{table}");
     }
-    // Nine tables are new: the five of C3 are empty, the credential status table
+    // Eleven tables are new: the five of C3 are empty, the credential status table
     // is present and its singleton row is absent, the receiver state and retired gap
-    // tables are empty, and the table of completed one-time data steps (C6 R63) holds
-    // the one marker that the identity tidy of the first read-write open inserted.
+    // tables are empty, the two geofence state tables of the C8 geofence step are
+    // empty, and the table of completed one-time data steps (C6 R63) holds the one
+    // marker that the identity tidy of the first read-write open inserted.
     let added: Vec<&String> = after.keys().filter(|name| !before.contains_key(*name)).collect();
     assert_eq!(
         added,
@@ -291,7 +292,9 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
             "collector_owner_actions",
             "collector_request_counters",
             "collector_vehicle_state",
+            "deleted_imported_geofences",
             "fleet_telemetry_accumulator_states",
+            "geofence_id_marks",
             "retired_delivery_gaps",
             "store_data_steps",
         ]

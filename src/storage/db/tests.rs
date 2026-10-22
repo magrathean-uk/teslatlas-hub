@@ -50,3 +50,9 @@ mod b3_c2_c;
 mod b3_c6_i1;
 #[path = "tests/vehicle_identity_tidy.rs"]
 mod b3_c6_i2;
+#[path = "tests/b3_c8_l.rs"]
+mod b3_c8_l;
+#[path = "tests/b3_c8_sa.rs"]
+mod b3_c8_sa;
+#[path = "tests/b3_c8_sb.rs"]
+mod b3_c8_sb;

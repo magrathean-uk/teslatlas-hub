@@ -223,6 +223,10 @@ fn t35_the_fill_prices_only_unknown_hub_costs_in_the_asked_fence() {
     // F: no energy to price.
     fill_put_row(&store, v, &fill_row(15, FILL_IN_FENCE_3, None, Some(9.00)));
     let before_others = [12, 5, 13, 14, 15].map(|id| fill_read(&store, v, id));
+    // Each seeding import marked the export (C8 R28); the fill's marks count
+    // from there.
+    let seeded = fill_export_revision(&store, v);
+    assert_eq!(seeded, 2);
 
     assert_eq!(
         store.recalculate_missing_charge_costs(v, 3).expect("fill"),
@@ -237,7 +241,7 @@ fn t35_the_fill_prices_only_unknown_hub_costs_in_the_asked_fence() {
         assert_eq!(fill_mutations(&store, v, id), 0, "row {id}");
     }
     assert_eq!(fill_mutations(&store, v, 11), 1);
-    assert_eq!(fill_export_revision(&store, v), 1);
+    assert_eq!(fill_export_revision(&store, v), seeded + 1);
 
     // A second identical call changes nothing and writes nothing.
     assert_eq!(
@@ -245,7 +249,7 @@ fn t35_the_fill_prices_only_unknown_hub_costs_in_the_asked_fence() {
         0
     );
     assert_eq!(fill_mutations(&store, v, 11), 1);
-    assert_eq!(fill_export_revision(&store, v), 1);
+    assert_eq!(fill_export_revision(&store, v), seeded + 1);
 }
 
 /// Insert rows `1..=count` outside every fence (so the fill passes over them),
@@ -351,6 +355,8 @@ fn t35_the_fill_refuses_bad_arguments_before_writing_anything() {
     let (_directory, store, _source, vehicle) = fill_store();
     let v = vehicle.vehicle_id;
     fill_put_fence(&store, v, 3, (10.0, 20.0), 150.0, Some((kwh(), 0.30, None)));
+    let seeded = fill_export_revision(&store, v);
+    assert_eq!(seeded, 1, "the seeding import marked the export (C8 R28)");
     fill_put_row(
         &store,
         v,
@@ -377,7 +383,7 @@ fn t35_the_fill_refuses_bad_arguments_before_writing_anything() {
     ));
     assert_eq!(fill_read(&store, v, 11).cost, None);
     assert_eq!(fill_mutations(&store, v, 11), 0);
-    assert_eq!(fill_export_revision(&store, v), 0);
+    assert_eq!(fill_export_revision(&store, v), seeded);
 }
 
 #[test]
@@ -412,6 +418,8 @@ fn r40_a_fence_without_a_complete_valid_tariff_fills_nothing() {
             ],
         )
         .expect("fences");
+    let seeded = fill_export_revision(&store, v);
+    assert_eq!(seeded, 1, "the seeding import marked the export (C8 R28)");
     fill_put_row(
         &store,
         v,
@@ -436,7 +444,7 @@ fn r40_a_fence_without_a_complete_valid_tariff_fills_nothing() {
     );
     assert_eq!(fill_read(&store, v, 1).cost, None);
     assert_eq!(fill_read(&store, v, 2).cost, None);
-    assert_eq!(fill_export_revision(&store, v), 0);
+    assert_eq!(fill_export_revision(&store, v), seeded);
 }
 
 #[test]
@@ -708,11 +716,10 @@ fn t35e_a_live_charge_after_a_seeded_cutover_is_filled_as_a_hub_row() {
         )
         .expect("place the cutover row");
     store
-        .save_geofence(
+        .upsert_geofences(
             v,
-            Some(3),
-            crate::teslamate_projection::TeslaMateGeofence {
-                id: 0,
+            &[crate::teslamate_projection::TeslaMateGeofence {
+                id: 3,
                 name: "F3".to_owned(),
                 latitude: Some(10.0),
                 longitude: Some(20.0),
@@ -720,7 +727,7 @@ fn t35e_a_live_charge_after_a_seeded_cutover_is_filled_as_a_hub_row() {
                 billing_type: Some(kwh()),
                 cost_per_unit: Some(0.30),
                 session_fee: None,
-            },
+            }],
         )
         .expect("save fence");
     assert_eq!(
@@ -1164,6 +1171,11 @@ fn t45_the_fill_and_manual_entry_touch_only_the_asked_vehicle() {
             );
         }
     }
+    let seeded_second = fill_export_revision(&store, v2);
+    assert_eq!(
+        seeded_second, 1,
+        "the seeding import marked the export (C8 R28)"
+    );
     assert_eq!(
         store.recalculate_missing_charge_costs(v1, 3).expect("fill"),
         3
@@ -1173,7 +1185,7 @@ fn t45_the_fill_and_manual_entry_touch_only_the_asked_vehicle() {
         assert_eq!(fill_read(&store, v2, id).cost, None);
         assert_eq!(fill_mutations(&store, v2, id), 0);
     }
-    assert_eq!(fill_export_revision(&store, v2), 0);
+    assert_eq!(fill_export_revision(&store, v2), seeded_second);
     store
         .set_charge_cost(v2, 11, 8.0)
         .expect("manual on the second");
@@ -1218,11 +1230,10 @@ fn t44_close_fill_and_manual_entry_log_no_name_coordinate_or_vin() {
         let v = harness.vehicle.vehicle_id;
         harness
             .store
-            .save_geofence(
+            .upsert_geofences(
                 v,
-                Some(3),
-                crate::teslamate_projection::TeslaMateGeofence {
-                    id: 0,
+                &[crate::teslamate_projection::TeslaMateGeofence {
+                    id: 3,
                     name: NAME.to_owned(),
                     latitude: Some(10.000123),
                     longitude: Some(20.000456),
@@ -1230,7 +1241,7 @@ fn t44_close_fill_and_manual_entry_log_no_name_coordinate_or_vin() {
                     billing_type: Some(kwh()),
                     cost_per_unit: Some(0.30),
                     session_fee: Some(1.00),
-                },
+                }],
             )
             .expect("fence");
         // T31's close, with a VIN in the payloads and coordinates inside the

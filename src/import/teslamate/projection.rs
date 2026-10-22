@@ -13,6 +13,10 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::geo::{
+    geofence_validation::GeofenceInactiveReason,
+    location::{MAX_IMPORTED_GEOFENCE_ID, MAX_IMPORTED_GEOFENCE_RADIUS_METRES},
+};
 use crate::hub_pack::{
     GeofenceBillingType, ProjectionAddressV2_2, ProjectionCar, ProjectionCarSettings,
     ProjectionCarSettingsV2_2, ProjectionCarV2_2, ProjectionCharge, ProjectionChargeSample,
@@ -531,20 +535,43 @@ pub struct TeslaMateGeofence {
 }
 
 impl TeslaMateGeofence {
-    pub fn valid_geometry(&self) -> Option<(f64, f64, f64)> {
-        let (Some(latitude), Some(longitude), Some(radius_m)) =
-            (self.latitude, self.longitude, self.radius_m)
-        else {
-            return None;
+    /// Decide whether an imported fence row becomes an active fence, and give
+    /// the centre and radius to copy as `(latitude, longitude, radius_m)`
+    /// (C8 R13).
+    ///
+    /// The checks run in this order: the id, the name, the centre, the radius.
+    /// The first that fails names the reason. Nothing is trimmed, rounded or
+    /// bounded by the Hub's own save rules: an activated row is copied as read.
+    pub fn import_activation(&self) -> Result<(f64, f64, f64), GeofenceInactiveReason> {
+        if !(1..=MAX_IMPORTED_GEOFENCE_ID).contains(&self.id) {
+            return Err(GeofenceInactiveReason::IdOutOfRange);
+        }
+        if self.name.chars().all(char::is_whitespace) {
+            return Err(GeofenceInactiveReason::NameEmpty);
+        }
+        let (Some(latitude), Some(longitude)) = (self.latitude, self.longitude) else {
+            return Err(GeofenceInactiveReason::CentreMissing);
         };
-        (latitude.is_finite()
-            && longitude.is_finite()
-            && radius_m.is_finite()
-            && (-90.0..=90.0).contains(&latitude)
-            && (-180.0..=180.0).contains(&longitude)
-            && radius_m > 0.0
-            && radius_m < 5_000.0)
-            .then_some((latitude, longitude, radius_m))
+        if !latitude.is_finite()
+            || !(-90.0..=90.0).contains(&latitude)
+            || !longitude.is_finite()
+            || !(-180.0..=180.0).contains(&longitude)
+        {
+            return Err(GeofenceInactiveReason::CentreOutOfRange);
+        }
+        let Some(radius_m) = self.radius_m else {
+            return Err(GeofenceInactiveReason::RadiusMissing);
+        };
+        if !radius_m.is_finite() {
+            return Err(GeofenceInactiveReason::RadiusOutOfRange);
+        }
+        if radius_m <= 0.0 {
+            return Err(GeofenceInactiveReason::RadiusNotPositive);
+        }
+        if radius_m > MAX_IMPORTED_GEOFENCE_RADIUS_METRES {
+            return Err(GeofenceInactiveReason::RadiusOutOfRange);
+        }
+        Ok((latitude, longitude, radius_m))
     }
 }
 

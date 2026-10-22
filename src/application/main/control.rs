@@ -332,6 +332,7 @@ fn run_set_geofence(
             cost_per_unit: *cost_per_unit,
             session_fee: *session_fee,
         },
+        false,
     )?;
     let recalculated_charge_costs = if *recalculate_missing_costs {
         store.recalculate_missing_charge_costs(vehicle_id, geofence.id)?

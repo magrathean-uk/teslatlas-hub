@@ -39,7 +39,9 @@ impl CostHarness {
         }
     }
 
-    /// Save a fence through the validated owner path.
+    /// Make a fence: an id the vehicle already has is edited through the
+    /// validated owner path; a new id is seeded as an imported fence with the
+    /// same name, centre, radius and tariff (C8 R2, C8 R52).
     fn fence(
         &self,
         id: i64,
@@ -49,22 +51,31 @@ impl CostHarness {
         rate: f64,
         fee: Option<f64>,
     ) {
-        self.store
-            .save_geofence(
-                self.vehicle.vehicle_id,
-                Some(id),
-                crate::teslamate_projection::TeslaMateGeofence {
-                    id: 0,
-                    name: name.to_owned(),
-                    latitude: Some(latitude),
-                    longitude: Some(20.0),
-                    radius_m: Some(150.0),
-                    billing_type: Some(billing_type),
-                    cost_per_unit: Some(rate),
-                    session_fee: fee,
-                },
-            )
-            .expect("fence");
+        let record = crate::teslamate_projection::TeslaMateGeofence {
+            id,
+            name: name.to_owned(),
+            latitude: Some(latitude),
+            longitude: Some(20.0),
+            radius_m: Some(150.0),
+            billing_type: Some(billing_type),
+            cost_per_unit: Some(rate),
+            session_fee: fee,
+        };
+        let known = self
+            .store
+            .geofences(self.vehicle.vehicle_id)
+            .expect("fences")
+            .iter()
+            .any(|stored| stored.id == id);
+        if known {
+            self.store
+                .save_geofence(self.vehicle.vehicle_id, Some(id), record, false)
+                .expect("fence");
+        } else {
+            self.store
+                .upsert_geofences(self.vehicle.vehicle_id, &[record])
+                .expect("fence");
+        }
     }
 
     /// Insert a fence as an import would copy it, with no validation.

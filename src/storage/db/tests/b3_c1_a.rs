@@ -16,11 +16,10 @@ fn c1_st107_boundary_dip_topup() {
     // session fee of 1.00; every observation is at the centre.
     harness
         .store
-        .save_geofence(
+        .upsert_geofences(
             harness.vehicle.vehicle_id,
-            Some(1),
-            crate::teslamate_projection::TeslaMateGeofence {
-                id: 0,
+            &[crate::teslamate_projection::TeslaMateGeofence {
+                id: 1,
                 name: "F1".to_owned(),
                 latitude: Some(10.0),
                 longitude: Some(20.0),
@@ -28,7 +27,7 @@ fn c1_st107_boundary_dip_topup() {
                 billing_type: Some(kwh()),
                 cost_per_unit: Some(0.30),
                 session_fee: Some(1.00),
-            },
+            }],
         )
         .expect("fence");
     let observe = |id: i64, offset_ms: i64, state: &str, fields: serde_json::Value| {

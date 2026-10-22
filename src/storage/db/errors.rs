@@ -415,6 +415,8 @@ pub enum StoreError {
     ChargeCostBasisUnavailable { charge_id: i64, mode: &'static str },
     #[error("geofence values are invalid")]
     InvalidGeofence,
+    #[error("{0}")]
+    GeofenceRejected(crate::geo::geofence_validation::GeofenceRejection),
     #[error("unknown geofence {0}")]
     UnknownGeofence(i64),
     #[error("vehicle {vehicle_id} does not belong to source {source_id}")]

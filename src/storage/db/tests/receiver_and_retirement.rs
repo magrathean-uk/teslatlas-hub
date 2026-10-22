@@ -385,10 +385,12 @@ fn retirement_creates_an_empty_gap_table_without_gaps() {
     // A catalogue at 73 that never held a disposition table.
     let store = HubStore::initialize(temporary.path()).unwrap();
     let connection = store.open().unwrap();
+    // The geofence step (C8 R49 item 3) comes after 73 as well: its additions go first.
     connection
-        .execute_batch(
-            "BEGIN IMMEDIATE; DROP TABLE retired_delivery_gaps; PRAGMA user_version = 73; COMMIT;",
-        )
+        .execute_batch(&format!(
+            "BEGIN IMMEDIATE; {REWIND_V76_SQL} DROP TABLE retired_delivery_gaps;
+             PRAGMA user_version = 73; COMMIT;"
+        ))
         .unwrap();
     assert!(!rr_table_exists(&connection, "edge_sequence_dispositions"));
     drop(connection);

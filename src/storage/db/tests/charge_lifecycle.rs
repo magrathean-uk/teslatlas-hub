@@ -120,7 +120,7 @@ fn st64_a_closed_charge_is_labelled_from_its_start_coordinates() {
         session_fee: None,
     };
     store
-        .save_geofence(vehicle.vehicle_id, None, fence("Home", 150.0))
+        .save_geofence(vehicle.vehicle_id, None, fence("Home", 150.0), false)
         .expect("fence");
     // One charge inside the fence, one without start coordinates.
     let samples = [

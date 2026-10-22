@@ -558,18 +558,17 @@ fn imported_home_work_geofences_match_live_endpoints_after_restart() {
             session_fee: Some(1.0),
         },
     ];
-    assert_eq!(
-        store
-            .upsert_geofences(vehicle.vehicle_id, &imported)
-            .unwrap(),
-        2
-    );
-    assert_eq!(
-        store
-            .upsert_geofences(vehicle.vehicle_id, &imported)
-            .unwrap(),
-        0
-    );
+    // The import report lists the rows by id (C8 R14): the second run inserts
+    // nothing and finds both rows unchanged.
+    let first = store
+        .upsert_geofences(vehicle.vehicle_id, &imported)
+        .unwrap();
+    assert_eq!(first.inserted, [10, 11]);
+    let second = store
+        .upsert_geofences(vehicle.vehicle_id, &imported)
+        .unwrap();
+    assert!(second.inserted.is_empty());
+    assert_eq!(second.unchanged, [10, 11]);
 
     let session = crate::lifecycle::OpenSessionState::new();
     let encoded = session.encode().expect("encode session");
@@ -1525,19 +1524,28 @@ fn native_controls_update_settings_geofences_and_gpx_pages() {
                 cost_per_unit: Some(0.25),
                 session_fee: Some(1.0),
             },
+            false,
         )
         .expect("create geofence");
-    assert_eq!((geofence.id, geofence.name.as_str()), (1, "Home"));
+    // A Hub fence takes the first Hub id (C8 R3) and the saved name is trimmed.
+    assert_eq!(
+        (geofence.id, geofence.name.as_str()),
+        (crate::geo::location::FIRST_HUB_GEOFENCE_ID, "Home")
+    );
+    // Replacing the tariff without a price clears it first: an omitted cost
+    // keeps the stored one (C8 table 5.2), so the cleared form carries no
+    // billing type, and the fee is given again (C8 R37).
     let mut replacement = geofence.clone();
+    replacement.billing_type = None;
     replacement.cost_per_unit = None;
     store
-        .save_geofence(vehicle.vehicle_id, Some(geofence.id), replacement)
+        .save_geofence(vehicle.vehicle_id, Some(geofence.id), replacement, true)
         .expect("replace geofence");
     assert_eq!(store.geofences(vehicle.vehicle_id).unwrap().len(), 1);
-    assert_eq!(
-        store.geofences(vehicle.vehicle_id).unwrap()[0].cost_per_unit,
-        None
-    );
+    let replaced = store.geofences(vehicle.vehicle_id).unwrap().remove(0);
+    assert_eq!(replaced.cost_per_unit, None);
+    assert_eq!(replaced.billing_type, None);
+    assert_eq!(replaced.session_fee, Some(1.0));
     store
         .delete_geofence(vehicle.vehicle_id, geofence.id)
         .expect("delete geofence");
@@ -1668,6 +1676,7 @@ fn native_controls_update_settings_geofences_and_gpx_pages() {
                 cost_per_unit: Some(0.25),
                 session_fee: Some(1.0),
             },
+            false,
         )
         .expect("save active geofence");
     assert_eq!(

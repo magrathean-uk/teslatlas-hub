@@ -450,15 +450,16 @@ fn st49_a_deleted_fence_relabels_stored_drives_identically() {
         latitude: Some(10.0),
         longitude: Some(20.0),
         radius_m: Some(radius),
-        billing_type: Some(crate::hub_pack::GeofenceBillingType::PerKwh),
+        // C8 R8: a Hub save gives a billing type only with a cost; no price matters here.
+        billing_type: None,
         cost_per_unit: None,
         session_fee: None,
     };
     let home = store
-        .save_geofence(vehicle.vehicle_id, None, fence("Home", 150.0))
+        .save_geofence(vehicle.vehicle_id, None, fence("Home", 150.0), false)
         .expect("home");
     let area = store
-        .save_geofence(vehicle.vehicle_id, None, fence("Area", 800.0))
+        .save_geofence(vehicle.vehicle_id, None, fence("Area", 800.0), false)
         .expect("area");
     let mut samples = moving(1, T0, 3);
     samples.push(parked(4, T0 + 3 * MIN, 10.003, Some(1002.0)));
@@ -479,7 +480,7 @@ fn st49_a_deleted_fence_relabels_stored_drives_identically() {
     assert_eq!(labels(&store), (Some("Area".to_owned()), Some("Area".to_owned())));
     // Saving the same fence again relabels with the same result.
     store
-        .save_geofence(vehicle.vehicle_id, Some(area.id), area.clone())
+        .save_geofence(vehicle.vehicle_id, Some(area.id), area.clone(), false)
         .expect("resave area");
     assert_eq!(labels(&store), (Some("Area".to_owned()), Some("Area".to_owned())));
     store
@@ -497,7 +498,8 @@ fn r87_fence(name: &str, centre: (f64, f64), radius: f64) -> crate::teslamate_pr
         latitude: Some(centre.0),
         longitude: Some(centre.1),
         radius_m: Some(radius),
-        billing_type: Some(crate::hub_pack::GeofenceBillingType::PerKwh),
+        // C8 R8: a Hub save gives a billing type only with a cost; no price matters here.
+        billing_type: None,
         cost_per_unit: None,
         session_fee: None,
     }
@@ -510,10 +512,10 @@ fn st95_b_the_children_labels_and_terrain_recompute_agree_with_the_row() {
     let store = HubStore::initialize(temp.path()).expect("store");
     let (source, vehicle) = test_registered_vehicle(&store);
     store
-        .save_geofence(vehicle.vehicle_id, None, r87_fence("B-spot", B, 50.0))
+        .save_geofence(vehicle.vehicle_id, None, r87_fence("B-spot", B, 50.0), false)
         .expect("B-spot");
     store
-        .save_geofence(vehicle.vehicle_id, None, r87_fence("C-spot", C, 50.0))
+        .save_geofence(vehicle.vehicle_id, None, r87_fence("C-spot", C, 50.0), false)
         .expect("C-spot");
     feed_owner_samples(&store, &source, &vehicle, &st95_samples());
     let history = store

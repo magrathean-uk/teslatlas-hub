@@ -193,8 +193,9 @@ const RECEIVER_STATE_TABLE_SQL: &str = "
 
 /// Test fixtures that rewind a current catalogue to the shape before the v74
 /// step: the gap table goes and the retired objects return, empty. The v75
-/// undo (C6 R63 (b) 3, `rewind_store_data_steps_sql!`) comes first, because
-/// every rewind is cumulative and the v75 step comes after this one.
+/// undo (C6 R63 (b) 3, `rewind_store_data_steps_sql!`) comes first, and it
+/// starts with the v76 geofence undo (C8 R49, `rewind_v76_sql!`), because every
+/// rewind is cumulative and the v75 and v76 steps come after this one.
 #[cfg(test)]
 macro_rules! rewind_v74_sql {
     () => {

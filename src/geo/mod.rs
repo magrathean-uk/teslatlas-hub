@@ -3,6 +3,7 @@
 //! Location enrichment, terrain, and geographic exports.
 
 pub mod geocoder;
+pub mod geofence_validation;
 pub mod gpx;
 pub mod location;
 pub mod terrain;

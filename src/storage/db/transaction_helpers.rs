@@ -167,50 +167,6 @@ fn record_snapshot_fingerprint_in_transaction(
     Ok(())
 }
 
-fn upsert_geofences_in_transaction(
-    transaction: &Transaction<'_>,
-    vehicle_id: Uuid,
-    geofences: &[crate::teslamate_projection::TeslaMateGeofence],
-) -> Result<usize, StoreError> {
-    let mut inserted = 0;
-    for geofence in geofences {
-        let Some((latitude, longitude, radius_m)) = geofence.valid_geometry() else {
-            continue;
-        };
-        if geofence.name.trim().is_empty() || geofence.name.len() > 256 {
-            continue;
-        }
-        inserted += transaction.execute(
-            "INSERT INTO geofences(vehicle_id, source_geofence_id, name, latitude, longitude, radius_m,
-                billing_type, cost_per_unit, session_fee) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
-             ON CONFLICT(vehicle_id, source_geofence_id) DO NOTHING",
-            params![vehicle_id.to_string(), geofence.id, geofence.name.trim(), latitude, longitude, radius_m,
-                geofence.billing_type.map(crate::hub_pack::GeofenceBillingType::as_str), geofence.cost_per_unit, geofence.session_fee],
-        ).map_err(StoreError::LifecycleWrite)?;
-        transaction
-            .execute(
-                "UPDATE geofences SET name=?3, latitude=?4, longitude=?5, radius_m=?6,
-                billing_type=COALESCE(?7,billing_type), cost_per_unit=COALESCE(?8,cost_per_unit),
-                session_fee=COALESCE(?9,session_fee) WHERE vehicle_id=?1 AND source_geofence_id=?2",
-                params![
-                    vehicle_id.to_string(),
-                    geofence.id,
-                    geofence.name.trim(),
-                    latitude,
-                    longitude,
-                    radius_m,
-                    geofence
-                        .billing_type
-                        .map(crate::hub_pack::GeofenceBillingType::as_str),
-                    geofence.cost_per_unit,
-                    geofence.session_fee
-                ],
-            )
-            .map_err(StoreError::LifecycleWrite)?;
-    }
-    Ok(inserted)
-}
-
 fn promote_imported_open_session_in_transaction(
     transaction: &Transaction<'_>,
     source_id: Uuid,

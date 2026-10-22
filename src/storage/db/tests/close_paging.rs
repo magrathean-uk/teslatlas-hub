@@ -408,11 +408,10 @@ fn r46_cost_after_closing_with(
     let store = HubStore::initialize(temp.path()).expect("store");
     let (_, vehicle) = test_registered_vehicle(&store);
     store
-        .save_geofence(
+        .upsert_geofences(
             vehicle.vehicle_id,
-            Some(3),
-            crate::teslamate_projection::TeslaMateGeofence {
-                id: 0,
+            &[crate::teslamate_projection::TeslaMateGeofence {
+                id: 3,
                 name: "F3".to_owned(),
                 latitude: Some(10.0),
                 longitude: Some(20.0),
@@ -420,7 +419,7 @@ fn r46_cost_after_closing_with(
                 billing_type: Some(crate::hub_pack::GeofenceBillingType::PerKwh),
                 cost_per_unit: Some(0.30),
                 session_fee: Some(1.00),
-            },
+            }],
         )
         .expect("fence");
     let samples = (201..=213)

@@ -372,9 +372,13 @@ impl HubStore {
     /// were recorded), the v69 shape (before the collector state tables), the v70
     /// shape (before the credential status table), the v71 shape (before its
     /// rejected-access digest), the v72 shape (before the receiver accumulator-state
-    /// table), the v73 shape (before the retired delivery objects were dropped) and
-    /// the v74 shape (before the table of completed one-time data steps, C6 R63) to
-    /// v75. Return no store handle: consumers still require a fully migrated schema.
+    /// table), the v73 shape (before the retired delivery objects were dropped), the
+    /// v74 shape (before the table of completed one-time data steps, C6 R63) and the
+    /// v75 shape (before the geofence step) to v76. The geofence step rebuilds the
+    /// fence table with a wider name, radius and session-fee rule and a
+    /// source-ownership column, and adds the fence id mark and imported-fence
+    /// tombstone tables (C8 R12). Return no store handle: consumers still require a
+    /// fully migrated schema.
     pub(crate) fn preflight_standalone_schema_read_only(data_dir: &Path) -> Result<(), StoreError> {
         Self::open_read_only_with_mode(data_dir, false, true).map(|_| ())
     }
@@ -419,7 +423,7 @@ impl HubStore {
         }
         let version = schema_version(&connection)?;
         let known_forward_upgrade =
-            standalone_migration_candidate && SCHEMA_VERSION == 75 && matches!(version, 66..=74);
+            standalone_migration_candidate && SCHEMA_VERSION == 76 && matches!(version, 66..=75);
         if version != SCHEMA_VERSION && !known_forward_upgrade {
             return Err(StoreError::UnsupportedSchema(version));
         }
