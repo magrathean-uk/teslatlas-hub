@@ -2,8 +2,8 @@
 
 ## Contract input and regeneration
 
-The SDK is generated and tested against the Protocol profile `hub-http-v1@1.2.0`.
-The generator reads `../protocol/profiles/hub-http-v1/1.2.0` in place. There is no
+The SDK is generated and tested against the Protocol profile `hub-http-v1@1.3.0`.
+The generator reads `../protocol/profiles/hub-http-v1/1.3.0` in place. There is no
 vendored copy and no lock file. Generation emits only `src/generated/hub-protocol.ts`
 (OpenAPI types), `src/generated/hub-validators.js` (standalone Ajv validators), and
 `src/generated/hub-validators.d.ts`.
@@ -21,7 +21,7 @@ regenerated; do not hand-edit generated files.
 
 ## Hub profile
 
-The client targets `hub-http-v1@1.2.0`. The validators accept additive fields. Against
+The client targets `hub-http-v1@1.3.0`. The validators accept additive fields. Against
 the 1.0.0 profile this client was first built for, 1.2.0 changes what the client
 checks:
 
@@ -49,6 +49,23 @@ checks:
 - A drive may carry `start_address_provenance` and `end_address_provenance`
   (either may be null); `looked_up_at_ms`, when present, is an exact signed 64-bit
   integer.
+
+The 1.3.0 minor keeps the 1.2.0 contract and adds neutral key names, each old key staying
+as a deprecated alias with the same value until a later minor removes the aliases (one
+removal for the `current` and the history aliases together). What the generated client
+checks:
+
+- A `current` body carries 115 required keys, its `car` 20 and its `car.settings` 16
+  (28, 4 and 8 renames, and `model_name` and `model_year` on the summary and the car). A
+  drive carries 45 keys (43 required), a charge 40 (39), a position 31 (30) and a charge
+  sample 21 (21), served as 33 renames beside their aliases.
+- The validators refuse a `current` or drive body that lacks a new key, so a pre-1.3.0
+  (1.2.0) Hub's `current` and drive bodies are refused; its discovery id is accepted, because
+  the discovery `profile` pattern is `hub-http-v1@1.x.y`. A 1.3.0 body is still valid for a
+  client generated from 1.2.0, which reads the old names.
+- The new integer keys (`state_since_ms`, `speed_kmh`, `started_at_ms`, `ended_at_ms`,
+  `ascent_m`, `descent_m` and the others in `src/hub/validate.ts`) are held to the exact
+  signed 64-bit range like their aliases.
 
 Run `npm run test:hub:node` only with the private fixture environment variables
 described by the task harness. The lane uses default Fetch from a freshly packed SDK.

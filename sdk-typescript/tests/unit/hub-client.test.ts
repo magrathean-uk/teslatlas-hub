@@ -12,13 +12,26 @@ const hubId = "11111111-1111-4111-8111-111111111111";
 const otherHubId = "22222222-2222-4222-8222-222222222222";
 const endpoint = "https://hub.example.invalid";
 const jsonHeaders = { "Content-Type": "application/json", "X-Request-ID": "request-1" };
-const profileRoot = new URL("../../../protocol/profiles/hub-http-v1/1.2.0/", import.meta.url);
+// The allocated C6 profile feeds every positive input (C6 R51, R62); the published 1.2.0
+// profile is read only by the deliberately retained checks that name it.
+const allocatedProfileRoot = new URL(
+  "../../../protocol/profiles/hub-http-v1/1.3.0/",
+  import.meta.url,
+);
+const retainedProfileRoot = new URL(
+  "../../../protocol/profiles/hub-http-v1/1.2.0/",
+  import.meta.url,
+);
 
 async function example(name: string): Promise<string> {
-  return readFile(new URL(`examples/${name}.json`, profileRoot), "utf8");
+  return readFile(new URL(`examples/${name}.json`, allocatedProfileRoot), "utf8");
 }
 
-// The 1.2.0 drives example holds two items. The second (id 101) is the one in-window item
+async function retainedExample(name: string): Promise<string> {
+  return readFile(new URL(`examples/${name}.json`, retainedProfileRoot), "utf8");
+}
+
+// The 1.3.0 drives example holds two items. The second (id 101) is the one in-window item
 // that the limit and time-window cases below admit, so serve it alone as the last page.
 async function singleDriveExample(nextCursor: string | null = null): Promise<string> {
   const page = JSON.parse(await example("drives")) as { items: unknown[]; next_cursor: unknown };
@@ -164,6 +177,25 @@ describe("current Hub client", () => {
     expect(queue.requests[0]?.redirect).toBe("error");
   });
 
+  it("still discovers a Hub that advertises the retained 1.2.0 profile (C6 R51a fallback)", async () => {
+    // The fallback keeps the previous discovery identifier while the body is the 1.3.0 superset;
+    // the client accepts the identifier and reads the generated 1.3.0 shapes either way.
+    const queue = queuedFetch([
+      new Response(await retainedExample("discovery"), { status: 200, headers: jsonHeaders }),
+    ]);
+    const client = createHubClient({
+      endpoint,
+      expectedHubId: hubId,
+      credentials: new MemoryCredentials(),
+      fetch: queue.fetch,
+    });
+
+    const result = await client.discover();
+
+    expect(result.value.profile).toBe("hub-http-v1@1.2.0");
+    expect(result.value.hubId).toBe(hubId);
+  });
+
   it("rejects a different Hub identity before sending credentials", async () => {
     const credentials = new MemoryCredentials();
     credentials.credential = {
@@ -244,7 +276,7 @@ describe("current Hub client", () => {
     },
   );
 
-  it("decodes the full 1.2.0 drives page with its address provenance and cursor", async () => {
+  it("decodes the full 1.3.0 drives page with its address provenance and cursor", async () => {
     const queue = queuedFetch([
       await discoveryResponse(),
       new Response(await example("drives"), {
@@ -266,6 +298,12 @@ describe("current Hub client", () => {
     expect(page.value.items[0]).toMatchObject({
       endAddressProvenance: { source: "geocoder", provider: "synthetic-geocoder" },
       startAddressProvenance: { source: "import", provider: null, lookedUpAtMs: null },
+    });
+    expect(page.value.items[0]).toMatchObject({
+      // Both spellings of the C6 R58 renames reach the caller with the same values.
+      startDateMs: page.value.items[0]?.startedAtMs,
+      endDateMs: page.value.items[0]?.endedAtMs,
+      ascent: page.value.items[0]?.ascentM,
     });
     expect(page.value.nextCursor).toMatch(/^tqp1\./u);
     expect(page.metadata).toEqual({ status: 200, etag: '"drive-page"', requestId: "request-1" });

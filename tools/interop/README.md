@@ -25,8 +25,8 @@ paths and the digest with your actual binaries and exported profile;
   "seed_binary": "/absolute/build/examples/interop_fixture",
   "output_dir": "/private/new-fixture",
   "lifetime_seconds": 3600,
-  "profile_id": "hub-http-v1@1.2.0",
-  "profile_path": "/absolute/hub/protocol/profiles/hub-http-v1/1.2.0",
+  "profile_id": "hub-http-v1@1.3.0",
+  "profile_path": "/absolute/hub/protocol/profiles/hub-http-v1/1.3.0",
   "profile_sha256": "SHA256 of the exact SHA256SUMS file bytes"
 }
 ```
@@ -39,25 +39,25 @@ The config binds the Hub binary, seed harness, fresh output directory, profile
 ID and path, profile checksum, and optional loopback port. The launcher stages
 and hashes both executables, creates a supported one-use pairing invitation,
 starts the TLS server, and writes a private `ready.json` evidence record. The
-`hub-http-v1@1.2.0` runner does not accept that file as its descriptor.
+`hub-http-v1@1.3.0` runner does not accept that file as its descriptor.
 
 The seed writes an owner-private marker, `hub/fixture-summary-clock-ms`, in the
 fixture root; only a source run in development mode `fixture` reads it, to serve
 the current summary at the fixture's own measurement time (the newest seeded
 observation), and production never does.
 
-The `1.2.0` descriptor is documented in `protocol/docs/guides/conformance.md`.
+The `1.3.0` descriptor is documented in `protocol/docs/guides/conformance.md`.
 This repository's `fixture.py` does not yet write it, so `fixture.py` and
 `smoke.py` cannot pass unaided. Native acceptance uses an externally produced
 lab descriptor until `fixture.py` is ported to write it. Run this command from
 the `protocol/` directory of this repository:
 
 ```sh
-./conformance/run --profile hub-http-v1@1.2.0 \
+./conformance/run --profile hub-http-v1@1.3.0 \
   --config /private/<run>/descriptor.json --timeout-seconds 600 --json
 ```
 
-Or, from the Hub root, save the redacted `hub-http-v1@1.2.0` summary of a
+Or, from the Hub root, save the redacted `hub-http-v1@1.3.0` summary of a
 complete native run:
 
 ```sh
@@ -87,7 +87,7 @@ vehicle was retired, is never granted it and sees a 404 for it, even after
 `--restore-dynamic`. Pair the client while the dynamic vehicle is exposed.
 
 Keep invitations, pairing URIs, bearer values, claim secrets, and opaque cursors
-out of logs and diagnostics. The `1.2.0` runner checks the descriptor's profile
+out of logs and diagnostics. The `1.3.0` runner checks the descriptor's profile
 binding, certificate and optional TLS pin, and `smoke.py` issues a receipt only
 for a complete run in which every check passed. Binary identity and process
 ownership come from the external lab descriptor writer until `fixture.py` is

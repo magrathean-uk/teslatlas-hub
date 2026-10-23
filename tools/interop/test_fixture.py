@@ -26,7 +26,7 @@ class ConfigTests(unittest.TestCase):
         self.executable = self.root / "binary"
         self.executable.write_text("fixture")
         self.executable.chmod(0o700)
-        profile = MODULE.resolve().parents[2] / "protocol/profiles/hub-http-v1/1.2.0"
+        profile = MODULE.resolve().parents[2] / "protocol/profiles/hub-http-v1/1.3.0"
         self.config = {
             "profile_id":fixture.HTTP_PROFILE_ID,
             "profile_path":str(profile),
@@ -48,10 +48,10 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(result["output_dir"], self.config["output_dir"])
         self.assertFalse(Path(result["output_dir"]).exists())
 
-    def test_default_scenario_accepts_hub_http_1_2_0(self):
+    def test_default_scenario_accepts_hub_http_1_3_0(self):
         result = self.load()
-        self.assertEqual(result["profile_id"], "hub-http-v1@1.2.0")
-        self.assertEqual(fixture.HTTP_PROFILE_ID, "hub-http-v1@1.2.0")
+        self.assertEqual(result["profile_id"], "hub-http-v1@1.3.0")
+        self.assertEqual(fixture.HTTP_PROFILE_ID, "hub-http-v1@1.3.0")
 
     def test_default_scenario_refuses_hub_http_1_0_0(self):
         self.config["profile_id"] = "hub-http-v1@1.0.0"
@@ -438,7 +438,7 @@ class ConfigTests(unittest.TestCase):
 
 
 PASS = {
-    "profile_id": "hub-http-v1@1.2.0",
+    "profile_id": "hub-http-v1@1.3.0",
     "complete": True,
     "runs": 61,
     "passed": 61,
@@ -518,7 +518,7 @@ class SmokeTests(unittest.TestCase):
         runner_path = MODULE.resolve().parents[2] / "protocol/conformance/run"
         self.assertEqual(args[0], [
             str(runner_path),
-            "--profile", "hub-http-v1@1.2.0",
+            "--profile", "hub-http-v1@1.3.0",
             "--config", str(self.descriptor),
             "--timeout-seconds", "600",
             "--json",

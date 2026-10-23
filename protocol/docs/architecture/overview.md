@@ -32,10 +32,10 @@ conflict is resolved and the local validation gate passes.
 
 | Layer | Artifact | Purpose |
 | --- | --- | --- |
-| Current-Hub HTTP | `profiles/hub-http-v1/1.2.0/` | Discovery, pairing, authenticated reads and pages, rotation, revocation, and the bounded conformance contract |
+| Current-Hub HTTP | `profiles/hub-http-v1/1.3.0/` (and the retained `1.2.0`) | Discovery, pairing, authenticated reads and pages, rotation, revocation, and the bounded conformance contract |
 | Hub sync | `profiles/hub-sync-v1/{1.3.0,1.4.0,1.5.0}/` | Changes-since, no-op, key discovery, and signed packs |
 | Receiver envelope | `profiles/receiver-v1/1.0.0/` | The envelope a self-hosted telemetry receiver posts to the Hub, with its two annotated rules and vectors |
-| Conformance | `conformance/` | The `hub-sync-v1@1.3.0` fixture cases and the `hub-http-v1@1.2.0` offline and native checks |
+| Conformance | `conformance/` | The `hub-sync-v1@1.3.0` fixture cases and the `hub-http-v1@1.2.0` and `hub-http-v1@1.3.0` offline and native checks |
 
 ## Public rules
 
@@ -50,7 +50,7 @@ The protocol is permissively licensed. It contains schemas, fixtures, specificat
 
 ## Current-Hub surface
 
-The `hub-http-v1@1.2.0` profile specifies `/.well-known/teslatlas-hub`, health
+The `hub-http-v1@1.3.0` profile (which keeps every `1.2.0` key) specifies `/.well-known/teslatlas-hub`, health
 and readiness, pairing claim, the vehicle list and current state, drive, charge,
 position and charge-sample pages, and credential rotation and revocation, by
 OpenAPI and the profile's schemas. This prose explains boundaries;

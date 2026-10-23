@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 //! Discovery (`GET /.well-known/teslatlas-hub`) against the committed
-//! `hub-http-v1@1.2.0` profile: the profile it names, the exact capability
+//! `hub-http-v1@1.3.0` profile: the profile it names, the exact capability
 //! tokens of each router configuration, their order, and the schema's required
 //! members. Real SQLite stores, the real routers, synthetic data only.
 
@@ -38,10 +38,10 @@ const KEY_BYTE: u8 = 61;
 
 fn profile_document(name: &str) -> serde_json::Value {
     let path = format!(
-        "{}/protocol/profiles/hub-http-v1/1.2.0/{name}",
+        "{}/protocol/profiles/hub-http-v1/1.3.0/{name}",
         env!("CARGO_MANIFEST_DIR")
     );
-    let text = fs::read_to_string(path).expect("committed hub-http-v1@1.2.0 document");
+    let text = fs::read_to_string(path).expect("committed hub-http-v1@1.3.0 document");
     serde_json::from_str(&text).expect("profile document JSON")
 }
 
@@ -139,7 +139,7 @@ async fn each_router_configuration_advertises_its_exact_tokens_and_the_profile()
         assert_eq!(status, StatusCode::OK, "{name}");
         assert_eq!(headers[header::CACHE_CONTROL], "no-store", "{name}");
         assert_eq!(tokens_of(&payload["capabilities"]), tokens, "{name}");
-        assert_eq!(payload["profile"], "hub-http-v1@1.2.0", "{name}");
+        assert_eq!(payload["profile"], "hub-http-v1@1.3.0", "{name}");
         // The Home Assistant invariants stay exactly as they were.
         assert_eq!(
             payload["api_versions"],

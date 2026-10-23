@@ -68,7 +68,7 @@ fn stamped_vehicle_data(time_ms: i64) -> serde_json::Value {
     })
 }
 
-async fn get_bytes(app: &Router, uri: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
+pub(super) async fn get_bytes(app: &Router, uri: &str) -> (StatusCode, HeaderMap, Vec<u8>) {
     let response = app
         .clone()
         .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
@@ -290,13 +290,12 @@ async fn c6_st_s33_http() {
         assert_eq!(status, StatusCode::OK, "{name}");
         let discovery: serde_json::Value = serde_json::from_slice(&body).expect("discovery");
         assert_eq!(discovery["profile"], HUB_HTTP_PROFILE_ID, "{name}");
-        // The literal is the minor advertised before C6 (C6 R51a's fallback):
-        // the 1.3.0 profile files are not in this change. The change that moves
-        // discovery to C6's minor (C6 R62) edits this line and the constant
-        // together, or keeps the literal under a recorded R51a decision.
+        // The literal is C6's own minor (C6 R62): the Hub advertises the profile
+        // whose body it serves, in step with the committed 1.3.0 profile files
+        // (C6 R51a's previous-minor fallback is not taken, see the C6-C2 receipt).
         assert_eq!(
-            discovery["profile"], "hub-http-v1@1.2.0",
-            "{name}: the minor advertised before C6"
+            discovery["profile"], "hub-http-v1@1.3.0",
+            "{name}: C6's minor"
         );
         let advertised: Vec<&str> = discovery["capabilities"]
             .as_array()
@@ -323,7 +322,7 @@ struct FullPage {
     item_keys: usize,
 }
 
-fn insert_all(store: &HubStore, sql: &str, rows: Vec<Vec<rusqlite::types::Value>>) {
+pub(super) fn insert_all(store: &HubStore, sql: &str, rows: Vec<Vec<rusqlite::types::Value>>) {
     let mut connection = store.open().expect("open store");
     let transaction = connection.transaction().expect("transaction");
     for row in rows {
@@ -334,16 +333,16 @@ fn insert_all(store: &HubStore, sql: &str, rows: Vec<Vec<rusqlite::types::Value>
     transaction.commit().expect("commit rows");
 }
 
-fn text(value: impl ToString) -> rusqlite::types::Value {
+pub(super) fn text(value: impl ToString) -> rusqlite::types::Value {
     rusqlite::types::Value::Text(value.to_string())
 }
 
-fn integer(value: i64) -> rusqlite::types::Value {
+pub(super) fn integer(value: i64) -> rusqlite::types::Value {
     rusqlite::types::Value::Integer(value)
 }
 
 /// The item bytes of a one-item page: between `"items":[` and `],"next_cursor"`.
-fn only_item(page: &[u8]) -> Vec<u8> {
+pub(super) fn only_item(page: &[u8]) -> Vec<u8> {
     let text = std::str::from_utf8(page).expect("page text");
     let start = text.find("\"items\":[").expect("items") + "\"items\":[".len();
     let end = text.rfind("],\"next_cursor\"").expect("cursor member");

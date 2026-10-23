@@ -321,34 +321,96 @@ export interface components {
         charge: {
             address: string | null;
             address_provenance?: components["schemas"]["address_provenance"] | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of tariff_type; carries the same value.
+             */
             billing_type: string | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of charge_energy_added_kwh; carries the same value.
+             */
             charge_energy_added: number | null;
+            charge_energy_added_kwh: number | null;
             charge_energy_used_kwh: number | null;
             charge_rate_km_per_hour: number | null;
             cost: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of tariff_rate; carries the same value.
+             */
             cost_per_unit: number | null;
             duration_min: number | null;
             end_battery_level: number | null;
-            /** Format: int64 */
+            end_battery_range_km: number | null;
+            /**
+             * Format: int64
+             * @deprecated
+             * @description Deprecated alias of ended_at_ms; carries the same value.
+             */
             end_date_ms: number;
+            end_ideal_battery_range_km: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of end_ideal_battery_range_km; carries the same value.
+             */
             end_ideal_range_km: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of end_battery_range_km; carries the same value.
+             */
             end_rated_range_km: number | null;
+            /** Format: int64 */
+            ended_at_ms: number;
             fast_charger_type: string | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of geofence_name; carries the same value.
+             */
             geofence: string | null;
+            geofence_name: string | null;
             /** Format: int64 */
             id: number;
             is_dc: boolean | null;
             location_name: string | null;
             max_charger_power_kw: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of outside_temp_avg_c; carries the same value.
+             */
             outside_temp_avg: number | null;
+            outside_temp_avg_c: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of tariff_session_fee; carries the same value.
+             */
             session_fee: number | null;
             start_battery_level: number | null;
-            /** Format: int64 */
+            start_battery_range_km: number | null;
+            /**
+             * Format: int64
+             * @deprecated
+             * @description Deprecated alias of started_at_ms; carries the same value.
+             */
             start_date_ms: number;
+            start_ideal_battery_range_km: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of start_ideal_battery_range_km; carries the same value.
+             */
             start_ideal_range_km: number | null;
             start_latitude: number | null;
             start_longitude: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of start_battery_range_km; carries the same value.
+             */
             start_rated_range_km: number | null;
+            /** Format: int64 */
+            started_at_ms: number;
+            tariff_rate: number | null;
+            tariff_session_fee: number | null;
+            tariff_type: string | null;
             /** Format: uuid */
             vehicle_id: string;
         };
@@ -359,6 +421,7 @@ export interface components {
         charge_sample: {
             battery_heater_on: boolean | null;
             battery_level: number | null;
+            battery_range_km: number | null;
             charge_cable: string | null;
             charge_energy_added_kwh: number | null;
             /** Format: int64 */
@@ -373,8 +436,17 @@ export interface components {
             fast_charger_type: string | null;
             /** Format: int64 */
             id: number;
+            ideal_battery_range_km: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of ideal_battery_range_km; carries the same value.
+             */
             ideal_range_km: number | null;
             outside_temp_c: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of battery_range_km; carries the same value.
+             */
             rated_range_km: number | null;
             /** Format: int64 */
             timestamp_ms: number;
@@ -387,41 +459,115 @@ export interface components {
         current: {
             active_route_destination: string | null;
             active_route_energy_at_arrival: number | null;
+            active_route_km_to_arrival: number | null;
             active_route_latitude: number | null;
             active_route_longitude: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of active_route_km_to_arrival; carries the provider miles value as given, because its name states miles.
+             */
             active_route_miles_to_arrival: number | null;
             active_route_minutes_to_arrival: number | null;
             active_route_traffic_minutes_delay: number | null;
+            activity_state: string | null;
+            any_door_open: boolean | null;
+            any_window_open: boolean | null;
             battery_level: number | null;
+            battery_range_km: number | null;
             car: {
+                api_vehicle_id: number | null;
                 efficiency_wh_per_km: number | null;
                 exterior_color: string | null;
                 firmware_version: string | null;
                 /** Format: int64 */
                 id: number;
+                /**
+                 * @deprecated
+                 * @description Deprecated alias of variant_name; carries the same value.
+                 */
                 marketing_name: string | null;
+                /**
+                 * @deprecated
+                 * @description Deprecated alias of model_code; carries the stored model text as 1.2.0 served it.
+                 */
                 model: string;
+                model_code: string | null;
+                model_name: string | null;
+                model_year: number | null;
                 name: string;
                 settings: {
+                    battery_lfp: boolean;
+                    collection_enabled: boolean;
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias of collection_enabled; carries the same value.
+                     */
                     enabled: boolean;
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias of supercharging_free; carries the same value.
+                     */
                     free_supercharging: boolean;
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias of battery_lfp; carries the same value.
+                     */
                     lfp_battery: boolean;
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias of sleep_requires_locked; carries the same value.
+                     */
                     req_not_unlocked: boolean;
                     /** Format: int64 */
-                    suspend_after_idle_min: number;
+                    sleep_after_idle_min: number;
+                    sleep_requires_locked: boolean;
                     /** Format: int64 */
+                    sleep_window_min: number;
+                    sleep_window_min_resolved: boolean;
+                    streaming_enabled: boolean;
+                    supercharging_free: boolean;
+                    /**
+                     * Format: int64
+                     * @deprecated
+                     * @description Deprecated alias of sleep_after_idle_min; carries the same value.
+                     */
+                    suspend_after_idle_min: number;
+                    /**
+                     * Format: int64
+                     * @deprecated
+                     * @description Deprecated alias of sleep_window_min; carries the same value.
+                     */
                     suspend_min: number;
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias of sleep_window_min_resolved; carries the same value.
+                     */
                     suspend_min_resolved: boolean;
+                    /**
+                     * @deprecated
+                     * @description Deprecated alias of streaming_enabled; carries the same value.
+                     */
                     use_streaming_api: boolean;
                 };
+                /**
+                 * @deprecated
+                 * @description Deprecated alias of api_vehicle_id; carries the same value.
+                 */
                 source_eid: number | null;
+                /**
+                 * @deprecated
+                 * @description Deprecated alias of stream_vehicle_id; carries the same value.
+                 */
                 source_vid: number | null;
                 spoiler_type: string | null;
+                stream_vehicle_id: number | null;
                 trim_badging: string | null;
+                variant_name: string | null;
                 vin: string | null;
                 wheel_type: string | null;
             } | null;
             center_display_state: number | null;
+            charge_cable_connected: boolean | null;
             charge_current_request: number | null;
             charge_current_request_max: number | null;
             charge_energy_added: number | null;
@@ -434,21 +580,67 @@ export interface components {
             charging_state: string | null;
             climate_keeper_mode: string | null;
             display_name: string | null;
+            door_driver_front_open: boolean | null;
+            door_driver_rear_open: boolean | null;
+            door_passenger_front_open: boolean | null;
+            door_passenger_rear_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of any_door_open; carries the same value.
+             */
             doors_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of software_update_download_perc; carries the same value.
+             */
             download_perc: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of door_driver_front_open; carries the same value.
+             */
             driver_front_door_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of window_driver_front_open; carries the same value.
+             */
             driver_front_window_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of door_driver_rear_open; carries the same value.
+             */
             driver_rear_door_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of window_driver_rear_open; carries the same value.
+             */
             driver_rear_window_open: boolean | null;
             elevation: number | null;
             est_battery_range_km: number | null;
             exterior_color: string | null;
+            front_trunk_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of front_trunk_open; carries the same value.
+             */
             frunk_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of geofence_name; carries the same value.
+             */
             geofence: string | null;
+            geofence_name: string | null;
             heading: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of processing_healthy; carries the same value.
+             */
             healthy: boolean | null;
             ideal_battery_range_km: number | null;
             inside_temp: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of software_update_install_perc; carries the same value.
+             */
             install_perc: number | null;
             is_climate_on: boolean | null;
             is_preconditioning: boolean | null;
@@ -456,25 +648,83 @@ export interface components {
             latitude: number | null;
             locked: boolean | null;
             longitude: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of model_code; carries the same value.
+             */
             model: string | null;
+            model_code: string | null;
+            model_name: string | null;
+            model_year: number | null;
             observed_at_ms: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of odometer_km; carries the same value.
+             */
             odometer: number | null;
+            odometer_km: number | null;
             outside_temp: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of door_passenger_front_open; carries the same value.
+             */
             passenger_front_door_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of window_passenger_front_open; carries the same value.
+             */
             passenger_front_window_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of door_passenger_rear_open; carries the same value.
+             */
             passenger_rear_door_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of window_passenger_rear_open; carries the same value.
+             */
             passenger_rear_window_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of charge_cable_connected; carries the same value.
+             */
             plugged_in: boolean | null;
             power: number | null;
+            processing_healthy: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of battery_range_km; carries the same value.
+             */
             rated_battery_range_km: number | null;
+            rear_trunk_open: boolean | null;
             scheduled_charging_start_time: number | null;
             sentry_mode: boolean | null;
             service_mode: boolean | null;
             shift_state: string | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of state_since_ms; carries the same value.
+             */
             since: number | null;
+            software_update_available: boolean | null;
+            software_update_download_perc: number | null;
+            software_update_install_perc: number | null;
+            software_update_status: string | null;
+            software_update_version: string | null;
+            software_version: string | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of speed_kmh; carries the same value.
+             */
             speed: number | null;
+            speed_kmh: number | null;
             spoiler_type: string | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of activity_state; carries the same value.
+             */
             state: string | null;
+            state_since_ms: number | null;
             sun_roof_installed: boolean | null;
             sun_roof_percent_open: number | null;
             sun_roof_state: string | null;
@@ -488,50 +738,155 @@ export interface components {
             tpms_soft_warning_rl: boolean | null;
             tpms_soft_warning_rr: boolean | null;
             trim_badging: string | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of rear_trunk_open; carries the same value.
+             */
             trunk_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of software_update_available; carries the same value.
+             */
             update_available: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of software_update_status; carries the same value.
+             */
             update_status: string | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of software_update_version; carries the same value.
+             */
             update_version: string | null;
             usable_battery_level: number | null;
             /** Format: uuid */
             vehicle_id: string;
+            /**
+             * @deprecated
+             * @description Deprecated alias of software_version; carries the same value.
+             */
             version: string | null;
             wheel_type: string | null;
+            window_driver_front_open: boolean | null;
+            window_driver_rear_open: boolean | null;
+            window_passenger_front_open: boolean | null;
+            window_passenger_rear_open: boolean | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of any_window_open; carries the same value.
+             */
             windows_open: boolean | null;
         };
         drive: {
+            /**
+             * @deprecated
+             * @description Deprecated alias of ascent_m; carries the same value.
+             */
             ascent: number | null;
+            ascent_m: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of descent_m; carries the same value.
+             */
             descent: number | null;
+            descent_m: number | null;
             distance_km: number | null;
             duration_min: number | null;
             efficiency: number | null;
             end_address: string | null;
             end_address_provenance?: components["schemas"]["address_provenance"] | null;
-            /** Format: int64 */
+            end_battery_range_km: number | null;
+            /**
+             * Format: int64
+             * @deprecated
+             * @description Deprecated alias of ended_at_ms; carries the same value.
+             */
             end_date_ms: number;
+            /**
+             * @deprecated
+             * @description Deprecated alias of end_geofence_name; carries the same value.
+             */
             end_geofence: string | null;
+            end_geofence_name: string | null;
+            end_ideal_battery_range_km: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of end_ideal_battery_range_km; carries the same value.
+             */
             end_ideal_range_km: number | null;
             end_latitude: number | null;
             end_longitude: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of end_battery_range_km; carries the same value.
+             */
             end_rated_range_km: number | null;
             end_soc: number | null;
             /** Format: int64 */
+            ended_at_ms: number;
+            /** Format: int64 */
             id: number;
+            /**
+             * @deprecated
+             * @description Deprecated alias of inside_temp_avg_c; carries the same value.
+             */
             inside_temp_avg: number | null;
+            inside_temp_avg_c: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of outside_temp_avg_c; carries the same value.
+             */
             outside_temp_avg: number | null;
+            outside_temp_avg_c: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of power_max_kw; carries the same value.
+             */
             power_max: number | null;
+            power_max_kw: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of power_min_kw; carries the same value.
+             */
             power_min: number | null;
+            power_min_kw: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of speed_max_kmh; carries the same value.
+             */
             speed_max: number | null;
+            speed_max_kmh: number | null;
             start_address: string | null;
             start_address_provenance?: components["schemas"]["address_provenance"] | null;
-            /** Format: int64 */
+            start_battery_range_km: number | null;
+            /**
+             * Format: int64
+             * @deprecated
+             * @description Deprecated alias of started_at_ms; carries the same value.
+             */
             start_date_ms: number;
+            /**
+             * @deprecated
+             * @description Deprecated alias of start_geofence_name; carries the same value.
+             */
             start_geofence: string | null;
+            start_geofence_name: string | null;
+            start_ideal_battery_range_km: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of start_ideal_battery_range_km; carries the same value.
+             */
             start_ideal_range_km: number | null;
             start_latitude: number | null;
             start_longitude: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of start_battery_range_km; carries the same value.
+             */
             start_rated_range_km: number | null;
             start_soc: number | null;
+            /** Format: int64 */
+            started_at_ms: number;
             /** Format: uuid */
             vehicle_id: string;
         };
@@ -550,7 +905,12 @@ export interface components {
             battery_heater: boolean | null;
             battery_heater_on: boolean | null;
             battery_level: number | null;
-            /** Format: int64 */
+            battery_range_km: number | null;
+            /**
+             * Format: int64
+             * @deprecated
+             * @description Deprecated alias of timestamp_ms; carries the same value.
+             */
             date_ms: number;
             /** Format: int64 */
             drive_id: number;
@@ -566,12 +926,28 @@ export interface components {
             is_climate_on: boolean | null;
             latitude: number | null;
             longitude: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of odometer_km; carries the same value.
+             */
             odometer: number | null;
+            odometer_km: number | null;
             outside_temp: number | null;
             passenger_temp_setting: number | null;
             power: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of battery_range_km; carries the same value.
+             */
             rated_battery_range_km: number | null;
+            /**
+             * @deprecated
+             * @description Deprecated alias of speed_kmh; carries the same value.
+             */
             speed: number | null;
+            speed_kmh: number | null;
+            /** Format: int64 */
+            timestamp_ms: number;
             tpms_pressure_fl: number | null;
             tpms_pressure_fr: number | null;
             tpms_pressure_rl: number | null;

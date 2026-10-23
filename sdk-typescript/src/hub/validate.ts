@@ -50,13 +50,16 @@ export function decodeHubJson<T>(
   return camelize(wire) as CamelizeKeys<T>;
 }
 
-// Integer-valued fields reachable from the nine validators in the hub-http-v1@1.2.0
-// resource/auth schemas, plus discovery's integral protocol_major const. Other numeric
+// Integer-valued fields reachable from the nine validators in the hub-http-v1@1.3.0
+// resource/auth schemas (C6 R47 to R49 and R58, with the deprecated aliases of the
+// hub-http-v1@1.2.0 names), plus discovery's integral protocol_major const. Other numeric
 // fields remain binary64 measurements; this list does not impose an integer rule on them.
 // Integer keys that only the charge, position and sample routes use are not listed: this
 // client calls none of those routes.
 const integerFields = new Set([
+  "api_vehicle_id",
   "ascent",
+  "ascent_m",
   "battery_level",
   "center_display_state",
   "charge_current_request",
@@ -64,25 +67,37 @@ const integerFields = new Set([
   "charge_limit_soc",
   "charger_phases",
   "descent",
+  "descent_m",
   "download_perc",
   "duration_min",
   "end_date_ms",
   "end_soc",
+  "ended_at_ms",
   "expires_at_ms",
   "expiresAtMs",
   "id",
   "install_perc",
   "looked_up_at_ms",
+  "model_year",
   "observed_at_ms",
   "protocol_major",
   "scheduled_charging_start_time",
   "since",
+  "sleep_after_idle_min",
+  "sleep_window_min",
+  "software_update_download_perc",
+  "software_update_install_perc",
   "source_eid",
   "source_vid",
   "speed",
+  "speed_kmh",
   "speed_max",
+  "speed_max_kmh",
   "start_date_ms",
   "start_soc",
+  "started_at_ms",
+  "state_since_ms",
+  "stream_vehicle_id",
   "sun_roof_percent_open",
   "suspend_after_idle_min",
   "suspend_min",

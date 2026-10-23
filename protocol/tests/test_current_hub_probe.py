@@ -1,4 +1,4 @@
-"""Executable tests for the bounded, read-only current-Hub curl probe (hub-http-v1@1.2.0)."""
+"""Executable tests for the bounded, read-only current-Hub curl probe (hub-http-v1@1.3.0)."""
 import hashlib
 import json
 import os
@@ -12,7 +12,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 PROBE = ROOT / "tools" / "check-current-hub"
-PROFILE = ROOT / "profiles" / "hub-http-v1" / "1.2.0"
+PROFILE = ROOT / "profiles" / "hub-http-v1" / "1.3.0"
 SECRET = "Bearer private-token-that-must-never-appear"
 HUB_ID = "11111111-1111-4111-8111-111111111111"
 
@@ -96,7 +96,7 @@ elif '/drives' in url:
         body = b''; status = 304
         etag = args[args.index('--header') + 1].split(': ', 1)[1]
     else:
-        # The 1.2.0 example page has a next page; this Hub has one page unless forced to have more.
+        # The 1.3.0 example page has a next page; this Hub has one page unless forced to have more.
         page = json.loads((root / 'examples/drives.json').read_bytes())
         page['next_cursor'] = 'opaque-cursor' if os.environ.get('PROBE_FORCE_CURSOR') == '1' else None
         body = json.dumps(page).encode()
@@ -155,7 +155,7 @@ sys.stdout.write(str(status))
             self.assertNotIn("private-token", " ".join(call))
             self.assertEqual(call[call.index("--retry") + 1], "0")
             self.assertNotIn("--location", call)
-        # The page validator is the 1.2.0 ETag: the quoted SHA-256 of the body, sent back as is.
+        # The page validator is the 1.3.0 ETag: the quoted SHA-256 of the body, sent back as is.
         page = json.loads((PROFILE / "examples" / "drives.json").read_bytes())
         page["next_cursor"] = None
         digest = hashlib.sha256(json.dumps(page).encode()).hexdigest()
@@ -171,7 +171,7 @@ sys.stdout.write(str(status))
         return [json.loads(line) for line in self.log.read_text().splitlines()]
 
     def test_discovery_the_profile_does_not_define_is_rejected_before_the_bearer_is_sent(self):
-        """The probe holds discovery to hub-http-v1@1.2.0: its profile member, its tokens and its rules."""
+        """The probe holds discovery to hub-http-v1@1.3.0: its profile member, its tokens and its rules."""
         for change in (
             "no-profile",
             "profile-1.1.0",
@@ -188,7 +188,7 @@ sys.stdout.write(str(status))
                 self.assertNotIn("--header", calls[0])
                 self.assertNotIn("@" + str(self.header), calls[0])
 
-    def test_unsigned_1_2_0_discovery_example_passes_without_drives(self):
+    def test_unsigned_1_3_0_discovery_example_passes_without_drives(self):
         """The profile's own unsigned example (profile member, two tokens) is a valid Hub."""
         self.discovery_change = "unsigned-example"
         result = self.run_probe()
@@ -196,7 +196,7 @@ sys.stdout.write(str(status))
         self.assertEqual(json.loads(result.stdout)["operations"], ["discovery", "vehicles", "current"])
 
     def test_drive_page_etag_that_is_not_the_body_digest_is_rejected(self):
-        """1.2.0 pages carry the quoted SHA-256 of their body as the ETag."""
+        """1.3.0 pages carry the quoted SHA-256 of their body as the ETag."""
         for change in ("not-the-body-digest", "not-a-digest"):
             with self.subTest(change=change):
                 self.log.unlink(missing_ok=True)

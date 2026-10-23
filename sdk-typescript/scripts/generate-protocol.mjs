@@ -14,22 +14,22 @@ if (process.argv.length !== 2) {
   );
 }
 // The contract is read in place from the Protocol package of this repository. Nothing is vendored.
-const sourceRoot = resolve(installedRoot, "../protocol/profiles/hub-http-v1/1.2.0");
+const sourceRoot = resolve(installedRoot, "../protocol/profiles/hub-http-v1/1.3.0");
 const outputRoot = resolve(
   process.env.TESLATLAS_PROTOCOL_OUTPUT_DIR ?? join(installedRoot, "src/generated"),
 );
 const openapiExecutable = join(installedRoot, "node_modules/openapi-typescript/bin/cli.js");
 
 const hubValidatorRefs = {
-  validateHubDiscovery: "urn:teslatlas:hub-http-v1:1.2.0:discovery",
-  validateHubError: "urn:teslatlas:hub-http-v1:1.2.0:errors",
-  validateHubClaim: "urn:teslatlas:hub-http-v1:1.2.0:auth#/$defs/claim",
-  validateHubInvitation: "urn:teslatlas:hub-http-v1:1.2.0:auth#/$defs/invitation",
-  validateHubVehicles: "urn:teslatlas:hub-http-v1:1.2.0:resources#/$defs/vehicles",
-  validateHubCurrent: "urn:teslatlas:hub-http-v1:1.2.0:resources#/$defs/current",
-  validateHubDrives: "urn:teslatlas:hub-http-v1:1.2.0:resources#/$defs/drives",
-  validateHubHealth: "urn:teslatlas:hub-http-v1:1.2.0:resources#/$defs/health",
-  validateHubReady: "urn:teslatlas:hub-http-v1:1.2.0:resources#/$defs/ready",
+  validateHubDiscovery: "urn:teslatlas:hub-http-v1:1.3.0:discovery",
+  validateHubError: "urn:teslatlas:hub-http-v1:1.3.0:errors",
+  validateHubClaim: "urn:teslatlas:hub-http-v1:1.3.0:auth#/$defs/claim",
+  validateHubInvitation: "urn:teslatlas:hub-http-v1:1.3.0:auth#/$defs/invitation",
+  validateHubVehicles: "urn:teslatlas:hub-http-v1:1.3.0:resources#/$defs/vehicles",
+  validateHubCurrent: "urn:teslatlas:hub-http-v1:1.3.0:resources#/$defs/current",
+  validateHubDrives: "urn:teslatlas:hub-http-v1:1.3.0:resources#/$defs/drives",
+  validateHubHealth: "urn:teslatlas:hub-http-v1:1.3.0:resources#/$defs/health",
+  validateHubReady: "urn:teslatlas:hub-http-v1:1.3.0:resources#/$defs/ready",
 };
 
 async function readJson(path) {

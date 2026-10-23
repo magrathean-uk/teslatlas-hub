@@ -6,7 +6,7 @@ contract applies to Teslatlas implementations. Explicit compatibility departures
 below are separate policies and do not establish standards conformance.
 
 The table describes the contracts this package keeps: the current-Hub HTTP
-profile `hub-http-v1@1.2.0`, the Hub sync profiles `hub-sync-v1@1.3.0` through
+profile `hub-http-v1@1.3.0` with its retained predecessor `1.2.0`, the Hub sync profiles `hub-sync-v1@1.3.0` through
 `1.5.0`, and `receiver-v1@1.0.0`. Use each profile's own documents for its
 routes, errors and limits: [`current-hub.md`](current-hub.md) for the HTTP
 profile and [`hub-sync.md`](hub-sync.md) for the sync profiles.
@@ -15,15 +15,15 @@ profile and [`hub-sync.md`](hub-sync.md) for the sync profiles.
 | --- | --- | --- |
 | Requirement words | [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119.html) and [RFC 8174](https://www.rfc-editor.org/rfc/rfc8174.html) | uppercase normative terms in prose contracts |
 | Well-known discovery | [RFC 8615](https://www.rfc-editor.org/rfc/rfc8615.html) | `/.well-known/teslatlas-hub` shape and deployment considerations |
-| HTTP semantics, validators | [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) | strong `ETag` and `If-None-Match` with `304` on the `hub-http-v1@1.2.0` reads; strong `ETag` and a single byte range (`206` with `Content-Range`) on the `hub-sync-v1@1.3.0` pack route |
-| OpenAPI | [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) | operation and HTTP representation contract of the OpenAPI documents of every retained profile (`hub-http-v1@1.2.0`, `hub-sync-v1@1.3.0`, `1.4.0` and `1.5.0`), each of which declares OpenAPI 3.1.0 |
+| HTTP semantics, validators | [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) | strong `ETag` and `If-None-Match` with `304` on the `hub-http-v1@1.3.0` and `1.2.0` reads; strong `ETag` and a single byte range (`206` with `Content-Range`) on the `hub-sync-v1@1.3.0` pack route |
+| OpenAPI | [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) | operation and HTTP representation contract of the OpenAPI documents of every retained profile (`hub-http-v1@1.3.0`, `1.2.0`, `hub-sync-v1@1.3.0`, `1.4.0` and `1.5.0`), each of which declares OpenAPI 3.1.0 |
 | JSON Schema | [Core](https://json-schema.org/draft/2020-12/json-schema-core.html) and [Validation](https://json-schema.org/draft/2020-12/json-schema-validation.html) | the data schemas of every retained profile |
 | Canonical JSON | [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html) | signed payloads and digests of the sync profiles; the receiver profile's informative identity block, with the key-order erratum below |
 | Version syntax | [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html) | protocol and capability version numbers |
 
 ### Entity tags in the current-Hub profile
 
-`hub-http-v1@1.2.0` gives each page read of its drives, drive positions, charges
+`hub-http-v1@1.3.0` and the retained `1.2.0` give each page read of their drives, drive positions, charges
 and charge samples a strong `ETag`: the quoted lowercase hex SHA-256 of the
 response body. `If-None-Match` carrying the current tag returns `304` with an
 empty body, the same `ETag` and `Cache-Control: no-store`. The profile defines

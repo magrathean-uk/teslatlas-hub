@@ -26,7 +26,7 @@ point adds `nodeTls`.
 
 ## Hub client
 
-`createHubClient` is a dedicated client for the `hub-http-v1@1.2.0` profile. Its
+`createHubClient` is a dedicated client for the `hub-http-v1@1.3.0` profile. Its
 methods are `discover`, `health`, `readiness`, `claimPairing`, `rotateDevice`,
 `vehicles`, `current`, and `drives`.
 

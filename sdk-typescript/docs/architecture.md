@@ -38,7 +38,7 @@ network I/O.
 
 The client is a static-endpoint client. It shares safe Fetch transport
 primitives where wire semantics match, and uses validators generated from the
-in-repository `hub-http-v1@1.2.0` profile. Explicit logout or disposal provides
+in-repository `hub-http-v1@1.3.0` profile. Explicit logout or disposal provides
 the required abort and identity reset boundary without inventing a mutable
 endpoint API. Logout raises a barrier before it moves the session generation,
 serializes SDK-owned credential mutations, and, inside that queue and before
@@ -60,7 +60,7 @@ obligation; ordinary injected Fetch remains responsible for non-claim routes.
 ## Protocol dependency
 
 The contract is read in place from the Protocol package of this repository,
-`../protocol/profiles/hub-http-v1/1.2.0`. There is no vendored copy and no lock
+`../protocol/profiles/hub-http-v1/1.3.0`. There is no vendored copy and no lock
 file. `npm run protocol:generate` writes the generated types and validators in
 `src/generated`; `npm run protocol:check` verifies that profile's `SHA256SUMS`
 and that the committed generated files equal a fresh generation. See

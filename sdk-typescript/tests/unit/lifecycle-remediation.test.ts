@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import hubDiscovery from "../../../protocol/profiles/hub-http-v1/1.2.0/examples/discovery.json" with {
+// The allocated C6 profile (hub-http-v1@1.3.0) examples feed every positive input here (C6 R51, R62).
+import hubDiscovery from "../../../protocol/profiles/hub-http-v1/1.3.0/examples/discovery.json" with {
   type: "json",
 };
-import drives from "../../../protocol/profiles/hub-http-v1/1.2.0/examples/drives.json" with {
+import drives from "../../../protocol/profiles/hub-http-v1/1.3.0/examples/drives.json" with {
   type: "json",
 };
 import { createHubClient } from "../../src/hub/client.js";

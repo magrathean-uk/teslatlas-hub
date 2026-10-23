@@ -11,7 +11,7 @@ SHA-256
 `b80d940e8edd15896c797f659dd76e08c8b2cf2229e8386d96342b1fa4c7d926`.
 The accepted binding does not add routes beyond those advertised by discovery.
 That record is historical: discovery now names the profile the Hub serves,
-`hub-http-v1@1.2.0` (see Discovery below). The root `teslatlas-v1` contract,
+`hub-http-v1@1.3.0` (see Discovery below). The root `teslatlas-v1` contract,
 with its separate specification and event stream, and the `hub-http-v1` 1.0.0
 and 1.1.0 profiles have been retired and are no longer part of the protocol package.
 
@@ -55,7 +55,7 @@ where `R` is `catalogue_unavailable`, `lifecycle_quarantined`,
 Tesla or a provider, a sign-in that still works but must be renewed, a Fleet refresh whose
 outcome is unknown, a broken collector cadence and the like) are collection attention: they
 appear in `teslatlas-hub status`, `doctor` and the Mac app, never in this body, and never
-change the status code. The body and its headers keep the published 1.2.0 shape; an
+change the status code. The body and its headers keep the shape published since `hub-http-v1@1.2.0`, unchanged in 1.3.0; an
 optional detail member and a cadence diagnostic are held for the next protocol
 declaration. See [Configuration](configuration.md#sign-in-status).
 
@@ -105,7 +105,7 @@ workspace master plan.
 `api_versions` currently contains `"1.0"`, `protocol` is `teslatlas-sync` and
 `protocol_major` is `1`, so Home Assistant keeps working unchanged. The
 `profile` member always names the wire profile the Hub serves,
-`hub-http-v1@1.2.0`; it is the wire profile revision, which the `version` field
+`hub-http-v1@1.3.0`; it is the wire profile revision, which the `version` field
 (the Hub product version, `2026.36.2` for the accepted cohort) is not.
 
 `capabilities` contains only implemented and currently usable surfaces: a token

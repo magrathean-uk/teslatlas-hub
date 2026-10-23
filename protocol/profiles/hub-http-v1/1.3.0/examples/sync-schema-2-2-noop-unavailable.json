@@ -1,0 +1,13 @@
+{
+  "fixture_id": "schema-2-2-noop-unavailable",
+  "requested_schema": "2.2",
+  "response": {
+    "body_bytes": 0,
+    "headers": {
+      "cache_control": "no-store"
+    },
+    "manifest_signature": "absent",
+    "status": 406
+  },
+  "route": "GET /v1/vehicles/{vehicle_id}/sync/noop"
+}

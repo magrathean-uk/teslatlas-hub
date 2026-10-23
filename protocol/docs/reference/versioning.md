@@ -1,7 +1,7 @@
 # Versioning, discovery, and capabilities
 
 This document defines how the retained contracts identify and version
-themselves: the current-Hub HTTP profile `hub-http-v1@1.2.0` and the Hub sync
+themselves: the current-Hub HTTP profile `hub-http-v1@1.3.0` (with its retained predecessor `1.2.0`) and the Hub sync
 profiles `hub-sync-v1@1.3.0` through `1.5.0`. The earlier `hub-http-v1` `1.0.0`
 and `1.1.0` profiles, the earlier sync profiles and the root `teslatlas-v1`
 contract with its version-negotiation headers were retired and are no longer in
@@ -11,14 +11,14 @@ this package. See [`current-hub.md`](current-hub.md) and
 ## Discovery
 
 A Hub publishes `GET /.well-known/teslatlas-hub` over HTTPS and returns the
-document defined by `profiles/hub-http-v1/1.2.0/discovery.schema.json` as
+document defined by `profiles/hub-http-v1/1.3.0/discovery.schema.json` as
 `application/json`. The document is public metadata: it contains a stable Hub
 identity, protocol support, the `profile` identity the Hub is held to,
 capabilities, and attributions. It must not contain credentials, provider
 tokens, vehicle identifiers, VINs, or user data.
 
 The advertised `profile` member is the profile identity, for example
-`hub-http-v1@1.2.0`. A client binds its expectations to that identity and not
+`hub-http-v1@1.3.0`. A client binds its expectations to that identity and not
 to the Hub's product version: the `version` member is the product version and
 is not a wire revision.
 
@@ -37,7 +37,7 @@ The protocol uses semantic versions `MAJOR.MINOR.PATCH`.
 - A patch version clarifies text or fixes a contract defect without changing a
   valid request or response.
 
-The current-Hub HTTP profile is `hub-http-v1@1.2.0`. Its additive policy is
+The current-Hub HTTP profile is `hub-http-v1@1.3.0`; `1.2.0` is its retained predecessor. Its additive policy is
 part of the profile: clients ignore unknown object fields and unknown
 capability tokens, and servers may add optional fields and tokens within 1.x.
 Adding an optional field, token or route is a new minor profile. Removing or

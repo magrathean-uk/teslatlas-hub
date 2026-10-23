@@ -7,7 +7,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // The only contract input: the in-repo Protocol profile the generator reads in place.
-const profileRoot = resolve(repositoryRoot, "../protocol/profiles/hub-http-v1/1.2.0");
+const profileRoot = resolve(repositoryRoot, "../protocol/profiles/hub-http-v1/1.3.0");
 const generatedRoot = join(repositoryRoot, "src/generated");
 const generatedFiles = ["hub-protocol.ts", "hub-validators.d.ts", "hub-validators.js"];
 
@@ -64,8 +64,8 @@ for (const [path, digest] of listed) {
   }
 }
 const profile = JSON.parse(await readFile(join(profileRoot, "profile.json"), "utf8"));
-if (profile.profile_id !== "hub-http-v1@1.2.0" || profile.contract_version !== "1.2.0") {
-  throw new Error("Protocol profile is not hub-http-v1@1.2.0");
+if (profile.profile_id !== "hub-http-v1@1.3.0" || profile.contract_version !== "1.3.0") {
+  throw new Error("Protocol profile is not hub-http-v1@1.3.0");
 }
 
 // 2. The committed generated files are exactly what the generator emits from those bytes.
@@ -88,4 +88,4 @@ try {
 } finally {
   await rm(temporaryOutput, { recursive: true, force: true });
 }
-console.log(`Protocol hub-http-v1@1.2.0 verified: ${listed.size} files, generated output matches`);
+console.log(`Protocol hub-http-v1@1.3.0 verified: ${listed.size} files, generated output matches`);

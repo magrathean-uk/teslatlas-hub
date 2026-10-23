@@ -24,7 +24,7 @@ use crate::{
 // ------------------------------------------------------------- the contract
 
 /// The 33 renames of C6 R58 (a): item, 1.2.0 key (the alias), new key.
-const PAIRS: [(&str, &str, &str); 33] = [
+pub(super) const PAIRS: [(&str, &str, &str); 33] = [
     ("drive", "start_date_ms", "started_at_ms"),
     ("drive", "end_date_ms", "ended_at_ms"),
     (
@@ -228,12 +228,12 @@ const CHARGE_SAMPLE_KEYS: [&str; 21] = [
 
 // ---------------------------------------------------------------- fixtures
 
-fn vehicle() -> Uuid {
+pub(crate) fn vehicle() -> Uuid {
     Uuid::from_u128(0x6c6c_0001_0000_4000_8000_0000_0000_0001)
 }
 
 /// A drive whose every 1.2.0 field holds a distinct non-null value of its type.
-fn drive_distinct() -> ProjectionDrive {
+pub(crate) fn drive_distinct() -> ProjectionDrive {
     ProjectionDrive {
         id: 11,
         car_id: 1,
@@ -267,7 +267,7 @@ fn drive_distinct() -> ProjectionDrive {
     }
 }
 
-fn drive_null() -> ProjectionDrive {
+pub(crate) fn drive_null() -> ProjectionDrive {
     ProjectionDrive {
         id: 12,
         car_id: 1,
@@ -301,7 +301,7 @@ fn drive_null() -> ProjectionDrive {
     }
 }
 
-fn charge_distinct() -> ProjectionCharge {
+pub(crate) fn charge_distinct() -> ProjectionCharge {
     ProjectionCharge {
         id: 21,
         car_id: 1,
@@ -333,7 +333,7 @@ fn charge_distinct() -> ProjectionCharge {
     }
 }
 
-fn charge_null() -> ProjectionCharge {
+pub(crate) fn charge_null() -> ProjectionCharge {
     ProjectionCharge {
         id: 22,
         car_id: 1,
@@ -365,7 +365,7 @@ fn charge_null() -> ProjectionCharge {
     }
 }
 
-fn position_distinct() -> ProjectionPosition {
+pub(crate) fn position_distinct() -> ProjectionPosition {
     ProjectionPosition {
         id: 31,
         drive_id: Some(11),
@@ -400,7 +400,7 @@ fn position_distinct() -> ProjectionPosition {
     }
 }
 
-fn position_null() -> ProjectionPosition {
+pub(crate) fn position_null() -> ProjectionPosition {
     ProjectionPosition {
         id: 32,
         drive_id: Some(12),
@@ -435,7 +435,7 @@ fn position_null() -> ProjectionPosition {
     }
 }
 
-fn terrain() -> PositionTerrainLookup {
+pub(crate) fn terrain() -> PositionTerrainLookup {
     PositionTerrainLookup {
         dataset: Some("Terrain dataset 81".to_owned()),
         dataset_version: Some("v82".to_owned()),
@@ -443,7 +443,7 @@ fn terrain() -> PositionTerrainLookup {
     }
 }
 
-fn sample_distinct() -> ProjectionChargeSample {
+pub(crate) fn sample_distinct() -> ProjectionChargeSample {
     ProjectionChargeSample {
         id: 41,
         charge_process_id: 21,
@@ -470,7 +470,7 @@ fn sample_distinct() -> ProjectionChargeSample {
     }
 }
 
-fn sample_null() -> ProjectionChargeSample {
+pub(crate) fn sample_null() -> ProjectionChargeSample {
     ProjectionChargeSample {
         id: 42,
         charge_process_id: 22,
@@ -793,11 +793,11 @@ fn key_order(bytes: &[u8]) -> Vec<String> {
 }
 
 /// One served item of one fixture: its bytes and the 1.2.0 golden body.
-struct Case {
-    item: &'static str,
-    fixture: &'static str,
+pub(crate) struct Case {
+    pub(crate) item: &'static str,
+    pub(crate) fixture: &'static str,
     expected_keys: &'static [&'static str],
-    bytes: Vec<u8>,
+    pub(crate) bytes: Vec<u8>,
     golden: Value,
 }
 
@@ -828,7 +828,7 @@ fn provenance_of(terrain: PositionTerrainLookup) -> PublicElevationProvenance {
 
 /// The eight cases: four item types, each with the distinct non-null fixture
 /// and the all-null fixture.
-fn cases() -> Vec<Case> {
+pub(crate) fn cases() -> Vec<Case> {
     let v = vehicle();
     let mut all = Vec::new();
     for (fixture, row) in [("distinct", drive_distinct()), ("null", drive_null())] {
@@ -896,7 +896,7 @@ fn resources_schema_1_2_0() -> Value {
 /// A value against a JSON-Schema fragment of the 1.2.0 resources: `$ref` into
 /// `$defs`, `anyOf`, `enum`, `type`, `maxLength`, the int64 bounds and nested
 /// `properties` and `required`; members a schema does not list are open.
-fn schema_allows(defs: &Value, schema: &Value, value: &Value) -> bool {
+pub(super) fn schema_allows(defs: &Value, schema: &Value, value: &Value) -> bool {
     if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
         let name = reference.strip_prefix("#/$defs/").expect("local $defs ref");
         return schema_allows(defs, &defs[name], value);

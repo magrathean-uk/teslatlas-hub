@@ -1,6 +1,6 @@
-# Generated clients for `hub-http-v1@1.2.0`
+# Generated clients for `hub-http-v1@1.3.0`
 
-`profiles/hub-http-v1/1.2.0/openapi.json` is an OpenAPI 3.1.0 document. It
+`profiles/hub-http-v1/1.3.0/openapi.json` is an OpenAPI 3.1.0 document. It
 refers to the schemas next to it (`resources.schema.json`, `discovery.schema.json`,
 `auth.schema.json` and `errors.schema.json`), so run a generator against the
 profile directory itself and never against a copy of `openapi.json` alone.
@@ -10,22 +10,25 @@ project, and keep it out of this repository.
 
 ## Invocations
 
+The recipes below target the current minor. For the retained predecessor, the
+same commands run against `profiles/hub-http-v1/1.2.0/openapi.json`.
+
 [`openapi-generator`](https://openapi-generator.tech/) needs a release with OpenAPI
 3.1 support (7.x or later). Run each command from the Protocol root and write the output outside this tree.
 
 ```sh
 openapi-generator-cli generate \
-  -i profiles/hub-http-v1/1.2.0/openapi.json \
+  -i profiles/hub-http-v1/1.3.0/openapi.json \
   -g swift5 \
   -o "$OUT/hub-http-swift5"
 
 openapi-generator-cli generate \
-  -i profiles/hub-http-v1/1.2.0/openapi.json \
+  -i profiles/hub-http-v1/1.3.0/openapi.json \
   -g typescript-fetch \
   -o "$OUT/hub-http-typescript-fetch"
 
 openapi-generator-cli generate \
-  -i profiles/hub-http-v1/1.2.0/openapi.json \
+  -i profiles/hub-http-v1/1.3.0/openapi.json \
   -g python \
   --additional-properties=disallowAdditionalPropertiesIfNotPresent=false \
   -o "$OUT/hub-http-python"
@@ -84,7 +87,7 @@ capability tokens:
   set `extra="forbid"` or the equivalent on models either.
 
 Do not turn the schemas into strict validators on the client. Servers are held to
-the strict form by conformance (`./conformance/run --profile hub-http-v1@1.2.0`
+the strict form by conformance (`./conformance/run --profile hub-http-v1@1.3.0`
 checks every example against a variant of each response schema that forbids
 undocumented fields); clients are not.
 

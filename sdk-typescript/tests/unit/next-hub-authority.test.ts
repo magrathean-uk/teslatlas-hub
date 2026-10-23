@@ -7,11 +7,15 @@ import { asStrongEntityTag } from "../../src/http/strong-etag.js";
 const hubId = "11111111-1111-4111-8111-111111111111";
 const otherId = "22222222-2222-4222-8222-222222222222";
 const endpoint = "https://hub.example.invalid";
-const root = new URL("../../../protocol/profiles/hub-http-v1/1.2.0/examples/", import.meta.url);
+// The allocated C6 profile examples feed every positive input (C6 R51, R62).
+const allocatedRoot = new URL(
+  "../../../protocol/profiles/hub-http-v1/1.3.0/examples/",
+  import.meta.url,
+);
 async function fixture(name: string) {
-  return JSON.parse(await readFile(new URL(`${name}.json`, root), "utf8"));
+  return JSON.parse(await readFile(new URL(`${name}.json`, allocatedRoot), "utf8"));
 }
-// The 1.2.0 drives example holds two items. The second (id 101) is the one in-window item
+// The 1.3.0 drives example holds two items. The second (id 101) is the one in-window item
 // these tests admit with a limit of 1, so serve it alone as the last page.
 async function singleDrivePage() {
   const page = await fixture("drives");
@@ -44,7 +48,11 @@ describe("CurrentHub immutable authority", () => {
       const pending = deferred<Response>();
       const entered = deferred<Request>();
       const page = await singleDrivePage();
-      if (bad) page.items[0].start_date_ms += 1_000_000;
+      // Both spellings of the start move together, so the time-window refusal stays the failure.
+      if (bad) {
+        page.items[0].start_date_ms += 1_000_000;
+        page.items[0].started_at_ms += 1_000_000;
+      }
       const client = createHubClient({
         endpoint,
         expectedHubId: hubId,

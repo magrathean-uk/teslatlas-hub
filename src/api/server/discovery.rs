@@ -21,7 +21,7 @@ enum Requires {
 }
 
 /// Every token this Hub can advertise, in the order of `capabilities` in the
-/// committed `hub-http-v1@1.2.0` `profile.json` (a test pins the order against
+/// committed `hub-http-v1@1.3.0` `profile.json` (a test pins the order against
 /// that file). The contract treats the list as a set; a stable order keeps the
 /// document byte-stable. `query.enrichment` is deliberately absent: it needs
 /// `attributions`, which this Hub does not emit until address and terrain

@@ -2450,7 +2450,7 @@ async fn home_assistant_discovery_invariants_hold_with_and_without_a_cursor_key(
         assert_eq!(payload["protocol"], "teslatlas-sync");
         assert_eq!(payload["protocol_major"], 1);
         // The profile the Hub serves; Home Assistant ignores the member.
-        assert_eq!(payload["profile"], "hub-http-v1@1.2.0");
+        assert_eq!(payload["profile"], "hub-http-v1@1.3.0");
         let capabilities = payload["capabilities"].as_array().expect("capabilities");
         for required in ["query.vehicles", "query.current"] {
             assert!(

@@ -100,8 +100,10 @@ const MAX_SYNC_CONTROL_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ADMITTED_PHYSICAL_PACK_BYTES: u64 = 16 * 1024 * 1024;
 const HUB_SYNC_PROFILE_ID: &str = "hub-sync-v1@1.3.0";
 /// The `hub-http-v1` revision discovery names. It tracks the committed profile
-/// under `protocol/profiles/hub-http-v1/`; a test pins the two together.
-const HUB_HTTP_PROFILE_ID: &str = "hub-http-v1@1.2.0";
+/// under `protocol/profiles/hub-http-v1/`; a test pins the two together. The
+/// 1.3.0 body is served from C6 R62 on; C6 R51a's fallback would keep naming the
+/// previous minor while serving the same body.
+const HUB_HTTP_PROFILE_ID: &str = "hub-http-v1@1.3.0";
 const PUBLIC_API_VERSIONS: [&str; 1] = ["1.0"];
 
 pub async fn rustls_config_from_identity(

@@ -1320,12 +1320,13 @@ fn schema_allows(schema: &Value, value: &Value) -> bool {
     }
 }
 
-fn current_schema_1_2_0() -> Value {
+fn current_schema(minor: &str) -> Value {
     let path = format!(
-        "{}/protocol/profiles/hub-http-v1/1.2.0/resources.schema.json",
+        "{}/protocol/profiles/hub-http-v1/{minor}/resources.schema.json",
         env!("CARGO_MANIFEST_DIR")
     );
-    let text = std::fs::read_to_string(path).expect("committed hub-http-v1@1.2.0 schema");
+    let text = std::fs::read_to_string(path)
+        .unwrap_or_else(|error| panic!("committed hub-http-v1@{minor} schema: {error}"));
     let schema: Value = serde_json::from_str(&text).expect("schema JSON");
     schema["$defs"]["current"].clone()
 }
@@ -1472,9 +1473,24 @@ fn check_summary(label: &str, summary: &CurrentVehicleSummary) -> Value {
         "{label}: removing the 30 new keys leaves the 85 keys of 1.2.0"
     );
     assert!(
-        schema_allows(&current_schema_1_2_0(), &body),
+        schema_allows(&current_schema("1.2.0"), &body),
         "{label}: the body validates against the 1.2.0 current definition"
     );
+    // C6 ST-S30, the 1.3.0 half (C6-C2): the same body against this minor's
+    // `$defs.current`, which requires all 115 keys and the nested 20 and 16.
+    assert!(
+        schema_allows(&current_schema("1.3.0"), &body),
+        "{label}: the body validates against the 1.3.0 current definition"
+    );
+    let strict = current_schema("1.3.0");
+    for key in key_set(&body) {
+        let mut missing = body.clone();
+        missing.as_object_mut().expect("body").remove(&key);
+        assert!(
+            !schema_allows(&strict, &missing),
+            "{label}: the 1.3.0 definition refuses a body without {key}"
+        );
+    }
     match summary.car.as_ref() {
         Some(car) => check_car(label, car, &bytes, &body["car"]),
         None => assert!(body["car"].is_null(), "{label}: no car"),
@@ -1552,7 +1568,7 @@ fn c6_st_s30_aliases() {
     assert_eq!(expected_top().len(), 115);
     assert_eq!(expected_car().len(), 20);
     assert_eq!(
-        key_set(&current_schema_1_2_0()["properties"]),
+        key_set(&current_schema("1.2.0")["properties"]),
         sorted(&CURRENT_1_2_0_KEYS)
     );
 

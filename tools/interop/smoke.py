@@ -11,7 +11,7 @@ REFUSAL = 'current-Hub acceptance failed; inspect private fixture evidence'
 
 
 def accepted(summary):
-    """True only for a complete native hub-http-v1@1.2.0 run in which every check passed."""
+    """True only for a complete native hub-http-v1@1.3.0 run in which every check passed."""
     return (
         isinstance(summary, dict)
         and summary.get('profile_id') == HTTP_PROFILE_ID

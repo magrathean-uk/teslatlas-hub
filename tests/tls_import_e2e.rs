@@ -118,7 +118,7 @@ async fn assert_pairing_and_pack_transfer(
     )
     .await;
     assert_eq!(capabilities["protocol"], "teslatlas-sync");
-    assert_eq!(capabilities["profile"], "hub-http-v1@1.2.0");
+    assert_eq!(capabilities["profile"], "hub-http-v1@1.3.0");
     // The paired router serves history, packs and self-revoke: all eight
     // tokens, in profile order. Home Assistant's invariants stay as they were.
     assert_eq!(

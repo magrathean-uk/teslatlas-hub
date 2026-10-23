@@ -633,6 +633,7 @@
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubLaunchAgent.swift",
         "packaging/macos-app/scripts/preinstall",
         "src/api/server/tests/b3_c6_c1.rs",
+        "src/api/server/tests/b3_c6_c2.rs",
         "src/api/server/tests/b3_c6_s1.rs",
         "src/api/server/tests/device_credentials.rs",
         "src/api/server/tests/discovery.rs",

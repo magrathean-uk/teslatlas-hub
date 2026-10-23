@@ -9,13 +9,22 @@ import {
   validateHubError,
 } from "../../src/hub/validate.js";
 
-const profileRoot = new URL("../../../protocol/profiles/hub-http-v1/1.2.0/", import.meta.url);
+// The allocated C6 profile feeds every positive current and drive input (C6 R51, R62).
+const allocatedProfileRoot = new URL(
+  "../../../protocol/profiles/hub-http-v1/1.3.0/",
+  import.meta.url,
+);
+// The published 1.2.0 profile, read only by the deliberately retained checks that name it.
+const retainedProfileRoot = new URL(
+  "../../../protocol/profiles/hub-http-v1/1.2.0/",
+  import.meta.url,
+);
 
 type Mutation = (value: Record<string, unknown>) => void;
 
 async function discoveryWith(change: Mutation): Promise<string> {
   const value = JSON.parse(
-    await readFile(new URL("examples/discovery.json", profileRoot), "utf8"),
+    await readFile(new URL("examples/discovery.json", allocatedProfileRoot), "utf8"),
   ) as Record<string, unknown>;
   change(value);
   return JSON.stringify(value);
@@ -77,8 +86,43 @@ const invalidDiscoveries: ReadonlyArray<readonly [string, Mutation]> = [
 ];
 
 describe("current Hub model decoding", () => {
-  it("accepts the 1.2.0 discovery bytes with an optional ETag-independent shape", async () => {
-    const bytes = await readFile(new URL("examples/discovery.json", profileRoot), "utf8");
+  it("accepts the allocated 1.3.0 discovery bytes with an optional ETag-independent shape", async () => {
+    const bytes = await readFile(new URL("examples/discovery.json", allocatedProfileRoot), "utf8");
+
+    expect(decodeHubJson(bytes, validateHubDiscovery, "HubDiscovery")).toEqual({
+      apiVersions: ["1.0"],
+      attributions: [
+        {
+          id: "osm",
+          licence: "ODbL-1.0",
+          text: "(c) OpenStreetMap contributors",
+          url: "https://www.openstreetmap.org/copyright",
+        },
+      ],
+      capabilities: [
+        "query.vehicles",
+        "query.current",
+        "query.drives",
+        "query.charges",
+        "query.charge.samples",
+        "query.positions",
+        "query.enrichment",
+        "sync.packs",
+        "auth.revoke",
+      ],
+      hubId: "11111111-1111-4111-8111-111111111111",
+      manifestPublicKey: "0".repeat(64),
+      packFormat: "sqlite-zstd",
+      profile: "hub-http-v1@1.3.0",
+      protocol: "teslatlas-sync",
+      protocolMajor: 1,
+      sourceUrl: "https://example.invalid/source",
+      version: "2026.36.2",
+    });
+  });
+
+  it("accepts the retained 1.2.0 discovery bytes with an optional ETag-independent shape", async () => {
+    const bytes = await readFile(new URL("examples/discovery.json", retainedProfileRoot), "utf8");
 
     expect(decodeHubJson(bytes, validateHubDiscovery, "HubDiscovery")).toEqual({
       apiVersions: ["1.0"],
@@ -113,7 +157,7 @@ describe("current Hub model decoding", () => {
   });
 
   it("preserves every nullable current value and the UUID identity", async () => {
-    const bytes = await readFile(new URL("examples/current.json", profileRoot), "utf8");
+    const bytes = await readFile(new URL("examples/current.json", allocatedProfileRoot), "utf8");
 
     const current = decodeHubJson(bytes, validateHubCurrent, "HubCurrent");
 
@@ -124,13 +168,38 @@ describe("current Hub model decoding", () => {
     expect(current.car).toMatchObject({
       id: 1,
       name: "Synthetic car",
-      settings: { enabled: true, suspendAfterIdleMin: 15, suspendMin: 21 },
+      // The retained 1.2.0 aliases and the new C6 R49 keys carry the same values.
+      settings: {
+        enabled: true,
+        suspendAfterIdleMin: 15,
+        suspendMin: 21,
+        collectionEnabled: true,
+        sleepAfterIdleMin: 15,
+        sleepWindowMin: 21,
+      },
     });
-    expect(Object.keys(current)).toHaveLength(85);
+    // The C6 R47 additions and renames: both spellings are present, null in the example.
+    expect(current.stateSinceMs).toBeNull();
+    expect(current.since).toBeNull();
+    expect(current.activeRouteKmToArrival).toBeNull();
+    expect(current.modelName).toBeNull();
+    expect(current.modelYear).toBeNull();
+    expect(Object.keys(current)).toHaveLength(115);
+    expect(Object.keys(current.car ?? {})).toHaveLength(20);
+    expect(Object.keys(current.car?.settings ?? {})).toHaveLength(16);
+  });
+
+  it("refuses the retained 1.2.0 current bytes under the allocated 1.3.0 validators", async () => {
+    // A 1.2.0 body lacks the 30 new required keys; the allocated minor is a superset, not a subset.
+    const bytes = await readFile(new URL("examples/current.json", retainedProfileRoot), "utf8");
+
+    expect(() => decodeHubJson(bytes, validateHubCurrent, "HubCurrent")).toThrowError(
+      expect.objectContaining({ code: "protocol_validation", validator: "HubCurrent" }),
+    );
   });
 
   it("keeps numeric drive IDs exact when they are safe JavaScript integers", async () => {
-    const bytes = await readFile(new URL("examples/drives.json", profileRoot), "utf8");
+    const bytes = await readFile(new URL("examples/drives.json", allocatedProfileRoot), "utf8");
 
     const page = decodeHubJson(bytes, validateHubDrives, "HubDrives");
 
@@ -140,13 +209,15 @@ describe("current Hub model decoding", () => {
       vehicleId: "11111111-1111-4111-8111-111111111111",
       startDateMs: 1_788_565_900_000,
       endDateMs: 1_788_565_960_000,
+      startedAtMs: 1_788_565_900_000,
+      endedAtMs: 1_788_565_960_000,
       efficiency: null,
     });
     expect(page.nextCursor).toMatch(/^tqp1\./u);
   });
 
   it("decodes the address provenance of a drive and keeps its lookup time exact", async () => {
-    const bytes = await readFile(new URL("examples/drives.json", profileRoot), "utf8");
+    const bytes = await readFile(new URL("examples/drives.json", allocatedProfileRoot), "utf8");
 
     expect(decodeHubJson(bytes, validateHubDrives, "HubDrives").items[0]).toMatchObject({
       endAddressProvenance: {
@@ -176,7 +247,7 @@ describe("current Hub model decoding", () => {
   });
 
   it("rejects integers that JSON.parse would silently round", async () => {
-    const bytes = await readFile(new URL("examples/drives.json", profileRoot), "utf8");
+    const bytes = await readFile(new URL("examples/drives.json", allocatedProfileRoot), "utf8");
     const unsafe = bytes.replace('"id": 101', '"id": 9007199254740993');
 
     expect(() => decodeHubJson(unsafe, validateHubDrives, "HubDrives")).toThrowError(
@@ -191,7 +262,7 @@ describe("current Hub model decoding", () => {
     "1.00000000000000001e2",
     "1e-400",
   ])("rejects the exact fractional drive ID %s before camelization", async (token) => {
-    const bytes = await readFile(new URL("examples/drives.json", profileRoot), "utf8");
+    const bytes = await readFile(new URL("examples/drives.json", allocatedProfileRoot), "utf8");
     const fractional = bytes.replace('"id": 101', `"id": ${token}`);
 
     expect(() => decodeHubJson(fractional, validateHubDrives, "HubDrives")).toThrowError(
@@ -202,7 +273,7 @@ describe("current Hub model decoding", () => {
   it.each(["101.0", "1.01e2", "10100e-2", "-101.0", "9007199254740991.0", "-9007199254740991.0"])(
     "retains the exact integral drive ID spelling %s",
     async (token) => {
-      const bytes = await readFile(new URL("examples/drives.json", profileRoot), "utf8");
+      const bytes = await readFile(new URL("examples/drives.json", allocatedProfileRoot), "utf8");
       const integral = bytes.replace('"id": 101', `"id": ${token}`);
 
       expect(decodeHubJson(integral, validateHubDrives, "HubDrives").items[1]?.id).toBe(
@@ -214,7 +285,7 @@ describe("current Hub model decoding", () => {
   it.each(["9007199254740993.0", "-9007199254740993", "9.007199254740993e15"])(
     "rejects an integral drive ID that cannot be represented exactly %s",
     async (token) => {
-      const bytes = await readFile(new URL("examples/drives.json", profileRoot), "utf8");
+      const bytes = await readFile(new URL("examples/drives.json", allocatedProfileRoot), "utf8");
       const unsafe = bytes.replace('"id": 101', `"id": ${token}`);
 
       expect(() => decodeHubJson(unsafe, validateHubDrives, "HubDrives")).toThrowError(
@@ -224,7 +295,7 @@ describe("current Hub model decoding", () => {
   );
 
   it("keeps ordinary fractional measurements beside exactly integral fields", async () => {
-    const bytes = await readFile(new URL("examples/current.json", profileRoot), "utf8");
+    const bytes = await readFile(new URL("examples/current.json", allocatedProfileRoot), "utf8");
     const measured = bytes
       .replace('"latitude": null', '"latitude": 51.507351')
       .replace('"inside_temp": null', '"inside_temp": 20.25')
@@ -245,7 +316,7 @@ describe("current Hub model decoding", () => {
   });
 
   it("checks an integral discovery constant before rounding", async () => {
-    const bytes = await readFile(new URL("examples/discovery.json", profileRoot), "utf8");
+    const bytes = await readFile(new URL("examples/discovery.json", allocatedProfileRoot), "utf8");
 
     expect(() =>
       decodeHubJson(
@@ -257,7 +328,7 @@ describe("current Hub model decoding", () => {
   });
 
   it("preserves final-member JSON parsing for duplicate and escaped equivalent keys", async () => {
-    const bytes = await readFile(new URL("examples/drives.json", profileRoot), "utf8");
+    const bytes = await readFile(new URL("examples/drives.json", allocatedProfileRoot), "utf8");
     const overwritten = bytes.replace('"id": 101', '"id": 101.000000000000001, "i\\u0064": 101');
     const overwrittenOverflow = bytes.replace('"id": 101', '"id": 1e309, "id": 101');
     const effective = bytes.replace('"id": 101', '"id": 101, "i\\u0064": 101.000000000000001');
@@ -272,7 +343,7 @@ describe("current Hub model decoding", () => {
   });
 
   it("rejects a malformed Hub UUID from exact JSON bytes", async () => {
-    const bytes = await readFile(new URL("examples/discovery.json", profileRoot), "utf8");
+    const bytes = await readFile(new URL("examples/discovery.json", allocatedProfileRoot), "utf8");
     const wrongUuid = bytes.replace("11111111-1111-4111-8111-111111111111", "not-a-uuid");
 
     expect(() => decodeHubJson(wrongUuid, validateHubDiscovery, "HubDiscovery")).toThrowError(
@@ -302,7 +373,7 @@ describe("current Hub model decoding", () => {
 
   it("accepts any lowercase error code token and rejects one outside the grammar", async () => {
     const drive = await readFile(
-      new URL("examples/error-drive-not-found.json", profileRoot),
+      new URL("examples/error-drive-not-found.json", allocatedProfileRoot),
       "utf8",
     );
 
@@ -320,8 +391,11 @@ describe("current Hub model decoding", () => {
   });
 
   it("accepts the maximum-lifetime rotation reason and nothing else", async () => {
-    const bytes = await readFile(new URL("examples/rotate-max-lifetime.json", profileRoot), "utf8");
-    const plain = await readFile(new URL("examples/claim.json", profileRoot), "utf8");
+    const bytes = await readFile(
+      new URL("examples/rotate-max-lifetime.json", allocatedProfileRoot),
+      "utf8",
+    );
+    const plain = await readFile(new URL("examples/claim.json", allocatedProfileRoot), "utf8");
 
     expect(decodeHubJson(bytes, validateHubClaim, "HubClaim")).toMatchObject({
       reason: "max_lifetime",
@@ -336,7 +410,7 @@ describe("current Hub model decoding", () => {
     // The second example item (id 101) has null measurements, so edits aimed at the first
     // null of a key land on it.
     async function drivesBytes() {
-      return readFile(new URL("examples/drives.json", profileRoot), "utf8");
+      return readFile(new URL("examples/drives.json", allocatedProfileRoot), "utf8");
     }
 
     it("rejects a nonfinite measurement", async () => {

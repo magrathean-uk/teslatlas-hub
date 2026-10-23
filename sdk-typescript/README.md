@@ -13,7 +13,7 @@
 
 ## Overview
 
-The Teslatlas TypeScript SDK is a private, protocol-derived client for the Teslatlas Hub read API on Node.js. It talks to one fixed Hub endpoint through typed methods and validates every JSON discovery, resource, pairing, and error response against validators generated from the in-repository `hub-http-v1@1.2.0` contract before returning it to the caller. There is no browser client.
+The Teslatlas TypeScript SDK is a private, protocol-derived client for the Teslatlas Hub read API on Node.js. It talks to one fixed Hub endpoint through typed methods and validates every JSON discovery, resource, pairing, and error response against validators generated from the in-repository `hub-http-v1@1.3.0` contract before returning it to the caller. There is no browser client.
 
 The package is private and is not a registry release. The package manifest identifies version `2026.36.2`, Apache-2.0 licensing, and an evidence-only runtime policy. Local fixtures and unit checks demonstrate SDK behavior against checked-in inputs. They do not establish the behavior of a live Hub or a production deployment.
 
@@ -40,7 +40,7 @@ The example endpoint and Hub UUID are placeholders, and the credential store is 
 
 ## Hub client
 
-`createHubClient` targets `hub-http-v1@1.2.0`. It uses a fixed HTTPS endpoint, an expected Hub UUID, and a caller-owned credential store. Its operations cover discovery, health, readiness, pairing, credential rotation, vehicles, current state, and drives. The client requires `profile` in the discovery document, so it refuses a Hub that predates that profile.
+`createHubClient` targets `hub-http-v1@1.3.0`. It uses a fixed HTTPS endpoint, an expected Hub UUID, and a caller-owned credential store. Its operations cover discovery, health, readiness, pairing, credential rotation, vehicles, current state, and drives. The client requires `profile` in the discovery document, so it refuses a Hub that predates that profile.
 
 The Node entry point keeps normal CA and hostname verification. During pairing it checks the invitation `tlsPin` against the SHA-256 digest of the connected leaf certificate DER bytes on the same new TLS connection before sending claim bytes. Without a claim transport that can do this, pairing fails with `hub_tls_pin_unavailable` before discovery or claim network I/O. The SDK never disables certificate verification.
 
@@ -69,7 +69,7 @@ npm run pack:check
 npm run test:package
 ```
 
-Types and validators are generated from `../protocol/profiles/hub-http-v1/1.2.0`, which the generator reads in place. `npm run protocol:generate` regenerates them, and `npm run protocol:check` verifies the profile's `SHA256SUMS` and that the committed output matches a fresh generation.
+Types and validators are generated from `../protocol/profiles/hub-http-v1/1.3.0`, which the generator reads in place. `npm run protocol:generate` regenerates them, and `npm run protocol:check` verifies the profile's `SHA256SUMS` and that the committed output matches a fresh generation.
 
 ## Further reading
 

@@ -639,7 +639,11 @@ fn lowercase_hex(value: &str) -> bool {
 
 #[cfg(test)]
 #[path = "public_query/b3_c6_c1_tests.rs"]
-mod b3_c6_c1;
+pub(crate) mod b3_c6_c1;
+
+#[cfg(test)]
+#[path = "public_query/b3_c6_c2_tests.rs"]
+pub(crate) mod b3_c6_c2;
 
 #[cfg(test)]
 mod tests {

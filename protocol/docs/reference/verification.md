@@ -15,7 +15,8 @@ installed-Hub, App or SDK acceptance.
 
 | Contract | Recorded position |
 | --- | --- |
-| Current-Hub HTTP `hub-http-v1@1.2.0` | Served. A fresh native conformance run through the interop smoke passed 61 of 61 cases, complete, from the G2-2 P1 commit: native 61/61, receipt `receipt-conformance-1.2.0-<P1 sha>.md` (PROVISIONAL until R-P runs). The offline profile checks run in `./tools/check`. |
+| Current-Hub HTTP `hub-http-v1@1.2.0` | Retained. Served until the `1.3.0` change; a current Hub now names `1.3.0` and serves a superset that a `1.2.0` client reads. A fresh native conformance run through the interop smoke passed 61 of 61 cases, complete, from the G2-2 P1 commit: native 61/61, receipt `receipt-conformance-1.2.0-<P1 sha>.md` (PROVISIONAL until R-P runs). The offline profile checks run in `./tools/check`. |
+| Current-Hub HTTP `hub-http-v1@1.3.0` | The minor a current Hub names in discovery: the `1.2.0` contract plus neutral key names, each old key kept as a deprecated alias with the same value. The offline profile checks and the unit suites run in `./tools/check`; the 59 native cases (`conformance/hub_http_13.py`) run against a Hub with a private descriptor. Hub and client runtime admission is separate and remains open. |
 | Hub sync `hub-sync-v1@1.3.0` | Served (candidate contract). 65 deterministic conformance cases run in `./tools/check` and `./conformance/run`. Hub and App runtime admission is separate and remains open. |
 | Hub sync `hub-sync-v1@1.4.0` | Served through its selector (candidate contract). Its profile files are retained and digest-bound; the unit suites run in `./tools/check` and the conformance runner does not run it. Hub and App runtime admission is separate and remains open. |
 | Hub sync `hub-sync-v1@1.5.0` | Candidate, not served: no Hub serves the live overlay yet. Its profile files are retained and digest-bound; the unit suites run in `./tools/check`. No runtime acceptance is claimed. |
@@ -25,6 +26,7 @@ installed-Hub, App or SDK acceptance.
 
 | Contract | Revision | Manifest SHA-256 |
 | --- | --- | --- |
+| Current-Hub HTTP | `hub-http-v1@1.3.0` | `28957c2dfcca9efeefc7d7fee230ef769ee3c73833e60e0b0769d93bcf8b7221` |
 | Current-Hub HTTP | `hub-http-v1@1.2.0` | `7aa26deeaa9052bc77e0a6f58b89422fa21ef0ec2fd53cec1adab0361db5f7e1` |
 
 ## Accepted bounded evidence
@@ -44,8 +46,9 @@ receipts.
 | Check | Evidence produced | Limit |
 | --- | --- | --- |
 | `./tools/check` | Retained-generator consistency, unit checks, and the 65 `hub-sync-v1@1.3.0` fixture cases | No installed or remote product acceptance |
-| `./conformance/run --profile hub-http-v1@1.2.0 --config <descriptor>` | Behavior of the owned Hub described by the supplied private descriptor | Limited to the exact source, artifacts, host, cases, and receipts |
-| `tools/check-current-hub` | Bounded read-only remote-wire smoke, held to `hub-http-v1@1.2.0` (discovery must name it) | No pairing, lifecycle, native process provenance, or complete-history proof |
+| `./conformance/run --profile hub-http-v1@1.3.0 --config <descriptor>` | Behavior of the owned Hub described by the supplied private descriptor | Limited to the exact source, artifacts, host, cases, and receipts |
+| `./conformance/run --profile hub-http-v1@1.2.0 --config <descriptor>` | The same for the retained `1.2.0` contract (50 native cases) | Limited as above. The harness holds every served body to the server-strict `1.2.0` schemas, so this command checks a Hub that serves exactly `1.2.0` (a build from before the `1.3.0` change). Against a Hub that serves `1.3.0`, whatever its discovery names, the body cases fail on the added members, and `discovery-profile` fails by design when discovery names `1.3.0`; the retained cases are judged there in a tolerant client mode that this runner does not offer |
+| `tools/check-current-hub` | Bounded read-only remote-wire smoke, held to `hub-http-v1@1.3.0` (discovery must name it) | No pairing, lifecycle, native process provenance, or complete-history proof |
 | Docker gate | Checks inside the exact built image | No container-to-Hub or installed-service acceptance by itself |
 
 ## What remains unaccepted
