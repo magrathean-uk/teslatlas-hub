@@ -58,7 +58,7 @@ use crate::{
     },
     fleet_credentials::{FleetAuthManager, FleetCredentialError, FleetSetupCredentials},
     fleet_telemetry::{FleetTelemetryAccumulator, ReceiverEnvelope, ReceiverKind, parse_envelope},
-    geocoder::{AdmittedUserEgressGuard, Geocoder, GeocoderError},
+    geocoder::{AdmittedUserEgressGuard, Geocoder, GeocoderError, LookupGate, lookup_gate},
     hub_pack::{
         ProjectionBinding, ProjectionCar, ProjectionDeltaPackRequest, ProjectionPackError,
         ProjectionPackRequest, ProjectionPackWriter, ProjectionSnapshot,

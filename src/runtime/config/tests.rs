@@ -257,18 +257,6 @@ fn teslamate_read_limits_use_configured_stage_cap() {
 fn enrichment_defaults_are_private() {
     assert!(!TerrainConfig::default().enabled);
     assert_eq!(TerrainConfig::default().max_cache_bytes, 512 * 1024 * 1024);
-    assert!(!GeocoderConfig::default().enabled);
-    assert!(GeocoderConfig::default().endpoint.is_none());
-}
-
-#[test]
-fn enabled_geocoder_requires_an_explicit_provider_endpoint() {
-    let error = HubConfig::from_exact_bytes(
-        b"data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
-          [geocoder]\nenabled = true\n",
-    )
-    .expect_err("enabled geocoder without endpoint");
-    assert!(matches!(error, ConfigError::InvalidGeocoderEndpoint));
 }
 
 #[test]
@@ -2110,3 +2098,7 @@ fn cmp3_01_the_last_releases_guide_example_loads_logs_one_notice_and_collects() 
         ..base.clone()
     }));
 }
+
+// Geocoder defaults (C7 part C).
+#[path = "b3_c7_c_tests.rs"]
+mod b3_c7_c;

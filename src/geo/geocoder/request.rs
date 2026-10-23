@@ -122,10 +122,6 @@ fn coordinate_text(value: f64) -> String {
 /// status was 403 or 429 and the header was usable (C7 R54).
 pub(super) struct RequestFailure {
     pub(super) error: GeocoderError,
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "C7 Part C: the back-off reads it")
-    )]
     pub(super) retry_after_seconds: Option<u64>,
 }
 

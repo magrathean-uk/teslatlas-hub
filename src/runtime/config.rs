@@ -1127,16 +1127,23 @@ impl Default for GeocoderConfig {
     }
 }
 
+/// C7 K-DEFAULT-ENDPOINT: the endpoint of a geocoder that has none configured (C7 R56).
+const DEFAULT_GEOCODER_ENDPOINT: &str = "https://nominatim.openstreetmap.org/";
+
+/// C7 R57: address lookup is on unless the configuration turns it off.
 const fn default_geocoder_enabled() -> bool {
-    false
+    true
 }
 
 impl GeocoderConfig {
     pub(crate) fn endpoint_url(&self, test_mode: bool) -> Result<Url, ConfigError> {
-        let raw = self
-            .endpoint
-            .as_deref()
-            .ok_or(ConfigError::InvalidGeocoderEndpoint)?;
+        // C7 R56: no endpoint means the public default, except in test mode, where
+        // a missing endpoint stays refused so that no test geocoder can reach it.
+        let raw = match self.endpoint.as_deref() {
+            Some(raw) => raw,
+            None if test_mode => return Err(ConfigError::InvalidGeocoderEndpoint),
+            None => DEFAULT_GEOCODER_ENDPOINT,
+        };
         let mut endpoint = Url::parse(raw).map_err(|_| ConfigError::InvalidGeocoderEndpoint)?;
         if endpoint.host_str().is_none()
             || !matches!(endpoint.scheme(), "https" | "http")

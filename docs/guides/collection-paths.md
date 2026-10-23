@@ -108,5 +108,5 @@ Hub never switches collection path by itself. You change it on the Collection sc
 
 - Legacy, direct polling and self-hosted: only Tesla and your Hub handle your data.
 - Provider: the provider's servers receive the car's stream and store at least a cache; read the provider's privacy policy. Hub keeps its own complete copy locally.
-- Addresses: Hub looks up street addresses for drive and charge locations through a geocoding service you choose at setup (the public OpenStreetMap Nominatim service by default, with its usage policy shown). Elevation comes from downloaded terrain tiles; no coordinates are sent for it.
+- Addresses: address lookup is on by default and uses the public OpenStreetMap Nominatim service unless another endpoint is set; the Mac app, the Debian package and the Docker guide's example configuration keep it off until you turn it on. The [configuration guide](configuration.md) covers the usage policy, the limits and how to switch. Elevation comes from downloaded terrain tiles; no coordinates are sent for it.
 - Magrathean receives nothing.

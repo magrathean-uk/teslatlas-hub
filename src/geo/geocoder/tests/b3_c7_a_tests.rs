@@ -848,6 +848,48 @@ async fn c7_t59_test_guard() {
             })
             .expect("count");
         assert_eq!(rows, 0);
+        // It also wrote no provider-state row (C7 K-STATE-KEY).
+        assert_eq!(store.geocoder_provider_state().expect("row"), None);
+
+        // C7-C carry (C7 R56, C7 R57): the default configuration has no endpoint, which
+        // means the public host, so the default-config geocoder is refused in a test
+        // build before any admission check, rate wait or request, by both entry
+        // points, and the cached one leaves no lookup row and no provider-state row.
+        let default_geocoder = Geocoder::build(
+            &GeocoderConfig::default(),
+            false,
+            Arc::new(Mutex::new(None)),
+        )
+        .expect("the default configuration builds");
+        assert!(is_public_host(&default_geocoder.endpoint));
+        let guard = CountingGuard::permitting_first(1);
+        let error = tokio::time::timeout(
+            Duration::from_millis(500),
+            default_geocoder.reverse_with_egress_guard(here, &guard),
+        )
+        .await
+        .expect("an immediate refusal")
+        .expect_err("the public host is refused in a test build");
+        assert!(matches!(error, GeocoderError::InvalidEndpoint));
+        assert_eq!(guard.checks(), 0);
+        assert!(default_geocoder.limiter.lock().unwrap().is_none());
+
+        let temporary = crate::private_tempdir().expect("temporary directory");
+        let store = HubStore::initialize(temporary.path()).expect("store");
+        let error = default_geocoder
+            .reverse_cached(&store, point(52.41, -1.52), 1000)
+            .await
+            .expect_err("the public host is refused in a test build");
+        assert!(matches!(error, GeocoderError::InvalidEndpoint));
+        let connection = store.open().expect("connection");
+        let rows: i64 = connection
+            .query_row("SELECT COUNT(*) FROM address_lookup_cache", [], |row| {
+                row.get(0)
+            })
+            .expect("count");
+        assert_eq!(rows, 0);
+        assert_eq!(store.geocoder_provider_state().expect("row"), None);
+        assert!(default_geocoder.limiter.lock().unwrap().is_none());
     })
     .await;
 }

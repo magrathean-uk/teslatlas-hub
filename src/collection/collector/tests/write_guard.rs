@@ -973,6 +973,9 @@ fn p3bf2_the_compaction_writes_nothing_after_the_fence() {
 /// enabled on an unroutable HTTPS endpoint (nothing leaves the machine), and the cached
 /// answer for the job's place when `cached` says so.
 fn p3bf2_enrichment_rig(cached: bool) -> (tempfile::TempDir, GuardBed, HubConfig) {
+    // The step's pre-claim gate and its geocoder share the process-wide limiter; this
+    // test's own holds no slot, so the gate is open (C7 R61).
+    crate::geocoder::isolate_global_limiter_for_test();
     let (temporary, bed) = GuardBed::new();
     let source = bed
         .store

@@ -48,6 +48,8 @@ include!("tests/stream_evidence.rs");
 include!("tests/stream_evidence_b2.rs");
 include!("tests/no_wake_journey.rs");
 include!("tests/terrain.rs");
+#[path = "tests/b3_c7_c.rs"]
+mod b3_c7_c;
 #[path = "tests/b3_c9_s.rs"]
 mod b3_c9_s;
 include!("tests/provider_secret_scrub.rs");

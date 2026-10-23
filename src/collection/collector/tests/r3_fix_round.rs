@@ -833,6 +833,9 @@ async fn i3_01_a_fenced_telemetry_loop_still_replays_enriches_and_wakes_the_terr
     // A tripwire server on the Fleet host and the token URL records every request of
     // any method and path: none arrives.
     crate::crypto::install_default_provider();
+    // The enrichment pass's pre-claim gate shares the process-wide limiter; this test's
+    // own holds no slot, so the gate is open (C7 R61).
+    crate::geocoder::isolate_global_limiter_for_test();
     let (temporary, store, cursor_key, _generation) = p3_unresolved_fleet_hub();
     let mut config = supervised_restart_test_config(temporary.path());
     // Deterministic local enrichment: the geocoder is enabled on an endpoint that is not

@@ -1509,7 +1509,8 @@ impl RunWriteGuard {
 
 impl crate::geocoder::EgressGuard for RunWriteGuard {
     /// The geocoder consults it before the rate wait, again once the slot is
-    /// reserved, and finally before it caches the answer: all are refused once the
+    /// reserved, before it stores or deletes its provider-state record after the
+    /// answer, and finally before it caches the answer: all are refused once the
     /// run's writes are.
     fn assert_egress_allowed(&self) -> Result<(), crate::geocoder::EgressGuardError> {
         self.check("geocoder")

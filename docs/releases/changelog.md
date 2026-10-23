@@ -71,6 +71,16 @@ All notable released changes are recorded here. From 2026.36.1, Hub follows
   collector until the credentials are reconnected.
 - Removed the `write-back charge-cost` command. Hub never writes to the source
   database; migration stays read-only.
+- Address lookup defaults: in the TOML file `[geocoder]` is on and, with no
+  `endpoint`, uses the public OpenStreetMap Nominatim service; the Mac app, the Debian
+  package and the Docker guide's example configuration still write `enabled = false`.
+  Requests start at most once every 15 seconds to the public host and at most once a
+  second to any other endpoint, also across restarts. After a 403 or 429 the Hub
+  pauses lookups to that endpoint for 1 minute, doubling per refusal up to 24 hours
+  (longer when `Retry-After` asks, at most 24 hours), keeps the pause across restarts,
+  leaves pending address jobs untouched meanwhile and shows it as `collector.geocoder`
+  in `doctor`. A lookup is `GET <endpoint>/reverse` with six parameters at building
+  level (`zoom=18`).
 
 ## 2026.36.1 — 2026-09-05
 

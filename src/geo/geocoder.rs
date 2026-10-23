@@ -27,8 +27,14 @@ use crate::{
     location::Wgs84Point,
 };
 
+mod provider_state;
 mod request;
 mod response_mapping;
+
+pub(crate) use provider_state::{LookupGate, POLICY_URL, lookup_gate, provider_status};
+#[cfg(test)]
+use provider_state::{backoff_pause, lookup_gate_with};
+use provider_state::{clear_state, load_state, record_refusal};
 
 #[cfg(test)]
 use request::is_public_host;
@@ -305,6 +311,10 @@ impl Geocoder {
 
     /// Cached reverse geocoding with the same egress-admission checks as
     /// [`Self::reverse_with_egress_guard`], and one more before the cache write.
+    ///
+    /// C7 R59 to R62: after a cache miss it returns `BackingOff` while the provider's
+    /// refusal pause is in force, stores a refusal (403, 429) as the durable provider
+    /// state, and clears that state on the first answer that is not a refusal.
     pub async fn reverse_cached_with_egress_guard<G: EgressGuard + ?Sized>(
         &self,
         store: &HubStore,
@@ -319,7 +329,51 @@ impl Geocoder {
             return Ok(cached.into());
         }
 
-        let address = self.reverse_with_egress_guard(point, egress_guard).await?;
+        // C7 R59: no admission check, rate wait or request while a pause is in force.
+        // An unreadable record fails closed.
+        let state = load_state(store).map_err(GeocoderError::Cache)?;
+        if state.as_ref().is_some_and(|state| {
+            state
+                .pause_end(&self.binding.endpoint, looked_up_at_ms)
+                .is_some()
+        }) {
+            return Err(GeocoderError::BackingOff);
+        }
+
+        let address = match self.send_reverse(point, egress_guard).await {
+            Ok(address) => {
+                self.clear_provider_state(store, state.as_ref(), egress_guard);
+                address
+            }
+            Err(failure) => {
+                match failure.error {
+                    // C7 R58: the provider refuses this client now.
+                    GeocoderError::HttpStatus(status @ (403 | 429)) => {
+                        // The state row is a store mutation after the request's
+                        // awaits, so the guard stands in front of it too.
+                        admit(egress_guard)?;
+                        record_refusal(
+                            store,
+                            &self.binding,
+                            state.as_ref(),
+                            status,
+                            failure.retry_after_seconds,
+                            looked_up_at_ms,
+                        )?;
+                    }
+                    // C7 R62: the provider answered, with something other than a refusal.
+                    GeocoderError::HttpStatus(_)
+                    | GeocoderError::ResponseTooLarge
+                    | GeocoderError::ResponseRead
+                    | GeocoderError::MalformedResponse
+                    | GeocoderError::NoResult => {
+                        self.clear_provider_state(store, state.as_ref(), egress_guard);
+                    }
+                    _ => {}
+                }
+                return Err(failure.error);
+            }
+        };
         // The cache row is a store mutation after the lookup's awaits: the guard that
         // stood in front of the request stands in front of it too (B2 fix round, P3b
         // fix 2, R-P3bF2-1).
@@ -355,7 +409,48 @@ impl Geocoder {
     }
 }
 
+impl Geocoder {
+    /// C7 R62: delete the stored provider state, if there is one, after the provider
+    /// answered with something other than a refusal. A refused guard leaves the row
+    /// for the next answer; the cache write that follows is refused by the same guard.
+    fn clear_provider_state<G: EgressGuard + ?Sized>(
+        &self,
+        store: &HubStore,
+        state: Option<&provider_state::ProviderState>,
+        egress_guard: &G,
+    ) {
+        if let Some(state) = state
+            && admit(egress_guard).is_ok()
+        {
+            clear_state(store, state);
+        }
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test thread's own stand-in for the process-wide limiter.
+    static THREAD_LIMITER: std::cell::RefCell<Option<SharedLimiter>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Give the calling test thread a process-wide limiter of its own, holding no
+/// slot, and return it. A test that runs the enrichment step reaches the
+/// geocoder and the pre-claim gate through [`global_limiter`]; without this the
+/// seeded process-wide limiter (C7 R55) would close the gate for one interval
+/// after the first use, and another test's reserved slot would too.
+#[cfg(test)]
+pub(crate) fn isolate_global_limiter_for_test() -> SharedLimiter {
+    let limiter: SharedLimiter = Arc::new(Mutex::new(None));
+    THREAD_LIMITER.with(|own| *own.borrow_mut() = Some(Arc::clone(&limiter)));
+    limiter
+}
+
 fn global_limiter() -> SharedLimiter {
+    #[cfg(test)]
+    if let Some(own) = THREAD_LIMITER.with(|own| own.borrow().clone()) {
+        return own;
+    }
     static LIMITER: OnceLock<SharedLimiter> = OnceLock::new();
     LIMITER
         .get_or_init(|| seeded_limiter(Instant::now()))
@@ -371,10 +466,6 @@ fn seeded_limiter(instant: Instant) -> SharedLimiter {
 
 /// C7 R55: whether a request could start at `now` without waiting. It reads the
 /// limiter and reserves nothing.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "C7 Part C: the pre-claim gate uses it")
-)]
 fn slot_free(
     limiter: &SharedLimiter,
     interval: Duration,
@@ -494,6 +585,9 @@ pub enum GeocoderError {
     EgressDenied,
     #[error("geocoder cache failed")]
     Cache(#[source] StoreError),
+    /// C7 R59: the provider refused this client and its pause is still in force.
+    #[error("geocoder provider refused requests; waiting before the next attempt")]
+    BackingOff,
 }
 
 #[cfg(test)]
@@ -516,6 +610,10 @@ mod tests {
     // Reverse-geocoder response mapping tests (C7 part B).
     #[path = "b3_c7_b_tests.rs"]
     mod b3_c7_b;
+
+    // Reverse-geocoder defaults, durable refusal and pre-claim gate tests (C7 part C).
+    #[path = "b3_c7_c_tests.rs"]
+    mod b3_c7_c;
 
     #[derive(Clone)]
     struct RevocableEgressGuard(Arc<AtomicBool>);

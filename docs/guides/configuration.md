@@ -562,27 +562,54 @@ route (profile `receiver-v1`, `protocol/profiles/receiver-v1/1.0.0/`).
 
 ## Geocoding and terrain
 
-Geocoding is off by default:
+Address lookup (geocoding) is on by default in the TOML file: `enabled = true`
+and no `endpoint`, which means the public OpenStreetMap Nominatim service at
+`https://nominatim.openstreetmap.org/`. With no endpoint set, lookups go to that
+service, whose usage policy applies:
+<https://operations.osmfoundation.org/policies/nominatim/>. The Mac app, the Debian
+package and the Docker guide's example configuration write `enabled = false`, so
+lookups stay off there until the Mac app's setup step offers the choice or you set
+`enabled = true`.
 
 ```toml
 [geocoder]
 enabled = true
-endpoint = "https://geocoder.example.net/"
+# endpoint = "https://geocoder.example.net/"   # omit it for the public default
 language = "en"
 timeout_seconds = 30
 ```
 
-There is no public default endpoint. Configure a self-hosted or otherwise
-authorised Nominatim-compatible provider. Each uncached lookup sends the exact
-vehicle latitude/longitude, zoom 19, requested language, Hub user agent,
-operator IP address, and request metadata; the returned address and provider
-identifiers are cached locally. A cached answer is reused only for the same
-endpoint, the same language and the same coordinates (rounded to six decimal
-places), so changing `endpoint` or `language` queries the provider again.
-Operators must comply with the selected provider's attribution, database-right,
-caching, privacy, transfer, and rate rules. The public OpenStreetMap Foundation
-Nominatim service is not a default and its usage policy warns against
-personal-data submission and systematic or vehicle-tracking geocoding.
+- While address lookup is off or paused, drives and charges keep their lookups
+  pending and are looked up later. A drive or charge ends without an address only
+  when the provider has no result for the point or its answer cannot be used.
+- Each lookup is `GET <endpoint path>/reverse` with exactly six query parameters:
+  `format=jsonv2`, `lat`, `lon`, `zoom=18` (building level), `addressdetails=1`
+  and `accept-language`. It carries three headers: `User-Agent`, which names the
+  Hub and its version, `Accept: application/json` and `Accept-Language`.
+- The endpoint must use https and must not contain a user name, password, query
+  (such as an API key parameter) or fragment. Such an endpoint is refused when the
+  configuration loads, so key-based or password-protected providers are not
+  supported in this release.
+- The endpoint must return Nominatim's `jsonv2` reverse output with `osm_type` and
+  `osm_id`. A provider whose answers lack them gives no addresses, and an answer
+  that is not a JSON object is retried.
+- Lookups are cached by provider, endpoint and language, and never repeated for a
+  cached point. A cached answer is reused only for the same endpoint, language and
+  coordinates rounded to six decimal places, so changing `endpoint` or `language`
+  asks the provider again.
+- Limits: at most one request per second to any endpoint and at most 4 per minute
+  (one every 15 seconds) to the public host, also across restarts. After a 403 or
+  429 the Hub pauses lookups to that endpoint for 1 minute, doubling with each
+  further refusal up to 24 hours (longer when the provider's `Retry-After` asks
+  for it, still at most 24 hours). The pause survives a restart, cached points are
+  still served during it, and `doctor` shows it under `collector.geocoder`
+  without changing its overall status.
+- To switch, set `endpoint` to another service, or set `enabled = false`, and
+  restart the Hub. This is also the switch the usage policy expects if the operator
+  of the public service asks.
+- The provider's licence text (for the public service, OpenStreetMap data under
+  the ODbL) is stored with each lookup and will be served with provenance when the
+  API emits it.
 
 Terrain is disabled by default for source builds and packaged macOS and Debian
 installations. Enabling it opts into the provider egress and local cache below;

@@ -1614,6 +1614,7 @@ include!("db/vehicle_identity_tidy.rs");
 include!("db/geofence_models.rs");
 include!("db/geofence_storage.rs");
 include!("db/geofence_relabel.rs");
+include!("db/geocoder_provider_state.rs");
 
 #[cfg(test)]
 #[path = "db/tests.rs"]

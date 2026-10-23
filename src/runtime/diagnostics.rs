@@ -25,6 +25,7 @@ use crate::{
         FleetCredentialError, inspect_stored_fleet_credentials, stored_fleet_scope_summary,
         validate_stored_fleet_credentials,
     },
+    geocoder::{POLICY_URL, provider_status},
     teslamate_credentials::validate_stored_legacy_credentials_read_only,
 };
 
@@ -80,6 +81,26 @@ pub struct CredentialDiagnostics {
     pub fleet: FleetCredentialDiagnostics,
 }
 
+/// C7 R63: the geocoder's status. A back-off is shown here and nowhere else: it
+/// never changes `readiness`, the checks or the report's `status`.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GeocoderDiagnostics {
+    pub enabled: bool,
+    /// The configured endpoint's host, or `None` when the endpoint is refused.
+    pub endpoint_host: Option<String>,
+    pub public_host: bool,
+    /// The usage policy of the public host, or `None` for any other host.
+    pub policy_url: Option<String>,
+    /// `off`, `backingOff` (the provider's refusal pause is in force) or `on`.
+    pub state: String,
+    /// The refusal record of the configured endpoint, when there is one.
+    pub refused_status: Option<u16>,
+    pub refusals: Option<u32>,
+    pub backing_off_since_ms: Option<i64>,
+    pub retry_at_ms: Option<i64>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CollectorDiagnostics {
@@ -108,6 +129,7 @@ pub struct CollectorDiagnostics {
     /// active (managed Serve waits for a correction and restart), else `None`.
     pub cadence_error: Option<CadenceViolationReport>,
     pub geocoder_enabled: bool,
+    pub geocoder: GeocoderDiagnostics,
     pub terrain_enabled: bool,
     pub bind: String,
 }
@@ -617,6 +639,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
                 .as_ref()
                 .map(|violation| violation.report()),
             geocoder_enabled: config.geocoder.enabled,
+            geocoder: geocoder_diagnostics(store, config, now_ms),
             terrain_enabled: config.terrain.enabled,
             bind: config.bind.to_string(),
         },
@@ -629,6 +652,30 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             doctor_is_read_only: true,
         },
     })
+}
+
+/// C7 R63: the `collector.geocoder` member at `now_ms`. It reads the stored
+/// refusal record and writes nothing.
+fn geocoder_diagnostics(store: &HubStore, config: &HubConfig, now_ms: i64) -> GeocoderDiagnostics {
+    let status = provider_status(&config.geocoder, store, now_ms);
+    let state = if !config.geocoder.enabled {
+        "off"
+    } else if status.backing_off {
+        "backingOff"
+    } else {
+        "on"
+    };
+    GeocoderDiagnostics {
+        enabled: config.geocoder.enabled,
+        endpoint_host: status.endpoint_host,
+        public_host: status.public_host,
+        policy_url: status.public_host.then(|| POLICY_URL.to_owned()),
+        state: state.to_owned(),
+        refused_status: status.refusal.as_ref().map(|record| record.status),
+        refusals: status.refusal.as_ref().map(|record| record.refusals),
+        backing_off_since_ms: status.refusal.as_ref().map(|record| record.since_ms),
+        retry_at_ms: status.refusal.as_ref().map(|record| record.until_ms),
+    }
 }
 
 fn collector_readiness_passes(required: bool, can_start: bool, readiness: &str) -> bool {
@@ -727,6 +774,11 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     include!("diagnostics/readiness_tests.rs");
+
+    // The geocoder status member (C7 part C).
+    mod b3_c7_c {
+        include!("diagnostics/b3_c7_c_tests.rs");
+    }
 
     #[test]
     fn stopped_collector_is_ready_to_start_not_a_doctor_failure() {

@@ -57,6 +57,12 @@ async fn run_address_enrichment_once_guarded(
         return Ok(false);
     }
     check_optional_write(write_guard, "enrichment-claim")?;
+    // C7 R61: a job is claimed only when a request could start now. While the
+    // endpoint's slot is not free or the provider's refusal pause is in force the
+    // jobs stay pending, untried and without an error.
+    if lookup_gate(&config.geocoder, store, now_ms) != LookupGate::Open {
+        return Ok(false);
+    }
     let Some(job) = store.claim_address_enrichment_job(now_ms)? else {
         return Ok(false);
     };
