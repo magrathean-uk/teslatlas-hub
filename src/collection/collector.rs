@@ -113,6 +113,11 @@ include!("collector/fleet_setup.rs");
 include!("collector/terrain.rs");
 include!("collector/terrain_sampling.rs");
 include!("collector/terrain_acquisition.rs");
+mod terrain_pass {
+    include!("collector/terrain_pass.rs");
+}
+pub(crate) use terrain_pass::TerrainClock;
+use terrain_pass::TerrainWorkerState;
 include!("collector/fleet_supervision.rs");
 include!("collector/owner_supervision.rs");
 include!("collector/streaming.rs");

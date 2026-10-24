@@ -1,47 +1,38 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+#[cfg(test)]
+use crate::db::K_RETRY_SHIFT_MAX;
 use crate::{
+    db::{RetrySchedule, TileProvenance},
     geocoder::{EgressGuard, EgressGuardError},
     terrain_cache::TerrainLookupResult,
 };
 use std::{collections::VecDeque, pin::Pin, sync::Mutex};
 
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "bounds cache-backed terrain acquisition")
+)]
 const K_ACQUIRE_BUDGET: Duration = Duration::from_secs(300);
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "bounds cached-state checks and local tile loading"
+    )
+)]
 const K_LOCAL_TILE_BUDGET: Duration = Duration::from_secs(30);
 const K_TILE_FAIL_MEMO: i64 = 900_000;
 const K_MEMO_ENTRIES: usize = 1_024;
 const K_BREAKER_WINDOW: i64 = 900_000;
 const K_BREAKER_BASE: i64 = 300_000;
 const K_BREAKER_CAP: i64 = 21_600_000;
-const K_RETRY_SHIFT_MAX: i64 = 32;
 
-/// The identity and origin of the bytes sampled by a group (C9 R53).
-/// Shared with storage outcomes.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct TileProvenance {
-    pub tile_name: String,
-    pub tile_hash: String,
-    pub dataset_source: String,
-    pub dataset_version: String,
-}
-
-/// Per-class retry timing shared with storage outcomes (C9 R17).
-#[derive(Clone, Copy)]
-pub(crate) struct RetrySchedule {
-    pub base_ms: i64,
-    pub cap_ms: i64,
-}
-
-impl RetrySchedule {
-    /// Saturating exponential delay, including corrupt attempt counts (C9 R17).
-    pub fn delay_ms(self, attempts_after: i64) -> i64 {
-        let shift = (attempts_after.max(1) - 1).min(K_RETRY_SHIFT_MAX) as u32;
-        self.base_ms.saturating_mul(1_i64 << shift).min(self.cap_ms)
-    }
-}
-
-#[cfg_attr(not(test), expect(dead_code, reason = "C9 Part A: used by Part P"))]
 pub(crate) trait TileSource: Send + Sync {
+    /// C9 R13: a timed-out local task must release its tile before another load.
+    fn has_pending_local_work(&self) -> bool {
+        false
+    }
     fn acquire<'a>(
         &'a self,
         tile: TileId,
@@ -50,7 +41,6 @@ pub(crate) trait TileSource: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<AcquiredTile, AcquireFailure>> + Send + 'a>>;
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "C9 Part A: used by Part P"))]
 pub(crate) struct AcquiredTile {
     pub tile: HgtTile,
     pub provenance: TileProvenance,
@@ -60,6 +50,13 @@ pub(crate) struct AcquireFailure {
     pub provenance: Option<TileProvenance>,
 }
 
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "describes errors produced by cache-backed terrain acquisition"
+    )
+)]
 #[derive(Debug)]
 pub(crate) enum AcquireErrorKind {
     Cache(TerrainCacheError),
@@ -79,7 +76,13 @@ impl AcquireErrorKind {
     }
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "C9 Part A: used by Part P"))]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "abstracts cache operations for terrain tile acquisition"
+    )
+)]
 pub(crate) trait TileCache: Send + Sync {
     fn has_cached_tile<'a>(
         &'a self,
@@ -104,7 +107,22 @@ impl TileCache for TerrainCache {
         &'a self,
         tile: &'a TileId,
     ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
-        Box::pin(TerrainCache::has_cached_tile(self, tile))
+        let cache = self.clone();
+        let tile = *tile;
+        Box::pin(async move {
+            let runtime = tokio::runtime::Handle::current();
+            let job = TerrainBlockingJob::new();
+            tokio::task::spawn_blocking(move || {
+                let _job = job;
+                #[cfg(test)]
+                _job.enter_for_test();
+                #[cfg(test)]
+                terrain_hold_local_for_test(TerrainLocalStage::CachedState, tile);
+                runtime.block_on(cache.has_cached_tile(&tile))
+            })
+            .await
+            .unwrap_or(false)
+        })
     }
     fn lookup<'a>(
         &'a self,
@@ -114,23 +132,42 @@ impl TileCache for TerrainCache {
         guard: &'a dyn EgressGuard,
     ) -> Pin<Box<dyn Future<Output = Result<TerrainLookupResult, TerrainCacheError>> + Send + 'a>>
     {
-        Box::pin(self.lookup_with_egress_guard(latitude, longitude, budget, guard))
+        let cache = self.clone();
+        Box::pin(terrain_cache_blocking(guard, move |relay| async move {
+            cache
+                .lookup_with_egress_guard(latitude, longitude, budget, &relay)
+                .await
+        }))
     }
     fn get<'a>(
         &'a self,
         tile: TileId,
         guard: &'a dyn EgressGuard,
     ) -> Pin<Box<dyn Future<Output = Result<HgtTile, TerrainCacheError>> + Send + 'a>> {
-        Box::pin(self.get_with_egress_guard(tile, guard))
+        let cache = self.clone();
+        Box::pin(terrain_cache_blocking(guard, move |relay| async move {
+            #[cfg(test)]
+            terrain_hold_local_for_test(TerrainLocalStage::Get, tile);
+            cache.get_with_egress_guard(tile, &relay).await
+        }))
     }
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "C9 Part A: used by Part P"))]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "adapts the retained cache into a terrain tile source"
+    )
+)]
 pub(crate) struct CacheTileSource<C: TileCache = TerrainCache> {
     cache: C,
 }
 
 impl<C: TileCache> TileSource for CacheTileSource<C> {
+    fn has_pending_local_work(&self) -> bool {
+        TERRAIN_BLOCKING_JOBS.load(Ordering::SeqCst) != 0
+    }
     fn acquire<'a>(
         &'a self,
         tile: TileId,
@@ -139,25 +176,33 @@ impl<C: TileCache> TileSource for CacheTileSource<C> {
     ) -> Pin<Box<dyn Future<Output = Result<AcquiredTile, AcquireFailure>> + Send + 'a>> {
         Box::pin(async move {
             // C9 R19, C9 R20, C9 R22: cached tiles retain admission without a probe.
-            let guard = if self.cache.has_cached_tile(&tile).await {
-                inner
-            } else {
-                guard
-            };
+            let acquisition_started = Instant::now();
+            let cached = timeout(K_LOCAL_TILE_BUDGET, self.cache.has_cached_tile(&tile))
+                .await
+                .map_err(|_| AcquireFailure {
+                    kind: AcquireErrorKind::LocalTimeout,
+                    provenance: None,
+                })?;
+            let guard = if cached { inner } else { guard };
             // C9 R14: the centre selects the same tile at degree edges and poles.
-            let result = self
-                .cache
-                .lookup(
+            let result = timeout(
+                K_ACQUIRE_BUDGET.saturating_sub(acquisition_started.elapsed()),
+                self.cache.lookup(
                     f64::from(tile.latitude()) + 0.5,
                     f64::from(tile.longitude()) + 0.5,
                     K_ACQUIRE_BUDGET,
                     guard,
-                )
-                .await
-                .map_err(|error| AcquireFailure {
-                    kind: AcquireErrorKind::Cache(error),
-                    provenance: None,
-                })?;
+                ),
+            )
+            .await
+            .map_err(|_| AcquireFailure {
+                kind: AcquireErrorKind::Cache(TerrainCacheError::Timeout),
+                provenance: None,
+            })?
+            .map_err(|error| AcquireFailure {
+                kind: AcquireErrorKind::Cache(error),
+                provenance: None,
+            })?;
             let provenance = TileProvenance {
                 tile_name: result.tile_name,
                 tile_hash: result.tile_hash,
@@ -170,23 +215,43 @@ impl<C: TileCache> TileSource for CacheTileSource<C> {
                     provenance: None,
                 });
             }
-            let loaded = timeout(K_LOCAL_TILE_BUDGET, self.cache.get(tile, guard)).await;
-            let loaded = match loaded {
-                Ok(Ok(loaded)) => loaded,
-                Ok(Err(error)) => {
-                    return Err(AcquireFailure {
+            // C9 R14: synchronous cache reads and hashing stay inside the local budget.
+            let loaded = timeout(K_LOCAL_TILE_BUDGET, async {
+                let loaded = self
+                    .cache
+                    .get(tile, guard)
+                    .await
+                    .map_err(|error| AcquireFailure {
                         kind: AcquireErrorKind::Cache(error),
                         provenance: None,
-                    });
-                }
-                Err(_) => {
-                    return Err(AcquireFailure {
-                        kind: AcquireErrorKind::LocalTimeout,
-                        provenance: None,
-                    });
-                }
-            };
-            let hash = loaded.sha256_hex().map_err(|error| AcquireFailure {
+                    })?;
+                let job = TerrainBlockingJob::new();
+                tokio::task::spawn_blocking(move || {
+                    #[cfg(test)]
+                    job.enter_for_test();
+                    #[cfg(test)]
+                    {
+                        terrain_hold_hash_for_test(loaded.tile_id());
+                        terrain_hold_local_for_test(TerrainLocalStage::Hash, loaded.tile_id());
+                    }
+                    let hash = loaded.sha256_hex();
+                    (loaded, hash, job)
+                })
+                .await
+                .map_err(|_| AcquireFailure {
+                    kind: AcquireErrorKind::Cache(TerrainCacheError::Io(std::io::Error::other(
+                        "tile task failed",
+                    ))),
+                    provenance: None,
+                })
+            })
+            .await
+            .map_err(|_| AcquireFailure {
+                kind: AcquireErrorKind::LocalTimeout,
+                provenance: None,
+            })??;
+            let (loaded, hash, _job) = loaded;
+            let hash = hash.map_err(|error| AcquireFailure {
                 kind: AcquireErrorKind::Cache(TerrainCacheError::InvalidTile(error)),
                 provenance: None,
             })?;
@@ -236,7 +301,13 @@ fn schedule_for(class: FailureClass) -> Option<RetrySchedule> {
     Some(RetrySchedule { base_ms, cap_ms })
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "C9 Part A: used by Part P"))]
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the C9 R17 class schedule evaluator, checked by C9 ST22"
+    )
+)]
 fn retry_delay_ms(class: FailureClass, attempts_after: i64) -> i64 {
     schedule_for(class).map_or(0, |schedule| schedule.delay_ms(attempts_after))
 }
@@ -333,22 +404,6 @@ impl AcquisitionBreaker {
     }
 }
 
-/// Epoch-millisecond clock for terrain acquisition and scheduling (C9 R28).
-pub(crate) trait TerrainClock: Send + Sync {
-    fn now_ms(&self) -> Result<i64, CollectorError>;
-}
-
-/// In-memory acquisition policy and pass progress (C9 R18, C9 R19).
-#[derive(Default)]
-struct TerrainWorkerState {
-    breaker: Mutex<AcquisitionBreaker>,
-    memo: TileFailureMemo,
-    #[expect(dead_code, reason = "C9 Part A: used by Part P")]
-    rotation_after: Option<Uuid>,
-    #[expect(dead_code, reason = "C9 Part A: used by Part P")]
-    tidy_complete: bool,
-}
-
 /// One acquisition's egress permission and half-open ownership (C9 R20).
 struct BreakerGuard<'a> {
     breaker: &'a Mutex<AcquisitionBreaker>,
@@ -438,7 +493,6 @@ impl Drop for BreakerGuard<'_> {
     }
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "C9 Part A: used by Part P"))]
 enum GroupAcquisition {
     Tile(AcquiredTile),
     Failed {
@@ -453,7 +507,6 @@ enum GroupAcquisition {
     },
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "C9 Part A: used by Part P"))]
 async fn acquire_group(
     state: &mut TerrainWorkerState,
     source: &dyn TileSource,
@@ -504,6 +557,154 @@ async fn acquire_group(
                 class,
                 provenance: failure.provenance,
             }
+        }
+    }
+}
+
+/// Forward blocking cache guard calls to the live admission owner (C9 R20).
+struct TerrainGuardRelay(
+    mpsc::UnboundedSender<std::sync::mpsc::SyncSender<Result<(), EgressGuardError>>>,
+);
+impl EgressGuard for TerrainGuardRelay {
+    fn assert_egress_allowed(&self) -> Result<(), EgressGuardError> {
+        let (send, receive) = std::sync::mpsc::sync_channel(1);
+        self.0.send(send).map_err(|_| EgressGuardError)?;
+        receive.recv().unwrap_or(Err(EgressGuardError))
+    }
+}
+
+/// Run cache I/O off the async executor; a dropped owner denies later permits.
+async fn terrain_cache_blocking<T, F, Fut>(
+    guard: &dyn EgressGuard,
+    operation: F,
+) -> Result<T, TerrainCacheError>
+where
+    T: Send + 'static,
+    F: FnOnce(TerrainGuardRelay) -> Fut + Send + 'static,
+    Fut: Future<Output = Result<T, TerrainCacheError>> + Send + 'static,
+{
+    let (send, mut receive) = mpsc::unbounded_channel();
+    let runtime = tokio::runtime::Handle::current();
+    let job = TerrainBlockingJob::new();
+    let mut task = tokio::task::spawn_blocking(move || {
+        #[cfg(test)]
+        job.enter_for_test();
+        (runtime.block_on(operation(TerrainGuardRelay(send))), job)
+    });
+    loop {
+        tokio::select! {
+            result = &mut task => return result.map_err(|_| TerrainCacheError::Io(std::io::Error::other("cache task failed")))?.0,
+            request = receive.recv() => {
+                if let Some(reply) = request {
+                    let _ = reply.send(guard.assert_egress_allowed());
+                } else {
+                    return task.await.map_err(|_| TerrainCacheError::Io(std::io::Error::other("cache task failed")))?.0;
+                }
+            }
+        }
+    }
+}
+
+static TERRAIN_BLOCKING_JOBS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// Process-wide ownership across all cache instances, including after timeout.
+struct TerrainBlockingJob {
+    #[cfg(test)]
+    dropped: Arc<AtomicBool>,
+}
+impl TerrainBlockingJob {
+    fn new() -> Self {
+        TERRAIN_BLOCKING_JOBS.fetch_add(1, Ordering::SeqCst);
+        Self {
+            #[cfg(test)]
+            dropped: Arc::new(AtomicBool::new(false)),
+        }
+    }
+    #[cfg(test)]
+    fn enter_for_test(&self) {
+        TERRAIN_CURRENT_JOB.with(|slot| *slot.borrow_mut() = Some(self.dropped.clone()));
+    }
+}
+#[cfg(test)]
+thread_local! {
+    static TERRAIN_CURRENT_JOB: std::cell::RefCell<Option<Arc<AtomicBool>>> = const { std::cell::RefCell::new(None) };
+}
+#[cfg(test)]
+fn terrain_job_drop_for_test() -> Arc<AtomicBool> {
+    TERRAIN_CURRENT_JOB.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .expect("blocking stage owns a job")
+            .clone()
+    })
+}
+impl Drop for TerrainBlockingJob {
+    fn drop(&mut self) {
+        TERRAIN_BLOCKING_JOBS.fetch_sub(1, Ordering::SeqCst);
+        #[cfg(test)]
+        self.dropped.store(true, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+type TerrainHashHold = (
+    TileId,
+    oneshot::Sender<Arc<AtomicBool>>,
+    std::sync::mpsc::Receiver<()>,
+);
+#[cfg(test)]
+static TERRAIN_HASH_HOLD: Mutex<Option<TerrainHashHold>> = Mutex::new(None);
+#[cfg(test)]
+fn terrain_hold_hash_for_test(tile: TileId) {
+    // C9 R13, C9 R28: acknowledge a loaded tile held across its hash deadline.
+    let hold = {
+        let mut slot = TERRAIN_HASH_HOLD.lock().unwrap();
+        if slot.as_ref().is_some_and(|(id, _, _)| *id == tile) {
+            slot.take()
+        } else {
+            None
+        }
+    };
+    if let Some((_, entered, release)) = hold {
+        let _ = entered.send(terrain_job_drop_for_test());
+        let _ = release.recv();
+    }
+}
+
+#[cfg(test)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TerrainLocalStage {
+    CachedState,
+    Get,
+    Hash,
+}
+#[cfg(test)]
+type TerrainLocalHold = (
+    TerrainLocalStage,
+    TileId,
+    std::thread::ThreadId,
+    oneshot::Sender<(std::thread::ThreadId, Arc<AtomicBool>)>,
+    std::sync::mpsc::Receiver<()>,
+);
+#[cfg(test)]
+static TERRAIN_LOCAL_HOLD: Mutex<Vec<TerrainLocalHold>> = Mutex::new(Vec::new());
+#[cfg(test)]
+fn terrain_hold_local_for_test(stage: TerrainLocalStage, tile: TileId) {
+    // C9 R14, C9 R28: acknowledge the actual cache adapter's blocking stage.
+    let hold = {
+        let mut slot = TERRAIN_LOCAL_HOLD.lock().unwrap();
+        slot.iter()
+            .position(|(held_stage, id, ..)| *held_stage == stage && *id == tile)
+            .map(|index| slot.remove(index))
+    };
+    if let Some((_, _, caller, entered, release)) = hold {
+        let worker = std::thread::current().id();
+        let _ = entered.send((worker, terrain_job_drop_for_test()));
+        // A broken adapter running here on the caller must fail the assertion
+        // without blocking the executor that releases the acknowledged worker.
+        if worker != caller {
+            let _ = release.recv();
         }
     }
 }

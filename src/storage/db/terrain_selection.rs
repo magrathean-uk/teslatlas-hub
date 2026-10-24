@@ -3,6 +3,8 @@
 const TERRAIN_WINDOW_IDS_SQL: &str = "SELECT MAX(position_id) FROM (
     SELECT position_id FROM materialised_positions
     WHERE vehicle_id = ?1 AND position_id > ?2 ORDER BY position_id LIMIT ?3)";
+pub(crate) const TERRAIN_WINDOW_REMAINS_SQL: &str = "SELECT EXISTS(
+    SELECT 1 FROM materialised_positions WHERE vehicle_id = ?1 AND position_id > ?2)";
 const TERRAIN_WINDOW_ROWS_SQL: &str = "SELECT p.drive_id, p.position_json,
     EXISTS(SELECT 1 FROM terrain_elevation_provenance t
            WHERE t.vehicle_id = p.vehicle_id AND t.position_id = p.position_id)
@@ -172,6 +174,10 @@ fn terrain_qualifies(
     if let Some(eligible) = eligibility.get(&key) {
         return Ok(*eligible);
     }
+    #[cfg(test)]
+    if TERRAIN_SELECTION_READ_ACTIVE.with(|active| active.get()) {
+        TERRAIN_ELIGIBILITY_READS.with(|count| count.set(count.get() + 1));
+    }
     let eligible = connection
         .query_row(
             TERRAIN_DRIVE_ELIGIBLE_SQL,
@@ -185,9 +191,49 @@ fn terrain_qualifies(
 
 #[cfg(test)]
 thread_local! {
+    // C9 ST73: count the marker reader itself, independently of its callers.
+    pub(crate) static TERRAIN_MARKER_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static TERRAIN_SELECTION_READ_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    // C9 R7: count selection eligibility evaluations, excluding commit rechecks.
+    pub(crate) static TERRAIN_ELIGIBILITY_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     // C9 R8: allow a test writer to commit after the window upper bound is read.
     static TERRAIN_WINDOW_AFTER_UPPER: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
         const { std::cell::RefCell::new(None) };
+}
+
+fn terrain_selection_qualifies(
+    connection: &Connection,
+    vehicle_id: Uuid,
+    drive_id: Option<i64>,
+    position: &ProjectionPosition,
+    boundary: ImportBoundary,
+    eligibility: &mut HashMap<(Uuid, i64), bool>,
+) -> Result<bool, StoreError> {
+    #[cfg(test)]
+    {
+        TERRAIN_SELECTION_READ_ACTIVE.with(|active| {
+            let previous = active.replace(true);
+            let result = terrain_qualifies(
+                connection,
+                vehicle_id,
+                drive_id,
+                position,
+                boundary,
+                eligibility,
+            );
+            active.set(previous);
+            result
+        })
+    }
+    #[cfg(not(test))]
+    terrain_qualifies(
+        connection,
+        vehicle_id,
+        drive_id,
+        position,
+        boundary,
+        eligibility,
+    )
 }
 
 impl HubStore {
@@ -248,6 +294,18 @@ impl HubStore {
         scan_rows: u32,
         limit: u32,
     ) -> Result<TerrainForwardWindow, StoreError> {
+        self.terrain_forward_window_with_eligibility(vehicle, scan_rows, limit, &mut HashMap::new())
+            .map(|(window, _)| window)
+    }
+
+    /// C9 R7, C9 R8: share a pass's drive decisions and report a cut window.
+    pub(crate) fn terrain_forward_window_with_eligibility(
+        &self,
+        vehicle: &TerrainVehicle,
+        scan_rows: u32,
+        limit: u32,
+        eligibility: &mut HashMap<(Uuid, i64), bool>,
+    ) -> Result<(TerrainForwardWindow, bool), StoreError> {
         let mut connection = self.open_read_only_connection()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Deferred)
@@ -273,7 +331,13 @@ impl HubStore {
             examined_through: upper,
         };
         let boundary = terrain_merged_boundary(vehicle.stored_boundary, vehicle.watermark_boundary);
-        let mut eligibility = HashMap::new();
+        let mut cut: bool = transaction
+            .query_row(
+                TERRAIN_WINDOW_REMAINS_SQL,
+                params![vehicle.vehicle_id.to_string(), upper],
+                |row| row.get(0),
+            )
+            .map_err(StoreError::Query)?;
         let mut statement = transaction
             .prepare(TERRAIN_WINDOW_ROWS_SQL)
             .map_err(StoreError::Query)?;
@@ -287,17 +351,18 @@ impl HubStore {
             let text: String = row.get(1).map_err(StoreError::Query)?;
             let position: ProjectionPosition =
                 serde_json::from_str(&text).map_err(StoreError::DeserializeLifecycleRow)?;
-            if !terrain_qualifies(
+            if !terrain_selection_qualifies(
                 &transaction,
                 vehicle.vehicle_id,
                 row.get(0).map_err(StoreError::Query)?,
                 &position,
                 boundary,
-                &mut eligibility,
+                eligibility,
             )? {
                 continue;
             }
             if result.candidates.len() == limit as usize {
+                cut = true;
                 // C9 R8: no returned candidate means a zero budget holds at L.
                 result.examined_through = result
                     .candidates
@@ -310,7 +375,7 @@ impl HubStore {
                 position,
             });
         }
-        Ok(result)
+        Ok((result, cut))
     }
 
     /// C9 R10: read a bounded retry slice in due-time, vehicle and position order.
@@ -318,6 +383,16 @@ impl HubStore {
         &self,
         now_ms: i64,
         limit: u32,
+    ) -> Result<Vec<TerrainRetry>, StoreError> {
+        self.terrain_due_retries_with_eligibility(now_ms, limit, &mut HashMap::new())
+    }
+
+    /// C9 R7, C9 R10: reuse the pass's drive decisions across both queues.
+    pub(crate) fn terrain_due_retries_with_eligibility(
+        &self,
+        now_ms: i64,
+        limit: u32,
+        eligibility: &mut HashMap<(Uuid, i64), bool>,
     ) -> Result<Vec<TerrainRetry>, StoreError> {
         let connection = self.open_read_only_connection()?;
         let mut statement = connection
@@ -328,7 +403,6 @@ impl HubStore {
             .map_err(StoreError::Query)?;
         let mut result = Vec::new();
         let mut boundaries = HashMap::new();
-        let mut eligibility = HashMap::new();
         while let Some(row) = rows.next().map_err(StoreError::Query)? {
             let text: String = row.get(0).map_err(StoreError::Query)?;
             let vehicle_id = Uuid::parse_str(&text).map_err(|_| StoreError::InvalidVehicleId)?;
@@ -346,13 +420,13 @@ impl HubStore {
             let candidate = if let Some(text) = text {
                 let position: ProjectionPosition =
                     serde_json::from_str(&text).map_err(StoreError::DeserializeLifecycleRow)?;
-                terrain_qualifies(
+                terrain_selection_qualifies(
                     &connection,
                     vehicle_id,
                     row.get(4).map_err(StoreError::Query)?,
                     &position,
                     boundary,
-                    &mut eligibility,
+                    eligibility,
                 )?
                 .then_some(TerrainCandidate {
                     vehicle_id,
@@ -438,6 +512,8 @@ impl HubStore {
 
     /// C9 R58: read the current terrain tidy run and counts; a missing row is a fault.
     pub fn terrain_tidy_progress(&self) -> Result<TerrainTidyProgress, StoreError> {
+        #[cfg(test)]
+        TERRAIN_MARKER_READS.with(|count| count.set(count.get() + 1));
         self.open_read_only_connection()?
             .query_row(
                 "SELECT run, examined, cleared, requeued,

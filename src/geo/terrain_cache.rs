@@ -149,13 +149,14 @@ impl TerrainCacheOptions {
     }
 }
 
+#[derive(Clone)]
 pub struct TerrainCache {
     options: TerrainCacheOptions,
     root: Arc<PrivateDirectory>,
     client: Client,
-    locks: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
-    quota_lock: AsyncMutex<()>,
-    hashes: Mutex<HashMap<String, (HgtFileIdentity, String)>>,
+    locks: Arc<Mutex<HashMap<String, Arc<AsyncMutex<()>>>>>,
+    quota_lock: Arc<AsyncMutex<()>>,
+    hashes: Arc<Mutex<HashMap<String, (HgtFileIdentity, String)>>>,
 }
 
 /// A tile that passed admission: the opened file, the digest it matched and
@@ -243,9 +244,9 @@ impl TerrainCache {
             options,
             root,
             client,
-            locks: Mutex::new(HashMap::new()),
-            quota_lock: AsyncMutex::new(()),
-            hashes: Mutex::new(HashMap::new()),
+            locks: Arc::new(Mutex::new(HashMap::new())),
+            quota_lock: Arc::new(AsyncMutex::new(())),
+            hashes: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 

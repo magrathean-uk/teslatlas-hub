@@ -162,6 +162,8 @@ pub struct TerrainBatchApplied {
     pub rearmed: bool,
     pub filled: u32,
     pub void: u32,
+    /// C9 R35: committed terminal gaps carrying the out-of-range code.
+    pub out_of_range: u32,
     pub failed: u32,
     pub stale_dropped: u32,
     pub stale_held: Vec<i64>,

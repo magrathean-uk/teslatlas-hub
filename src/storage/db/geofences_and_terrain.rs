@@ -1049,11 +1049,12 @@ impl HubStore {
 
     /// The digest recorded when the Hub downloaded `tile_name` (G2-3f), if any.
     /// Files without one are unproven and are never admitted.
+    /// C9 R4, C9 R14: read-only probes never repair catalogue metadata.
     pub fn terrain_tile_digest(
         &self,
         tile_name: &str,
     ) -> Result<Option<TerrainTileDigest>, StoreError> {
-        let connection = self.open()?;
+        let connection = self.open_read_only_connection()?;
         connection
             .query_row(
                 "SELECT sha256, recorded_at_ms FROM terrain_tile_digests WHERE tile_name = ?1",

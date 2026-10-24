@@ -251,7 +251,10 @@ impl HubStore {
                     }
                     applied.filled += 1;
                 }
-                TerrainOutcomeKind::Void { .. } => applied.void += 1,
+                TerrainOutcomeKind::Void { error_code, .. } => {
+                    applied.void += 1;
+                    applied.out_of_range += u32::from(*error_code == Some("out_of_range"));
+                }
                 TerrainOutcomeKind::Failed { .. } => applied.failed += 1,
             }
             write_terrain_batch_provenance(&transaction, outcome, attempts, batch.committed_at_ms)?;

@@ -52,6 +52,8 @@ include!("tests/terrain.rs");
 mod b3_c7_c;
 #[path = "tests/b3_c9_a.rs"]
 mod b3_c9_a;
+#[path = "tests/b3_c9_p.rs"]
+mod b3_c9_p;
 #[path = "tests/b3_c9_s.rs"]
 mod b3_c9_s;
 include!("tests/provider_secret_scrub.rs");
