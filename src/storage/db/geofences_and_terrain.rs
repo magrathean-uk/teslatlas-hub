@@ -452,9 +452,13 @@ impl HubStore {
                 &drive_json,
             )?;
         }
+        let mut terrain_requests = TerrainRecomputeRequests::default();
         let mut positions_written = 0usize;
         for position in &delta.positions {
-            Self::write_materialised_position(transaction, commit, position)?;
+            terrain_requests.extend(
+                Self::write_materialised_position(transaction, commit, position)?
+                    .recompute_drive_ids,
+            );
             positions_written += 1;
         }
         for drive in &delta.drives {
@@ -474,7 +478,10 @@ impl HubStore {
                     if position.date_ms > drive.end_date_ms {
                         position.drive_id = None;
                     }
-                    Self::write_materialised_position(transaction, commit, &position)?;
+                    terrain_requests.extend(
+                        Self::write_materialised_position(transaction, commit, &position)?
+                            .recompute_drive_ids,
+                    );
                     positions_written += 1;
                     Ok(())
                 },
@@ -495,22 +502,22 @@ impl HubStore {
                         return Ok(());
                     }
                     position.drive_id = None;
-                    Self::write_materialised_position(transaction, commit, &position)?;
+                    terrain_requests.extend(
+                        Self::write_materialised_position(transaction, commit, &position)?
+                            .recompute_drive_ids,
+                    );
                     positions_written += 1;
                     Ok(())
                 },
             )?;
         }
-        // C1 R93: a drive that was open across the upgrade is recomputed once
-        // every position of the commit is written (in-delta positions, then
-        // each closed drive's stored children, then each discarded drive's),
-        // and before the charge close.
-        recompute_inherited_drives_in_transaction(
+        // C1 R93, C9 R64: all positions precede C1's eligible ids and then C9 requests.
+        finalise_position_drives_in_transaction(
             transaction,
             commit.vehicle_id,
-            commit.car_id,
             &delta.drives,
             &delta.recompute_drive_ids,
+            &terrain_requests.ids,
         )?;
         close_charges_in_transaction(transaction, commit)?;
         // Samples follow the same order after the close step: the in-delta
@@ -679,7 +686,7 @@ impl HubStore {
         transaction: &Transaction<'_>,
         commit: &LifecycleCommit<'_>,
         position: &crate::hub_pack::ProjectionPosition,
-    ) -> Result<(), StoreError> {
+    ) -> Result<TerrainRewriteApplied, StoreError> {
         let position_json =
             serde_json::to_string(position).map_err(StoreError::SerializeLifecycleRow)?;
         transaction
@@ -738,6 +745,24 @@ impl HubStore {
                 ],
             )
             .map_err(StoreError::LifecycleWrite)?;
+        let applied = terrain_after_position_write_in_transaction(
+            transaction,
+            commit.vehicle_id,
+            position.id,
+            commit.updated_at_ms,
+        )?;
+        let position_json = if applied.outcome == TerrainRewrite::Unchanged {
+            position_json
+        } else {
+            transaction
+                .query_row(
+                    "SELECT position_json FROM materialised_positions \
+                     WHERE vehicle_id = ?1 AND position_id = ?2",
+                    params![commit.vehicle_id.to_string(), position.id],
+                    |row| row.get::<_, String>(0),
+                )
+                .map_err(StoreError::Query)?
+        };
         record_sync_mutation_in_transaction(
             transaction,
             commit.vehicle_id,
@@ -747,7 +772,7 @@ impl HubStore {
             "upsert",
             &position_json,
         )?;
-        Ok(())
+        Ok(applied)
     }
 
     /// Write one materialised charge sample and its sync mutation (C1 R11).

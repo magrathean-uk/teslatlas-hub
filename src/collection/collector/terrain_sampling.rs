@@ -28,7 +28,7 @@ const K_TERRAIN_MAX: i16 = 9_000;
     expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SampleOutcome {
+pub(crate) enum SampleOutcome {
     /// Whole metres inside `K_TERRAIN_MIN..=K_TERRAIN_MAX`.
     Elevation(i16),
     /// The point lies in an unknown (void) area.
@@ -86,7 +86,7 @@ fn finish_sample(value: f64) -> SampleOutcome {
     not(test),
     expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
 )]
-fn sample_elevation(
+pub(crate) fn sample_elevation(
     tile: &HgtTile,
     latitude: f64,
     longitude: f64,

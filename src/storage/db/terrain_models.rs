@@ -63,6 +63,113 @@ pub struct TerrainTidyProgress {
     pub completed_at_ms: Option<i64>,
 }
 
+/// C9 R58: the durable identity under which a pass prepared its chunks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TerrainTidyRun {
+    pub run: i64,
+    pub armed_at_ms: Option<i64>,
+}
+
+impl TerrainTidyProgress {
+    /// C9 R58: retain this identity from the pass's marker read until commit.
+    pub fn identity(&self) -> TerrainTidyRun {
+        TerrainTidyRun {
+            run: self.run,
+            armed_at_ms: self.armed_at_ms,
+        }
+    }
+}
+
+/// C9 R55, C9 R56: one bounded chunk, or a re-arm that invalidated its work.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TerrainTidyApplied {
+    pub examined: u32,
+    pub cleared: u32,
+    pub requeued: u32,
+    pub removed: u32,
+    pub kept: u32,
+    pub drives_changed: u32,
+    pub complete: bool,
+    pub rearmed: bool,
+}
+
+/// C9 R45, C9 R53: the acquisition identity of the bytes sampled for an outcome.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TileProvenance {
+    pub tile_name: String,
+    pub tile_hash: String,
+    pub dataset_source: String,
+    pub dataset_version: String,
+}
+
+/// C9 R17: a capped exponential delay, measured from the outcome's commit time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetrySchedule {
+    pub base_ms: i64,
+    pub cap_ms: i64,
+}
+
+/// C9 R17, section 5: prevent shift overflow without changing delays below a cap.
+pub(crate) const K_RETRY_SHIFT_MAX: i64 = 32;
+
+impl RetrySchedule {
+    /// C9 R17: clamp the exponent before multiplying, including very old retries.
+    pub fn delay_ms(self, attempts_after: i64) -> i64 {
+        let shift = (attempts_after.max(1) - 1).min(K_RETRY_SHIFT_MAX) as u32;
+        self.base_ms.saturating_mul(1_i64 << shift).min(self.cap_ms)
+    }
+}
+
+/// C9 R45: one sampled value, terminal gap, or scheduled acquisition failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TerrainOutcomeKind {
+    Filled {
+        elevation_m: i16,
+        tile: TileProvenance,
+    },
+    Void {
+        tile: TileProvenance,
+        error_code: Option<&'static str>,
+    },
+    Failed {
+        error_code: &'static str,
+        schedule: RetrySchedule,
+        tile: Option<TileProvenance>,
+    },
+}
+
+/// C9 R16: the selected position and queue against which a result is checked.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TerrainOutcome {
+    pub candidate: TerrainCandidate,
+    pub forward: bool,
+    pub kind: TerrainOutcomeKind,
+}
+
+/// C9 R9, C9 R15: one vehicle's durable outcomes and proposed forward frontier.
+pub struct TerrainBatch<'a> {
+    pub vehicle_id: Uuid,
+    pub outcomes: &'a [TerrainOutcome],
+    pub retire: &'a [i64],
+    pub cursor_to: Option<i64>,
+    pub committed_at_ms: i64,
+}
+
+/// C9 R16: committed counts, undecided stale positions and the cursor actually raised.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TerrainBatchApplied {
+    /// C9 R58: abandon remaining prepared work and read the tidy marker again.
+    pub rearmed: bool,
+    pub filled: u32,
+    pub void: u32,
+    pub failed: u32,
+    pub stale_dropped: u32,
+    pub stale_held: Vec<i64>,
+    pub retired: u32,
+    pub drives_changed: u32,
+    pub cursor_written: Option<i64>,
+}
+
 /// C9 R8: maximum forward rows examined in a vehicle window.
 #[cfg_attr(
     not(test),
@@ -84,3 +191,19 @@ pub(crate) const K_RETRY_SLICE: u32 = 250;
     expect(dead_code, reason = "caps each vehicle's terrain backlog counts")
 )]
 pub(crate) const K_STATUS_COUNT_CAP: u32 = 10_000;
+
+/// C9 R54: the immediate provenance effect of a materialised-position rewrite.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerrainRewrite {
+    Unchanged,
+    Requeued,
+    Removed,
+}
+
+/// C9 R54: corrections and the old/current drives to finalise after all positions.
+#[must_use = "finalise every returned drive after the transaction's position mutations"]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerrainRewriteApplied {
+    pub outcome: TerrainRewrite,
+    pub recompute_drive_ids: Vec<i64>,
+}

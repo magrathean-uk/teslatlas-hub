@@ -626,6 +626,8 @@ fn recompute_terrain_drive(
     vehicle_id: &str,
     drive_id: i64,
 ) -> Result<(), StoreError> {
+    #[cfg(test)]
+    c9_record_recompute_call(transaction, vehicle_id, drive_id)?;
     let mut triples: Vec<(i64, i64, Option<i64>)> = Vec::new();
     {
         let mut statement = transaction
@@ -656,19 +658,64 @@ fn recompute_terrain_drive(
             |row| row.get(0),
         )
         .map_err(StoreError::Query)?;
-    let mut drive: ProjectionDrive =
+    let _: ProjectionDrive =
         serde_json::from_str(&drive_json).map_err(StoreError::DeserializeLifecycleRow)?;
-    drive.ascent = ascent;
-    drive.descent = descent;
-    let drive_json = serde_json::to_string(&drive).map_err(StoreError::SerializeLifecycleRow)?;
+    // C1 R52, C9 R55: preserve every other member of the stored drive JSON.
     transaction
         .execute(
-            "UPDATE materialised_drives SET drive_json = ?3, ascent = ?4, descent = ?5
+            "UPDATE materialised_drives SET
+             drive_json = json_set(drive_json, '$.ascent', ?3, '$.descent', ?4),
+             ascent = ?3, descent = ?4
              WHERE vehicle_id = ?1 AND drive_id = ?2",
-            params![vehicle_id, drive_id, drive_json, ascent, descent],
+            params![vehicle_id, drive_id, ascent, descent],
         )
         .map_err(StoreError::LifecycleWrite)?;
     Ok(())
+}
+
+/// C9 R39, C9 R40: preserve copied totals and publish changed Hub drive totals.
+pub(crate) fn recompute_terrain_drive_with_change(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    drive_id: i64,
+) -> Result<bool, StoreError> {
+    let vehicle_key = vehicle_id.to_string();
+    if import_inventory_contains_closed_drive(transaction, &vehicle_key, drive_id)? {
+        return Ok(false);
+    }
+    recompute_terrain_drive_pair_with_change(transaction, vehicle_id, drive_id)
+}
+
+/// C1 R93, C9 R39: recompute once and publish only a changed pair.
+fn recompute_terrain_drive_pair_with_change(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    drive_id: i64,
+) -> Result<bool, StoreError> {
+    let vehicle_key = vehicle_id.to_string();
+    let before = stored_drive_totals(transaction, &vehicle_key, drive_id)?;
+    recompute_terrain_drive(transaction, &vehicle_key, drive_id)?;
+    let after = stored_drive_totals(transaction, &vehicle_key, drive_id)?;
+    if (before.0, before.1) == (after.0, after.1) {
+        return Ok(false);
+    }
+    let car: i64 = transaction
+        .query_row(
+            "SELECT car_id FROM materialised_drives WHERE vehicle_id = ?1 AND drive_id = ?2",
+            params![&vehicle_key, drive_id],
+            |row| row.get(0),
+        )
+        .map_err(StoreError::Query)?;
+    record_sync_mutation_in_transaction(
+        transaction,
+        vehicle_id,
+        "drive",
+        drive_id,
+        car,
+        "upsert",
+        &after.2,
+    )?;
+    Ok(true)
 }
 
 /// The stored `(ascent, descent)` and `drive_json` of one materialised drive.
@@ -685,49 +732,6 @@ fn stored_drive_totals(
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(StoreError::Query)
-}
-
-/// Recompute the drives of a commit that were open across the upgrade (C1
-/// R93), after every position of the commit is written and before the commit
-/// writes anything else that follows the positions (the charge close).
-///
-/// For each id in `recompute_drive_ids`, in that order, whose drive row this
-/// commit wrote (`written`): read the stored `(ascent, descent)`, call
-/// [`recompute_terrain_drive`], read the row again, and record one `drive`
-/// `upsert` sync mutation carrying the `drive_json` just read when the pair
-/// changed, and none when it did not. It is the caller's duty that C1 R85
-/// states for the recompute function. A refusal of a stored position returns
-/// before this function writes for that drive.
-fn recompute_inherited_drives_in_transaction(
-    transaction: &Transaction<'_>,
-    vehicle_id: Uuid,
-    car_id: i64,
-    written: &[ProjectionDrive],
-    recompute_drive_ids: &[i64],
-) -> Result<(), StoreError> {
-    let vehicle_key = vehicle_id.to_string();
-    for &drive_id in recompute_drive_ids {
-        if !written.iter().any(|drive| drive.id == drive_id) {
-            continue;
-        }
-        let (ascent_before, descent_before, _) =
-            stored_drive_totals(transaction, &vehicle_key, drive_id)?;
-        recompute_terrain_drive(transaction, &vehicle_key, drive_id)?;
-        let (ascent, descent, drive_json) =
-            stored_drive_totals(transaction, &vehicle_key, drive_id)?;
-        if (ascent, descent) != (ascent_before, descent_before) {
-            record_sync_mutation_in_transaction(
-                transaction,
-                vehicle_id,
-                "drive",
-                drive_id,
-                car_id,
-                "upsert",
-                &drive_json,
-            )?;
-        }
-    }
-    Ok(())
 }
 
 fn validate_address_cache_record(record: &AddressCacheRecord) -> Result<(), StoreError> {

@@ -283,6 +283,8 @@ fn c9_st51_st52_boundaries() {
         .unwrap();
     assert_eq!(children, vec![(101, 40, None), (102, 40, None)]);
     assert_eq!(c9_vehicle(&store, vehicle).watermark_boundary, boundary);
+    // C9 R58: the seed's changed Positions already raised the stored boundary.
+    assert_eq!(c9_vehicle(&store, vehicle).stored_boundary, boundary);
     assert_eq!(
         c9_ids(&store, &c9_vehicle(&store, vehicle)),
         (vec![201, 202, 501, 502], 502)
@@ -291,7 +293,7 @@ fn c9_st51_st52_boundaries() {
         store
             .record_terrain_import_boundary(vehicle, boundary, C9_T0 + 3_000)
             .unwrap(),
-        TerrainBoundaryRaise::Raised
+        TerrainBoundaryRaise::Unchanged
     );
     store
         .open()

@@ -319,15 +319,16 @@ fn promote_imported_open_session_in_transaction(
                 position.tpms_pressure_fl, position.tpms_pressure_fr, position.tpms_pressure_rl, position.tpms_pressure_rr],
         ).map_err(StoreError::LifecycleWrite)?;
     }
-    // C2 R80 (g) step 1: the six pairs through the one writer (a promotion has
-    // no no-op test, C2 R80 (d)). Step 2 (C1 R84 (b), R90: the cursor raise over
-    // every source's rows) follows below; step 3 (C9 R58's boundary re-arm when
-    // the writer reports `Positions`) joins once C9 Part C has landed.
+    // C2 R80 (g), C2 R80 (d), C1 R84 (b), C1 R90, C9 R58: raise-only merge,
+    // all-source cursor raise, then the boundary hook for changed Positions.
     let watermarks = snapshot_watermark_pairs(&session.watermarks);
-    let _changed_domains =
+    let changed_domains =
         raise_source_watermarks_in_transaction(transaction, source_id, vehicle_id, &watermarks)?;
     let mut seeded = seeded;
     raise_id_cursors_above_watermarks(transaction, vehicle_id, &mut seeded)?;
+    if changed_domains.contains(&WatermarkDomain::Positions) {
+        terrain_after_import_boundary_raise_in_transaction(transaction, vehicle_id, updated_at_ms)?;
+    }
     seed_imported_version_from_updates(transaction, vehicle_id, &mut seeded)?;
     let json = seeded
         .encode()

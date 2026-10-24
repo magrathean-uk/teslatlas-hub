@@ -1976,12 +1976,10 @@ impl HubStore {
                 .map_err(StoreError::LifecycleWrite)?;
         }
 
-        // C2 R80 (g) step 1: the six pairs through the one writer. Step 2 (C1
-        // R84 (b)'s cursor raise) follows below; step 3 (C9 R58's boundary
-        // re-arm when the writer reports `Positions`) joins once C9 Part C has
-        // landed.
+        // C2 R80 (g), C1 R84 (b), C9 R58: raise-only merge, all-source cursor raise,
+        // then the boundary hook for changed Positions.
         let watermarks = snapshot_watermark_pairs(&session.watermarks);
-        let _changed_domains = raise_source_watermarks_in_transaction(
+        let changed_domains = raise_source_watermarks_in_transaction(
             &transaction,
             source_id,
             vehicle_id,
@@ -1989,6 +1987,13 @@ impl HubStore {
         )?;
         let mut seeded = seeded;
         raise_id_cursors_above_watermarks(&transaction, vehicle_id, &mut seeded)?;
+        if changed_domains.contains(&WatermarkDomain::Positions) {
+            terrain_after_import_boundary_raise_in_transaction(
+                &transaction,
+                vehicle_id,
+                updated_at_ms,
+            )?;
+        }
         seed_imported_version_from_updates(&transaction, vehicle_id, &mut seeded)?;
         let json = seeded
             .encode()

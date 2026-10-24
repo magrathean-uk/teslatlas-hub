@@ -1,5 +1,33 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+/// C9 R40: inventory membership identifies copied closed drives even when empty.
+fn import_inventory_contains_closed_drive(
+    transaction: &Transaction<'_>,
+    vehicle_id: &str,
+    drive_id: i64,
+) -> Result<bool, StoreError> {
+    transaction
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM teslamate_import_projection_rows r
+                JOIN teslamate_import_projection_heads h USING(vehicle_id)
+                JOIN sources s ON s.source_id = h.source_id
+                WHERE r.vehicle_id = ?1 AND r.entity = 'drive' AND r.entity_id = ?2
+                  AND s.source_kind = ?3
+                UNION ALL
+                SELECT 1 FROM teslamate_import_projection_state_rows r
+                JOIN teslamate_import_projection_state_heads h USING(vehicle_id)
+                JOIN sources s ON s.source_id = h.source_id
+                WHERE r.vehicle_id = ?1 AND r.entity_ordinal = 1 AND r.entity_id = ?2
+                  AND s.source_kind = ?3 AND NOT EXISTS(
+                    SELECT 1 FROM teslamate_import_projection_heads legacy
+                    WHERE legacy.vehicle_id = r.vehicle_id))",
+            params![vehicle_id, drive_id, IMPORT_SOURCE_KIND],
+            |r| r.get(0),
+        )
+        .map_err(StoreError::Query)
+}
+
 impl HubStore {
     /// Publish a client-valid import successor under the immutable V2 base.
     ///

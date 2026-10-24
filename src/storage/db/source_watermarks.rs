@@ -26,9 +26,9 @@
 // 2. C1 R84 (b)'s raise of the vehicle's id cursors from the rows as they then
 //    stand ([`raise_id_cursors_above_watermarks`]), reading every source's
 //    rows (C1 R90 for the promotion);
-// 3. once C9 Part C has landed, when the returned domains include
-//    [`WatermarkDomain::Positions`], C9 R58's boundary re-arm for the vehicle.
-//    C9 Part C is not in this tree yet, so no caller performs step 3 today.
+// 3. when the returned domains include [`WatermarkDomain::Positions`], call
+//    [`terrain_after_import_boundary_raise_in_transaction`] for C9 R58's
+//    boundary raise and re-arm in that same transaction.
 //
 // A seed that is a no-op by C2 R80 (d) writes nothing and performs none of the
 // three. The two seeding paths are `HubStore::seed_imported_open_session` and
@@ -247,4 +247,14 @@ pub(crate) fn raise_source_watermarks_in_transaction(
         .zip(changed)
         .filter_map(|(domain, was_changed)| was_changed.then_some(domain))
         .collect())
+}
+
+/// C9 R6, C9 R58: merge the import boundary and re-arm tidy in the import transaction.
+pub(crate) fn terrain_after_import_boundary_raise_in_transaction(
+    transaction: &Transaction<'_>,
+    vehicle_id: Uuid,
+    now_ms: i64,
+) -> Result<TerrainBoundaryRaise, StoreError> {
+    let watermark = terrain_watermark_boundary(transaction, vehicle_id)?;
+    raise_terrain_import_boundary_in_transaction(transaction, vehicle_id, watermark, now_ms)
 }
