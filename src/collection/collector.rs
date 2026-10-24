@@ -112,6 +112,7 @@ include!("collector/supervised_test_support.rs");
 include!("collector/fleet_setup.rs");
 include!("collector/terrain.rs");
 include!("collector/terrain_sampling.rs");
+include!("collector/terrain_acquisition.rs");
 include!("collector/fleet_supervision.rs");
 include!("collector/owner_supervision.rs");
 include!("collector/streaming.rs");

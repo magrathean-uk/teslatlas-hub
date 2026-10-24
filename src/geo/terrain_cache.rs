@@ -249,6 +249,39 @@ impl TerrainCache {
         })
     }
 
+    /// Whether the on-disk tile matches its recorded digest (C9 R19).
+    /// Takes the existing quota lock without consulting a guard, changing the
+    /// cache or making a request. Admission is still checked by lookup and get.
+    /// Reuses a memoised digest only while the file identity is unchanged.
+    pub async fn has_cached_tile(&self, tile: &TileId) -> bool {
+        let _quota_guard = self.quota_lock.lock().await;
+        let name = tile.name();
+        let Ok(hgt) = HgtTile::open_in(&name, self.root.as_ref(), &tile_file(*tile)) else {
+            return false;
+        };
+        let Ok(Some(recorded)) = self.options.store.terrain_tile_digest(&name) else {
+            return false;
+        };
+        let Ok(Some(before)) = hgt.file_identity() else {
+            return false;
+        };
+        let memoised = {
+            let Ok(hashes) = self.hashes.lock() else {
+                return false;
+            };
+            hashes
+                .get(&name)
+                .filter(|(identity, _)| *identity == before)
+                .map(|(_, hash)| hash.clone())
+        };
+        let hash = match memoised {
+            Some(hash) => Ok(hash),
+            None => hgt.sha256_hex(),
+        };
+        hash.is_ok_and(|hash| hash == recorded.sha256)
+            && hgt.file_identity().is_ok_and(|after| after == Some(before))
+    }
+
     #[cfg(any(not(target_os = "macos"), test))]
     pub async fn get(&self, tile: TileId) -> Result<HgtTile, TerrainCacheError> {
         self.get_with_egress_guard(tile, &crate::geocoder::UnguardedEgress)
