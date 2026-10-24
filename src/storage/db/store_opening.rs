@@ -373,12 +373,16 @@ impl HubStore {
     /// shape (before the credential status table), the v71 shape (before its
     /// rejected-access digest), the v72 shape (before the receiver accumulator-state
     /// table), the v73 shape (before the retired delivery objects were dropped), the
-    /// v74 shape (before the table of completed one-time data steps, C6 R63) and the
-    /// v75 shape (before the geofence step) to v76. The geofence step rebuilds the
-    /// fence table with a wider name, radius and session-fee rule and a
-    /// source-ownership column, and adds the fence id mark and imported-fence
-    /// tombstone tables (C8 R12). Return no store handle: consumers still require a
-    /// fully migrated schema.
+    /// v74 shape (before the table of completed one-time data steps, C6 R63), the
+    /// v75 shape (before the geofence step) and the v76 shape (before the terrain
+    /// selection step) to v77. The geofence step (C8 R12) rebuilds the fence table
+    /// with a wider name, radius and session-fee rule and a source-ownership
+    /// column, and adds the fence id mark and imported-fence tombstone tables.
+    /// The terrain selection step (C9 R61) adds the import boundary columns,
+    /// resets each terrain cursor once, creates the pending terrain tidy row
+    /// extends the retry-order index and adds a per-vehicle index of failed
+    /// retries.
+    /// Return no store handle: consumers still require a fully migrated schema.
     pub(crate) fn preflight_standalone_schema_read_only(data_dir: &Path) -> Result<(), StoreError> {
         Self::open_read_only_with_mode(data_dir, false, true).map(|_| ())
     }
@@ -422,8 +426,9 @@ impl HubStore {
             return Err(StoreError::InvalidApplicationId(application_id));
         }
         let version = schema_version(&connection)?;
-        let known_forward_upgrade =
-            standalone_migration_candidate && SCHEMA_VERSION == 76 && matches!(version, 66..=75);
+        let known_forward_upgrade = standalone_migration_candidate
+            && SCHEMA_VERSION == TERRAIN_SELECTION_SCHEMA_VERSION
+            && (66..TERRAIN_SELECTION_SCHEMA_VERSION).contains(&version);
         if version != SCHEMA_VERSION && !known_forward_upgrade {
             return Err(StoreError::UnsupportedSchema(version));
         }

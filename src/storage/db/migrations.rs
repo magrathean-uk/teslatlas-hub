@@ -2550,6 +2550,11 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         migrate_geofence_step(connection)?;
         version = GEOFENCE_STEP_SCHEMA_VERSION;
     }
+    // C9 R61: selection boundaries, tidy progress and the complete retry order.
+    if version == TERRAIN_SELECTION_SCHEMA_VERSION - 1 {
+        migrate_terrain_selection(connection)?;
+        version = TERRAIN_SELECTION_SCHEMA_VERSION;
+    }
     if version == SCHEMA_VERSION {
         Ok(())
     } else {
@@ -2562,8 +2567,8 @@ include!("migrations/b3.rs");
 /// Test fixtures that rewind a current catalogue to the shape before the v72
 /// step run this: it drops the rejected-access-digest column of the credential
 /// status table (hub fix pass 3). Every older rewind drops the whole table. It
-/// starts with the rewind of the geofence, table-of-data-steps, receiver-state
-/// and retirement steps (v76, v75, v73 and v74), which come after this step.
+/// starts with the terrain-selection (C9 R61, v77), geofence, completed-data-step,
+/// retirement and receiver-state rewinds (v76, v75, v74 and v73), which come later.
 #[cfg(test)]
 pub(crate) const REWIND_V72_SQL: &str = concat!(
     rewind_v73_sql!(),
@@ -2575,8 +2580,8 @@ pub(crate) const REWIND_V72_SQL: &str = concat!(
 /// Test fixtures that rewind a current catalogue to the shape before the v71
 /// step run this: it drops the legacy credential unit's status table (C5
 /// section 3.3), which also removes the v72 digest column. It starts with the
-/// v76, v75, v74 and v73 rewinds (`rewind_v73_sql!`), which undo the geofence,
-/// data-steps table, retirement and receiver-state steps that come after it.
+/// v77, v76, v75, v74 and v73 rewinds (`rewind_v73_sql!`), which undo terrain
+/// selection (C9 R61), geofences, data steps, retirement and receiver state.
 /// Every older rewind starts with the same drop.
 #[cfg(test)]
 pub(crate) const REWIND_V71_SQL: &str = concat!(
@@ -2588,11 +2593,10 @@ pub(crate) const REWIND_V71_SQL: &str = concat!(
 
 /// Test fixtures that rewind a current catalogue to the shape before the v70
 /// step run this: it drops the legacy credential status table of the v71 step
-/// and the five collector state tables (C3 R4). It starts with the v76, v75, v74
-/// and v73 rewinds (`rewind_v73_sql!`), which undo the geofence, data-steps
-/// table, retirement and receiver-state steps that come after them. A fixture
-/// that rewinds further runs
-/// [`REWIND_V69_SQL`], which starts with the same rewinds and drops.
+/// and the five collector state tables (C3 R4). It starts with the v77, v76,
+/// v75, v74 and v73 rewinds (`rewind_v73_sql!`): terrain selection (C9 R61),
+/// geofences, data steps, retirement and receiver state. A fixture that rewinds
+/// further runs [`REWIND_V69_SQL`], which starts with the same rewinds and drops.
 #[cfg(test)]
 pub(crate) const REWIND_V70_SQL: &str = concat!(
     rewind_v73_sql!(),
@@ -2607,10 +2611,10 @@ pub(crate) const REWIND_V70_SQL: &str = concat!(
 );
 
 /// Test fixtures that rewind a current catalogue to an older shape run this
-/// first: it undoes the v76 geofence step (C8 R49), the v75 data-steps table
-/// (C6 R63), the v74 retirement and the v73 receiver-state steps
-/// (`rewind_v73_sql!`), everything the v71 step adds (the credential status
-/// table, with the v72 digest column), the v70 step (the collector state
+/// first: it undoes v77 terrain selection (C9 R61), v76 geofences (C8 R49), the
+/// v75 data-steps table (C6 R63), the v74 retirement and the v73 receiver-state
+/// steps (`rewind_v73_sql!`), everything the v71 step adds (the credential
+/// status table, with the v72 digest column), the v70 step (the collector state
 /// tables) and then everything the v69 step adds (G2-3e: the lookup columns;
 /// G2-3f: the terrain tile digest table). Every older rewind starts here, so
 /// migrating the rewound catalogue forward adds them again.
@@ -2648,9 +2652,9 @@ pub(crate) const REWIND_V69_SQL: &str = concat!(
 );
 
 /// The v74 and v73 rewinds, for fixtures that step back one version at a time.
-/// Both also undo the v76 geofence step (C8 R49) and the v75 step (C6 R63 (b)
-/// 3), which come after them; their own rewinds are [`REWIND_V76_SQL`] and
-/// [`REWIND_V75_SQL`].
+/// Both first undo v77 terrain selection (C9 R61), v76 geofences (C8 R49) and
+/// the v75 data-steps table (C6 R63 (b) 3), which come later; their individual
+/// cumulative rewinds are [`REWIND_V77_SQL`], [`REWIND_V76_SQL`] and [`REWIND_V75_SQL`].
 #[cfg(test)]
 pub(crate) const REWIND_V74_SQL: &str = rewind_v74_sql!();
 #[cfg(test)]

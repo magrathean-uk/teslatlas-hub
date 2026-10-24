@@ -60,7 +60,7 @@ use crate::{
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 76;
+pub const SCHEMA_VERSION: i32 = 77;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -1611,6 +1611,8 @@ include!("db/access_models.rs");
 include!("db/import_state.rs");
 include!("db/transaction_helpers.rs");
 include!("db/vehicle_identity_tidy.rs");
+include!("db/terrain_models.rs");
+include!("db/terrain_selection.rs");
 include!("db/geofence_models.rs");
 include!("db/geofence_storage.rs");
 include!("db/geofence_relabel.rs");

@@ -3,10 +3,41 @@
 // The schema steps of bulk B3 (work order section 4, "Every B3 schema step").
 // C6 Part I owns the first one; C8 and C9 add theirs after it. The file is
 // pulled into `migrations.rs` by `include!`, so it carries `//` and `///`
-// comments only. A `macro_rules!` is textually scoped, so the geofence undo
-// is defined first: Part I's rewind macro expands it.
+// comments only. A `macro_rules!` is textually scoped, so the terrain undo
+// is defined first, the geofence undo expands it, and Part I's rewind macro
+// expands the geofence undo (C6 R63 (b), C8 R49, C9 R61 (b)).
 
-/// The shape before the geofence step (C8 R49): the two state tables go and
+/// C9 R61 (b), section 14: the undo of the terrain selection step, which every
+/// older cumulative rewind starts with. It drops `terrain_tidy_state` and both
+/// step indexes, restores the predecessor's two-column
+/// `terrain_provenance_retry`, and rebuilds `terrain_enrichment_state` with the
+/// v23 step's columns, checks and foreign key (removing the two boundary
+/// columns) by renaming it away, so the undo can run more than once. The
+/// cursor reset is not undone; fixtures set cursors.
+#[cfg(test)]
+macro_rules! rewind_v77_sql {
+    () => {
+        "DROP TABLE IF EXISTS terrain_tidy_state;
+         DROP INDEX IF EXISTS terrain_provenance_vehicle_retry;
+         DROP INDEX IF EXISTS terrain_provenance_retry;
+         CREATE INDEX terrain_provenance_retry
+             ON terrain_elevation_provenance(status, retry_after_ms);
+         ALTER TABLE terrain_enrichment_state RENAME TO terrain_enrichment_state_undo;
+         CREATE TABLE terrain_enrichment_state (
+             vehicle_id TEXT PRIMARY KEY NOT NULL
+                 REFERENCES vehicles(vehicle_id) ON DELETE CASCADE,
+             cursor_position_id INTEGER NOT NULL DEFAULT 0
+                 CHECK(cursor_position_id >= 0),
+             updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= 0)
+         ) STRICT;
+         INSERT INTO terrain_enrichment_state(vehicle_id, cursor_position_id, updated_at_ms)
+             SELECT vehicle_id, cursor_position_id, updated_at_ms FROM terrain_enrichment_state_undo;
+         DROP TABLE terrain_enrichment_state_undo;"
+    };
+}
+
+/// The shape before the geofence step (C8 R49): first undo terrain selection
+/// (C9 R61, v77), then the two geofence state tables go and
 /// `geofences` is rebuilt without `source_owned`, with the checks the step
 /// replaces. The checks are the ones of the steps that created them: the name
 /// limit of 256 bytes and the radius bound of 5000 m (the v12 step) and the
@@ -15,7 +46,9 @@
 #[cfg(test)]
 macro_rules! rewind_v76_sql {
     () => {
-        "DROP TABLE IF EXISTS deleted_imported_geofences;
+        concat!(
+            rewind_v77_sql!(),
+            "DROP TABLE IF EXISTS deleted_imported_geofences;
              DROP TABLE IF EXISTS geofence_id_marks;
              CREATE TABLE geofences_predecessor (
                  vehicle_id TEXT NOT NULL REFERENCES vehicles(vehicle_id) ON DELETE RESTRICT,
@@ -41,6 +74,7 @@ macro_rules! rewind_v76_sql {
              CREATE INDEX geofences_vehicle_location
                  ON geofences(vehicle_id, latitude, longitude);
             "
+        )
     };
 }
 
@@ -63,11 +97,9 @@ const STORE_DATA_STEPS_TABLE_SQL: &str = "
     ) STRICT;
 ";
 
-/// The undo of C6 Part I's step (C6 R63 (b) 3, C6 R69) as every older rewind
-/// starts it: the undo of the geofence step that follows it (C8 R49,
-/// `rewind_v76_sql!`), then the drop of what Part I's step adds. Each rewind is
-/// cumulative, so a later step's undo goes first (C8 R49 item 3, C6 R63 (b) 3); the macro form lets
-/// the older macros place the pair first.
+/// The undo of the completed-data-step table (C6 R63 (b) 3, C6 R69): first
+/// undo terrain selection (C9 R61, v77) and geofences (C8 R49, v76), then drop
+/// the table. Every older cumulative rewind expands this chain first.
 #[cfg(test)]
 macro_rules! rewind_store_data_steps_sql {
     () => {
@@ -75,10 +107,11 @@ macro_rules! rewind_store_data_steps_sql {
     };
 }
 
-/// Test fixtures that rewind a current catalogue to the shape before C6 Part
-/// I's step run this: the geofence undo, then the drop of `store_data_steps`
-/// and the completed-step markers in it. Every older rewind starts with the
-/// same pair. The geofence step's own rewind alone is [`REWIND_V76_SQL`].
+/// Rewind to the shape before the completed-data-step table: undo terrain
+/// selection (C9 R61, v77) and geofences, then drop `store_data_steps` and its
+/// markers (C6 R63). Every older rewind starts with the same chain.
+/// [`REWIND_V76_SQL`] undoes terrain selection and geofences;
+/// [`REWIND_V77_SQL`] undoes terrain selection alone.
 #[cfg(test)]
 pub(crate) const REWIND_V75_SQL: &str = rewind_store_data_steps_sql!();
 
@@ -202,7 +235,55 @@ fn migrate_geofence_step(connection: &Connection) -> Result<(), StoreError> {
     transaction.commit().map_err(StoreError::Migrate)
 }
 
-/// Test fixtures that rewind a current catalogue to the shape before the
-/// geofence step run this.
+/// Rewind to before the geofence step: terrain selection (C9 R61, v77)
+/// goes first, then geofences (C8 R49, v76).
 #[cfg(test)]
 pub(crate) const REWIND_V76_SQL: &str = rewind_v76_sql!();
+
+/// C9 R61: the next free schema step after the geofence step.
+pub(crate) const TERRAIN_SELECTION_SCHEMA_VERSION: i32 = 77;
+
+/// C9 R61: only the terrain step's undo, including the predecessor retry index.
+#[cfg(test)]
+pub(crate) const REWIND_V77_SQL: &str = rewind_v77_sql!();
+
+/// C9 R61 and C9 section 7: one atomic schema change and one cursor reset.
+fn migrate_terrain_selection(connection: &Connection) -> Result<(), StoreError> {
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)
+        .map_err(StoreError::Migrate)?;
+    transaction
+        .execute_batch(
+            "ALTER TABLE terrain_enrichment_state ADD COLUMN import_position_id_max
+             INTEGER NOT NULL DEFAULT 0 CHECK(import_position_id_max >= 0);
+         ALTER TABLE terrain_enrichment_state ADD COLUMN import_position_date_max_ms
+             INTEGER NOT NULL DEFAULT 0 CHECK(import_position_date_max_ms >= 0);
+         UPDATE terrain_enrichment_state SET cursor_position_id = 0;
+         CREATE TABLE terrain_tidy_state (
+             step TEXT PRIMARY KEY NOT NULL CHECK(length(step) > 0),
+             resume_vehicle_id TEXT NOT NULL DEFAULT '',
+             resume_position_id INTEGER NOT NULL DEFAULT 0 CHECK(resume_position_id >= 0),
+             examined INTEGER NOT NULL DEFAULT 0 CHECK(examined >= 0),
+             cleared INTEGER NOT NULL DEFAULT 0 CHECK(cleared >= 0),
+             requeued INTEGER NOT NULL DEFAULT 0 CHECK(requeued >= 0),
+             removed INTEGER NOT NULL DEFAULT 0 CHECK(removed >= 0),
+             kept INTEGER NOT NULL DEFAULT 0 CHECK(kept >= 0),
+             drives_changed INTEGER NOT NULL DEFAULT 0 CHECK(drives_changed >= 0),
+             run INTEGER NOT NULL DEFAULT 1 CHECK(run >= 1),
+             armed_at_ms INTEGER CHECK(armed_at_ms IS NULL OR armed_at_ms >= 0),
+             completed_at_ms INTEGER CHECK(completed_at_ms IS NULL OR completed_at_ms >= 0)
+         ) STRICT;
+         INSERT INTO terrain_tidy_state(step) VALUES ('earlier_build_values_v1');
+         DROP INDEX terrain_provenance_retry;
+         CREATE INDEX terrain_provenance_retry
+             ON terrain_elevation_provenance(status, retry_after_ms, vehicle_id, position_id);
+         CREATE INDEX terrain_provenance_vehicle_retry
+             ON terrain_elevation_provenance(vehicle_id, retry_after_ms) WHERE status = 'failed';",
+        )
+        .map_err(StoreError::Migrate)?;
+    transaction
+        .execute_batch(&format!(
+            "PRAGMA user_version = {TERRAIN_SELECTION_SCHEMA_VERSION};"
+        ))
+        .map_err(StoreError::Migrate)?;
+    transaction.commit().map_err(StoreError::Migrate)
+}

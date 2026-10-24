@@ -56,3 +56,5 @@ mod b3_c8_l;
 mod b3_c8_sa;
 #[path = "tests/b3_c8_sb.rs"]
 mod b3_c8_sb;
+#[path = "tests/b3_c9_q.rs"]
+mod b3_c9_q;
