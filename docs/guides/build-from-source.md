@@ -70,16 +70,16 @@ workspace runner, external output locations and a reviewed Go host identity.
 A standalone clone does not contain that runner. There is no complete portable
 Mac installer recipe in this checkout.
 
-The packager checks Xcode, XcodeGen, rustup and exactly Go 1.27.1. It reads the
+The packager checks Xcode, XcodeGen, rustup and exactly Go 1.27.3. It reads the
 current absolute `buildRoot` from the JSON emitted by
 `clean-development status --json` and accepts Cargo output only under that
 root's managed Hub directory.
 Do not hard-code a cache path or set Cargo's target directory around the runner.
 
-`scripts/tesla-proxy-lock.json` records the Go 1.27.1 command-proxy subjects
+`scripts/tesla-proxy-lock.json` records the Go 1.27.3 command-proxy subjects
 and the reviewed build host: the selected Go executable and its binary, Xcode
-27.0, its Apple Clang toolchain and the macOS 27.0 SDK. `TESLATLAS_GO` may
-select only a Go executable recorded there; another Go 1.27.1 installation is
+27.1, its Apple Clang toolchain and the macOS 27.0 SDK. `TESLATLAS_GO` may
+select only a Go executable recorded there; another Go 1.27.3 installation is
 insufficient. The lock covers the proxy component only. It does not establish a
 working combined package or installed Hub.
 

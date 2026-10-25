@@ -55,7 +55,7 @@ ALLOWED_LICENSES = {
     "MIT AND BSD-3-Clause",
 }
 TOOLCHAIN_POLICY = {
-    "go_version": "go1.27.1",
+    "go_version": "go1.27.3",
     "trimpath": True,
     "buildvcs": False,
     "ldflags": "-s -w",

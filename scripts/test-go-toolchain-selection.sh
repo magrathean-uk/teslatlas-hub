@@ -56,13 +56,13 @@ ambient_go="$TMP/ambient/bin/go"
 ambient_log="$TMP/ambient.log"
 module_cache="$TMP/module cache"
 /bin/mkdir -p "$module_cache"
-make_fake_go "$selected_go" go1.27.1 "$selected_log" "$module_cache"
-make_fake_go "$ambient_go" go1.27.0 "$ambient_log" "$module_cache"
+make_fake_go "$selected_go" go1.27.3 "$selected_log" "$module_cache"
+make_fake_go "$ambient_go" go1.27.2 "$ambient_log" "$module_cache"
 
 selected=$(
     PATH="$(/usr/bin/dirname "$ambient_go"):/usr/bin:/bin" \
         TESLATLAS_GO="$selected_go" \
-        /usr/bin/python3 "$HELPER" --expected-version go1.27.1
+        /usr/bin/python3 "$HELPER" --expected-version go1.27.3
 ) || fail "absolute override was rejected"
 [ "$selected" = "$selected_go" ] || fail "override path was not preserved"
 [ -s "$selected_log" ] || fail "selected Go was not executed"
@@ -121,14 +121,15 @@ assert spec.loader is not None
 spec.loader.exec_module(module)
 selected, _, values = module.strict_go_environment()
 assert selected == expected
-assert values["GOVERSION"] == "go1.27.1"
+assert values["GOVERSION"] == "go1.27.3"
 PY
 [ -s "$selected_log" ] || fail "Go proxy evidence did not use the explicit Go"
 [ ! -e "$ambient_log" ] || fail "Go proxy evidence fell back to ambient Go"
 
 : >"$selected_log"
 PATH="$(/usr/bin/dirname "$ambient_go"):/usr/bin:/bin" \
-    TESLATLAS_GO="$selected_go" /usr/bin/python3 - \
+    TESLATLAS_GO="$selected_go" /usr/bin/env -u GOMODCACHE \
+    /usr/bin/python3 - \
     "$ROOT/scripts" "$FLEET_EVIDENCE" "$module_cache" <<'PY'
 import importlib.util
 import pathlib
@@ -149,8 +150,8 @@ evidence_wrong_log="$TMP/evidence-wrong.log"
 evidence_wrong_go="$TMP/evidence-wrong/bin/go"
 evidence_fallback_log="$TMP/evidence-fallback.log"
 evidence_fallback_go="$TMP/evidence-fallback/bin/go"
-make_fake_go "$evidence_wrong_go" go1.27.0 "$evidence_wrong_log" "$module_cache"
-make_fake_go "$evidence_fallback_go" go1.27.1 "$evidence_fallback_log" "$module_cache"
+make_fake_go "$evidence_wrong_go" go1.27.1 "$evidence_wrong_log" "$module_cache"
+make_fake_go "$evidence_fallback_go" go1.27.3 "$evidence_fallback_log" "$module_cache"
 if PATH="$(/usr/bin/dirname "$evidence_fallback_go"):/usr/bin:/bin" \
     GOMODCACHE="$module_cache" TESLATLAS_GO="$evidence_wrong_go" \
     /usr/bin/python3 "$FLEET_EVIDENCE" --repo "$ROOT" \
@@ -158,7 +159,7 @@ if PATH="$(/usr/bin/dirname "$evidence_fallback_go"):/usr/bin:/bin" \
     --output-dir "$TMP/inherited-cache-output" >"$TMP/inherited-cache.out" 2>&1; then
     fail "Fleet evidence accepted a wrong override with inherited GOMODCACHE"
 fi
-/usr/bin/grep -Fq 'go1.27.1 is required exactly: go1.27.0' \
+/usr/bin/grep -Fq 'go1.27.3 is required exactly: go1.27.1' \
     "$TMP/inherited-cache.out" \
     || fail "inherited GOMODCACHE bypassed explicit Go validation"
 [ -s "$evidence_wrong_log" ] || fail "inherited-cache override was not checked"
@@ -195,9 +196,10 @@ fi
 
 default_log="$TMP/default.log"
 default_go="$TMP/default/bin/go"
-make_fake_go "$default_go" go1.27.1 "$default_log" "$module_cache"
+make_fake_go "$default_go" go1.27.3 "$default_log" "$module_cache"
 default_selected=$(PATH="$(/usr/bin/dirname "$default_go"):/usr/bin:/bin" \
-    /usr/bin/python3 "$HELPER" --expected-version go1.27.1) \
+    /usr/bin/env -u TESLATLAS_GO \
+    /usr/bin/python3 "$HELPER" --expected-version go1.27.3) \
     || fail "default PATH selection was rejected"
 default_expected=$(/usr/bin/python3 -c \
     'import os, sys; print(os.path.abspath(sys.argv[1]))' "$default_go")
@@ -207,15 +209,15 @@ wrong_log="$TMP/wrong.log"
 wrong_go="$TMP/wrong/bin/go"
 fallback_log="$TMP/fallback.log"
 fallback_go="$TMP/fallback/bin/go"
-make_fake_go "$wrong_go" go1.27.0 "$wrong_log" "$module_cache"
-make_fake_go "$fallback_go" go1.27.1 "$fallback_log" "$module_cache"
+make_fake_go "$wrong_go" go1.27.1 "$wrong_log" "$module_cache"
+make_fake_go "$fallback_go" go1.27.3 "$fallback_log" "$module_cache"
 if PATH="$(/usr/bin/dirname "$fallback_go"):/usr/bin:/bin" \
     TESLATLAS_GO="$wrong_go" \
-    /usr/bin/python3 "$HELPER" --expected-version go1.27.1 \
+    /usr/bin/python3 "$HELPER" --expected-version go1.27.3 \
     >"$TMP/wrong.out" 2>&1; then
     fail "wrong-version explicit Go was accepted"
 fi
-/usr/bin/grep -Fq 'go1.27.1 is required exactly: go1.27.0' "$TMP/wrong.out" \
+/usr/bin/grep -Fq 'go1.27.3 is required exactly: go1.27.1' "$TMP/wrong.out" \
     || fail "wrong-version failure was not exact"
 [ -s "$wrong_log" ] || fail "wrong-version override was not checked"
 [ ! -e "$fallback_log" ] || fail "wrong-version override silently fell back"
@@ -229,7 +231,7 @@ for invalid_go in '' relative/go "$malformed_go" "$TMP/missing/go" "$non_executa
     /bin/rm -f "$fallback_log"
     if PATH="$(/usr/bin/dirname "$fallback_go"):/usr/bin:/bin" \
         TESLATLAS_GO="$invalid_go" \
-        /usr/bin/python3 "$HELPER" --expected-version go1.27.1 \
+        /usr/bin/python3 "$HELPER" --expected-version go1.27.3 \
         >"$TMP/invalid.out" 2>&1; then
         fail "invalid explicit Go was accepted: $invalid_go"
     fi

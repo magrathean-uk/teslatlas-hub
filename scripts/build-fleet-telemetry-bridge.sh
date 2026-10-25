@@ -21,7 +21,7 @@ COMMIT=d64c73ab65e7c5fb5fc12b35fe507e2c6054227b
 ARCHIVE_URL=https://codeload.github.com/teslamotors/fleet-telemetry/tar.gz/d64c73ab65e7c5fb5fc12b35fe507e2c6054227b
 ARCHIVE_SHA256=a30818d9d832cf6dcec7cf0d61b780d4bea52cc7c9f8edb31a111bc0f25cd6b9
 PATCH_SHA256=33b3c1ab5597507cc4ddf78be57fa017c3b731a109559c9e6ec6e60f14ee3637
-GO_VERSION=go1.27.1
+GO_VERSION=go1.27.3
 
 die() {
     printf '%s\n' "build-fleet-telemetry-bridge: $*" >&2

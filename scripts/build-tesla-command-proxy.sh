@@ -18,7 +18,7 @@ export GOENV GOWORK GOTOOLCHAIN GOFLAGS GOPROXY GOSUMDB GONOSUMDB GOPRIVATE
 
 COMMIT=49977a18fd68567501d59e16a6c9e4a8b9348544
 VERSION=v0.4.1
-GO_VERSION=go1.27.1
+GO_VERSION=go1.27.3
 OVERLAY_PATCH_SHA256=93a464c0e3a276d6c2c379ac33bb92ab10301cda7ddfb13cd7b155c7da8f87bc
 MODIFIED_GO_MOD_SHA256=8f7bb08108b8080cf0e9c361405405f3701cabc54f8bcb13e5c960080759781f
 
@@ -188,21 +188,23 @@ private_module_gosum=$(printf '%s\n' "$private_module_json" | /usr/bin/awk -F'"'
 # policy. The checksum-verified upstream archive remains untouched.
 /bin/cp -R "$private_module_dir" "$work/source"
 /bin/chmod -R u+w "$work/source"
-# Populate the host download proxy from the verified main source, then return
-# to the private module cache for the actual build. Only the locked runtime
-# graph is requested; the shared extracted module directory is never read.
-(
-    cd "$work/source"
-    GOMODCACHE="$host_module_cache" GOCACHE="$work/discovery-cache" \
-        GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
-        GOWORK=off "$GO" list -mod=readonly -deps ./cmd/tesla-http-proxy >/dev/null
-) || die "cannot cache the locked Tesla proxy dependencies"
 (
     cd "$work/source"
     "$PATCH" --batch --forward --fuzz=0 -p1 < "$overlay_patch"
 ) || die "cannot apply the reviewed Tesla command-proxy overlay"
 [ "$(sha256_file "$work/source/go.mod")" = "$MODIFIED_GO_MOD_SHA256" ] \
     || die "modified Tesla command-proxy go.mod does not match the reviewed digest"
+
+# Populate the host download proxy from the patched private source, then return
+# to the private module cache for the actual build. Only the locked runtime
+# graph is requested; the shared extracted module directory is never read.
+(
+    cd "$work/source"
+    GOMODCACHE="$host_module_cache" GOCACHE="$work/discovery-cache" \
+        GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org \
+        GOWORK=off CGO_ENABLED="$target_cgo" GOOS="$target_os" GOARCH="$target_arch" \
+        "$GO" list -mod=readonly -deps ./cmd/tesla-http-proxy >/dev/null
+) || die "cannot cache the locked Tesla proxy dependencies"
 
 if [ "$target" = darwin-arm64 ]; then
     (

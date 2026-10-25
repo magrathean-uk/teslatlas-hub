@@ -4,45 +4,38 @@
   "subjects": {
     "darwin-arm64": {
       "name": "tesla-http-proxy",
-      "sha256": "f3243ee333d2b6668e4e8655fc7818529f0a3ea391f4f2b6495031b1aebdb0a3",
-      "size": 10579122
+      "sha256": "ee4b5e51dcc90c309c057f7172dff45086265d570e1db629760124db21712c8e",
+      "size": 10595666
     },
     "linux-amd64": {
       "name": "tesla-http-proxy",
-      "sha256": "12bce532d96a316f98c83b3c6871a48ab3928fdd756fd694905bbbd2893d8b09",
-      "size": 11288736
+      "sha256": "ffb49fe2e799f3be65bf404b9c2ecac2845d191bd8522a8cd91f84fc80bc8441",
+      "size": 11305120
     },
     "linux-arm64": {
       "name": "tesla-http-proxy",
-      "sha256": "38092d34c0647e48641a3abe4b4f5d19abaf1de866c4b47cee745228d5011934",
-      "size": 10551456
+      "sha256": "4326a7dd4b122c284042bfc5c1a7e4228ad4b5ebb57e54e390f3eff3a5f0a1e3",
+      "size": 10616992
     }
   },
   "build_host": {
     "go": [
       {
-        "path": "/Users/bolyki/Library/Application Support/clean-development/bin/go",
-        "sha256": "8f891adac45a0340c54d32475d8e4dfb00721d02ea9452fdf507a329b658c76c",
-        "goroot": "/opt/homebrew/Cellar/go/1.27.1/libexec",
-        "binary_path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
-        "binary_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b"
-      },
-      {
-        "path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
-        "sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b",
-        "goroot": "/opt/homebrew/Cellar/go/1.27.1/libexec",
-        "binary_path": "/opt/homebrew/Cellar/go/1.27.1/libexec/bin/go",
-        "binary_sha256": "548608a910c46de32c65a3934f461b1787acf6ddd371044826068d8503b8509b"
+        "path": "/opt/homebrew/Cellar/go/1.27.3/libexec/bin/go",
+        "sha256": "60fa7fbaac037e24462915e8c19a1c73b02f548df0098b323823d6fbcdd0c764",
+        "goroot": "/opt/homebrew/Cellar/go/1.27.3/libexec",
+        "binary_path": "/opt/homebrew/Cellar/go/1.27.3/libexec/bin/go",
+        "binary_sha256": "60fa7fbaac037e24462915e8c19a1c73b02f548df0098b323823d6fbcdd0c764"
       }
     ],
     "compiler": {
       "path": "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang",
-      "sha256": "5922f5f7843fee699497c45cc98134b6686e0a5e2fa8a5866ab74c5482fa87a5",
+      "sha256": "ee029330bf58ab6e481385f4237cc54602eaa8b81526242e5c5ab5b76e8c5a7e",
       "version": "Apple clang version 21.0.0 (clang-2100.3.34.2)"
     },
     "xcode": {
-      "version": "Xcode 27.0",
-      "build": "Build version 27A266a"
+      "version": "Xcode 27.1",
+      "build": "Build version 27A9275"
     },
     "sdk": {
       "path": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
@@ -51,7 +44,7 @@
     }
   },
   "toolchain": {
-    "go_version": "go1.27.1",
+    "go_version": "go1.27.3",
     "trimpath": true,
     "buildvcs": false,
     "ldflags": "-s -w",

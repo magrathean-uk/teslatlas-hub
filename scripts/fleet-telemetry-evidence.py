@@ -290,7 +290,7 @@ def validate_bridge_lock(value: object) -> dict[str, Any]:
         or not upstream["archive_url"].startswith("https://codeload.github.com/teslamotors/fleet-telemetry/")
         or overlay["patch"] != "0001-teslatlas-http-dispatcher.patch"
         or bridge["endpoint"] != "http://127.0.0.1:8080/v1/internal/fleet-telemetry"
-        or toolchain != {"go_version": "go1.27.1", "cgo_enabled": False}
+        or toolchain != {"go_version": "go1.27.3", "cgo_enabled": False}
         or lock["targets"]
         != ["darwin-arm64", "darwin-amd64", "linux-arm64", "linux-amd64"]
     ):
@@ -439,7 +439,7 @@ def verify_binary_modules(binary: Path, legal: dict[str, Any], go_version: str) 
     go = configured_go_override()
     if go is None:
         try:
-            go = select_go("go1.27.1")
+            go = select_go("go1.27.3")
         except RuntimeError as exc:
             raise GateError(f"cannot select Go to inspect Fleet Telemetry binary: {exc}") from exc
     environment = os.environ.copy()
@@ -1107,7 +1107,7 @@ def write_file(path: Path, data: bytes) -> None:
 
 def configured_go_override() -> str | None:
     try:
-        return select_configured_go("go1.27.1")
+        return select_configured_go("go1.27.3")
     except RuntimeError as exc:
         raise GateError(str(exc)) from exc
 
@@ -1119,7 +1119,7 @@ def default_module_cache() -> Path:
         return Path(os.path.abspath(configured))
     if go is None:
         try:
-            go = select_go("go1.27.1")
+            go = select_go("go1.27.3")
         except RuntimeError as exc:
             raise GateError(str(exc)) from exc
     environment = {
@@ -1237,7 +1237,7 @@ def main() -> int:
         ) or args.target != "darwin-arm64":
             raise GateError("--check-go-toolchain cannot be combined with evidence inputs")
         try:
-            print(select_go("go1.27.1"))
+            print(select_go("go1.27.3"))
         except RuntimeError as exc:
             raise GateError(str(exc)) from exc
         return 0
