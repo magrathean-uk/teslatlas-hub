@@ -171,6 +171,30 @@ fn cursor_of(cursors: [i64; 6], domain: WatermarkDomain) -> i64 {
 
 #[test]
 fn c2_t86_every_domain_seed_promotion() {
+    for domain in WatermarkDomain::ALL {
+        let (_directory, store, source, vehicle) =
+            t69_store(&format!("t86-persisted-floor-{}", domain.as_str()));
+        let v = vehicle.vehicle_id;
+        let mut connection = store.open().expect("connection");
+        let transaction = connection.transaction().expect("transaction");
+        raise_source_watermarks_in_transaction(
+            &transaction,
+            source.source_id,
+            v,
+            &[(domain, pair(Some(900), Some(T_HI)))],
+        )
+        .expect("persisted fixture floor");
+        transaction.commit().expect("commit fixture floor");
+        drop(connection);
+        let session = s_d(domain, pair(Some(500), Some(T_MID)));
+        t69_seed(&store, &source, &vehicle, &session, T69_T0);
+        assert_eq!(
+            cursor_of(id_cursors(&store, v), domain),
+            901,
+            "c2_t86_every_domain_seed_promotion: {} cursor must exceed the persisted floor, not just the snapshot",
+            domain.as_str()
+        );
+    }
     let snapshots = [
         pair(Some(500), Some(T_HI)),
         pair(Some(300), Some(T_LO)),

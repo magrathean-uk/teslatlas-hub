@@ -833,13 +833,21 @@ fn c9_st55_upgrade() {
 
 #[test]
 fn c9_st55b_standalone_upgrade() {
+    assert!(
+        REWIND_V76_SQL.starts_with(REWIND_V77_SQL),
+        "assertion failed: c9_st55b_standalone_upgrade: older rewinds begin with the complete terrain-selection undo"
+    );
     let (directory, store, vehicle, before) = c9_predecessor();
     let connection = store.open().unwrap();
     let data_version = connection
         .query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0))
         .unwrap();
     drop(store);
-    HubStore::preflight_standalone_schema_read_only(directory.path()).unwrap();
+    let preflight = HubStore::preflight_standalone_schema_read_only(directory.path());
+    assert!(
+        preflight.is_ok(),
+        "assertion failed: c9_st55b_standalone_upgrade: standalone preflight accepts the terrain predecessor: {preflight:?}"
+    );
     assert_eq!(
         schema_version(&connection).unwrap(),
         TERRAIN_SELECTION_SCHEMA_VERSION - 1

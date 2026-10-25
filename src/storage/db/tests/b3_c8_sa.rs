@@ -847,8 +847,19 @@ pub(super) fn count(connection: &Connection, table: &str) -> i64 {
 
 #[test]
 fn c8_t12_upgrade() {
+    assert!(
+        REWIND_V75_SQL.starts_with(REWIND_V76_SQL),
+        "assertion failed: c8_t12_upgrade: Part I and older rewinds include the complete geofence undo"
+    );
     let predecessor = GEOFENCE_STEP_SCHEMA_VERSION - 1;
-    let (temporary, store) = c8_store();
+    let temporary = crate::private_tempdir().expect("temporary store");
+    let initialized = HubStore::initialize(temporary.path());
+    assert!(
+        initialized.is_ok(),
+        "assertion failed: c8_t12_upgrade: a fresh store must migrate through the geofence predecessor: {:?}",
+        initialized.as_ref().err()
+    );
+    let store = initialized.expect("asserted successful migration");
     let vehicle = c8_vehicle(&store, "t12");
     let connection = store.open().expect("connection");
     // The store at the step before the geofence step: its one rewind constant
@@ -908,8 +919,11 @@ fn c8_t12_upgrade() {
     drop(connection);
     drop(store);
     // Standalone Serve migrates this shape: the preflight accepts it.
-    HubStore::preflight_standalone_schema_read_only(temporary.path())
-        .expect("the preflight accepts the shape before the step");
+    let preflight = HubStore::preflight_standalone_schema_read_only(temporary.path());
+    assert!(
+        preflight.is_ok(),
+        "assertion failed: c8_t12_upgrade: standalone preflight accepts the geofence predecessor: {preflight:?}"
+    );
 
     let migrated = HubStore::initialize(temporary.path()).expect("migrated");
     let connection = migrated.open().expect("connection");

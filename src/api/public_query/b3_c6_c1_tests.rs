@@ -940,6 +940,52 @@ pub(super) fn schema_allows(defs: &Value, schema: &Value, value: &Value) -> bool
 
 #[test]
 fn c6_st_s45_history_aliases() {
+    let persisted = serde_json::to_value(drive_distinct()).expect("persisted drive JSON");
+    assert_eq!(
+        persisted
+            .as_object()
+            .expect("stored drive object")
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "ascent",
+            "car_id",
+            "descent",
+            "distance_km",
+            "duration_min",
+            "efficiency",
+            "end_address",
+            "end_date_ms",
+            "end_geofence",
+            "end_ideal_range_km",
+            "end_latitude",
+            "end_longitude",
+            "end_rated_range_km",
+            "end_soc",
+            "id",
+            "inside_temp_avg",
+            "optimized_at_ms",
+            "outside_temp_avg",
+            "power_max",
+            "power_min",
+            "speed_max",
+            "start_address",
+            "start_date_ms",
+            "start_geofence",
+            "start_ideal_range_km",
+            "start_latitude",
+            "start_longitude",
+            "start_rated_range_km",
+            "start_soc",
+        ]),
+        "assertion failed: c6_st_s45_history_aliases: no stored drive field is renamed"
+    );
+    assert_eq!(
+        persisted.get("distance_km"),
+        Some(&serde_json::json!(12.5)),
+        "c6_st_s45_history_aliases: stored distance_km value"
+    );
     // The table itself: 15 + 12 + 4 + 2 = 33 pairs, no duplicate, and the key
     // lists are strictly ascending in byte order with the stated counts.
     let count = |item: &str| PAIRS.iter().filter(|pair| pair.0 == item).count();

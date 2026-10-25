@@ -283,14 +283,21 @@ fn c2_t77_header_refusal() {
     let columns = HEADER.split(',').collect::<Vec<_>>();
     // Rows that would be refused themselves, to show the header is read first.
     let body = "abc,def\n";
-    let refuse = |header: String| match read(&format!("{header}\n{body}")) {
-        Err(GateReadError::HeaderMismatch {
-            column,
-            expected,
-            found,
-            ..
-        }) => (column, expected, found),
-        other => panic!("expected a header refusal, got {other:?}"),
+    let refuse = |header: String| {
+        let result = read(&format!("{header}\n{body}"));
+        assert!(
+            matches!(&result, Err(GateReadError::HeaderMismatch { .. })),
+            "assertion failed: c2_t77_header_refusal: mismatched headers must be refused before rows: {result:?}"
+        );
+        match result {
+            Err(GateReadError::HeaderMismatch {
+                column,
+                expected,
+                found,
+                ..
+            }) => (column, expected, found),
+            other => panic!("expected a header refusal, got {other:?}"),
+        }
     };
     // An extra column `latitude`, anywhere, names the first column that differs.
     let mut extra = columns.clone();
@@ -411,9 +418,17 @@ fn c2_t77_order_parse_refusal() {
         row(11, 2, 2, "1.00", "7"),
         row(11, 3, 1, "2.00", "7"),
     ];
-    assert_eq!(
-        refused_row(read(&csv(HEADER, &rows))),
-        (3, RowFault::SampleOrder)
+    let result = read(&csv(HEADER, &rows));
+    assert!(
+        matches!(
+            &result,
+            Err(GateReadError::Row {
+                row: 3,
+                fault: RowFault::SampleOrder,
+                ..
+            })
+        ),
+        "assertion failed: c2_t77_order_parse_refusal: out-of-order samples must be refused at row 3: {result:?}"
     );
     // The same time with a lower id is below too.
     let mut tie = [row(11, 5, 0, "0.00", "7"), row(11, 4, 0, "1.00", "7")];

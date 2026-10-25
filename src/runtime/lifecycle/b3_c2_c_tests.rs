@@ -423,6 +423,12 @@ fn seeded(row: &Row, samples: &[ProjectionChargeSample]) -> ChargeDisplayAggrega
 
 #[test]
 fn c2_rq_a2_aggregate_equivalence() {
+    assert_eq!(
+        charge_display_aggregates(&[display_sample(1, None, None, None, Some(0.0), None)])
+            .max_charger_power_kw,
+        Some(0.0),
+        "c2_rq_a2_aggregate_equivalence: zero charger power is retained"
+    );
     // (1) The step against the live observer and against itself, page by page,
     // on generated sequences with every filter case (C2 R81 (e), acceptance
     // items 1 and 2).

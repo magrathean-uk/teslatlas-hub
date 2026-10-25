@@ -1944,7 +1944,21 @@ fn definition_count(text: &str, needle: &str) -> usize {
 fn c6_st_i28_schema_constants() {
     // (a) A new store: user_version is SCHEMA_VERSION, `store_data_steps` has
     // R57's three columns and its only row is the tidy's marker.
-    let ts = Ts::new();
+    let directory = crate::private_tempdir().expect("tempdir");
+    let initialized = HubStore::initialize(directory.path());
+    assert!(
+        initialized.is_ok(),
+        "assertion failed: c6_st_i28_schema_constants: a fresh store must migrate through the Part I predecessor: {:?}",
+        initialized.as_ref().err()
+    );
+    let store = initialized.expect("asserted successful migration");
+    let (source, vehicle) = test_registered_vehicle(&store);
+    let ts = Ts {
+        directory,
+        store,
+        source,
+        vehicle,
+    };
     const { assert!(SCHEMA_VERSION >= STORE_DATA_STEPS_SCHEMA_VERSION) };
     assert_eq!(user_version(&ts.store), SCHEMA_VERSION);
     let connection = ts.store.open().expect("catalogue");
@@ -2025,8 +2039,11 @@ fn c6_st_i28_schema_constants() {
         "the rewound store has no table"
     );
     assert_eq!(user_version(&ts.store), STORE_DATA_STEPS_SCHEMA_VERSION - 1);
-    HubStore::preflight_standalone_schema_read_only(ts.directory.path())
-        .expect("the preflight accepts the predecessor shape");
+    let preflight = HubStore::preflight_standalone_schema_read_only(ts.directory.path());
+    assert!(
+        preflight.is_ok(),
+        "assertion failed: c6_st_i28_schema_constants: standalone preflight accepts the Part I predecessor: {preflight:?}"
+    );
     let store = ts.open_ok();
     assert_eq!(user_version(&store), SCHEMA_VERSION);
     assert!(table_exists(&store, "store_data_steps"));
