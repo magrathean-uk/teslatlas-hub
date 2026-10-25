@@ -123,9 +123,3 @@ pub enum CollectorError {
     #[error(transparent)]
     Store(#[from] StoreError),
 }
-
-#[derive(Default)]
-struct TerrainFuse {
-    failures: Vec<Instant>,
-    blown_until: Option<Instant>,
-}

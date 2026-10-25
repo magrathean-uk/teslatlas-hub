@@ -138,12 +138,6 @@ const fn provider_discovery_record_type(provider: CollectorProvider) -> &'static
         CollectorProvider::Fleet => "fleet_api_discovery_v1",
     }
 }
-const TERRAIN_PAGE_LIMIT: u32 = 1_000;
-const TERRAIN_PERIOD: Duration = Duration::from_secs(6 * 60 * 60);
-const TERRAIN_LOOKUP_BUDGET: Duration = Duration::from_millis(100);
-const TERRAIN_RETRY_DELAY: Duration = TERRAIN_PERIOD;
-const TERRAIN_FUSE_WINDOW: Duration = Duration::from_secs(3 * 60);
-const TERRAIN_FUSE_RESET: Duration = Duration::from_secs(15 * 60);
 /// How far a deadline is pushed when `Instant + Duration` would overflow (C3
 /// R45): 100 years, far beyond any process lifetime and any deadline the spec
 /// allows (the longest is `K_RETRY_AFTER_MAX`, one hour), so an overflowing
@@ -934,28 +928,6 @@ async fn abort_and_clear_manual_probe_streams_without_egress(
         let _ = stream._shutdown.take();
     }
     streams.clear();
-}
-
-impl TerrainFuse {
-    fn available(&mut self, now: Instant) -> bool {
-        if self.blown_until.is_some_and(|until| now >= until) {
-            self.blown_until = None;
-            self.failures.clear();
-        }
-        self.blown_until.is_none()
-    }
-
-    fn failure(&mut self, now: Instant) {
-        if !self.available(now) {
-            return;
-        }
-        self.failures
-            .retain(|at| now.saturating_duration_since(*at) < TERRAIN_FUSE_WINDOW);
-        self.failures.push(now);
-        if self.failures.len() >= 2 {
-            self.blown_until = now.checked_add(TERRAIN_FUSE_RESET);
-        }
-    }
 }
 
 /// Result safe to print from a one-shot collection service. It contains local

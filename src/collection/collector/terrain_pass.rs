@@ -22,25 +22,11 @@ pub(crate) trait SensitiveAccessCheck: Send + Sync {
 
 /// Runtime admission and the supervised run's irreversible mutation fence.
 /// Used as both the access check and the inner acquisition guard.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "checks runtime admission for terrain reads and transactions"
-    )
-)]
 pub(super) struct RuntimeAdmissionCheck {
     run: RunWriteGuard,
     inner: Box<dyn EgressGuard>,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "constructs terrain admission from the supervised run guard"
-    )
-)]
 impl RuntimeAdmissionCheck {
     pub(super) fn new(run: RunWriteGuard) -> Self {
         let inner: Box<dyn EgressGuard> = if let Some(admission) = &run.admission {
@@ -103,13 +89,6 @@ impl TerrainWorkerState {
     }
 
     /// C9 R19, C9 R24: an expired Open state is eligible for its next probe.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "reports the active breaker deadline for terrain scheduling and status"
-        )
-    )]
     pub(super) fn breaker_open_until(&self, now_ms: i64) -> Option<i64> {
         match self.breaker.lock().unwrap_or_else(|e| e.into_inner()).state {
             BreakerState::Open { until_ms } if now_ms < until_ms => Some(until_ms),
@@ -290,13 +269,6 @@ impl TerrainCommit<'_> {
 }
 
 /// C9 R4, C9 R11 to C9 R15: select, acquire and commit one bounded terrain pass.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "runs bounded terrain enrichment with restart-safe chunk commits"
-    )
-)]
 pub(super) async fn run_terrain_enrichment_pass(
     store: &HubStore,
     source: &dyn TileSource,
@@ -309,10 +281,6 @@ pub(super) async fn run_terrain_enrichment_pass(
 }
 
 /// C9 R57, C9 R59: observe the marker and run pending tidy chunks only.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "runs terrain tidy while enrichment is disabled")
-)]
 pub(super) async fn run_terrain_tidy_only_pass(
     store: &HubStore,
     state: &mut TerrainWorkerState,

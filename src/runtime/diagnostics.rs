@@ -81,6 +81,55 @@ pub struct CredentialDiagnostics {
     pub fleet: FleetCredentialDiagnostics,
 }
 
+/// C9 R63: durable terrain counts, independent of collector readiness.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TerrainDiagnostics {
+    pub rows_unexamined: Option<u64>,
+    pub retries_due: Option<u64>,
+    pub retries_waiting: Option<u64>,
+    pub tidy_progress: Option<TerrainTidyDiagnostics>,
+    pub error_code: Option<&'static str>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TerrainTidyDiagnostics {
+    pub run: i64,
+    pub examined: i64,
+    pub cleared: i64,
+    pub requeued: i64,
+    pub removed: i64,
+    pub kept: i64,
+    pub drives_changed: i64,
+    pub armed_at_ms: Option<i64>,
+    pub completed_at_ms: Option<i64>,
+}
+
+/// C9 R63: failed optional reads are visible without failing the doctor report.
+fn terrain_diagnostics(store: &HubStore, now_ms: i64) -> TerrainDiagnostics {
+    let backlog = store.terrain_backlog(now_ms, crate::db::K_STATUS_COUNT_CAP);
+    let progress = store.terrain_tidy_progress();
+    let error_code = (backlog.is_err() || progress.is_err()).then_some("store");
+    TerrainDiagnostics {
+        rows_unexamined: backlog.as_ref().ok().map(|b| b.rows_unexamined),
+        retries_due: backlog.as_ref().ok().map(|b| b.retries_due),
+        retries_waiting: backlog.as_ref().ok().map(|b| b.retries_waiting),
+        tidy_progress: progress.ok().map(|p| TerrainTidyDiagnostics {
+            run: p.run,
+            examined: p.examined,
+            cleared: p.cleared,
+            requeued: p.requeued,
+            removed: p.removed,
+            kept: p.kept,
+            drives_changed: p.drives_changed,
+            armed_at_ms: p.armed_at_ms,
+            completed_at_ms: p.completed_at_ms,
+        }),
+        error_code,
+    }
+}
+
 /// C7 R63: the geocoder's status. A back-off is shown here and nowhere else: it
 /// never changes `readiness`, the checks or the report's `status`.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -131,6 +180,7 @@ pub struct CollectorDiagnostics {
     pub geocoder_enabled: bool,
     pub geocoder: GeocoderDiagnostics,
     pub terrain_enabled: bool,
+    pub terrain: TerrainDiagnostics,
     pub bind: String,
 }
 
@@ -641,6 +691,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
             geocoder_enabled: config.geocoder.enabled,
             geocoder: geocoder_diagnostics(store, config, now_ms),
             terrain_enabled: config.terrain.enabled,
+            terrain: terrain_diagnostics(store, now_ms),
             bind: config.bind.to_string(),
         },
         stream_audit,
@@ -778,6 +829,11 @@ mod tests {
     // The geocoder status member (C7 part C).
     mod b3_c7_c {
         include!("diagnostics/b3_c7_c_tests.rs");
+    }
+
+    // The terrain status member (C9 R63).
+    mod b3_c9_w {
+        include!("diagnostics/b3_c9_w_tests.rs");
     }
 
     #[test]

@@ -118,6 +118,12 @@ mod terrain_pass {
 }
 pub(crate) use terrain_pass::TerrainClock;
 use terrain_pass::TerrainWorkerState;
+mod terrain_worker {
+    include!("collector/terrain_worker.rs");
+}
+use terrain_worker::TerrainStatus;
+#[cfg(test)]
+use terrain_worker::TerrainWorkerPhase;
 include!("collector/fleet_supervision.rs");
 include!("collector/owner_supervision.rs");
 include!("collector/streaming.rs");
@@ -194,3 +200,6 @@ pub(crate) fn publish_unpublished_sync_mutations(
 #[cfg(test)]
 #[path = "collector/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+pub(crate) use tests::b3_c9_w::fill_diagnostic_fixture;

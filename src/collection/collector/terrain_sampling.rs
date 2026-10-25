@@ -10,23 +10,11 @@
 // of that point. The stored error codes (C9 R47) are mapped by `terrain_error_code`.
 
 /// Lowest accepted elevation in metres (C9 R35).
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
-)]
 const K_TERRAIN_MIN: i16 = -500;
 /// Highest accepted elevation in metres (C9 R35).
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
-)]
 const K_TERRAIN_MAX: i16 = 9_000;
 
 /// Result of sampling one point.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
-)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SampleOutcome {
     /// Whole metres inside `K_TERRAIN_MIN..=K_TERRAIN_MAX`.
@@ -40,10 +28,6 @@ pub(crate) enum SampleOutcome {
 /// The tile of a point (C9 R30). A point on a whole-degree line belongs to the
 /// tile north or east of it; 180 and -180 are one meridian, and the pole belongs
 /// to the northernmost row. Invalid coordinates fail with the retained codes.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
-)]
 fn terrain_tile_for(latitude: f64, longitude: f64) -> Result<TileId, TerrainError> {
     TileId::from_coordinates(latitude, longitude)?;
     let longitude = if longitude == 180.0 {
@@ -63,10 +47,6 @@ fn terrain_tile_for(latitude: f64, longitude: f64) -> Result<TileId, TerrainErro
 }
 
 /// Rounds half away from zero and applies the validity range (C9 R34, C9 R35).
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
-)]
 fn finish_sample(value: f64) -> SampleOutcome {
     let rounded = value.round();
     if rounded < f64::from(K_TERRAIN_MIN) || rounded > f64::from(K_TERRAIN_MAX) {
@@ -82,10 +62,6 @@ fn finish_sample(value: f64) -> SampleOutcome {
 /// tile covers (the codes of C9 R47), for a tile that is not the point's tile
 /// (`WrongTile`) and for a failed read of a file-backed tile (`Io`); none of
 /// these is a void, which is a terminal outcome (C9 R46).
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
-)]
 pub(crate) fn sample_elevation(
     tile: &HgtTile,
     latitude: f64,
@@ -144,7 +120,10 @@ pub(crate) fn sample_elevation(
 /// One provider's attribution record (C9 R50).
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "read by the attribution reader of G2-7 (C9 R51)")
+    expect(
+        dead_code,
+        reason = "describes provider attribution for terrain provenance"
+    )
 )]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerrainAttribution {
@@ -161,7 +140,10 @@ pub(crate) struct TerrainAttribution {
 /// are provisional until the approved text replaces them.
 #[cfg_attr(
     not(test),
-    expect(dead_code, reason = "read by the attribution reader of G2-7 (C9 R51)")
+    expect(
+        dead_code,
+        reason = "supplies provider attribution for terrain provenance"
+    )
 )]
 pub(crate) fn terrain_attribution(dataset_source: &str) -> &'static [TerrainAttribution] {
     const AWS: TerrainAttribution = TerrainAttribution {

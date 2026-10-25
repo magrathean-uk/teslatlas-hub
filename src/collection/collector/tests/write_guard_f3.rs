@@ -532,10 +532,11 @@ fn p3bf3_the_supervisor_hands_its_own_guard_to_the_terrain_worker() {
     p3bf3_cached_terrain(&temporary, &store);
     let mut config = supervised_restart_test_config(temporary.path());
     config.terrain.enabled = true;
+    // C9 R4: the worker checks its shared run guard at the pass admission boundary.
     let (result, at_trip, audit) =
-        p3bf3_run_the_owner_loop(&temporary, &store, config, ("terrain-lookup", 1));
+        p3bf3_run_the_owner_loop(&temporary, &store, config, ("terrain-pass", 1));
     assert!(audit.tripped(), "the worker never reached the run's guard");
-    assert!(audit.refused("terrain-lookup") >= 1);
+    assert!(audit.refused("terrain-pass") >= 1);
     assert!(
         result.as_ref().is_err_and(loses_sensitive_access),
         "the run ends with the sensitive failure: {result:?}"
@@ -626,7 +627,7 @@ fn p3bf3_the_fleet_supervisor_hands_its_own_guard_to_the_terrain_worker() {
         let observed = store.clone();
         let slot = Arc::clone(&at_trip);
         seam.trip_write_guard_at(
-            "terrain-lookup",
+            "terrain-pass",
             1,
             Arc::new(move || {
                 *slot.lock().expect("stamp") = Some(whole_store_stamp(&observed));

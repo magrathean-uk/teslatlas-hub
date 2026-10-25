@@ -50,12 +50,15 @@ include!("tests/no_wake_journey.rs");
 include!("tests/terrain.rs");
 #[path = "tests/b3_c7_c.rs"]
 mod b3_c7_c;
+// C9 Part W worker scheduling and diagnostics.
 #[path = "tests/b3_c9_a.rs"]
 mod b3_c9_a;
 #[path = "tests/b3_c9_p.rs"]
 mod b3_c9_p;
 #[path = "tests/b3_c9_s.rs"]
 mod b3_c9_s;
+#[path = "tests/b3_c9_w.rs"]
+pub(super) mod b3_c9_w;
 include!("tests/provider_secret_scrub.rs");
 include!("tests/loop_waiting.rs");
 include!("tests/loop_drain.rs");

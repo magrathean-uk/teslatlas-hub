@@ -173,25 +173,9 @@ pub struct TerrainBatchApplied {
 }
 
 /// C9 R8: maximum forward rows examined in a vehicle window.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "bounds terrain forward selection")
-)]
 pub(crate) const K_SCAN_ROWS: u32 = 5_000;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "bounds terrain pass candidates")
-)]
 pub(crate) const K_PASS_CANDIDATES: u32 = 1_000;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "bounds terrain retry selection")
-)]
 pub(crate) const K_RETRY_SLICE: u32 = 250;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "caps each vehicle's terrain backlog counts")
-)]
 pub(crate) const K_STATUS_COUNT_CAP: u32 = 10_000;
 
 /// C9 R54: the immediate provenance effect of a materialised-position rewrite.

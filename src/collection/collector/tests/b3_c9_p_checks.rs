@@ -703,7 +703,11 @@ async fn c9_wrote_tracks_boundary_retirement_and_outcomes() {
     let r = pass(&store, &source, &mut state).await;
     assert_eq!((r.retired, r.filled, r.failed), (1, 0, 0));
     assert!(r.wrote);
-    for script in [Script::Value(0), Script::BadResponse] {
+    for script in [
+        Script::Value(0),
+        Script::Value(i16::MIN),
+        Script::BadResponse,
+    ] {
         let (_dir, store, v) = fixture(false);
         seed(&store, v, vec![point(1, 1, 0, 20)]);
         plant(&store, v, 1, "failed", None, T1 - 1);
@@ -714,7 +718,7 @@ async fn c9_wrote_tracks_boundary_retirement_and_outcomes() {
         let source = Source::new(&Arc::new(ManualClock::new()));
         source.script("N10E020", script);
         let r = pass(&store, &source, &mut TerrainWorkerState::default()).await;
-        assert_eq!(r.filled + r.failed, 1);
+        assert_eq!(r.filled + r.void + r.failed, 1);
         assert_eq!(cursor(&store, v), 1);
         assert_eq!(source.count(), 1);
         assert!(
@@ -722,6 +726,31 @@ async fn c9_wrote_tracks_boundary_retirement_and_outcomes() {
             "retry-only outcomes write without advancing a cursor"
         );
     }
+    // C9 R24: a stale retry-only outcome commits neither provenance nor cursor.
+    let (_dir, store, v) = fixture(false);
+    seed(&store, v, vec![point(1, 1, 0, 20)]);
+    plant(&store, v, 1, "failed", None, T1 - 1);
+    store.open().unwrap().execute(
+        "INSERT INTO terrain_enrichment_state(vehicle_id,cursor_position_id,updated_at_ms) VALUES (?1,1,?2)",
+        params![v.to_string(), T1],
+    ).unwrap();
+    let before = table(&store, "terrain_elevation_provenance");
+    let source = Source::new(&Arc::new(ManualClock::new()));
+    let changed = store.clone();
+    *source.after.lock().unwrap() = Some(Box::new(move |_| {
+        changed.open().unwrap().execute(
+            "UPDATE materialised_positions SET position_json=json_set(position_json,'$.latitude',10.6)",
+            [],
+        ).unwrap();
+    }));
+    let r = pass(&store, &source, &mut TerrainWorkerState::default()).await;
+    assert_eq!(
+        (r.stale, r.filled, r.void, r.failed, r.retired),
+        (1, 0, 0, 0, 0)
+    );
+    assert!(!r.wrote, "stale-only retry commits no worker progress");
+    assert_eq!(cursor(&store, v), 1);
+    assert_eq!(table(&store, "terrain_elevation_provenance"), before);
 }
 
 #[tokio::test]

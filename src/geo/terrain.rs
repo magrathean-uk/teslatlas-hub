@@ -26,10 +26,6 @@ pub const SRTM3_BYTES: u64 = (SRTM3_SIDE as u64) * (SRTM3_SIDE as u64) * 2;
 pub const SRTM1_BYTES: u64 = (SRTM1_SIDE as u64) * (SRTM1_SIDE as u64) * 2;
 pub const TERRAIN_DATASET_VERSION: &str = "srtm-0.8.0-hgt";
 /// The void marker of the HGT format.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
-)]
 pub(crate) const K_HGT_VOID: i16 = i16::MIN;
 
 #[derive(Debug, Error)]
@@ -295,10 +291,6 @@ impl HgtTile {
     /// `None` for the void marker. A position outside the grid is an error, never a
     /// void, and so is a failed read of a file-backed tile, because a void is a
     /// terminal outcome for a position (C9 R46).
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "consumed by the terrain sampler of C9 Part P")
-    )]
     pub(crate) fn try_cell(&self, row: usize, column: usize) -> Result<Option<i16>, TerrainError> {
         let side = self.side.side();
         if row >= side || column >= side {
@@ -322,10 +314,7 @@ impl HgtTile {
     /// cannot be read. Callers that must tell the two apart use [`Self::try_cell`].
     #[cfg_attr(
         not(test),
-        expect(
-            dead_code,
-            reason = "raw accessor of C9 section 8 item 1; production sampling uses try_cell"
-        )
+        expect(dead_code, reason = "reads terrain nodes with optional void values")
     )]
     pub(crate) fn cell(&self, row: usize, column: usize) -> Option<i16> {
         self.try_cell(row, column).ok().flatten()

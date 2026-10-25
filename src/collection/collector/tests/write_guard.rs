@@ -1793,43 +1793,52 @@ fn p3bf2_terrain_rig(
 /// is of the fence, not of the budget, so the pass is given a budget it cannot exceed.
 const P3BF2_TERRAIN_LOOKUP_BUDGET: Duration = Duration::from_secs(300);
 
-fn p3bf2_terrain_pass(point: &'static str) {
-    let tiles = point != "terrain-failure";
-    // The pass runs on a runtime whose server task outlives the rig's setup.
+fn p3bf2_terrain_pass(point: &'static str, nth: usize, tiles: bool) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
         .build()
         .expect("runtime");
     let (_temporary, bed, cache, server) = p3bf2_terrain_rig(tiles, &runtime);
-    bed.trip_at(point);
-    let mut fuse = TerrainFuse::default();
-    let result = runtime.block_on(run_terrain_enrichment_pass(
-        &bed.store,
-        &cache,
-        &CursorKey::from_bytes([4; 32]),
-        1,
-        &mut fuse,
-        &bed.guard,
-        P3BF2_TERRAIN_LOOKUP_BUDGET,
-    ));
-    refused_with_the_sensitive_failure(point, &result);
+    // C9 R59: complete the empty tidy before arming each ordinary-pass boundary.
+    bed.store
+        .apply_terrain_tidy_chunk(250, 10_000)
+        .expect("tidy");
+    bed.trip_at_nth(point, nth);
+    let source = CacheTileSource { cache };
+    let access = terrain_pass::RuntimeAdmissionCheck::new(bed.guard.clone());
+    struct Clock;
+    impl TerrainClock for Clock {
+        fn now_ms(&self) -> Result<i64, CollectorError> {
+            current_epoch_millis()
+        }
+    }
+    let result = runtime
+        .block_on(terrain_pass::run_terrain_enrichment_pass(
+            &bed.store,
+            &source,
+            &mut TerrainWorkerState::default(),
+            &access,
+            &access,
+            &Clock,
+        ))
+        .expect("terrain refusal is contained");
+    assert!(result.access_denied, "{point}: refusal was not reported");
     bed.assert_held(point);
     server.abort();
 }
 
 #[test]
 fn p3bf2_the_terrain_pass_writes_nothing_after_the_fence() {
-    for point in [
-        "terrain-lookup",
-        "terrain-result",
-        "terrain-failure",
-        "terrain-publish",
-        "terrain-publish-sequence",
-        "terrain-publish-pack",
-        "terrain-publish-finalize",
+    // C9 R4, C9 R26: start, locked read, commit and cache boundaries; no publication.
+    for (point, nth, tiles) in [
+        ("terrain-pass", 1, true),
+        ("terrain-pass", 2, true),
+        ("terrain-pass", 3, true),
+        ("terrain-pass", 3, false),
+        ("terrain-cache", 1, true),
     ] {
-        p3bf2_terrain_pass(point);
+        p3bf2_terrain_pass(point, nth, tiles);
     }
 }
 

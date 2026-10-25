@@ -1442,6 +1442,8 @@ fn select_native_setup_vehicle(
 }
 
 struct TerrainWorker {
+    status: watch::Receiver<TerrainStatus>,
+    logged_phase: Option<(terrain_worker::TerrainWorkerPhase, Option<&'static str>)>,
     wake: mpsc::Sender<()>,
     initialized: Option<oneshot::Receiver<Result<(), CollectorError>>>,
     start: Option<oneshot::Sender<()>>,
@@ -1466,10 +1468,29 @@ impl TerrainWorker {
             .map_err(|_| CollectorError::TerrainWorkerTask)
     }
 
+    /// C9 R63: keep the last logged phase across cancelled supervisor waits.
+    fn log_status_phase(&mut self) {
+        let status = self.status.borrow();
+        let phase = (status.state.clone(), status.last_error_code);
+        if self.logged_phase.as_ref() != Some(&phase) {
+            terrain_worker::log_phase(&status);
+            self.logged_phase = Some(phase);
+        }
+    }
+
     async fn wait_until_exit(&mut self) -> Result<(), CollectorError> {
-        (&mut self.task)
-            .await
-            .map_err(|_| CollectorError::TerrainWorkerTask)?
+        self.log_status_phase();
+        loop {
+            tokio::select! {
+                result = &mut self.task => return result.map_err(|_| CollectorError::TerrainWorkerTask)?,
+                changed = self.status.changed() => {
+                    if changed.is_err() {
+                        return (&mut self.task).await.map_err(|_| CollectorError::TerrainWorkerTask)?;
+                    }
+                    self.log_status_phase();
+                }
+            }
+        }
     }
 
     async fn shutdown(mut self, already_finished: bool) -> Result<(), CollectorError> {

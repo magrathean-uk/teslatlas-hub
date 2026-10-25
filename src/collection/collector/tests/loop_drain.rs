@@ -2247,10 +2247,12 @@ async fn assert_the_renewal_is_over_before_the_held_cleanup(first: RenewalEndsFi
     let mut bed = DrainBed::start_with_admission(1, true, |_, seam| {
         let select = (first == RenewalEndsFirst::Renewal)
             .then(|| seam.arm_gate("supervisor-select"));
-        gates = Some((select, seam.arm_gate("renewal-candidate")));
+        gates = Some((select, seam.arm_gate("renewal-candidate"), seam.arm_gate("terrain-worker-pass")));
     })
     .await;
-    let (select, renewal) = gates.expect("gates");
+    let (select, renewal, terrain) = gates.expect("gates");
+    // C9 R4: hold the third admission observer while this proof orders the other two.
+    terrain.arrived("terrain held before pass admission", 1).await;
     let seam = Arc::clone(&bed.seam);
     renewal.arrived("the renewal's first candidate", 1).await;
     match &select {

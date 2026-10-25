@@ -63,7 +63,7 @@ where
             admission_fence.clone(),
         ),
     ));
-    let mut terrain_worker = spawn_terrain_worker(
+    let mut terrain_worker = terrain_worker::spawn_terrain_worker(
         config.data_dir.clone(),
         config.terrain.clone(),
         cursor_key.clone(),
@@ -72,6 +72,7 @@ where
     );
     let terrain_wake = terrain_worker.wake.clone();
     let mut startup_result = terrain_worker.wait_until_initialized().await;
+    terrain_worker.log_status_phase();
     if startup_result.is_ok() {
         startup_result = assert_runtime_sensitive_access(Some(&*admission));
     }

@@ -9,18 +9,7 @@ use crate::{
 };
 use std::{collections::VecDeque, pin::Pin, sync::Mutex};
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "bounds cache-backed terrain acquisition")
-)]
 const K_ACQUIRE_BUDGET: Duration = Duration::from_secs(300);
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "bounds cached-state checks and local tile loading"
-    )
-)]
 const K_LOCAL_TILE_BUDGET: Duration = Duration::from_secs(30);
 const K_TILE_FAIL_MEMO: i64 = 900_000;
 const K_MEMO_ENTRIES: usize = 1_024;
@@ -50,13 +39,6 @@ pub(crate) struct AcquireFailure {
     pub provenance: Option<TileProvenance>,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "describes errors produced by cache-backed terrain acquisition"
-    )
-)]
 #[derive(Debug)]
 pub(crate) enum AcquireErrorKind {
     Cache(TerrainCacheError),
@@ -76,13 +58,6 @@ impl AcquireErrorKind {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "abstracts cache operations for terrain tile acquisition"
-    )
-)]
 pub(crate) trait TileCache: Send + Sync {
     fn has_cached_tile<'a>(
         &'a self,
@@ -153,13 +128,6 @@ impl TileCache for TerrainCache {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "adapts the retained cache into a terrain tile source"
-    )
-)]
 pub(crate) struct CacheTileSource<C: TileCache = TerrainCache> {
     cache: C,
 }
