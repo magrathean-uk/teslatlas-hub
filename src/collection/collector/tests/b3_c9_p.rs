@@ -8,9 +8,150 @@ use super::super::*;
 use crate::db::{IMPORT_SOURCE_KIND, ImportBoundary, LifecycleCommit};
 use crate::hub_pack::{ProjectionDrive, ProjectionPosition};
 use crate::terrain::{SRTM3_SIDE, TERRAIN_DATASET_VERSION};
+use crate::test_assertions::LabelledResult;
 use rusqlite::params;
 use serde_json::json;
 use std::sync::atomic::{AtomicI64, AtomicUsize};
+
+// Real-time supervision stays outside the cache executor under test.
+const CACHE_TEST_BOUND: Duration = Duration::from_secs(60);
+fn supervise_cache_test(
+    test: &'static str,
+    paused: bool,
+    body: impl Future<Output = ()> + Send + 'static,
+) {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.blocking_lock();
+    let _serial = super::TERRAIN_CACHE_TEST_SERIAL.blocking_lock();
+    type Body = Pin<Box<dyn Future<Output = ()> + Send>>;
+    let started = std::time::Instant::now();
+    let body: Arc<Mutex<Option<Body>>> = Arc::new(Mutex::new(Some(Box::pin(body))));
+    let executor_body = body.clone();
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    let executor = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(paused)
+            .build()
+            .unwrap();
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime.block_on(async {
+                loop {
+                    let complete = std::future::poll_fn(|cx| {
+                        let mut slot = executor_body.lock().unwrap_or_else(|e| e.into_inner());
+                        let complete = slot
+                            .as_mut()
+                            .is_none_or(|future| future.as_mut().poll(cx).is_ready());
+                        if complete {
+                            slot.take();
+                        }
+                        std::task::Poll::Ready(complete)
+                    })
+                    .await;
+                    if complete {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+        }));
+        // A panicking body must drop its release guards before shutdown too.
+        executor_body
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        runtime.shutdown_timeout(CACHE_TEST_BOUND);
+        let _ = send.send(outcome);
+    });
+    let outcome = receive.recv_timeout(CACHE_TEST_BOUND);
+    let completed = outcome.is_ok();
+    let outcome = match outcome {
+        Ok(value) => Some(value),
+        Err(_) => {
+            // Wake an inline adapter before attempting to cancel its owner future.
+            release_cache_test_holds();
+            match body.try_lock() {
+                Ok(mut body) => {
+                    body.take();
+                }
+                Err(std::sync::TryLockError::Poisoned(error)) => {
+                    error.into_inner().take();
+                }
+                Err(std::sync::TryLockError::WouldBlock) => {}
+            }
+            receive.recv_timeout(CACHE_TEST_BOUND).ok()
+        }
+    };
+    release_cache_test_holds();
+    let stopped = outcome.is_some();
+    if stopped {
+        executor.join().unwrap();
+    }
+    terrain_test_timing!(
+        "FR3_TIMING {test} supervised_total={:.6} bound=60",
+        started.elapsed().as_secs_f64()
+    );
+    assert!(
+        completed && stopped,
+        "assertion failed: {test}: cache scenario completes and releases its executor within the bound"
+    );
+    if let Some(Err(panic)) = outcome {
+        let message = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied())
+            .unwrap_or("non-string panic");
+        let labelled = message.contains(&format!("assertion failed: {test}:"))
+            || message.contains(&format!("{test}:"));
+        assert!(
+            labelled,
+            "assertion failed: {test}: cache executor completes without an inline panic; error={message}"
+        );
+        std::panic::resume_unwind(panic);
+    }
+}
+
+#[derive(Clone)]
+struct CacheTestRelease {
+    send: std::sync::mpsc::SyncSender<()>,
+    local: Option<TileId>,
+    hash: Option<TileId>,
+}
+// The supervisor can release held operations even while an inline poll owns its mutex.
+static CACHE_TEST_RELEASES: Mutex<Vec<CacheTestRelease>> = Mutex::new(Vec::new());
+fn release_cache_test_holds() {
+    let releases = std::mem::take(
+        &mut *CACHE_TEST_RELEASES
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()),
+    );
+    drop(releases);
+}
+impl CacheTestRelease {
+    fn registered(self) -> Self {
+        CACHE_TEST_RELEASES
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(self.clone());
+        self
+    }
+}
+impl Drop for CacheTestRelease {
+    fn drop(&mut self) {
+        let _ = self.send.try_send(());
+        if let Some(tile) = self.local {
+            TERRAIN_LOCAL_HOLD
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .retain(|(_, id, ..)| *id != tile);
+        }
+        if let Some(tile) = self.hash {
+            let mut hold = TERRAIN_HASH_HOLD.lock().unwrap_or_else(|e| e.into_inner());
+            if hold.as_ref().is_some_and(|(id, ..)| *id == tile) {
+                hold.take();
+            }
+        }
+    }
+}
 
 const T0: i64 = 1_760_000_000_000;
 const T1: i64 = T0 + 60_000_000;
@@ -267,8 +408,26 @@ fn pair(store: &HubStore, vehicle: Uuid, id: i64) -> (Option<i64>, Option<i64>) 
         )
         .unwrap()
 }
+fn provenance_result(
+    store: &HubStore,
+    vehicle: Uuid,
+    id: i64,
+) -> rusqlite::Result<(String, i64, Option<String>, i64, i64)> {
+    store.open().unwrap().query_row("SELECT status,attempts,error_code,attempted_at_ms,retry_after_ms FROM terrain_elevation_provenance WHERE vehicle_id=?1 AND position_id=?2", params![vehicle.to_string(),id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))
+}
 fn provenance(store: &HubStore, vehicle: Uuid, id: i64) -> (String, i64, Option<String>, i64, i64) {
-    store.open().unwrap().query_row("SELECT status,attempts,error_code,attempted_at_ms,retry_after_ms FROM terrain_elevation_provenance WHERE vehicle_id=?1 AND position_id=?2", params![vehicle.to_string(),id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).unwrap()
+    provenance_result(store, vehicle, id).unwrap()
+}
+fn provenance_labelled(
+    test: &str,
+    store: &HubStore,
+    vehicle: Uuid,
+    id: i64,
+) -> (String, i64, Option<String>, i64, i64) {
+    provenance_result(store, vehicle, id).labelled_ok(
+        test,
+        "refill acquisition persists the expected provenance row",
+    )
 }
 fn table(store: &HubStore, name: &str) -> Vec<Vec<String>> {
     let conn = store.open().unwrap();
@@ -339,6 +498,7 @@ fn reset_marker(store: &HubStore) {
 
 #[tokio::test]
 async fn c9_st13_to_st17_bounds() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_dir, store, v) = fixture(false);
     let clock = Arc::new(ManualClock::new());
     let source = Source::new(&clock);
@@ -428,6 +588,7 @@ async fn c9_st13_to_st17_bounds() {
 
 #[tokio::test]
 async fn c9_st28_car_drive() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(false);
     let clock = Arc::new(ManualClock::new());
     let source = Source::new(&clock);
@@ -495,6 +656,7 @@ async fn c9_st28_car_drive() {
 
 #[tokio::test]
 async fn c9_st39_rotation() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, a) = fixture(false);
     let b = vehicle(&s, "two");
     let mut ids = [a, b];
@@ -515,6 +677,7 @@ async fn c9_st39_rotation() {
 
 #[tokio::test]
 async fn c9_st40_retry_share() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(false);
     seed(
         &s,
@@ -564,6 +727,7 @@ async fn c9_st40_retry_share() {
 
 #[tokio::test]
 async fn c9_st54_slots() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(false);
     seed(
         &s,
@@ -669,6 +833,7 @@ fn breaker_fixture(cached: bool) -> (tempfile::TempDir, HubStore, Uuid, Arc<Manu
 }
 #[tokio::test]
 async fn c9_st18_to_st21_breaker() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     for last in [Script::Value(0), Script::Timeout, Script::Archive] {
         let (_d, s, v, clock, source) = breaker_fixture(false);
         let mut state = TerrainWorkerState::default();
@@ -766,6 +931,7 @@ async fn c9_st18_to_st21_breaker() {
 
 #[tokio::test]
 async fn c9_st34_to_st36_failures() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(false);
     seed(&s, v, vec![point(1, 1, 0, 20), point(2, 1, 0, 21)]);
     let clock = Arc::new(ManualClock::new());
@@ -872,6 +1038,7 @@ async fn c9_st34_to_st36_failures() {
 
 #[tokio::test]
 async fn c9_st44_refused() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(true);
     seed(&s, v, vec![point(1, 1, 0, 20)]);
     let before = durable(&s);
@@ -930,6 +1097,7 @@ async fn c9_st44_refused() {
 
 #[tokio::test]
 async fn c9_st30_restart() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (d, s, v) = fixture(false);
     seed(
         &s,
@@ -1021,6 +1189,7 @@ fn st27_source(clock: &Arc<ManualClock>) -> Source {
 }
 #[tokio::test]
 async fn c9_st31_replay() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(false);
     seed(&s, v, st27_rows());
     let clock = Arc::new(ManualClock::new());
@@ -1061,6 +1230,7 @@ fn pack_tree(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 
 #[tokio::test]
 async fn c9_st41_no_snapshot() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (dir, s, v) = fixture(false);
     seed(
         &s,
@@ -1110,6 +1280,7 @@ async fn c9_st41_no_snapshot() {
 
 #[tokio::test]
 async fn c9_st43_safe_logs() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let log = super::DecisionLog::start();
     async {
         for failure in [false, true] {
@@ -1149,6 +1320,35 @@ async fn c9_st43_safe_logs() {
     .await;
     let text = log.contents();
     assert!(text.contains("terrain pass complete"));
+    let allowed = [
+        "phase",
+        "filled",
+        "void",
+        "failed",
+        "stale",
+        "deferred",
+        "retired",
+        "tiles",
+        "tidy_rows",
+        "elapsed_ms",
+        "code",
+    ];
+    for line in text
+        .lines()
+        .filter(|line| line.contains("terrain pass complete"))
+    {
+        let fields = line.split("terrain pass complete").nth(1).unwrap();
+        for field in fields
+            .split_whitespace()
+            .filter_map(|part| part.split_once('='))
+        {
+            assert!(
+                allowed.contains(&field.0),
+                "assertion failed: c9_st43_safe_logs: terrain pass events contain no location field names or values; field={}",
+                field.0
+            );
+        }
+    }
     assert!(!text.contains("10.123"));
     assert!(!text.contains("20.654"));
     for token in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
@@ -1175,6 +1375,7 @@ async fn c9_st43_safe_logs() {
 
 #[tokio::test]
 async fn c9_st59_serial() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(false);
     seed(&s, v, (1..=500).map(|id| point(id, 1, 0, 20)).collect());
     let clock = Arc::new(ManualClock::new());
@@ -1200,6 +1401,12 @@ async fn c9_st59_serial() {
                 }
                 self.source.acquire(t, g, i).await
             })
+        }
+    }
+    impl Drop for Held<'_> {
+        fn drop(&mut self) {
+            self.resume.notify_waiters();
+            self.resume.notify_one();
         }
     }
     struct CountAccess {
@@ -1233,21 +1440,46 @@ async fn c9_st59_serial() {
         run_terrain_enrichment_pass(&s, &held, &mut b, &access, &Permit(true), clock.as_ref()).await
     };
     let release = async {
-        while access.count.load(Ordering::SeqCst) < 3 {
-            access.changed.notified().await;
-        }
-        // C9 R27, C9 ST73: the waiting pass has not read its marker yet.
-        assert_eq!(
-            crate::db::TERRAIN_MARKER_READS.with(|n| n.get()) - marker_reads,
-            1
-        );
-        assert_eq!(
-            scalar(&s, "SELECT COUNT(*) FROM terrain_elevation_provenance"),
-            0
-        );
+        let started = std::time::Instant::now();
+        let ready = timeout(Duration::from_secs(10), async {
+            while access.count.load(Ordering::SeqCst) < 3 {
+                access.changed.notified().await;
+            }
+        })
+        .await
+        .is_ok();
+        let reads = crate::db::TERRAIN_MARKER_READS.with(|n| n.get()) - marker_reads;
+        let rows = scalar(&s, "SELECT COUNT(*) FROM terrain_elevation_provenance");
         held.resume.notify_one();
+        terrain_test_timing!(
+            "FR3_TIMING c9_st59_serial handshake={:.6} bound=10",
+            started.elapsed().as_secs_f64()
+        );
+        (ready, reads, rows)
     };
-    let (a, b, ()) = tokio::join!(first, second, release);
+    let started = std::time::Instant::now();
+    let joined = timeout(Duration::from_secs(30), async {
+        tokio::join!(first, second, release)
+    })
+    .await;
+    held.resume.notify_one();
+    terrain_test_timing!(
+        "FR3_TIMING c9_st59_serial join={:.6} bound=30",
+        started.elapsed().as_secs_f64()
+    );
+    let (a, b, (ready, reads, rows)) = joined.labelled_ok(
+        "c9_st59_serial",
+        "both serial passes complete within the bound",
+    );
+    assert!(
+        ready,
+        "assertion failed: c9_st59_serial: initial and post-lock admission checks complete before releasing the held pass"
+    );
+    assert_eq!(
+        reads, 1,
+        "c9_st59_serial: waiting pass does not read the marker before owning the process lock"
+    );
+    assert_eq!(rows, 0);
     assert_eq!(a.unwrap().filled + b.unwrap().filled, 500);
     assert_eq!(source.count(), 1);
     assert_eq!(
@@ -1268,6 +1500,7 @@ async fn c9_st59_serial() {
 
 #[tokio::test]
 async fn c9_st64_clock_stamps() {
+    let _pass_serial = super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(false);
     seed(
         &s,

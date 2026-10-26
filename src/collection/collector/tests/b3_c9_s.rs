@@ -4,6 +4,7 @@
 //! Synthetic tiles only. A 1201 tile `N10E020` has every cell 0 unless stated;
 //! cell `(r, c)` lies at `lat = 11 - r / 1200` and `lon = 20 + c / 1200`.
 
+use crate::test_assertions::LabelledResult;
 use std::{
     fs::OpenOptions,
     io::{Seek, SeekFrom, Write},
@@ -33,8 +34,15 @@ fn tile(name: &str, bytes: &[u8]) -> HgtTile {
 }
 
 /// Samples a tile named for the point it is asked about, in 1201 or 3601 size.
-fn sample(name: &str, bytes: &[u8], latitude: f64, longitude: f64) -> SampleOutcome {
-    sample_elevation(&tile(name, bytes), latitude, longitude).expect("sampling succeeds")
+fn sample_labelled(
+    test: &str,
+    name: &str,
+    bytes: &[u8],
+    latitude: f64,
+    longitude: f64,
+) -> SampleOutcome {
+    sample_elevation(&tile(name, bytes), latitude, longitude)
+        .labelled_ok(test, "sampling succeeds for the tile containing the point")
 }
 
 fn tile_name(latitude: f64, longitude: f64) -> String {
@@ -54,8 +62,15 @@ fn square(values: [i16; 4]) -> Vec<u8> {
 
 #[test]
 fn c9_st01_to_st06_sampling() {
-    let at =
-        |bytes: &[u8], latitude: f64, longitude: f64| sample("N10E020", bytes, latitude, longitude);
+    let at = |bytes: &[u8], latitude: f64, longitude: f64| {
+        sample_labelled(
+            "c9_st01_to_st06_sampling",
+            "N10E020",
+            bytes,
+            latitude,
+            longitude,
+        )
+    };
 
     // C9 ST1 exact node: no weight on any neighbour.
     let mut cells = blank(N);
@@ -142,8 +157,15 @@ fn c9_st01_to_st06_sampling() {
 
 #[test]
 fn c9_st07_to_st10_edges() {
-    let at =
-        |bytes: &[u8], latitude: f64, longitude: f64| sample("N10E020", bytes, latitude, longitude);
+    let at = |bytes: &[u8], latitude: f64, longitude: f64| {
+        sample_labelled(
+            "c9_st07_to_st10_edges",
+            "N10E020",
+            bytes,
+            latitude,
+            longitude,
+        )
+    };
 
     // C9 ST7 validity range, inclusive at both ends.
     for (value, expected) in [
@@ -223,14 +245,20 @@ fn c9_st07_to_st10_edges() {
     put(&mut dateline, N, 600, 0, 33);
     for longitude in [180.0, -180.0] {
         assert_eq!(
-            sample("N10W180", &dateline, 10.5, longitude),
+            sample_labelled(
+                "c9_st07_to_st10_edges",
+                "N10W180",
+                &dateline,
+                10.5,
+                longitude
+            ),
             SampleOutcome::Elevation(33)
         );
     }
     let mut pole = blank(N);
     put(&mut pole, N, 0, 600, 44);
     assert_eq!(
-        sample("N89E000", &pole, 90.0, 0.5),
+        sample_labelled("c9_st07_to_st10_edges", "N89E000", &pole, 90.0, 0.5),
         SampleOutcome::Elevation(44)
     );
     // The south pole: r = n - 1 exactly in the S90 tile, the clamp keeps the
@@ -239,7 +267,7 @@ fn c9_st07_to_st10_edges() {
     put(&mut south_pole, N, 1200, 600, 55);
     put(&mut south_pole, N, 1200, 601, 55);
     assert_eq!(
-        sample("S90E000", &south_pole, -90.0, 0.5),
+        sample_labelled("c9_st07_to_st10_edges", "S90E000", &south_pole, -90.0, 0.5),
         SampleOutcome::Elevation(55)
     );
 
@@ -275,13 +303,19 @@ fn c9_st07_to_st10_edges() {
     let mut fine = blank(FINE);
     put(&mut fine, FINE, 1800, 1800, 77);
     assert_eq!(
-        sample("N10E020", &fine, 10.5, 20.5),
+        sample_labelled("c9_st07_to_st10_edges", "N10E020", &fine, 10.5, 20.5),
         SampleOutcome::Elevation(77)
     );
     // Quarter step: r = 1800.25 weights row 1801 by 0.25 (fc = 0).
     put(&mut fine, FINE, 1801, 1800, 177);
     assert_eq!(
-        sample("N10E020", &fine, 10.5 - 0.25 / 3600.0, 20.5),
+        sample_labelled(
+            "c9_st07_to_st10_edges",
+            "N10E020",
+            &fine,
+            10.5 - 0.25 / 3600.0,
+            20.5
+        ),
         SampleOutcome::Elevation(102)
     );
 

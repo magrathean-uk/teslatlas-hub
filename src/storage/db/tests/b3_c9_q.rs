@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use super::*;
+use crate::test_assertions::LabelledResult;
 use serde_json::json;
 
 const C9_T0: i64 = 1_760_000_000_000;
@@ -651,7 +652,7 @@ fn c9_st42_query_plans() {
     let index_sql = index_sql.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
         index_sql.ends_with("(vehicle_id, retry_after_ms) WHERE status = 'failed'"),
-        "{index_sql}"
+        "assertion failed: c9_st42_query_plans: vehicle retry index is partial on failed status; {index_sql}"
     );
     let boundary_plan = c9_plan(
         &connection,
@@ -684,7 +685,10 @@ fn c9_st42_query_plans() {
         ),
     ] {
         let plan = c9_plan(&connection, sql, &parameters);
-        assert!(!plan.contains("SCAN materialised_positions"), "{plan}");
+        assert!(
+            !plan.contains("SCAN materialised_positions"),
+            "assertion failed: c9_st42_query_plans: bounded selection does not scan materialised positions; {plan}"
+        );
         assert!(
             !plan.contains("SCAN terrain_elevation_provenance"),
             "{plan}"
@@ -709,7 +713,10 @@ fn c9_st42_retry_order_has_no_temp_sort() {
     let connection = store.open().unwrap();
     let plan = c9_plan(&connection, TERRAIN_DUE_RETRIES_SQL, &[&C9_T0, &2_u32]);
     assert!(plan.contains("terrain_provenance_retry"), "{plan}");
-    assert!(!plan.contains("TEMP B-TREE"), "{plan}");
+    assert!(
+        !plan.contains("TEMP B-TREE"),
+        "assertion failed: c9_st42_retry_order_has_no_temp_sort: due retry selection does not build a temporary B-tree; {plan}"
+    );
     // C9 ST42: malformed JSON beyond the SQL limit must never be processed.
     for id in 1..=3 {
         c9_provenance(&connection, vehicle, id, "failed", C9_T0);
@@ -1120,7 +1127,7 @@ fn c9_st55_failed_step_is_atomic() {
     );
     assert!(
         c9_schema(&connection) == schema_before,
-        "C9 R61: failed terrain step changed the schema"
+        "assertion failed: c9_st55_failed_step_is_atomic: failed terrain migration leaves the schema unchanged"
     );
     assert_eq!(
         connection
@@ -1350,7 +1357,10 @@ fn c9_st55_repeated_rewinds_restore_fresh_schema() {
     for rewind in [REWIND_V77_SQL, REWIND_V77_SQL, REWIND_V76_SQL] {
         connection
             .execute_batch(&format!("BEGIN IMMEDIATE; {rewind} COMMIT;"))
-            .unwrap();
+            .labelled_ok(
+                "c9_st55_repeated_rewinds_restore_fresh_schema",
+                "terrain rewind succeeds when its optional index is already absent",
+            );
         assert_eq!(
             connection
                 .query_row(

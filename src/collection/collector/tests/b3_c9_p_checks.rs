@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use super::*;
+use crate::test_assertions::LabelledResult;
 
 #[tokio::test]
 async fn c9_waiting_pass_rechecks_access_before_marker() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     for tidy_only in [false, true] {
         let (_dir, store, vehicle) = fixture(false);
         seed(&store, vehicle, vec![point(1, 1, 0, 20)]);
@@ -12,6 +14,7 @@ async fn c9_waiting_pass_rechecks_access_before_marker() {
             source: Source,
             entered: tokio::sync::Notify,
             resume: tokio::sync::Notify,
+            first: AtomicBool,
         }
         impl TileSource for Held {
             fn acquire<'a>(
@@ -22,10 +25,18 @@ async fn c9_waiting_pass_rechecks_access_before_marker() {
             ) -> Pin<Box<dyn Future<Output = Result<AcquiredTile, AcquireFailure>> + Send + 'a>>
             {
                 Box::pin(async move {
-                    self.entered.notify_one();
-                    self.resume.notified().await;
+                    if !self.first.swap(true, Ordering::SeqCst) {
+                        self.entered.notify_one();
+                        self.resume.notified().await;
+                    }
                     self.source.acquire(tile, guard, inner).await
                 })
+            }
+        }
+        impl Drop for Held {
+            fn drop(&mut self) {
+                self.resume.notify_waiters();
+                self.resume.notify_one();
             }
         }
         struct ObservedAccess {
@@ -43,6 +54,7 @@ async fn c9_waiting_pass_rechecks_access_before_marker() {
             source: Source::new(&clock),
             entered: tokio::sync::Notify::new(),
             resume: tokio::sync::Notify::new(),
+            first: AtomicBool::new(false),
         };
         let run = RunWriteGuard::for_run(None);
         let access = ObservedAccess {
@@ -77,11 +89,36 @@ async fn c9_waiting_pass_rechecks_access_before_marker() {
             }
         };
         let revoke = async {
-            access.checked.notified().await;
+            let started = std::time::Instant::now();
+            let ready = timeout(Duration::from_secs(10), access.checked.notified())
+                .await
+                .is_ok();
+            terrain_test_timing!(
+                "FR3_TIMING c9_waiting_pass_rechecks_access_before_marker admission_wait={:.6} bound=10",
+                started.elapsed().as_secs_f64()
+            );
             run.fence.set();
             held.resume.notify_one();
+            ready
         };
-        let (first, second, ()) = tokio::join!(first, second, revoke);
+        let started = std::time::Instant::now();
+        let joined = timeout(Duration::from_secs(30), async {
+            tokio::join!(first, second, revoke)
+        })
+        .await;
+        held.resume.notify_one();
+        terrain_test_timing!(
+            "FR3_TIMING c9_waiting_pass_rechecks_access_before_marker join={:.6} bound=30",
+            started.elapsed().as_secs_f64()
+        );
+        let (first, second, ready) = joined.labelled_ok(
+            "c9_waiting_pass_rechecks_access_before_marker",
+            "waiting passes complete within the bound",
+        );
+        assert!(
+            ready,
+            "assertion failed: c9_waiting_pass_rechecks_access_before_marker: waiting pass admission is acknowledged within the bound"
+        );
         assert_eq!(first.unwrap().filled, 1);
         assert!(second.unwrap().access_denied);
         assert_eq!(held.source.count(), 1);
@@ -90,7 +127,7 @@ async fn c9_waiting_pass_rechecks_access_before_marker() {
     }
 }
 
-async fn check_fenced_mutation(path: &str, denied_at: usize) {
+async fn check_fenced_mutation(test: &str, path: &str, denied_at: usize) {
     let (_dir, store, vehicle) = fixture(path == "tidy");
     let rows = if path == "outcomes" {
         (1..=251).map(|id| point(id, 1, 0, 20)).collect()
@@ -130,65 +167,77 @@ async fn check_fenced_mutation(path: &str, denied_at: usize) {
     )
     .await
     .unwrap();
-    assert!(run.audit().tripped(), "{path}");
-    assert!(report.access_denied, "{path}");
+    assert!(
+        run.audit().tripped(),
+        "assertion failed: {test}: the nominated mutation reaches the live admission fence; path={path}"
+    );
+    assert!(
+        report.access_denied,
+        "assertion failed: {test}: live admission refusal denies the pass; path={path}"
+    );
     assert!(
         !report.full_batch,
-        "{path} refusal must not request continuation"
+        "assertion failed: {test}: refusal must not request continuation; path={path}"
     );
-    assert_eq!(report.failed, 0, "{path}");
-    assert_eq!(report.wrote, path == "outcomes", "{path}");
+    assert_eq!(report.failed, 0, "{test}: {path}");
+    assert_eq!(report.wrote, path == "outcomes", "{test}: {path}");
     assert_eq!(
         (durable(&store), store.terrain_tidy_progress().unwrap()),
         stamp.lock().unwrap().take().unwrap(),
-        "{path}"
+        "{test}: {path}"
     );
     if path != "outcomes" {
         assert_eq!(
             (durable(&store), store.terrain_tidy_progress().unwrap()),
             initial,
-            "{path} wrote before the refusal"
+            "{test}: no writes before the refusal; path={path}"
         );
     }
     assert_eq!(
         report.filled,
         if path == "outcomes" { 250 } else { 0 },
-        "{path}"
+        "{test}: {path}"
     );
     assert_eq!(
         cursor(&store, vehicle),
         if path == "outcomes" { 250 } else { 0 },
-        "{path}"
+        "{test}: {path}"
     );
 }
 
 #[tokio::test]
 async fn c9_fence_tidy() {
-    check_fenced_mutation("tidy", 3).await;
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
+    check_fenced_mutation("c9_fence_tidy", "tidy", 3).await;
 }
 
 #[tokio::test]
 async fn c9_fence_boundary() {
-    check_fenced_mutation("boundary", 3).await;
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
+    check_fenced_mutation("c9_fence_boundary", "boundary", 3).await;
 }
 
 #[tokio::test]
 async fn c9_fence_retire() {
-    check_fenced_mutation("retire", 3).await;
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
+    check_fenced_mutation("c9_fence_retire", "retire", 3).await;
 }
 
 #[tokio::test]
 async fn c9_fence_cursor() {
-    check_fenced_mutation("cursor", 3).await;
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
+    check_fenced_mutation("c9_fence_cursor", "cursor", 3).await;
 }
 
 #[tokio::test]
 async fn c9_fence_outcomes() {
-    check_fenced_mutation("outcomes", 4).await;
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
+    check_fenced_mutation("c9_fence_outcomes", "outcomes", 4).await;
 }
 
 #[tokio::test]
 async fn c9_mixed_groups_retry_ties_and_sample_order() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_dir, store, a) = fixture(false);
     let b = vehicle(&store, "two");
     let mut vehicles = [a, b];
@@ -254,6 +303,7 @@ async fn c9_mixed_groups_retry_ties_and_sample_order() {
 
 #[tokio::test]
 async fn c9_cursor_waits_for_the_later_group() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_dir, store, vehicle) = fixture(false);
     seed(
         &store,
@@ -299,6 +349,7 @@ async fn c9_cursor_waits_for_the_later_group() {
 
 #[tokio::test]
 async fn c9_clock_errors_never_write_prepared_work() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     struct FailingClock {
         calls: AtomicUsize,
         fail_at: usize,
@@ -353,6 +404,7 @@ async fn c9_clock_errors_never_write_prepared_work() {
 
 #[tokio::test]
 async fn c9_drive_memo_is_cleared_between_passes() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_dir, store, vehicle) = fixture(false);
     seed(
         &store,
@@ -387,6 +439,7 @@ async fn c9_drive_memo_is_cleared_between_passes() {
 
 #[tokio::test]
 async fn c9_breaker_eligibility_uses_pass_start() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     struct AdvancingClock(AtomicI64);
     impl TerrainClock for AdvancingClock {
         fn now_ms(&self) -> Result<i64, CollectorError> {
@@ -447,183 +500,458 @@ fn cached_source(store: &HubStore, tile: TileId) -> (tempfile::TempDir, CacheTil
     (root, CacheTileSource { cache })
 }
 
-async fn check_local_stage(stage: TerrainLocalStage, name: &str) {
+// The supervisor owns cancellation and release outside the executor under test.
+const LOCAL_WATCHDOG: Duration = Duration::from_secs(10);
+type LocalAcquisition = Pin<Box<dyn Future<Output = Result<AcquiredTile, AcquireFailure>> + Send>>;
+
+fn check_local_stage(test: &str, stage: TerrainLocalStage, name: &str) {
+    let _serial = super::super::TERRAIN_CACHE_TEST_SERIAL.blocking_lock();
+    let started = std::time::Instant::now();
+    let drain_started = std::time::Instant::now();
+    while TERRAIN_BLOCKING_JOBS.load(Ordering::SeqCst) != 0
+        && drain_started.elapsed() < LOCAL_WATCHDOG
+    {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let quiescent = TERRAIN_BLOCKING_JOBS.load(Ordering::SeqCst);
+    let initial_drain_seconds = drain_started.elapsed().as_secs_f64();
     let (_dir, store, _) = fixture(false);
     let tile = TileId::parse(name).unwrap();
     let (_root, source) = cached_source(&store, tile);
-    let caller = std::thread::current().id();
-    let (entered_send, entered_receive) = oneshot::channel();
+    let source = Arc::new(source);
+    let (_other_root, other) = cached_source(&store, TileId::parse("N33E077").unwrap());
+    let (entered_send, mut entered_receive) = oneshot::channel();
     let (release_send, release_receive) = std::sync::mpsc::sync_channel(1);
-    TERRAIN_LOCAL_HOLD
-        .lock()
-        .unwrap()
-        .push((stage, tile, caller, entered_send, release_receive));
-    let acquire = timeout(
-        K_LOCAL_TILE_BUDGET,
-        source.acquire(tile, &Permit(false), &Permit(true)),
-    );
-    let advance = async {
-        let worker = entered_receive.await.unwrap();
-        tokio::time::advance(K_LOCAL_TILE_BUDGET).await;
-        worker
-    };
-    let (result, (worker, dropped)) = tokio::join!(acquire, advance);
-    let owned = !dropped.load(Ordering::SeqCst);
-    let _ = release_send.send(());
-    while !dropped.load(Ordering::SeqCst) {
-        tokio::task::yield_now().await;
+    struct Release {
+        tile: TileId,
+        send: std::sync::mpsc::SyncSender<()>,
+        owner: Arc<Mutex<Option<LocalAcquisition>>>,
     }
-    assert_ne!(worker, caller);
-    assert!(owned);
-    assert!(matches!(
-        result,
-        Ok(Err(AcquireFailure {
-            kind: AcquireErrorKind::LocalTimeout,
-            ..
-        }))
-    ));
+    impl Drop for Release {
+        fn drop(&mut self) {
+            // Release first: an inline adapter may hold the owner mutex while blocked.
+            let _ = self.send.try_send(());
+            TERRAIN_LOCAL_HOLD
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .retain(|(_, id, ..)| *id != self.tile);
+            match self.owner.try_lock() {
+                Ok(mut owner) => {
+                    owner.take();
+                }
+                Err(std::sync::TryLockError::Poisoned(error)) => {
+                    error.into_inner().take();
+                }
+                Err(std::sync::TryLockError::WouldBlock) => {}
+            }
+        }
+    }
+    let owned_source = source.clone();
+    let owner: Arc<Mutex<Option<LocalAcquisition>>> =
+        Arc::new(Mutex::new(Some(Box::pin(async move {
+            owned_source
+                .acquire(tile, &Permit(false), &Permit(true))
+                .await
+        }))));
+    let release = Release {
+        tile,
+        send: release_send,
+        owner: owner.clone(),
+    };
+    let advance = Arc::new(AtomicBool::new(false));
+    let finish = Arc::new(AtomicBool::new(false));
+    let (caller_send, caller_receive) = std::sync::mpsc::sync_channel(1);
+    let (deadline_send, deadline_receive) = std::sync::mpsc::sync_channel(1);
+    let (done_send, done_receive) = std::sync::mpsc::sync_channel(1);
+    let thread_owner = owner.clone();
+    let thread_advance = advance.clone();
+    let thread_finish = finish.clone();
+    let executor = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .unwrap();
+        let caller = std::thread::current().id();
+        TERRAIN_LOCAL_HOLD.lock().unwrap().push((
+            stage,
+            tile,
+            caller,
+            entered_send,
+            release_receive,
+        ));
+        let _ = caller_send.send(caller);
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            runtime.block_on(async {
+                let mut result = None;
+                while !thread_finish.load(Ordering::SeqCst) {
+                    std::future::poll_fn(|cx| {
+                        let mut slot = thread_owner.lock().unwrap_or_else(|e| e.into_inner());
+                        if let Some(acquire) = slot.as_mut()
+                            && let std::task::Poll::Ready(value) = acquire.as_mut().poll(cx)
+                        {
+                            result = Some(value);
+                            slot.take();
+                        }
+                        std::task::Poll::Ready(())
+                    })
+                    .await;
+                    if thread_advance.swap(false, Ordering::SeqCst) {
+                        // Drive the contractual deadline independently of acquisition.
+                        // One millisecond is past 30 s and strictly before a 31 s mutant.
+                        tokio::time::advance(K_LOCAL_TILE_BUDGET + Duration::from_millis(1)).await;
+                        let poll_started = std::time::Instant::now();
+                        while result.is_none() && poll_started.elapsed() < LOCAL_WATCHDOG {
+                            std::future::poll_fn(|cx| {
+                                let mut slot =
+                                    thread_owner.lock().unwrap_or_else(|e| e.into_inner());
+                                if let Some(acquire) = slot.as_mut()
+                                    && let std::task::Poll::Ready(value) = acquire.as_mut().poll(cx)
+                                {
+                                    result = Some(value);
+                                    slot.take();
+                                }
+                                std::task::Poll::Ready(())
+                            })
+                            .await;
+                            tokio::task::yield_now().await;
+                        }
+                        let local_timeout = matches!(
+                            result,
+                            Some(Err(AcquireFailure {
+                                kind: AcquireErrorKind::LocalTimeout,
+                                ..
+                            }))
+                        );
+                        let _ = deadline_send.send(local_timeout);
+                    }
+                    // Keep paused time from auto-advancing before the acknowledgement.
+                    tokio::task::yield_now().await;
+                }
+            });
+        }));
+        thread_owner
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        runtime.shutdown_timeout(LOCAL_WATCHDOG);
+        let _ = done_send.send(outcome.is_ok());
+    });
+    let startup_started = std::time::Instant::now();
+    let caller = caller_receive.recv_timeout(LOCAL_WATCHDOG);
+    let startup_seconds = startup_started.elapsed().as_secs_f64();
+    let entry_started = std::time::Instant::now();
+    let entry = loop {
+        match entered_receive.try_recv() {
+            Ok(value) => break Some(value),
+            Err(oneshot::error::TryRecvError::Closed) => break None,
+            Err(oneshot::error::TryRecvError::Empty)
+                if entry_started.elapsed() < LOCAL_WATCHDOG =>
+            {
+                std::thread::sleep(Duration::from_millis(1))
+            }
+            Err(_) => break None,
+        }
+    };
+    let entry_seconds = entry_started.elapsed().as_secs_f64();
+    let at_entry = (
+        TERRAIN_BLOCKING_JOBS.load(Ordering::SeqCst),
+        source.has_pending_local_work(),
+        other.has_pending_local_work(),
+    );
+    let off_executor = entry
+        .as_ref()
+        .zip(caller.as_ref().ok())
+        .is_some_and(|((worker, _), caller)| worker != caller);
+    let deadline_started = std::time::Instant::now();
+    let local_timeout = if off_executor {
+        advance.store(true, Ordering::SeqCst);
+        deadline_receive
+            .recv_timeout(LOCAL_WATCHDOG)
+            .unwrap_or(false)
+    } else {
+        false
+    };
+    let deadline_seconds = deadline_started.elapsed().as_secs_f64();
+    let at_deadline = (
+        TERRAIN_BLOCKING_JOBS.load(Ordering::SeqCst),
+        source.has_pending_local_work(),
+        other.has_pending_local_work(),
+    );
+    let owned = entry
+        .as_ref()
+        .is_some_and(|(_, dropped)| !dropped.load(Ordering::SeqCst));
+    drop(release);
+    let cleanup_started = std::time::Instant::now();
+    while entry
+        .as_ref()
+        .is_some_and(|(_, dropped)| !dropped.load(Ordering::SeqCst))
+        && cleanup_started.elapsed() < LOCAL_WATCHDOG
+    {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let drained = entry
+        .as_ref()
+        .is_none_or(|(_, dropped)| dropped.load(Ordering::SeqCst));
+    let drain_seconds = cleanup_started.elapsed().as_secs_f64();
+    let shutdown_started = std::time::Instant::now();
+    finish.store(true, Ordering::SeqCst);
+    let outcome = done_receive.recv_timeout(LOCAL_WATCHDOG);
+    let stopped = outcome == Ok(true);
+    if outcome.is_ok() {
+        executor.join().unwrap();
+    }
+    let cleanup_seconds = cleanup_started.elapsed().as_secs_f64();
+    let shutdown_seconds = shutdown_started.elapsed().as_secs_f64();
+    terrain_test_timing!(
+        "FR3_TIMING {test} initial_drain={initial_drain_seconds:.6} startup={startup_seconds:.6} drain={drain_seconds:.6} shutdown={shutdown_seconds:.6} entry={entry_seconds:.6} deadline={deadline_seconds:.6} cleanup={cleanup_seconds:.6} total={:.6} per_step_bound=10",
+        started.elapsed().as_secs_f64()
+    );
+    assert!(
+        entry.is_some(),
+        "assertion failed: {test}: real cache stage entry completes within the bound"
+    );
+    assert!(
+        off_executor,
+        "assertion failed: {test}: real cache stage runs off the caller executor"
+    );
+    assert!(
+        quiescent == 0 && at_entry == (1, true, true) && at_deadline == (1, true, true),
+        "assertion failed: {test}: held local stage remains counted as owned through its deadline; baseline={quiescent} entry={at_entry:?} deadline={at_deadline:?}"
+    );
+    assert!(
+        owned,
+        "assertion failed: {test}: held local job is not dropped before release"
+    );
+    assert!(
+        local_timeout,
+        "assertion failed: {test}: real cache acquisition reports LocalTimeout at the local deadline"
+    );
+    assert!(
+        drained && stopped,
+        "assertion failed: {test}: released local stage drains and executor stops within the bound"
+    );
     assert!(
         !TERRAIN_LOCAL_HOLD
             .lock()
             .unwrap()
             .iter()
-            .any(|(_, held, ..)| *held == tile)
+            .any(|(_, held, ..)| *held == tile),
+        "assertion failed: {test}: local stage hold is consumed or removed"
     );
 }
 
-#[tokio::test(start_paused = true)]
-async fn c9_real_cache_cachedstate_deadline_and_ownership() {
-    check_local_stage(TerrainLocalStage::CachedState, "N34E078").await;
+#[test]
+fn c9_real_cache_cachedstate_deadline_and_ownership() {
+    check_local_stage(
+        "c9_real_cache_cachedstate_deadline_and_ownership",
+        TerrainLocalStage::CachedState,
+        "N34E078",
+    );
 }
 
-#[tokio::test(start_paused = true)]
-async fn c9_real_cache_get_deadline_and_ownership() {
-    check_local_stage(TerrainLocalStage::Get, "N34E079").await;
-}
-
-#[tokio::test(start_paused = true)]
-async fn c9_real_cache_hash_deadline_and_ownership() {
-    check_local_stage(TerrainLocalStage::Hash, "N34E080").await;
-}
-
-#[tokio::test]
-async fn c9_real_cache_get_revalidates_live_admission() {
-    let (_dir, store, _) = fixture(false);
-    let tile = TileId::parse("N35E079").unwrap();
-    let (_root, source) = cached_source(&store, tile);
-    let caller = std::thread::current().id();
-    let (entered_send, entered_receive) = oneshot::channel();
-    let (release_send, release_receive) = std::sync::mpsc::sync_channel(1);
-    TERRAIN_LOCAL_HOLD.lock().unwrap().push((
+#[test]
+fn c9_real_cache_get_deadline_and_ownership() {
+    check_local_stage(
+        "c9_real_cache_get_deadline_and_ownership",
         TerrainLocalStage::Get,
-        tile,
-        caller,
-        entered_send,
-        release_receive,
-    ));
-    let run = RunWriteGuard::for_run(None);
-    let runtime = RuntimeAdmissionCheck::new(run.clone());
-    let clock = ManualClock::new();
-    let mut state = TerrainWorkerState::default();
-    let connection = store.open().unwrap();
-    let version = data_version(&connection);
-    let acquire = acquire_group(&mut state, &source, &runtime, &clock, tile);
-    let revoke = async {
-        let worker = entered_receive.await.unwrap();
-        run.fence.set();
-        let _ = release_send.send(());
-        worker
-    };
-    let (result, (worker, _dropped)) = tokio::join!(acquire, revoke);
-    assert_ne!(worker, caller);
-    assert!(matches!(result, GroupAcquisition::AccessDenied));
-    assert_eq!(state.breaker.lock().unwrap().state, BreakerState::Closed);
-    assert!(state.memo.entries.is_empty());
-    assert_eq!(data_version(&connection), version);
-    assert!(run.audit().refused("terrain-cache") > 0);
+        "N34E079",
+    );
+}
+
+#[test]
+fn c9_real_cache_hash_deadline_and_ownership() {
+    check_local_stage(
+        "c9_real_cache_hash_deadline_and_ownership",
+        TerrainLocalStage::Hash,
+        "N34E080",
+    );
+}
+
+#[test]
+fn c9_real_cache_get_revalidates_live_admission() {
+    supervise_cache_test(
+        "c9_real_cache_get_revalidates_live_admission",
+        false,
+        async move {
+            let (_dir, store, _) = fixture(false);
+            let tile = TileId::parse("N35E079").unwrap();
+            let (_root, source) = cached_source(&store, tile);
+            let caller = std::thread::current().id();
+            let (entered_send, entered_receive) = oneshot::channel();
+            let (release_send, release_receive) = std::sync::mpsc::sync_channel(1);
+            let _release = CacheTestRelease {
+                send: release_send.clone(),
+                local: Some(tile),
+                hash: None,
+            }
+            .registered();
+            TERRAIN_LOCAL_HOLD.lock().unwrap().push((
+                TerrainLocalStage::Get,
+                tile,
+                caller,
+                entered_send,
+                release_receive,
+            ));
+            let run = RunWriteGuard::for_run(None);
+            let runtime = RuntimeAdmissionCheck::new(run.clone());
+            let clock = ManualClock::new();
+            let mut state = TerrainWorkerState::default();
+            let connection = store.open().unwrap();
+            let version = data_version(&connection);
+            let acquire = acquire_group(&mut state, &source, &runtime, &clock, tile);
+            let revoke = async {
+                let worker = entered_receive.await.unwrap();
+                run.fence.set();
+                let _ = release_send.send(());
+                worker
+            };
+            let (result, (worker, _dropped)) = tokio::join!(acquire, revoke);
+            assert_ne!(worker, caller);
+            assert!(matches!(result, GroupAcquisition::AccessDenied));
+            assert_eq!(state.breaker.lock().unwrap().state, BreakerState::Closed);
+            assert!(state.memo.entries.is_empty());
+            assert_eq!(data_version(&connection), version);
+            assert!(run.audit().refused("terrain-cache") > 0);
+
+            // C9 R20: a queued permit request loses its reply owner, not its receiver.
+            let (send, mut receive) = mpsc::unbounded_channel();
+            let relay = TerrainGuardRelay(send);
+            let task = tokio::task::spawn_blocking(move || relay.assert_egress_allowed());
+            let queue_started = std::time::Instant::now();
+            let reply = timeout(Duration::from_secs(10), receive.recv())
+                .await
+                .labelled_ok(
+                    "c9_real_cache_get_revalidates_live_admission",
+                    "relay request arrives within the bound",
+                );
+            terrain_test_timing!(
+                "FR3_TIMING c9_real_cache_get_revalidates_live_admission relay_queue={:.6} bound=10",
+                queue_started.elapsed().as_secs_f64()
+            );
+            assert!(
+                reply.is_some(),
+                "assertion failed: c9_real_cache_get_revalidates_live_admission: relay request is queued before reply disconnection"
+            );
+            drop(reply);
+            let reply_started = std::time::Instant::now();
+            let result = timeout(Duration::from_secs(10), task)
+                .await
+                .labelled_ok(
+                    "c9_real_cache_get_revalidates_live_admission",
+                    "disconnected relay completes within the bound",
+                )
+                .labelled_ok(
+                    "c9_real_cache_get_revalidates_live_admission",
+                    "disconnected relay task completes",
+                );
+            terrain_test_timing!(
+                "FR3_TIMING c9_real_cache_get_revalidates_live_admission relay_reply={:.6} bound=10",
+                reply_started.elapsed().as_secs_f64()
+            );
+            assert!(
+                result.is_err(),
+                "assertion failed: c9_real_cache_get_revalidates_live_admission: a disconnected admission reply denies the blocking cache operation"
+            );
+            drop(receive);
+        },
+    );
 }
 
 #[cfg(unix)]
-#[tokio::test(start_paused = true)]
-async fn c9_detached_cached_probe_never_repairs_the_store() {
-    use std::os::unix::fs::PermissionsExt;
+#[test]
+fn c9_detached_cached_probe_never_repairs_the_store() {
+    supervise_cache_test(
+        "c9_detached_cached_probe_never_repairs_the_store",
+        true,
+        async move {
+            use std::os::unix::fs::PermissionsExt;
 
-    let (_dir, store, _) = fixture(false);
-    let tile = TileId::parse("N36E081").unwrap();
-    let (_root, source) = cached_source(&store, tile);
-    let database = store.database_path();
-    // C9 R4, C9 R14: a read-only probe must leave even repairable metadata alone
-    // after the acquisition owner timed out and its runtime admission was lost.
-    std::fs::set_permissions(database, std::fs::Permissions::from_mode(0o640)).unwrap();
-    let writable = store
-        .instrumentation()
-        .writable_opens
-        .load(Ordering::SeqCst);
-    let readonly = store
-        .instrumentation()
-        .read_only_opens
-        .load(Ordering::SeqCst);
-    let caller = std::thread::current().id();
-    let (entered_send, entered_receive) = oneshot::channel();
-    let (release_send, release_receive) = std::sync::mpsc::sync_channel(1);
-    TERRAIN_LOCAL_HOLD.lock().unwrap().push((
-        TerrainLocalStage::CachedState,
-        tile,
-        caller,
-        entered_send,
-        release_receive,
-    ));
-    let run = RunWriteGuard::for_run(None);
-    let runtime = RuntimeAdmissionCheck::new(run.clone());
-    runtime.check().unwrap();
-    let acquire = timeout(
-        K_LOCAL_TILE_BUDGET,
-        source.acquire(tile, &runtime, &runtime),
-    );
-    let revoke = async {
-        let worker = entered_receive.await.unwrap();
-        run.fence.set();
-        tokio::time::advance(K_LOCAL_TILE_BUDGET).await;
-        worker
-    };
-    let (result, (worker, dropped)) = tokio::join!(acquire, revoke);
-    let owned = !dropped.load(Ordering::SeqCst);
-    let _ = release_send.send(());
-    while !dropped.load(Ordering::SeqCst) {
-        tokio::task::yield_now().await;
-    }
-    assert_ne!(worker, caller);
-    assert!(owned);
-    assert!(matches!(
-        result,
-        Ok(Err(AcquireFailure {
-            kind: AcquireErrorKind::LocalTimeout,
-            ..
-        }))
-    ));
-    assert!(run.fence.is_set());
-    assert_eq!(
-        std::fs::metadata(database).unwrap().permissions().mode() & 0o777,
-        0o640
-    );
-    assert_eq!(
-        store
-            .instrumentation()
-            .writable_opens
-            .load(Ordering::SeqCst),
-        writable
-    );
-    assert_eq!(
-        store
-            .instrumentation()
-            .read_only_opens
-            .load(Ordering::SeqCst),
-        readonly + 1
+            let (_dir, store, _) = fixture(false);
+            let tile = TileId::parse("N36E081").unwrap();
+            let (_root, source) = cached_source(&store, tile);
+            let database = store.database_path();
+            // C9 R4, C9 R14: a read-only probe must leave even repairable metadata alone
+            // after the acquisition owner timed out and its runtime admission was lost.
+            std::fs::set_permissions(database, std::fs::Permissions::from_mode(0o640)).unwrap();
+            let writable = store
+                .instrumentation()
+                .writable_opens
+                .load(Ordering::SeqCst);
+            let readonly = store
+                .instrumentation()
+                .read_only_opens
+                .load(Ordering::SeqCst);
+            let caller = std::thread::current().id();
+            let (entered_send, entered_receive) = oneshot::channel();
+            let (release_send, release_receive) = std::sync::mpsc::sync_channel(1);
+            let _release = CacheTestRelease {
+                send: release_send.clone(),
+                local: Some(tile),
+                hash: None,
+            }
+            .registered();
+            TERRAIN_LOCAL_HOLD.lock().unwrap().push((
+                TerrainLocalStage::CachedState,
+                tile,
+                caller,
+                entered_send,
+                release_receive,
+            ));
+            let run = RunWriteGuard::for_run(None);
+            let runtime = RuntimeAdmissionCheck::new(run.clone());
+            runtime.check().unwrap();
+            let acquire = timeout(
+                K_LOCAL_TILE_BUDGET + Duration::from_millis(1),
+                source.acquire(tile, &runtime, &runtime),
+            );
+            let revoke = async {
+                let worker = entered_receive.await.unwrap();
+                run.fence.set();
+                tokio::time::advance(K_LOCAL_TILE_BUDGET + Duration::from_millis(1)).await;
+                worker
+            };
+            let (result, (worker, dropped)) = tokio::join!(acquire, revoke);
+            let owned = !dropped.load(Ordering::SeqCst);
+            let _ = release_send.send(());
+            while !dropped.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+            assert_ne!(worker, caller);
+            assert!(owned);
+            assert!(matches!(
+                result,
+                Ok(Err(AcquireFailure {
+                    kind: AcquireErrorKind::LocalTimeout,
+                    ..
+                }))
+            ));
+            assert!(run.fence.is_set());
+            assert_eq!(
+                std::fs::metadata(database).unwrap().permissions().mode() & 0o777,
+                0o640
+            );
+            assert_eq!(
+                store
+                    .instrumentation()
+                    .writable_opens
+                    .load(Ordering::SeqCst),
+                writable
+            );
+            assert_eq!(
+                store
+                    .instrumentation()
+                    .read_only_opens
+                    .load(Ordering::SeqCst),
+                readonly + 1
+            );
+        },
     );
 }
 
 #[tokio::test]
 async fn c9_window_cut_requires_rows_beyond_upper() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_dir, store, v) = fixture(false);
     seed(&store, v, (1..=2).map(|id| point(id, 1, 0, 20)).collect());
     let vehicle = store.terrain_vehicles().unwrap().remove(0);
@@ -676,6 +1004,7 @@ fn c9_window_remains_uses_a_primary_key_probe() {
 
 #[tokio::test]
 async fn c9_wrote_tracks_boundary_retirement_and_outcomes() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_dir, store, v) = fixture(false);
     let imported = import_source(&store);
     watermark(&store, imported, v, 0, T0);
@@ -723,7 +1052,7 @@ async fn c9_wrote_tracks_boundary_retirement_and_outcomes() {
         assert_eq!(source.count(), 1);
         assert!(
             r.wrote,
-            "retry-only outcomes write without advancing a cursor"
+            "assertion failed: c9_wrote_tracks_boundary_retirement_and_outcomes: retry-only outcomes write without advancing a cursor"
         );
     }
     // C9 R24: a stale retry-only outcome commits neither provenance nor cursor.
@@ -751,10 +1080,46 @@ async fn c9_wrote_tracks_boundary_retirement_and_outcomes() {
     assert!(!r.wrote, "stale-only retry commits no worker progress");
     assert_eq!(cursor(&store, v), 1);
     assert_eq!(table(&store, "terrain_elevation_provenance"), before);
+
+    // C9 R24, ST26: deleting a retry candidate yields stale_dropped.
+    let (_dir, store, v) = fixture(false);
+    seed(&store, v, vec![point(1, 1, 0, 20)]);
+    plant(&store, v, 1, "failed", None, T1 - 1);
+    store.open().unwrap().execute(
+        "INSERT INTO terrain_enrichment_state(vehicle_id,cursor_position_id,updated_at_ms) VALUES (?1,1,?2)",
+        params![v.to_string(), T1],
+    ).unwrap();
+    let source = Source::new(&Arc::new(ManualClock::new()));
+    let changed = store.clone();
+    let snapshot = Arc::new(Mutex::new(None));
+    let captured = snapshot.clone();
+    *source.after.lock().unwrap() = Some(Box::new(move |_| {
+        changed
+            .open()
+            .unwrap()
+            .execute(
+                "DELETE FROM materialised_positions WHERE vehicle_id=?1 AND position_id=1",
+                params![v.to_string()],
+            )
+            .unwrap();
+        *captured.lock().unwrap() = Some(durable(&changed));
+    }));
+    let r = pass(&store, &source, &mut TerrainWorkerState::default()).await;
+    assert_eq!(
+        (r.stale, r.filled, r.void, r.failed, r.retired),
+        (1, 0, 0, 0, 0)
+    );
+    assert!(
+        !r.wrote,
+        "assertion failed: c9_wrote_tracks_boundary_retirement_and_outcomes: stale-dropped retry-only work does not count as a worker write"
+    );
+    assert_eq!(cursor(&store, v), 1);
+    assert_eq!(durable(&store), snapshot.lock().unwrap().take().unwrap());
 }
 
 #[tokio::test]
 async fn c9_every_early_exit_logs_once() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let log = super::super::DecisionLog::start();
     let (_dir, store, _) = fixture(true);
     let clock = ManualClock::new();

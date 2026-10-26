@@ -4,6 +4,7 @@ use super::*;
 
 #[tokio::test]
 async fn c9_st56_st76_refills() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(false);
     seed(&s, v, st27_rows());
     let clock = Arc::new(ManualClock::new());
@@ -15,7 +16,7 @@ async fn c9_st56_st76_refills() {
     clock.set(T1 + 10000);
     commit(&s, v, Vec::new(), vec![p]);
     assert_eq!(elevation(&s, v, 2), None);
-    let row = provenance(&s, v, 2);
+    let row = provenance_labelled("c9_st56_st76_refills", &s, v, 2);
     assert_eq!(
         (row.0, row.1, row.2, row.4),
         ("failed".into(), 1, Some("position_rewritten".into()), T1)
@@ -24,7 +25,7 @@ async fn c9_st56_st76_refills() {
     let r = pass(&s, &source, &mut state).await;
     assert_eq!((r.filled, source.count()), (1, 2));
     assert_eq!(elevation(&s, v, 2), Some(150));
-    assert_eq!(provenance(&s, v, 2).1, 2);
+    assert_eq!(provenance_labelled("c9_st56_st76_refills", &s, v, 2).1, 2);
     assert_eq!(pair(&s, v, 1), (Some(55), Some(49)));
     // C9 ST76 (a): lifecycle replacement with null elevation is due for a refill.
     let (_d, s, v) = fixture(false);
@@ -32,15 +33,21 @@ async fn c9_st56_st76_refills() {
     let source = st27_source(&clock);
     let mut state = TerrainWorkerState::default();
     pass(&s, &source, &mut state).await;
-    let unchanged = provenance(&s, v, 2);
+    let unchanged = provenance_labelled("c9_st56_st76_refills", &s, v, 2);
     commit(&s, v, Vec::new(), vec![point(1, 1, 0, 20)]);
     assert_eq!(elevation(&s, v, 1), None);
-    assert_eq!(provenance(&s, v, 1).2, Some("position_rewritten".into()));
+    assert_eq!(
+        provenance_labelled("c9_st56_st76_refills", &s, v, 1).2,
+        Some("position_rewritten".into())
+    );
     let r = pass(&s, &source, &mut state).await;
     assert_eq!(r.filled, 1);
     assert_eq!(elevation(&s, v, 1), Some(100));
-    assert_eq!(provenance(&s, v, 1).1, 2);
-    assert_eq!(provenance(&s, v, 2), unchanged);
+    assert_eq!(provenance_labelled("c9_st56_st76_refills", &s, v, 1).1, 2);
+    assert_eq!(
+        provenance_labelled("c9_st56_st76_refills", &s, v, 2),
+        unchanged
+    );
     // C9 ST76 (e): refill uses the relocated drive and leaves its old drive alone.
     let (_d, s, v) = fixture(false);
     seed(
@@ -76,14 +83,14 @@ async fn c9_st56_st76_refills() {
         2
     );
     clear_log(&s);
-    let old = provenance(&s, v, 1);
+    let old = provenance_labelled("c9_st56_st76_refills", &s, v, 1);
     let r = pass(&s, &source, &mut state).await;
     assert_eq!((r.filled, source.count()), (1, 2));
     assert_eq!(elevation(&s, v, 2), Some(110));
-    assert_eq!(provenance(&s, v, 2).1, 2);
+    assert_eq!(provenance_labelled("c9_st56_st76_refills", &s, v, 2).1, 2);
     assert_eq!(pair(&s, v, 1), (None, None));
     assert_eq!(pair(&s, v, 2), (Some(20), Some(0)));
-    assert_eq!(provenance(&s, v, 1), old);
+    assert_eq!(provenance_labelled("c9_st56_st76_refills", &s, v, 1), old);
     assert_eq!(
         scalar(
             &s,
@@ -102,6 +109,7 @@ async fn c9_st56_st76_refills() {
 
 #[tokio::test]
 async fn c9_r7_shared_memo_and_stale_cursor() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(false);
     seed(&s, v, (1..=600).map(|id| point(id, 1, 0, 20)).collect());
     for id in 1..=10 {
@@ -172,6 +180,7 @@ async fn c9_r7_shared_memo_and_stale_cursor() {
 
 #[tokio::test]
 async fn c9_runtime_fence_before_commit() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(false);
     seed(&s, v, vec![point(1, 1, 0, 20)]);
     let clock = Arc::new(ManualClock::new());
@@ -212,251 +221,313 @@ async fn c9_runtime_fence_before_commit() {
     assert_eq!(source.count(), count);
 }
 
-#[tokio::test(start_paused = true)]
-async fn c9_blocking_timeout_ownership() {
-    let (entered_send, entered_receive) = oneshot::channel();
-    let (release_send, release_receive) = std::sync::mpsc::sync_channel(1);
-    let (ended_send, ended_receive) = oneshot::channel();
-    let caller = std::thread::current().id();
-    let operation = terrain_cache_blocking(&Permit(true), move |relay| async move {
-        let tile = HgtTile::from_bytes("N10E020", vec![0; SRTM3_SIDE * SRTM3_SIDE * 2]).unwrap();
-        let _ = entered_send.send((std::thread::current().id(), terrain_job_drop_for_test()));
-        release_receive.recv().unwrap();
-        let refused = relay.assert_egress_allowed().is_err();
-        drop(tile);
-        let _ = ended_send.send(refused);
-        Ok(())
+#[test]
+fn c9_blocking_timeout_ownership() {
+    supervise_cache_test("c9_blocking_timeout_ownership", true, async move {
+        let (entered_send, entered_receive) = oneshot::channel();
+        let (release_send, release_receive) = std::sync::mpsc::sync_channel(1);
+        let _release = CacheTestRelease {
+            send: release_send.clone(),
+            local: None,
+            hash: None,
+        }
+        .registered();
+        let (ended_send, ended_receive) = oneshot::channel();
+        let caller = std::thread::current().id();
+        let operation = terrain_cache_blocking(&Permit(true), move |relay| async move {
+            let tile =
+                HgtTile::from_bytes("N10E020", vec![0; SRTM3_SIDE * SRTM3_SIDE * 2]).unwrap();
+            let _ = entered_send.send((std::thread::current().id(), terrain_job_drop_for_test()));
+            release_receive.recv().unwrap();
+            let refused = relay.assert_egress_allowed().is_err();
+            drop(tile);
+            let _ = ended_send.send(refused);
+            Ok(())
+        });
+        let initial_started = std::time::Instant::now();
+        let run = timeout(Duration::from_secs(30), operation);
+        let entered = async {
+            let (worker, dropped) = entered_receive.await.unwrap();
+            assert_ne!(worker, caller);
+            tokio::time::advance(Duration::from_secs(30)).await;
+            dropped
+        };
+        let (expired, dropped) = tokio::join!(run, entered);
+        terrain_test_timing!(
+            "FR3_TIMING c9_blocking_timeout_ownership initial_owner_wait={:.6} bound=30",
+            initial_started.elapsed().as_secs_f64()
+        );
+        assert!(expired.is_err());
+        assert!(!dropped.load(Ordering::SeqCst));
+        struct ReadyCache(AtomicUsize);
+        impl TileCache for ReadyCache {
+            fn has_cached_tile<'a>(
+                &'a self,
+                _: &'a TileId,
+            ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+                Box::pin(async { true })
+            }
+            fn lookup<'a>(
+                &'a self,
+                _: f64,
+                _: f64,
+                _: Duration,
+                _: &'a dyn EgressGuard,
+            ) -> Pin<
+                Box<
+                    dyn Future<
+                            Output = Result<
+                                crate::terrain_cache::TerrainLookupResult,
+                                TerrainCacheError,
+                            >,
+                        > + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async move {
+                    self.0.fetch_add(1, Ordering::SeqCst);
+                    let tile = HgtTile::from_bytes("N10E020", vec![0; SRTM3_SIDE * SRTM3_SIDE * 2])
+                        .unwrap();
+                    Ok(crate::terrain_cache::TerrainLookupResult {
+                        elevation_m: None,
+                        tile_name: "N10E020".into(),
+                        tile_hash: tile.sha256_hex().unwrap(),
+                        dataset_source: "aws".into(),
+                        dataset_version: TERRAIN_DATASET_VERSION.into(),
+                    })
+                })
+            }
+            fn get<'a>(
+                &'a self,
+                _: TileId,
+                _: &'a dyn EgressGuard,
+            ) -> Pin<Box<dyn Future<Output = Result<HgtTile, TerrainCacheError>> + Send + 'a>>
+            {
+                Box::pin(async {
+                    Ok(
+                        HgtTile::from_bytes("N10E020", vec![0; SRTM3_SIDE * SRTM3_SIDE * 2])
+                            .unwrap(),
+                    )
+                })
+            }
+        }
+
+        // C9 ST59: other tests can have their own independent cache tasks in flight.
+        struct FirstLookup<'a, C: TileCache>(&'a CacheTileSource<C>, AtomicBool);
+        impl<C: TileCache> TileSource for FirstLookup<'_, C> {
+            fn has_pending_local_work(&self) -> bool {
+                self.1.swap(true, Ordering::SeqCst) && self.0.has_pending_local_work()
+            }
+            fn acquire<'a>(
+                &'a self,
+                t: TileId,
+                g: &'a dyn EgressGuard,
+                i: &'a dyn EgressGuard,
+            ) -> Pin<Box<dyn Future<Output = Result<AcquiredTile, AcquireFailure>> + Send + 'a>>
+            {
+                self.0.acquire(t, g, i)
+            }
+        }
+        let (_d, s, v) = fixture(false);
+        seed(&s, v, vec![point(1, 1, 0, 20)]);
+        let clock = Arc::new(ManualClock::new());
+        let source = CacheTileSource {
+            cache: ReadyCache(AtomicUsize::new(0)),
+        };
+        let mut state = TerrainWorkerState::default();
+        let r = run_terrain_enrichment_pass(
+            &s,
+            &source,
+            &mut state,
+            &Access(true),
+            &Permit(true),
+            clock.as_ref(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            (
+                r.filled,
+                r.failed,
+                r.deferred,
+                source.cache.0.load(Ordering::SeqCst),
+                cursor(&s, v)
+            ),
+            (0, 0, 1, 0, 0),
+            "c9_blocking_timeout_ownership: pending owned job defers the pass without cache lookup or cursor advance"
+        );
+        release_send.send(()).unwrap();
+        assert!(ended_receive.await.unwrap());
+
+        assert!(!r.breaker_deferred);
+        assert!(r.local_deferred);
+        while !dropped.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        let r = run_terrain_enrichment_pass(
+            &s,
+            &FirstLookup(&source, AtomicBool::new(false)),
+            &mut state,
+            &Access(true),
+            &Permit(true),
+            clock.as_ref(),
+        )
+        .await
+        .unwrap();
+        assert_eq!((r.filled, source.cache.0.load(Ordering::SeqCst)), (1, 1));
+
+        // C9 R13, C9 R28: the actual hash deadline retains ownership until release.
+        struct HashCache(AtomicUsize);
+        impl TileCache for HashCache {
+            fn has_cached_tile<'a>(
+                &'a self,
+                _: &'a TileId,
+            ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
+                Box::pin(async { true })
+            }
+            fn lookup<'a>(
+                &'a self,
+                lat: f64,
+                lon: f64,
+                _: Duration,
+                _: &'a dyn EgressGuard,
+            ) -> Pin<
+                Box<
+                    dyn Future<
+                            Output = Result<
+                                crate::terrain_cache::TerrainLookupResult,
+                                TerrainCacheError,
+                            >,
+                        > + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async move {
+                    self.0.fetch_add(1, Ordering::SeqCst);
+                    let id = terrain_tile_for(lat, lon).unwrap();
+                    let tile =
+                        HgtTile::from_bytes(&id.name(), vec![0; SRTM3_SIDE * SRTM3_SIDE * 2])
+                            .unwrap();
+                    Ok(crate::terrain_cache::TerrainLookupResult {
+                        elevation_m: None,
+                        tile_name: id.name(),
+                        tile_hash: tile.sha256_hex().unwrap(),
+                        dataset_source: "aws".into(),
+                        dataset_version: TERRAIN_DATASET_VERSION.into(),
+                    })
+                })
+            }
+            fn get<'a>(
+                &'a self,
+                id: TileId,
+                _: &'a dyn EgressGuard,
+            ) -> Pin<Box<dyn Future<Output = Result<HgtTile, TerrainCacheError>> + Send + 'a>>
+            {
+                Box::pin(async move {
+                    Ok(
+                        HgtTile::from_bytes(&id.name(), vec![0; SRTM3_SIDE * SRTM3_SIDE * 2])
+                            .unwrap(),
+                    )
+                })
+            }
+        }
+        let (_d, s, v) = fixture(false);
+        seed(
+            &s,
+            v,
+            (1..=2)
+                .map(|id| {
+                    let mut p = point(id, 1, 0, 76 + id as i32);
+                    p.latitude = 33.5;
+                    p
+                })
+                .collect(),
+        );
+        let (entered_send, entered_receive) = oneshot::channel();
+        let (release_send, release_receive) = std::sync::mpsc::sync_channel(1);
+        let _release = CacheTestRelease {
+            send: release_send.clone(),
+            local: None,
+            hash: Some(TileId::parse("N33E077").unwrap()),
+        }
+        .registered();
+        *TERRAIN_HASH_HOLD.lock().unwrap() = Some((
+            TileId::parse("N33E077").unwrap(),
+            entered_send,
+            release_receive,
+        ));
+        let source = CacheTileSource {
+            cache: HashCache(AtomicUsize::new(0)),
+        };
+        let mut state = TerrainWorkerState::default();
+        let owner = FirstLookup(&source, AtomicBool::new(false));
+        let run = run_terrain_enrichment_pass(
+            &s,
+            &owner,
+            &mut state,
+            &Access(true),
+            &Permit(true),
+            clock.as_ref(),
+        );
+        let hash_started = std::time::Instant::now();
+        // Keep the virtual clock at 30.001 s while polling completion under a wall bound.
+        // This gives executor slack without admitting a 31 s local-budget mutant.
+        let run = async {
+            tokio::pin!(run);
+            let started = std::time::Instant::now();
+            loop {
+                if let std::task::Poll::Ready(result) = futures_util::poll!(run.as_mut()) {
+                    break Ok(result);
+                }
+                if started.elapsed() >= CACHE_TEST_BOUND {
+                    break Err("hash pass wall-clock watchdog expired");
+                }
+                tokio::task::yield_now().await;
+            }
+        };
+        let advance = async {
+            let dropped = entered_receive.await.unwrap();
+            tokio::time::advance(K_LOCAL_TILE_BUDGET + Duration::from_millis(1)).await;
+            dropped
+        };
+        let (result, dropped) = tokio::join!(run, advance);
+        terrain_test_timing!(
+            "FR3_TIMING c9_blocking_timeout_ownership hash_wait={:.6} wall_bound=60 virtual_observation=30.001",
+            hash_started.elapsed().as_secs_f64()
+        );
+        let returned = result.is_ok();
+        let owned = !dropped.load(Ordering::SeqCst);
+        release_send.send(()).unwrap();
+        while !dropped.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            returned,
+            "assertion failed: c9_blocking_timeout_ownership: hash pass returns at the local deadline"
+        );
+        let r = result
+            .labelled_ok(
+                "c9_blocking_timeout_ownership",
+                "hash pass returns at the local deadline",
+            )
+            .unwrap();
+        assert_eq!(
+            (
+                r.filled,
+                r.failed,
+                r.deferred,
+                source.cache.0.load(Ordering::SeqCst)
+            ),
+            (0, 1, 1, 1)
+        );
+        assert!(owned);
+        assert_eq!(provenance(&s, v, 1).2, Some("io".into()));
+        assert_eq!(state.breaker.lock().unwrap().state, BreakerState::Closed);
+        assert!(TERRAIN_HASH_HOLD.lock().unwrap().is_none());
+        assert!(
+            !r.breaker_deferred,
+            "local ownership does not defer for the breaker"
+        );
+        assert!(r.local_deferred);
     });
-    let run = timeout(Duration::from_secs(30), operation);
-    let entered = async {
-        let (worker, dropped) = entered_receive.await.unwrap();
-        assert_ne!(worker, caller);
-        tokio::time::advance(Duration::from_secs(30)).await;
-        dropped
-    };
-    let (expired, dropped) = tokio::join!(run, entered);
-    assert!(expired.is_err());
-    assert!(!dropped.load(Ordering::SeqCst));
-    struct ReadyCache(AtomicUsize);
-    impl TileCache for ReadyCache {
-        fn has_cached_tile<'a>(
-            &'a self,
-            _: &'a TileId,
-        ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
-            Box::pin(async { true })
-        }
-        fn lookup<'a>(
-            &'a self,
-            _: f64,
-            _: f64,
-            _: Duration,
-            _: &'a dyn EgressGuard,
-        ) -> Pin<
-            Box<
-                dyn Future<
-                        Output = Result<
-                            crate::terrain_cache::TerrainLookupResult,
-                            TerrainCacheError,
-                        >,
-                    > + Send
-                    + 'a,
-            >,
-        > {
-            Box::pin(async move {
-                self.0.fetch_add(1, Ordering::SeqCst);
-                let tile =
-                    HgtTile::from_bytes("N10E020", vec![0; SRTM3_SIDE * SRTM3_SIDE * 2]).unwrap();
-                Ok(crate::terrain_cache::TerrainLookupResult {
-                    elevation_m: None,
-                    tile_name: "N10E020".into(),
-                    tile_hash: tile.sha256_hex().unwrap(),
-                    dataset_source: "aws".into(),
-                    dataset_version: TERRAIN_DATASET_VERSION.into(),
-                })
-            })
-        }
-        fn get<'a>(
-            &'a self,
-            _: TileId,
-            _: &'a dyn EgressGuard,
-        ) -> Pin<Box<dyn Future<Output = Result<HgtTile, TerrainCacheError>> + Send + 'a>> {
-            Box::pin(async {
-                Ok(HgtTile::from_bytes("N10E020", vec![0; SRTM3_SIDE * SRTM3_SIDE * 2]).unwrap())
-            })
-        }
-    }
-
-    // C9 ST59: other tests can have their own independent cache tasks in flight.
-    struct FirstLookup<'a, C: TileCache>(&'a CacheTileSource<C>, AtomicBool);
-    impl<C: TileCache> TileSource for FirstLookup<'_, C> {
-        fn has_pending_local_work(&self) -> bool {
-            self.1.swap(true, Ordering::SeqCst) && self.0.has_pending_local_work()
-        }
-        fn acquire<'a>(
-            &'a self,
-            t: TileId,
-            g: &'a dyn EgressGuard,
-            i: &'a dyn EgressGuard,
-        ) -> Pin<Box<dyn Future<Output = Result<AcquiredTile, AcquireFailure>> + Send + 'a>>
-        {
-            self.0.acquire(t, g, i)
-        }
-    }
-    let (_d, s, v) = fixture(false);
-    seed(&s, v, vec![point(1, 1, 0, 20)]);
-    let clock = Arc::new(ManualClock::new());
-    let source = CacheTileSource {
-        cache: ReadyCache(AtomicUsize::new(0)),
-    };
-    let mut state = TerrainWorkerState::default();
-    let r = run_terrain_enrichment_pass(
-        &s,
-        &source,
-        &mut state,
-        &Access(true),
-        &Permit(true),
-        clock.as_ref(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        (
-            r.filled,
-            r.failed,
-            r.deferred,
-            source.cache.0.load(Ordering::SeqCst),
-            cursor(&s, v)
-        ),
-        (0, 0, 1, 0, 0)
-    );
-    release_send.send(()).unwrap();
-    assert!(ended_receive.await.unwrap());
-    assert!(!r.breaker_deferred);
-    assert!(r.local_deferred);
-    while !dropped.load(Ordering::SeqCst) {
-        tokio::task::yield_now().await;
-    }
-    let r = run_terrain_enrichment_pass(
-        &s,
-        &FirstLookup(&source, AtomicBool::new(false)),
-        &mut state,
-        &Access(true),
-        &Permit(true),
-        clock.as_ref(),
-    )
-    .await
-    .unwrap();
-    assert_eq!((r.filled, source.cache.0.load(Ordering::SeqCst)), (1, 1));
-
-    // C9 R13, C9 R28: the actual hash deadline retains ownership until release.
-    struct HashCache(AtomicUsize);
-    impl TileCache for HashCache {
-        fn has_cached_tile<'a>(
-            &'a self,
-            _: &'a TileId,
-        ) -> Pin<Box<dyn Future<Output = bool> + Send + 'a>> {
-            Box::pin(async { true })
-        }
-        fn lookup<'a>(
-            &'a self,
-            lat: f64,
-            lon: f64,
-            _: Duration,
-            _: &'a dyn EgressGuard,
-        ) -> Pin<
-            Box<
-                dyn Future<
-                        Output = Result<
-                            crate::terrain_cache::TerrainLookupResult,
-                            TerrainCacheError,
-                        >,
-                    > + Send
-                    + 'a,
-            >,
-        > {
-            Box::pin(async move {
-                self.0.fetch_add(1, Ordering::SeqCst);
-                let id = terrain_tile_for(lat, lon).unwrap();
-                let tile =
-                    HgtTile::from_bytes(&id.name(), vec![0; SRTM3_SIDE * SRTM3_SIDE * 2]).unwrap();
-                Ok(crate::terrain_cache::TerrainLookupResult {
-                    elevation_m: None,
-                    tile_name: id.name(),
-                    tile_hash: tile.sha256_hex().unwrap(),
-                    dataset_source: "aws".into(),
-                    dataset_version: TERRAIN_DATASET_VERSION.into(),
-                })
-            })
-        }
-        fn get<'a>(
-            &'a self,
-            id: TileId,
-            _: &'a dyn EgressGuard,
-        ) -> Pin<Box<dyn Future<Output = Result<HgtTile, TerrainCacheError>> + Send + 'a>> {
-            Box::pin(async move {
-                Ok(HgtTile::from_bytes(&id.name(), vec![0; SRTM3_SIDE * SRTM3_SIDE * 2]).unwrap())
-            })
-        }
-    }
-    let (_d, s, v) = fixture(false);
-    seed(
-        &s,
-        v,
-        (1..=2)
-            .map(|id| {
-                let mut p = point(id, 1, 0, 76 + id as i32);
-                p.latitude = 33.5;
-                p
-            })
-            .collect(),
-    );
-    let (entered_send, entered_receive) = oneshot::channel();
-    let (release_send, release_receive) = std::sync::mpsc::sync_channel(1);
-    *TERRAIN_HASH_HOLD.lock().unwrap() = Some((
-        TileId::parse("N33E077").unwrap(),
-        entered_send,
-        release_receive,
-    ));
-    let source = CacheTileSource {
-        cache: HashCache(AtomicUsize::new(0)),
-    };
-    let mut state = TerrainWorkerState::default();
-    let owner = FirstLookup(&source, AtomicBool::new(false));
-    let run = run_terrain_enrichment_pass(
-        &s,
-        &owner,
-        &mut state,
-        &Access(true),
-        &Permit(true),
-        clock.as_ref(),
-    );
-    let advance = async {
-        let dropped = entered_receive.await.unwrap();
-        tokio::time::advance(K_LOCAL_TILE_BUDGET).await;
-        dropped
-    };
-    let (result, dropped) = tokio::join!(run, advance);
-    let r = result.unwrap();
-    assert_eq!(
-        (
-            r.filled,
-            r.failed,
-            r.deferred,
-            source.cache.0.load(Ordering::SeqCst)
-        ),
-        (0, 1, 1, 1)
-    );
-    assert!(!dropped.load(Ordering::SeqCst));
-    assert_eq!(provenance(&s, v, 1).2, Some("io".into()));
-    assert_eq!(state.breaker.lock().unwrap().state, BreakerState::Closed);
-    release_send.send(()).unwrap();
-    while !dropped.load(Ordering::SeqCst) {
-        tokio::task::yield_now().await;
-    }
-    assert!(TERRAIN_HASH_HOLD.lock().unwrap().is_none());
-    assert!(
-        !r.breaker_deferred,
-        "local ownership does not defer for the breaker"
-    );
-    assert!(r.local_deferred);
 }

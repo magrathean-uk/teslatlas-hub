@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use super::*;
+use crate::test_assertions::LabelledResult;
 use serde_json::json;
 
 const C9_T0: i64 = 1_760_000_000_000;
@@ -116,6 +117,22 @@ fn outcome(vehicle: Uuid, position: ProjectionPosition, elevation: i16) -> Terra
     }
 }
 
+fn apply_result(
+    store: &HubStore,
+    vehicle: Uuid,
+    outcomes: &[TerrainOutcome],
+    retire: &[i64],
+    cursor: Option<i64>,
+) -> Result<TerrainBatchApplied, StoreError> {
+    store.apply_terrain_batch(&TerrainBatch {
+        vehicle_id: vehicle,
+        outcomes,
+        retire,
+        cursor_to: cursor,
+        committed_at_ms: C9_COMMIT,
+    })
+}
+
 fn apply(
     store: &HubStore,
     vehicle: Uuid,
@@ -123,17 +140,21 @@ fn apply(
     retire: &[i64],
     cursor: Option<i64>,
 ) -> TerrainBatchApplied {
-    store
-        .apply_terrain_batch(&TerrainBatch {
-            vehicle_id: vehicle,
-            outcomes,
-            retire,
-            cursor_to: cursor,
-            committed_at_ms: C9_COMMIT,
-        })
-        .unwrap()
+    apply_result(store, vehicle, outcomes, retire, cursor).unwrap()
 }
-
+fn apply_labelled(
+    test: &str,
+    store: &HubStore,
+    vehicle: Uuid,
+    outcomes: &[TerrainOutcome],
+    retire: &[i64],
+    cursor: Option<i64>,
+) -> TerrainBatchApplied {
+    apply_result(store, vehicle, outcomes, retire, cursor).labelled_ok(
+        test,
+        "committing prepared work after vehicle deletion succeeds without writes",
+    )
+}
 fn current_vehicle(store: &HubStore, vehicle: Uuid) -> TerrainVehicle {
     store
         .terrain_vehicles()
@@ -1269,7 +1290,14 @@ fn c9_st63_vehicle_deleted() {
     tx.commit().unwrap();
     let before = snapshot(&store, vehicle);
     assert_eq!(
-        apply(&store, vehicle, &outcomes, &[20], Some(2)),
+        apply_labelled(
+            "c9_st63_vehicle_deleted",
+            &store,
+            vehicle,
+            &outcomes,
+            &[20],
+            Some(2)
+        ),
         TerrainBatchApplied {
             stale_dropped: 3,
             ..Default::default()

@@ -158,7 +158,7 @@ fn assert_labels_only(
 }
 
 /// Run one fence call and check what it did to the vehicle's history.
-fn run_step(store: &HubStore, vehicle: Uuid, call: impl FnOnce()) -> Outcome {
+fn run_step_labelled(test: &str, store: &HubStore, vehicle: Uuid, call: impl FnOnce()) -> Outcome {
     let drives = raw_rows(store, vehicle, "materialised_drives");
     let charges = raw_rows(store, vehicle, "materialised_charges");
     let log = mutation_log(store, vehicle).len();
@@ -200,7 +200,7 @@ fn run_step(store: &HubStore, vehicle: Uuid, call: impl FnOnce()) -> Outcome {
         .collect();
     assert!(
         order.windows(2).all(|pair| pair[0] < pair[1]),
-        "fixed order: {mutations:?}"
+        "assertion failed: {test}: relabel mutations put ascending drives before ascending charges without duplicates; {mutations:?}"
     );
     Outcome {
         mutations,
@@ -247,9 +247,14 @@ fn owned(labels: [Option<&str>; 5]) -> Vec<Option<String>> {
 
 /// Steps C8 T16 to C8 T22 on one store, in the spec's order; `observe` sees
 /// each step by name with its outcome.
-fn run_l0_to_t22(store: &HubStore, vehicle: Uuid, observe: &mut dyn FnMut(&'static str, &Outcome)) {
+fn run_l0_to_t22(
+    test: &str,
+    store: &HubStore,
+    vehicle: Uuid,
+    observe: &mut dyn FnMut(&'static str, &Outcome),
+) {
     let mut step = |name: &'static str, call: &mut dyn FnMut()| {
-        let outcome = run_step(store, vehicle, call);
+        let outcome = run_step_labelled(test, store, vehicle, call);
         observe(name, &outcome);
     };
     // C8 T16: create.
@@ -383,26 +388,31 @@ fn c8_t16_to_t22_changes() {
         ),
     ];
     let mut seen = 0_usize;
-    run_l0_to_t22(&store, vehicle, &mut |name, outcome| {
-        let (expected_name, labels, mutations, exported) = &expected[seen];
-        seen += 1;
-        assert_eq!(name, *expected_name);
-        assert_eq!(outcome.mutations, *mutations, "{name}: M");
-        assert_eq!(outcome.exported, *exported, "{name}: X");
-        assert_eq!(l0_labels(&store, vehicle), owned(*labels), "{name}: labels");
-        // A change in a tariff only, or none, reads no history page (C8 R53).
-        if matches!(name, "t21" | "t22") {
-            assert_eq!(outcome.page_reads, 0, "{name}: no page read");
-        } else {
-            assert!(outcome.page_reads > 0, "{name}: the history was read");
-        }
-        if name == "t19" {
-            assert!(
-                durable(&store, vehicle).tombstones.is_empty(),
-                "a Hub id leaves no tombstone"
-            );
-        }
-    });
+    run_l0_to_t22(
+        "c8_t16_to_t22_changes",
+        &store,
+        vehicle,
+        &mut |name, outcome| {
+            let (expected_name, labels, mutations, exported) = &expected[seen];
+            seen += 1;
+            assert_eq!(name, *expected_name);
+            assert_eq!(outcome.mutations, *mutations, "{name}: M");
+            assert_eq!(outcome.exported, *exported, "{name}: X");
+            assert_eq!(l0_labels(&store, vehicle), owned(*labels), "{name}: labels");
+            // A change in a tariff only, or none, reads no history page (C8 R53).
+            if matches!(name, "t21" | "t22") {
+                assert_eq!(outcome.page_reads, 0, "{name}: no page read");
+            } else {
+                assert!(outcome.page_reads > 0, "{name}: the history was read");
+            }
+            if name == "t19" {
+                assert!(
+                    durable(&store, vehicle).tombstones.is_empty(),
+                    "a Hub id leaves no tombstone"
+                );
+            }
+        },
+    );
     assert_eq!(seen, 7);
     // C8 T21: the price reached the fence and no charge field (C8 R27).
     let stored = store.geofences(vehicle).expect("fences");
@@ -429,13 +439,13 @@ fn c8_t23_to_t27_geometry() {
     let (_temporary, store) = c8_store();
     // C8 T23: rows without coordinates, after the sequence to C8 T22.
     let vehicle = l0(&store, "t23");
-    run_l0_to_t22(&store, vehicle, &mut |_, _| {});
+    run_l0_to_t22("c8_t23_to_t27_geometry", &store, vehicle, &mut |_, _| {});
     seed_drive(
         &store,
         vehicle,
         &drive_row(3, None, None, Some("House"), Some("House")),
     );
-    let renamed = run_step(&store, vehicle, || {
+    let renamed = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         save(&store, vehicle, Some(H), fence("Home", 10.0, 20.0)).expect("rename");
     });
     assert_eq!(
@@ -458,7 +468,7 @@ fn c8_t23_to_t27_geometry() {
         "the fence keeps its price"
     );
     assert_eq!(stored_charge(&store, vehicle, 1).cost_per_unit, None);
-    let deleted = run_step(&store, vehicle, || {
+    let deleted = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         store.delete_geofence(vehicle, H).expect("delete");
     });
     assert_eq!(deleted.mutations, ["drive 1", "drive 2", "charge 1"]);
@@ -484,7 +494,7 @@ fn c8_t23_to_t27_geometry() {
         vehicle,
         &drive_row(4, None, Some((10.1, 20.0)), None, Some("Work")),
     );
-    let grown = run_step(&store, vehicle, || {
+    let grown = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         save(
             &store,
             vehicle,
@@ -495,7 +505,7 @@ fn c8_t23_to_t27_geometry() {
     });
     assert_eq!(grown.mutations, Vec::<String>::new());
     assert_eq!(end_label(&store, vehicle, 4).as_deref(), Some("Work"));
-    let gone = run_step(&store, vehicle, || {
+    let gone = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         store.delete_geofence(vehicle, H).expect("delete");
     });
     assert_eq!(gone.mutations, ["drive 4"]);
@@ -510,7 +520,7 @@ fn c8_t23_to_t27_geometry() {
         vehicle,
         &drive_row(5, None, Some((10.0004, 20.0)), None, Some("Source Home")),
     );
-    let shrunk = run_step(&store, vehicle, || {
+    let shrunk = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         save(
             &store,
             vehicle,
@@ -524,7 +534,7 @@ fn c8_t23_to_t27_geometry() {
         end_label(&store, vehicle, 5).as_deref(),
         Some("Source Home")
     );
-    let shrunk = run_step(&store, vehicle, || {
+    let shrunk = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         save(
             &store,
             vehicle,
@@ -564,12 +574,12 @@ fn c8_t23_to_t27_geometry() {
         vehicle,
         &drive_row(7, None, Some((11.0004, 20.0)), None, None),
     );
-    let edge = run_step(&store, vehicle, || {
+    let edge = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         save(&store, vehicle, Some(1), fence("Edge", 10.0, 20.0)).expect("Edge");
     });
     assert_eq!(edge.mutations, ["drive 6"]);
     assert_eq!(end_label(&store, vehicle, 6).as_deref(), Some("Edge"));
-    let near = run_step(&store, vehicle, || {
+    let near = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         save(&store, vehicle, Some(2), fence("Near", 11.0, 20.0)).expect("Near");
     });
     assert_eq!(near.mutations, Vec::<String>::new());
@@ -588,13 +598,13 @@ fn c8_t23_to_t27_geometry() {
         vehicle,
         &drive_row(9, None, Some((89.9999, -135.0)), None, None),
     );
-    let dateline = run_step(&store, vehicle, || {
+    let dateline = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         save(&store, vehicle, None, fence("Dateline", 0.0, 180.0)).expect("Dateline");
     });
     assert_eq!(dateline.mutations, ["drive 8"]);
     assert_eq!(end_label(&store, vehicle, 8).as_deref(), Some("Dateline"));
     assert_eq!(end_label(&store, vehicle, 9), None);
-    let pole = run_step(&store, vehicle, || {
+    let pole = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         save(
             &store,
             vehicle,
@@ -621,7 +631,7 @@ fn c8_t23_to_t27_geometry() {
         vehicle,
         &drive_row(18, None, Some((10.0, 20.0004)), None, Some("Home")),
     );
-    let moved = run_step(&store, vehicle, || {
+    let moved = run_step_labelled("c8_t23_to_t27_geometry", &store, vehicle, || {
         save(
             &store,
             vehicle,
@@ -718,7 +728,7 @@ fn c8_t37_to_t39_successors() {
         vehicle,
         &drive_row(13, None, Some((10.5, 20.5)), None, Some("Source Work")),
     );
-    let outcome = run_step(&store, vehicle, || {
+    let outcome = run_step_labelled("c8_t37_to_t39_successors", &store, vehicle, || {
         save(&store, vehicle, Some(H), fence("Office", 10.5, 20.5)).expect("rename");
     });
     assert_eq!(outcome.mutations, ["drive 10", "drive 11", "drive 12"]);
@@ -736,7 +746,7 @@ fn c8_t37_to_t39_successors() {
 
     // C8 T38: a rename with a shared name.
     let vehicle = shared_name_vehicle(&store, "t38");
-    let outcome = run_step(&store, vehicle, || {
+    let outcome = run_step_labelled("c8_t37_to_t39_successors", &store, vehicle, || {
         save(&store, vehicle, Some(1), fence("Office", 10.0, 20.0)).expect("rename one");
     });
     assert_eq!(outcome.mutations, ["drive 14"]);
@@ -752,7 +762,7 @@ fn c8_t37_to_t39_successors() {
 
     // C8 T39: a delete with a shared name.
     let vehicle = shared_name_vehicle(&store, "t39");
-    let outcome = run_step(&store, vehicle, || {
+    let outcome = run_step_labelled("c8_t37_to_t39_successors", &store, vehicle, || {
         store.delete_geofence(vehicle, 2).expect("delete two");
     });
     assert_eq!(outcome.mutations, ["drive 15"]);
@@ -926,12 +936,22 @@ fn c8_t30_determinism() {
     let second_vehicle = l0(&second, "t30");
     let mut first_outcomes = Vec::new();
     let mut second_outcomes = Vec::new();
-    run_l0_to_t22(&first, first_vehicle, &mut |_, outcome| {
-        first_outcomes.push(outcome.clone());
-    });
-    run_l0_to_t22(&second, second_vehicle, &mut |_, outcome| {
-        second_outcomes.push(outcome.clone());
-    });
+    run_l0_to_t22(
+        "c8_t30_determinism",
+        &first,
+        first_vehicle,
+        &mut |_, outcome| {
+            first_outcomes.push(outcome.clone());
+        },
+    );
+    run_l0_to_t22(
+        "c8_t30_determinism",
+        &second,
+        second_vehicle,
+        &mut |_, outcome| {
+            second_outcomes.push(outcome.clone());
+        },
+    );
     assert_eq!(first_outcomes, second_outcomes);
     let left = durable(&first, first_vehicle);
     let right = durable(&second, second_vehicle);
@@ -1075,7 +1095,7 @@ fn c8_t29_open_drive() {
     let log = mutation_log(&store, key);
     // Create "Home" (10.0, 20.0) r 50 while the drive is open: the relabel
     // neither reads nor writes the open session and records no mutation.
-    let outcome = run_step(&store, key, || {
+    let outcome = run_step_labelled("c8_t29_open_drive", &store, key, || {
         save(&store, key, None, fence("Home", 10.0, 20.0)).expect("create");
     });
     assert_eq!(outcome.mutations, Vec::<String>::new());
@@ -1120,7 +1140,7 @@ fn c8_t29b_open_charge() {
     assert!(harness.charges().is_empty(), "the charge is still open");
     let log = mutation_log(&harness.store, key);
     // Create "Home" (10.0, 20.0) r 50 with cost 0.30 while the charge is open.
-    let outcome = run_step(&harness.store, key, || {
+    let outcome = run_step_labelled("c8_t29b_open_charge", &harness.store, key, || {
         save(
             &harness.store,
             key,
@@ -1156,12 +1176,17 @@ fn c8_t31_current_summary() {
             .expect("current name")
     };
     assert_eq!(name_at(&store), None);
-    run_l0_to_t22(&store, vehicle, &mut |step, _| match step {
-        "t16" => assert_eq!(name_at(&store).as_deref(), Some("Home")),
-        "t17" | "t18" | "t19" => assert_eq!(name_at(&store).as_deref(), Some("Home")),
-        "t20" | "t21" | "t22" => assert_eq!(name_at(&store).as_deref(), Some("House")),
-        other => panic!("unexpected step {other}"),
-    });
+    run_l0_to_t22(
+        "c8_t31_current_summary",
+        &store,
+        vehicle,
+        &mut |step, _| match step {
+            "t16" => assert_eq!(name_at(&store).as_deref(), Some("Home")),
+            "t17" | "t18" | "t19" => assert_eq!(name_at(&store).as_deref(), Some("Home")),
+            "t20" | "t21" | "t22" => assert_eq!(name_at(&store).as_deref(), Some("House")),
+            other => panic!("unexpected step {other}"),
+        },
+    );
     store.delete_geofence(vehicle, H).expect("delete");
     assert_eq!(name_at(&store), None);
     // The summary is computed at read time: no stored row changed with it.
@@ -1232,7 +1257,7 @@ fn c8_t32_no_upgrade_relabel() {
     assert_eq!(relabel_page_reads(), reads, "the upgrade read no page");
     // A later change relabels by the rules: the name follows its fence (rule 3),
     // the label no fence had stays.
-    let outcome = run_step(&migrated, vehicle, || {
+    let outcome = run_step_labelled("c8_t32_no_upgrade_relabel", &migrated, vehicle, || {
         save(&migrated, vehicle, Some(1), fence("Large", 10.0, 20.0)).expect("rename");
     });
     assert_eq!(outcome.mutations, ["drive 2"]);
@@ -1391,9 +1416,14 @@ fn c8_t46_served_names_tariff_snapshot() {
         )
     };
     // The rename relabels both rows.
-    let outcome = run_step(&store, vehicle, || {
-        save(&store, vehicle, Some(H), fence("Garage", 10.0, 20.0)).expect("rename");
-    });
+    let outcome = run_step_labelled(
+        "c8_t46_served_names_tariff_snapshot",
+        &store,
+        vehicle,
+        || {
+            save(&store, vehicle, Some(H), fence("Garage", 10.0, 20.0)).expect("rename");
+        },
+    );
     assert_eq!(outcome.mutations, ["drive 1", "charge 1"]);
     let (drive, charge) = served(&store);
     for key in ["start_geofence", "end_geofence"] {
@@ -1452,15 +1482,20 @@ fn c8_t46_served_names_tariff_snapshot() {
         }
     }
     // A later price on the fence never reaches the charge.
-    let outcome = run_step(&store, vehicle, || {
-        save(
-            &store,
-            vehicle,
-            Some(H),
-            with_cost(fence("Garage", 10.0, 20.0), 0.40),
-        )
-        .expect("price");
-    });
+    let outcome = run_step_labelled(
+        "c8_t46_served_names_tariff_snapshot",
+        &store,
+        vehicle,
+        || {
+            save(
+                &store,
+                vehicle,
+                Some(H),
+                with_cost(fence("Garage", 10.0, 20.0), 0.40),
+            )
+            .expect("price");
+        },
+    );
     assert_eq!(outcome.mutations, Vec::<String>::new());
     let (_, charge) = served(&store);
     assert_eq!(charge["cost_per_unit"], 0.3);

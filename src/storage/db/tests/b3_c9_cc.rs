@@ -624,7 +624,10 @@ fn c9_st67_cases() {
     C9_RECOMPUTE_CALLS.with(|slot| *slot.borrow_mut() = Some(Vec::new()));
     let applied = store.apply_terrain_tidy_chunk(250, T1).unwrap();
     let calls = C9_RECOMPUTE_CALLS.with(|slot| slot.borrow_mut().take().unwrap());
-    assert!(calls.is_empty(), "C9 R55 T1: no drive recompute: {calls:?}");
+    assert!(
+        calls.is_empty(),
+        "assertion failed: c9_st67_cases: tidy of a non-success row does not recompute a drive; {calls:?}"
+    );
     assert_eq!(pair(&store, v, 9), (Some(55), Some(40)));
     assert_eq!(
         applied,

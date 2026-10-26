@@ -29,6 +29,21 @@ use crate::{
     owner_api::{Vehicle, VehicleData},
 };
 
+// Paused worker clocks must not expire while another runtime owns the pass lock.
+static TERRAIN_PASS_TEST_SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+// Cache ownership counts are process-wide, so real adapter fixtures share this lock.
+static TERRAIN_CACHE_TEST_SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+// Opt-in step measurements keep ordinary test output quiet.
+macro_rules! terrain_test_timing {
+    ($($arg:tt)*) => {
+        if std::env::var_os("TESLATLAS_TEST_TIMING").is_some() {
+            eprintln!($($arg)*);
+        }
+    };
+}
+
 include!("tests/runtime_and_setup.rs");
 include!("tests/legacy_auth.rs");
 include!("tests/projection_and_outbox.rs");

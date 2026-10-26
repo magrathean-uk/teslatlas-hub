@@ -33,6 +33,7 @@ fn layout69() -> (tempfile::TempDir, HubStore, Uuid) {
 }
 #[tokio::test]
 async fn c9_st69_tidy_first() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = layout69();
     let clock = Arc::new(ManualClock::new());
     let source = Source::new(&clock);
@@ -215,6 +216,7 @@ fn assert71(s: &HubStore, v: Uuid) {
 }
 #[tokio::test]
 async fn c9_st71_rearm_seen() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v, imported, clock, source) = layout71();
     let mut state = TerrainWorkerState::default();
     prepare71(&s, v, &source, &mut state).await;
@@ -277,6 +279,7 @@ async fn c9_st71_rearm_seen() {
 }
 #[tokio::test]
 async fn c9_st73_marker_once() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v, imported, clock, source) = layout71();
     let mut state = TerrainWorkerState::default();
     prepare71(&s, v, &source, &mut state).await;
@@ -323,6 +326,7 @@ async fn c9_st73_marker_once() {
 }
 #[tokio::test]
 async fn c9_st75_rearm_stops_pass() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v, imported, clock, source) = layout71();
     let mut state = TerrainWorkerState::default();
     prepare71(&s, v, &source, &mut state).await;
@@ -414,6 +418,7 @@ async fn c9_st75_rearm_stops_pass() {
 
 #[tokio::test]
 async fn c9_st67_refill() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_d, s, v) = fixture(true);
     let imported = import_source(&s);
     watermark(&s, imported, v, 10, T0 + 10000);
@@ -527,6 +532,7 @@ async fn c9_st67_refill() {
 
 #[tokio::test]
 async fn c9_tidy_only_complete_is_read_only() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_dir, store, v) = fixture(false);
     seed(&store, v, vec![point(1, 1, 0, 20)]);
     let imported = import_source(&store);
@@ -569,6 +575,7 @@ async fn c9_tidy_only_complete_is_read_only() {
 
 #[tokio::test]
 async fn c9_tidy_only_pending_never_selects() {
+    let _pass_serial = super::super::TERRAIN_PASS_TEST_SERIAL.lock().await;
     let (_dir, store, _) = layout69();
     let clock = ManualClock::new();
     let mut state = TerrainWorkerState::default();

@@ -120,7 +120,7 @@ async fn c6_st_s54_no_collection_minor() {
         new_resources["$defs"]["current"]["properties"]
             .get("collection")
             .is_none(),
-        "no collection object on the current body"
+        "assertion failed: c6_st_s54_no_collection_minor: current schema has no collection object"
     );
     assert_eq!(
         profile_document("1.3.0", "examples/ready.json"),
@@ -477,7 +477,8 @@ async fn c6_st_s46_served_items() {
         for minor in ["1.3.0", "1.2.0"] {
             assert!(
                 item_problems(minor, case.item, &item).is_empty(),
-                "{label}: the served item is valid against hub-http-v1@{minor}"
+                "assertion failed: c6_st_s46_served_items: served item validates against the requested profile minor; item={label} minor={minor} problems={:?}",
+                item_problems(minor, case.item, &item)
             );
         }
         // The aliases of this item agree with their replacements on the wire.

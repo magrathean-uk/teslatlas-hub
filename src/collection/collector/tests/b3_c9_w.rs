@@ -6,13 +6,15 @@ use super::super::*;
 use crate::db::{IMPORT_SOURCE_KIND, LifecycleCommit, TileProvenance};
 use crate::hub_pack::{ProjectionDrive, ProjectionPosition};
 use crate::terrain::{SRTM3_SIDE, TERRAIN_DATASET_VERSION};
+use crate::test_assertions::LabelledResult;
 use rusqlite::params;
 use serde_json::json;
 use std::sync::atomic::AtomicUsize;
 
 const T0: i64 = 1_760_000_000_000;
 const NOW: i64 = T0 + 60_000_000;
-static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+const WORKER_OBSERVATION_HORIZON: Duration = Duration::from_secs(30 * 24 * 60 * 60);
+use super::TERRAIN_PASS_TEST_SERIAL as SERIAL;
 
 struct TokioOffsetClock {
     start: Instant,
@@ -245,41 +247,81 @@ async fn start(w: &mut TerrainWorker) {
     w.wait_until_initialized().await.unwrap();
     w.start().unwrap();
 }
-async fn seen(
+struct WorkerRelease {
+    abort: tokio::task::AbortHandle,
+    source: Option<Arc<Source>>,
+}
+impl Drop for WorkerRelease {
+    fn drop(&mut self) {
+        if let Some(source) = &self.source {
+            source.block.store(false, Ordering::SeqCst);
+            source.release.add_permits(1);
+        }
+        self.abort.abort();
+    }
+}
+async fn bounded_worker_step<T>(test: &str, step: &str, future: impl Future<Output = T>) -> T {
+    let started = std::time::Instant::now();
+    let result = timeout(Duration::from_secs(10), future).await;
+    terrain_test_timing!(
+        "FR3_TIMING {test} step={step} seconds={:.6} bound=10",
+        started.elapsed().as_secs_f64()
+    );
+    result.labelled_ok(test, step)
+}
+async fn seen_labelled(
+    test: &str,
     rx: &mut mpsc::UnboundedReceiver<TerrainStatus>,
     at: i64,
     phase: TerrainWorkerPhase,
 ) -> TerrainStatus {
-    loop {
-        let status = rx.recv().await.expect("worker status");
-        assert!(
-            status.last_pass_at_ms.is_none_or(|t| t <= at),
-            "missed expected pass: {status:?}"
-        );
-        if status.last_pass_at_ms == Some(at) && status.state == phase {
-            return status;
+    let started = std::time::Instant::now();
+    let result = timeout(WORKER_OBSERVATION_HORIZON, async {
+        loop {
+            let status = rx.recv().await;
+            assert!(status.is_some(), "assertion failed: {test}: worker status channel stays open while waiting");
+            let status = status.unwrap();
+            assert!(status.last_pass_at_ms.is_none_or(|t| t <= at),
+                "assertion failed: {test}: worker status does not skip the expected pass deadline; status={status:?}");
+            if status.last_pass_at_ms == Some(at) && status.state == phase { return status; }
         }
-    }
+    }).await;
+    terrain_test_timing!(
+        "FR3_TIMING {test} seen_loop={:.6} virtual_horizon_days=30",
+        started.elapsed().as_secs_f64()
+    );
+    result.labelled_ok(
+        test,
+        "expected worker phase arrives within the bounded wait",
+    )
 }
-async fn tidy_observed(
+async fn tidy_observed_labelled(
+    test: &str,
     rx: &mut mpsc::UnboundedReceiver<TerrainStatus>,
     store: &HubStore,
     cleared: i64,
     complete: bool,
     at: i64,
 ) {
-    loop {
-        let status = rx.recv().await.expect("tidy status acknowledgement");
-        assert!(
-            status.last_pass_at_ms.is_none_or(|started| started <= at),
-            "tidy deadline missed: {status:?}"
-        );
-        if status.tidy_complete == complete
-            && store.terrain_tidy_progress().unwrap().cleared == cleared
-        {
-            return;
+    let started = std::time::Instant::now();
+    let result = timeout(WORKER_OBSERVATION_HORIZON, async {
+        loop {
+            let status = rx.recv().await;
+            assert!(status.is_some(), "assertion failed: {test}: tidy status channel stays open while waiting");
+            let status = status.unwrap();
+            assert!(status.last_pass_at_ms.is_none_or(|started| started <= at),
+                "assertion failed: {test}: tidy progress does not skip its expected deadline; status={status:?}");
+            if status.tidy_complete == complete && store.terrain_tidy_progress().unwrap().cleared == cleared { return; }
         }
-    }
+    }).await;
+    terrain_test_timing!(
+        "FR3_TIMING {test} tidy_loop={:.6} virtual_horizon_days=30",
+        started.elapsed().as_secs_f64()
+    );
+    result.labelled_ok(
+        test,
+        "expected tidy progress arrives within the bounded wait",
+    )
 }
 async fn settle() {
     for _ in 0..16 {
@@ -312,10 +354,24 @@ async fn c9_st32_stop() {
     assert_eq!(w.status.borrow().state, TerrainWorkerPhase::Working);
     advance(100).await;
     let stopped_at = Instant::now();
-    tokio::time::timeout(Duration::from_secs(1), w.shutdown(false))
-        .await
-        .unwrap()
-        .unwrap();
+    let abort = w.task.abort_handle();
+    let shutdown = tokio::time::timeout(Duration::from_secs(1), w.shutdown(false)).await;
+    if shutdown.is_err() {
+        source.block.store(false, Ordering::SeqCst);
+        source.release.add_permits(1);
+        abort.abort();
+        settle().await;
+    }
+    assert!(
+        shutdown.is_ok(),
+        "assertion failed: c9_st32_stop: stop completes within the bounded wait without writing pending work"
+    );
+    shutdown
+        .labelled_ok(
+            "c9_st32_stop",
+            "stop completes within the bounded wait without writing pending work",
+        )
+        .labelled_ok("c9_st32_stop", "worker shutdown succeeds");
     assert_eq!(Instant::now() - stopped_at, Duration::ZERO);
     assert_eq!(
         scalar(&s, "SELECT COUNT(*) FROM terrain_elevation_provenance"),
@@ -348,7 +404,17 @@ async fn c9_st37_conditions() {
             }
         };
         let (mut w, _) = launch_config(&s, d.path(), config, None, clock, access());
-        w.wait_until_initialized().await.unwrap();
+        let _release = WorkerRelease {
+            abort: w.task.abort_handle(),
+            source: None,
+        };
+        bounded_worker_step(
+            "c9_st37_conditions",
+            "initialisation",
+            w.wait_until_initialized(),
+        )
+        .await
+        .unwrap();
         let expected = if untrusted {
             TerrainWorkerPhase::Backoff {
                 code: "untrusted_root",
@@ -359,7 +425,7 @@ async fn c9_st37_conditions() {
                 code: "invalid_config",
             }
         };
-        assert_eq!(w.status.borrow().state, expected);
+        let observed = w.status.borrow().state.clone();
         // C9 ST37: other startup work may delay start, without moving this deadline.
         if untrusted {
             advance(100_000).await;
@@ -380,7 +446,26 @@ async fn c9_st37_conditions() {
                 }
             );
         }
-        w.shutdown(false).await.unwrap();
+        let started = std::time::Instant::now();
+        timeout(Duration::from_secs(10), w.shutdown(false))
+            .await
+            .labelled_ok("c9_st37_conditions", "worker shuts down within the bound")
+            .labelled_ok("c9_st37_conditions", "worker shutdown succeeds");
+        terrain_test_timing!(
+            "FR3_TIMING c9_st37_conditions shutdown={:.6} bound=10",
+            started.elapsed().as_secs_f64()
+        );
+        if untrusted {
+            assert_eq!(
+                observed, expected,
+                "c9_st37_conditions: untrusted cache root enters Backoff"
+            );
+        } else {
+            assert_eq!(
+                observed, expected,
+                "c9_st37_conditions: invalid configuration enters Halted rather than Backoff"
+            );
+        }
     }
     // C9 R1: only a store-open failure fails the startup receipt.
     let (d, s, _) = fixture(false);
@@ -394,12 +479,26 @@ async fn c9_st37_conditions() {
         Arc::new(TokioOffsetClock::new()),
         access(),
     );
+    let _release = WorkerRelease {
+        abort: w.task.abort_handle(),
+        source: None,
+    };
     assert!(matches!(
-        w.wait_until_initialized().await,
+        bounded_worker_step(
+            "c9_st37_conditions",
+            "initialisation",
+            w.wait_until_initialized()
+        )
+        .await,
         Err(CollectorError::TerrainWorkerStartup)
     ));
     assert!(matches!(
-        w.wait_until_exit().await,
+        bounded_worker_step(
+            "c9_st37_conditions",
+            "store_failure_exit",
+            w.wait_until_exit()
+        )
+        .await,
         Err(CollectorError::Store(_))
     ));
     // C9 ST37: post-start store, configuration and clock failures stay contained.
@@ -424,8 +523,17 @@ async fn c9_st37_conditions() {
             clock.clone(),
             access(),
         );
-        start(&mut w).await;
-        source.entered.notified().await;
+        let _release = WorkerRelease {
+            abort: w.task.abort_handle(),
+            source: Some(source.clone()),
+        };
+        bounded_worker_step("c9_st37_conditions", "worker_start", start(&mut w)).await;
+        bounded_worker_step(
+            "c9_st37_conditions",
+            "source_entry",
+            source.entered.notified(),
+        )
+        .await;
         if code == "clock" {
             clock.failure.store(true, Ordering::SeqCst);
         }
@@ -437,17 +545,20 @@ async fn c9_st37_conditions() {
         }
         source.release.add_permits(1);
         let expected_code = if code == "store_read" { "store" } else { code };
-        loop {
-            let st = rx.recv().await.unwrap();
-            if st.last_error_code == Some(expected_code)
-                && matches!(
-                    st.state,
-                    TerrainWorkerPhase::Backoff { .. } | TerrainWorkerPhase::Halted { .. }
-                )
-            {
-                break;
+        bounded_worker_step("c9_st37_conditions", "failure_phase", async {
+            loop {
+                let st = rx.recv().await.unwrap();
+                if st.last_error_code == Some(expected_code)
+                    && matches!(
+                        st.state,
+                        TerrainWorkerPhase::Backoff { .. } | TerrainWorkerPhase::Halted { .. }
+                    )
+                {
+                    break;
+                }
             }
-        }
+        })
+        .await;
         assert!(!w.task.is_finished());
         assert_eq!(
             scalar(&s, "SELECT COUNT(*) FROM terrain_elevation_provenance"),
@@ -456,11 +567,23 @@ async fn c9_st37_conditions() {
         if code == "store" {
             source.failures.lock().unwrap().clear();
             advance(300_000).await;
-            let st = seen(&mut rx, NOW + 300_000, TerrainWorkerPhase::Idle).await;
+            let st = seen_labelled(
+                "c9_st37_conditions",
+                &mut rx,
+                NOW + 300_000,
+                TerrainWorkerPhase::Idle,
+            )
+            .await;
             assert_eq!(st.filled_since_start, 1);
             assert_eq!(st.last_error_code, None);
         }
-        w.shutdown(false).await.unwrap();
+        bounded_worker_step(
+            "c9_st37_conditions",
+            "contained_failure_shutdown",
+            w.shutdown(false),
+        )
+        .await
+        .labelled_ok("c9_st37_conditions", "contained worker shutdown succeeds");
     }
 }
 
@@ -483,7 +606,7 @@ async fn c9_st38_disabled() {
     w.wait_until_initialized().await.unwrap();
     assert_eq!(w.status.borrow().state, TerrainWorkerPhase::Disabled);
     w.start().unwrap();
-    tidy_observed(&mut rx, &s, 0, true, NOW).await;
+    tidy_observed_labelled("c9_st38_disabled", &mut rx, &s, 0, true, NOW).await;
     assert!(w.status.borrow().tidy_complete);
     assert_eq!(version(&c), before);
     assert_eq!(source.count(), 0);
@@ -505,7 +628,7 @@ async fn c9_st38_disabled() {
         access(),
     );
     start(&mut w).await;
-    tidy_observed(&mut rx, &s, 0, true, NOW).await;
+    tidy_observed_labelled("c9_st38_disabled", &mut rx, &s, 0, true, NOW).await;
     settle().await;
     assert_eq!(w.status.borrow().state, TerrainWorkerPhase::Disabled);
     assert_eq!(version(&c), before);
@@ -521,11 +644,17 @@ async fn c9_st60_cadence() {
     let clock = Arc::new(TokioOffsetClock::new());
     let (mut w, mut rx) = launch(&s, d.path(), true, Some(Source::new()), clock, access());
     start(&mut w).await;
-    seen(&mut rx, NOW, TerrainWorkerPhase::Idle).await;
+    seen_labelled("c9_st60_cadence", &mut rx, NOW, TerrainWorkerPhase::Idle).await;
     advance(3_599_999).await;
     assert!(drain(&mut rx).is_empty());
     advance(1).await;
-    seen(&mut rx, NOW + 3_600_000, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_st60_cadence",
+        &mut rx,
+        NOW + 3_600_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     // C9 ST60 (b,c): wakes inside the minimum gap coalesce at its exact end.
     let base = NOW + 3_600_000;
     advance(1_000).await;
@@ -537,7 +666,13 @@ async fn c9_st60_cadence() {
     advance(8_999).await;
     assert!(drain(&mut rx).is_empty());
     advance(1).await;
-    seen(&mut rx, base + 10_000, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_st60_cadence",
+        &mut rx,
+        base + 10_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     advance(10_000).await;
     assert!(drain(&mut rx).is_empty());
     w.shutdown(false).await.unwrap();
@@ -554,11 +689,17 @@ async fn c9_st60_cadence() {
         access(),
     );
     start(&mut w).await;
-    seen(&mut rx, NOW, TerrainWorkerPhase::Idle).await;
+    seen_labelled("c9_st60_cadence", &mut rx, NOW, TerrainWorkerPhase::Idle).await;
     advance(1_199_999).await;
     assert!(drain(&mut rx).is_empty());
     advance(1).await;
-    let st = seen(&mut rx, NOW + 1_200_000, TerrainWorkerPhase::Idle).await;
+    let st = seen_labelled(
+        "c9_st60_cadence",
+        &mut rx,
+        NOW + 1_200_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     assert_eq!(st.filled_since_start, 1);
     w.shutdown(false).await.unwrap();
     // C9 ST60 (e): a full pass continues two seconds after it ends.
@@ -583,7 +724,13 @@ async fn c9_st60_cadence() {
     advance(1_999).await;
     assert_eq!(source.count(), 1);
     advance(1).await;
-    seen(&mut rx, NOW + 2_000, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_st60_cadence",
+        &mut rx,
+        NOW + 2_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     assert_eq!(source.count(), 2);
     w.shutdown(false).await.unwrap();
     // C9 ST60 (f): an expired Open value is eligible at its deadline.
@@ -612,7 +759,8 @@ async fn c9_st60_cadence() {
         access(),
     );
     start(&mut w).await;
-    seen(
+    seen_labelled(
+        "c9_st60_cadence",
         &mut rx,
         NOW,
         TerrainWorkerPhase::BreakerOpen {
@@ -624,7 +772,13 @@ async fn c9_st60_cadence() {
     advance(299_999).await;
     assert!(drain(&mut rx).is_empty());
     advance(1).await;
-    seen(&mut rx, NOW + 300_000, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_st60_cadence",
+        &mut rx,
+        NOW + 300_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     assert_eq!(source.network.load(Ordering::SeqCst), 3);
     w.shutdown(false).await.unwrap();
     // C9 R3, C9 R24: access refusal keeps idle retry timing and store-only counts.
@@ -645,7 +799,13 @@ async fn c9_st60_cadence() {
         denied,
     );
     start(&mut w).await;
-    let status = seen(&mut rx, NOW, TerrainWorkerPhase::WaitingForAccess).await;
+    let status = seen_labelled(
+        "c9_st60_cadence",
+        &mut rx,
+        NOW,
+        TerrainWorkerPhase::WaitingForAccess,
+    )
+    .await;
     assert_eq!(
         (
             status.rows_unexamined,
@@ -657,7 +817,8 @@ async fn c9_st60_cadence() {
     advance(1_199_999).await;
     assert!(drain(&mut rx).is_empty());
     advance(1).await;
-    seen(
+    seen_labelled(
+        "c9_st60_cadence",
         &mut rx,
         NOW + 1_200_000,
         TerrainWorkerPhase::WaitingForAccess,
@@ -694,11 +855,17 @@ async fn c9_st61_wake() {
     assert_eq!(queued, 1);
     assert_eq!(w.wake.capacity(), 0);
     source.release.add_permits(1);
-    seen(&mut rx, NOW, TerrainWorkerPhase::Idle).await;
+    seen_labelled("c9_st61_wake", &mut rx, NOW, TerrainWorkerPhase::Idle).await;
     advance(9_999).await;
     assert!(drain(&mut rx).is_empty());
     advance(1).await;
-    seen(&mut rx, NOW + 10_000, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_st61_wake",
+        &mut rx,
+        NOW + 10_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     advance(10_000).await;
     assert!(drain(&mut rx).is_empty());
     assert_eq!(source.count(), 1);
@@ -725,7 +892,7 @@ async fn c9_st66_status() {
     source.entered.notified().await;
     assert_eq!(w.status.borrow().state, TerrainWorkerPhase::Working);
     source.release.add_permits(1);
-    let st = seen(&mut rx, NOW, TerrainWorkerPhase::Idle).await;
+    let st = seen_labelled("c9_st66_status", &mut rx, NOW, TerrainWorkerPhase::Idle).await;
     assert_eq!(
         (
             st.filled_since_start,
@@ -742,7 +909,13 @@ async fn c9_st66_status() {
     allowed.0.store(false, Ordering::SeqCst);
     w.wake.try_send(()).unwrap();
     advance(10_000).await;
-    seen(&mut rx, NOW + 10_000, TerrainWorkerPhase::WaitingForAccess).await;
+    seen_labelled(
+        "c9_st66_status",
+        &mut rx,
+        NOW + 10_000,
+        TerrainWorkerPhase::WaitingForAccess,
+    )
+    .await;
     assert_eq!(source.count(), 1);
     w.shutdown(false).await.unwrap();
     // C9 ST66: runtime phase reflects a breaker deferral at its active deadline.
@@ -774,7 +947,7 @@ async fn c9_st66_status() {
     let phase = TerrainWorkerPhase::BreakerOpen {
         until_ms: NOW + 300_000,
     };
-    let st = seen(&mut rx, NOW, phase.clone()).await;
+    let st = seen_labelled("c9_st66_status", &mut rx, NOW, phase.clone()).await;
     assert_eq!(w.status.borrow().state, phase);
     assert_eq!(
         (st.rows_unexamined, st.retries_due, st.retries_waiting),
@@ -793,19 +966,31 @@ async fn c9_st66_status() {
         access(),
     );
     start(&mut w).await;
-    let st = seen(&mut rx, NOW, TerrainWorkerPhase::Idle).await;
+    let st = seen_labelled("c9_st66_status", &mut rx, NOW, TerrainWorkerPhase::Idle).await;
     assert_eq!(st.rows_unexamined, 0);
     seed(&s, v, vec![point(2, 2, 20.5, Some(55))]);
     w.wake.try_send(()).unwrap();
     advance(10_000).await;
-    let st = seen(&mut rx, NOW + 10_000, TerrainWorkerPhase::Idle).await;
+    let st = seen_labelled(
+        "c9_st66_status",
+        &mut rx,
+        NOW + 10_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     assert_eq!(st.rows_unexamined, 0);
     plant(&s, v, 2, 2, None, "failed", NOW + 86_400_000);
     let c = s.open().unwrap();
     let before = version(&c);
     w.wake.try_send(()).unwrap();
     advance(10_000).await;
-    let st = seen(&mut rx, NOW + 20_000, TerrainWorkerPhase::Idle).await;
+    let st = seen_labelled(
+        "c9_st66_status",
+        &mut rx,
+        NOW + 20_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     assert_eq!(version(&c), before);
     assert_eq!(
         s.terrain_backlog(NOW + 20_000, crate::db::K_STATUS_COUNT_CAP)
@@ -875,7 +1060,7 @@ async fn c9_st70_disabled_tidy() {
         access(),
     );
     start(&mut w).await;
-    tidy_observed(&mut ready, &s, 0, true, NOW).await;
+    tidy_observed_labelled("c9_st70_disabled_tidy", &mut ready, &s, 0, true, NOW).await;
     assert!(w.status.borrow().tidy_complete);
     assert_eq!(w.status.borrow().state, TerrainWorkerPhase::Disabled);
     assert_eq!(version(&c), before);
@@ -919,7 +1104,7 @@ async fn c9_st70_disabled_tidy() {
             assert_eq!(w.status.borrow().last_pass_at_ms, None);
         }
         w.start().unwrap();
-        tidy_observed(&mut rx, &s, 1000, false, NOW).await;
+        tidy_observed_labelled("c9_st70_disabled_tidy", &mut rx, &s, 1000, false, NOW).await;
         assert_eq!(s.terrain_tidy_progress().unwrap().cleared, 1000);
         assert!(!w.status.borrow().tidy_complete);
         assert_eq!(
@@ -933,7 +1118,15 @@ async fn c9_st70_disabled_tidy() {
         advance(1_999).await;
         assert_eq!(s.terrain_tidy_progress().unwrap().cleared, 1000);
         advance(1).await;
-        tidy_observed(&mut rx, &s, 1200, true, NOW + 2_000).await;
+        tidy_observed_labelled(
+            "c9_st70_disabled_tidy",
+            &mut rx,
+            &s,
+            1200,
+            true,
+            NOW + 2_000,
+        )
+        .await;
         assert_eq!(s.terrain_tidy_progress().unwrap().cleared, 1200);
         assert!(w.status.borrow().tidy_complete);
         assert_eq!(source.count(), 0);
@@ -967,7 +1160,13 @@ async fn c9_st70_disabled_tidy() {
         assert_eq!(pair, (None, None));
         advance(2_000).await;
         if enabled {
-            seen(&mut rx, NOW + 4_000, TerrainWorkerPhase::Idle).await;
+            seen_labelled(
+                "c9_st70_disabled_tidy",
+                &mut rx,
+                NOW + 4_000,
+                TerrainWorkerPhase::Idle,
+            )
+            .await;
             assert_eq!(source.count(), 1);
             assert_eq!(w.status.borrow().filled_since_start, 10);
         } else {
@@ -1044,7 +1243,10 @@ async fn c9_st74_disabled_rearm() {
         raise(&s, v, imported, 12);
         assert_eq!(s.terrain_tidy_progress().unwrap().run, 2);
         if wake {
-            w.wake.try_send(()).unwrap();
+            w.wake.try_send(()).labelled_ok(
+                "c9_st74_disabled_rearm",
+                "disabled worker stays alive to accept a rearm wake",
+            );
         }
         let at = if wake { 10_000 } else { 3_600_000 };
         advance(at - 1_001).await;
@@ -1206,11 +1408,20 @@ async fn c9_worker_local_deferral() {
         access(),
     );
     start(&mut w).await;
-    seen(&mut rx, NOW, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_worker_local_deferral",
+        &mut rx,
+        NOW,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     let mut at = NOW;
     for delay in [2_000, 4_000, 8_000, 10_000, 10_000] {
         advance(delay - 1).await;
-        assert!(drain(&mut rx).is_empty(), "local re-check started early");
+        assert!(
+            drain(&mut rx).is_empty(),
+            "assertion failed: c9_worker_local_deferral: local ownership recheck does not start before its backoff deadline"
+        );
         advance(1).await;
         at += delay as i64;
         assert_eq!(
@@ -1218,20 +1429,38 @@ async fn c9_worker_local_deferral() {
             Some(at),
             "local ownership must be re-checked at its bounded deadline"
         );
-        seen(&mut rx, at, TerrainWorkerPhase::Idle).await;
+        seen_labelled(
+            "c9_worker_local_deferral",
+            &mut rx,
+            at,
+            TerrainWorkerPhase::Idle,
+        )
+        .await;
         assert_eq!(source.count(), 0);
     }
     source.pending.store(false, Ordering::SeqCst);
     advance(10_000).await;
     at += 10_000;
-    seen(&mut rx, at, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_worker_local_deferral",
+        &mut rx,
+        at,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     assert_eq!(source.count(), 1);
     seed(&s, v, vec![point(2, 2, 20.5, None)]);
     source.pending.store(true, Ordering::SeqCst);
     w.wake.try_send(()).unwrap();
     advance(10_000).await;
     at += 10_000;
-    seen(&mut rx, at, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_worker_local_deferral",
+        &mut rx,
+        at,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     advance(1_999).await;
     assert!(drain(&mut rx).is_empty());
     advance(1).await;
@@ -1263,7 +1492,8 @@ async fn c9_worker_open_without_deferred_group() {
         access(),
     );
     start(&mut w).await;
-    seen(
+    seen_labelled(
+        "c9_worker_open_without_deferred_group",
         &mut rx,
         NOW,
         TerrainWorkerPhase::BreakerOpen {
@@ -1300,7 +1530,13 @@ async fn c9_worker_refresh_after_partial_store_error() {
         allowed.clone(),
     );
     start(&mut w).await;
-    seen(&mut rx, NOW, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_worker_refresh_after_partial_store_error",
+        &mut rx,
+        NOW,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     seed(
         &s,
         v,
@@ -1309,7 +1545,8 @@ async fn c9_worker_refresh_after_partial_store_error() {
     s.open().unwrap().execute_batch("CREATE TRIGGER c9_fail_last BEFORE INSERT ON terrain_elevation_provenance WHEN NEW.position_id=252 BEGIN SELECT RAISE(ABORT,'synthetic chunk'); END;").unwrap();
     w.wake.try_send(()).unwrap();
     advance(10_000).await;
-    seen(
+    seen_labelled(
+        "c9_worker_refresh_after_partial_store_error",
         &mut rx,
         NOW + 10_000,
         TerrainWorkerPhase::Backoff {
@@ -1335,7 +1572,13 @@ async fn c9_worker_refresh_after_partial_store_error() {
     advance(299_999).await;
     assert!(drain(&mut rx).is_empty());
     advance(1).await;
-    let st = seen(&mut rx, NOW + 310_000, TerrainWorkerPhase::WaitingForAccess).await;
+    let st = seen_labelled(
+        "c9_worker_refresh_after_partial_store_error",
+        &mut rx,
+        NOW + 310_000,
+        TerrainWorkerPhase::WaitingForAccess,
+    )
+    .await;
     assert_eq!(
         (st.rows_unexamined, st.retries_due, st.retries_waiting),
         (1, 0, 0),
@@ -1367,7 +1610,8 @@ async fn c9_worker_backoff_schedule() {
     let mut at = NOW;
     let mut delay = 300_000_u64;
     for _ in 0..9 {
-        seen(
+        seen_labelled(
+            "c9_worker_backoff_schedule",
             &mut rx,
             at,
             TerrainWorkerPhase::Backoff {
@@ -1384,7 +1628,8 @@ async fn c9_worker_backoff_schedule() {
         at += delay as i64;
         delay = (delay * 2).min(21_600_000);
     }
-    seen(
+    seen_labelled(
+        "c9_worker_backoff_schedule",
         &mut rx,
         at,
         TerrainWorkerPhase::Backoff {
@@ -1396,7 +1641,13 @@ async fn c9_worker_backoff_schedule() {
     source.failures.lock().unwrap().clear();
     advance(delay).await;
     at += delay as i64;
-    seen(&mut rx, at, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_worker_backoff_schedule",
+        &mut rx,
+        at,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     seed(&s, v, vec![point(2, 2, 21.5, None)]);
     source
         .failures
@@ -1406,7 +1657,8 @@ async fn c9_worker_backoff_schedule() {
     w.wake.try_send(()).unwrap();
     advance(10_000).await;
     at += 10_000;
-    seen(
+    seen_labelled(
+        "c9_worker_backoff_schedule",
         &mut rx,
         at,
         TerrainWorkerPhase::Backoff {
@@ -1460,45 +1712,88 @@ async fn c9_worker_stop_at_waits() {
             Arc::new(TokioOffsetClock::new()),
             access(),
         );
-        w.wait_until_initialized().await.unwrap();
+        let _release = WorkerRelease {
+            abort: w.task.abort_handle(),
+            source: Some(source.clone()),
+        };
+        bounded_worker_step(
+            "c9_worker_stop_at_waits",
+            "initialisation",
+            w.wait_until_initialized(),
+        )
+        .await
+        .unwrap();
         settle().await;
         assert_eq!(
             w.status.borrow().last_pass_at_ms,
             None,
             "start is acknowledged before work"
         );
-        if stage != "start" {
-            w.start().unwrap();
-            let phase = match stage {
-                "continuation" => TerrainWorkerPhase::Working,
-                "backoff" => TerrainWorkerPhase::Backoff {
-                    code: "store",
-                    until_ms: NOW + 300_000,
-                },
-                "halted" => TerrainWorkerPhase::Halted {
-                    code: "invalid_config",
-                },
-                _ => TerrainWorkerPhase::Idle,
-            };
-            // A full pass publishes Working before and after work, so wait for its fills too.
-            loop {
-                let st = seen(&mut rx, NOW, phase.clone()).await;
-                if stage != "continuation" || st.filled_since_start == 1000 {
-                    break;
+        let phase_started = std::time::Instant::now();
+        let phase_ready = timeout(WORKER_OBSERVATION_HORIZON, async {
+            if stage != "start" {
+                w.start().unwrap();
+                let phase = match stage {
+                    "continuation" => TerrainWorkerPhase::Working,
+                    "backoff" => TerrainWorkerPhase::Backoff {
+                        code: "store",
+                        until_ms: NOW + 300_000,
+                    },
+                    "halted" => TerrainWorkerPhase::Halted {
+                        code: "invalid_config",
+                    },
+                    _ => TerrainWorkerPhase::Idle,
+                };
+                // A full pass publishes Working before and after work, so wait for its fills too.
+                loop {
+                    let st =
+                        seen_labelled("c9_worker_stop_at_waits", &mut rx, NOW, phase.clone()).await;
+                    if stage != "continuation" || st.filled_since_start == 1000 {
+                        break;
+                    }
+                }
+                settle().await;
+                if stage == "minimum" {
+                    advance(1_000).await;
+                    w.wake.try_send(()).unwrap();
+                    settle().await;
                 }
             }
-            settle().await;
-            if stage == "minimum" {
-                advance(1_000).await;
-                w.wake.try_send(()).unwrap();
-                settle().await;
-            }
-        }
+        })
+        .await
+        .is_ok();
+        terrain_test_timing!(
+            "FR3_TIMING c9_worker_stop_at_waits phase={:.6} bound=20 stage={stage}",
+            phase_started.elapsed().as_secs_f64()
+        );
+        source.block.store(false, Ordering::SeqCst);
+        source.release.add_permits(1);
         let at = Instant::now();
-        tokio::time::timeout(Duration::from_secs(1), w.shutdown(false))
-            .await
-            .unwrap()
-            .unwrap();
+        let abort = w.task.abort_handle();
+        let shutdown_started = std::time::Instant::now();
+        let shutdown = tokio::time::timeout(Duration::from_secs(1), w.shutdown(false)).await;
+        if shutdown.is_err() {
+            abort.abort();
+            settle().await;
+        }
+        terrain_test_timing!(
+            "FR3_TIMING c9_worker_stop_at_waits shutdown={:.6} bound=1 stage={stage}",
+            shutdown_started.elapsed().as_secs_f64()
+        );
+        assert!(
+            phase_ready,
+            "assertion failed: c9_worker_stop_at_waits: expected worker phase arrives within the bounded wait; stage={stage}"
+        );
+        assert!(
+            shutdown.is_ok(),
+            "assertion failed: c9_worker_stop_at_waits: stop completes within the bounded wait at every worker stage"
+        );
+        shutdown
+            .labelled_ok(
+                "c9_worker_stop_at_waits",
+                "stop completes within the bounded wait at every worker stage",
+            )
+            .labelled_ok("c9_worker_stop_at_waits", "worker shutdown succeeds");
         assert_eq!(Instant::now() - at, Duration::ZERO, "stop at {stage}");
     }
 }
@@ -1541,7 +1836,8 @@ async fn c9_worker_clock_after_commit() {
         access(),
     );
     start(&mut w).await;
-    let st = seen(
+    let st = seen_labelled(
+        "c9_worker_clock_after_commit",
         &mut rx,
         NOW,
         TerrainWorkerPhase::Backoff {
@@ -1560,7 +1856,13 @@ async fn c9_worker_clock_after_commit() {
     );
     clock.fail.store(false, Ordering::SeqCst);
     advance(300_000).await;
-    let st = seen(&mut rx, NOW + 300_000, TerrainWorkerPhase::Idle).await;
+    let st = seen_labelled(
+        "c9_worker_clock_after_commit",
+        &mut rx,
+        NOW + 300_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     assert_eq!((st.filled_since_start, st.rows_unexamined), (1, 0));
     w.shutdown(false).await.unwrap();
 }
@@ -1581,15 +1883,27 @@ async fn c9_worker_retry_minimum() {
         access(),
     );
     start(&mut w).await;
-    seen(&mut rx, NOW, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_worker_retry_minimum",
+        &mut rx,
+        NOW,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     advance(9_999).await;
     assert!(
         drain(&mut rx).is_empty(),
-        "a near retry still respects the minimum gap"
+        "assertion failed: c9_worker_retry_minimum: near retry still respects the minimum pass gap"
     );
     assert_eq!(source.count(), 0);
     advance(1).await;
-    let st = seen(&mut rx, NOW + 10_000, TerrainWorkerPhase::Idle).await;
+    let st = seen_labelled(
+        "c9_worker_retry_minimum",
+        &mut rx,
+        NOW + 10_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     assert_eq!(st.filled_since_start, 1);
     w.shutdown(false).await.unwrap();
 }
@@ -1618,7 +1932,13 @@ async fn c9_worker_continuation_after_pass_end() {
     advance(30_000).await;
     source.release.add_permits(1);
     loop {
-        let st = seen(&mut rx, NOW, TerrainWorkerPhase::Working).await;
+        let st = seen_labelled(
+            "c9_worker_continuation_after_pass_end",
+            &mut rx,
+            NOW,
+            TerrainWorkerPhase::Working,
+        )
+        .await;
         if st.filled_since_start == 1000 {
             break;
         }
@@ -1632,7 +1952,13 @@ async fn c9_worker_continuation_after_pass_end() {
     );
     assert_eq!(source.count(), 1);
     advance(1).await;
-    seen(&mut rx, NOW + 32_000, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_worker_continuation_after_pass_end",
+        &mut rx,
+        NOW + 32_000,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     assert_eq!(source.count(), 2);
     w.shutdown(false).await.unwrap();
 }
@@ -1658,7 +1984,13 @@ async fn c9_worker_status_count_cap() {
         denied,
     );
     start(&mut w).await;
-    let st = seen(&mut rx, NOW, TerrainWorkerPhase::WaitingForAccess).await;
+    let st = seen_labelled(
+        "c9_worker_status_count_cap",
+        &mut rx,
+        NOW,
+        TerrainWorkerPhase::WaitingForAccess,
+    )
+    .await;
     assert_eq!(
         (st.rows_unexamined, st.retries_due, st.retries_waiting),
         (10_000, 0, 0)
@@ -1703,7 +2035,8 @@ async fn c9_worker_scheduling_condition_backoff() {
     w.wait_until_initialized().await.unwrap();
     *clock.status.lock().unwrap() = Some(w.status.clone());
     w.start().unwrap();
-    seen(
+    seen_labelled(
+        "c9_worker_scheduling_condition_backoff",
         &mut rx,
         NOW,
         TerrainWorkerPhase::Backoff {
@@ -1713,7 +2046,8 @@ async fn c9_worker_scheduling_condition_backoff() {
     )
     .await;
     advance(300_000).await;
-    seen(
+    seen_labelled(
+        "c9_worker_scheduling_condition_backoff",
         &mut rx,
         NOW + 300_000,
         TerrainWorkerPhase::Backoff {
@@ -1759,7 +2093,13 @@ async fn c9_worker_phase_logging() {
         );
     }
     source.release.add_permits(1);
-    seen(&mut rx, NOW, TerrainWorkerPhase::Idle).await;
+    seen_labelled(
+        "c9_worker_phase_logging",
+        &mut rx,
+        NOW,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     tokio::select! {
         biased;
         result = w.wait_until_exit() => panic!("worker exited: {result:?}"),
@@ -1817,7 +2157,13 @@ async fn c9_worker_open_breaker_full_batch() {
     let phase = TerrainWorkerPhase::BreakerOpen {
         until_ms: NOW + 300_000,
     };
-    seen(&mut rx, NOW, phase.clone()).await;
+    seen_labelled(
+        "c9_worker_open_breaker_full_batch",
+        &mut rx,
+        NOW,
+        phase.clone(),
+    )
+    .await;
     assert_eq!(source.network.load(Ordering::SeqCst), 2);
     assert_eq!(
         scalar(
@@ -1829,7 +2175,13 @@ async fn c9_worker_open_breaker_full_batch() {
     advance(1_999).await;
     assert!(drain(&mut rx).is_empty());
     advance(1).await;
-    seen(&mut rx, NOW + 2_000, phase.clone()).await;
+    seen_labelled(
+        "c9_worker_open_breaker_full_batch",
+        &mut rx,
+        NOW + 2_000,
+        phase.clone(),
+    )
+    .await;
     advance(297_999).await;
     assert_eq!(
         w.status.borrow().last_pass_at_ms,
@@ -1878,7 +2230,13 @@ async fn c9_worker_open_breaker_due_retries() {
     let phase = TerrainWorkerPhase::BreakerOpen {
         until_ms: NOW + 300_000,
     };
-    let st = seen(&mut rx, NOW, phase.clone()).await;
+    let st = seen_labelled(
+        "c9_worker_open_breaker_due_retries",
+        &mut rx,
+        NOW,
+        phase.clone(),
+    )
+    .await;
     assert_eq!(st.retries_due, 251);
     advance(299_999).await;
     assert_eq!(
@@ -1945,7 +2303,8 @@ async fn c9_worker_expired_breaker_deferral() {
         access(),
     );
     start(&mut w).await;
-    seen(
+    seen_labelled(
+        "c9_worker_expired_breaker_deferral",
         &mut rx,
         NOW,
         TerrainWorkerPhase::BreakerOpen {
@@ -1959,7 +2318,13 @@ async fn c9_worker_expired_breaker_deferral() {
     settle().await;
     assert_eq!(w.status.borrow().last_pass_at_ms, Some(NOW + 299_999));
     advance(2).await;
-    let st = seen(&mut rx, NOW + 299_999, TerrainWorkerPhase::Idle).await;
+    let st = seen_labelled(
+        "c9_worker_expired_breaker_deferral",
+        &mut rx,
+        NOW + 299_999,
+        TerrainWorkerPhase::Idle,
+    )
+    .await;
     assert_eq!(st.filled_since_start, 1);
     drain(&mut rx);
     advance(9_997).await;
@@ -1973,7 +2338,7 @@ async fn c9_worker_expired_breaker_deferral() {
     w.shutdown(false).await.unwrap();
 }
 
-async fn disabled_condition(code: &str) {
+async fn disabled_condition(test: &str, code: &str) {
     let (d, s, _) = layout69();
     let clock = Arc::new(TokioOffsetClock::new());
     let (mut w, mut rx) = launch(&s, d.path(), false, None, clock.clone(), access());
@@ -2006,7 +2371,7 @@ async fn disabled_condition(code: &str) {
     assert_eq!(s.terrain_tidy_progress().unwrap().cleared, 0);
     assert!(drain(&mut rx).is_empty());
     advance(1).await;
-    tidy_observed(&mut rx, &s, 1000, false, NOW + 300_000).await;
+    tidy_observed_labelled(test, &mut rx, &s, 1000, false, NOW + 300_000).await;
     assert_eq!(w.status.borrow().last_pass_at_ms, Some(NOW + 300_000));
     assert_eq!(w.status.borrow().last_error_code, None);
     assert_eq!(w.status.borrow().state, TerrainWorkerPhase::Disabled);
@@ -2016,13 +2381,13 @@ async fn disabled_condition(code: &str) {
 #[tokio::test(start_paused = true)]
 async fn c9_worker_disabled_store_condition() {
     let _serial = SERIAL.lock().await;
-    disabled_condition("store").await;
+    disabled_condition("c9_worker_disabled_store_condition", "store").await;
 }
 
 #[tokio::test(start_paused = true)]
 async fn c9_worker_disabled_clock_condition() {
     let _serial = SERIAL.lock().await;
-    disabled_condition("clock").await;
+    disabled_condition("c9_worker_disabled_clock_condition", "clock").await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -2061,7 +2426,15 @@ async fn c9_worker_disabled_refused_access() {
         advance(delay - 1).await;
         assert!(drain(&mut rx).is_empty());
         advance(1).await;
-        tidy_observed(&mut rx, &s, 1000, false, NOW + delay as i64).await;
+        tidy_observed_labelled(
+            "c9_worker_disabled_refused_access",
+            &mut rx,
+            &s,
+            1000,
+            false,
+            NOW + delay as i64,
+        )
+        .await;
         assert_eq!(w.status.borrow().last_pass_at_ms, Some(NOW + delay as i64));
         assert_eq!(w.status.borrow().state, TerrainWorkerPhase::Disabled);
         assert_eq!(source.count(), 0);
@@ -2092,7 +2465,13 @@ async fn c9_worker_full_local_continuation() {
         access(),
     );
     start(&mut w).await;
-    seen(&mut rx, NOW, TerrainWorkerPhase::Working).await;
+    seen_labelled(
+        "c9_worker_full_local_continuation",
+        &mut rx,
+        NOW,
+        TerrainWorkerPhase::Working,
+    )
+    .await;
     settle().await;
     assert_eq!(w.status.borrow().filled_since_start, 1);
     assert_eq!(source.count(), 1);
@@ -2128,7 +2507,13 @@ async fn c9_worker_full_local_no_progress_backoff() {
         access(),
     );
     start(&mut w).await;
-    seen(&mut rx, NOW, TerrainWorkerPhase::Working).await;
+    seen_labelled(
+        "c9_worker_full_local_no_progress_backoff",
+        &mut rx,
+        NOW,
+        TerrainWorkerPhase::Working,
+    )
+    .await;
     settle().await;
     drain(&mut rx);
     let mut previous = 0;
@@ -2251,12 +2636,24 @@ async fn c9_worker_rearmed_tidy_with_open_breaker() {
     let phase = TerrainWorkerPhase::BreakerOpen {
         until_ms: NOW + 300_000,
     };
-    seen(&mut rx, NOW, phase.clone()).await;
+    seen_labelled(
+        "c9_worker_rearmed_tidy_with_open_breaker",
+        &mut rx,
+        NOW,
+        phase.clone(),
+    )
+    .await;
     settle().await;
     source.cached.store(true, Ordering::SeqCst);
     w.wake.try_send(()).unwrap();
     advance(10_000).await;
-    seen(&mut rx, NOW + 10_000, phase).await;
+    seen_labelled(
+        "c9_worker_rearmed_tidy_with_open_breaker",
+        &mut rx,
+        NOW + 10_000,
+        phase,
+    )
+    .await;
     settle().await;
     assert!(s.terrain_tidy_progress().unwrap().completed_at_ms.is_none());
     assert!(!w.status.borrow().tidy_complete);
@@ -2328,7 +2725,8 @@ async fn c9_worker_marker_failure_after_start() {
         .expect("C9 R1: the connection opens without reading the marker");
     assert_eq!(w.status.borrow().last_pass_at_ms, None);
     w.start().unwrap();
-    seen(
+    seen_labelled(
+        "c9_worker_marker_failure_after_start",
         &mut rx,
         NOW,
         TerrainWorkerPhase::Backoff {

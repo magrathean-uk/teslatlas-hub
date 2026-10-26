@@ -1794,6 +1794,8 @@ fn p3bf2_terrain_rig(
 const P3BF2_TERRAIN_LOOKUP_BUDGET: Duration = Duration::from_secs(300);
 
 fn p3bf2_terrain_pass(point: &'static str, nth: usize, tiles: bool) {
+    let _pass_serial = TERRAIN_PASS_TEST_SERIAL.blocking_lock();
+    let _serial = TERRAIN_CACHE_TEST_SERIAL.blocking_lock();
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()

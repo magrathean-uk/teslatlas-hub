@@ -3,6 +3,7 @@
 use super::super::*;
 use crate::terrain::{SRTM3_SIDE, TERRAIN_DATASET_VERSION};
 use crate::terrain_cache::TerrainCacheOptions;
+use crate::test_assertions::LabelledResult;
 use std::sync::atomic::{AtomicI64, AtomicUsize};
 
 const T0: i64 = 1_760_000_000_000;
@@ -493,6 +494,7 @@ async fn c9_st48_memo() {
 
 #[tokio::test]
 async fn c9_st47_hash() {
+    let _serial = super::TERRAIN_CACHE_TEST_SERIAL.lock().await;
     let a = id("N10E020");
     let mut cache = FakeTileCache::new(a);
     // C9 R14: changing only the last node must change the exact-byte hash.
@@ -518,11 +520,15 @@ async fn c9_st47_hash() {
         dataset_version: "synthetic-version".into(),
         ..provenance(a)
     };
-    let error = source
-        .acquire(a, &TestGuard(true), &TestGuard(true))
-        .await
-        .err()
-        .unwrap();
+    let result = source.acquire(a, &TestGuard(true), &TestGuard(true)).await;
+    result
+        .as_ref()
+        .map_err(|_| ())
+        .labelled_err("c9_st47_hash", "mismatched exact-byte tile hash is refused");
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => unreachable!("labelled refusal assertion passed"),
+    };
     assert!(matches!(error.kind, AcquireErrorKind::HashMismatch));
     assert_eq!(error.provenance, Some(expected.clone()));
     let mut state = TerrainWorkerState::default();
@@ -598,6 +604,7 @@ async fn c9_st47_hash() {
 
 #[tokio::test(start_paused = true)]
 async fn c9_st58_tile_centre() {
+    let _serial = super::TERRAIN_CACHE_TEST_SERIAL.lock().await;
     let a = terrain_tile_for(11.0, 20.5).unwrap();
     assert_eq!(a.name(), "N11E020");
     let source = CacheTileSource {
@@ -618,11 +625,15 @@ async fn c9_st58_tile_centre() {
     let mut cache = FakeTileCache::new(a);
     cache.name = "N10E020".into();
     let wrong = CacheTileSource { cache };
-    let error = wrong
-        .acquire(a, &TestGuard(true), &TestGuard(true))
-        .await
-        .err()
-        .unwrap();
+    let result = wrong.acquire(a, &TestGuard(true), &TestGuard(true)).await;
+    result
+        .as_ref()
+        .map_err(|_| ())
+        .labelled_err("c9_st58_tile_centre", "mismatched tile identity is refused");
+    let error = match result {
+        Err(error) => error,
+        Ok(_) => unreachable!("labelled refusal assertion passed"),
+    };
     assert!(matches!(error.kind, AcquireErrorKind::TileMismatch));
     assert_eq!(error.kind.code(), "wrong_tile");
     assert_eq!(error.provenance, None);
@@ -671,6 +682,7 @@ async fn c9_st58_tile_centre() {
 
 #[tokio::test]
 async fn c9_st33_cache_guard() {
+    let _serial = super::TERRAIN_CACHE_TEST_SERIAL.lock().await;
     use axum::{
         Router,
         body::Body,
