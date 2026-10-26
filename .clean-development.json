@@ -4,6 +4,7 @@
   "enabled": true,
   "heavy": false,
   "buildDirs": [
+    "target",
     "sdk-typescript/dist"
   ],
   "depDirs": [

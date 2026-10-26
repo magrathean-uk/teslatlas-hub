@@ -70,10 +70,10 @@ workspace runner, external output locations and a reviewed Go host identity.
 A standalone clone does not contain that runner. There is no complete portable
 Mac app build recipe in this checkout.
 
-The packager checks Xcode, XcodeGen, rustup and exactly Go 1.27.3. It reads the
-current absolute `buildRoot` from the JSON emitted by
-`clean-development status --json` and accepts Cargo output only under that
-root's managed Hub directory.
+The packager checks Xcode, XcodeGen, rustup and exactly Go 1.27.3. It accepts
+Cargo output only in the checkout's git-ignored `target/` directory or, when
+`clean-development status --json` reports an absolute `buildRoot`, under that
+root's managed Hub directory (`hub-*/cargo/target`).
 Do not hard-code a cache path or set Cargo's target directory around the runner.
 
 `scripts/tesla-proxy-lock.json` records the Go 1.27.3 command-proxy subjects

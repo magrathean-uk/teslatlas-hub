@@ -60,7 +60,7 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 
-ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd)
+ROOT=$(CDPATH='' cd "$(dirname "$0")/.." && pwd -P)
 GO_TOOLCHAIN_HELPER="$ROOT/scripts/go_toolchain.py"
 [ -f "$GO_TOOLCHAIN_HELPER" ] && [ ! -L "$GO_TOOLCHAIN_HELPER" ] \
     || die "Go toolchain selector is missing or unsafe"
@@ -106,19 +106,24 @@ for output_root in "$TESLATLAS_LAB" "$TESLATLAS_DERIVED_DATA"; do
         "$ROOT"|"$ROOT"/*) die "build output would enter the Hub checkout" ;;
     esac
 done
+# Accept the checkout's git-ignored Cargo target directory or the legacy managed layout.
 TARGET_DIRECTORY=$(cargo metadata --locked --format-version 1 --no-deps | \
     /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])') \
     || die "cannot find the managed Cargo target directory"
-MANAGED_BUILD_ROOT=$("$CLEAN_DEVELOPMENT" status --json | \
-    /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["buildRoot"])') \
+CLEAN_DEVELOPMENT_COMMAND=${CLEAN_DEVELOPMENT:-$(command -v clean-development)} \
+    || die "cannot find clean-development"
+MANAGED_BUILD_ROOT=$("$CLEAN_DEVELOPMENT_COMMAND" status --json | \
+    /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("buildRoot", ""))') \
     || die "cannot find the managed build root"
 case "$MANAGED_BUILD_ROOT" in
+    '') [ "$TARGET_DIRECTORY" = "$ROOT/target" ] \
+        || die "clean-development reports no buildRoot; the Cargo target must be $ROOT/target, not $TARGET_DIRECTORY (do not set CARGO_TARGET_DIR around the runner)" ;;
     /*) ;;
     *) die "managed build root is not absolute" ;;
 esac
 case "$TARGET_DIRECTORY" in
-    "$MANAGED_BUILD_ROOT"/hub-*/cargo/target) ;;
-    *) die "Cargo target directory is outside the managed build cache" ;;
+    "$ROOT/target"|"$MANAGED_BUILD_ROOT"/hub-*/cargo/target) ;;
+    *) die "Cargo target $TARGET_DIRECTORY is neither $ROOT/target nor $MANAGED_BUILD_ROOT/hub-*/cargo/target" ;;
 esac
 
 SOURCE_COMMIT=${TESLATLAS_HUB_SOURCE_COMMIT-}
