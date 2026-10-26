@@ -7,6 +7,15 @@ use crate::protocol::{
     PackFormat, ProtocolError, ProtocolVersion, SchemaVersion, SequenceRange, TransferMode,
 };
 
+use crate::test_assertions::LabelledResult;
+
+/// The shared fallible store constructor for synthetic fixtures.
+fn try_test_store() -> Result<(tempfile::TempDir, HubStore), Box<dyn std::error::Error>> {
+    let temporary = crate::private_tempdir()?;
+    let store = HubStore::initialize(temporary.path())?;
+    Ok((temporary, store))
+}
+
 include!("tests/database_and_migrations.rs");
 include!("tests/catalogue_and_pairing.rs");
 include!("tests/device_vehicle_grants.rs");

@@ -875,7 +875,10 @@ fn c8_t28_rollback() {
     second.execute_batch(trigger).expect("trigger");
     // The save writes the fence, the id mark and the first drive mutation
     // before the charge mutation fails: nothing stays.
-    let error = save(&store, vehicle, None, fence("Home", 10.0, 20.0)).expect_err("injected");
+    let error = save(&store, vehicle, None, fence("Home", 10.0, 20.0)).labelled_err(
+        "c8_t28_rollback",
+        "the injected relabel failure is propagated",
+    );
     assert!(error.to_string().contains("injected"), "{error}");
     assert_eq!(durable(&store, vehicle), before);
     assert!(store.geofences(vehicle).expect("fences").is_empty());

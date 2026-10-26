@@ -8,6 +8,8 @@
 // passes, never the clock; each geocoder has its own private limiter; no test
 // reaches the public host. Bodies are hand-written synthetic text.
 
+use super::b3_c7_b::LabelledResult;
+
 use crate::config::GeocoderConfig;
 use crate::db::{GEOCODER_PROVIDER_STATE_KEY, HubStore};
 use crate::geocoder::{
@@ -37,6 +39,18 @@ async fn within<T>(seconds: u64, body: impl Future<Output = T>) -> T {
     tokio::time::timeout(Duration::from_secs(seconds), body)
         .await
         .expect("the test finishes within its timeout")
+}
+
+async fn within_labelled<T>(test: &str, seconds: u64, body: impl Future<Output = T>) -> T {
+    let completed = tokio::time::timeout(Duration::from_secs(seconds), body).await;
+    assert!(
+        completed.is_ok(),
+        "assertion failed: {test}: the provider-state scenario completes within its bound"
+    );
+    match completed {
+        Ok(value) => value,
+        Err(_) => unreachable!("labelled completion assertion passed"),
+    }
 }
 
 // ---- the scripted loopback stub -------------------------------------------------
@@ -455,7 +469,10 @@ async fn c7_t67_cache_during_pause() {
         let again = geocoder
             .reverse_cached_with_egress_guard(&store, first, 3_000, &guard)
             .await
-            .expect("the cache answers during the pause");
+            .labelled_ok(
+                "c7_t67_cache_during_pause",
+                "the cache answers during the pause",
+            );
         assert_eq!(again, cached);
         assert_eq!(guard.checks(), 0);
         assert_eq!(stub.requests(), 2);
@@ -565,7 +582,7 @@ async fn c7_t69_new_endpoint() {
         second
             .reverse_cached(&store, point(52.42, -1.52), 2_000)
             .await
-            .expect("an address from the other endpoint");
+            .labelled_ok("c7_t69_new_endpoint", "an address from the other endpoint");
         assert_eq!(answering.requests(), 1);
         assert_eq!(refusing.requests(), 1);
         assert_eq!(stored(&store), None);
@@ -603,7 +620,7 @@ async fn c7_t70_other_answers() {
         (503, Some("60"), "{}"),
         (404, None, r#"{"error":"Unable to geocode"}"#),
     ] {
-        within(6, async {
+        within_labelled("c7_t70_other_answers", 6, async {
             let mut scripted = answer(status, body);
             if let Some(value) = retry_after {
                 scripted = scripted.retry_after(value);
@@ -626,7 +643,7 @@ async fn c7_t70_other_answers() {
 
     // (d) A 429 and then a 500: the second answer is not a refusal and clears the
     // record.
-    within(7, async {
+    within_labelled("c7_t70_other_answers", 7, async {
         let stub = Stub::start(vec![refusal(429), refusal(500)]).await;
         let (_temporary, store) = private_store();
         let geocoder = geocoder_for(&stub.endpoint);
@@ -647,7 +664,7 @@ async fn c7_t70_other_answers() {
     .await;
 
     // (e) A timeout says nothing about the refusal: the record stays as it was.
-    within(8, async {
+    within_labelled("c7_t70_other_answers", 8, async {
         let stub = Stub::start(vec![
             refusal(429),
             answer(200, F1).delayed(Duration::from_secs(3)),
@@ -684,7 +701,7 @@ async fn c7_t70_other_answers() {
     // either way. A refusal is not recorded and the lookup reports the lost
     // admission; a record that an answer would have cleared stays for the next
     // answer. The two checks before the request are permitted.
-    within(7, async {
+    within_labelled("c7_t70_other_answers", 7, async {
         let stub = Stub::start(vec![refusal(429), refusal(500)]).await;
         let (_temporary, store) = private_store();
         let geocoder = geocoder_for(&stub.endpoint);
@@ -714,20 +731,20 @@ async fn c7_t70_other_answers() {
 
     // (g) to (j): an answer that is not an address, whatever its fault, is still an
     // answer, so it clears the record as a status other than 403 or 429 does.
-    within(7, async {
+    within_labelled("c7_t70_other_answers", 7, async {
         let (error, requests, left) =
             answer_after_refusal(answer(200, r#"{"error":"Unable to geocode"}"#)).await;
         assert!(matches!(error, GeocoderError::NoResult), "{error:?}");
         assert_eq!((requests, left), (2, None));
     })
     .await;
-    within(7, async {
+    within_labelled("c7_t70_other_answers", 7, async {
         let (error, requests, left) = answer_after_refusal(answer(200, "[]")).await;
         assert!(matches!(error, GeocoderError::ResponseRead), "{error:?}");
         assert_eq!((requests, left), (2, None));
     })
     .await;
-    within(7, async {
+    within_labelled("c7_t70_other_answers", 7, async {
         let (error, requests, left) = answer_after_refusal(answer(200, "{}")).await;
         assert!(
             matches!(error, GeocoderError::MalformedResponse),
@@ -736,7 +753,7 @@ async fn c7_t70_other_answers() {
         assert_eq!((requests, left), (2, None));
     })
     .await;
-    within(7, async {
+    within_labelled("c7_t70_other_answers", 7, async {
         let (error, requests, left) =
             answer_after_refusal(answer(200, "{}").claiming_length(256 * 1024 + 1)).await;
         assert!(
@@ -749,7 +766,7 @@ async fn c7_t70_other_answers() {
 
     // (k) A refusal whose record cannot be stored is reported as a store failure,
     // after one request, and leaves no row.
-    within(6, async {
+    within_labelled("c7_t70_other_answers", 6, async {
         let stub = Stub::start(vec![refusal(429)]).await;
         let (_temporary, store) = private_store();
         store
@@ -765,7 +782,14 @@ async fn c7_t70_other_answers() {
             .reverse_cached(&store, point(52.41, -1.52), 1_000)
             .await
             .expect_err("a refusal that cannot be stored");
-        assert!(matches!(error, GeocoderError::Cache(_)), "{error:?}");
+        assert!(
+            matches!(error, GeocoderError::Cache(_)),
+            concat!(
+                "assertion failed: c7_t70_other_answers: ",
+                "a refusal whose state cannot be stored reports the cache error; {error:?}"
+            ),
+            error = error
+        );
         assert_eq!(stub.requests(), 1);
         assert_eq!(stored(&store), None);
     })
@@ -773,7 +797,7 @@ async fn c7_t70_other_answers() {
 
     // (l) A record that cannot be deleted does not change the answer's outcome: the
     // error is the answer's own and the stale record stays for the next answer.
-    within(7, async {
+    within_labelled("c7_t70_other_answers", 7, async {
         let stub = Stub::start(vec![refusal(429), refusal(500)]).await;
         let (_temporary, store) = private_store();
         let geocoder = geocoder_for(&stub.endpoint);
@@ -792,10 +816,43 @@ async fn c7_t70_other_answers() {
                  BEGIN SELECT RAISE(ABORT, 'store refused'); END"
             ))
             .expect("trigger");
-        let error = geocoder
-            .reverse_cached(&store, point(52.42, -1.52), 61_000)
-            .await
-            .expect_err("a server error");
+        let lookup_store = store.clone();
+        let lookup_geocoder = geocoder.clone();
+        let mut lookup = tokio::spawn(async move {
+            lookup_geocoder
+                .reverse_cached(&lookup_store, point(52.42, -1.52), 61_000)
+                .await
+        });
+        let completed = tokio::time::timeout(Duration::from_secs(7), &mut lookup).await;
+        if completed.is_err() {
+            lookup.abort();
+        }
+        assert!(
+            completed.is_ok(),
+            concat!(
+                "assertion failed: c7_t70_other_answers: ",
+                "failed state deletion leaves a bounded server-error answer"
+            )
+        );
+        let joined = match completed {
+            Ok(joined) => joined,
+            Err(_) => unreachable!("labelled lookup completion assertion passed"),
+        };
+        assert!(
+            joined.is_ok(),
+            concat!(
+                "assertion failed: c7_t70_other_answers: ",
+                "failed state deletion preserves the answer without a panic"
+            )
+        );
+        let answer = match joined {
+            Ok(answer) => answer,
+            Err(_) => unreachable!("labelled task assertion passed"),
+        };
+        let error = answer.labelled_err(
+            "c7_t70_other_answers",
+            "a server error after failed state deletion",
+        );
         assert!(matches!(error, GeocoderError::HttpStatus(500)), "{error:?}");
         assert_eq!(stub.requests(), 2);
         assert_eq!(record(&store), kept);

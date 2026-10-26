@@ -394,7 +394,10 @@ fn c8_t02_id_allocation() {
     assert_eq!(first.id, H);
     let second = save(&store, vehicle, None, fence("B", 11.0, 20.0)).expect("B");
     assert_eq!(second.id, H + 1);
-    store.delete_geofence(vehicle, H + 1).expect("delete B");
+    store.delete_geofence(vehicle, H + 1).labelled_ok(
+        "c8_t02_id_allocation",
+        "deleting a Hub-owned fence needs no imported tombstone",
+    );
     // A deleted Hub id is never given again (the mark never decreases), and a
     // Hub id needs no tombstone.
     let third = save(&store, vehicle, None, fence("C", 12.0, 20.0)).expect("C");
@@ -754,7 +757,8 @@ fn c8_t10_replay_same_place() {
     // A retried create returns the fence it made and writes nothing, the mark
     // included (C8 R9 item 1, C8 R43).
     let state = durable(&store, vehicle);
-    let again = save(&store, vehicle, None, fence("Home", 10.0, 20.0)).expect("replay");
+    let again = save(&store, vehicle, None, fence("Home", 10.0, 20.0))
+        .labelled_ok("c8_t10_replay_same_place", "replay");
     assert_eq!(again, first);
     assert_eq!(store.geofences(vehicle).expect("fences").len(), 1);
     assert_eq!(durable(&store, vehicle), state);
@@ -804,7 +808,7 @@ fn c8_t10_replay_same_place() {
         None,
         with_radius(fence("Other", 10.0, 20.0), 60.0),
     )
-    .expect("another radius");
+    .labelled_ok("c8_t10_replay_same_place", "another radius");
     assert_eq!(sized.id, H + 2);
     // An edit that moves a fence onto another's centre and radius is refused;
     // one that only renames it is not.
@@ -851,7 +855,7 @@ fn c8_t10_replay_same_place() {
         Some(H),
         with_radius(fence("Dateline", 0.0, -180.0), 50.0),
     )
-    .expect("edit across the antimeridian");
+    .labelled_ok("c8_t10_replay_same_place", "edit across the antimeridian");
     assert_eq!((moved.id, moved.longitude), (H, Some(-180.0)));
     assert_eq!(
         store.geofences(dateline).expect("fences")[0].longitude,
@@ -907,7 +911,8 @@ fn c8_t10_replay_same_place() {
         ],
     );
     let state = durable(&store, twins);
-    let replayed = save(&store, twins, None, fence("Same", 11.0, 20.0)).expect("replay");
+    let replayed = save(&store, twins, None, fence("Same", 11.0, 20.0))
+        .labelled_ok("c8_t10_replay_same_place", "replay");
     assert_eq!(replayed.id, 3, "the smallest id of the equal fences");
     assert_eq!(durable(&store, twins), state);
     // A refusal names the smallest id too, for a create and for an edit that
@@ -1362,6 +1367,122 @@ impl Finalised {
 
 #[test]
 fn c8_t48_finalisation_path() {
+    // Snapshot and generation finalisation must reconcile supplied fences too.
+    // The generation wrappers share the same inner publication transaction.
+    let (_base_directory, base_store) = c8_store();
+    let (base_vehicle, base_binding, base_manifest) = v2_base_manifest(&base_store);
+    let base_fence = imported(1, "Base", 10.0, 20.0, 50.0);
+    base_store
+        .finalize_import_snapshot_with_binding(
+            &base_manifest,
+            Sha256Digest::of_bytes(b"t48-nonempty-base"),
+            std::slice::from_ref(&base_fence),
+            &base_binding,
+        )
+        .expect("snapshot finalisation");
+    assert!(
+        base_store
+            .geofences(base_vehicle.vehicle_id)
+            .expect("base fences")
+            == [base_fence]
+            && source_owned_of(
+                &base_store.open().expect("base connection"),
+                base_vehicle.vehicle_id,
+                1
+            ) == 1,
+        "assertion failed: c8_t48_finalisation_path: supplied geofences are reconciled by snapshot finalisation"
+    );
+    for materialised in [false, true] {
+        let (_generation_directory, generation_store) = c8_store();
+        let (vehicle, binding, car, mut prior) = direct_materialised_base(&generation_store, &[]);
+        seed_drive(
+            &generation_store,
+            vehicle.vehicle_id,
+            &drive_row(99, None, Some((10.0, 20.0)), None, None),
+        );
+        for (step, name) in ["Generation", "Renamed"].into_iter().enumerate() {
+            let at_ms = 3_000 + step as i64;
+            let run_id = generation_store
+                .begin_import_generation(
+                    binding.account_id,
+                    vehicle.vehicle_id,
+                    binding.selected_car_id,
+                    at_ms,
+                )
+                .expect("generation staging");
+            let mut session = t69_s((None, None));
+            session.car_id = binding.selected_car_id;
+            session.drive = None;
+            session.drive_positions.clear();
+            session.charge = None;
+            session.charge_samples.clear();
+            session.state = None;
+            session.standalone_positions.clear();
+            session.watermarks = Default::default();
+            generation_store
+                .stage_import_generation_session(run_id, &session)
+                .expect("stage generation session");
+            let state = direct_test_projection_state(&generation_store, run_id, &car);
+            let delta = imported_typed_delta(&generation_store, &binding, &prior);
+            let cursor = import_delta_test_cursor(&binding, delta.to_sequence);
+            let supplied = imported(1, name, 10.0, 20.0, 50.0);
+            let result = if materialised {
+                generation_store
+                    .finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
+                        run_id,
+                        binding.account_id,
+                        vehicle.vehicle_id,
+                        binding.selected_car_id,
+                        at_ms,
+                        std::slice::from_ref(&delta),
+                        &import_delta_test_cursor_key(),
+                        &cursor,
+                        Sha256Digest::of_bytes(name.as_bytes()),
+                        std::slice::from_ref(&supplied),
+                        &state,
+                        &car,
+                        &[],
+                    )
+            } else {
+                generation_store.finalize_import_generation_delta_successors_with_projection_state(
+                    run_id,
+                    binding.account_id,
+                    vehicle.vehicle_id,
+                    binding.selected_car_id,
+                    at_ms,
+                    std::slice::from_ref(&delta),
+                    &import_delta_test_cursor_key(),
+                    &cursor,
+                    Sha256Digest::of_bytes(name.as_bytes()),
+                    std::slice::from_ref(&supplied),
+                    &state,
+                    false,
+                )
+            };
+            assert!(
+                result.is_ok(),
+                "assertion failed: c8_t48_finalisation_path: generation finalisation succeeds: {result:?}"
+            );
+            assert!(
+                generation_store
+                    .geofences(vehicle.vehicle_id)
+                    .expect("generation fences")
+                    == [supplied]
+                    && source_owned_of(
+                        &generation_store.open().expect("generation connection"),
+                        vehicle.vehicle_id,
+                        1
+                    ) == 1
+                    && end_label(&generation_store, vehicle.vehicle_id, 99).as_deref()
+                        == Some(name),
+                "assertion failed: c8_t48_finalisation_path: supplied geofences are reconciled by generation finalisation; materialised={materialised}, step={step}"
+            );
+            prior = generation_store
+                .lineage_manifest_for_vehicle(vehicle.vehicle_id)
+                .expect("generation lineage")
+                .expect("published generation");
+        }
+    }
     // The same slices through the store-level upsert, the transaction-level
     // upsert the import finalisation calls, and a real finalisation (an import
     // successor): the same reconciliation and durable state (C8 R51).
@@ -1688,6 +1809,7 @@ fn c8_duplicate_import_ids_roll_back() {
 fn t15_sequence(
     store: &HubStore,
     key: &str,
+    test: &str,
     import: impl Fn(&HubStore, Uuid, &[Fence]) -> GeofenceUpsertReport,
 ) {
     // 1. A fresh vehicle: import id 1, Home, centre (10.0, 20.0), radius 50.
@@ -1785,6 +1907,44 @@ fn t15_sequence(
     assert_eq!(durable(store, vehicle).drives[0], drive_one);
     assert_eq!(mutation_log(store, vehicle), ["drive 1", "drive 2"]);
     assert_eq!(export_revision(store, vehicle), marked + 2);
+    // A later geometry change requires a scan; this charge's label is already
+    // correct and its raw stored row must not be rewritten by that scan.
+    let charge = crate::hub_pack::ProjectionCharge {
+        start_latitude: Some(10.0001),
+        start_longitude: Some(20.0),
+        geofence: Some("House".to_owned()),
+        ..cost_row(99, None, None, None, None)
+    };
+    let connection = store.open().expect("fixture connection");
+    connection
+        .execute(
+            "INSERT INTO materialised_charges(vehicle_id, charge_id, car_id, charge_json)
+         VALUES (?1, ?2, ?3, ?4)",
+            params![
+                vehicle.to_string(),
+                charge.id,
+                charge.car_id,
+                serde_json::to_string_pretty(&charge).expect("fixture charge")
+            ],
+        )
+        .expect("seed already-correct charge");
+    drop(connection);
+    let before_scan = durable(store, vehicle);
+    let reads = relabel_page_reads();
+    let report = import(store, vehicle, &[home("House", 130.0)]);
+    assert!(
+        relabel_page_reads() > reads,
+        "assertion failed: {test}: geometry change scans history"
+    );
+    assert!(
+        report.relabel.charges == 0,
+        "assertion failed: {test}: an already-correct charge is not counted as relabelled"
+    );
+    let after_scan = durable(store, vehicle);
+    assert!(
+        after_scan.charges == before_scan.charges && after_scan.mutations == before_scan.mutations,
+        "assertion failed: {test}: an already-correct charge has no rewrite or mutation"
+    );
     // 6. No geofence entity mutation, ever (C8 R32).
     assert_eq!(geofence_entity_mutations(store, vehicle), 0);
 }
@@ -1792,17 +1952,23 @@ fn t15_sequence(
 #[test]
 fn c8_t15_import_relabel_store() {
     let (_temporary, store) = c8_store();
-    t15_sequence(&store, "t15-store", |store, vehicle, rows| {
-        store.upsert_geofences(vehicle, rows).expect("import")
-    });
+    t15_sequence(
+        &store,
+        "t15-store",
+        "c8_t15_import_relabel_store",
+        |store, vehicle, rows| store.upsert_geofences(vehicle, rows).expect("import"),
+    );
 }
 
 #[test]
 fn c8_t15_import_relabel_transaction() {
     let (_temporary, store) = c8_store();
-    t15_sequence(&store, "t15-transaction", |store, vehicle, rows| {
-        import_in_transaction(store, vehicle, rows)
-    });
+    t15_sequence(
+        &store,
+        "t15-transaction",
+        "c8_t15_import_relabel_transaction",
+        import_in_transaction,
+    );
 }
 
 /// One of the seven compared values of a fence: the record with only that

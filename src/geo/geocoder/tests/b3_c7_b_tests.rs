@@ -20,6 +20,8 @@ use std::sync::{
 };
 use std::time::Duration;
 
+pub(super) use crate::test_assertions::LabelledResult;
+
 const LIC: &str = "Data (c) test contributors, ODbL 1.0";
 /// K-RAW: the largest body kept as `raw_json`.
 const RAW_CAP: usize = RAW_MAX_BYTES;
@@ -321,6 +323,12 @@ fn c7_t15_to_t23_fixtures() {
 
 #[test]
 fn c7_t24_to_t29_identity_errors() {
+    let refusal = |body: &[u8]| {
+        variant_name(&parse_response(body).labelled_err(
+            "c7_t24_to_t29_identity_errors",
+            "the invalid identity body is refused",
+        ))
+    };
     // T24 error member: any present non-null member means no result.
     for body in [
         r#"{"error":"Unable to geocode"}"#,
@@ -1028,7 +1036,10 @@ fn c7_t53_storage_accepts() {
         let address = parsed(body);
         store
             .put_address_cache(&record_of(&address, &binding, lookup_point, 1000))
-            .unwrap_or_else(|error| panic!("{label}: storage refused a parser output: {error}"));
+            .labelled_ok(
+                "c7_t53_storage_accepts",
+                &format!("{label}: storage accepts a parser output"),
+            );
         stored += 1;
     }
     assert_eq!(stored, bodies.len());

@@ -91,6 +91,41 @@ pub(crate) fn private_tempdir() -> std::io::Result<tempfile::TempDir> {
         .tempdir()
 }
 
+#[cfg(test)]
+pub(crate) mod test_assertions {
+    /// Assert the result condition before extracting its value for later checks.
+    pub(crate) trait LabelledResult<T, E> {
+        #[track_caller]
+        fn labelled_ok(self, test: &str, condition: &str) -> T;
+        #[track_caller]
+        fn labelled_err(self, test: &str, condition: &str) -> E;
+    }
+
+    impl<T, E: std::fmt::Debug> LabelledResult<T, E> for Result<T, E> {
+        #[track_caller]
+        fn labelled_ok(self, test: &str, condition: &str) -> T {
+            assert!(
+                self.is_ok(),
+                "assertion failed: {test}: {condition}; error={:?}",
+                self.as_ref().err()
+            );
+            match self {
+                Ok(value) => value,
+                Err(_) => unreachable!("labelled success assertion passed"),
+            }
+        }
+
+        #[track_caller]
+        fn labelled_err(self, test: &str, condition: &str) -> E {
+            assert!(self.is_err(), "assertion failed: {test}: {condition}");
+            match self {
+                Err(error) => error,
+                Ok(_) => unreachable!("labelled refusal assertion passed"),
+            }
+        }
+    }
+}
+
 /// One process-wide log capture for tests. Tests that read their own log lines
 /// share it, because a process may install only one global `tracing` subscriber:
 /// two helpers that each installed their own made whichever ran second fail, so

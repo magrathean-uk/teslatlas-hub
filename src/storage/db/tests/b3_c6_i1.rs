@@ -1047,7 +1047,10 @@ fn claimed_delta_for_car(
                 .expect("delta ordinal"),
             delta: &payload,
         })
-        .expect("an empty stored model is valid in a delta pack (C6 R13, R16)");
+        .labelled_ok(
+            "c6_st_i16_an_empty_model_is_valid_in_the_delta_path_and_the_lineage_verifier",
+            "an empty stored model is valid in a delta pack (C6 R13, R16)",
+        );
     let delta = LineageDelta {
         from_sequence,
         to_sequence,
@@ -1081,7 +1084,10 @@ fn c6_st_i16_an_empty_model_is_valid_in_the_delta_path_and_the_lineage_verifier(
             &import_delta_test_cursor_key(),
             &import_delta_test_cursor(&binding, delta.to_sequence),
         )
-        .expect("the verifier accepts an empty stored model");
+        .labelled_ok(
+            "c6_st_i16_an_empty_model_is_valid_in_the_delta_path_and_the_lineage_verifier",
+            "the verifier accepts an empty stored model",
+        );
     let published = store
         .lineage_manifest_for_vehicle(vehicle.vehicle_id)
         .expect("serving verification")

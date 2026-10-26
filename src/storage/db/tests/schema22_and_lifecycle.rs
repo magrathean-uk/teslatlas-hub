@@ -128,19 +128,23 @@ fn physical_staging_leftovers_are_removed_on_repair_and_restart() {
 }
 
 fn test_registered_vehicle(store: &HubStore) -> (SourceRecord, VehicleRecord) {
+    try_test_registered_vehicle(store).expect("registered source and vehicle fixture")
+}
+
+fn try_test_registered_vehicle(
+    store: &HubStore,
+) -> Result<(SourceRecord, VehicleRecord), StoreError> {
     let source = store
         .register_source(
             &SourceDescriptor::new("tesla_owner_api", "account-test"),
             1_000,
-        )
-        .expect("source");
+        )?;
     let vehicle = store
         .register_vehicle(
             &VehicleDescriptor::new(source.source_id, "vehicle-test"),
             1_001,
-        )
-        .expect("vehicle");
-    (source, vehicle)
+        )?;
+    Ok((source, vehicle))
 }
 
 fn test_manifest() -> SyncManifest {

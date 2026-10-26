@@ -49,9 +49,7 @@ pub(super) fn imported(id: i64, name: &str, latitude: f64, longitude: f64, radiu
 }
 
 pub(super) fn c8_store() -> (tempfile::TempDir, HubStore) {
-    let temporary = crate::private_tempdir().expect("temporary store");
-    let store = HubStore::initialize(temporary.path()).expect("store");
-    (temporary, store)
+    try_test_store().expect("synthetic store fixture")
 }
 
 /// One registered vehicle; `key` makes a second vehicle of the same store.
@@ -92,7 +90,16 @@ fn created_on_fresh_vehicle(store: &HubStore, key: &str, record: Fence) -> Fence
 /// The refused save on a fresh vehicle: the rejection, with nothing stored.
 fn refused_on_fresh_vehicle(store: &HubStore, key: &str, record: Fence) -> GeofenceRejection {
     let vehicle = c8_vehicle(store, key);
-    let refused = rejection(store.save_geofence(vehicle, None, record, false));
+    let result = store.save_geofence(vehicle, None, record, false);
+    assert!(
+        matches!(result, Err(StoreError::GeofenceRejected(_))),
+        concat!(
+            "assertion failed: c8_t04_to_t09_validation: ",
+            "the save is refused with a geofence rejection; got {result:?}"
+        ),
+        result = result
+    );
+    let refused = rejection(result);
     assert!(
         store.geofences(vehicle).expect("fences").is_empty(),
         "a refused save writes nothing"
@@ -601,7 +608,8 @@ fn c8_t04_to_t09_validation() {
         billing_type: Some(GeofenceBillingType::PerKwh),
         ..fence("Gate", 10.0, 20.0)
     };
-    let retyped_edit = edit(&retyped, &gate, false).expect("the kept cost admits the type");
+    let retyped_edit = edit(&retyped, &gate, false)
+        .labelled_ok("c8_t04_to_t09_validation", "the kept cost admits the type");
     assert_eq!(
         (
             retyped_edit.radius_m,
@@ -1173,7 +1181,10 @@ fn c8_t13_activation() {
     let (_temporary, store) = c8_store();
     let vehicle = c8_vehicle(&store, "t13");
     let rows = t13_rows();
-    let report = store.upsert_geofences(vehicle, &rows).expect("import");
+    let report = store.upsert_geofences(vehicle, &rows).labelled_ok(
+        "c8_t13_activation",
+        "inactive source rows are reported without a storage error",
+    );
     assert_eq!(rows.len(), 13, "source rows");
     // The report of C8 T13 (C8 R14): every list holds ids ascending.
     assert_eq!(report.source_rows, 13);
@@ -1425,7 +1436,10 @@ fn c8_t13_activation() {
     assert_eq!(
         store
             .upsert_geofences(other, std::slice::from_ref(&copied))
-            .expect("import")
+            .labelled_ok(
+                "c8_t13_activation",
+                "inactive source rows are reported without a storage error"
+            )
             .inserted,
         [11]
     );

@@ -287,15 +287,18 @@ struct Ts {
 
 impl Ts {
     fn new() -> Self {
-        let directory = crate::private_tempdir().expect("tempdir");
-        let store = HubStore::initialize(directory.path()).expect("store");
-        let (source, vehicle) = test_registered_vehicle(&store);
-        Self {
+        Self::try_new().expect("synthetic tidy fixture")
+    }
+
+    fn try_new() -> Result<Self, Box<dyn std::error::Error>> {
+        let (directory, store) = try_test_store()?;
+        let (source, vehicle) = try_test_registered_vehicle(&store)?;
+        Ok(Self {
             directory,
             store,
             source,
             vehicle,
-        }
+        })
     }
 
     fn vid(&self) -> String {
@@ -334,6 +337,11 @@ impl Ts {
 
     fn open_ok(&self) -> HubStore {
         self.open().expect("open the store")
+    }
+
+    fn open_labelled(&self, test: &str) -> HubStore {
+        self.open()
+            .labelled_ok(test, "opening the stored tidy fixture succeeds")
     }
 }
 
@@ -1102,10 +1110,10 @@ fn c6_st_i25_once_restart_rollback() {
     // no live-sync change is recorded.
     let ts = Ts::fixture();
     let first = ts.snap();
-    let store = ts.open_ok();
+    let store = ts.open_labelled("c6_st_i25_once_restart_rollback");
     let after_first = snap(&store, &ts.vid());
     assert_st_i23_result(&store, &ts.vid(), &first, &after_first);
-    let store = ts.open_ok();
+    let store = ts.open_labelled("c6_st_i25_once_restart_rollback");
     assert_eq!(
         snap(&store, &ts.vid()),
         after_first,
@@ -1115,7 +1123,7 @@ fn c6_st_i25_once_restart_rollback() {
     // (2) Delete the marker and open again: the bytes equal the first open's and
     // the marker is written again with no change counted.
     remove_marker(&store);
-    let store = ts.open_ok();
+    let store = ts.open_labelled("c6_st_i25_once_restart_rollback");
     let rerun = snap(&store, &ts.vid());
     assert_eq!(rerun.car, after_first.car);
     assert_eq!(rerun.blob, after_first.blob);
@@ -1165,7 +1173,7 @@ fn c6_st_i25_once_restart_rollback() {
         .expect("catalogue")
         .execute_batch("DROP TRIGGER c6_i2_abort_marker;")
         .expect("drop the trigger");
-    let store = ts.open_ok();
+    let store = ts.open_labelled("c6_st_i25_once_restart_rollback");
     assert_st_i23_result(&store, &ts.vid(), &before, &snap(&store, &ts.vid()));
 
     // (4) No other open runs the tidy: a read-only open, the control path
@@ -1660,7 +1668,7 @@ fn skip_case(edit: impl FnOnce(&Ts)) -> (Ts, Snap, Snap) {
     let ts = Ts::fixture();
     edit(&ts);
     let before = ts.snap();
-    let store = ts.open_ok();
+    let store = ts.open_labelled("c6_st_i27_skip_whole_vehicle");
     let after = snap(&store, &ts.vid());
     (ts, before, after)
 }
@@ -1760,7 +1768,7 @@ fn c6_st_i27_skip_whole_vehicle() {
             .expect("its car");
     }
     remove_marker(&ts.store);
-    let store = ts.open_ok();
+    let store = ts.open_labelled("c6_st_i27_skip_whole_vehicle");
     let stored: String = store
         .open()
         .expect("catalogue")
@@ -1895,7 +1903,7 @@ fn c6_st_i27_skip_whole_vehicle() {
     }
     remove_marker(&ts.store);
     let before = ts.snap();
-    let store = ts.open_ok();
+    let store = ts.open_labelled("c6_st_i27_skip_whole_vehicle");
     let after = snap(&store, &ts.vid());
     assert_skipped_whole(&ts, &before, &after, "oversized re-encode");
 }

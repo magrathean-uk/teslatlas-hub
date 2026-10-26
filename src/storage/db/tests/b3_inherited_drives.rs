@@ -798,7 +798,34 @@ fn c1_st111_recompute_precedes_charge_close() {
     );
     let (_, ascent, descent) = stored_drive(&harness.store, &harness.vehicle, 1);
     assert_eq!((ascent, descent), (Some(10), Some(0)));
-    // A listed id whose drive row this commit did not write is skipped.
+    // A persisted but unwritten drive must keep its deliberately stale totals.
+    let untouched = CostHarness::new();
+    let mut seed = crate::lifecycle::LifecycleDelta::default();
+    let mut stale = drive_row(99, 300);
+    stale.ascent = Some(77);
+    stale.descent = Some(88);
+    seed.drives.push(stale);
+    for (id, date_ms, elevation) in [(1, 100, 100), (2, 200, 110)] {
+        let mut position = position_row(id, Some(99), date_ms);
+        position.elevation = Some(elevation);
+        seed.positions.push(position);
+    }
+    untouched.commit_delta(&seed);
+    let before = stored_drive(&untouched.store, &untouched.vehicle, 99);
+    assert_eq!((before.1, before.2), (Some(77), Some(88)));
+    let raw_json = || -> String {
+        untouched.store.open().expect("fixture connection").query_row(
+            "SELECT drive_json FROM materialised_drives WHERE vehicle_id = ?1 AND drive_id = 99",
+            params![untouched.vehicle.vehicle_id.to_string()],
+            |row| row.get(0),
+        ).expect("fixture drive JSON")
+    };
+    let bytes_before = raw_json();
+    let mutations_before = drive_mutations(&untouched.store, &untouched.vehicle, 99);
+    assert!(
+        !mutations_before.is_empty(),
+        "assertion failed: c1_st111_recompute_precedes_charge_close: stored fixture has a drive mutation"
+    );
     let other = crate::lifecycle::LifecycleDelta {
         recompute_drive_ids: vec![99],
         ..Default::default()
@@ -806,6 +833,14 @@ fn c1_st111_recompute_precedes_charge_close() {
     harness.commit_delta(&other);
     assert_eq!(
         drive_mutations(&harness.store, &harness.vehicle, 99).len(),
-        0
+        0,
+        "c1_st111_recompute_precedes_charge_close: an absent drive creates no mutation"
+    );
+    untouched.commit_delta(&other);
+    assert!(
+        stored_drive(&untouched.store, &untouched.vehicle, 99) == before
+            && raw_json() == bytes_before
+            && drive_mutations(&untouched.store, &untouched.vehicle, 99) == mutations_before,
+        "assertion failed: c1_st111_recompute_precedes_charge_close: an unwritten persisted drive is not recomputed"
     );
 }

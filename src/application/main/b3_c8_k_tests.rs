@@ -19,6 +19,38 @@ use uuid::Uuid;
 
 use crate::{Cli, Command, ControlCommand, report_outcome, run, run_set_geofence};
 
+/// Assert the result condition before extracting its value for later checks.
+trait LabelledResult<T, E> {
+    #[track_caller]
+    fn labelled_ok(self, test: &str, condition: &str) -> T;
+    #[track_caller]
+    fn labelled_err(self, test: &str, condition: &str) -> E;
+}
+
+impl<T, E: std::fmt::Debug> LabelledResult<T, E> for Result<T, E> {
+    #[track_caller]
+    fn labelled_ok(self, test: &str, condition: &str) -> T {
+        assert!(
+            self.is_ok(),
+            "assertion failed: {test}: {condition}; error={:?}",
+            self.as_ref().err()
+        );
+        match self {
+            Ok(value) => value,
+            Err(_) => unreachable!("labelled success assertion passed"),
+        }
+    }
+
+    #[track_caller]
+    fn labelled_err(self, test: &str, condition: &str) -> E {
+        assert!(self.is_err(), "assertion failed: {test}: {condition}");
+        match self {
+            Err(error) => error,
+            Ok(_) => unreachable!("labelled refusal assertion passed"),
+        }
+    }
+}
+
 fn parse(arguments: &[&str]) -> Result<Cli, clap::Error> {
     let mut all = vec!["teslatlas-hub", "control"];
     all.extend_from_slice(arguments);
@@ -244,7 +276,7 @@ fn c8_t33_parse() {
         "--longitude",
         "-0.127758",
     ])
-    .expect("negative centre");
+    .labelled_ok("c8_t33_parse", "a negative centre parses");
     assert_eq!(west_south.latitude, -33.5);
     assert_eq!(west_south.longitude, -0.127758);
     // C8 R40, C8 T4, C8 T8: negative numbers parse as typed and are refused by
@@ -825,8 +857,13 @@ async fn c8_t36_rejection_exit() {
             if edit {
                 arguments.extend_from_slice(&["--id", &id_text]);
             }
-            let cli = Cli::try_parse_from(arguments).expect("arguments parse");
-            let error = run(cli).await.expect_err("an invalid value is refused");
+            let cli = Cli::try_parse_from(arguments).labelled_ok(
+                "c8_t36_rejection_exit",
+                "negative values parse and reach the store validation",
+            );
+            let error = run(cli)
+                .await
+                .labelled_err("c8_t36_rejection_exit", "an invalid value is refused");
             let texts = failure_text(error.as_ref());
             assert_eq!(texts[0], message, "{option} {value} edit {edit}");
             for text in &texts {

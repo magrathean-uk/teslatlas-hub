@@ -7,6 +7,8 @@
 // its own private limiter; no test reaches the public host. Bodies are
 // hand-written synthetic text.
 
+use super::b3_c7_b::LabelledResult;
+
 use crate::config::{ConfigError, GeocoderConfig};
 use crate::db::HubStore;
 use crate::geocoder::{
@@ -474,7 +476,7 @@ async fn c7_t09_redirect() {
         let error = geocoder_for(&redirecting.endpoint)
             .reverse_with_egress_guard(point(51.5, -0.25), &CountingGuard::permitting())
             .await
-            .expect_err("a redirect is an error");
+            .labelled_err("c7_t09_redirect", "a redirect is an error");
         assert!(matches!(error, GeocoderError::HttpStatus(302)), "{error:?}");
         assert_eq!(redirecting.count(), 1);
         assert_eq!(target.count(), 0);
@@ -551,7 +553,7 @@ async fn c7_t11_revoke() {
         let error = geocoder
             .reverse_with_egress_guard(here, &revoked)
             .await
-            .expect_err("revoked during the wait");
+            .labelled_err("c7_t11_revoke", "revoked during the wait");
         assert!(matches!(error, GeocoderError::EgressDenied), "{error:?}");
         assert_eq!(revoked.checks(), 2);
         assert_eq!(stub.count(), 2);
@@ -663,7 +665,8 @@ async fn c7_t14_safe_errors() {
             "mailto:geo@example.test",
         ] {
             errors.push(
-                reverse_request_url(&url(endpoint), here, "en-GB").expect_err("a refused endpoint"),
+                reverse_request_url(&url(endpoint), here, "en-GB")
+                    .labelled_err("c7_t14_safe_errors", "a refused endpoint"),
             );
         }
 
@@ -774,7 +777,7 @@ async fn c7_t57_bad_language() {
         let error = geocoder
             .reverse_with_egress_guard(point(51.5, -0.25), &guard)
             .await
-            .expect_err("a bad language");
+            .labelled_err("c7_t57_bad_language", "a bad language");
         assert!(
             matches!(
                 error,
@@ -1052,7 +1055,12 @@ fn c7_t62_seed() {
     ));
 
     // The process-wide limiter starts seeded: it holds a start instant already.
-    let slot = global_limiter().lock().unwrap().expect("a seeded slot");
+    let slot = *global_limiter().lock().unwrap();
+    assert!(
+        slot.is_some(),
+        "assertion failed: c7_t62_seed: the process-wide limiter starts with a seeded slot"
+    );
+    let slot = slot.expect("labelled seeded-slot assertion passed");
     assert!(slot <= Instant::now());
 }
 
