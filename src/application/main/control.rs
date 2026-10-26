@@ -18,6 +18,10 @@ async fn main() -> ExitCode {
         .init();
 
     let cli = Cli::parse();
+    #[cfg(target_os = "macos")]
+    if matches!(&cli.command, Command::Serve) {
+        teslatlas_hub::macos_launch_agent::compact_inherited_logs();
+    }
     let kind = match &cli.command {
         Command::Migrate { .. } => dev::Kind::Import,
         Command::Serve => dev::Kind::Serve,

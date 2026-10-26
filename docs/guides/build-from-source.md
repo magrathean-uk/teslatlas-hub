@@ -61,14 +61,14 @@ the commit identifies it. Keep the commit, toolchain versions and artifact
 checksums with your build record.
 Build identity does not confer signing, notarisation or support.
 
-## macOS app and combined installer
+## macOS app
 
-The source includes an AppKit control app and a combined app/service packager
+The source includes an AppKit control app and an app-only builder
 for Apple-silicon macOS, with a macOS 13 deployment target. The current
 `scripts/build-macos-app.sh` is workspace-specific: it requires the parent
 workspace runner, external output locations and a reviewed Go host identity.
 A standalone clone does not contain that runner. There is no complete portable
-Mac installer recipe in this checkout.
+Mac app build recipe in this checkout.
 
 The packager checks Xcode, XcodeGen, rustup and exactly Go 1.27.3. It reads the
 current absolute `buildRoot` from the JSON emitted by
@@ -81,12 +81,12 @@ and the reviewed build host: the selected Go executable and its binary, Xcode
 27.1, its Apple Clang toolchain and the macOS 27.0 SDK. `TESLATLAS_GO` may
 select only a Go executable recorded there; another Go 1.27.3 installation is
 insufficient. The lock covers the proxy component only. It does not establish a
-working combined package or installed Hub.
+working app or installed Hub.
 
 The packaging source checks select exactly the maintained Rust 1.98.1 toolchain
 for `Cargo.toml`'s `1.98` minimum and reject incompatible minimum changes. That
 check proves the source-level toolchain selection only; a successful local
-package build and ordinary-user install or upgrade acceptance remain required.
+app build and ordinary-user install or upgrade acceptance remain required.
 
 Within the maintained workspace, the entry point is:
 
@@ -96,11 +96,12 @@ TESLATLAS_GO=/absolute/reviewed/path/to/go \
   ../scripts/dev/run.sh hub ./scripts/build-macos-app.sh
 ```
 
-The script prints the app and package paths on success. Its output root follows
+The script prints one app path on success. Its output root follows
 the workspace's configured lab and managed build roots, so inspect the printed
-paths instead of assuming a location under the source checkout. Mac builds are not
+path instead of assuming a location under the source checkout. Mac builds are not
 automatically Developer ID signed or notarised. Do not disable macOS security
-controls to install one. Once you have a validated package, follow
+controls to install one. Copy the validated app to `/Applications` or
+`~/Applications`, then follow
 [Mac setup](install-macos.md). The
 [source-run control app](../../macos/TeslatlasHubApp/DEVELOPMENT.md) describes
 unsigned development mode separately.

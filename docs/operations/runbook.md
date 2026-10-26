@@ -24,7 +24,7 @@ sudo journalctl -u teslatlas-hub -n 200 --no-pager
 ```
 
 On macOS, press **Command-L** for the bounded combined log and diagnostics view.
-CLI use must run as the signed-in user with the absolute packaged binary path;
+CLI use must run as the signed-in user with the absolute app-embedded binary path;
 see [CLI reference](../guides/cli.md#platform-invocation).
 
 ## Start, stop, and restart
@@ -38,8 +38,10 @@ sudo /usr/bin/teslatlas-hub service stop
 sudo /usr/bin/teslatlas-hub service restart
 ```
 
-On macOS, use the control app or run the packaged binary as the signed-in user,
-using the path in [CLI reference](../guides/cli.md#platform-invocation).
+On macOS, use **Start Hub**, **Stop Hub** and **Restart Hub** in the app. Stop
+persists across logins until Start Hub enables the agent again. Data commands
+use the app-embedded binary as the signed-in user; see
+[CLI reference](../guides/cli.md#platform-invocation).
 
 An intentional stop is a stable stopped state. It stops new collection, closes
 Tesla streaming, terminates supervised command-proxy and receiver connections,
@@ -55,6 +57,14 @@ enrolment. The single Hub service command is otherwise the lifecycle control
 for all network-owning processes.
 
 ## Upgrade
+
+On macOS, retain a backup, use **Stop Hub** in the app, then quit it. Replace
+**Teslatlas Hub.app** in `/Applications` or `~/Applications` and open the new
+copy. Run diagnostics before choosing **Start Hub**. The app replaces an older
+per-user agent after preflight; see [Upgrade and rollback](../releases/upgrade.md)
+for installer-era administrator cleanup.
+
+For a Debian package installation:
 
 1. Verify and retain a data backup.
 2. Verify the new source tag, exact version, notices, and locally built package.

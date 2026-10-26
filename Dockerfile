@@ -23,7 +23,6 @@ COPY src ./src
 COPY examples ./examples
 COPY tests ./tests
 COPY fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql ./fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql
-COPY packaging/com.teslatlas.hub.plist.in ./packaging/com.teslatlas.hub.plist.in
 COPY packaging/docker/initialize-volume.sh ./packaging/docker/initialize-volume.sh
 RUN TESLATLAS_HUB_SOURCE_COMMIT="${TESLATLAS_HUB_SOURCE_COMMIT}" \
     SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH}" \

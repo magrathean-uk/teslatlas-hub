@@ -40,9 +40,9 @@ use super::{
     MAX_MIGRATION_ENCRYPTION_KEY_BYTES, MAX_MIGRATION_POSTGRES_PASSWORD_BYTES,
     MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES, MAX_MIGRATION_TOKEN_BYTES,
     MAX_MIGRATION_TOKEN_FILE_BYTES, MacCommandProxySpec, MacServeControl,
-    MacServeWorkerStopTimeout, MigrationSecretReadError, ServiceCommand,
-    clear_provider_credentials, command_requires_user_hub_admission, decode_setup_fleet_stdin,
-    migration_start_requested, migration_stop_confirmed, persist_fleet_setup_and_drop_legacy,
+    MacServeWorkerStopTimeout, MigrationSecretReadError, clear_provider_credentials,
+    command_requires_user_hub_admission, decode_setup_fleet_stdin, migration_start_requested,
+    migration_stop_confirmed, persist_fleet_setup_and_drop_legacy,
     persist_legacy_setup_and_drop_fleet, persist_migrated_legacy_tokens,
     read_migration_encryption_key, read_migration_postgres_password, read_migration_secret,
     read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
@@ -2254,9 +2254,10 @@ fn migrate_copies_legacy_tokens_without_deleting_fleet() {
     assert!(teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(target_os = "linux")]
 #[test]
 fn service_commands_parse_without_live_store_admission() {
+    use super::ServiceCommand;
     for (name, expected) in [
         ("status", "status"),
         ("start", "start"),
@@ -2345,9 +2346,6 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
             history_only: false,
         }
     ));
-    assert!(!command_requires_user_hub_admission(&Command::Service {
-        command: ServiceCommand::Status,
-    }));
     assert!(!command_requires_user_hub_admission(&Command::Control {
         vehicle_id: None,
         command: ControlCommand::Pause,
@@ -2918,3 +2916,6 @@ fn default_pairing_presentation_includes_a_plain_link() {
     assert!(text.contains("Scan with Teslatlas:"));
     assert!(text.contains(&format!("Pairing link: {}", uri.as_str())));
 }
+
+#[path = "service_cli_tests.rs"]
+mod service_cli_tests;

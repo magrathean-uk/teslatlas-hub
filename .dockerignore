@@ -31,4 +31,3 @@ repository-roots/
 fixtures/teslamate-postgres/
 TeslatlasCore.xcframework/
 macos/
-packaging/macos-service/

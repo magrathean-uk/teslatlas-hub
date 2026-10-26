@@ -35,9 +35,12 @@ See the [privacy policy](../legal/privacy.md) for the full deployment-role state
 
 ## Deletion
 
-Stopping or uninstalling Hub does not delete history. The macOS uninstaller and
-Debian package intentionally preserve data by default. Permanent deletion must
-be a separate deliberate action after backup-retention obligations are checked.
+Stopping Hub does not delete history. On macOS, Remove Background Service
+preserves data; Delete Hub and Data removes the service, Hub folder, logs and
+app-owned settings and caches after confirmation. Backups and exports elsewhere
+remain. It refuses a Hub folder containing a backup, export, link or another
+disk. The Debian package preserves data by default. Permanent deletion is a
+separate deliberate action after backup-retention obligations are checked.
 
 Never attach a catalogue, pack, production log, VIN, coordinate, token, or
 pairing payload to a public issue.

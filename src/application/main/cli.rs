@@ -13,7 +13,7 @@ struct Cli {
     command: Command,
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 #[derive(Debug, Subcommand)]
 enum ServiceCommand {
     /// Print the installed service state.
@@ -166,7 +166,8 @@ enum ControlCommand {
     Pause,
     /// Resume Owner API and streaming collection for the selected car.
     Resume,
-    /// Stop collection and remove the persisted Tesla account credentials.
+    /// Stop the service and remove the persisted Tesla account credentials. On macOS
+    /// the service stays stopped across logins until Start Hub in the app.
     #[command(name = "sign-out")]
     SignOut,
     /// Explicitly wake the selected car once.
@@ -464,11 +465,8 @@ enum Command {
         #[arg(long, default_value_t = 3_600, value_parser = clap::value_parser!(u64).range(1..))]
         duration_seconds: u64,
     },
-    /// Install and start the minimal per-user macOS Hub LaunchAgent.
-    #[cfg(target_os = "macos")]
-    Install,
-    /// Control the installed Hub service.
-    #[cfg(unix)]
+    /// Control the installed Linux service.
+    #[cfg(target_os = "linux")]
     Service {
         #[command(subcommand)]
         command: ServiceCommand,

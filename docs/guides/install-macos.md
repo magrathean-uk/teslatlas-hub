@@ -4,26 +4,21 @@ Teslatlas Hub targets Apple-silicon Macs running macOS 13 or later. This guide
 describes the installation and control flow; verify it against your exact
 source-built artifact before relying on a deployment.
 
-Build your own package using [Build from source](build-from-source.md).
-Prebuilt GitHub releases are no longer provided. By default the app is ad-hoc signed
-and the combined installer is unsigned and unnotarised. Use the combined
-installer for installation and upgrades; in-app service installation,
-reinstallation, and update are unavailable in this distribution. The embedded
-installer requires official-release metadata and Gatekeeper trust, which this
-build does not provide. The unsigned installer can be blocked by macOS or
-organisation policy. Do not disable system-wide security controls to install it.
-For an existing installation, follow [Upgrade and rollback](../releases/upgrade.md).
+Build the app using [Build from source](build-from-source.md). Prebuilt GitHub
+releases are no longer provided. Local builds are ad-hoc signed; they do not
+automatically gain Developer ID signing or notarisation. For an existing
+installation, follow [Upgrade and rollback](../releases/upgrade.md).
 
 ## Install
 
-1. Open the `TeslatlasHub.pkg` produced by your validated local build.
-2. Complete the macOS Installer flow. It installs **Teslatlas Hub.app** in
-   `/Applications` and the service payload in
-   `/Library/Application Support/Teslatlas Hub`.
-3. Open `/Applications/Teslatlas Hub.app`.
-4. Choose Fleet API, legacy login, or TeslaMate migration.
-5. Complete account setup and diagnostics.
-6. Confirm the dashboard reports **Hub is running**, diagnostics pass, and
+1. Copy the validated **Teslatlas Hub.app** to `/Applications` or
+   `~/Applications`. Keep it on the Mac's local disk; an external volume or
+   an App Translocation location cannot host the per-user agent.
+2. Open the app from that location.
+3. Choose Fleet API, legacy login, or migration from the source database.
+4. Complete account setup and diagnostics, then choose **Start Hub**. The app
+   writes and loads its per-user LaunchAgent after configuration preflight.
+5. Confirm the dashboard reports **Hub is running**, diagnostics pass, and
    the intended vehicles and fresh activity are visible. Process health alone
    does not prove that new vehicle data is arriving.
 
@@ -86,44 +81,25 @@ see [Pair your client](getting-started.md#pair-your-client).
 
 ## How the service is installed
 
-The product installer includes both the app and a service-only component. The
-app also carries `Contents/Resources/TeslatlasHubService.pkg`, but this
-distribution cannot install that embedded package through the app. Use the
-combined installer to install or update the service. A
-per-user LaunchAgent owns the running Hub service for the signed-in user.
+The app writes `~/Library/LaunchAgents/com.teslatlas.hub.plist` for the signed-in
+user. The agent runs the Hub binary embedded in the app with the private
+per-user configuration. Start validates that configuration before enabling and
+loading the agent. A failed preflight keeps Hub stopped.
 
-The app keeps Hub stopped when setup, version admission, package verification,
-or diagnostics fail. It never silently starts an unconfigured collector.
-
-When setup invokes the packaged `install` command to activate or replace the
-per-user service, Hub preflights the configuration before interruption, stops
-the current LaunchAgent, waits for its lifetime lock, and prepares the replacement.
-It treats replacement as successful only after one stable process owns the lock
-and accepts connections on the configured listener. If preparation, launch or
-readiness fails, it attempts to restore the previous files and running service.
-Retain the previous package and a verified backup: this bounded service recovery
-does not prove the whole installer journey or provide cross-version data rollback.
+After the app is replaced or moved, it rewrites the agent to reference the
+current app and replaces an older app-managed, Rust-installed or installer-era
+agent. Configuration and data stay in the user's Hub folder. The app does not
+remove an installer-era root payload; see the administrator cleanup below.
 
 ## Service controls
 
-Use the app, or run the installed binary by its absolute path. The package does
-not add a shell command to `PATH`:
-
-```sh
-HUB='/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub'
-CONFIG="$HOME/Library/Application Support/Teslatlas Hub/config.toml"
-"$HUB" service status
-"$HUB" --config "$CONFIG" service start
-"$HUB" --config "$CONFIG" service restart
-"$HUB" service stop
-```
+Use **Start Hub**, **Stop Hub…** and **Restart Hub** in the app. Stop persists
+across logins and reboots until **Start Hub** enables the agent again. There
+are no macOS CLI `install` or `service` verbs. For data commands, use the
+[app-embedded CLI](cli.md#platform-invocation) as the signed-in user.
 
 Stopping Hub pauses collection and closes streaming, HTTP, command-proxy, and
 supervised companion connections. Stored history remains intact.
-
-The replacement and recovery checks are implemented in the current source but
-have not established ordinary-user installation or upgrade acceptance for a
-new package. Verify the exact package on the intended Mac before relying on it.
 
 ## Logs and diagnostics
 
@@ -136,17 +112,45 @@ it; precise telemetry is sensitive even when ordinary identifiers are removed.
 
 ## Uninstall
 
-Open **Service Details → Uninstall Hub…**. The default uninstall removes the
-current user's LaunchAgent, service payload, and logs but preserves the Hub
-database and configuration. Permanent data deletion is a separate confirmed
-choice.
+Service Details offers two choices:
 
-The uninstaller refuses to remove a shared service payload while another local
-user still has a Hub LaunchAgent.
+- **Remove Background Service** removes the per-user agent and preserves all
+  Hub data, configuration and logs.
+- **Delete Hub and Data** confirms removal of the service, Hub support folder,
+  logs and the app's own settings and caches. Backups and exports saved
+  elsewhere remain. It refuses with a reason if the Hub folder contains a
+  backup, export, link or another disk.
+
+Move the app to the Trash last, after the service has been removed.
+
+For terminal-only service removal, run these as the signed-in user in order.
+If bootout reports that the job is already absent, continue; resolve other
+errors before removing its plist:
+
+```sh
+launchctl bootout gui/$(id -u)/com.teslatlas.hub
+launchctl enable gui/$(id -u)/com.teslatlas.hub
+rm "$HOME/Library/LaunchAgents/com.teslatlas.hub.plist"
+```
+
+Terminal-only data removal follows agent removal: after checking backups,
+exports, links and mount points, remove only
+`~/Library/Application Support/Teslatlas Hub` and
+`~/Library/Logs/Teslatlas Hub`. Move the app to the Trash last.
+
+### Installer-era administrator cleanup
+
+The app replaces the old per-user agent but leaves its root-owned payload
+alone. After every local user has removed or replaced their old agent, an
+administrator can remove `/Library/Application Support/Teslatlas Hub` and the
+old `/private/var/tmp/com.teslatlas.hub-upgrade-<uid>` directory for each
+identified user. Check each exact target before removal; the per-user Hub data
+under `~/Library` is separate. Forget the two old receipts with
+`sudo pkgutil --forget com.teslatlas.hub.service` and
+`sudo pkgutil --forget com.teslatlas.hub.app`.
 
 ## Build from source
 
-See [Build from source](build-from-source.md) for the current packaging
-requirements and limitations. The Mac installer helper depends on the maintained
-workspace and is not a complete standalone-clone procedure. Source builds do not
-automatically gain trusted signing or notarisation.
+See [Build from source](build-from-source.md) for the workspace-specific app
+builder and its limitations. Source builds do not automatically gain trusted
+signing or notarisation.

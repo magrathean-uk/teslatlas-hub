@@ -93,7 +93,6 @@ cp LICENSE NOTICE "$context_root/"
 cp -R src examples tests "$context_root/"
 cp fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql \
     "$context_root/fixtures/teslamate-corpus/v1/"
-cp packaging/com.teslatlas.hub.plist.in "$context_root/packaging/"
 cp packaging/docker/initialize-volume.sh "$context_root/packaging/docker/"
 TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
     CARGO_TARGET_DIR="$root/target/docker-context-check" \
@@ -134,7 +133,6 @@ grep -F 'COPY Cargo.toml Cargo.lock build.rs source_identity.rs ./' Dockerfile >
 grep -F 'COPY compute ./compute' Dockerfile >/dev/null
 grep -F 'COPY LICENSE NOTICE ./' Dockerfile >/dev/null
 grep -F 'COPY fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql ./fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql' Dockerfile >/dev/null
-grep -F 'COPY packaging/com.teslatlas.hub.plist.in ./packaging/com.teslatlas.hub.plist.in' Dockerfile >/dev/null
 grep -F 'COPY packaging/docker/initialize-volume.sh ./packaging/docker/initialize-volume.sh' Dockerfile >/dev/null
 grep -F 'TESLATLAS_HUB_SOURCE_COMMIT="${TESLATLAS_HUB_SOURCE_COMMIT}"' Dockerfile >/dev/null
 grep -F 'ARG SOURCE_DATE_EPOCH' Dockerfile >/dev/null

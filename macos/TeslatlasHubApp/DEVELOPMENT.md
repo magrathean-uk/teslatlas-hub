@@ -1,6 +1,6 @@
 # Source-run control app
 
-The AppKit control app keeps its installed-service behavior by default. An unsigned
+The AppKit control app keeps its per-user LaunchAgent behaviour by default. An unsigned
 source build can instead control a source-built Hub only when all of these environment
 variables are supplied and the opt-in value is exactly `1`:
 

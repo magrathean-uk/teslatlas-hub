@@ -117,6 +117,14 @@ fn migration_stop_confirmed(answer: &str) -> bool {
     matches!(answer.trim(), "y" | "Y")
 }
 
+#[cfg(target_os = "macos")]
+fn macos_migration_start_request() -> serde_json::Value {
+    serde_json::json!({
+        "serviceStartRequested": true,
+        "next": "open Teslatlas Hub.app and choose Start Hub",
+    })
+}
+
 #[cfg(unix)]
 fn migration_start_requested(answer: &str) -> bool {
     matches!(answer.trim(), "y" | "Y")

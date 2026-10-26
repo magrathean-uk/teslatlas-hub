@@ -6,9 +6,9 @@ files do not establish current platform acceptance.
 
 Created by György Bolyki. Published and maintained by MAGRATHEAN UK LTD.
 
-Hub is source-only. [Build your own package](guides/build-from-source.md)
-before installing. The current Mac installer builder depends on the maintained
-workspace; a standalone clone is not a complete Mac packaging environment.
+Hub is source-only. [Build your own app or Debian package](guides/build-from-source.md)
+before installing. The current Mac app builder depends on the maintained
+workspace; a standalone clone is not a complete Mac build environment.
 GitHub releases and downloadable assets are no longer
 provided; existing source tags and historical notes remain available.
 
@@ -23,7 +23,7 @@ provided; existing source tags and historical notes remain available.
    after configuring a secure connection.
 4. Keep a [recovery copy](operations/backup-and-recovery.md).
 
-Looking for an installer? Follow [Build from source](guides/build-from-source.md).
+For local build instructions, follow [Build from source](guides/build-from-source.md).
 If something fails, start with [Troubleshooting](guides/troubleshooting.md).
 
 ## Start here

@@ -39,10 +39,9 @@ this gate. GitHub Release assets are outside the v1.0.0 publication scope.
 
 ## Local packages
 
-- `scripts/build-macos-app.sh` produces `dist/TeslatlasHub.pkg` containing the
-  app component and service component.
-- The app, embedded Hub CLI, service component, and installer metadata agree on
-  version `1.0.0`.
+- `scripts/build-macos-app.sh` produces the local macOS app and prints its path.
+- The app and embedded Hub CLI versions agree with the app-build authority in
+  `Cargo.toml`.
 - Debian packages are built natively for their target architecture and contain
   matching Hub, sidecar, legal-bundle, and evidence inputs.
 - Local package installation, first run, migration, repeat import, diagnostics,

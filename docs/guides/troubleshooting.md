@@ -4,26 +4,17 @@ Start with the message shown by Hub. Preserve your data and configuration;
 uninstalling, deleting a database or repeatedly reconnecting an account is not
 a first diagnostic step. Review logs before sharing them.
 
-## macOS blocks the installer
-
-The current combined installer is unsigned and unnotarised. Verify that it
-came from the official release and matches its published checksums. A matching
-checksum confirms the downloaded bytes, not Apple approval. If macOS or your
-organisation blocks installation, do not disable system-wide protections.
-Use an administrator-approved distribution path or wait for a trusted signed
-release. See [release verification](../releases/verification.md).
-
 ## An older Mac app opens after installation
 
 Quit the control app, then open **Teslatlas Hub.app** directly from
 `/Applications` in Finder. Do not open a copy from Downloads, a development
 build folder or an old Dock shortcut. Check **About Teslatlas Hub** for the app
 version and **Service Details** for service information. Opening the intended
-app does not itself replace an older service.
+app allows its per-user agent to be reconciled with the embedded Hub.
 
 If the service is older, follow [Upgrade and rollback](../releases/upgrade.md)
-and use the matching combined installer. Do not delete your data folder or
-install only an app bundle to repair a service-version mismatch.
+and replace the app in `/Applications` or `~/Applications`. Keep your data
+folder; Start validates the configuration before loading the current agent.
 
 ## Quitting the app does not stop collection
 
@@ -76,8 +67,8 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub \
   --config /etc/teslatlas-hub/config.toml status
 ```
 
-Those are Debian package commands. On macOS, use the control app or run the
-packaged binary as the signed-in user; see
+Those are Debian package commands. On macOS, use the control app or run its
+embedded binary as the signed-in user from `/Applications` or `~/Applications`; see
 [CLI reference](cli.md#platform-invocation).
 
 Check absolute paths, private-file ownership and mode, loopback/TLS binding,
@@ -103,7 +94,7 @@ sudo /usr/bin/teslatlas-hub service status
 ```
 
 The second command is for Debian. On macOS, check service state in the control
-app or use the packaged binary path in the CLI reference.
+app and use its embedded binary for data commands as described in the CLI reference.
 
 A normal Hub stop closes collection, streaming, supervised children, active
 connections after the bounded grace period, and the listener.

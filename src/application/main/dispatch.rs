@@ -292,39 +292,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     #[cfg(target_os = "macos")]
-    if let Command::Service { command } = &cli.command {
-        match command {
-            ServiceCommand::Status => {
-                let loaded = teslatlas_hub::macos_launch_agent::service_is_loaded()?;
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": if loaded { "running" } else { "stopped" },
-                        "loaded": loaded,
-                    })
-                );
-            }
-            ServiceCommand::Start => {
-                let config = HubConfig::load(&config_path)?;
-                teslatlas_hub::macos_launch_agent::preflight_hub_for_config(&config)?;
-                teslatlas_hub::macos_launch_agent::start_preflighted_installed()?;
-                println!("{}", serde_json::json!({"status": "running"}));
-            }
-            ServiceCommand::Stop => {
-                teslatlas_hub::macos_launch_agent::stop_installed()?;
-                println!("{}", serde_json::json!({"status": "stopped"}));
-            }
-            ServiceCommand::Restart => {
-                let config = HubConfig::load(&config_path)?;
-                teslatlas_hub::macos_launch_agent::preflight_hub_for_config(&config)?;
-                teslatlas_hub::macos_launch_agent::restart_preflighted_installed()?;
-                println!("{}", serde_json::json!({"status": "running"}));
-            }
-        }
-        return Ok(());
-    }
-
-    #[cfg(target_os = "macos")]
     if let Command::ServePreflight { mode, history_only } = &cli.command {
         let config = HubConfig::load(&config_path)?;
         if *history_only {
@@ -393,14 +360,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         return Err("serve requires a Unix platform".into());
     }
 
-    #[cfg(target_os = "macos")]
-    if matches!(&cli.command, Command::Install) {
-        let (config, digest) = HubConfig::load_with_digest(&config_path)?;
-        let installed_binary = replace_macos_launch_agent(&config, &config_path, digest)?;
-        println!("installed {}; launch requested", installed_binary.display());
-        return Ok(());
-    }
-
     // Long-lived service, import, credential, and recovery commands take the
     // local instance lock. `control` uses short SQLite transactions so it can
     // intentionally operate while the collector is running.
@@ -456,9 +415,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         drop(admitted_user_hub);
         #[cfg(target_os = "macos")]
         if start_hub {
-            let (config, digest) = HubConfig::load_with_digest(&config_path)?;
-            let installed_binary = replace_macos_launch_agent(&config, &config_path, digest)?;
-            println!("installed {}; launch requested", installed_binary.display());
+            println!("{}", macos_migration_start_request());
         }
         #[cfg(target_os = "linux")]
         if start_hub {
@@ -805,7 +762,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         | Command::VerifyObservation { .. } => {
             unreachable!("read-only commands return before opening writable Hub state")
         }
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         Command::Service { .. } => {
             unreachable!("service control returns before opening writable Hub state")
         }
@@ -965,8 +922,6 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
             }
             observe_result?;
         }
-        #[cfg(target_os = "macos")]
-        Command::Install => unreachable!("install returns before opening Hub state"),
         #[cfg(unix)]
         Command::Migrate { .. } => {
             unreachable!("migration returns before opening common Hub state")
@@ -1021,48 +976,4 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
     catalogue_checkpoint.finish()?;
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn replace_macos_launch_agent(
-    config: &HubConfig,
-    config_path: &Path,
-    config_digest: teslatlas_hub::protocol::Sha256Digest,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    use teslatlas_hub::macos_launch_agent;
-
-    // Validate before interrupting a healthy service. The prepared install
-    // repeats this check while holding the instance lock.
-    macos_launch_agent::preflight_hub_for_config(config)?;
-    let previously_loaded = macos_launch_agent::stop_for_replacement()?;
-
-    let prepared = (|| -> Result<_, Box<dyn std::error::Error>> {
-        let admission = macos_launch_agent::admit_after_service_stop(&config.data_dir)?;
-        let installed = macos_launch_agent::prepare_install(&config.data_dir, config_path)?;
-        drop(admission);
-        Ok(installed)
-    })();
-    let installed = match prepared {
-        Ok(installed) => installed,
-        Err(error) if previously_loaded => {
-            if let Err(restart_error) = macos_launch_agent::start_preflighted_installed() {
-                return Err(format!(
-                    "{error}; previous Hub service restart failed: {restart_error}"
-                )
-                .into());
-            }
-            if let Err(readiness_error) = macos_launch_agent::wait_for_current_installed_readiness()
-            {
-                return Err(format!(
-                    "{error}; previous Hub service restarted but did not become ready: {readiness_error}"
-                )
-                .into());
-            }
-            return Err(format!("{error}; previous Hub service restarted").into());
-        }
-        Err(error) => return Err(error),
-    };
-
-    macos_launch_agent::start_prepared(&installed, config, config_digest, previously_loaded)?;
-    Ok(installed.binary)
 }

@@ -8,22 +8,22 @@ connects to Hub to synchronise history.
 
 These are source and packaging targets, not a claim of current acceptance on
 all hosts. The Mac packager depends on the maintained workspace; read the
-[build limitations](build-from-source.md#macos-app-and-combined-installer) first.
+[build limitations](build-from-source.md#macos-app) first.
 
 | Host | Interface | Local build |
 |---|---|---|
-| Apple-silicon Mac, macOS 13+ | Native app and CLI | Combined installer with Fleet companions |
+| Apple-silicon Mac, macOS 13+ | Native app and CLI | App copied to Applications |
 | Debian 13, amd64 or arm64 | CLI and systemd | Core/Legacy package; no Fleet companions |
 
 Start with [Mac setup and everyday use](install-macos.md) or
 [Debian installation](install-debian.md), after [building from source](build-from-source.md).
-No prebuilt releases are provided. Local Mac installers are unsigned and
-unnotarised by default and may be blocked by macOS.
+No prebuilt releases are provided. Local Mac apps are ad-hoc signed and
+unnotarised by default.
 
-Current source and component checks do not establish a completed Mac installer
+Current source and component checks do not establish a completed Mac setup
 journey or continuous installed collection. A bounded source-run observation is
 useful evidence for collection behaviour, but it does not substitute for those
-package and ordinary-use checks.
+app and ordinary-use checks.
 
 ## Choose a setup path
 

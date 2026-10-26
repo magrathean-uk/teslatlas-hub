@@ -30,7 +30,7 @@ usage() {
     cat <<'EOF'
 Usage: scripts/build-macos-app.sh [--check-go-toolchain|--check-go-toolchain-chain]
 
-Builds the local unsigned macOS app and combined installer.
+Builds the local ad-hoc-signed macOS app.
 
 Options:
   --check-go-toolchain        Validate and print the selected Go executable.
@@ -134,11 +134,6 @@ PROJECT="$PROJECT_DIR/TeslatlasHubApp.xcodeproj"
 RUST_BINARY="$TARGET_DIRECTORY/release/teslatlas-hub"
 PROXY_BINARY="$GENERATED/tesla-http-proxy"
 FLEET_TELEMETRY_BINARY="$GENERATED/fleet-telemetry"
-SERVICE_PACKAGE="$GENERATED/TeslatlasHubService.pkg"
-APP_COMPONENT_PACKAGE="$GENERATED/TeslatlasHubApp.pkg"
-APP_COMPONENT_SCRIPTS="$GENERATED/app-component-scripts"
-PRODUCT_DISTRIBUTION="$GENERATED/TeslatlasHub-distribution.xml"
-PRODUCT_EXPANSION="$GENERATED/expanded-product"
 PRODUCT="$DERIVED/Build/Products/Release/Teslatlas Hub.app"
 DIST="$TESLATLAS_LAB/build/hub/dist"
 DIST_APP="$DIST/Teslatlas Hub.app"
@@ -293,17 +288,6 @@ done
     --fleet-telemetry-evidence "$FLEET_TELEMETRY_EVIDENCE" \
     --output-dir "$LEGAL_BUNDLE" >/dev/null
 
-"$ROOT/scripts/build-macos-service-package.sh" \
-    --binary "$RUST_BINARY" \
-    --proxy-binary "$PROXY_BINARY" \
-    --fleet-telemetry-binary "$FLEET_TELEMETRY_BINARY" \
-    --version "$version" \
-    --source-commit "$SOURCE_COMMIT" \
-    --legal-bundle "$LEGAL_BUNDLE" \
-    --go-proxy-evidence "$GO_EVIDENCE" \
-    --fleet-telemetry-evidence "$FLEET_TELEMETRY_EVIDENCE" \
-    --output "$SERVICE_PACKAGE" >/dev/null
-
 xcodegen generate --quiet \
     --spec "$PROJECT_DIR/project.yml" \
     --project "$PROJECT_DIR"
@@ -336,11 +320,9 @@ resources="$PRODUCT/Contents/Resources"
 [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$PRODUCT/Contents/Info.plist")" = AppIcon ] \
     || die "App icon Info.plist value is missing"
 /usr/bin/install -m 0755 "$RUST_BINARY" "$resources/teslatlas-hub"
-# Keep a separately signed app resource for release provenance; the service
-# package copy is the LaunchAgent's runtime sibling beside the Hub binary.
+# The command proxy must stay beside the Hub binary: Serve starts it from its own directory.
 /usr/bin/install -m 0755 "$PROXY_BINARY" "$resources/tesla-http-proxy"
 /usr/bin/install -m 0755 "$FLEET_TELEMETRY_BINARY" "$resources/fleet-telemetry"
-/usr/bin/install -m 0644 "$SERVICE_PACKAGE" "$resources/TeslatlasHubService.pkg"
 for required_release_legal_file in LICENSE NOTICE docs/legal/third-party-notices.md \
     docs/legal/provenance.md docs/legal/additional-terms.md \
     docs/legal/source-availability.md docs/releases/verification.md; do
@@ -382,8 +364,6 @@ done
 is_executable_macho "$resources/teslatlas-hub" \
     || die "embedded Hub binary is not a Mach-O executable"
 require_macos_13_or_earlier "$resources/teslatlas-hub"
-[ -f "$resources/TeslatlasHubService.pkg" ] \
-    || die "service package resource is missing"
 [ "$(/usr/bin/lipo -archs "$resources/tesla-http-proxy")" = arm64 ] \
     || die "embedded Tesla command proxy is not arm64-only"
 is_executable_macho "$resources/tesla-http-proxy" \
@@ -416,8 +396,7 @@ require_macos_13_or_earlier "$app_binary"
 
 # Rust and Go already emit valid ad-hoc signatures for these Apple-silicon
 # Mach-O binaries. Preserve their exact evidence-bound bytes here. Re-signing
-# nested resources would change the subjects before the release script can bind
-# them to the clean-build evidence.
+# nested resources would change the subjects bound to the clean-build evidence.
 for evidence_bound_binary in \
     "$resources/teslatlas-hub" \
     "$resources/tesla-http-proxy" \
@@ -465,25 +444,6 @@ reject_appledouble "$DIST_APP"
     || die "distribution app icon Info.plist value is missing"
 /usr/bin/codesign --verify --deep --strict "$DIST_APP"
 
-[ "$(/usr/bin/shasum -a 256 "$SERVICE_PACKAGE" | /usr/bin/awk '{print $1}')" \
-    = "$(/usr/bin/shasum -a 256 "$DIST_APP/Contents/Resources/TeslatlasHubService.pkg" | /usr/bin/awk '{print $1}')" ] \
-    || die "embedded service package does not match combined installer service component"
-[ ! -e "$DIST_APP/Contents/Resources/TeslatlasHub.pkg" ] \
-    && [ ! -L "$DIST_APP/Contents/Resources/TeslatlasHub.pkg" ] \
-    || die "app must not embed its outer installer"
-
-for generated_installer_input in "$APP_COMPONENT_PACKAGE" "$PRODUCT_DISTRIBUTION"; do
-    case "$generated_installer_input" in
-        "$GENERATED"/*) ;;
-        *) die "refusing unsafe generated installer input path" ;;
-    esac
-    if [ -e "$generated_installer_input" ] || [ -L "$generated_installer_input" ]; then
-        [ -f "$generated_installer_input" ] && [ ! -L "$generated_installer_input" ] \
-            || die "unsafe generated installer input path"
-        /bin/rm -f "$generated_installer_input"
-    fi
-done
-
 for distribution_package in "$DIST_PACKAGE" "$STALE_DIST_SERVICE_PACKAGE"; do
     case "$distribution_package" in
         "$TESLATLAS_LAB/build/hub/dist/TeslatlasHub.pkg"|"$TESLATLAS_LAB/build/hub/dist/TeslatlasHubService.pkg") ;;
@@ -495,118 +455,10 @@ for distribution_package in "$DIST_PACKAGE" "$STALE_DIST_SERVICE_PACKAGE"; do
         /bin/rm -f "$distribution_package"
     fi
 done
-[ ! -e "$STALE_DIST_SERVICE_PACKAGE" ] && [ ! -L "$STALE_DIST_SERVICE_PACKAGE" ] \
-    || die "stale public service-only installer was not removed"
-
-if [ -e "$APP_COMPONENT_SCRIPTS" ] || [ -L "$APP_COMPONENT_SCRIPTS" ]; then
-    [ -d "$APP_COMPONENT_SCRIPTS" ] && [ ! -L "$APP_COMPONENT_SCRIPTS" ] \
-        || die "unsafe app component scripts staging directory"
-    /usr/bin/find "$APP_COMPONENT_SCRIPTS" -depth -delete
-fi
-/bin/mkdir -m 0700 "$APP_COMPONENT_SCRIPTS"
-/usr/bin/install -m 0644 "$ROOT/packaging/macos-service/scripts/common.sh" \
-    "$APP_COMPONENT_SCRIPTS/common.sh"
-/usr/bin/install -m 0755 "$ROOT/packaging/macos-app/scripts/preinstall" \
-    "$APP_COMPONENT_SCRIPTS/preinstall"
-
-/usr/bin/pkgbuild --quiet \
-    --component "$DIST_APP" \
-    --identifier com.teslatlas.hub.app \
-    --version "$bundle_version" \
-    --install-location /Applications \
-    --ownership recommended \
-    --scripts "$APP_COMPONENT_SCRIPTS" \
-    "$APP_COMPONENT_PACKAGE" \
-    || die "cannot build app component package"
-/usr/bin/productbuild --synthesize \
-    --package "$APP_COMPONENT_PACKAGE" \
-    --package "$SERVICE_PACKAGE" \
-    "$PRODUCT_DISTRIBUTION" \
-    || die "cannot synthesize combined installer distribution"
-distribution_architecture_count=$( \
-    /usr/bin/grep -o 'hostArchitectures="[^"]*"' "$PRODUCT_DISTRIBUTION" \
-        | /usr/bin/wc -l | /usr/bin/tr -d '[:space:]'
-)
-[ "$distribution_architecture_count" = 1 ] \
-    || die "combined installer has an unexpected architecture declaration"
-/usr/bin/perl -0pi -e 's/hostArchitectures="[^"]*"/hostArchitectures="arm64"/' \
-    "$PRODUCT_DISTRIBUTION" \
-    || die "cannot constrain combined installer architecture"
-/usr/bin/grep -Fq 'hostArchitectures="arm64"' "$PRODUCT_DISTRIBUTION" \
-    || die "combined installer distribution is not arm64-only"
-if /usr/bin/grep -Fq 'x86_64' "$PRODUCT_DISTRIBUTION"; then
-    die "combined installer distribution supports a non-arm64 architecture"
-fi
-/usr/bin/productbuild \
-    --distribution "$PRODUCT_DISTRIBUTION" \
-    --package-path "$GENERATED" \
-    "$DIST_PACKAGE" \
-    || die "cannot build combined installer"
-[ -f "$DIST_PACKAGE" ] && [ ! -L "$DIST_PACKAGE" ] \
-    || die "final combined installer is missing"
-
-case "$PRODUCT_EXPANSION" in
-    "$GENERATED/expanded-product") ;;
-    *) die "refusing unsafe combined installer inspection output" ;;
-esac
-if [ -e "$PRODUCT_EXPANSION" ] || [ -L "$PRODUCT_EXPANSION" ]; then
-    [ -d "$PRODUCT_EXPANSION" ] && [ ! -L "$PRODUCT_EXPANSION" ] \
-        || die "unsafe combined installer inspection output"
-    /usr/bin/find "$PRODUCT_EXPANSION" -depth -delete
-fi
-/usr/sbin/pkgutil --expand-full "$DIST_PACKAGE" "$PRODUCT_EXPANSION" \
-    || die "generated combined installer cannot be inspected"
-[ -f "$PRODUCT_EXPANSION/Distribution" ] && [ ! -L "$PRODUCT_EXPANSION/Distribution" ] \
-    || die "expanded combined installer has no distribution"
-/usr/bin/grep -Fq 'hostArchitectures="arm64"' "$PRODUCT_EXPANSION/Distribution" \
-    || die "expanded combined installer is not arm64-only"
-if /usr/bin/grep -Fq 'x86_64' "$PRODUCT_EXPANSION/Distribution"; then
-    die "expanded combined installer supports a non-arm64 architecture"
-fi
-outer_app_component="$PRODUCT_EXPANSION/TeslatlasHubApp.pkg"
-outer_service_component="$PRODUCT_EXPANSION/TeslatlasHubService.pkg"
-[ -f "$outer_app_component/PackageInfo" ] && [ ! -L "$outer_app_component/PackageInfo" ] \
-    || die "combined installer does not contain its app component"
-/usr/bin/grep -Fq 'identifier="com.teslatlas.hub.app"' "$outer_app_component/PackageInfo" \
-    || die "combined installer app component has the wrong identifier"
-/usr/bin/grep -Fq 'install-location="/Applications"' "$outer_app_component/PackageInfo" \
-    || die "combined installer app component has wrong install location"
-outer_app="$outer_app_component/Payload/Teslatlas Hub.app"
-[ -d "$outer_app" ] && [ ! -L "$outer_app" ] \
-    || die "combined installer app component has no app payload"
-for app_install_script in preinstall common.sh; do
-    [ -f "$outer_app_component/Scripts/$app_install_script" ] \
-        && [ ! -L "$outer_app_component/Scripts/$app_install_script" ] \
-        || die "combined installer app component lacks its replacement script"
-    /usr/bin/cmp "$APP_COMPONENT_SCRIPTS/$app_install_script" \
-        "$outer_app_component/Scripts/$app_install_script" >/dev/null \
-        || die "combined installer app replacement script differs from staged input"
-done
-embedded_service_package="$outer_app/Contents/Resources/TeslatlasHubService.pkg"
-[ -f "$embedded_service_package" ] && [ ! -L "$embedded_service_package" ] \
-    || die "combined installer app component lacks its embedded service package"
-[ ! -e "$outer_app/Contents/Resources/TeslatlasHub.pkg" ] \
-    && [ ! -L "$outer_app/Contents/Resources/TeslatlasHub.pkg" ] \
-    || die "combined installer app component embeds its outer installer"
-[ -f "$outer_service_component/PackageInfo" ] \
-    && [ ! -L "$outer_service_component/PackageInfo" ] \
-    || die "combined installer does not contain its service component"
-/usr/bin/grep -Fq 'identifier="com.teslatlas.hub.service"' "$outer_service_component/PackageInfo" \
-    || die "combined installer service component has the wrong identifier"
-/usr/bin/grep -Fq 'install-location="/"' "$outer_service_component/PackageInfo" \
-    || die "combined installer service component has wrong install location"
-[ -f "$outer_service_component/Payload/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub" ] \
-    || die "combined installer service component has no service payload"
-[ ! -e "$outer_service_component/Payload/Applications" ] \
-    && [ ! -L "$outer_service_component/Payload/Applications" ] \
-    || die "combined installer service component contains an Applications payload"
-embedded_service_expansion="$PRODUCT_EXPANSION/embedded-service"
-[ ! -e "$embedded_service_expansion" ] && [ ! -L "$embedded_service_expansion" ] \
-    || die "unsafe embedded service inspection output"
-/usr/sbin/pkgutil --expand-full "$embedded_service_package" "$embedded_service_expansion" \
-    || die "embedded service package cannot be inspected"
-/usr/bin/diff -qr "$outer_service_component" "$embedded_service_expansion" >/dev/null \
-    || die "final embedded service package differs from installed service component"
+[ ! -e "$DIST_PACKAGE" ] && [ ! -L "$DIST_PACKAGE" ] \
+    && [ ! -e "$STALE_DIST_SERVICE_PACKAGE" ] \
+    && [ ! -L "$STALE_DIST_SERVICE_PACKAGE" ] \
+    || die "stale installer was not removed"
 
 for dist_evidence in "$DIST_GO_EVIDENCE" "$DIST_FLEET_TELEMETRY_EVIDENCE" "$DIST_LEGAL_BUNDLE"; do
     case "$dist_evidence" in
@@ -627,8 +479,6 @@ done
     --fleet-telemetry-evidence "$DIST_FLEET_TELEMETRY_EVIDENCE" >/dev/null \
     || die "distribution dependency legal bundle is invalid"
 
-# The external product includes the app component plus the service-only component.
-# Its embedded service package remains only for in-app service management.
 # Drop the exact Xcode staging tree so repeated builds do not retain hundreds
 # of megabytes. Failed builds intentionally keep it for diagnosis.
 case "$DERIVED" in
@@ -643,4 +493,4 @@ esac
 
 printf '%s\n' \
     'build-macos-app: local unsigned build; release signing and notarization are not included.' >&2
-printf '%s\n%s\n' "$DIST_APP" "$DIST_PACKAGE"
+printf '%s\n' "$DIST_APP"

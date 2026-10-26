@@ -449,7 +449,6 @@
       "class": "MAGRATHEAN-ORIGINAL",
       "rationale": "Repository-maintained launchd, systemd, Debian, and macOS package configuration and lifecycle scripts.",
       "paths": [
-        "packaging/com.teslatlas.hub.plist.in",
         "packaging/linux/command-proxy.env",
         "packaging/linux/config.toml",
         "packaging/linux/control.in",
@@ -461,12 +460,7 @@
         "packaging/linux/teslatlas-command-proxy.service",
         "packaging/linux/teslatlas-fleet-telemetry.service",
         "packaging/linux/teslatlas-hub-terminal-failure.target",
-        "packaging/linux/teslatlas-hub.service",
-        "packaging/macos-service/com.teslatlas.hub.plist.in",
-        "packaging/macos-service/fleet-telemetry.json.example"
-      ],
-      "globs": [
-        "packaging/macos-service/scripts/*"
+        "packaging/linux/teslatlas-hub.service"
       ]
     },
     {
@@ -631,7 +625,6 @@
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubDataRemoval.swift",
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubL10n.swift",
         "macos/TeslatlasHubApp/TeslatlasHubApp/HubLaunchAgent.swift",
-        "packaging/macos-app/scripts/preinstall",
         "src/api/server/tests/b3_c6_c1.rs",
         "src/api/server/tests/b3_c6_c2.rs",
         "src/api/server/tests/b3_c6_s1.rs",

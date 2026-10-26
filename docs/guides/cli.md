@@ -15,7 +15,7 @@ package adds the binary to `PATH`. Use the installed platform form:
 | Platform | Data/config commands | Service commands |
 |---|---|---|
 | Debian package | `sudo -u teslatlas -- /usr/bin/teslatlas-hub` | `sudo /usr/bin/teslatlas-hub` |
-| macOS package | `"/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub"` as the signed-in user | Same absolute path, or the app |
+| macOS app | `"/Applications/Teslatlas Hub.app/Contents/Resources/teslatlas-hub"` as the signed-in user; use `~/Applications` if installed there | Start, Stop and Restart in the app |
 | Source checkout | `./target/release/teslatlas-hub` | Depends on the operator's supervisor |
 
 Pass `--config ABSOLUTE_PATH` before or after the command. Commands that need
@@ -32,8 +32,11 @@ appear in process arguments.
 | `setup-fleet` | Configure Fleet credentials from bounded JSON on standard input. |
 | `configure-fleet-telemetry` | Install the fixed Fleet Telemetry policy on configured vehicles. |
 | `serve` | Run the HTTP service in the foreground. |
-| `service status\|start\|stop\|restart` | Control the installed service. |
-| `install` | Install the minimal per-user macOS LaunchAgent. |
+| `service status\|start\|stop\|restart` | Control the installed Linux service; Linux only. |
+
+On macOS, `control sign-out` disables the per-user agent, stops Hub and removes
+the persisted Tesla account credentials. It stays stopped across logins until
+**Start Hub** in the app enables it again.
 
 ## Health and maintenance
 

@@ -41,8 +41,8 @@ At a year boundary, use the ISO week-year, not the calendar year: 1 January
 
 ## Keep source and packages aligned
 
-Use one product version across the Rust CLI, locally built macOS app and
-installer, locally built Debian amd64 and ARM64 packages, protocol tooling,
+`Cargo.toml` is the macOS app-build version authority. Use one product version
+across the Rust CLI, locally built macOS app, Debian amd64 and ARM64 packages, protocol tooling,
 SDKs, Home Assistant integration, release notes, and any later
 authorized source tag. A source tag adds only a `v` prefix. The current
 source-only policy does not publish the locally verified packages.

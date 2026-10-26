@@ -201,7 +201,7 @@ for source_root in \
             }
         done
 done
-find "$ROOT/scripts" "$ROOT/packaging/linux" "$ROOT/packaging/macos-service" \
+find "$ROOT/scripts" "$ROOT/packaging/linux" \
     -type f \( -name '*.sh' -o -name '*.py' -o -name preinst -o -name postinst \
         -o -name prerm -o -name postrm \) -print |
     while IFS= read -r script_file; do

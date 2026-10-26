@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Small per-user LaunchAgent installer for the one Hub process.
+//! Serve preflight, inherited log compaction, the persistent launchctl stop used by
+//! sign-out and the installed-service helpers retained for C10.
 
 use std::{
     ffi::OsStr,
-    fs::{self, File, OpenOptions},
-    io::{self, Read, Write},
+    fs::{self, File},
+    io::{self, Read, Seek, SeekFrom, Write},
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 #[cfg(unix)]
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::{
+    fd::{AsFd, BorrowedFd},
+    unix::fs::{FileExt, MetadataExt},
+};
 
 #[path = "macos_launch_agent/fixture_clock.rs"]
 mod fixture_clock;
@@ -21,8 +25,6 @@ pub use fixture_clock::fixture_summary_now_ms;
 
 const LABEL: &str = "com.teslatlas.hub";
 const PLIST_NAME: &str = "com.teslatlas.hub.plist";
-const BINARY_NAME: &str = "teslatlas-hub";
-const PLIST_TEMPLATE: &str = include_str!("../../packaging/com.teslatlas.hub.plist.in");
 const SERVICE_UNLOAD_ATTEMPTS: usize = 100;
 const SERVICE_READY_ATTEMPTS: usize = 50;
 const SERVICE_READY_STABLE_OBSERVATIONS: usize = 10;
@@ -42,33 +44,6 @@ const LOCK_RELEASE_DELAY: Duration = Duration::from_millis(100);
 #[cfg(test)]
 const LOCK_RELEASE_DELAY: Duration = Duration::ZERO;
 const READINESS_CONNECT_TIMEOUT: Duration = Duration::from_millis(100);
-
-pub struct InstallPaths {
-    pub binary: PathBuf,
-    pub plist: PathBuf,
-    previous_binary: Option<PathBuf>,
-    previous_plist: Option<PathBuf>,
-}
-
-/// Validate the configured store and write the binary and LaunchAgent files.
-/// The caller keeps the Hub instance lock until this returns, then releases
-/// it before [`start_prepared`] lets launchd start Serve.
-pub fn prepare_install(data_dir: &Path, config_path: &Path) -> io::Result<InstallPaths> {
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "HOME is not set"))?;
-    let executable = std::env::current_exe()?;
-    let config = crate::config::HubConfig::load(config_path)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    if config.data_dir != data_dir {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "configuration data directory does not match install target",
-        ));
-    }
-    preflight_hub_for_config(&config)?;
-    install_files(data_dir, config_path, &home, &executable)
-}
 
 /// Validate the configured collection authority, including receiver-only
 /// Fleet ingestion where no Tesla Fleet token is owned by Hub.
@@ -124,7 +99,7 @@ pub fn development_serve_mode(
     }
 }
 
-/// Validate Serve without weakening production install/service preflight.
+/// Validate Serve without weakening production preflight.
 /// Existing source-run modes remain loopback-only. Private LAN is an explicit
 /// local-v1 opt-in with an exact RFC1918 IPv4 HTTPS identity.
 /// Fixture mode additionally requires the historical published fixture;
@@ -316,33 +291,14 @@ fn preflight_private_lan_serve(config: &crate::config::HubConfig) -> io::Result<
     preflight_hub_for_provider(&config.data_dir, crate::config::CollectorProvider::Legacy)
 }
 
-/// Load and request start of an already prepared LaunchAgent. The caller must
-/// have released the Hub instance lock first so Serve can acquire it. The
-/// original loaded state controls whether a failed replacement is restarted.
-pub fn start_prepared(
-    paths: &InstallPaths,
-    config: &crate::config::HubConfig,
-    config_digest: crate::protocol::Sha256Digest,
-    previously_loaded: bool,
-) -> io::Result<()> {
-    launch(paths, config, config_digest, previously_loaded)
-}
-
 /// Query the per-user LaunchAgent without changing it.
 pub fn service_is_loaded() -> io::Result<bool> {
     let (_, service) = service_identifiers();
     service_is_loaded_with_runner(&service, &mut real_launchctl)
 }
 
-/// Stop and settle the current LaunchAgent before replacing files or taking
-/// the Hub instance lock. Returns whether the service must be restarted.
-pub fn stop_for_replacement() -> io::Result<bool> {
-    let (_, service) = service_identifiers();
-    stop_for_replacement_with_runner(&service, &mut real_launchctl)
-}
-
 /// Wait for a stopped Serve process to release the lifetime lock, then retain
-/// the admission through file preparation.
+/// the admission for the caller.
 pub fn admit_after_service_stop(
     data_dir: &Path,
 ) -> io::Result<std::sync::Arc<crate::hub_user_process::AdmittedUserHub>> {
@@ -362,19 +318,10 @@ pub fn wait_for_installed_readiness(
     })
 }
 
-/// Recovery after preparation failed must identify the configuration of the
-/// existing job, which may differ from the requested replacement.
+/// Identify the exact configuration served by the existing job.
 pub fn wait_for_current_installed_readiness() -> io::Result<()> {
     let (config, digest) = configured_identity_from_plist(&installed_plist()?)?;
     wait_for_installed_readiness(&config, digest)
-}
-
-/// Start an already-installed Hub LaunchAgent after revalidating Hub data.
-pub fn start_installed(data_dir: &Path) -> io::Result<()> {
-    preflight_hub(data_dir)?;
-    let plist = installed_plist()?;
-    let (domain, service) = service_identifiers();
-    start_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
 }
 
 /// Start after the caller validated the exact loaded configuration.
@@ -384,28 +331,17 @@ pub fn start_preflighted_installed() -> io::Result<()> {
     start_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
 }
 
-/// Idempotently stop the installed Hub LaunchAgent.
+/// Persistently stop the per-user LaunchAgent: disable, then bootout, then wait
+/// until it is unloaded. The service stays disabled across logins until the app's
+/// Start Hub enables it. Never use this for a transient stop: a disabled job
+/// cannot be loaded, and start_preflighted_installed issues no enable. A transient
+/// stop is bootout plus wait_for_service_unloaded_with_runner.
 pub fn stop_installed() -> io::Result<()> {
     let (_, service) = service_identifiers();
     stop_installed_with_runner(&service, &mut real_launchctl)
 }
 
-/// Restart an installed Hub LaunchAgent after revalidating Hub data.
-pub fn restart_installed(data_dir: &Path) -> io::Result<()> {
-    preflight_hub(data_dir)?;
-    let plist = installed_plist()?;
-    let (domain, service) = service_identifiers();
-    restart_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
-}
-
-/// Restart after the caller validated the exact loaded configuration.
-pub fn restart_preflighted_installed() -> io::Result<()> {
-    let plist = installed_plist()?;
-    let (domain, service) = service_identifiers();
-    restart_installed_with_runner(&plist, &domain, &service, &mut real_launchctl)
-}
-
-/// Refuse to replace a running LaunchAgent unless this data directory has a
+/// Refuse production start unless this data directory has a
 /// configured car and at least one usable provider credential pair.
 pub fn preflight_hub(data_dir: &Path) -> io::Result<()> {
     let store = preflight_store(data_dir)?;
@@ -498,117 +434,6 @@ fn provider_credentials_are_usable(
     Ok(())
 }
 
-#[cfg(test)]
-fn install_files_after_preflight(
-    data_dir: &Path,
-    config_path: &Path,
-    home: &Path,
-    executable: &Path,
-) -> io::Result<InstallPaths> {
-    preflight_hub(data_dir)?;
-    install_files(data_dir, config_path, home, executable)
-}
-
-fn install_files(
-    data_dir: &Path,
-    config_path: &Path,
-    home: &Path,
-    executable: &Path,
-) -> io::Result<InstallPaths> {
-    let data_dir = absolute_existing(data_dir)?;
-    let config_path = absolute_existing(config_path)?;
-    let home = absolute_existing(home)?;
-    let executable = absolute_existing(executable)?;
-    let bin_dir = data_dir.join("bin");
-    fs::create_dir_all(&bin_dir)?;
-    set_mode(&bin_dir, 0o700)?;
-
-    let binary = bin_dir.join(BINARY_NAME);
-    let launch_agents = home.join("Library").join("LaunchAgents");
-    fs::create_dir_all(&launch_agents)?;
-    let plist = launch_agents.join(PLIST_NAME);
-    let previous_binary = backup_existing_file(&binary, "previous", 0o700)?;
-    let previous_plist = match backup_existing_plist(&plist) {
-        Ok(previous_plist) => previous_plist,
-        Err(error) => {
-            if let Some(previous_binary) = &previous_binary {
-                let _ = fs::remove_file(previous_binary);
-            }
-            return Err(error);
-        }
-    };
-    let binary_for_cleanup = binary.clone();
-    let plist_for_cleanup = plist.clone();
-    let previous_binary_for_cleanup = previous_binary.clone();
-    let previous_plist_for_cleanup = previous_plist.clone();
-    let result = (|| {
-        copy_atomic(&executable, &binary, 0o700)?;
-        write_atomic(
-            &plist,
-            render_plist(&binary, &config_path, &data_dir)?.as_bytes(),
-            0o600,
-        )?;
-        Ok(InstallPaths {
-            binary,
-            plist,
-            previous_binary,
-            previous_plist,
-        })
-    })();
-    if result.is_err() {
-        let restored_binary = previous_binary_for_cleanup
-            .as_deref()
-            .map(|previous| restore_file_from_backup(previous, &binary_for_cleanup).is_ok())
-            .unwrap_or(true);
-        let restored_plist = previous_plist_for_cleanup
-            .as_deref()
-            .map(|previous| restore_file_from_backup(previous, &plist_for_cleanup).is_ok())
-            .unwrap_or(true);
-        if restored_binary && restored_plist {
-            if let Some(previous_binary) = &previous_binary_for_cleanup {
-                let _ = fs::remove_file(previous_binary);
-            }
-            if let Some(previous_plist) = &previous_plist_for_cleanup {
-                let _ = fs::remove_file(previous_plist);
-            }
-        }
-    }
-    result
-}
-
-fn launch(
-    paths: &InstallPaths,
-    config: &crate::config::HubConfig,
-    config_digest: crate::protocol::Sha256Digest,
-    previously_loaded: bool,
-) -> io::Result<()> {
-    let (domain, service) = service_identifiers();
-    let mut runner = real_launchctl;
-    let previous = if previously_loaded {
-        paths
-            .previous_plist
-            .as_deref()
-            .map(configured_identity_from_plist)
-            .transpose()
-    } else {
-        Ok(None)
-    };
-    let mut readiness = ConfiguredServiceReadiness {
-        replacement: (config, config_digest),
-        previous,
-        service: &service,
-        ready_pid: None,
-    };
-    launch_with_runner(
-        paths,
-        previously_loaded,
-        &domain,
-        &service,
-        &mut runner,
-        &mut readiness,
-    )
-}
-
 fn configured_identity_from_plist(
     plist: &Path,
 ) -> io::Result<(crate::config::HubConfig, crate::protocol::Sha256Digest)> {
@@ -645,53 +470,6 @@ fn configured_identity_from_plist(
         ));
     }
     crate::config::HubConfig::load_with_digest(config_path).map_err(io::Error::other)
-}
-
-trait ServiceReadiness {
-    fn observe(&mut self, restored: bool) -> io::Result<bool>;
-}
-
-impl<F: FnMut() -> io::Result<bool>> ServiceReadiness for F {
-    fn observe(&mut self, _restored: bool) -> io::Result<bool> {
-        self()
-    }
-}
-
-struct ConfiguredServiceReadiness<'a> {
-    replacement: (&'a crate::config::HubConfig, crate::protocol::Sha256Digest),
-    previous: io::Result<Option<(crate::config::HubConfig, crate::protocol::Sha256Digest)>>,
-    service: &'a str,
-    ready_pid: Option<u32>,
-}
-
-impl ConfiguredServiceReadiness<'_> {
-    fn identity(
-        &self,
-        restored: bool,
-    ) -> io::Result<(&crate::config::HubConfig, crate::protocol::Sha256Digest)> {
-        if restored {
-            self.previous
-                .as_ref()
-                .map_err(|error| io::Error::new(error.kind(), error.to_string()))?
-                .as_ref()
-                .map(|(config, digest)| (config, *digest))
-                .ok_or_else(|| {
-                    io::Error::other("previous service readiness identity is unavailable")
-                })
-        } else {
-            Ok(self.replacement)
-        }
-    }
-}
-
-impl ServiceReadiness for ConfiguredServiceReadiness<'_> {
-    fn observe(&mut self, restored: bool) -> io::Result<bool> {
-        let mut ready_pid = self.ready_pid;
-        let (config, digest) = self.identity(restored)?;
-        let result = installed_service_is_ready(config, digest, self.service, &mut ready_pid);
-        self.ready_pid = ready_pid;
-        result
-    }
 }
 
 fn service_identifiers() -> (String, String) {
@@ -754,23 +532,13 @@ fn stop_installed_with_runner(
     service: &str,
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
 ) -> io::Result<()> {
+    run_launchctl(runner, &[OsStr::new("disable"), OsStr::new(service)])?;
     let bootout = [
         std::ffi::OsStr::new("bootout"),
         std::ffi::OsStr::new(service),
     ];
     let _ = runner(&bootout)?;
     wait_for_service_unloaded_with_runner(service, runner)
-}
-
-fn stop_for_replacement_with_runner(
-    service: &str,
-    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
-) -> io::Result<bool> {
-    let was_loaded = service_is_loaded_with_runner(service, runner)?;
-    if was_loaded {
-        stop_installed_with_runner(service, runner)?;
-    }
-    Ok(was_loaded)
 }
 
 fn wait_for_admission_with_probe<T>(
@@ -1003,226 +771,6 @@ fn readiness_address(configured: SocketAddr) -> SocketAddr {
     }
 }
 
-fn restart_installed_with_runner(
-    plist: &Path,
-    domain: &str,
-    service: &str,
-    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
-) -> io::Result<()> {
-    stop_installed_with_runner(service, runner)?;
-    start_installed_with_runner(plist, domain, service, runner)
-}
-
-fn launch_with_runner(
-    paths: &InstallPaths,
-    previously_loaded: bool,
-    domain: &str,
-    service: &str,
-    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
-    readiness: &mut impl ServiceReadiness,
-) -> io::Result<()> {
-    let print = [std::ffi::OsStr::new("print"), std::ffi::OsStr::new(service)];
-    if let Err(error) = runner(&print) {
-        return Err(with_rollback_context(
-            error,
-            previously_loaded,
-            false,
-            paths,
-            domain,
-            service,
-            runner,
-            readiness,
-        ));
-    }
-    let bootout = [
-        std::ffi::OsStr::new("bootout"),
-        std::ffi::OsStr::new(service),
-    ];
-    if let Err(error) = runner(&bootout) {
-        return Err(with_rollback_context(
-            error,
-            previously_loaded,
-            false,
-            paths,
-            domain,
-            service,
-            runner,
-            readiness,
-        ));
-    }
-    if let Err(error) = wait_for_service_unloaded_with_runner(service, runner) {
-        return Err(with_rollback_context(
-            error,
-            previously_loaded,
-            false,
-            paths,
-            domain,
-            service,
-            runner,
-            readiness,
-        ));
-    }
-    let bootstrap = [
-        std::ffi::OsStr::new("bootstrap"),
-        std::ffi::OsStr::new(domain),
-        paths.plist.as_os_str(),
-    ];
-    if let Err(error) = run_launchctl(runner, &bootstrap) {
-        return Err(with_rollback_context(
-            error,
-            previously_loaded,
-            true,
-            paths,
-            domain,
-            service,
-            runner,
-            readiness,
-        ));
-    }
-    let kickstart = [
-        std::ffi::OsStr::new("kickstart"),
-        std::ffi::OsStr::new("-k"),
-        std::ffi::OsStr::new(service),
-    ];
-    if let Err(error) = run_launchctl(runner, &kickstart) {
-        return Err(with_rollback_context(
-            error,
-            previously_loaded,
-            true,
-            paths,
-            domain,
-            service,
-            runner,
-            readiness,
-        ));
-    }
-    if let Err(error) = wait_for_service_ready_with_probe(&mut || readiness.observe(false)) {
-        return Err(with_rollback_context(
-            error,
-            previously_loaded,
-            true,
-            paths,
-            domain,
-            service,
-            runner,
-            readiness,
-        ));
-    }
-    cleanup_backups(paths);
-    Ok(())
-}
-
-fn with_rollback_context(
-    error: io::Error,
-    previously_loaded: bool,
-    replacement_may_be_loaded: bool,
-    paths: &InstallPaths,
-    domain: &str,
-    service: &str,
-    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
-    readiness: &mut impl ServiceReadiness,
-) -> io::Error {
-    let kind = error.kind();
-    let rollback = if previously_loaded {
-        match paths.previous_plist.as_deref() {
-            Some(previous_plist) => restore_previous_service(
-                &paths.binary,
-                paths.previous_binary.as_deref(),
-                &paths.plist,
-                previous_plist,
-                domain,
-                service,
-                runner,
-                readiness,
-            ),
-            None => Err(io::Error::other("previous plist backup is unavailable")),
-        }
-    } else if replacement_may_be_loaded {
-        restore_stopped_prepared_files(paths, service, runner)
-    } else {
-        restore_prepared_files(paths)
-    };
-    let message = match rollback {
-        Ok(()) if previously_loaded => format!("{error}; previous Hub service restored"),
-        Ok(()) => format!("{error}; prepared install files restored"),
-        Err(rollback) if previously_loaded => {
-            format!("{error}; previous Hub service restore failed: {rollback}")
-        }
-        Err(rollback) => format!("{error}; stopped-install rollback failed: {rollback}"),
-    };
-    io::Error::new(kind, message)
-}
-
-fn restore_stopped_prepared_files(
-    paths: &InstallPaths,
-    service: &str,
-    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
-) -> io::Result<()> {
-    let bootout = [
-        std::ffi::OsStr::new("bootout"),
-        std::ffi::OsStr::new(service),
-    ];
-    let unload = match runner(&bootout) {
-        Ok(_) => wait_for_service_unloaded_with_runner(service, runner),
-        Err(error) => Err(error),
-    };
-    let files = restore_prepared_files(paths);
-    match (unload, files) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Err(unload), Ok(())) => Err(io::Error::new(
-            unload.kind(),
-            format!("replacement service unload failed: {unload}; prepared files restored"),
-        )),
-        (Ok(()), Err(files)) => Err(files),
-        (Err(unload), Err(files)) => Err(io::Error::new(
-            unload.kind(),
-            format!("replacement service unload failed: {unload}; file restore failed: {files}"),
-        )),
-    }
-}
-
-fn restore_previous_service(
-    binary: &Path,
-    previous_binary: Option<&Path>,
-    plist: &Path,
-    previous_plist: &Path,
-    domain: &str,
-    service: &str,
-    runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
-    readiness: &mut impl ServiceReadiness,
-) -> io::Result<()> {
-    let bootout = [
-        std::ffi::OsStr::new("bootout"),
-        std::ffi::OsStr::new(service),
-    ];
-    let _ = runner(&bootout)?;
-    wait_for_service_unloaded_with_runner(service, runner)?;
-    if let Some(previous_binary) = previous_binary {
-        restore_file_from_backup(previous_binary, binary)?;
-        set_mode(binary, 0o700)?;
-    }
-    restore_file_from_backup(previous_plist, plist)?;
-    set_mode(plist, 0o600)?;
-    let bootstrap = [
-        std::ffi::OsStr::new("bootstrap"),
-        std::ffi::OsStr::new(domain),
-        plist.as_os_str(),
-    ];
-    run_launchctl(runner, &bootstrap)?;
-    let kickstart = [
-        std::ffi::OsStr::new("kickstart"),
-        std::ffi::OsStr::new("-k"),
-        std::ffi::OsStr::new(service),
-    ];
-    run_launchctl(runner, &kickstart)?;
-    wait_for_service_ready_with_probe(&mut || readiness.observe(true))?;
-    if let Some(previous_binary) = previous_binary {
-        let _ = fs::remove_file(previous_binary);
-    }
-    let _ = fs::remove_file(previous_plist);
-    Ok(())
-}
-
 fn run_launchctl(
     runner: &mut impl FnMut(&[&std::ffi::OsStr]) -> io::Result<bool>,
     arguments: &[&std::ffi::OsStr],
@@ -1234,7 +782,24 @@ fn run_launchctl(
     }
 }
 
+#[cfg(test)]
+const REAL_LAUNCHCTL_REFUSAL: &str = "real launchctl is unavailable in unit tests";
+
+#[cfg(test)]
+fn refuse_real_launchctl_in_unit_tests() -> io::Result<()> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        REAL_LAUNCHCTL_REFUSAL,
+    ))
+}
+
+#[cfg(not(test))]
+fn refuse_real_launchctl_in_unit_tests() -> io::Result<()> {
+    Ok(())
+}
+
 fn real_launchctl(arguments: &[&std::ffi::OsStr]) -> io::Result<bool> {
+    refuse_real_launchctl_in_unit_tests()?;
     let mut command = Command::new("/bin/launchctl");
     for argument in arguments {
         command.arg(*argument);
@@ -1268,6 +833,7 @@ fn real_launchctl(arguments: &[&std::ffi::OsStr]) -> io::Result<bool> {
 }
 
 fn real_service_running_pid(service: &str) -> io::Result<Option<u32>> {
+    refuse_real_launchctl_in_unit_tests()?;
     let output = Command::new("/bin/launchctl")
         .arg("print")
         .arg(service)
@@ -1311,147 +877,216 @@ fn expected_launchctl_absence(action: &str, status: Option<i32>, detail: &str) -
         || (action == "bootout" && status == Some(3) && detail.contains("No such process"))
 }
 
-fn restore_prepared_files(paths: &InstallPaths) -> io::Result<()> {
-    restore_prepared_file(&paths.binary, paths.previous_binary.as_deref(), 0o700)?;
-    restore_prepared_file(&paths.plist, paths.previous_plist.as_deref(), 0o600)?;
-    cleanup_backups(paths);
-    Ok(())
+const INHERITED_LOG_COMPACT_ABOVE: u64 = 1 << 20;
+const INHERITED_LOG_KEEP: u64 = 512 << 10;
+const INHERITED_LOG_DIRECTORY: &str = "Library/Logs/Teslatlas Hub";
+const INHERITED_STDOUT_LOG: &str = "hub.out.log";
+const INHERITED_STDERR_LOG: &str = "hub.err.log";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InheritedLogCompaction {
+    Compacted,
+    BelowThreshold,
+    NotRegularFile,
+    SameFileAsStdout,
+    NotAgentLog,
+    FailedBeforeChange,
+    FailedAfterTruncate,
 }
 
-fn restore_prepared_file(destination: &Path, previous: Option<&Path>, mode: u32) -> io::Result<()> {
-    if let Some(previous) = previous {
-        restore_file_from_backup(previous, destination)?;
-        set_mode(destination, mode)
-    } else {
-        match fs::remove_file(destination) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(error),
-        }
-    }
-}
-
-fn cleanup_backups(paths: &InstallPaths) {
-    if let Some(previous_binary) = &paths.previous_binary {
-        let _ = fs::remove_file(previous_binary);
-    }
-    if let Some(previous_plist) = &paths.previous_plist {
-        let _ = fs::remove_file(previous_plist);
-    }
-}
-
-fn restore_file_from_backup(previous: &Path, destination: &Path) -> io::Result<()> {
-    fs::copy(previous, destination).map(|_| ())
-}
-
-fn backup_existing_plist(plist: &Path) -> io::Result<Option<PathBuf>> {
-    backup_existing_file(plist, "previous", 0o600)
-}
-
-fn backup_existing_file(path: &Path, suffix: &str, mode: u32) -> io::Result<Option<PathBuf>> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(io::Error::other)?
-        .as_nanos();
-    let backup = path.with_file_name(format!(
-        ".{}.{}.{}.{}",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("file"),
-        std::process::id(),
-        suffix,
-        nonce
-    ));
-    fs::copy(path, &backup)?;
-    set_mode(&backup, mode)?;
-    Ok(Some(backup))
-}
-
-fn render_plist(binary: &Path, config_path: &Path, data_dir: &Path) -> io::Result<String> {
-    let binary = xml_path(binary)?;
-    let config = xml_path(config_path)?;
-    let stdout = xml_path(&data_dir.join("hub.stdout.log"))?;
-    let stderr = xml_path(&data_dir.join("hub.stderr.log"))?;
-    Ok(PLIST_TEMPLATE
-        .replace("@BINARY@", &binary)
-        .replace("@CONFIG@", &config)
-        .replace("@STDOUT@", &stdout)
-        .replace("@STDERR@", &stderr))
-}
-
-fn xml_path(path: &Path) -> io::Result<String> {
-    let value = path
-        .to_str()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path is not UTF-8"))?;
-    Ok(value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;"))
-}
-
-fn absolute_existing(path: &Path) -> io::Result<PathBuf> {
-    path.canonicalize()
-}
-
-fn copy_atomic(source: &Path, destination: &Path, mode: u32) -> io::Result<()> {
-    let mut input = File::open(source)?;
-    write_atomic_from(destination, mode, |output| {
-        io::copy(&mut input, output).map(|_| ())
+fn inherited_agent_log_paths(home: Option<&Path>) -> Option<[PathBuf; 2]> {
+    home.map(|home| {
+        let directory = home.join(INHERITED_LOG_DIRECTORY);
+        [
+            directory.join(INHERITED_STDOUT_LOG),
+            directory.join(INHERITED_STDERR_LOG),
+        ]
     })
 }
 
-fn write_atomic(destination: &Path, bytes: &[u8], mode: u32) -> io::Result<()> {
-    write_atomic_from(destination, mode, |output| output.write_all(bytes))
+/// Best-effort startup compaction of the fixed per-user agent logs.
+/// See the diagnostic-log compaction contract in spec section 2.6.
+pub fn compact_inherited_logs() {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let paths = inherited_agent_log_paths(home.as_deref());
+    let stdout = io::stdout();
+    let stderr = io::stderr();
+    let _ = compact_inherited_log_descriptors(
+        stdout.as_fd(),
+        stderr.as_fd(),
+        paths
+            .as_ref()
+            .map(|paths| [paths[0].as_path(), paths[1].as_path()]),
+    );
 }
 
-fn write_atomic_from(
-    destination: &Path,
-    mode: u32,
-    write: impl FnOnce(&mut File) -> io::Result<()>,
+fn compact_inherited_log_descriptors(
+    stdout: BorrowedFd<'_>,
+    stderr: BorrowedFd<'_>,
+    agent_logs: Option<[&Path; 2]>,
+) -> [InheritedLogCompaction; 2] {
+    compact_inherited_log_descriptors_with(
+        stdout,
+        stderr,
+        agent_logs,
+        &mut |len, file| compact_in_place(len, file),
+        &mut align_shared_log_stderr,
+    )
+}
+
+// The callbacks retain the real classification and descriptor path in fault tests.
+fn compact_inherited_log_descriptors_with(
+    stdout: BorrowedFd<'_>,
+    stderr: BorrowedFd<'_>,
+    agent_logs: Option<[&Path; 2]>,
+    compact: &mut impl FnMut(u64, &mut InheritedLogFile) -> InheritedLogCompaction,
+    align: &mut impl FnMut(&mut File) -> io::Result<()>,
+) -> [InheritedLogCompaction; 2] {
+    use InheritedLogCompaction::*;
+    let mut outcomes = [FailedBeforeChange; 2];
+    let mut stdout_identity = None;
+    for (index, descriptor) in [stdout, stderr].into_iter().enumerate() {
+        let Ok(owned) = descriptor.try_clone_to_owned() else {
+            continue;
+        };
+        let mut log = File::from(owned);
+        let Ok(metadata) = log.metadata() else {
+            continue;
+        };
+        let identity = (metadata.dev(), metadata.ino());
+        if index == 0 {
+            stdout_identity = Some(identity);
+        }
+        outcomes[index] = if !metadata.is_file() {
+            NotRegularFile
+        } else if index == 1 && stdout_identity == Some(identity) {
+            if matches!(outcomes[0], Compacted | FailedAfterTruncate) {
+                let aligned = align(&mut log);
+                if outcomes[0] == FailedAfterTruncate || aligned.is_err() {
+                    FailedAfterTruncate
+                } else {
+                    SameFileAsStdout
+                }
+            } else {
+                SameFileAsStdout
+            }
+        } else if metadata.len() <= INHERITED_LOG_COMPACT_ABOVE {
+            BelowThreshold
+        } else if let Some(reader) = matching_agent_log_reader(agent_logs, identity) {
+            match rustix::fs::fcntl_getfl(&log) {
+                Ok(flags) => compact(
+                    metadata.len(),
+                    &mut InheritedLogFile {
+                        log,
+                        reader,
+                        append: flags.contains(rustix::fs::OFlags::APPEND),
+                        position_for_write: |file| file.seek(SeekFrom::Start(0)).map(|_| ()),
+                    },
+                ),
+                Err(_) => FailedBeforeChange,
+            }
+        } else {
+            NotAgentLog
+        };
+    }
+    outcomes
+}
+
+fn matching_agent_log_reader(paths: Option<[&Path; 2]>, identity: (u64, u64)) -> Option<File> {
+    let paths = paths?;
+    for path in paths {
+        let Ok(descriptor) = rustix::fs::open(
+            path,
+            rustix::fs::OFlags::RDONLY
+                | rustix::fs::OFlags::NOFOLLOW
+                | rustix::fs::OFlags::NONBLOCK
+                | rustix::fs::OFlags::CLOEXEC,
+            rustix::fs::Mode::empty(),
+        ) else {
+            continue;
+        };
+        let reader = File::from(descriptor);
+        let Ok(metadata) = reader.metadata() else {
+            continue;
+        };
+        if metadata.is_file() && (metadata.dev(), metadata.ino()) == identity {
+            return Some(reader);
+        }
+    }
+    None
+}
+
+fn align_shared_log_stderr(stderr: &mut File) -> io::Result<()> {
+    align_shared_log_stderr_with(
+        stderr,
+        |file| {
+            rustix::fs::fcntl_getfl(file)
+                .map(|flags| flags.contains(rustix::fs::OFlags::APPEND))
+                .map_err(Into::into)
+        },
+        |file| file.seek(SeekFrom::End(0)).map(|_| ()),
+    )
+}
+
+fn align_shared_log_stderr_with(
+    stderr: &mut File,
+    is_append: impl FnOnce(&File) -> io::Result<bool>,
+    seek_end: impl FnOnce(&mut File) -> io::Result<()>,
 ) -> io::Result<()> {
-    let parent = destination
-        .parent()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
-    let name = destination
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no name"))?
-        .to_string_lossy();
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(io::Error::other)?
-        .as_nanos();
-    let temporary = parent.join(format!(".{name}.{}.{}.tmp", std::process::id(), nonce));
-    let result = (|| {
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        options.mode(mode);
-        let mut output = options.open(&temporary)?;
-        set_mode(&temporary, mode)?;
-        write(&mut output)?;
-        output.sync_all()?;
-        fs::rename(&temporary, destination)
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(&temporary);
+    if !is_append(stderr)? {
+        seek_end(stderr)?;
     }
-    result
+    Ok(())
 }
 
-fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
-    #[cfg(unix)]
+trait InheritedLogIo {
+    fn read_tail(&mut self, kept: &mut [u8], offset: u64) -> io::Result<()>;
+    fn prepare_write(&mut self) -> io::Result<()>;
+    fn truncate(&mut self) -> io::Result<()>;
+    fn write_kept(&mut self, kept: &[u8]) -> io::Result<()>;
+    fn sync(&mut self) -> io::Result<()>;
+}
+
+fn compact_in_place(len: u64, file: &mut impl InheritedLogIo) -> InheritedLogCompaction {
+    use InheritedLogCompaction::*;
+    let mut kept = vec![0; INHERITED_LOG_KEEP as usize];
+    if file.read_tail(&mut kept, len - INHERITED_LOG_KEEP).is_err()
+        || file.prepare_write().is_err()
+        || file.truncate().is_err()
     {
-        fs::set_permissions(path, fs::Permissions::from_mode(mode))
+        return FailedBeforeChange;
     }
-    #[cfg(not(unix))]
-    {
-        let _ = (path, mode);
+    if file.write_kept(&kept).is_err() || file.sync().is_err() {
+        return FailedAfterTruncate;
+    }
+    Compacted
+}
+
+struct InheritedLogFile {
+    log: File,
+    reader: File,
+    append: bool,
+    position_for_write: fn(&mut File) -> io::Result<()>,
+}
+
+impl InheritedLogIo for InheritedLogFile {
+    fn read_tail(&mut self, kept: &mut [u8], offset: u64) -> io::Result<()> {
+        self.reader.read_exact_at(kept, offset)
+    }
+    fn prepare_write(&mut self) -> io::Result<()> {
+        if !self.append {
+            (self.position_for_write)(&mut self.log)?;
+        }
         Ok(())
+    }
+    fn truncate(&mut self) -> io::Result<()> {
+        self.log.set_len(0)
+    }
+    fn write_kept(&mut self, kept: &[u8]) -> io::Result<()> {
+        self.log.write_all(kept)
+    }
+    fn sync(&mut self) -> io::Result<()> {
+        self.log.sync_all()
     }
 }
 

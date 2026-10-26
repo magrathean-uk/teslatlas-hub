@@ -1,7 +1,7 @@
 # Fleet API setup
 
-This is the advanced setup guide for Fleet installations. The current Mac
-package includes companion binaries, but you must still configure your
+This is the advanced setup guide for Fleet installations. The Mac app
+includes companion binaries, but you must still configure your
 developer application and receiver. The current Debian downloads are
 Core/Legacy-only and omit those companions; do not follow this guide as though
 installing the `.deb` alone provides a complete Fleet deployment. See the
@@ -178,16 +178,11 @@ the receiver: it must preserve Tesla's vehicle mTLS connection. A TCP
 pass-through load balancer is suitable. Keep Hub and the command proxy on
 loopback; expose only the Fleet Telemetry receiver.
 
-On macOS, the signed service package bundles the receiver and supervises it
-with Hub in the same per-user LaunchAgent. Hub starts and stops the bundled
-loopback command proxy as its direct child using the already configured private
-key, certificate/key, and session-cache paths; do not start a second proxy.
-Copy the packaged
-`fleet-telemetry.json.example` to the private Hub data directory as
-`fleet-telemetry.json`, set absolute certificate/key paths and create the
-private bearer at the `ingest_token_path` from Hub configuration. The example
-uses unprivileged port 8443; route the public Tesla mTLS connection to that port
-without terminating TLS. If the receiver JSON is absent, Hub runs alone.
+On macOS, Hub starts and stops the bundled loopback command proxy as its direct
+child using the already configured private key, certificate/key, and
+session-cache paths; do not start a second proxy. The bundled receiver does
+not run under the per-user agent. A separately operated receiver requires its
+own validated configuration and lifecycle.
 
 For an official Debian package, generate both pinned Linux sidecars and their
 paired Go/Fleet evidence on the approved Apple-silicon macOS release host by

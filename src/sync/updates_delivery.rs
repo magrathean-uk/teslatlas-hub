@@ -2081,11 +2081,7 @@ fn shipping_source_root() -> Result<PathBuf, UpdatesDeliveryError> {
         return Err(reject("TESLATLAS_HUB_SOURCE_ROOT must be an absolute path"));
     }
     let source_root = fs::canonicalize(source_root).map_err(|error| reject(error.to_string()))?;
-    if !source_root.join("packaging/config.toml").is_file()
-        || !source_root
-            .join("packaging/com.teslatlas.hub.plist.in")
-            .is_file()
-    {
+    if !source_root.join("packaging/config.toml").is_file() {
         return Err(reject(
             "TESLATLAS_HUB_SOURCE_ROOT does not contain the shipping packaging inputs",
         ));
@@ -2100,14 +2096,10 @@ pub fn receipt_identity_hashes() -> Result<ReceiptIdentityHashes, UpdatesDeliver
     let manifest_dir = shipping_source_root()?;
     let config_toml = fs::read(manifest_dir.join("packaging/config.toml"))
         .map_err(|error| reject(error.to_string()))?;
-    let plist = fs::read(manifest_dir.join("packaging/com.teslatlas.hub.plist.in"))
-        .map_err(|error| reject(error.to_string()))?;
     let mut config_document = b"teslatlas-hub-shipping-config-v1\n".to_vec();
     config_document
         .extend_from_slice(&(u64::try_from(config_toml.len()).unwrap_or(0)).to_be_bytes());
     config_document.extend_from_slice(&config_toml);
-    config_document.extend_from_slice(&(u64::try_from(plist.len()).unwrap_or(0)).to_be_bytes());
-    config_document.extend_from_slice(&plist);
     let rustc = Command::new("rustc")
         .arg("-vV")
         .output()

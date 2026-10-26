@@ -149,9 +149,9 @@ sudo -u teslatlas -- /usr/bin/teslatlas-hub \
 Pair devices again and prove a fresh observation before declaring recovery
 complete.
 
-On macOS, stop the per-user service with the Mac app or the packaged CLI before
-running backup and recovery commands. Run those commands as the signed-in user
-with the packaged binary and per-user configuration paths documented in
+On macOS, choose **Stop Hub** in the app before running backup and recovery
+commands. Run those commands as the signed-in user with the app-embedded binary
+and per-user configuration paths documented in
 [CLI reference](../guides/cli.md#platform-invocation). Restart the service only
 after the command has completed and the intended data and configuration have
 been checked.

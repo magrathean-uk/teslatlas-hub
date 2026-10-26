@@ -1,7 +1,7 @@
 # Upgrade and rollback
 
-Build your own replacement package using [Build from source](../guides/build-from-source.md).
-No prebuilt GitHub releases are provided. Retain your previous local package
+Build your own replacement app or Debian package using [Build from source](../guides/build-from-source.md).
+No prebuilt GitHub releases are provided. Retain your previous local artifact
 and its source commit for recovery.
 
 The current `2026.36.2` Debian core package contains core/Legacy collection
@@ -11,19 +11,18 @@ The retained `2026.36.1-1` ARM64 package is a real predecessor for the current
 candidate; keep its exact package, source commit and matching data backup if
 you need that recovery route.
 
-The last historical macOS package remains
-`TeslatlasHub-2026.36.1-arm64.pkg`; this Debian candidate does not establish a
-new Mac package. On macOS, use the matching combined package for upgrades.
-The app is ad-hoc signed and the installer is unsigned and unnotarised.
-In-app installation, reinstallation, and update of the embedded service are
-unavailable because this build lacks the required official-release metadata
-and Gatekeeper trust.
+On macOS, replace Teslatlas Hub.app in `/Applications` or `~/Applications` and
+open it. The app rewrites an older per-user agent after preflight, including an
+installer-era or Rust-installed agent. It leaves the root-owned installer-era
+payload alone. Follow the [administrator cleanup](../guides/install-macos.md#installer-era-administrator-cleanup)
+only after all local users have replaced or removed their older agents.
+Local apps are ad-hoc signed and unnotarised.
 
 ## Prepare
 
 1. Record the installed version, platform, configuration location, and current
-   service status. Save the previous installer or package.
-2. Stop the existing Hub service through the Mac app, the packaged CLI, or
+   service status. Save the previous app or Debian package.
+2. Stop the existing Hub service through the Mac app or
    `sudo systemctl stop teslatlas-hub.service` on Debian. Prevent simultaneous
    collectors from owning the same refresh credentials. Backup and credential
    export require the same exclusive Hub instance lock as the service.
@@ -31,12 +30,12 @@ and Gatekeeper trust.
    [Backup and recovery](../operations/backup-and-recovery.md). Keep these
    private. A data-only restore does not restore collector authority, TLS,
    configuration or service state; retain and rehearse those inputs separately.
-4. Inspect your new package and retain its checksum, source commit, toolchain
+4. Inspect your new app or Debian package and retain its checksum, source commit, toolchain
    versions and completed build/test results.
 
 ## Install and check
 
-Install the matching package following the [macOS](../guides/install-macos.md)
+Copy the replacement app or install the Debian package following the [macOS](../guides/install-macos.md)
 or [Debian](../guides/install-debian.md) guide. Preserve existing data and
 configuration. For the current Debian candidate, confirm the installed binary
 reports `teslatlas-hub 2026.36.2`; use the version matching the selected package
@@ -54,11 +53,11 @@ older binary against a data directory already migrated by a newer version.
 Verify the previous backup, restore it into a new private directory, restore
 its separately exported recovery credentials when applicable, then select that
 restored directory while the service remains stopped before installing the
-matching previous package. The exact synthetic Debian ARM64
+matching previous app or Debian package. The exact synthetic Debian ARM64
 `2026.36.1-1 -> 2026.36.2-1` journey was rolled back this way; it is not a
 general cross-version downgrade promise. Never let old and new instances
 refresh the same credentials concurrently.
 
-Migration's bounded readiness rollback covers its service transition. It does
-not replace a separately verified backup-and-restore plan or establish general
-cross-version downgrade compatibility.
+After a direct CLI migration on macOS, open the app and choose **Start Hub**
+when prompted. Retain a separately verified backup-and-restore plan; this
+service start does not establish cross-version downgrade compatibility.

@@ -140,28 +140,16 @@ the project identity documented in `CITATION.cff`.
 
 ## Verify a local macOS build
 
-Build from the detached tag, then inspect the combined installer:
+Follow [Build from source](../guides/build-from-source.md#macos-app) using the
+reviewed source commit and an authorised build run. Record the one app path
+printed by the builder. Inspect that app's version and its embedded Hub CLI
+version against `Cargo.toml`; verify its signature, embedded Hub and sibling
+command proxy, dependency legal bundle and build evidence. Preserve the
+receiver disposition of the selected source tree. Require no package inside
+the app or distribution output. Retain source identity and app/Hub hashes.
 
-```sh
-TESLATLAS_HUB_SOURCE_COMMIT=$(git rev-parse HEAD) ./scripts/build-macos-app.sh
-test -d "dist/Teslatlas Hub.app"
-test -f dist/TeslatlasHub.pkg
-test "$("dist/Teslatlas Hub.app/Contents/Resources/teslatlas-hub" --version)" = \
-  'teslatlas-hub 1.0.0'
-test "$(/usr/libexec/PlistBuddy -c 'Print :TeslatlasHubVersion' \
-  'dist/Teslatlas Hub.app/Contents/Info.plist')" = 1.0.0
-
-VERIFY_DIR=$(mktemp -d "${TMPDIR:-/tmp}/teslatlas-pkg.XXXXXX")
-trap 'find "$VERIFY_DIR" -depth -delete 2>/dev/null || true' EXIT HUP INT TERM
-pkgutil --expand-full dist/TeslatlasHub.pkg "$VERIFY_DIR/product"
-test -d "$VERIFY_DIR/product/TeslatlasHubApp.pkg/Payload/Teslatlas Hub.app"
-test -f "$VERIFY_DIR/product/TeslatlasHubService.pkg/Payload/Library/Application Support/Teslatlas Hub/bin/teslatlas-hub"
-test ! -e "$VERIFY_DIR/product/TeslatlasHubService.pkg/Payload/Applications"
-```
-
-The product must contain one app component installed in `/Applications` and one
-service component installed at the filesystem root. The app embeds the same
-service-only package for later in-app service management.
+This describes the required verification; source checks alone do not establish
+that an app artifact has been built or inspected.
 
 ## Verify a local Debian build
 
