@@ -512,7 +512,7 @@ final class DevelopmentHubCommandRunner: HubCommandRunning {
     private static func timeout(for arguments: [String]) -> TimeInterval {
         if arguments.contains("migrate") { return 24 * 60 * 60 }
         if arguments.contains("doctor") { return 15 * 60 }
-        if arguments.contains("teslamate-check") || arguments.contains("setup") { return 5 * 60 }
+        if arguments.contains("source-check") || arguments.contains("setup") { return 5 * 60 }
         if arguments.contains("control") { return 45 }
         if arguments.contains("status") || arguments.contains("preflight") { return 30 }
         return HubProcessExecutor.defaultTimeout

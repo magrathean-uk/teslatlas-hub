@@ -12,7 +12,7 @@ fn t69_snapshot(
     samples: &[(i64, i64, f64)],
     processes: (Option<i64>, Option<i64>),
     charges: (Option<i64>, Option<i64>),
-) -> crate::teslamate_projection::TeslaMateOpenSession {
+) -> crate::source_db_projection::SourceDbOpenSession {
     let process = serde_json::from_value(serde_json::json!({
         "id": 7, "car_id": 1, "position_id": null, "address_id": null,
         "geofence_id": null, "start_date_ms": T69_T0 - 30 * T69_MIN, "end_date_ms": null,
@@ -39,7 +39,7 @@ fn t69_snapshot(
         }))
         .expect("imported charge sample")
     };
-    let mut session = crate::teslamate_projection::TeslaMateOpenSession {
+    let mut session = crate::source_db_projection::SourceDbOpenSession {
         car_id: 1,
         charge: Some(process),
         charge_samples: samples
@@ -56,7 +56,9 @@ fn t69_snapshot(
 }
 
 /// Snapshot S: samples 101 (t0 - 20 min) and 102 (t0 - 10 min).
-fn t69_s(processes: (Option<i64>, Option<i64>)) -> crate::teslamate_projection::TeslaMateOpenSession {
+fn t69_s(
+    processes: (Option<i64>, Option<i64>),
+) -> crate::source_db_projection::SourceDbOpenSession {
     t69_snapshot(
         &[(101, 20, 1.00), (102, 10, 2.00)],
         processes,
@@ -68,7 +70,7 @@ fn t69_s(processes: (Option<i64>, Option<i64>)) -> crate::teslamate_projection::
 /// t0 - 5 min).
 fn t69_s_prime(
     processes: (Option<i64>, Option<i64>),
-) -> crate::teslamate_projection::TeslaMateOpenSession {
+) -> crate::source_db_projection::SourceDbOpenSession {
     t69_snapshot(
         &[(101, 20, 1.00), (102, 10, 2.00), (103, 5, 3.00)],
         processes,
@@ -149,7 +151,10 @@ fn t69_store(label: &str) -> (tempfile::TempDir, HubStore, SourceRecord, Vehicle
     let directory = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(directory.path()).expect("store");
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", label), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, label),
+            1_000,
+        )
         .expect("source");
     let vehicle = store
         .register_vehicle(&VehicleDescriptor::new(source.source_id, "vehicle-t69"), 1_001)
@@ -161,7 +166,7 @@ fn t69_seed(
     store: &HubStore,
     source: &SourceRecord,
     vehicle: &VehicleRecord,
-    session: &crate::teslamate_projection::TeslaMateOpenSession,
+    session: &crate::source_db_projection::SourceDbOpenSession,
     updated_at_ms: i64,
 ) -> OpenSessionSeedReport {
     store

@@ -5,6 +5,15 @@ All notable released changes are recorded here. From 2026.36.1, Hub follows
 
 ## Unreleased
 
+- Import checks use `source-check` and `--accept-schema-evidence`. Earlier
+  command/configuration names are refused with neutral replacement guidance.
+  The earlier schema flag remains a hidden deprecated alias and emits one
+  stderr warning; it can be removed in a later version.
+- Store schema 78 renames Hub-owned import tables and the current position type,
+  preserving historical raw payloads and digests. Import identities use
+  `source_db`; the first keyless import uses `default`. Reuse an upgraded store's
+  existing key or explicitly allow a distinct second source.
+
 - Retired Edge delivery. A `[collector.edge]` table now fails with a clear error; remove
   it and use the receiver in `[collector.fleet_telemetry]`. `status` no longer reports
   `edgeDelivery` and `doctor` no longer reports an `edge` collector block. The source-run

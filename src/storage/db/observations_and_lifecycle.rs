@@ -1043,7 +1043,7 @@ impl HubStore {
             .collect()
     }
 
-    /// One bounded page of a drive's positions in TeslaMate GPX order.
+    /// One bounded page of a drive's positions in source database GPX order.
     pub fn drive_positions_page(
         &self,
         vehicle_id: Uuid,
@@ -1747,7 +1747,7 @@ impl HubStore {
         source_id: Uuid,
         vehicle_id: Uuid,
         car_id: i64,
-        session: &TeslaMateOpenSession,
+        session: &SourceDbOpenSession,
         updated_at_ms: i64,
     ) -> Result<OpenSessionSeedReport, StoreError> {
         self.seed_imported_open_session_checked(
@@ -1765,7 +1765,7 @@ impl HubStore {
         source_id: Uuid,
         vehicle_id: Uuid,
         car_id: i64,
-        session: &TeslaMateOpenSession,
+        session: &SourceDbOpenSession,
         updated_at_ms: i64,
         expected: Option<(i64, i64)>,
     ) -> Result<OpenSessionSeedReport, StoreError> {
@@ -2035,7 +2035,7 @@ impl HubStore {
         &self,
         source_id: Uuid,
         vehicle_id: Uuid,
-    ) -> Result<Option<TeslaMateOpenSession>, StoreError> {
+    ) -> Result<Option<SourceDbOpenSession>, StoreError> {
         if source_id.is_nil() {
             return Err(StoreError::NilSourceId);
         }
@@ -2050,7 +2050,7 @@ impl HubStore {
                  ORDER BY source_table, source_row_id",
             )
             .map_err(StoreError::Query)?;
-        let mut session = TeslaMateOpenSession::default();
+        let mut session = SourceDbOpenSession::default();
         let mut found = false;
         let rows = statement
             .query_map(
@@ -2102,7 +2102,7 @@ impl HubStore {
                 |row| {
                     Ok((
                         row.get::<_, String>(0)?,
-                        crate::teslamate_projection::TeslaMateSourceWatermark {
+                        crate::source_db_projection::SourceDbWatermark {
                             max_id: row.get(1)?,
                             max_timestamp_ms: row.get(2)?,
                         },
@@ -2219,8 +2219,8 @@ fn round_manual_amount(value: f64, decimals: i32) -> Option<f64> {
 /// pair in either field is a no-op when repeated. `stored` is left with the
 /// snapshot's own watermarks, which the caller no longer uses.
 fn imported_open_session_is_unchanged(
-    stored: &mut crate::teslamate_projection::TeslaMateOpenSession,
-    snapshot: &crate::teslamate_projection::TeslaMateOpenSession,
+    stored: &mut crate::source_db_projection::SourceDbOpenSession,
+    snapshot: &crate::source_db_projection::SourceDbOpenSession,
 ) -> bool {
     let merged = merged_snapshot_watermarks(&stored.watermarks, &snapshot.watermarks);
     if stored.watermarks != merged {

@@ -11,12 +11,12 @@ fn lc_gen(n: u8) -> Uuid {
 /// A store holding a pair of generation `lc_gen(1)`.
 fn lc_store_with_pair() -> (tempfile::TempDir, HubStore) {
     let (directory, store) = cs_store();
-    let pair = TeslaMateLegacyTokenStore::imported(vec![1; 8], vec![2; 8])
+    let pair = LegacyOwnerTokenStore::imported(vec![1; 8], vec![2; 8])
         .expect("placeholder pair")
         .with_credential_generation(lc_gen(1))
         .expect("generation");
     store
-        .replace_teslamate_legacy_tokens(&pair)
+        .replace_legacy_owner_tokens(&pair)
         .expect("store pair");
     (directory, store)
 }
@@ -83,20 +83,20 @@ fn lc2_a_closed_attempt_without_release_keeps_the_input_fenced_for_ever() {
         Err(StoreError::LegacyRefreshOutcomeUnknown)
     ));
     // K4: the same pair cannot be imported again, a different one can.
-    let same = TeslaMateLegacyTokenStore::imported(vec![1; 8], vec![2; 8])
+    let same = LegacyOwnerTokenStore::imported(vec![1; 8], vec![2; 8])
         .expect("same pair")
         .with_credential_generation(lc_gen(1))
         .expect("generation");
     assert!(matches!(
-        store.replace_teslamate_legacy_tokens(&same),
+        store.replace_legacy_owner_tokens(&same),
         Err(StoreError::LegacyRefreshOutcomeUnknown)
     ));
-    let other = TeslaMateLegacyTokenStore::imported(vec![3; 8], vec![4; 8])
+    let other = LegacyOwnerTokenStore::imported(vec![3; 8], vec![4; 8])
         .expect("other pair")
         .with_credential_generation(lc_gen(2))
         .expect("generation");
     store
-        .replace_teslamate_legacy_tokens(&other)
+        .replace_legacy_owner_tokens(&other)
         .expect("new login");
 }
 
@@ -220,8 +220,8 @@ fn lc4_only_a_started_attempt_bound_to_the_input_can_be_closed() {
 
 /// The pair a refresh that kept its refresh token writes: a new access token, the
 /// same generation.
-fn lc_unrotated(generation: Uuid) -> TeslaMateLegacyTokenStore {
-    TeslaMateLegacyTokenStore::refreshed(vec![9; 8], vec![2; 8], AS_T0 + 28_800, AS_T0 + 21_600)
+fn lc_unrotated(generation: Uuid) -> LegacyOwnerTokenStore {
+    LegacyOwnerTokenStore::refreshed(vec![9; 8], vec![2; 8], AS_T0 + 28_800, AS_T0 + 21_600)
         .expect("refreshed pair")
         .with_credential_generation(generation)
         .expect("generation")
@@ -243,7 +243,7 @@ fn lc5_an_unrotated_refresh_writes_the_pair_and_closes_the_receipt_in_one_step()
     assert!(store.legacy_fenced_inputs_for_test().expect("fences").is_empty());
     assert!(!store.has_unresolved_legacy_refresh().expect("unresolved"));
     let stored = store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("load")
         .expect("a row");
     assert_eq!(stored.access(), &[9; 8]);
@@ -261,12 +261,12 @@ fn lc6_an_external_write_that_came_first_is_never_overwritten_by_the_older_refre
     let receipt = store.begin_legacy_refresh(lc_gen(1)).expect("begin");
     // The owner enters a new login while the request is in flight. The kept
     // writer resolves the started attempt (K4) and stores its pair.
-    let replacement = TeslaMateLegacyTokenStore::imported(vec![7; 8], vec![8; 8])
+    let replacement = LegacyOwnerTokenStore::imported(vec![7; 8], vec![8; 8])
         .expect("replacement")
         .with_credential_generation(lc_gen(2))
         .expect("generation");
     store
-        .replace_teslamate_legacy_tokens(&replacement)
+        .replace_legacy_owner_tokens(&replacement)
         .expect("external write");
     // The older refresh finds its attempt closed and the row changed: nothing is
     // written, and the owner's pair stays.
@@ -275,7 +275,7 @@ fn lc6_an_external_write_that_came_first_is_never_overwritten_by_the_older_refre
         Err(StoreError::LegacyRefreshOutcomeUnknown)
     ));
     let stored = store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("load")
         .expect("a row");
     assert_eq!(stored.credential_generation(), Some(lc_gen(2)));
@@ -292,7 +292,11 @@ fn lc7_a_row_that_changed_under_a_started_attempt_leaves_the_receipt_started() {
         .open()
         .expect("connection")
         .execute(
-            "UPDATE teslamate_legacy_tokens SET credential_generation = ?1",
+            concat!(
+                "UPDATE ",
+                crate::db::import_table_names::legacy_owner_tokens_table!(),
+                " SET credential_generation = ?1"
+            ),
             params![lc_gen(3).to_string()],
         )
         .expect("a row written by hand");
@@ -306,7 +310,7 @@ fn lc7_a_row_that_changed_under_a_started_attempt_leaves_the_receipt_started() {
     );
     assert_eq!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("load")
             .expect("a row")
             .access(),

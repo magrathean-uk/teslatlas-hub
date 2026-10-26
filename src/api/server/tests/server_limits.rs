@@ -40,13 +40,12 @@ fn physical_public_admission_gate_enforces_profile_wire_bounds() {
     let gate = store
         .try_acquire_publication_gate()
         .expect("publication gate");
-    let (_, candidate) =
-        crate::import::teslamate::physical_fragments::tests::public_admission_candidate_fixture(
-            &temporary.path().join("candidate"),
-            &store,
-            &CursorKey::from_bytes([97; 32]),
-            1,
-        );
+    let (_, candidate) = crate::sync::physical_fragments::tests::public_admission_candidate_fixture(
+        &temporary.path().join("candidate"),
+        &store,
+        &CursorKey::from_bytes([97; 32]),
+        1,
+    );
     let admission = store
         .stage_pending_physical_v3_admission(&gate, candidate)
         .expect("physical admission");

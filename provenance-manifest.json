@@ -4,7 +4,7 @@
   "declared_classes": [
     "MAGRATHEAN-ORIGINAL",
     "COMPANY-ASSIGNED-CONTRIBUTION",
-    "TESLAMATE-COMPATIBILITY",
+    "IMPORT-COMPATIBILITY",
     "THIRD-PARTY",
     "GENERATED",
     "DATA-OR-FACTS",
@@ -81,8 +81,6 @@
         "docs/maintainers/plans/2026-09-04-macos-app-native-fidelity-correction.md",
         "docs/maintainers/plans/2026-09-04-macos-app-redesign-fidelity-completion.md",
         "docs/maintainers/plans/2026-09-04-macos-app-redesign.md",
-        "docs/maintainers/specs/2026-09-04-macos-app-native-fidelity-correction.md",
-        "docs/maintainers/specs/2026-09-04-macos-app-redesign-design.md",
         "docs/operations/backup-and-recovery.md",
         "docs/operations/data-and-retention.md",
         "docs/operations/data-protection-for-deployers.md",
@@ -151,7 +149,7 @@
         "docs/legal/third-party-notices.md"
       ],
       "exception": {
-        "origin": "Compilation of notices for TeslaMate, Tesla Auth, Tesla Vehicle Command, Tesla Fleet Telemetry, and release dependencies.",
+        "origin": "Compilation of notices for Tesla Auth, Tesla Vehicle Command, Tesla Fleet Telemetry, Teslatlas Compute, data and service providers, and release dependencies.",
         "licensing": "Each embedded notice and licence remains governed by its named rightsholder and terms; compilation treatment does not replace generated release notices.",
         "release_treatment": "Ship this policy notice and also generate candidate-specific dependency and bundled-component notices."
       }
@@ -299,19 +297,20 @@
     {
       "id": "fixture-data-and-facts",
       "class": "DATA-OR-FACTS",
-      "rationale": "Deterministic test packs, manifests, checksums, lineage facts, and a synthetic TeslaMate source-shape corpus.",
+      "rationale": "Deterministic test packs, manifests, checksums, lineage facts, and a synthetic source-schema corpus.",
       "paths": [
         "fixtures/delta-v2/SHA256SUMS",
         "fixtures/delta-v2/manifest.json",
-        "fixtures/lineage_manifest_v2.json"
+        "fixtures/lineage_manifest_v2.json",
+        "fixtures/n1/v77-catalogue.sqlite.zst"
       ],
       "globs": [
         "fixtures/delta-v2/v1/packs/sha256/*.sqlite.zst",
-        "fixtures/teslamate-corpus/v1/*.sql"
+        "fixtures/source-corpus/v1/*.sql"
       ],
       "exception": {
-        "origin": "Repository test tooling and compatibility work produced deterministic, synthetic fixtures; the SQL fixture records TeslaMate v4 source schema shape and edge-case values, not a production vehicle dump.",
-        "licensing": "The original selection and fixture expression follow the project licence; TeslaMate schema names and third-party facts remain attributed to their sources. No database ownership is asserted.",
+        "origin": "Repository test tooling and compatibility work produced deterministic, synthetic fixtures; the SQL fixture records the source database's schema shape and edge-case values, not a production vehicle dump.",
+        "licensing": "The original selection and fixture expression follow the project licence; source schema names and third-party facts remain attributed to their sources. No database ownership is asserted.",
         "release_treatment": "Ship only as test data, preserve compatibility attribution, and never substitute private or production telemetry."
       }
     },
@@ -346,7 +345,8 @@
         "src/collection/mod.rs",
         "src/collection/tesla_stream.rs",
         "src/import/mod.rs",
-        "src/lib.rs"
+        "src/lib.rs",
+        "src/runtime/config/tests/n1.rs"
       ],
       "globs": [
         "src/api/*.rs",
@@ -377,30 +377,31 @@
       ]
     },
     {
-      "id": "teslamate-compatibility-rust",
-      "class": "TESLAMATE-COMPATIBILITY",
-      "rationale": "Compatibility, migration, schema, projection, token, and deterministic TeslaMate-behaviour paths reviewed against public TeslaMate material; classification is not a conclusion about protectable expression.",
+      "id": "import-compatibility-rust",
+      "class": "IMPORT-COMPATIBILITY",
+      "rationale": "Import paths that work with another program's database schema and published data formats; classification is not a conclusion about protectable expression.",
       "paths": [
         "src/auth/legacy_auth.rs",
-        "src/auth/teslamate_credentials.rs",
-        "src/auth/teslamate_token.rs",
-        "src/collection/fake_tesla.rs"
+        "src/auth/legacy_owner_credentials.rs",
+        "src/auth/source_token_envelope.rs",
+        "src/collection/fake_tesla.rs",
+        "src/collection/source_db_current/current_key_tests.rs"
       ],
       "globs": [
         "src/auth/legacy_auth/*.rs",
-        "src/auth/teslamate_credentials/*.rs",
+        "src/auth/legacy_owner_credentials/*.rs",
         "src/collection/fake_tesla/*.rs",
-        "src/import/teslamate/*.rs",
-        "src/import/teslamate/*/*.rs"
+        "src/import/source_db/*.rs",
+        "src/import/source_db/*/*.rs"
       ]
     },
     {
       "id": "teslatlas-protocol-pack-contracts",
       "class": "MAGRATHEAN-ORIGINAL",
-      "rationale": "Pack schemas reproduced verbatim, apart from their header comments, from the Apache-2.0 Teslatlas Protocol hub-sync-v1 contracts: physical-delta-pack-v1.sql from profile 1.4.0 and prepared-pack-v1.sql from profile 1.3.0. They are source-neutral protocol material, not TeslaMate-derived expression. This treatment does not prove chain of title.",
+      "rationale": "Pack schemas reproduced verbatim, apart from their header comments, from the Apache-2.0 Teslatlas Protocol hub-sync-v1 contracts: physical-delta-pack-v1.sql from profile 1.4.0 and prepared-pack-v1.sql from profile 1.3.0. They are source-neutral protocol material, not derived from another program's code. This treatment does not prove chain of title.",
       "paths": [
-        "src/import/teslamate/physical_delta_pack_v1.sql",
-        "src/import/teslamate/prepared_pack_v1.sql"
+        "src/import/source_db/physical_delta_pack_v1.sql",
+        "src/sync/prepared_pack_v1.sql"
       ]
     },
     {
@@ -430,18 +431,24 @@
         "macos/TeslatlasHubApp/TeslatlasHubApp/OnboardingWindowController.swift",
         "macos/TeslatlasHubApp/TeslatlasHubApp/ServiceDetailsWindowController.swift",
         "macos/TeslatlasHubApp/TeslatlasHubApp/main.swift",
-        "macos/TeslatlasHubApp/project.yml"
+        "macos/TeslatlasHubApp/project.yml",
+        "macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/import-history-argv.json",
+        "macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-not-recognised.json",
+        "macos/TeslatlasHubApp/TeslatlasHubAppTests/Fixtures/source-check-recognised.json",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/HubSourceCheckResult.swift"
       ],
       "globs": [
         "macos/TeslatlasHubApp/TeslatlasHubAppTests/*.swift"
       ]
     },
     {
-      "id": "teslamate-macos-importer",
-      "class": "TESLAMATE-COMPATIBILITY",
-      "rationale": "Native macOS migration adapter implements the reviewed TeslaMate compatibility and import contract.",
+      "id": "import-macos-importer",
+      "class": "IMPORT-COMPATIBILITY",
+      "rationale": "Native macOS import adapter that finds and reads another program's database on the user's server.",
       "paths": [
-        "macos/TeslatlasHubApp/TeslatlasHubApp/TeslaMateServerImporter.swift"
+        "macos/TeslatlasHubApp/TeslatlasHubApp/SourceServerImporter.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/SourceDiscovery.swift",
+        "macos/TeslatlasHubApp/TeslatlasHubApp/SourceDeploymentFacts.swift"
       ]
     },
     {
@@ -483,7 +490,9 @@
       "rationale": "Repository-maintained build, audit, evidence, release, and hermetic test tooling.",
       "globs": [
         "scripts/*.py",
-        "scripts/*.sh"
+        "scripts/*.sh",
+        "scripts/name-policy/*.py",
+        "scripts/name-policy/*.json"
       ]
     },
     {
@@ -563,7 +572,8 @@
         "origin": "Pre-programme plans, receipts, snapshots, and supporting records retained during the 2026-09-25 repository reorganisation.",
         "licensing": "Historical records can describe external systems and facts without establishing rights in referenced material.",
         "release_treatment": "Retain as immutable historical context; do not use them as current plans, acceptance evidence, or release authority."
-      }
+      },
+      "paths": []
     },
     {
       "id": "historical-archive-patches",
@@ -639,8 +649,8 @@
         "src/api/server/tests/vehicle_grants.rs",
         "src/collection/current_state/b3_c6_c1_tests.rs",
         "src/collection/current_state/http_serializers.rs",
-        "src/collection/teslamate_current.rs",
-        "src/collection/teslamate_current/tests.rs",
+        "src/collection/source_db_current.rs",
+        "src/collection/source_db_current/tests.rs",
         "src/runtime/lifecycle/gate_tests/c2_a_tests.rs",
         "src/runtime/lifecycle/gate_tests/c2_b_tests.rs",
         "src/runtime/lifecycle/gate_tests/fold.rs",

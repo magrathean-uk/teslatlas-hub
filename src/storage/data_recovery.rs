@@ -97,7 +97,7 @@ pub enum DataRecoveryError {
     #[error("Hub data-backup SQLite identity query failed: {0}")]
     CatalogueIdentity(#[source] rusqlite::Error),
     #[error("Hub data-backup credential validation failed: {0}")]
-    Credential(#[from] crate::teslamate_credentials::TeslaMateCredentialError),
+    Credential(#[from] crate::legacy_owner_credentials::SourceDbCredentialError),
     #[error("could not inspect free space at {path}: {source}")]
     FilesystemSpace {
         path: PathBuf,

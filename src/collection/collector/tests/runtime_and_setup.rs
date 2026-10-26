@@ -71,7 +71,7 @@ async fn empty_inventory_then_return_remains_discoverable_across_supervisor_rest
     const VIN: &str = "5YJ3E1EA7KF000001";
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+    let key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
     let vehicle = Vehicle::for_test(70, VIN, "online");
     finish_collection_for_provider(
@@ -116,7 +116,7 @@ async fn a_scheduled_list_that_lacks_a_car_retires_nothing_and_a_later_list_keep
     const VIN: &str = "5YJ3E1EA7KF000001";
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+    let key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
     let vehicle = Vehicle::for_test(70, VIN, "online");
     finish_collection_for_provider(
@@ -459,7 +459,7 @@ async fn resident_fleet_control_uses_selected_vehicle_shared_bearer_proxy_and_au
         Some(SELECTED_EID),
     )
     .expect("explicit Fleet vehicle selection");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
     finish_collection_for_provider(
         &store,
@@ -650,7 +650,8 @@ async fn resident_fleet_control_uses_selected_vehicle_shared_bearer_proxy_and_au
 async fn fleet_observer_revalidates_admission_before_discovery_egress() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         "observer-fleet-access".to_owned(),
         "observer-fleet-refresh".to_owned(),
@@ -768,7 +769,7 @@ fn native_setup_requires_an_explicit_choice_for_multiple_vehicles() {
 async fn fleet_setup_requires_every_configured_vehicle_by_eid_or_vin() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
     finish_collection_for_provider(
         &store,
@@ -804,7 +805,7 @@ async fn receiver_commits_and_restores_through_fleet_projection() {
     const VIN: &str = "5YJ3E1EA7KF000001";
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
     finish_collection_for_provider(
         &store,
@@ -879,7 +880,9 @@ async fn receiver_commits_and_restores_through_fleet_projection() {
     let raw_before: i64 = store
         .open()
         .unwrap()
-        .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| {
+            row.get(0)
+        })
         .unwrap();
     receiver
         .ingest(&store, &cursor_key, &body)
@@ -889,7 +892,9 @@ async fn receiver_commits_and_restores_through_fleet_projection() {
     let raw_after: i64 = store
         .open()
         .unwrap()
-        .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM raw_observations", [], |row| {
+            row.get(0)
+        })
         .unwrap();
     assert_eq!(raw_after, raw_before);
 }
@@ -899,7 +904,7 @@ async fn fleet_vin_match_rotates_eid_without_losing_car_settings() {
     const VIN: &str = "5YJ3E1EA7KF000001";
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
     let mut original = Vehicle::for_test(70, VIN, "online");
     original.settings.enabled = false;
@@ -1020,7 +1025,7 @@ async fn assert_legacy_eid_rotation_preserves_identity_and_settings(mode: Legacy
     const VIN: &str = "5YJ3E1EA7KF000001";
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
     let mut original = Vehicle::for_test(70, VIN, "online");
     original.settings.enabled = false;
@@ -1130,7 +1135,7 @@ async fn legacy_setup_rejects_ambiguous_eid_and_vin_inventory_before_reconciliat
     const VIN: &str = "5YJ3E1EA7KF000001";
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
     let mut original = Vehicle::for_test(70, VIN, "online");
     original.settings.enabled = false;
@@ -1228,11 +1233,12 @@ async fn native_setup_discovers_and_publishes_one_vehicle_without_wake() {
         )
         .expect("setup tokens");
         let key = b"native-setup-key";
-        let (access, refresh) = crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens)
-            .expect("encrypted setup tokens");
-        let stored = crate::db::TeslaMateLegacyTokenStore::imported(access, refresh)
+        let (access, refresh) =
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens)
+                .expect("encrypted setup tokens");
+        let stored = crate::db::LegacyOwnerTokenStore::imported(access, refresh)
             .expect("stored setup tokens");
-        crate::teslamate_credentials::replace_key_and_tokens(
+        crate::legacy_owner_credentials::replace_key_and_tokens(
             temporary.path(),
             &store,
             key,
@@ -1365,7 +1371,7 @@ async fn disabled_geocoder_leaves_pending_jobs_untouched() {
             enabled: false,
             ..crate::config::GeocoderConfig::default()
         },
-        teslamate: crate::config::TeslaMateConfig::default(),
+        import_source: crate::config::ImportSourceConfig::default(),
         terrain: TerrainConfig::default(),
     };
 

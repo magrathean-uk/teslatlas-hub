@@ -368,8 +368,8 @@ const EMPTY_ROW: Row = Row {
     average: None,
 };
 
-fn imported_row(row: &Row) -> TeslaMateChargingProcess {
-    let mut process: TeslaMateChargingProcess = serde_json::from_value(serde_json::json!({
+fn imported_row(row: &Row) -> SourceDbChargingProcess {
+    let mut process: SourceDbChargingProcess = serde_json::from_value(serde_json::json!({
         "id": 7, "car_id": 1, "position_id": null, "address_id": null,
         "geofence_id": null, "start_date_ms": T0 - 1_800_000, "end_date_ms": null,
         "charge_energy_added": null, "charge_energy_used_kwh": null,
@@ -391,7 +391,7 @@ fn imported_row(row: &Row) -> TeslaMateChargingProcess {
 
 /// The imported sample row of a sample (the importer's own type), 10 s apart,
 /// carrying the five aggregate inputs; the other fields are empty.
-fn imported_sample(sample: &ProjectionChargeSample) -> TeslaMateCharge {
+fn imported_sample(sample: &ProjectionChargeSample) -> SourceDbCharge {
     serde_json::from_value(serde_json::json!({
         "id": sample.id, "charging_process_id": 7, "date_ms": sample.timestamp_ms,
         "battery_heater": null, "battery_heater_on": null,
@@ -404,7 +404,7 @@ fn imported_sample(sample: &ProjectionChargeSample) -> TeslaMateCharge {
         "fast_charger_type": null, "ideal_range_km": null, "rated_range_km": null,
         "not_enough_power_to_heat": null, "outside_temp_c": null
     }))
-    .map(|mut row: TeslaMateCharge| {
+    .map(|mut row: SourceDbCharge| {
         // Non-finite values cannot travel through JSON; set the five inputs
         // directly.
         row.ideal_range_km = sample.ideal_range_km;
@@ -417,7 +417,7 @@ fn imported_sample(sample: &ProjectionChargeSample) -> TeslaMateCharge {
 }
 
 fn seeded(row: &Row, samples: &[ProjectionChargeSample]) -> ChargeDisplayAggregates {
-    let imported: Vec<TeslaMateCharge> = samples.iter().map(imported_sample).collect();
+    let imported: Vec<SourceDbCharge> = samples.iter().map(imported_sample).collect();
     open_aggregates(&open_charge_from_source(&imported_row(row), &imported))
 }
 

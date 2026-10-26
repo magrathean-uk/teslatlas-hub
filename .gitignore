@@ -23,6 +23,7 @@ __pycache__/
 
 # Track committed golden pack fixtures used by M06/lineage tests.
 !fixtures/delta-v2/**/*.zst
+!fixtures/n1/**/*.zst
 
 # Imported packages keep their fixtures.
 !protocol/**/*.zst

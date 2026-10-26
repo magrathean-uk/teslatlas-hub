@@ -40,7 +40,7 @@ changing server permissions indiscriminately. See
 
 SSH authentication succeeded, but the remote account cannot access the
 deployment. If that account normally uses sudo for Docker, select **This user
-needs sudo to read the TeslaMate database** and retry. The importer requires
+needs sudo to read the source database** and retry. The importer requires
 the supported non-interactive access path; an interactive sudo password prompt
 may not satisfy it. Ask the server administrator to verify the account's access
 if the error persists. Do not make the Docker socket world-writable.
@@ -81,7 +81,7 @@ signal cannot deliver live data. Legacy streaming reconnects with bounded
 recovery; Fleet Telemetry resumes when the vehicle and public receiver can
 communicate. A genuine no-signal interval may remain a route gap.
 
-Confirm only one service owns the provider token pair. Never run TeslaMate and
+Confirm only one service owns the provider token pair. Never run the source application and
 Hub concurrently with the same legacy refresh token.
 
 ## Service stopped but a port looks open
@@ -105,10 +105,10 @@ Confirm Fleet provider mode, virtual-key registration, the loopback command
 proxy, its CA path, and command-proxy service state. Wake uses the direct Fleet
 endpoint; other signed commands require the proxy.
 
-## TeslaMate import fails
+## Source application import fails
 
-Run `teslamate-check`. The running app must be TeslaMate 4.2.0 or newer, and
-Hub admits only the exact reviewed v4.2-compatible migration set. A newer or
+Run `source-check`. The running app must be the source application at a supported release, and
+Hub admits only an exact recognised schema set. A newer or
 modified schema is rejected rather than guessed.
 Passwords must not appear in the PostgreSQL URL.
 

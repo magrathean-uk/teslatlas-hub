@@ -4,6 +4,14 @@ This file records material changes to licensing, attribution, provenance, privac
 Historical entries describe what the documents asserted at that time; they are
 not evidence that a private instrument exists or remains sufficient.
 
+## 2026-10-26 - N1 Step 14 independence and provenance wording
+
+- Under the owner's pre-approval N1R-L (2026-10-26), updated the independence
+  wording in `NOTICE`, `docs/legal/overview.md` and `docs/legal/trademarks.md`,
+  renamed the import-compatibility classification in `docs/legal/provenance.md`,
+  and regenerated `docs/legal/owner-controlled-files.sha256`. These edits
+  change no licence or required attribution.
+
 ## 2026-10-26 — Go toolchain pin moved to 1.27.3
 
 - The Fleet Telemetry bridge and the command-proxy overlay are built with Go

@@ -2,7 +2,7 @@
 
 //! Operator diagnostics for Hub SQLite, stored Tesla credentials, and TLS.
 //!
-//! `doctor` is read-only: it never writes TeslaMate PostgreSQL and never
+//! `doctor` is read-only: it never writes source database PostgreSQL and never
 //! deletes Owner or Fleet tokens.
 
 use std::{
@@ -26,7 +26,7 @@ use crate::{
         validate_stored_fleet_credentials,
     },
     geocoder::{POLICY_URL, provider_status},
-    teslamate_credentials::validate_stored_legacy_credentials_read_only,
+    legacy_owner_credentials::validate_stored_legacy_credentials_read_only,
 };
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -208,7 +208,7 @@ pub struct VehicleDiagnostics {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SafetyDiagnostics {
-    pub teslamate_source_never_mutated: bool,
+    pub import_source_never_mutated: bool,
     pub import_does_not_delete_fleet_tokens: bool,
     pub doctor_is_read_only: bool,
 }
@@ -283,7 +283,7 @@ impl HubDoctorReport {
             certificate_present = self.tls.certificate_present,
             private_key_present = self.tls.private_key_present,
             identity_valid = self.tls.identity_valid,
-            teslamate_source_never_mutated = self.safety.teslamate_source_never_mutated,
+            import_source_never_mutated = self.safety.import_source_never_mutated,
             import_does_not_delete_fleet_tokens = self.safety.import_does_not_delete_fleet_tokens,
             "Hub doctor connection and safety"
         );
@@ -323,7 +323,7 @@ impl HubDoctorReport {
 
 /// Full Hub diagnosis: SQLite integrity, pack hashes, credential presence for
 /// both Tesla providers, TLS files, and collector readiness. Never deletes
-/// tokens and never opens TeslaMate PostgreSQL.
+/// tokens and never opens source database PostgreSQL.
 pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorReport, StoreError> {
     let sqlite = store.sqlite_version()?;
     let database = store.database_path().to_path_buf();
@@ -345,7 +345,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         },
     };
 
-    let legacy_tokens = store.load_teslamate_legacy_tokens()?;
+    let legacy_tokens = store.load_legacy_owner_tokens()?;
     let fleet_tokens = store.load_fleet_tokens()?;
     let unresolved_legacy_refresh = store.has_unresolved_legacy_refresh()?;
     let now_ms = diagnostic_epoch_ms();
@@ -619,14 +619,10 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         passed: true,
         detail: format!(
             "doctor did not delete Owner ({}) or Fleet ({}) token rows",
-            catalogue.teslamate_legacy_token_rows, catalogue.fleet_token_rows
+            catalogue.legacy_owner_token_rows, catalogue.fleet_token_rows
         ),
     };
-    let teslamate_safety = DoctorCheck {
-        name: "teslamateSource".to_owned(),
-        passed: true,
-        detail: "doctor does not connect to TeslaMate PostgreSQL and never writes it".to_owned(),
-    };
+    let source_db_safety = import_source_doctor_check(store, config);
 
     let mut checks = vec![
         integrity,
@@ -637,7 +633,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         cadence_check,
         stream_check,
         token_preservation,
-        teslamate_safety,
+        source_db_safety,
     ];
     if config.collector.provider == CollectorProvider::Fleet {
         checks.insert(
@@ -698,7 +694,7 @@ pub fn inspect_hub(store: &HubStore, config: &HubConfig) -> Result<HubDoctorRepo
         tls,
         vehicles,
         safety: SafetyDiagnostics {
-            teslamate_source_never_mutated: true,
+            import_source_never_mutated: true,
             import_does_not_delete_fleet_tokens: true,
             doctor_is_read_only: true,
         },
@@ -755,24 +751,20 @@ pub fn log_runtime_inventory(store: &HubStore, config: &HubConfig) {
             observations = catalogue.raw_observations,
             quarantined = catalogue.quarantined_sessions,
             packs = catalogue.referenced_packs,
-            legacy_token_rows = catalogue.teslamate_legacy_token_rows,
+            legacy_token_rows = catalogue.legacy_owner_token_rows,
             fleet_token_rows = catalogue.fleet_token_rows,
             journal_mode = %catalogue.journal_mode,
             "Hub runtime inventory"
         ),
         Err(error) => tracing::warn!(%error, "Hub runtime inventory unavailable"),
     }
-    let legacy = store
-        .load_teslamate_legacy_tokens()
-        .ok()
-        .flatten()
-        .is_some();
+    let legacy = store.load_legacy_owner_tokens().ok().flatten().is_some();
     let fleet = store.load_fleet_tokens().ok().flatten().is_some();
     tracing::info!(
         provider = ?config.collector.provider,
         owner_tokens_present = legacy,
         fleet_tokens_present = fleet,
-        "Hub stored Tesla credentials (not deleted by diagnostics or TeslaMate import)"
+        "Hub stored Tesla credentials (not deleted by diagnostics or source database import)"
     );
 }
 
@@ -821,6 +813,7 @@ fn diagnostic_epoch_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const EXACT_SOURCE_TOKEN_KEY: &[u8] = b"exact source token key";
     use crate::config::HubConfig;
     use std::os::unix::fs::PermissionsExt;
 
@@ -877,7 +870,7 @@ mod tests {
                 .iter()
                 .any(|check| check.name == "tokenPreservation" && check.passed)
         );
-        assert!(report.safety.teslamate_source_never_mutated);
+        assert!(report.safety.import_source_never_mutated);
         assert!(report.safety.import_does_not_delete_fleet_tokens);
         assert!(report.safety.doctor_is_read_only);
         assert!(!report.credentials.legacy.present);
@@ -891,12 +884,7 @@ mod tests {
                 .iter()
                 .any(|check| check.name == "streamRecovery" && check.passed)
         );
-        assert!(
-            store
-                .load_teslamate_legacy_tokens()
-                .expect("legacy")
-                .is_none()
-        );
+        assert!(store.load_legacy_owner_tokens().expect("legacy").is_none());
         assert!(store.load_fleet_tokens().expect("fleet").is_none());
         let json = serde_json::to_value(&report).expect("JSON");
         assert_eq!(json["status"], "ok");
@@ -976,14 +964,14 @@ mod tests {
         )
         .expect("tokens");
         let (access, refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(b"correct key", &tokens)
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(b"correct key", &tokens)
                 .expect("encrypt");
         let stored =
-            crate::db::TeslaMateLegacyTokenStore::imported(access, refresh).expect("stored tokens");
+            crate::db::LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
         store
-            .replace_teslamate_legacy_tokens(&stored)
+            .replace_legacy_owner_tokens(&stored)
             .expect("store tokens");
-        crate::teslamate_credentials::replace_key(temporary.path(), b"wrong key")
+        crate::legacy_owner_credentials::replace_key(temporary.path(), b"wrong key")
             .expect("wrong key");
         let config_path = temporary.path().join("config.toml");
         fs::write(
@@ -1014,17 +1002,18 @@ mod tests {
     fn doctor_rejects_unresolved_legacy_refresh_without_settling_it() {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("store");
-        let key = b"exact TeslaMate key";
+        let key = EXACT_SOURCE_TOKEN_KEY;
         let tokens = crate::credentials::OwnerTokens::from_secret_parts(
             "access".to_owned(),
             "refresh".to_owned(),
         )
         .expect("tokens");
         let (access, refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens)
+                .expect("encrypt");
         let stored =
-            crate::db::TeslaMateLegacyTokenStore::imported(access, refresh).expect("stored tokens");
-        crate::teslamate_credentials::replace_key_and_tokens(
+            crate::db::LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
+        crate::legacy_owner_credentials::replace_key_and_tokens(
             temporary.path(),
             &store,
             key,
@@ -1032,7 +1021,7 @@ mod tests {
         )
         .expect("persist credentials");
         let generation = store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("load tokens")
             .expect("token row")
             .credential_generation()
@@ -1075,17 +1064,18 @@ mod tests {
     fn legacy_doctor_fixture() -> (tempfile::TempDir, HubStore, HubConfig) {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("store");
-        let key = b"exact TeslaMate key";
+        let key = EXACT_SOURCE_TOKEN_KEY;
         let tokens = crate::credentials::OwnerTokens::from_secret_parts(
             "access".to_owned(),
             "refresh".to_owned(),
         )
         .expect("tokens");
         let (access, refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens)
+                .expect("encrypt");
         let stored =
-            crate::db::TeslaMateLegacyTokenStore::imported(access, refresh).expect("stored tokens");
-        crate::teslamate_credentials::replace_key_and_tokens(
+            crate::db::LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
+        crate::legacy_owner_credentials::replace_key_and_tokens(
             temporary.path(),
             &store,
             key,
@@ -1177,7 +1167,11 @@ mod tests {
                 assert!(matches!(text, "retrying" | "network"), "{text}");
             }
         }
-        assert!(!json.to_string().contains("exact TeslaMate key"));
+        assert!(
+            !json
+                .to_string()
+                .contains(std::str::from_utf8(EXACT_SOURCE_TOKEN_KEY).unwrap())
+        );
     }
 
     #[test]
@@ -1186,7 +1180,7 @@ mod tests {
         // The stops are tied to the stored pair's own generation: a stop of another
         // generation is lifted in the effective view (C5 R44a).
         let generation = store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("tokens")
             .expect("row")
             .credential_generation()
@@ -1241,7 +1235,7 @@ mod tests {
             .write_collector_auth_row(&row("ready", None), 2_000)
             .expect("ready");
         let tokens = store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("tokens")
             .expect("row");
         store
@@ -1285,5 +1279,63 @@ mod tests {
                 .iter()
                 .any(|check| check.name == "tlsIdentity" && !check.passed)
         );
+    }
+}
+
+fn import_source_doctor_check(store: &HubStore, config: &HubConfig) -> DoctorCheck {
+    let result = config
+        .import_source
+        .current
+        .as_ref()
+        .map(|current| store.check_current_import_source_key(&current.source_key));
+    match result {
+        Some(Err(error)) => DoctorCheck {
+            name: "importSource".to_owned(),
+            passed: false,
+            detail: error.to_string(),
+        },
+        _ => DoctorCheck {
+            name: "importSource".to_owned(),
+            passed: true,
+            detail: "doctor does not connect to the source database and never writes it".to_owned(),
+        },
+    }
+}
+
+#[cfg(test)]
+mod n1_current_key_tests {
+    use super::*;
+    #[test]
+    fn mt4_5_unknown_current_key_fails_doctor_using_the_same_lookup() {
+        let temporary = crate::private_tempdir().unwrap();
+        let store = HubStore::initialize(temporary.path()).unwrap();
+        store
+            .register_import_source("home-source", 1000, false)
+            .unwrap();
+        let text = format!(
+            "data_dir={:?}\nbind=\"127.0.0.1:21447\"\n",
+            temporary.path().to_str().unwrap()
+        );
+        let (mut config, _) = HubConfig::from_exact_bytes(text.as_bytes()).unwrap();
+        config.import_source.current = Some(crate::config::ImportSourceCurrentConfig {
+            source_url: "postgresql://reader@source.example/sourcedb".into(),
+            source_key: "unmatched-private-key".into(),
+            vehicle_id: uuid::Uuid::new_v4(),
+            car_id: 42,
+            password_file: temporary.path().join("intentionally-absent-password"),
+        });
+        let check = import_source_doctor_check(&store, &config);
+        assert_eq!(check.name, "importSource");
+        assert!(!check.passed);
+        assert_eq!(
+            check.detail,
+            store
+                .check_current_import_source_key("unmatched-private-key")
+                .unwrap_err()
+                .to_string()
+        );
+        assert!(!check.detail.contains("unmatched-private-key"));
+        config.import_source.current.as_mut().unwrap().source_key = "home-source".into();
+        assert!(import_source_doctor_check(&store, &config).passed);
     }
 }

@@ -242,7 +242,7 @@ impl crate::legacy_auth::attempt::AuthEnv for FixedAuthEnv {
 /// calls.
 fn confirmation_auth(bed: &StopBed, env: &Arc<FixedAuthEnv>) -> CollectionAuth {
     bed.store_pair("stored-access", "stored-refresh");
-    let manager = LegacyAuthManager::from_hub_teslamate_store_for_test(
+    let manager = LegacyAuthManager::from_hub_source_db_store_for_test(
         bed.store.clone(),
         bed.temporary.path(),
         &crate::legacy_auth::AuthEndpointConfig {
@@ -892,20 +892,20 @@ async fn t42_a_signed_out_account_sends_nothing_and_the_owners_retry_resumes_it(
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    crate::teslamate_credentials::replace_key(temporary.path(), b"chain-cloak-key")
+    crate::legacy_owner_credentials::replace_key(temporary.path(), b"chain-cloak-key")
         .expect("0600 Cloak key");
-    let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("loop-access".to_owned(), "loop-refresh".to_owned())
             .expect("initial pair");
-    let generation = crate::teslamate_token::legacy_refresh_credential_generation(&initial);
+    let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&initial);
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("Cloak pair");
     let (expires, next) = not_due_schedule();
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(access, refresh, expires, next)
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, expires, next)
                 .expect("a schedule that is not due"),
         )
         .expect("store pair");
@@ -930,7 +930,7 @@ async fn t42_a_signed_out_account_sends_nothing_and_the_owners_retry_resumes_it(
         .expect("stored stop");
 
     let (fake, base, client, server) = auth_fake().await;
-    let manager = LegacyAuthManager::from_hub_teslamate_store_for_test(
+    let manager = LegacyAuthManager::from_hub_source_db_store_for_test(
         store.clone(),
         temporary.path(),
         &AuthEndpointConfig {
@@ -1060,19 +1060,19 @@ async fn t28_an_observer_whose_list_is_refused_waits_and_the_run_goes_on() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    crate::teslamate_credentials::replace_key(temporary.path(), b"chain-cloak-key")
+    crate::legacy_owner_credentials::replace_key(temporary.path(), b"chain-cloak-key")
         .expect("0600 Cloak key");
-    let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
     let write_pair = |access: &str, refresh: &str| {
         let tokens =
             OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).expect("pair");
         let (access, refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
                 .expect("Cloak pair");
         let (expires, next) = not_due_schedule();
         store
-            .replace_teslamate_legacy_tokens(
-                &crate::db::TeslaMateLegacyTokenStore::refreshed(access, refresh, expires, next)
+            .replace_legacy_owner_tokens(
+                &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, expires, next)
                     .expect("a schedule that is not due"),
             )
             .expect("store pair");
@@ -1081,7 +1081,7 @@ async fn t28_an_observer_whose_list_is_refused_waits_and_the_run_goes_on() {
     let (fake, base, client, server) = auth_fake().await;
     fake.reject_all.store(true, Ordering::SeqCst);
     let env = Arc::new(SkippingEnv::default());
-    let manager = LegacyAuthManager::from_hub_teslamate_store_for_test(
+    let manager = LegacyAuthManager::from_hub_source_db_store_for_test(
         store.clone(),
         temporary.path(),
         &AuthEndpointConfig {
@@ -1207,9 +1207,15 @@ async fn t28_an_observer_whose_list_is_refused_waits_and_the_run_goes_on() {
         Some("observer-access-2"),
         "the next list carries the new token"
     );
-    k6_wait_for(&mut task, "the ready row", || auth_state().is_some_and(|(state, _)| state == "ready"))
-        .await;
-    assert_eq!(fake.token_requests(), 0, "an observer still never refreshes");
+    k6_wait_for(&mut task, "the ready row", || {
+        auth_state().is_some_and(|(state, _)| state == "ready")
+    })
+    .await;
+    assert_eq!(
+        fake.token_requests(),
+        0,
+        "an observer still never refreshes"
+    );
     shutdown_tx.send(()).expect("shutdown");
     join_supervised_restart_task("collector join", &mut task)
         .await
@@ -1431,38 +1437,44 @@ async fn ct72_c_a_read_that_meets_the_wait_does_not_cancel_the_requests_in_fligh
                 terrain_wake: &bed.terrain,
                 any_wrote: false,
             };
-            let flow = drive_requests(&mut run, requests, None, |run: &mut TickRun<'_>, key, result, now| {
-                // The Owner loop's handler, for the two arms this case meets.
-                let TickKey::Read(vehicle_id) = key else {
-                    return Ok(ReadFlow::Continue);
-                };
-                match result {
-                    Ok(TickPayload::Data(snapshot)) => {
-                        let vehicle = run
-                            .scheduler
-                            .vehicles()
-                            .into_iter()
-                            .find(|vehicle| vehicle.id == vehicle_id)
-                            .expect("the car");
-                        run.scheduler.vehicle_succeeded(
-                            vehicle_id,
-                            poll_phase(&snapshot),
-                            sleep_eligible_with_policy(&snapshot, false),
-                            now,
-                        );
-                        run.batch.snapshots.push(SnapshotItem {
-                            vehicle,
-                            snapshot,
-                            received_at_ms,
-                        });
+            let flow = drive_requests(
+                &mut run,
+                requests,
+                None,
+                |run: &mut TickRun<'_>, key, result, now| {
+                    // The Owner loop's handler, for the two arms this case meets.
+                    let TickKey::Read(vehicle_id) = key else {
+                        return Ok(ReadFlow::Continue);
+                    };
+                    match result {
+                        Ok(TickPayload::Data(snapshot)) => {
+                            let vehicle = run
+                                .scheduler
+                                .vehicles()
+                                .into_iter()
+                                .find(|vehicle| vehicle.id == vehicle_id)
+                                .expect("the car");
+                            run.scheduler.vehicle_succeeded(
+                                vehicle_id,
+                                poll_phase(&snapshot),
+                                sleep_eligible_with_policy(&snapshot, false),
+                                now,
+                            );
+                            run.batch.snapshots.push(SnapshotItem {
+                                vehicle,
+                                snapshot,
+                                received_at_ms,
+                            });
+                        }
+                        Err(error) => {
+                            run.scheduler
+                                .vehicle_failed_for_error(vehicle_id, &error, now);
+                        }
+                        _ => {}
                     }
-                    Err(error) => {
-                        run.scheduler.vehicle_failed_for_error(vehicle_id, &error, now);
-                    }
-                    _ => {}
-                }
-                Ok(ReadFlow::Continue)
-            })
+                    Ok(ReadFlow::Continue)
+                },
+            )
             .await
             .expect("the tick");
             assert_eq!(flow, ReadFlow::Continue);

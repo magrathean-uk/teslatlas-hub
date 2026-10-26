@@ -459,12 +459,15 @@ fn prune_expired_outbound_request_receipts(
     let cutoff_ms = outbound_request_clock_ms()?.saturating_sub(OUTBOUND_REQUEST_RETENTION_MS);
     transaction
         .execute(
-            "DELETE FROM outbound_request_receipts
+            concat!(
+                "DELETE FROM outbound_request_receipts
               WHERE outcome <> 'started'
                 AND completed_at_ms < ?1
                 AND id NOT IN (
                     WITH RECURSIVE chain(generation) AS (
-                        SELECT credential_generation FROM teslamate_legacy_tokens
+                        SELECT credential_generation FROM ",
+                crate::db::import_table_names::legacy_owner_tokens_table!(),
+                "
                          WHERE singleton_id = 1 AND credential_generation IS NOT NULL
                         UNION
                         SELECT b.input_credential_generation
@@ -473,7 +476,8 @@ fn prune_expired_outbound_request_receipts(
                     )
                     SELECT b.receipt_id FROM legacy_refresh_receipt_bindings AS b
                      WHERE b.output_credential_generation IN (SELECT generation FROM chain)
-                )",
+                )"
+            ),
             params![cutoff_ms],
         )
         .map_err(StoreError::OutboundRequestReceipt)?;

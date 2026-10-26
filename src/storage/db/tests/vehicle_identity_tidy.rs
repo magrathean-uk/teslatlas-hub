@@ -19,7 +19,7 @@
 //! in `c6_st_i23_tidy_live` through the served summary's `car` view.
 
 use super::*;
-use crate::collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE;
+use crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE;
 use crate::hub_pack::ProjectionCarPatch;
 use crate::lifecycle::{OpenSessionState, drive_tests::T0};
 use serde_json::{Value, json};
@@ -1226,7 +1226,7 @@ fn import_finalise(
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -1234,7 +1234,7 @@ fn import_finalise(
         .expect("staging the session");
     let state = create_direct_import_projection_state(store, run_id, 32);
     let mut capture =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_initial_base(state);
+        crate::import_projection_state::SourceDbProjectionStateCapture::for_initial_base(state);
     capture.record_car(car).expect("capture the car");
     capture.seal().expect("seal the state");
     let state = capture.into_state();
@@ -1326,7 +1326,7 @@ fn route_store(route: Route) -> (tempfile::TempDir, HubStore, String) {
                     );
                 }
                 _ => {
-                    let inventory = TeslaMateImportProjectionInventory {
+                    let inventory = SourceDbImportProjectionInventory {
                         source_id: binding.account_id,
                         selected_car_id: binding.selected_car_id,
                         rows: Vec::new(),
@@ -1336,7 +1336,7 @@ fn route_store(route: Route) -> (tempfile::TempDir, HubStore, String) {
                         &import_delta_test_car(binding.selected_car_id),
                     );
                     store
-                        .finalize_teslamate_import_snapshot_with_projection_state(
+                        .finalize_source_db_import_snapshot_with_projection_state(
                             &manifest,
                             Sha256Digest::of_bytes(b"c6-i2-route"),
                             &[],
@@ -1377,12 +1377,12 @@ fn route_store(route: Route) -> (tempfile::TempDir, HubStore, String) {
         Route::SourceModelText => car.source_model_text = Some("Model 3".to_owned()),
         Route::PositionRow => {
             store
-                .record_teslamate_current(
+                .record_source_db_current(
                     &ObservationInput {
                         source_id: source,
                         vehicle_id: vehicle,
                         observed_at_ms: T0,
-                        payload: json!({"record_type": IMPORT_POSITION_RECORD_TYPE,
+                        payload: json!({"record_type": SOURCE_DB_POSITION_RECORD_TYPE,
                                         "position_id": 7, "battery_level": 80}),
                     },
                     T0,
@@ -1449,24 +1449,44 @@ fn route_store(route: Route) -> (tempfile::TempDir, HubStore, String) {
                 .open()
                 .expect("catalogue")
                 .execute(
-                    "DELETE FROM teslamate_import_projection_state_heads WHERE vehicle_id = ?1",
+                    concat!(
+                        "DELETE FROM ",
+                        crate::db::import_table_names::import_projection_state_heads_table!(),
+                        " WHERE vehicle_id = ?1"
+                    ),
                     params![vehicle_id],
                 )
                 .expect("remove the state head");
-            assert_eq!(count("teslamate_import_projection_heads"), 1);
-            assert_eq!(count("teslamate_import_projection_state_heads"), 0);
+            assert_eq!(
+                count(crate::db::import_table_names::import_projection_heads_table!()),
+                1
+            );
+            assert_eq!(
+                count(crate::db::import_table_names::import_projection_state_heads_table!()),
+                0
+            );
         }
         Route::StateHead => {
             store
                 .open()
                 .expect("catalogue")
                 .execute(
-                    "DELETE FROM teslamate_import_projection_heads WHERE vehicle_id = ?1",
+                    concat!(
+                        "DELETE FROM ",
+                        crate::db::import_table_names::import_projection_heads_table!(),
+                        " WHERE vehicle_id = ?1"
+                    ),
                     params![vehicle_id],
                 )
                 .expect("remove the head");
-            assert_eq!(count("teslamate_import_projection_heads"), 0);
-            assert_eq!(count("teslamate_import_projection_state_heads"), 1);
+            assert_eq!(
+                count(crate::db::import_table_names::import_projection_heads_table!()),
+                0
+            );
+            assert_eq!(
+                count(crate::db::import_table_names::import_projection_state_heads_table!()),
+                1
+            );
         }
         Route::Generation => assert_eq!(count("import_generations"), 1),
         Route::VehicleSource => {
@@ -1546,12 +1566,12 @@ fn c6_st_i26_imported_untouched() {
         );
     }
     store
-        .record_teslamate_current(
+        .record_source_db_current(
             &ObservationInput {
                 source_id: live.source_id,
                 vehicle_id: c.vehicle_id,
                 observed_at_ms: T0,
-                payload: json!({"record_type": IMPORT_POSITION_RECORD_TYPE, "position_id": 7}),
+                payload: json!({"record_type": SOURCE_DB_POSITION_RECORD_TYPE, "position_id": 7}),
             },
             T0,
         )
@@ -1935,13 +1955,13 @@ fn user_version(store: &HubStore) -> i32 {
 /// 4), never from a bare number.
 fn rewind_store(store: &HubStore, rewind: &str, steps_below_predecessor: i32) {
     let predecessor = STORE_DATA_STEPS_SCHEMA_VERSION - 1 - steps_below_predecessor;
-    store
-        .open()
-        .expect("catalogue")
+    let connection = store.open().expect("catalogue");
+    connection
         .execute_batch(&format!(
             "BEGIN IMMEDIATE; {rewind} PRAGMA user_version = {predecessor}; COMMIT;"
         ))
         .expect("rewind");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
 }
 
 fn definition_count(text: &str, needle: &str) -> usize {
@@ -2118,7 +2138,7 @@ fn c6_st_i28_schema_constants() {
     // no copy either, and a rename is one edit.
     let kind_double = format!("\"{IMPORT_SOURCE_KIND}\"");
     let kind_single = format!("'{IMPORT_SOURCE_KIND}'");
-    let record_type = IMPORT_POSITION_RECORD_TYPE;
+    let record_type = SOURCE_DB_POSITION_RECORD_TYPE;
     let source = |path: &str| {
         std::fs::read_to_string(format!("{}/src/{path}", env!("CARGO_MANIFEST_DIR")))
             .unwrap_or_else(|error| panic!("read {path}: {error}"))
@@ -2131,21 +2151,21 @@ fn c6_st_i28_schema_constants() {
         "the kind has one definition"
     );
     assert!(helpers.contains(&format!(
-        "pub(crate) const IMPORT_SOURCE_KIND: &str = {kind_double};"
+        "pub const IMPORT_SOURCE_KIND: &str = {kind_double};"
     )));
     // The one definition of the position record type, beside its producer.
-    let producer = source("collection/teslamate_current.rs");
+    let producer = source("collection/source_db_current.rs");
     assert_eq!(
         definition_count(&producer, record_type),
         1,
         "the record type has one definition"
     );
     assert!(producer.contains(&format!(
-        "pub(crate) const IMPORT_POSITION_RECORD_TYPE: &str = \"{record_type}\";"
+        "pub(crate) const SOURCE_DB_POSITION_RECORD_TYPE: &str = \"{record_type}\";"
     )));
     // Every producer and reader that R70 names reads them through the constants.
     for path in [
-        "import/teslamate/importer.rs",
+        "import/source_db/importer.rs",
         "storage/db/observation_persistence.rs",
         "storage/db/vehicle_identity_tidy.rs",
         "storage/db/migrations/b3.rs",
@@ -2162,7 +2182,7 @@ fn c6_st_i28_schema_constants() {
         }
     }
     assert!(
-        source("import/teslamate/importer.rs")
+        source("import/source_db/importer.rs")
             .matches("IMPORT_SOURCE_KIND")
             .count()
             >= 3,
@@ -2186,7 +2206,7 @@ fn c6_st_i28_schema_constants() {
         "the CHECK admits the producer's record type"
     );
     ts.store
-        .record_teslamate_current(
+        .record_source_db_current(
             &ObservationInput {
                 source_id: ts.source.source_id,
                 vehicle_id: ts.vehicle.vehicle_id,
@@ -2226,13 +2246,13 @@ fn c6_st_i28_schema_constants() {
         .expect("imported vehicle");
     assert_eq!(
         ts.store
-            .teslamate_current_source("i2-lookup", imported.vehicle_id, "lookup-key", None)
+            .source_db_current_source("i2-lookup", imported.vehicle_id, "lookup-key", None)
             .expect("lookup"),
         Some(import.source_id)
     );
     assert_eq!(
         ts.store
-            .teslamate_current_source("account-test", ts.vehicle.vehicle_id, "vehicle-test", None)
+            .source_db_current_source("account-test", ts.vehicle.vehicle_id, "vehicle-test", None)
             .expect("lookup of a live source"),
         None
     );

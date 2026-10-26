@@ -320,7 +320,7 @@ updates. Fields are change-driven and have per-field minimum intervals; during
 driving, location, speed, and heading are capped at one update every five
 seconds. Hub derives drive power from `PackVoltage` and `PackCurrent` only when
 their timestamps are within 30 seconds. Fleet Telemetry does not provide the
-elevation used by TeslaMate-style positions; elevation remains absent unless
+elevation used by imported positions; elevation remains absent unless
 Hub's optional terrain enrichment is enabled and resolves it.
 
 With `[collector.fleet_telemetry]` present, the resident collector makes no

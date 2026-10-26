@@ -770,6 +770,7 @@ fn c9_predecessor() -> (
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
     assert_eq!(columns, vec!["status", "retry_after_ms"]);
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     (directory, store, vehicle, before)
 }
 
@@ -1108,7 +1109,10 @@ fn c9_st55_failed_step_is_atomic() {
     // C9 R61: fail the final DDL after both columns, the reset and index rebuild.
     connection.execute_batch("CREATE INDEX terrain_provenance_vehicle_retry ON terrain_elevation_provenance(attempts);").unwrap();
     let schema_before = c9_schema(&connection);
-    assert!(matches!(migrate(&connection), Err(StoreError::Migrate(_))));
+    assert!(matches!(
+        migrate_historical_fixture(&connection),
+        Err(StoreError::Migrate(_))
+    ));
     assert!(connection.is_autocommit());
     assert_eq!(
         schema_version(&connection).unwrap(),
@@ -1137,7 +1141,7 @@ fn c9_st55_failed_step_is_atomic() {
     connection
         .execute_batch("DROP INDEX terrain_provenance_vehicle_retry;")
         .unwrap();
-    migrate(&connection).unwrap();
+    migrate_historical_fixture(&connection).unwrap();
     c9_assert_upgrade(&store, vehicle, &before);
 }
 
@@ -1363,6 +1367,7 @@ fn c9_st55_repeated_rewinds_restore_fresh_schema() {
     connection
         .execute_batch(&format!("PRAGMA user_version = {predecessor};"))
         .unwrap();
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
     let migrated = HubStore::initialize(directory.path()).unwrap();

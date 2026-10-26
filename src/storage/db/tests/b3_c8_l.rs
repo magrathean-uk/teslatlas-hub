@@ -1218,10 +1218,12 @@ fn c8_t32_no_upgrade_relabel() {
     };
     let recorded = counts(&store);
     let reads = relabel_page_reads();
+    crate::db::import_names_test_support::prepare_historical_import_names(&store.open().unwrap());
     drop(store);
     let migrated = HubStore::initialize(temporary.path()).expect("migrated");
     let connection = migrated.open().expect("connection");
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     // The upgrade rewrote no label and recorded nothing (C8 R33).
     assert_eq!(raw_rows(&migrated, vehicle, "materialised_drives"), rows);

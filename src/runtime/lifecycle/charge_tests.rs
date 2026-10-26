@@ -936,7 +936,7 @@ fn st64_a_closed_charge_with_start_coordinates_has_one_start_coordinate_entry() 
 // ----------------------------------------------------------------------- ST65
 
 fn imported_charge_state(start: i64) -> OpenSessionState {
-    let process: TeslaMateChargingProcess = serde_json::from_value(json!({
+    let process: SourceDbChargingProcess = serde_json::from_value(json!({
         "id": 80, "car_id": 1, "position_id": null, "address_id": null,
         "geofence_id": null, "start_date_ms": start, "end_date_ms": null,
         "charge_energy_added": 3.0, "charge_energy_used_kwh": null,
@@ -946,7 +946,7 @@ fn imported_charge_state(start: i64) -> OpenSessionState {
         "end_rated_range_km": 142.0, "cost": null
     }))
     .expect("imported charging process");
-    let mut session = TeslaMateOpenSession {
+    let mut session = SourceDbOpenSession {
         car_id: 1,
         charge: Some(process),
         charge_samples: vec![

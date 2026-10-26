@@ -629,7 +629,7 @@ fn materialise_vehicle_lifecycle_with(
         },
         None => OpenSessionState::new(),
     };
-    // After TeslaMate import, materialised_* already holds pack-local ids
+    // After source database import, materialised_* already holds pack-local ids
     // (position_id up to 10M+). Seed next_* so live Owner-API projection never
     // collides with imported primary keys (R06 continuity UNIQUE constraint).
     seed_lifecycle_ids_from_materialised(store, vehicle_id, &mut state)?;
@@ -905,7 +905,7 @@ fn publish_compatibility_snapshots_for_provider_guarded(
         check_optional_write(guard, "publication-car-id")?;
         let selected_car_id =
             projection_car_id_for_vehicle(store, registered.vehicle_id, source_vehicle_id)?;
-        // Discovery can be the first live Owner-API event after a TeslaMate
+        // Discovery can be the first live Owner-API event after a source database
         // import. Imported history lives in immutable packs and therefore does
         // not guarantee a collector-side materialised car row. Seed that row
         // before recording the settings mutation so a sparse V2 successor can
@@ -1096,9 +1096,9 @@ fn compatibility_car_id(source_vehicle_id: u64) -> i64 {
 
 /// Pack-local car id for live collection on a registered vehicle.
 ///
-/// When the vehicle already has an immutable V2 base (TeslaMate import), live
+/// When the vehicle already has an immutable V2 base (source database import), live
 /// Owner-API materialisation and deltas must reuse that base's
-/// `selected_car_id` (TeslaMate car_id, e.g. 1). Using the Owner-API EID as
+/// `selected_car_id` (source car_id, e.g. 1). Using the Owner-API EID as
 /// `compatibility_car_id` would create pack-local id conflicts and break
 /// migration-to-Hub continuity (R06).
 fn projection_car_id_for_vehicle(
@@ -1118,18 +1118,26 @@ fn projection_car_id_for_vehicle(
 /// Raise open-session id cursors above any durable materialised history for
 /// this vehicle so import-backed rows and live collection share one id space.
 ///
-/// TeslaMate import publishes the full history as V2 packs and may only
+/// Source database import publishes the full history as V2 packs and may only
 /// materialise a subset (e.g. positions/states) into `materialised_*`. Drive /
 /// charge / sample / update ids still occupy pack-local primary keys. Live
 /// collection must not reuse those ids or the client V2 integrity check fails
 /// when a delta upserts drive id=1 over an imported drive with different times
 /// (positions fall outside the drive interval).
-const LEGACY_IMPORT_MAX_ID_SQL: &str = "SELECT COALESCE(MAX(entity_id), 0)
-       FROM teslamate_import_projection_rows
-      WHERE vehicle_id = ?1 AND entity = ?2";
-const CURRENT_IMPORT_MAX_ID_SQL: &str = "SELECT COALESCE(MAX(entity_id), 0)
-       FROM teslamate_import_projection_state_rows
-      WHERE vehicle_id = ?1 AND entity_ordinal = ?2";
+const LEGACY_IMPORT_MAX_ID_SQL: &str = concat!(
+    "SELECT COALESCE(MAX(entity_id), 0)
+       FROM ",
+    crate::db::import_table_names::import_projection_rows_table!(),
+    "
+      WHERE vehicle_id = ?1 AND entity = ?2"
+);
+const CURRENT_IMPORT_MAX_ID_SQL: &str = concat!(
+    "SELECT COALESCE(MAX(entity_id), 0)
+       FROM ",
+    crate::db::import_table_names::import_projection_state_rows_table!(),
+    "
+      WHERE vehicle_id = ?1 AND entity_ordinal = ?2"
+);
 
 fn seed_lifecycle_ids_from_materialised(
     store: &HubStore,

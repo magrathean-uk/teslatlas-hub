@@ -46,7 +46,7 @@ fn config_with_default_geocoder(directory: &std::path::Path) -> HubConfig {
         pairing: Default::default(),
         collector: crate::config::CollectorConfig::default(),
         geocoder: crate::config::GeocoderConfig::default(),
-        teslamate: crate::config::TeslaMateConfig::default(),
+        import_source: crate::config::ImportSourceConfig::default(),
         terrain: TerrainConfig::default(),
     }
 }

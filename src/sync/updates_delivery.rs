@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Shipped selected-car TeslaMate `updates` path through Hub schema 2.2.
+//! Shipped selected-car source database `updates` path through Hub schema 2.2.
 //!
 //! Read-only source decode, Hub persist/publish, signed full snapshot, signed
 //! no-op, and receipt emit are separate so each step can be driven without the
-//! next. Production TeslaMate is never written.
+//! next. Production source database is never written.
 
 use std::{
     fs::{self, File, OpenOptions},
@@ -31,24 +31,24 @@ use crate::{
         CursorKey, HUB_PROJECTION_SCHEMA_V2, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor,
         ProtocolLimits, SequenceRange, SyncManifest, TransportPack,
     },
-    teslamate_direct::DirectUpdatesSourceV2_2,
-    teslamate_projection::TeslaMateUpdatePhysicalV2_2,
-    teslamate_schema::{
-        MAX_VALIDATED_MIGRATION, TESLAMATE_V4_MIGRATION_COUNT, TESLAMATE_V4_MIGRATION_SET_SHA256,
-        TESLAMATE_V4_SOURCE_REVISION, is_supported_teslamate_source_revision,
+    source_db_direct::DirectUpdatesSourceV2_2,
+    source_db_projection::SourceDbUpdatePhysicalV2_2,
+    source_db_schema::{
+        MAX_VALIDATED_MIGRATION, SOURCE_DB_V4_MIGRATION_COUNT, SOURCE_DB_V4_MIGRATION_SET_SHA256,
+        SOURCE_DB_V4_SOURCE_REVISION, is_supported_source_db_revision,
     },
     updates_logical::{
         APP_SCHEMA_VERSION, LOGICAL_STREAM_SCHEMA, LogicalUpdatesStream, LogicalUpdatesSummary,
         PINNED_CANONICAL_BYTES, PINNED_CANONICAL_SHA256, PINNED_SELECTED_CAR_ID,
-        PINNED_TESLAMATE_REVISION, UPDATES_FIELD_COUNT, UpdatesLogicalError,
+        PINNED_SOURCE_DB_REVISION, UPDATES_FIELD_COUNT, UpdatesLogicalError,
         encode_updates_logical_stream, hex_sha256,
     },
 };
 
 const PINNED_FIXTURE_SQL: &[u8] =
-    include_bytes!("../../fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql");
+    include_bytes!("../../fixtures/source-corpus/v1/updates-lossless-selected-car.sql");
 const PINNED_FIXTURE_SQL_SHA256: &str =
-    "d8eebcbbb2f7e2039caa5cc509b0ff76b4aea56e4db1631d16f27aabf86d23db";
+    "3feb7d26022665e9996843bbf62b2352257d24a0019605e184528598da76dbd9";
 
 const FIXED_PACK_ID: &str = "91126d25-b1ed-5fe3-9e38-a4ad4f54285e";
 const FIXED_SNAPSHOT_ID: &str = "ea03e388-b812-5c4e-826e-be3eac371187";
@@ -102,7 +102,7 @@ fn reject(message: impl Into<String>) -> UpdatesDeliveryError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedUpdatesFixture {
     pub selected_car_id: i16,
-    pub rows: Vec<TeslaMateUpdatePhysicalV2_2>,
+    pub rows: Vec<SourceDbUpdatePhysicalV2_2>,
     pub sql_sha256: String,
 }
 
@@ -300,7 +300,7 @@ pub fn parse_pinned_updates_fixture() -> Result<ParsedUpdatesFixture, UpdatesDel
     parse_updates_copy_sql(PINNED_FIXTURE_SQL)
 }
 
-/// Parse TeslaMate `updates` COPY CSV (comma, `\\N` null, LF) into physical rows.
+/// Parse source database `updates` COPY CSV (comma, `\\N` null, LF) into physical rows.
 pub fn parse_updates_copy_sql(bytes: &[u8]) -> Result<ParsedUpdatesFixture, UpdatesDeliveryError> {
     let sql_sha256 = hex_sha256(bytes);
     if bytes != PINNED_FIXTURE_SQL && sql_sha256 == PINNED_FIXTURE_SQL_SHA256 {
@@ -348,7 +348,7 @@ pub fn parse_updates_copy_sql(bytes: &[u8]) -> Result<ParsedUpdatesFixture, Upda
                 .as_deref()
                 .ok_or_else(|| reject(format!("{label} is unexpectedly SQL NULL")))
         };
-        rows.push(TeslaMateUpdatePhysicalV2_2 {
+        rows.push(SourceDbUpdatePhysicalV2_2 {
             id: parse_ascii_i32(required(0, "id")?, "id")?,
             car_id: parse_ascii_i16(required(1, "car_id")?, "car_id")?,
             start_date_pg_us: parse_pg_timestamp_us(required(2, "start_date")?)?,
@@ -550,7 +550,7 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 }
 
 /// Build the schema-2.2 snapshot used by the pinned selected-car updates path.
-pub fn updates_snapshot_v2_2(rows: Vec<TeslaMateUpdatePhysicalV2_2>) -> ProjectionSnapshotV2_2 {
+pub fn updates_snapshot_v2_2(rows: Vec<SourceDbUpdatePhysicalV2_2>) -> ProjectionSnapshotV2_2 {
     ProjectionSnapshotV2_2 {
         global_settings: vec![ProjectionGlobalSettingsV2_2 {
             id: 1,
@@ -621,7 +621,7 @@ fn parse_uuid(value: &str) -> Uuid {
 /// Write one locally verified schema-2.2 pack from already-decoded update rows.
 pub fn write_updates_schema_22_pack(
     packs_dir: impl Into<PathBuf>,
-    rows: Vec<TeslaMateUpdatePhysicalV2_2>,
+    rows: Vec<SourceDbUpdatePhysicalV2_2>,
 ) -> Result<(BuiltProjectionPack, ProjectionSnapshotV2_2), UpdatesDeliveryError> {
     let snapshot = updates_snapshot_v2_2(rows);
     let request = updates_pack_request(&snapshot);
@@ -696,14 +696,14 @@ pub fn sign_updates_schema_22_noop(
 pub fn read_hub_updates_from_pack(
     pack: &TransportPack,
     pack_path: &Path,
-) -> Result<Vec<TeslaMateUpdatePhysicalV2_2>, UpdatesDeliveryError> {
+) -> Result<Vec<SourceDbUpdatePhysicalV2_2>, UpdatesDeliveryError> {
     let (_directory, path) = private_sqlite_tempfile_from_pack(pack, pack_path)?;
     read_hub_updates_from_sqlite_path(&path, pack.row_count)
 }
 
 pub fn read_hub_updates_from_sqlite(
     sqlite: &[u8],
-) -> Result<Vec<TeslaMateUpdatePhysicalV2_2>, UpdatesDeliveryError> {
+) -> Result<Vec<SourceDbUpdatePhysicalV2_2>, UpdatesDeliveryError> {
     if u64::try_from(sqlite.len()).unwrap_or(u64::MAX)
         > ProtocolLimits::default().max_uncompressed_pack_bytes
     {
@@ -716,7 +716,7 @@ pub fn read_hub_updates_from_sqlite(
 fn read_hub_updates_from_sqlite_path(
     path: &Path,
     maximum_rows: u64,
-) -> Result<Vec<TeslaMateUpdatePhysicalV2_2>, UpdatesDeliveryError> {
+) -> Result<Vec<SourceDbUpdatePhysicalV2_2>, UpdatesDeliveryError> {
     let connection = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -735,7 +735,7 @@ fn read_hub_updates_from_sqlite_path(
         .ok_or_else(|| reject("reopened SQLite row bound is invalid"))?;
     let rows = statement
         .query_map([query_limit], |row| {
-            Ok(TeslaMateUpdatePhysicalV2_2 {
+            Ok(SourceDbUpdatePhysicalV2_2 {
                 id: row.get(0)?,
                 car_id: row.get(1)?,
                 start_date_pg_us: row.get(2)?,
@@ -890,7 +890,7 @@ fn read_hub_production_capture_from_pack(
                 [i64::try_from(pack.row_count.saturating_add(1))
                     .map_err(|_| reject("reopened production row bound is invalid"))?],
                 |row| {
-                    Ok(TeslaMateUpdatePhysicalV2_2 {
+                    Ok(SourceDbUpdatePhysicalV2_2 {
                         id: row.get(0)?,
                         car_id: row.get(1)?,
                         start_date_pg_us: row.get(2)?,
@@ -1157,7 +1157,7 @@ struct ProductionUpdatesCaptureProof {
     global_settings: ProductionGlobalSettingsCapture,
     car: ProductionCarCapture,
     car_settings: ProductionCarSettingsCapture,
-    updates: Vec<TeslaMateUpdatePhysicalV2_2>,
+    updates: Vec<SourceDbUpdatePhysicalV2_2>,
 }
 
 fn production_updates_capture_proof(
@@ -1232,7 +1232,9 @@ fn production_car_identity_sha256(
 ) -> Result<String, UpdatesDeliveryError> {
     let canonical = serde_json::to_vec(&(car.eid, car.vid, car.vin.as_deref()))
         .map_err(|error| reject(error.to_string()))?;
-    let mut bytes = b"teslatlas-hub/teslamate-car-identity/v1\n".to_vec();
+    let mut bytes = crate::runtime::legacy_names::CAR_IDENTITY_V1
+        .as_bytes()
+        .to_vec();
     bytes.extend_from_slice(&canonical);
     Ok(hex_sha256(&bytes))
 }
@@ -1448,13 +1450,13 @@ pub(crate) fn prepare_initial_production_updates_schema_22_with_gate(
 ) -> Result<PreparedProductionUpdatesSchema22, UpdatesDeliveryError> {
     // New captures must use the current reviewed source. Legacy beta revision
     // acceptance is limited to verification of already-signed witnesses below.
-    if source_capture.schema.pinned_source_revision != TESLAMATE_V4_SOURCE_REVISION
-        || source_capture.schema.pinned_migration_set_sha256 != TESLAMATE_V4_MIGRATION_SET_SHA256
-        || source_capture.schema.observed_migration_count != TESLAMATE_V4_MIGRATION_COUNT
+    if source_capture.schema.pinned_source_revision != SOURCE_DB_V4_SOURCE_REVISION
+        || source_capture.schema.pinned_migration_set_sha256 != SOURCE_DB_V4_MIGRATION_SET_SHA256
+        || source_capture.schema.observed_migration_count != SOURCE_DB_V4_MIGRATION_COUNT
         || source_capture.schema.observed_migration_version != MAX_VALIDATED_MIGRATION
     {
         return Err(reject(
-            "production schema-2.2 source capture contradicts its pinned TeslaMate v4 schema facts",
+            "production schema-2.2 source capture contradicts its pinned source database v4 schema facts",
         ));
     }
     if !is_canonical_sha256(&source_capture.postgres_snapshot_sha256)
@@ -1591,13 +1593,13 @@ pub(crate) fn publish_production_updates_schema_22_with_gate(
 ) -> Result<ProductionUpdatesPublication, UpdatesDeliveryError> {
     // New captures must use the current reviewed source. Legacy beta revision
     // acceptance is limited to verification of already-signed witnesses below.
-    if source_capture.schema.pinned_source_revision != TESLAMATE_V4_SOURCE_REVISION
-        || source_capture.schema.pinned_migration_set_sha256 != TESLAMATE_V4_MIGRATION_SET_SHA256
-        || source_capture.schema.observed_migration_count != TESLAMATE_V4_MIGRATION_COUNT
+    if source_capture.schema.pinned_source_revision != SOURCE_DB_V4_SOURCE_REVISION
+        || source_capture.schema.pinned_migration_set_sha256 != SOURCE_DB_V4_MIGRATION_SET_SHA256
+        || source_capture.schema.observed_migration_count != SOURCE_DB_V4_MIGRATION_COUNT
         || source_capture.schema.observed_migration_version != MAX_VALIDATED_MIGRATION
     {
         return Err(reject(
-            "production schema-2.2 source capture contradicts its pinned TeslaMate v4 schema facts",
+            "production schema-2.2 source capture contradicts its pinned source database v4 schema facts",
         ));
     }
     if !is_canonical_sha256(&source_capture.postgres_snapshot_sha256)
@@ -1961,14 +1963,14 @@ pub fn assemble_updates_receipt(
     let identity = receipt_identity_hashes()?;
     let _ = work_root;
     Ok(UpdatesReceipt {
-        schema: "teslatlas-teslamate-v4-updates-receipt-v1".into(),
+        schema: crate::runtime::legacy_names::V4_UPDATES_RECEIPT_V1.into(),
         receipt_state: if layers_equal {
             "accepted".into()
         } else {
             "incomplete".into()
         },
         receipt_not_fabricated: true,
-        reference_commit: PINNED_TESLAMATE_REVISION.into(),
+        reference_commit: PINNED_SOURCE_DB_REVISION.into(),
         table: "updates".into(),
         field_count: UPDATES_FIELD_COUNT,
         app_schema_version: APP_SCHEMA_VERSION.into(),
@@ -2017,7 +2019,7 @@ pub fn assemble_updates_receipt(
         schema_version: "2.2".into(),
         manifest_sha256,
         pack_sha256,
-        source_commit: TESLAMATE_V4_SOURCE_REVISION.into(),
+        source_commit: SOURCE_DB_V4_SOURCE_REVISION.into(),
         binary_sha256: identity.binary_sha256,
         config_sha256: identity.config_sha256,
         toolchain_sha256: identity.toolchain_sha256,
@@ -2301,10 +2303,10 @@ fn validate_production_source_witness(
     );
     if witness.schema != "teslatlas-pg-source-witness-v1"
         || witness.source_transaction != "read_only_repeatable_read_exported_snapshot"
-        || !is_supported_teslamate_source_revision(&witness.source_revision)
-        || witness.pinned_migration_set_sha256 != TESLAMATE_V4_MIGRATION_SET_SHA256
+        || !is_supported_source_db_revision(&witness.source_revision)
+        || witness.pinned_migration_set_sha256 != SOURCE_DB_V4_MIGRATION_SET_SHA256
         || witness.observed_migration_count
-            != u64::try_from(TESLAMATE_V4_MIGRATION_COUNT).expect("migration count fits u64")
+            != u64::try_from(SOURCE_DB_V4_MIGRATION_COUNT).expect("migration count fits u64")
         || witness.observed_migration_version != MAX_VALIDATED_MIGRATION
         || i16::try_from(witness.selected_car_id)
             .ok()

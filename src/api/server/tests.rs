@@ -40,8 +40,8 @@ use crate::{
         SequenceRange, Sha256Digest, SyncManifest, TRANSPORT_SCHEMA_V1, TransferMode,
         TransportPack, canonical_delta_chain_digest,
     },
-    teslamate_import::{TeslaMateImportRequest, TeslaMateImportScope, publish_history},
-    teslamate_projection::{TeslaMateCar, TeslaMateDrive, TeslaMateHistory},
+    source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history},
+    source_db_projection::{SourceDbCar, SourceDbDrive, SourceDbHistory},
     transport::{
         TransportOperation, TransportPackRequest, TransportPackWriter, TransportRow, TransportValue,
     },
@@ -120,7 +120,7 @@ fn local_tls_server_config(
         }),
         collector: Default::default(),
         geocoder: Default::default(),
-        teslamate: Default::default(),
+        import_source: Default::default(),
         terrain: Default::default(),
         http: Default::default(),
         pairing: Default::default(),
@@ -134,7 +134,7 @@ fn local_plain_server_config(data_dir: std::path::PathBuf, bind: SocketAddr) -> 
         tls: None,
         collector: Default::default(),
         geocoder: Default::default(),
-        teslamate: Default::default(),
+        import_source: Default::default(),
         terrain: Default::default(),
         http: Default::default(),
         pairing: Default::default(),
@@ -250,7 +250,7 @@ async fn admitted_tls_server_creates_data_dir_cursor_key_when_not_supplied() {
     let bind = reservation.local_addr().expect("reserved address");
     drop(reservation);
     let config = local_tls_server_config(&temporary, store_path, bind);
-    let cursor_key_path = crate::teslamate_credentials::cursor_key_path(&config.data_dir);
+    let cursor_key_path = crate::legacy_owner_credentials::cursor_key_path(&config.data_dir);
     let store = HubStore::initialize(&config.data_dir).expect("store");
     let server_task = tokio::spawn(async move {
         serve_for_admitted_user(
@@ -298,7 +298,7 @@ async fn admitted_plain_server_reuses_the_persisted_schema_22_cursor_key() {
     drop(reservation);
     let config = local_plain_server_config(store_path, bind);
     let store = HubStore::initialize(&config.data_dir).expect("store");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(&config.data_dir)
         .expect("persisted cursor key");
     let (vehicle_id, _) = inject_schema_22_catalogue(&store, &cursor_key);
     let local_token_path = config.data_dir.join("secrets/local-api-token");

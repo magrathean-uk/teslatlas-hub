@@ -28,6 +28,6 @@ artifacts/
 vendor/
 upstream/
 repository-roots/
-fixtures/teslamate-postgres/
+fixtures/*-postgres/
 TeslatlasCore.xcframework/
 macos/

@@ -22,7 +22,10 @@ fn watermark_and_verification_use_only_durable_observation_metadata() {
     let store = HubStore::initialize(temporary.path()).expect("store");
     let (source, vehicle) = {
         let source = store
-            .register_source(&SourceDescriptor::new("teslamate", "cutover-test"), 1_000)
+            .register_source(
+                &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "cutover-test"),
+                1_000,
+            )
             .expect("source");
         let vehicle = store
             .register_vehicle(&VehicleDescriptor::new(source.source_id, "vin:test"), 1_001)
@@ -122,7 +125,10 @@ fn source_car_mapping_fails_closed_when_missing_or_ambiguous() {
 
     map_car(&store, vehicle.vehicle_id, 17);
     let other_source = store
-        .register_source(&SourceDescriptor::new("teslamate", "other"), 2_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "other"),
+            2_000,
+        )
         .expect("other source");
     let other_vehicle = store
         .register_vehicle(

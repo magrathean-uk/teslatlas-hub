@@ -18,7 +18,7 @@ fn c1_st107_boundary_dip_topup() {
         .store
         .upsert_geofences(
             harness.vehicle.vehicle_id,
-            &[crate::teslamate_projection::TeslaMateGeofence {
+            &[crate::source_db_projection::SourceDbGeofence {
                 id: 1,
                 name: "F1".to_owned(),
                 latitude: Some(10.0),

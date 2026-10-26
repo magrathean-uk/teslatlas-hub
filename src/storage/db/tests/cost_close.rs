@@ -51,7 +51,7 @@ impl CostHarness {
         rate: f64,
         fee: Option<f64>,
     ) {
-        let record = crate::teslamate_projection::TeslaMateGeofence {
+        let record = crate::source_db_projection::SourceDbGeofence {
             id,
             name: name.to_owned(),
             latitude: Some(latitude),
@@ -90,7 +90,7 @@ impl CostHarness {
         self.store
             .upsert_geofences(
                 self.vehicle.vehicle_id,
-                &[crate::teslamate_projection::TeslaMateGeofence {
+                &[crate::source_db_projection::SourceDbGeofence {
                     id,
                     name: format!("Imported {id}"),
                     latitude: Some(latitude),
@@ -433,7 +433,10 @@ fn t33_an_existing_cost_and_its_copy_are_kept_at_close() {
     // tariff copy; the import watermark covers it (R5).
     let import = harness
         .store
-        .register_source(&SourceDescriptor::new("teslamate", "import-t33"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-t33"),
+            1_000,
+        )
         .expect("import source");
     harness
         .store
@@ -888,7 +891,7 @@ fn r6_recommitting_an_unchanged_row_adds_no_sync_mutation() {
     assert_eq!(harness.charge_mutations(charge_id), 1);
 }
 
-fn imported_open_session(start: i64) -> crate::teslamate_projection::TeslaMateOpenSession {
+fn imported_open_session(start: i64) -> crate::source_db_projection::SourceDbOpenSession {
     let process = serde_json::from_value(serde_json::json!({
         "id": 7, "car_id": 1, "position_id": null, "address_id": null,
         "geofence_id": null, "start_date_ms": start, "end_date_ms": null,
@@ -916,7 +919,7 @@ fn imported_open_session(start: i64) -> crate::teslamate_projection::TeslaMateOp
         }))
         .expect("imported charge sample")
     };
-    let mut session = crate::teslamate_projection::TeslaMateOpenSession {
+    let mut session = crate::source_db_projection::SourceDbOpenSession {
         car_id: 1,
         charge: Some(process),
         charge_samples: vec![
@@ -937,7 +940,10 @@ fn t63_an_imported_open_charge_is_priced_at_its_live_close() {
     let store = HubStore::initialize(directory.path()).expect("store");
     // A migrated vehicle: registered under the import source (C9 ST51).
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", "import-t63"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-t63"),
+            1_000,
+        )
         .expect("source");
     let vehicle = store
         .register_vehicle(
@@ -1022,7 +1028,10 @@ fn r5_a_reseed_never_lowers_the_charge_import_bound() {
     let directory = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(directory.path()).expect("store");
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", "import-r5-seed"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-r5-seed"),
+            1_000,
+        )
         .expect("source");
     let vehicle = store
         .register_vehicle(
@@ -1070,7 +1079,7 @@ fn r5_a_promotion_never_lowers_the_charge_import_bound() {
     let store = HubStore::initialize(directory.path()).expect("store");
     let source = store
         .register_source(
-            &SourceDescriptor::new("teslamate", "import-r5-promote"),
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-r5-promote"),
             1_000,
         )
         .expect("source");
@@ -1081,7 +1090,7 @@ fn r5_a_promotion_never_lowers_the_charge_import_bound() {
         )
         .expect("vehicle");
     let v = vehicle.vehicle_id;
-    let promote = |session: &crate::teslamate_projection::TeslaMateOpenSession, at_ms: i64| {
+    let promote = |session: &crate::source_db_projection::SourceDbOpenSession, at_ms: i64| {
         let mut connection = store.open().expect("connection");
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1153,10 +1162,16 @@ fn r5_the_import_bound_reads_only_import_watermarks_of_charging_processes() {
         )
         .expect("second vehicle");
     let import_a = store
-        .register_source(&SourceDescriptor::new("teslamate", "import-a"), 1_003)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-a"),
+            1_003,
+        )
         .expect("source a");
     let import_b = store
-        .register_source(&SourceDescriptor::new("teslamate", "import-b"), 1_004)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-b"),
+            1_004,
+        )
         .expect("source b");
 
     // No watermark: nothing is imported, and every id is a Hub row.
@@ -1202,7 +1217,10 @@ fn r5_the_vehicle_source_does_not_decide_which_rows_are_imported() {
     let directory = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(directory.path()).expect("store");
     let import = store
-        .register_source(&SourceDescriptor::new("teslamate", "import-m"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-m"),
+            1_000,
+        )
         .expect("source");
     let migrated = store
         .register_vehicle(

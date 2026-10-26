@@ -76,7 +76,7 @@ def types(**groups):
 
 # The JSON type of every field, written out from the Hub projection models (ProjectionDrive, ProjectionPosition, ProjectionCharge and
 # ProjectionChargeSample: i64 is integer, f64 is number, bool, String), so a retyped generator table cannot agree with itself. position.power
-# and the four charger fields of a sample are number although TeslaMate stores whole numbers: the page routes serve the f64 projections.
+# and the four charger fields of a sample are number although the source database stores whole numbers: the page routes serve the f64 projections.
 FIELD_TYPES = {
     'drive': types(
         uuid='vehicle_id', integer='id start_date_ms end_date_ms duration_min speed_max start_soc end_soc ascent descent',

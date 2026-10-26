@@ -570,13 +570,14 @@ async fn imported_changed_history_serves_a_valid_typed_delta() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store");
     let cursor_key = CursorKey::from_bytes([44; 32]);
-    let request = TeslaMateImportRequest {
+    let request = SourceDbImportRequest {
+        new_import_source: false,
         source_key: "server-import".into(),
-        scope: TeslaMateImportScope::Selected(1),
+        scope: SourceDbImportScope::Selected(1),
         imported_at_ms: 1_700_000_000_000,
     };
-    let mut history = TeslaMateHistory {
-        cars: vec![TeslaMateCar {
+    let mut history = SourceDbHistory {
+        cars: vec![SourceDbCar {
             id: 1,
             eid: 440,
             vid: Some(441),
@@ -601,7 +602,7 @@ async fn imported_changed_history_serves_a_valid_typed_delta() {
         updates: vec![],
     };
     let first = publish_history(&store, &cursor_key, &request, &history).expect("base import");
-    history.drives.push(TeslaMateDrive {
+    history.drives.push(SourceDbDrive {
         id: 440,
         car_id: 1,
         start_date_ms: 2_000,

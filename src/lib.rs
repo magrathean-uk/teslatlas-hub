@@ -22,19 +22,17 @@ mod source_identity;
 pub use api::{fleet_api, http_range, owner_api, protocol, server, transport};
 pub use auth::{
     credential_recovery, credentials, crypto, fleet_credentials, legacy_auth,
-    teslamate_credentials, teslamate_token,
+    legacy_owner_credentials, source_token_envelope,
 };
 #[cfg(test)]
 pub use collection::fake_tesla;
 pub use collection::{collector, current_state, fleet_telemetry, tesla_stream};
 pub use geo::{geocoder, gpx, location, terrain, terrain_cache};
-pub use import::teslamate::{
-    direct as teslamate_direct, fragments as teslamate_fragments, importer as teslamate_import,
-    parity as teslamate_parity, physical_fragments as teslamate_physical_fragments,
-    physical_publication as teslamate_physical_publication, progress as teslamate_progress,
-    projection as teslamate_projection, projection_state as teslamate_projection_state,
-    reader as teslamate_reader, schema as teslamate_schema, source as teslamate,
-    stage as teslamate_stage,
+pub use import::source_db::{
+    direct as source_db_direct, fragments as source_db_fragments, importer as source_db_import,
+    parity as source_db_parity, progress as source_db_progress, projection as source_db_projection,
+    projection_state as import_projection_state, reader as source_db_reader,
+    schema as source_db_schema, source as source_db_connection, stage as source_db_stage,
 };
 #[cfg(unix)]
 #[doc(hidden)]
@@ -45,7 +43,9 @@ pub use platform::linux_systemd;
 pub use platform::macos_launch_agent;
 pub use runtime::{config, diagnostics, lifecycle};
 pub use storage::{data_recovery, db};
-pub use sync::{hub_pack, updates_delivery, updates_logical};
+pub use sync::{
+    hub_pack, physical_fragments, physical_publication, updates_delivery, updates_logical,
+};
 
 #[cfg(unix)]
 pub(crate) use platform::user_lifetime_lock;
@@ -228,7 +228,7 @@ pub fn legal_notice() -> String {
          License: AGPL-3.0-only\n\
          Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: {SOURCE_URL}\n\
          Corresponding Source: {corresponding_source}\n\
-         Unofficial; not affiliated with Tesla or TeslaMate; no warranty."
+         Unofficial; not affiliated with Tesla, Inc. or with the makers of software it can import from; no warranty."
     )
 }
 
@@ -288,6 +288,28 @@ mod legal_notice_tests {
     }
 
     #[test]
+    fn legal_notice_attribution_line_equals_additional_terms() {
+        let reference = include_str!("../docs/legal/additional-terms.md");
+        let section = reference
+            .split_once("## 1.")
+            .expect("original reference has section 1")
+            .1
+            .split("\n## ")
+            .next()
+            .expect("section 1 text");
+        let expected = section
+            .lines()
+            .find_map(|line| line.strip_prefix("> "))
+            .expect("section 1 quotes the required notice");
+        let notice = legal_notice();
+        let actual = notice
+            .lines()
+            .find(|line| line.starts_with("Teslatlas Hub ") && line.contains("Source: "))
+            .expect("interactive notice has an attribution line");
+        assert_eq!(actual.as_bytes(), expected.as_bytes());
+    }
+
+    #[test]
     fn legal_notice_identifies_agpl_only_and_notice_facts() {
         let notice = legal_notice();
         assert!(
@@ -326,8 +348,7 @@ mod legal_notice_tests {
             ),
         }
         assert!(
-            notice.contains("no warranty")
-                && notice.contains("not affiliated with Tesla or TeslaMate"),
+            notice.contains("no warranty") && notice.contains("not affiliated with Tesla, Inc."),
             "notice must state no-warranty and unofficial status: {notice}"
         );
     }

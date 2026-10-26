@@ -6,11 +6,11 @@
 use super::*;
 
 fn imported_online_state() -> OpenSessionState {
-    let mut session = TeslaMateOpenSession {
+    let mut session = SourceDbOpenSession {
         car_id: 1,
         ..Default::default()
     };
-    session.state = Some(TeslaMateState {
+    session.state = Some(SourceDbState {
         id: 5,
         car_id: 1,
         state: "online".to_owned(),

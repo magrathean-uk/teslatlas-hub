@@ -64,16 +64,24 @@ the persisted Tesla account credentials. It stays stopped across logins until
 
 | Command | Purpose |
 |---|---|
-| `teslamate-check` | Read-only TeslaMate compatibility and inventory check. |
-| `migrate` | Read-only TeslaMate history and credential transfer. |
+| `source-check` | Read-only source application compatibility and inventory check. |
+| `migrate` | Read-only source history and credential transfer. |
 | `observation-watermark` | Capture a durable cutover watermark. |
 | `verify-observation` | Prove a newer observation was committed. |
 
-TeslaMate migration requires a running TeslaMate 4.2.0 or newer and the exact
-reviewed v4.2-compatible database schema. Because the database cannot prove the
-app version, `teslamate-check` reports confirmation required until the operator
-passes `--acknowledge-v4-2-compatible-schema`; `migrate` always requires that
-flag.
+Import checks read the source schema and report whether this Hub recognises it.
+The schema cannot establish the release of the running source application. After
+checking the supported-release guidance, pass `--accept-schema-evidence` to
+acknowledge that limit; `migrate` requires the flag. The earlier schema flag is
+deprecated, remains a hidden alias, emits one warning
+on stderr and can be removed in a later version.
+
+The import kind is `source_db`; a first keyless import uses `default`. On an
+upgraded catalogue, reuse its stored key with `--source-key` or configure
+`import_source.source_key`. A different key is refused unless
+`--new-import-source` explicitly permits a second import source. `doctor` reports
+an unmatched current-source key; its current-state worker stops while Hub keeps
+serving. Old command/configuration names are refused with replacement guidance.
 
 ## Vehicle control
 

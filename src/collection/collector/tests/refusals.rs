@@ -928,21 +928,21 @@ fn ct72_owner_stores_credentials(
     access: &str,
     refresh: &str,
 ) -> Uuid {
-    let key = crate::teslamate_credentials::load_key(data_dir).unwrap_or_else(|_| {
-        crate::teslamate_credentials::replace_key(data_dir, b"ct72-cloak-key")
+    let key = crate::legacy_owner_credentials::load_key(data_dir).unwrap_or_else(|_| {
+        crate::legacy_owner_credentials::replace_key(data_dir, b"ct72-cloak-key")
             .expect("0600 Cloak key");
-        crate::teslamate_credentials::load_key(data_dir).expect("Cloak key")
+        crate::legacy_owner_credentials::load_key(data_dir).expect("Cloak key")
     });
-    let tokens = OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned())
-        .expect("a pair");
-    let generation = crate::teslamate_token::legacy_refresh_credential_generation(&tokens);
+    let tokens =
+        OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).expect("a pair");
+    let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
             .expect("Cloak pair");
     let (expires, next) = not_due_schedule();
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(access, refresh, expires, next)
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, expires, next)
                 .expect("a schedule")
                 .with_credential_generation(generation)
                 .expect("generation"),
@@ -970,7 +970,7 @@ fn ct72_unit_with_env(
     token_url: &url::Url,
     env: Arc<SkippingEnv>,
 ) -> LegacyAuthManager {
-    LegacyAuthManager::from_hub_teslamate_store_for_test(
+    LegacyAuthManager::from_hub_source_db_store_for_test(
         store.clone(),
         data_dir,
         &crate::legacy_auth::AuthEndpointConfig {
@@ -1108,7 +1108,7 @@ async fn ct72_g_a_refresh_between_two_starts_changes_no_fingerprint_and_keeps_a_
             // The unit's own refresh: a completed binding from g0 to a new generation.
             let g1 = Uuid::from_bytes([0x71; 16]);
             let receipt = bed.store.begin_legacy_refresh(g0).expect("begin");
-            let successor = crate::db::TeslaMateLegacyTokenStore::refreshed(
+            let successor = crate::db::LegacyOwnerTokenStore::refreshed(
                 vec![7; 8],
                 vec![3; 8],
                 epoch_seconds_of(SystemTime::now()) + 28_800,
@@ -1920,17 +1920,17 @@ async fn ct66_the_owner_loop_refuses_after_a_repeated_403_and_an_owner_retry_sen
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    crate::teslamate_credentials::replace_key(temporary.path(), b"chain-cloak-key")
+    crate::legacy_owner_credentials::replace_key(temporary.path(), b"chain-cloak-key")
         .expect("0600 Cloak key");
-    let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
     let initial = OwnerTokens::from_secret_parts("k6-access".to_owned(), "k6-refresh".to_owned())
         .expect("initial pair");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("Cloak pair");
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(access, refresh, 2, 1)
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, 2, 1)
                 .expect("due refresh schedule"),
         )
         .expect("store pair");
@@ -1958,7 +1958,7 @@ async fn ct66_the_owner_loop_refuses_after_a_repeated_403_and_an_owner_retry_sen
     // The refusal check's refresh follows the startup refresh within a minute, so
     // C5 R19 holds it back for the remainder; the environment skips that wait
     // instead of sitting through it.
-    let manager = LegacyAuthManager::from_hub_teslamate_store_for_test(
+    let manager = LegacyAuthManager::from_hub_source_db_store_for_test(
         store.clone(),
         temporary.path(),
         &crate::legacy_auth::AuthEndpointConfig {

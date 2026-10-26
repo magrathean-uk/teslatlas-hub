@@ -29,7 +29,7 @@ final class HubLayoutIntegrityTests: XCTestCase {
 
     func testNavigationSymbolsStayInsideSelectedPills() {
         let actions = HubNavigationActions(select: { _ in }, diagnostics: {}, logs: {},
-                                           serviceDetails: {}, importTeslaMate: {}, connectTesla: {},
+                                           serviceDetails: {}, importSource: {}, connectTesla: {},
                                            accountMenu: { NSMenu() }, appearance: {})
         let navigation = HubNavigationBar(actions: actions)
         navigation.frame = NSRect(x: 0, y: 0, width: 492, height: 36)
@@ -88,7 +88,7 @@ final class HubLayoutIntegrityTests: XCTestCase {
     func testDashboardAtActualMinimumKeepsAllVehiclesAndFooterReachableByScrolling() throws {
         var snapshot = HubSnapshot.previewRunning
         snapshot.activity = [
-            HubActivity(message: "Imported TeslaMate history", age: "just now", color: .systemGreen),
+            HubActivity(message: "Imported vehicle history", age: "just now", color: .systemGreen),
             HubActivity(message: "Vehicle went offline", age: "2 min", color: .systemOrange),
             HubActivity(message: "Position stored", age: "4 min", color: .systemBlue)
         ]
@@ -115,7 +115,7 @@ final class HubLayoutIntegrityTests: XCTestCase {
         XCTAssertGreaterThan(document.bounds.height, scroll.contentView.bounds.height)
         let text = descendants(dashboard).compactMap { $0 as? NSTextField }
             .map(\.stringValue).joined(separator: " ")
-        for expected in ["Aurora", "Comet", "Imported TeslaMate history",
+        for expected in ["Aurora", "Comet", "Imported vehicle history",
                          "Vehicle went offline", "Position stored"] {
             XCTAssertTrue(text.contains(expected), "missing \(expected)")
         }

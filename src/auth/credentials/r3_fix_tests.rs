@@ -557,7 +557,7 @@ async fn c5_r3_01_f3_a_status_row_captured_before_the_completion_cannot_bring_th
 
 /// An observer over the stored pair with the region configured, for opaque stored tokens.
 fn observer_global(bed: &Bed) -> LegacyAuthManager {
-    LegacyAuthManager::from_hub_teslamate_store_for_test(
+    LegacyAuthManager::from_hub_source_db_store_for_test(
         bed.rig.store.clone(),
         bed.rig.directory.path(),
         &bed.rig
@@ -926,7 +926,9 @@ async fn c5_r3_01_f4_a_padded_stored_token_counted_by_an_observer_is_owed_to_a_m
                 .load_collector_auth_row()
                 .expect("row")
                 .and_then(|row| row.fuse_rejected_access_digest),
-            Some(crate::teslamate_token::legacy_access_token_digest("AT1")),
+            Some(crate::source_token_envelope::legacy_access_token_digest(
+                "AT1"
+            )),
             "the count keeps the digest of the trimmed token it rejected"
         );
     }
@@ -976,7 +978,7 @@ async fn c5_r3_01_f4_a_padded_count_two_token_still_stored_owes_the_forced_refre
 
 /// A managed construction over the stored pair that reports its error.
 fn try_manager_global(bed: &Bed) -> Result<LegacyAuthManager, LegacyAuthManagerError> {
-    LegacyAuthManager::from_hub_teslamate_store_for_test(
+    LegacyAuthManager::from_hub_source_db_store_for_test(
         bed.rig.store.clone(),
         bed.rig.directory.path(),
         &bed.rig

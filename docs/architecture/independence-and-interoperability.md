@@ -2,7 +2,9 @@
 
 ## Independent project
 
-Teslatlas Hub is maintained by Magrathean UK Ltd and is not an official Tesla, TeslaMate or vehicle-manufacturer product.
+Teslatlas Hub is maintained by MAGRATHEAN UK LTD and is not an official
+product of Tesla, of any vehicle manufacturer or of any software it can import
+from.
 
 It is built for new Teslatlas deployments and includes optional compatibility for operator-controlled legacy data. Compatibility is not the project's brand identity.
 
@@ -32,15 +34,21 @@ Do not assume interoperability permits:
 - presenting a product as official;
 - using a service provider's systems after access has been revoked.
 
-## TeslaMate
+## Importing from other software
 
-TeslaMate's GNU AGPL governs its covered code. A separate trade mark policy or README statement does not amend that licence for code already distributed under GNU AGPL.
+Hub reads another program's database only to import the operator's own history.
+The importer may use that database's table and column names, which are needed
+to read it; it must not copy that program's code.
 
-Actual TeslaMate trade mark rights still matter. The Hub therefore uses only nominative compatibility references, does not use TeslaMate in its product title and retains a clear non-affiliation statement.
+Hub names no other vehicle-data software in user-facing text, documentation,
+its API, its command line, its app or new legal text, apart from some internal
+file and format names that later releases replace. It recognises a database it
+can import by the database's schema, not by a product name. Earlier published
+records keep their wording.
 
-## Database migration
-
-The migration adapter should operate against a database controlled by the operator, with a dedicated read-only account. It must not alter TeslaMate, redistribute TeslaMate itself or claim support from its maintainers.
+The importer should use a database account that can only read; import never
+changes the source database. Hub must not redistribute the other program or
+claim support from its maintainers.
 
 ## Proprietary client
 
@@ -52,16 +60,15 @@ Shared protocol facts should be maintained in a neutral specification. Shared so
 
 Use:
 
-- “independent”;
-- “supports one-way import from a user-controlled TeslaMate database”;
-- “compatible with the stated TeslaMate schema revision”;
-- the exact non-affiliation disclaimer.
+- "independent";
+- "imports from a source database that Hub recognises by its schema";
+- the independence statement in NOTICE.
 
 Avoid:
 
-- “official”;
-- “TeslaMate Pro”;
-- “the new TeslaMate”;
-- “authorised by Tesla/TeslaMate”;
-- “clean room” unless the evidence supports that precise claim;
-- “100% compatible” without a defined and tested scope.
+- "official";
+- the name of any software Hub imports from, alone or combined with ours;
+- "compatible with" followed by another project's name;
+- "authorised by" Tesla or by the makers of any software Hub imports from;
+- "clean room" unless the evidence supports that precise claim;
+- "100% compatible" without a defined and tested scope.

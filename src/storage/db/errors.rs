@@ -54,14 +54,14 @@ pub enum StoreError {
     CatalogueChangedDuringImmutableCheck,
     #[error("cannot configure hub database: {0}")]
     Configure(rusqlite::Error),
-    #[error("TeslaMate token pair is empty")]
-    TeslaMateTokenPairEmpty,
-    #[error("TeslaMate token ciphertext exceeds the fixed size limit")]
-    TeslaMateTokenCiphertextTooLarge,
-    #[error("TeslaMate token refresh schedule is invalid")]
-    InvalidTeslaMateTokenSchedule,
-    #[error("cannot access TeslaMate token store: {0}")]
-    TeslaMateTokenStore(rusqlite::Error),
+    #[error("Legacy owner token pair is empty")]
+    SourceDbTokenPairEmpty,
+    #[error("Legacy owner token ciphertext exceeds the fixed size limit")]
+    SourceDbTokenCiphertextTooLarge,
+    #[error("Legacy owner token refresh schedule is invalid")]
+    InvalidSourceDbTokenSchedule,
+    #[error("cannot access legacy owner token store: {0}")]
+    LegacyOwnerTokenStore(rusqlite::Error),
     #[error("Fleet token store is invalid")]
     InvalidFleetTokenStore,
     #[error("cannot access Fleet token store: {0}")]
@@ -116,6 +116,16 @@ pub enum StoreError {
     BackupPackDigestMismatch { path: PathBuf },
     #[error("cannot migrate hub database: {0}")]
     Migrate(rusqlite::Error),
+    #[error("cannot migrate import source names: {0}")]
+    ImportSourceNameMigration(&'static str),
+    #[error(
+        "An import source already exists, but the requested key matches none; stored keys: {stored_keys}. Use --new-import-source to register another source."
+    )]
+    UnmatchedImportSource { stored_keys: String },
+    #[error(
+        "The configured import source key for current positions matches no stored import source; stored keys: {stored_keys}"
+    )]
+    UnmatchedCurrentImportSource { stored_keys: String },
     /// C6 R57: the one-time identity tidy failed and its transaction rolled back.
     /// The text names the step and holds no VIN, name, vehicle id or stored
     /// value; the storage error that caused it stays in the source chain.
@@ -272,19 +282,19 @@ pub enum StoreError {
     )]
     ImmutableBaseBindingMissing(Uuid),
     #[error(
-        "TeslaMate imported-history inventory is missing for {0}; refusing a changed import without exact deletion provenance"
+        "Source database imported-history inventory is missing for {0}; refusing a changed import without exact deletion provenance"
     )]
-    TeslaMateImportInventoryMissing(Uuid),
+    SourceDbImportInventoryMissing(Uuid),
     #[error(
-        "TeslaMate durable projection digest state is missing for {0}; legacy inventory cannot prove changed-row payloads"
+        "Source database durable projection digest state is missing for {0}; legacy inventory cannot prove changed-row payloads"
     )]
-    TeslaMateImportProjectionStateMissing(Uuid),
+    SourceDbImportProjectionStateMissing(Uuid),
     #[error(
-        "TeslaMate legacy direct-import base for {0} cannot be proved unchanged; rebase_required"
+        "Source database legacy direct-import base for {0} cannot be proved unchanged; rebase_required"
     )]
-    TeslaMateLegacyDirectRebaseRequired(Uuid),
-    #[error("TeslaMate projection-state capture failed: {0}")]
-    TeslaMateProjectionState(#[from] TeslaMateProjectionStateError),
+    SourceDbLegacyDirectRebaseRequired(Uuid),
+    #[error("Source database projection-state capture failed: {0}")]
+    SourceDbProjectionState(#[from] SourceDbProjectionStateError),
     #[error("invalid sync mutation: {0}")]
     SyncMutation(String),
     #[error("lineage pack is not verified and ready")]
@@ -540,4 +550,576 @@ pub enum NoWakeVerificationError {
     Store(#[from] StoreError),
     #[error("observation verification failed: {0}")]
     Observation(#[from] ObservationVerificationError),
+}
+
+#[cfg(test)]
+mod n1_src_storage_db_errors_rs_display_tests {
+    use super::*;
+    use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
+
+    impl ErrorExample for StoreError {
+        fn error_example() -> Self {
+            StoreError::EntropyUnavailable
+        }
+    }
+
+    impl ErrorExample for ObservationVerificationError {
+        fn error_example() -> Self {
+            ObservationVerificationError::InvalidSourceCarId
+        }
+    }
+
+    impl ErrorExample for NoWakeVerificationError {
+        fn error_example() -> Self {
+            NoWakeVerificationError::InvalidAuditWatermark
+        }
+    }
+
+    #[test]
+    fn every_reachable_error_display_omits_the_source_project_name() {
+        fn check_store_error(error: StoreError) {
+            match &error {
+                StoreError::EntropyUnavailable => (),
+                StoreError::CreateDataDir(..) => (),
+                StoreError::CreatePacksDir(..) => (),
+                StoreError::ProtectDataDir(..) => (),
+                StoreError::ProtectPacksDir(..) => (),
+                StoreError::UnsafeDataDir(..) => (),
+                StoreError::UnsafePacksDir(..) => (),
+                StoreError::CreateSharedSqlite(..) => (),
+                StoreError::InspectSharedSqlite(..) => (),
+                StoreError::ProtectSharedSqlite(..) => (),
+                StoreError::UnsafeSharedSqlite(..) => (),
+                StoreError::CreateImportSpool(..) => (),
+                StoreError::InspectImportSpool(..) => (),
+                StoreError::UnsafeImportSpool(..) => (),
+                StoreError::Open(..) => (),
+                StoreError::InspectCatalogue(..) => (),
+                StoreError::ReadCatalogue(..) => (),
+                StoreError::ResolveCataloguePath(..) => (),
+                StoreError::InvalidCataloguePath => (),
+                StoreError::PendingCatalogueWal => (),
+                StoreError::CatalogueCheckpoint(..) => (),
+                StoreError::CatalogueCheckpointIncomplete => (),
+                StoreError::ImmutableSnapshotRequired => (),
+                StoreError::CatalogueChangedDuringImmutableCheck => (),
+                StoreError::Configure(..) => (),
+                StoreError::SourceDbTokenPairEmpty => (),
+                StoreError::SourceDbTokenCiphertextTooLarge => (),
+                StoreError::InvalidSourceDbTokenSchedule => (),
+                StoreError::LegacyOwnerTokenStore(..) => (),
+                StoreError::InvalidFleetTokenStore => (),
+                StoreError::FleetTokenStore(..) => (),
+                StoreError::FleetRefreshReceipt(..) => (),
+                StoreError::FleetRefreshOutcomeUnknown => (),
+                StoreError::InvalidFleetRefreshGeneration => (),
+                StoreError::InvalidFleetRefreshFailure => (),
+                StoreError::FleetCredentialScrubIncomplete => (),
+                StoreError::InvalidAddressCache => (),
+                StoreError::AddressCacheWrite(..) => (),
+                StoreError::InvalidAddressEnrichment => (),
+                StoreError::InvalidTerrainTileDigest => (),
+                StoreError::AddressEnrichmentWrite(..) => (),
+                StoreError::Backup(..) => (),
+                StoreError::BackupDestinationExists(..) => (),
+                StoreError::BackupDestinationIsLiveDatabase => (),
+                StoreError::CreateBackupDirectory(..) => (),
+                StoreError::BackupCapacityOverflow => (),
+                StoreError::CopyBackupPack { .. } => (),
+                StoreError::BackupPackSizeMismatch { .. } => (),
+                StoreError::OpenBackupPack(..) => (),
+                StoreError::ReadBackupPack(..) => (),
+                StoreError::BackupPackDigestMismatch { .. } => (),
+                StoreError::Migrate(..) => (),
+                StoreError::ImportSourceNameMigration(..) => (),
+                StoreError::UnmatchedImportSource { .. } => (),
+                StoreError::UnmatchedCurrentImportSource { .. } => (),
+                StoreError::VehicleIdentityTidy(..) => (),
+                StoreError::Query(..) => (),
+                StoreError::Begin(..) => (),
+                StoreError::SupervisedCollectorLeaseWrite(..) => (),
+                StoreError::SupervisedCollectorLeaseHeld => (),
+                StoreError::SupervisedCollectorLeaseLost => (),
+                StoreError::SupervisedCollectorClockOverflow => (),
+                StoreError::OpenPublicationGate(..) => (),
+                StoreError::ProtectPublicationGate(..) => (),
+                StoreError::UnsafePublicationGate(..) => (),
+                StoreError::LockPublicationGate(..) => (),
+                StoreError::PublicationGateBusy => (),
+                StoreError::PublishManifest(..) => (),
+                StoreError::CatalogueDurability(..) => (),
+                StoreError::AmbiguousCatalogueCommit { .. } => (),
+                StoreError::UnsafeUnpublishedPackPath(..) => (),
+                StoreError::CleanupUnpublishedPack { .. } => (),
+                StoreError::UnpublishedPackDigestMismatch(..) => (),
+                StoreError::FingerprintManifestMissing(..) => (),
+                StoreError::ImportDeltaRequiresBaseBinding => (),
+                StoreError::InvalidVehicleId => (),
+                StoreError::InvalidVehicleIdentity => (),
+                StoreError::VehicleIdentityConflict => (),
+                StoreError::InvalidSourceId => (),
+                StoreError::TerrainCarMissing(..) => (),
+                StoreError::WriteRefused(..) => (),
+                StoreError::TerrainPack(..) => (),
+                StoreError::PackStartupRepair(..) => (),
+                StoreError::RegisterSource(..) => (),
+                StoreError::RegisterVehicle(..) => (),
+                StoreError::CreatePairing(..) => (),
+                StoreError::RevokePairing(..) => (),
+                StoreError::ClaimPairing(..) => (),
+                StoreError::LegacyRefreshReceipt(..) => (),
+                StoreError::LegacyRefreshOutcomeUnknown => (),
+                StoreError::InvalidLegacyRefreshGeneration => (),
+                StoreError::InvalidStoredAuthStatus => (),
+                StoreError::EffectiveCollectorAuthUnavailable => (),
+                StoreError::RotateDevice(..) => (),
+                StoreError::RevokeDevice(..) => (),
+                StoreError::AppendObservation(..) => (),
+                StoreError::InstallationIdentity(..) => (),
+                StoreError::SerializeManifest(..) => (),
+                StoreError::DeserializeManifest(..) => (),
+                StoreError::SchemaPublicationUnavailable(..) => (),
+                StoreError::WriteSchema22NoOp(..) => (),
+                StoreError::ReadSchema22NoOp(..) => (),
+                StoreError::AccessSchema22NoOp(..) => (),
+                StoreError::UnsafeSchema22NoOpPath(..) => (),
+                StoreError::Schema22NoOpNotFound => (),
+                StoreError::Schema22PairPublicationRequired(..) => (),
+                StoreError::InvalidSchema22Pair(..) => (),
+                StoreError::Schema22SnapshotConflict { .. } => (),
+                StoreError::PhysicalV3AdmissionInvalid => (),
+                StoreError::PhysicalV3Pack(..) => (),
+                StoreError::PhysicalV3SecondHeadUnsupported(..) => (),
+                StoreError::PhysicalV3AdmissionConflict => (),
+                StoreError::PhysicalV3RetentionInvalid => (),
+                StoreError::ImportGeneration(..) => (),
+                StoreError::InvalidImportGeneration => (),
+                StoreError::ImportGenerationNotFound => (),
+                StoreError::ImportGenerationConflict => (),
+                StoreError::LineageCatalog(..) => (),
+                StoreError::LineageCatalogConflict => (),
+                StoreError::LineageCompactionUnavailable => (),
+                StoreError::LineageCapacityExhausted => (),
+                StoreError::RetiredLineageClock(..) => (),
+                StoreError::RetiredLineageClockOverflow => (),
+                StoreError::ImmutableBaseBindingMissing(..) => (),
+                StoreError::SourceDbImportInventoryMissing(..) => (),
+                StoreError::SourceDbImportProjectionStateMissing(..) => (),
+                StoreError::SourceDbLegacyDirectRebaseRequired(..) => (),
+                StoreError::SourceDbProjectionState(..) => (),
+                StoreError::SyncMutation(..) => (),
+                StoreError::LineagePackNotReady => (),
+                StoreError::LineagePackDigestMismatch => (),
+                StoreError::OpenLineagePack(..) => (),
+                StoreError::DecodeLineagePack(..) => (),
+                StoreError::CreateLineagePackInspection { .. } => (),
+                StoreError::SyncLineagePackInspection(..) => (),
+                StoreError::SerializeObservation(..) => (),
+                StoreError::Manifest(..) => (),
+                StoreError::SequenceTooLarge => (),
+                StoreError::SequenceExhausted => (),
+                StoreError::InvalidStoredSequence => (),
+                StoreError::StaleManifest { .. } => (),
+                StoreError::PackSizeTooLarge => (),
+                StoreError::PackOrdinalTooLarge => (),
+                StoreError::UnsafeStoredPackPath => (),
+                StoreError::InspectCatalogPack { .. } => (),
+                StoreError::CatalogPackNotRegular { .. } => (),
+                StoreError::CatalogPackSizeMismatch { .. } => (),
+                StoreError::CatalogPackDigestMismatch { .. } => (),
+                StoreError::EmptyIdentity(..) => (),
+                StoreError::IdentityTooLong { .. } => (),
+                StoreError::IdentityControlCharacter(..) => (),
+                StoreError::InvalidSourceKind => (),
+                StoreError::NegativeTimestamp(..) => (),
+                StoreError::InvalidPairingExpiry => (),
+                StoreError::PairingRejected => (),
+                StoreError::PairingVehicleUnavailable(..) => (),
+                StoreError::EmptyPairingScope => (),
+                StoreError::InvalidDeviceMaxLifetime => (),
+                StoreError::SealRotationSuccessor => (),
+                StoreError::NilSourceId => (),
+                StoreError::NilVehicleId => (),
+                StoreError::ObservationMustBeObject => (),
+                StoreError::InvalidCurrentDiscovery => (),
+                StoreError::ObservationTooLarge { .. } => (),
+                StoreError::ObservationMissingAfterInsert => (),
+                StoreError::InvalidObservationQueryLimit { .. } => (),
+                StoreError::InvalidObservationQueryRange => (),
+                StoreError::UnknownSource(..) => (),
+                StoreError::UnknownVehicle(..) => (),
+                StoreError::InvalidCarSettings => (),
+                StoreError::InvalidDriveId => (),
+                StoreError::InvalidDriveQueryLimit(..) => (),
+                StoreError::InvalidDriveQueryRange => (),
+                StoreError::InvalidDriveQueryCursor => (),
+                StoreError::InvalidDriveProjectionIdentity => (),
+                StoreError::InvalidDrivePositionPageLimit(..) => (),
+                StoreError::InvalidPublicPageQuery(..) => (),
+                StoreError::InvalidPublicProjectionIdentity(..) => (),
+                StoreError::InvalidChargeId => (),
+                StoreError::InvalidChargeCost => (),
+                StoreError::UnknownCharge(..) => (),
+                StoreError::ChargeCostBasisUnavailable { .. } => (),
+                StoreError::InvalidGeofence => (),
+                StoreError::GeofenceRejected(..) => (),
+                StoreError::UnknownGeofence(..) => (),
+                StoreError::VehicleSourceMismatch { .. } => (),
+                StoreError::VehicleIdentityMismatch { .. } => (),
+                StoreError::InvalidStoredUuid(..) => (),
+                StoreError::InvalidStoredGeneration => (),
+                StoreError::InvalidStoredCount => (),
+                StoreError::QuarantinedLifecycle(..) => (),
+                StoreError::UnsupportedSchema(..) => (),
+                StoreError::InvalidApplicationId(..) => (),
+                StoreError::Integrity(..) => (),
+                StoreError::InvalidLifecycleCarId => (),
+                StoreError::InvalidLifecycleCursor => (),
+                StoreError::InvalidLifecycleSession => (),
+                StoreError::LifecycleWrite(..) => (),
+                StoreError::ReceiverState(..) => (),
+                StoreError::InvalidEventRecord => (),
+                StoreError::MigrationClock => (),
+                StoreError::LifecycleProjection(..) => (),
+                StoreError::InjectedStreamFault(..) => (),
+                #[cfg(test)]
+                StoreError::InjectedProjectionStateDetachFault => (),
+                StoreError::SerializeLifecycleRow(..) => (),
+                StoreError::DeserializeLifecycleRow(..) => (),
+                StoreError::OutboundRequestReceipt(..) => (),
+                StoreError::InvalidOutboundRequestReceiptId => (),
+                StoreError::OutboundRequestReceiptNotStarted => (),
+                StoreError::ReservedLegacyRefreshReceipt => (),
+                StoreError::NilOutboundRequestCorrelationId => (),
+                StoreError::InvalidOutboundRequestVehicleId => (),
+                StoreError::InvalidVehicleDataAuditPrecondition => (),
+                StoreError::InvalidVehicleActionAudit => (),
+                StoreError::OutboundRequestClock(..) => (),
+                StoreError::OutboundRequestClockOverflow => (),
+                StoreError::InvalidOutboundRequestHttpStatus => (),
+                StoreError::InvalidOutboundRequestRetryAfter => (),
+                StoreError::InvalidOutboundRequestWatermark => (),
+                StoreError::InvalidStreamAuditWindow => (),
+                StoreError::InvalidOutboundRequestQueryLimit { .. } => (),
+                StoreError::OutboundRequestAuditCapacityExhausted => (),
+                StoreError::StreamSessionReceipt(..) => (),
+                StoreError::InvalidStreamSessionReceiptId => (),
+                StoreError::StreamSessionReceiptNotStarted => (),
+                StoreError::StreamSessionUnsubscribeNotCompleted => (),
+                StoreError::StreamSessionAuditCapacityExhausted => (),
+            }
+            assert_name_free(&error);
+        }
+        check_store_error(StoreError::EntropyUnavailable);
+        check_store_error(StoreError::CreateDataDir(example()));
+        check_store_error(StoreError::CreatePacksDir(example()));
+        check_store_error(StoreError::ProtectDataDir(example()));
+        check_store_error(StoreError::ProtectPacksDir(example()));
+        check_store_error(StoreError::UnsafeDataDir(example()));
+        check_store_error(StoreError::UnsafePacksDir(example()));
+        check_store_error(StoreError::CreateSharedSqlite(example()));
+        check_store_error(StoreError::InspectSharedSqlite(example()));
+        check_store_error(StoreError::ProtectSharedSqlite(example()));
+        check_store_error(StoreError::UnsafeSharedSqlite(example()));
+        check_store_error(StoreError::CreateImportSpool(example()));
+        check_store_error(StoreError::InspectImportSpool(example()));
+        check_store_error(StoreError::UnsafeImportSpool(example()));
+        check_store_error(StoreError::Open(example()));
+        check_store_error(StoreError::InspectCatalogue(example()));
+        check_store_error(StoreError::ReadCatalogue(example()));
+        check_store_error(StoreError::ResolveCataloguePath(example()));
+        check_store_error(StoreError::InvalidCataloguePath);
+        check_store_error(StoreError::PendingCatalogueWal);
+        check_store_error(StoreError::CatalogueCheckpoint(example()));
+        check_store_error(StoreError::CatalogueCheckpointIncomplete);
+        check_store_error(StoreError::ImmutableSnapshotRequired);
+        check_store_error(StoreError::CatalogueChangedDuringImmutableCheck);
+        check_store_error(StoreError::Configure(example()));
+        check_store_error(StoreError::SourceDbTokenPairEmpty);
+        check_store_error(StoreError::SourceDbTokenCiphertextTooLarge);
+        check_store_error(StoreError::InvalidSourceDbTokenSchedule);
+        check_store_error(StoreError::LegacyOwnerTokenStore(example()));
+        check_store_error(StoreError::InvalidFleetTokenStore);
+        check_store_error(StoreError::FleetTokenStore(example()));
+        check_store_error(StoreError::FleetRefreshReceipt(example()));
+        check_store_error(StoreError::FleetRefreshOutcomeUnknown);
+        check_store_error(StoreError::InvalidFleetRefreshGeneration);
+        check_store_error(StoreError::InvalidFleetRefreshFailure);
+        check_store_error(StoreError::FleetCredentialScrubIncomplete);
+        check_store_error(StoreError::InvalidAddressCache);
+        check_store_error(StoreError::AddressCacheWrite(example()));
+        check_store_error(StoreError::InvalidAddressEnrichment);
+        check_store_error(StoreError::InvalidTerrainTileDigest);
+        check_store_error(StoreError::AddressEnrichmentWrite(example()));
+        check_store_error(StoreError::Backup(example()));
+        check_store_error(StoreError::BackupDestinationExists(example()));
+        check_store_error(StoreError::BackupDestinationIsLiveDatabase);
+        check_store_error(StoreError::CreateBackupDirectory(example()));
+        check_store_error(StoreError::BackupCapacityOverflow);
+        check_store_error(StoreError::CopyBackupPack {
+            source_path: example(),
+            destination: example(),
+            source_error: example(),
+        });
+        check_store_error(StoreError::BackupPackSizeMismatch {
+            path: example(),
+            expected: example(),
+            actual: example(),
+        });
+        check_store_error(StoreError::OpenBackupPack(example()));
+        check_store_error(StoreError::ReadBackupPack(example()));
+        check_store_error(StoreError::BackupPackDigestMismatch { path: example() });
+        check_store_error(StoreError::Migrate(example()));
+        check_store_error(StoreError::ImportSourceNameMigration(example()));
+        check_store_error(StoreError::UnmatchedImportSource {
+            stored_keys: example(),
+        });
+        check_store_error(StoreError::UnmatchedCurrentImportSource {
+            stored_keys: example(),
+        });
+        check_store_error(StoreError::VehicleIdentityTidy(example()));
+        check_store_error(StoreError::Query(example()));
+        check_store_error(StoreError::Begin(example()));
+        check_store_error(StoreError::SupervisedCollectorLeaseWrite(example()));
+        check_store_error(StoreError::SupervisedCollectorLeaseHeld);
+        check_store_error(StoreError::SupervisedCollectorLeaseLost);
+        check_store_error(StoreError::SupervisedCollectorClockOverflow);
+        check_store_error(StoreError::OpenPublicationGate(example()));
+        check_store_error(StoreError::ProtectPublicationGate(example()));
+        check_store_error(StoreError::UnsafePublicationGate(example()));
+        check_store_error(StoreError::LockPublicationGate(example()));
+        check_store_error(StoreError::PublicationGateBusy);
+        check_store_error(StoreError::PublishManifest(example()));
+        check_store_error(StoreError::CatalogueDurability(example()));
+        check_store_error(StoreError::AmbiguousCatalogueCommit {
+            vehicle_id: example(),
+            snapshot_id: example(),
+        });
+        check_store_error(StoreError::UnsafeUnpublishedPackPath(example()));
+        check_store_error(StoreError::CleanupUnpublishedPack {
+            path: example(),
+            source: example(),
+        });
+        check_store_error(StoreError::UnpublishedPackDigestMismatch(example()));
+        check_store_error(StoreError::FingerprintManifestMissing(example()));
+        check_store_error(StoreError::ImportDeltaRequiresBaseBinding);
+        check_store_error(StoreError::InvalidVehicleId);
+        check_store_error(StoreError::InvalidVehicleIdentity);
+        check_store_error(StoreError::VehicleIdentityConflict);
+        check_store_error(StoreError::InvalidSourceId);
+        check_store_error(StoreError::TerrainCarMissing(example()));
+        check_store_error(StoreError::WriteRefused(example()));
+        check_store_error(StoreError::TerrainPack(example()));
+        check_store_error(StoreError::PackStartupRepair(example()));
+        check_store_error(StoreError::RegisterSource(example()));
+        check_store_error(StoreError::RegisterVehicle(example()));
+        check_store_error(StoreError::CreatePairing(example()));
+        check_store_error(StoreError::RevokePairing(example()));
+        check_store_error(StoreError::ClaimPairing(example()));
+        check_store_error(StoreError::LegacyRefreshReceipt(example()));
+        check_store_error(StoreError::LegacyRefreshOutcomeUnknown);
+        check_store_error(StoreError::InvalidLegacyRefreshGeneration);
+        check_store_error(StoreError::InvalidStoredAuthStatus);
+        check_store_error(StoreError::EffectiveCollectorAuthUnavailable);
+        check_store_error(StoreError::RotateDevice(example()));
+        check_store_error(StoreError::RevokeDevice(example()));
+        check_store_error(StoreError::AppendObservation(example()));
+        check_store_error(StoreError::InstallationIdentity(example()));
+        check_store_error(StoreError::SerializeManifest(example()));
+        check_store_error(StoreError::DeserializeManifest(example()));
+        check_store_error(StoreError::SchemaPublicationUnavailable(example()));
+        check_store_error(StoreError::WriteSchema22NoOp(example()));
+        check_store_error(StoreError::ReadSchema22NoOp(example()));
+        check_store_error(StoreError::AccessSchema22NoOp(example()));
+        check_store_error(StoreError::UnsafeSchema22NoOpPath(example()));
+        check_store_error(StoreError::Schema22NoOpNotFound);
+        check_store_error(StoreError::Schema22PairPublicationRequired(example()));
+        check_store_error(StoreError::InvalidSchema22Pair(example()));
+        check_store_error(StoreError::Schema22SnapshotConflict {
+            vehicle_id: example(),
+            snapshot_id: example(),
+        });
+        check_store_error(StoreError::PhysicalV3AdmissionInvalid);
+        check_store_error(StoreError::PhysicalV3Pack(example()));
+        check_store_error(StoreError::PhysicalV3SecondHeadUnsupported(example()));
+        check_store_error(StoreError::PhysicalV3AdmissionConflict);
+        check_store_error(StoreError::PhysicalV3RetentionInvalid);
+        check_store_error(StoreError::ImportGeneration(example()));
+        check_store_error(StoreError::InvalidImportGeneration);
+        check_store_error(StoreError::ImportGenerationNotFound);
+        check_store_error(StoreError::ImportGenerationConflict);
+        check_store_error(StoreError::LineageCatalog(example()));
+        check_store_error(StoreError::LineageCatalogConflict);
+        check_store_error(StoreError::LineageCompactionUnavailable);
+        check_store_error(StoreError::LineageCapacityExhausted);
+        check_store_error(StoreError::RetiredLineageClock(example()));
+        check_store_error(StoreError::RetiredLineageClockOverflow);
+        check_store_error(StoreError::ImmutableBaseBindingMissing(example()));
+        check_store_error(StoreError::SourceDbImportInventoryMissing(example()));
+        check_store_error(StoreError::SourceDbImportProjectionStateMissing(example()));
+        check_store_error(StoreError::SourceDbLegacyDirectRebaseRequired(example()));
+        check_store_error(StoreError::SourceDbProjectionState(example()));
+        check_store_error(StoreError::SyncMutation(example()));
+        check_store_error(StoreError::LineagePackNotReady);
+        check_store_error(StoreError::LineagePackDigestMismatch);
+        check_store_error(StoreError::OpenLineagePack(example()));
+        check_store_error(StoreError::DecodeLineagePack(example()));
+        check_store_error(StoreError::CreateLineagePackInspection {
+            path: example(),
+            source: example(),
+        });
+        check_store_error(StoreError::SyncLineagePackInspection(example()));
+        check_store_error(StoreError::SerializeObservation(example()));
+        check_store_error(StoreError::Manifest(example()));
+        check_store_error(StoreError::SequenceTooLarge);
+        check_store_error(StoreError::SequenceExhausted);
+        check_store_error(StoreError::InvalidStoredSequence);
+        check_store_error(StoreError::StaleManifest {
+            vehicle_id: example(),
+            attempted: example(),
+            current: example(),
+        });
+        check_store_error(StoreError::PackSizeTooLarge);
+        check_store_error(StoreError::PackOrdinalTooLarge);
+        check_store_error(StoreError::UnsafeStoredPackPath);
+        check_store_error(StoreError::InspectCatalogPack {
+            path: example(),
+            source: example(),
+        });
+        check_store_error(StoreError::CatalogPackNotRegular { path: example() });
+        check_store_error(StoreError::CatalogPackSizeMismatch {
+            path: example(),
+            expected: example(),
+            actual: example(),
+        });
+        check_store_error(StoreError::CatalogPackDigestMismatch { path: example() });
+        check_store_error(StoreError::EmptyIdentity(example()));
+        check_store_error(StoreError::IdentityTooLong {
+            field: example(),
+            actual: example(),
+            maximum: example(),
+        });
+        check_store_error(StoreError::IdentityControlCharacter(example()));
+        check_store_error(StoreError::InvalidSourceKind);
+        check_store_error(StoreError::NegativeTimestamp(example()));
+        check_store_error(StoreError::InvalidPairingExpiry);
+        check_store_error(StoreError::PairingRejected);
+        check_store_error(StoreError::PairingVehicleUnavailable(example()));
+        check_store_error(StoreError::EmptyPairingScope);
+        check_store_error(StoreError::InvalidDeviceMaxLifetime);
+        check_store_error(StoreError::SealRotationSuccessor);
+        check_store_error(StoreError::NilSourceId);
+        check_store_error(StoreError::NilVehicleId);
+        check_store_error(StoreError::ObservationMustBeObject);
+        check_store_error(StoreError::InvalidCurrentDiscovery);
+        check_store_error(StoreError::ObservationTooLarge {
+            actual: example(),
+            maximum: example(),
+        });
+        check_store_error(StoreError::ObservationMissingAfterInsert);
+        check_store_error(StoreError::InvalidObservationQueryLimit {
+            actual: example(),
+            maximum: example(),
+        });
+        check_store_error(StoreError::InvalidObservationQueryRange);
+        check_store_error(StoreError::UnknownSource(example()));
+        check_store_error(StoreError::UnknownVehicle(example()));
+        check_store_error(StoreError::InvalidCarSettings);
+        check_store_error(StoreError::InvalidDriveId);
+        check_store_error(StoreError::InvalidDriveQueryLimit(example()));
+        check_store_error(StoreError::InvalidDriveQueryRange);
+        check_store_error(StoreError::InvalidDriveQueryCursor);
+        check_store_error(StoreError::InvalidDriveProjectionIdentity);
+        check_store_error(StoreError::InvalidDrivePositionPageLimit(example()));
+        check_store_error(StoreError::InvalidPublicPageQuery(example()));
+        check_store_error(StoreError::InvalidPublicProjectionIdentity(example()));
+        check_store_error(StoreError::InvalidChargeId);
+        check_store_error(StoreError::InvalidChargeCost);
+        check_store_error(StoreError::UnknownCharge(example()));
+        check_store_error(StoreError::ChargeCostBasisUnavailable {
+            charge_id: example(),
+            mode: example(),
+        });
+        check_store_error(StoreError::InvalidGeofence);
+        check_store_error(StoreError::GeofenceRejected(example()));
+        check_store_error(StoreError::UnknownGeofence(example()));
+        check_store_error(StoreError::VehicleSourceMismatch {
+            vehicle_id: example(),
+            source_id: example(),
+        });
+        check_store_error(StoreError::VehicleIdentityMismatch {
+            expected: example(),
+            actual: example(),
+        });
+        check_store_error(StoreError::InvalidStoredUuid(example()));
+        check_store_error(StoreError::InvalidStoredGeneration);
+        check_store_error(StoreError::InvalidStoredCount);
+        check_store_error(StoreError::QuarantinedLifecycle(example()));
+        check_store_error(StoreError::UnsupportedSchema(example()));
+        check_store_error(StoreError::InvalidApplicationId(example()));
+        check_store_error(StoreError::Integrity(example()));
+        check_store_error(StoreError::InvalidLifecycleCarId);
+        check_store_error(StoreError::InvalidLifecycleCursor);
+        check_store_error(StoreError::InvalidLifecycleSession);
+        check_store_error(StoreError::LifecycleWrite(example()));
+        check_store_error(StoreError::ReceiverState(example()));
+        check_store_error(StoreError::InvalidEventRecord);
+        check_store_error(StoreError::MigrationClock);
+        check_store_error(StoreError::LifecycleProjection(example()));
+        check_store_error(StoreError::InjectedStreamFault(example()));
+        #[cfg(test)]
+        check_store_error(StoreError::InjectedProjectionStateDetachFault);
+        check_store_error(StoreError::SerializeLifecycleRow(example()));
+        check_store_error(StoreError::DeserializeLifecycleRow(example()));
+        check_store_error(StoreError::OutboundRequestReceipt(example()));
+        check_store_error(StoreError::InvalidOutboundRequestReceiptId);
+        check_store_error(StoreError::OutboundRequestReceiptNotStarted);
+        check_store_error(StoreError::ReservedLegacyRefreshReceipt);
+        check_store_error(StoreError::NilOutboundRequestCorrelationId);
+        check_store_error(StoreError::InvalidOutboundRequestVehicleId);
+        check_store_error(StoreError::InvalidVehicleDataAuditPrecondition);
+        check_store_error(StoreError::InvalidVehicleActionAudit);
+        check_store_error(StoreError::OutboundRequestClock(example()));
+        check_store_error(StoreError::OutboundRequestClockOverflow);
+        check_store_error(StoreError::InvalidOutboundRequestHttpStatus);
+        check_store_error(StoreError::InvalidOutboundRequestRetryAfter);
+        check_store_error(StoreError::InvalidOutboundRequestWatermark);
+        check_store_error(StoreError::InvalidStreamAuditWindow);
+        check_store_error(StoreError::InvalidOutboundRequestQueryLimit {
+            actual: example(),
+            maximum: example(),
+        });
+        check_store_error(StoreError::OutboundRequestAuditCapacityExhausted);
+        check_store_error(StoreError::StreamSessionReceipt(example()));
+        check_store_error(StoreError::InvalidStreamSessionReceiptId);
+        check_store_error(StoreError::StreamSessionReceiptNotStarted);
+        check_store_error(StoreError::StreamSessionUnsubscribeNotCompleted);
+        check_store_error(StoreError::StreamSessionAuditCapacityExhausted);
+        fn check_observation_verification_error(error: ObservationVerificationError) {
+            match &error {
+                ObservationVerificationError::InvalidSourceCarId => (),
+                ObservationVerificationError::InvalidWatermark => (),
+                ObservationVerificationError::NoVehicleMapping => (),
+                ObservationVerificationError::AmbiguousVehicleMapping => (),
+                ObservationVerificationError::Store(..) => (),
+            }
+            assert_name_free(&error);
+        }
+        check_observation_verification_error(ObservationVerificationError::InvalidSourceCarId);
+        check_observation_verification_error(ObservationVerificationError::InvalidWatermark);
+        check_observation_verification_error(ObservationVerificationError::NoVehicleMapping);
+        check_observation_verification_error(ObservationVerificationError::AmbiguousVehicleMapping);
+        check_observation_verification_error(ObservationVerificationError::Store(example()));
+        fn check_no_wake_verification_error(error: NoWakeVerificationError) {
+            match &error {
+                NoWakeVerificationError::InvalidAuditWatermark => (),
+                NoWakeVerificationError::Store(..) => (),
+                NoWakeVerificationError::Observation(..) => (),
+            }
+            assert_name_free(&error);
+        }
+        check_no_wake_verification_error(NoWakeVerificationError::InvalidAuditWatermark);
+        check_no_wake_verification_error(NoWakeVerificationError::Store(example()));
+        check_no_wake_verification_error(NoWakeVerificationError::Observation(example()));
+    }
 }

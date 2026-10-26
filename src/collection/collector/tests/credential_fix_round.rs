@@ -45,7 +45,7 @@ impl StopBed {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         seed_supervised_restart_import(&store);
-        crate::teslamate_credentials::replace_key(temporary.path(), b"chain-cloak-key")
+        crate::legacy_owner_credentials::replace_key(temporary.path(), b"chain-cloak-key")
             .expect("0600 Cloak key");
         let (fake, base, client, server) = auth_fake().await;
         Self {
@@ -62,17 +62,19 @@ impl StopBed {
     /// Store a pair as the owner would (an external write), with its generation and
     /// a schedule that is not due. Returns the generation.
     fn store_pair(&self, access: &str, refresh: &str) -> Uuid {
-        let key = crate::teslamate_credentials::load_key(self.temporary.path()).expect("Cloak key");
+        let key =
+            crate::legacy_owner_credentials::load_key(self.temporary.path()).expect("Cloak key");
         let tokens =
             OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).expect("pair");
-        let generation = crate::teslamate_token::legacy_refresh_credential_generation(&tokens);
+        let generation =
+            crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
         let (access, refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
                 .expect("Cloak pair");
         let (expires, next) = not_due_schedule();
         self.store
-            .replace_teslamate_legacy_tokens(
-                &crate::db::TeslaMateLegacyTokenStore::refreshed(access, refresh, expires, next)
+            .replace_legacy_owner_tokens(
+                &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, expires, next)
                     .expect("a schedule that is not due")
                     .with_credential_generation(generation)
                     .expect("generation"),
@@ -83,7 +85,7 @@ impl StopBed {
 
     /// The credential unit as the collector's start path builds it.
     fn unit(&self, region: Option<StreamRegion>) -> LegacyAuthManager {
-        LegacyAuthManager::from_hub_teslamate_store_for_test(
+        LegacyAuthManager::from_hub_source_db_store_for_test(
             self.store.clone(),
             self.temporary.path(),
             &crate::legacy_auth::AuthEndpointConfig {
@@ -454,12 +456,7 @@ async fn counted_request(
     ledger: &RequestLedger,
 ) -> Result<(), CollectorError> {
     let car = VehicleId::from_test(1);
-    let counted = |category| {
-        Some(RequestAccounting {
-            ledger,
-            category,
-        })
-    };
+    let counted = |category| Some(RequestAccounting { ledger, category });
     match kind {
         0 => list_vehicles_counted(client, auth, counted(RequestCategory::State))
             .await
@@ -867,7 +864,9 @@ fn lease_state_text(store: &HubStore) -> String {
     store
         .open()
         .expect("catalogue")
-        .query_row("SELECT state FROM supervised_collector_lease", [], |row| row.get(0))
+        .query_row("SELECT state FROM supervised_collector_lease", [], |row| {
+            row.get(0)
+        })
         .expect("the lease row")
 }
 
@@ -893,15 +892,19 @@ async fn supervisor_first_admission_loss_skips_shutdown_writes_and_settlement() 
     // transaction, no heartbeat, no lease state, no release, no `hub_stopped` or
     // `auth_terminal` gap, and no wait for the held exchange to settle (its request
     // timeout is far beyond this test, so a settlement would outlast it).
-    let mut bed = FleetLoopBed::start_with_auth_timeout(
+    let mut renewal_gate = None;
+    let mut bed = FleetLoopBed::start_with_seam(
         "asleep",
         false,
         true,
         Duration::from_secs(120),
+        |seam| { renewal_gate = Some(seam.arm_gate("renewal-candidate")); },
     )
     .await;
     let lists_seen = Arc::clone(&bed.fake.lists);
     bed.wait_for("the first lists", || lists_seen.load(Ordering::SeqCst) >= 2).await;
+    let renewal_gate = renewal_gate.expect("renewal candidate gate");
+    renewal_gate.arrived("renewal is held before admission", 1).await;
     // The next request starts an exchange the token endpoint holds.
     bed.fake.token_hold.store(true, Ordering::SeqCst);
     bed.manager.lock().await.mark_refresh_due();
@@ -961,6 +964,7 @@ async fn supervisor_first_admission_loss_skips_shutdown_writes_and_settlement() 
     assert_eq!(bed.seam.tick_commits(), commits_at_loss, "no final transaction");
     assert_eq!(account(&bed.store), account_at_loss, "no account row written");
 
+    renewal_gate.open();
     // The held exchange is let go so nothing outlives the test. (That the detached
     // exchange then also refuses to persist its successor is proved with the
     // credential persistence in part P3b.)
@@ -1065,7 +1069,7 @@ async fn fleet_tripwire_record(
 fn p3_unresolved_fleet_hub() -> (tempfile::TempDir, HubStore, CursorKey, Uuid) {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
     cadence_wait_seed_car(&store);
     let generation = p3_add_unresolved_fleet_refresh(&store, temporary.path());
@@ -1074,7 +1078,7 @@ fn p3_unresolved_fleet_hub() -> (tempfile::TempDir, HubStore, CursorKey, Uuid) {
 
 /// Add a sound Fleet pair to `store` and begin a refresh that never completes.
 fn p3_add_unresolved_fleet_refresh(store: &HubStore, data_dir: &std::path::Path) -> Uuid {
-    crate::teslamate_credentials::load_or_create_cursor_key(data_dir).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(data_dir).expect("cursor key");
     crate::fleet_credentials::persist_fleet_setup_credentials(
         store,
         data_dir,
@@ -1310,15 +1314,14 @@ async fn fleet_unresolved_refresh_starts_a_running_credential_stop() {
         // watchdog ends a traversal that does not move; either way the run is aborted
         // and joined.
         let mut ready_rx = ready_rx;
-        let handoff = step_the_controlled_loop_until_within(
-            &control,
-            origin,
-            Duration::from_secs(2),
-            || match ready_rx.try_recv() {
-                Ok(_) => Ok(true),
-                Err(oneshot::error::TryRecvError::Empty) => Ok(false),
-                Err(oneshot::error::TryRecvError::Closed) => {
-                    Err("Fleet startup handoff dropped".to_owned())
+        let handoff =
+            step_the_controlled_loop_until_within(&control, origin, Duration::from_secs(2), || {
+                match ready_rx.try_recv() {
+                    Ok(_) => Ok(true),
+                    Err(oneshot::error::TryRecvError::Empty) => Ok(false),
+                    Err(oneshot::error::TryRecvError::Closed) => {
+                        Err("Fleet startup handoff dropped".to_owned())
+                    }
                 }
             },
         )
@@ -1410,7 +1413,12 @@ async fn fleet_unresolved_refresh_starts_a_running_credential_stop() {
                 &control,
                 clock.mono_now(),
                 Duration::from_secs(20),
-                |_| store.pending_collector_owner_actions().expect("actions").is_empty(),
+                |_| {
+                    store
+                        .pending_collector_owner_actions()
+                        .expect("actions")
+                        .is_empty()
+                },
             )
             .await;
             let refreshes = seam.settings_refreshes_completed();
@@ -1950,7 +1958,10 @@ async fn b2_a_withheld_resend_then_a_second_forced_refresh_waits_on_no_spacing_a
     let gaps_store = bed.store.clone();
     // The wait is the stall watchdog of the bed; the stop's promptness is proved below
     // by the ticks that made the two refreshes being consecutive, not by a span.
-    bed.wait_for("the credential stop", || open_auth_terminal_gaps(&gaps_store) == 1).await;
+    bed.wait_for("the credential stop", || {
+        open_auth_terminal_gaps(&gaps_store) == 1
+    })
+    .await;
     let refusals = notes
         .lock()
         .expect("notes")

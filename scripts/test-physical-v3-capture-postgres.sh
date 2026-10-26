@@ -3,7 +3,7 @@
 set -euo pipefail
 
 postgres_bin=/opt/homebrew/opt/postgresql@18/bin
-schema_dump=${TESLATLAS_TEST_TESLAMATE_SCHEMA_DUMP:?set TESLATLAS_TEST_TESLAMATE_SCHEMA_DUMP to the private TeslaMate custom dump}
+schema_dump=${TESLATLAS_TEST_SOURCE_SCHEMA_DUMP:?set TESLATLAS_TEST_SOURCE_SCHEMA_DUMP to the private source custom dump}
 lab_tmp_root=${TESLATLAS_TEST_PRIVATE_TMP_ROOT:-${TESLATLAS_LAB:?set TESLATLAS_LAB or TESLATLAS_TEST_PRIVATE_TMP_ROOT}/tmp}
 hub_root=${0:A:h:h}
 workspace_root=${hub_root:h}
@@ -52,29 +52,29 @@ trap cleanup EXIT INT TERM
   -o "-h 127.0.0.1 -p ${fixture_port} -k ${socket_root}" \
   -w start >/dev/null
 "${postgres_bin}/createdb" \
-  -h "${socket_root}" -p "${fixture_port}" -U fixture_owner teslamate_fixture
+  -h "${socket_root}" -p "${fixture_port}" -U fixture_owner source_fixture
 "${postgres_bin}/pg_restore" \
   -h "${socket_root}" -p "${fixture_port}" -U fixture_owner \
-  -d teslamate_fixture \
+  -d source_fixture \
   --schema-only --schema=public --no-owner --no-privileges \
   "${schema_dump}" >/dev/null
 "${postgres_bin}/psql" \
   -h "${socket_root}" -p "${fixture_port}" -U fixture_owner \
-  -d teslamate_fixture -v ON_ERROR_STOP=1 -q <<'SQL'
+  -d source_fixture -v ON_ERROR_STOP=1 -q <<'SQL'
 CREATE ROLE fixture_reader LOGIN;
-GRANT CONNECT ON DATABASE teslamate_fixture TO fixture_reader;
+GRANT CONNECT ON DATABASE source_fixture TO fixture_reader;
 GRANT USAGE ON SCHEMA public TO fixture_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO fixture_reader;
 SQL
 
-export TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_URL="postgresql://fixture_reader@127.0.0.1:${fixture_port}/teslamate_fixture"
-export TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_ADMIN_URL="postgresql://fixture_owner@127.0.0.1:${fixture_port}/teslamate_fixture"
+export TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_URL="postgresql://fixture_reader@127.0.0.1:${fixture_port}/source_fixture"
+export TESLATLAS_HUB_PHYSICAL_CAPTURE_TEST_POSTGRES_ADMIN_URL="postgresql://fixture_owner@127.0.0.1:${fixture_port}/source_fixture"
 # The test is #[ignore]d, so a cargo exit of zero is not enough: a filter that
 # matches nothing would also exit zero. Require exactly one test run and passed.
 test_log=${fixture_root}/cargo-test.log
 "${workspace_root}/scripts/dev/with-heavy-build-lock.sh" \
   "${workspace_root}/scripts/dev/run.sh" hub cargo test --locked --lib \
-    import::teslamate::reader::tests::physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failures_when_configured \
+    import::source_db::reader::tests::physical_v3_capture_uses_one_exported_snapshot_and_discards_hook_failures_when_configured \
     -- --ignored --exact --nocapture 2>&1 | tee "${test_log}"
 if ! grep -qxF 'running 1 test' "${test_log}" ||
   ! grep -Eq '^test result: ok\. 1 passed; 0 failed; 0 ignored;' "${test_log}"; then

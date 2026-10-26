@@ -328,10 +328,10 @@ pub async fn setup_fleet_vehicle(
     let selected_vehicle_id =
         i64::try_from(vehicle.id.get()).map_err(|_| CollectorError::NativeSetupVehicleIdInvalid)?;
     let display_name = vehicle.display_name.clone();
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(&config.data_dir)
         .map_err(|error| {
-            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
-        })?;
+        CollectorError::Credential(CredentialError::SourceDbCredentialFile(error))
+    })?;
     let report = finish_collection_for_provider(
         store,
         &cursor_key,
@@ -401,10 +401,10 @@ pub async fn setup_fleet_vehicles(
                 .map_err(|_| CollectorError::NativeSetupVehicleIdInvalid)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(&config.data_dir)
         .map_err(|error| {
-            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
-        })?;
+        CollectorError::Credential(CredentialError::SourceDbCredentialFile(error))
+    })?;
     let report = finish_collection_for_provider(
         store,
         &cursor_key,
@@ -1333,8 +1333,8 @@ async fn setup_native_vehicle_with_client(
 
     let display_name = vehicle.display_name.clone();
     let cursor_key =
-        crate::teslamate_credentials::load_or_create_cursor_key(data_dir).map_err(|error| {
-            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
+        crate::legacy_owner_credentials::load_or_create_cursor_key(data_dir).map_err(|error| {
+            CollectorError::Credential(CredentialError::SourceDbCredentialFile(error))
         })?;
     let report = finish_collection(
         store,
@@ -1395,8 +1395,8 @@ async fn setup_native_vehicles_with_client(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let cursor_key =
-        crate::teslamate_credentials::load_or_create_cursor_key(data_dir).map_err(|error| {
-            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
+        crate::legacy_owner_credentials::load_or_create_cursor_key(data_dir).map_err(|error| {
+            CollectorError::Credential(CredentialError::SourceDbCredentialFile(error))
         })?;
     let report = finish_collection(
         store,

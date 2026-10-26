@@ -43,7 +43,9 @@ A modified distribution should state substantially:
 
 ## Third-party marks
 
-Tesla and TeslaMate references are nominative compatibility statements only.
-Use the minimum text required to identify the relevant vehicle, service or
-migration source. Do not copy third-party logos, trade dress or product artwork
-without a documented right to do so.
+Use other names only to identify what Hub works with, in the fewest words
+needed. Hub does not name the software it imports from: write "source
+application" and "source database". Where a name's owner publishes a trade-mark
+policy, use that name only as the policy permits or as its owner has agreed in
+writing. Do not copy third-party logos, trade dress or product artwork without
+a documented right to do so.

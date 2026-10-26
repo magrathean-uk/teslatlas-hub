@@ -307,7 +307,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
             diagnostics: { [weak self] in self?.showEmbeddedDiagnostics() },
             logs: { [weak self] in self?.showEmbeddedLogs() },
             serviceDetails: { [weak self] in self?.showEmbeddedServiceDetails() },
-            importTeslaMate: { [weak self] in self?.importPressed() },
+            importSource: { [weak self] in self?.importPressed() },
             connectTesla: { [weak self] in self?.connectTeslaPressed() },
             accountMenu: { [weak self] in self?.teslaAccountMenu() ?? NSMenu() },
             appearance: { [weak self] in self?.appearancePressed() }
@@ -339,8 +339,8 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         return true
     }
 
-    var canImportTeslaMate: Bool {
-        navigationAvailable && lifecycleIdle && lastPresentedSnapshot.shouldOfferTeslaMateImport
+    var canImportSource: Bool {
+        navigationAvailable && lifecycleIdle && lastPresentedSnapshot.shouldOfferSourceImport
     }
 
     func selectMainSection(_ section: HubMainSection) {
@@ -526,10 +526,10 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         restartButton.isEnabled = mutableActionsAvailable
         heroDiagnosticsButton.isEnabled = mutableActionsAvailable
         connectButton.isEnabled = accountActionsAvailable
-        importButton.isEnabled = accountActionsAvailable && snapshot.shouldOfferTeslaMateImport
+        importButton.isEnabled = accountActionsAvailable && snapshot.shouldOfferSourceImport
         detailsButton.isEnabled = !accountWorkflowActive
         connectButton.isHidden = false
-        importButton.isHidden = !snapshot.shouldOfferTeslaMateImport
+        importButton.isHidden = !snapshot.shouldOfferSourceImport
         if snapshot.accountState == .connected {
             connectButton.title = HubL10n.text("hub.MainWindowController.441.1792", fallback: "Manage Tesla")
             connectButton.image = NSImage(systemSymbolName: "person.crop.circle.badge.checkmark",
@@ -1079,7 +1079,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func importPressed() {
-        guard lastPresentedSnapshot.shouldOfferTeslaMateImport else { return }
+        guard lastPresentedSnapshot.shouldOfferSourceImport else { return }
         showOnboarding(route: .migration)
     }
 
@@ -1243,12 +1243,12 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         if lastPresentedSnapshot.accountState == .connected {
             menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1152.1840", fallback: "Use Fleet API"), action: #selector(useFleetPressed)))
             menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1153.1841", fallback: "Use Legacy token"), action: #selector(useLegacyPressed)))
-            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1154.1842", fallback: "Migrate from TeslaMate…"), action: #selector(migrateTeslaMatePressed)))
+            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1154.1842", fallback: "Import History…"), action: #selector(importHistoryPressed)))
             menu.addItem(.separator())
             menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1156.1843", fallback: "Disconnect Tesla…"), action: #selector(disconnectTeslaPressed)))
         } else {
             menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1158.1844", fallback: "Connect Tesla Account…"), action: #selector(connectTeslaPressed)))
-            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1154.1842", fallback: "Migrate from TeslaMate…"), action: #selector(migrateTeslaMatePressed)))
+            menu.addItem(menuItem(HubL10n.text("hub.MainWindowController.1154.1842", fallback: "Import History…"), action: #selector(importHistoryPressed)))
         }
         return menu
     }
@@ -1263,7 +1263,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
 
     @objc private func useLegacyPressed() { showOnboarding(route: .legacy) }
 
-    @objc private func migrateTeslaMatePressed() { showOnboarding(route: .migration) }
+    @objc private func importHistoryPressed() { showOnboarding(route: .migration) }
 
     @objc private func disconnectTeslaPressed() {
         guard actionsAvailable, !vehicleControlPending else { NSSound.beep(); return }
@@ -1462,7 +1462,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         heroDiagnosticsButton.isEnabled = mutableActionsAvailable
         connectButton.isEnabled = mutableActionsAvailable
         importButton.isEnabled = mutableActionsAvailable
-            && lastPresentedSnapshot.shouldOfferTeslaMateImport
+            && lastPresentedSnapshot.shouldOfferSourceImport
         navigationBar.apply(snapshot: lastPresentedSnapshot,
                             enabled: mutableActionsAvailable && !vehicleControlPending)
         mainToolbar?.apply(snapshot: lastPresentedSnapshot,
@@ -1498,7 +1498,7 @@ final class MainWindowController: NSWindowController, NSWindowDelegate {
         heroDiagnosticsButton.isEnabled = mutableActionsAvailable
         connectButton.isEnabled = mutableActionsAvailable && !vehicleControlPending
         importButton.isEnabled = mutableActionsAvailable && !vehicleControlPending
-            && lastPresentedSnapshot.shouldOfferTeslaMateImport
+            && lastPresentedSnapshot.shouldOfferSourceImport
         navigationBar.apply(snapshot: lastPresentedSnapshot,
                             enabled: mutableActionsAvailable && !vehicleControlPending)
         mainToolbar?.apply(snapshot: lastPresentedSnapshot,

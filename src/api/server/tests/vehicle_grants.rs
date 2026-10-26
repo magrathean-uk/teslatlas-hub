@@ -1054,7 +1054,7 @@ async fn physical_and_prepared_packs_follow_the_owning_vehicles_grant() {
         .expect("publication gate");
     let stage = |name: &str, updates: u32| {
         let (binding, candidate) =
-            crate::import::teslamate::physical_fragments::tests::public_admission_candidate_fixture_for_source(
+            crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source(
                 &temp.path().join(name),
                 &store,
                 &key,
@@ -1121,13 +1121,12 @@ async fn physical_and_prepared_packs_follow_the_owning_vehicles_grant() {
     }
 
     // The signed prepared month of vehicle one: its receipt route and its pack.
-    let (artifact_id, receipt) =
-        crate::import::teslamate::prepared_map::insert_signed_month_fixture(
-            &store,
-            &key,
-            &admission_one,
-            now_ms,
-        );
+    let (artifact_id, receipt) = crate::sync::prepared_map::insert_signed_month_fixture(
+        &store,
+        &key,
+        &admission_one,
+        now_ms,
+    );
     let receipt_uri =
         |vehicle: Uuid| format!("/v1/vehicles/{vehicle}/sync/prepared-artefacts/{artifact_id}");
     let served = send(
@@ -1169,7 +1168,7 @@ async fn physical_and_prepared_packs_follow_the_owning_vehicles_grant() {
     assert_ne!(prepared_pack, pack_one);
     let digest_c: Sha256Digest = "c".repeat(64).parse().expect("fixture digest");
     let lookup = |scope: VehicleScope| {
-        crate::import::teslamate::prepared_map::current_pack(&store, &key, digest_c, scope)
+        crate::sync::prepared_map::current_pack(&store, &key, digest_c, scope)
             .expect("prepared pack lookup")
     };
     assert!(lookup(VehicleScope::Unrestricted).is_some());
@@ -1212,7 +1211,7 @@ async fn physical_and_prepared_packs_follow_the_owning_vehicles_grant() {
     assert_eq!(ungranted_keyless, unknown_keyless);
     // The loopback scope (no device principal) is the owner's: unrestricted.
     assert!(
-        crate::import::teslamate::prepared_map::current_pack_candidate_exists(
+        crate::sync::prepared_map::current_pack_candidate_exists(
             &store,
             digest_c,
             VehicleScope::Unrestricted
@@ -1220,7 +1219,7 @@ async fn physical_and_prepared_packs_follow_the_owning_vehicles_grant() {
         .unwrap()
     );
     assert!(
-        !crate::import::teslamate::prepared_map::current_pack_candidate_exists(
+        !crate::sync::prepared_map::current_pack_candidate_exists(
             &store,
             digest_c,
             VehicleScope::Device(device_two)
@@ -1228,7 +1227,7 @@ async fn physical_and_prepared_packs_follow_the_owning_vehicles_grant() {
         .unwrap()
     );
     assert!(
-        crate::import::teslamate::prepared_map::current_pack_candidate_exists(
+        crate::sync::prepared_map::current_pack_candidate_exists(
             &store,
             digest_c,
             VehicleScope::Device(device_one)

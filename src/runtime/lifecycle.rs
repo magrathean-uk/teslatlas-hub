@@ -18,9 +18,9 @@ use crate::hub_pack::{
     GeofenceBillingType, ProjectionCarPatch, ProjectionCharge, ProjectionChargeSample,
     ProjectionDrive, ProjectionPosition, ProjectionState, ProjectionUpdate,
 };
-use crate::teslamate_projection::{
-    TeslaMateCharge, TeslaMateChargingProcess, TeslaMateDrive, TeslaMateOpenSession,
-    TeslaMatePosition, TeslaMateState, project_charge_sample,
+use crate::source_db_projection::{
+    SourceDbCharge, SourceDbChargingProcess, SourceDbDrive, SourceDbOpenSession, SourceDbPosition,
+    SourceDbState, project_charge_sample,
 };
 
 /// Maximum UTF-8 bytes retained for one vehicle's open-session blob.

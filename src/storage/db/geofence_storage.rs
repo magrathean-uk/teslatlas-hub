@@ -8,8 +8,8 @@
 /// geometry and tariff field present (C8 R1, C8 table 5.2).
 fn stored_fence_record(
     fence: &crate::lifecycle::GeofenceFence,
-) -> crate::teslamate_projection::TeslaMateGeofence {
-    crate::teslamate_projection::TeslaMateGeofence {
+) -> crate::source_db_projection::SourceDbGeofence {
+    crate::source_db_projection::SourceDbGeofence {
         id: fence.source_geofence_id,
         name: fence.name.clone(),
         latitude: Some(fence.latitude),
@@ -103,9 +103,9 @@ impl HubStore {
         &self,
         vehicle_id: Uuid,
         source_geofence_id: Option<i64>,
-        mut geofence: crate::teslamate_projection::TeslaMateGeofence,
+        mut geofence: crate::source_db_projection::SourceDbGeofence,
         clear_tariff: bool,
-    ) -> Result<crate::teslamate_projection::TeslaMateGeofence, StoreError> {
+    ) -> Result<crate::source_db_projection::SourceDbGeofence, StoreError> {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
@@ -302,7 +302,7 @@ impl HubStore {
     pub fn upsert_geofences(
         &self,
         vehicle_id: Uuid,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
     ) -> Result<GeofenceUpsertReport, StoreError> {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
@@ -404,9 +404,9 @@ fn deleted_imported_geofence_ids(
 fn upsert_geofences_in_transaction(
     transaction: &Transaction<'_>,
     vehicle_id: Uuid,
-    geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+    geofences: &[crate::source_db_projection::SourceDbGeofence],
 ) -> Result<GeofenceUpsertReport, StoreError> {
-    let mut rows: Vec<&crate::teslamate_projection::TeslaMateGeofence> = geofences.iter().collect();
+    let mut rows: Vec<&crate::source_db_projection::SourceDbGeofence> = geofences.iter().collect();
     rows.sort_by_key(|row| row.id);
     if rows.windows(2).any(|pair| pair[0].id == pair[1].id) {
         return Err(StoreError::InvalidGeofence);

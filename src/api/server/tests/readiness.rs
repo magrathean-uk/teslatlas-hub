@@ -8,7 +8,7 @@ use super::*;
 use crate::config::{CadenceRule, CadenceViolation, CollectorMode};
 use crate::db::{
     CollectorAccountRow, CollectorAuthRow, CollectorGapInsert, CollectorRowsWrite,
-    CollectorVehicleRow, ReadinessContext, TeslaMateLegacyTokenStore,
+    CollectorVehicleRow, LegacyOwnerTokenStore, ReadinessContext,
 };
 
 const NOW_MS: i64 = 1_800_000_000_000;
@@ -170,18 +170,18 @@ fn real_pair(
         crate::credentials::OwnerTokens::from_secret_parts(access.to_owned(), "refresh".to_owned())
             .expect("tokens");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
     let stored = match schedule {
         Some((expires_at, next_refresh_at)) => {
-            TeslaMateLegacyTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
+            LegacyOwnerTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
         }
-        None => TeslaMateLegacyTokenStore::imported(access, refresh),
+        None => LegacyOwnerTokenStore::imported(access, refresh),
     }
     .expect("stored pair");
-    crate::teslamate_credentials::replace_key_and_tokens(directory, store, key, &stored)
+    crate::legacy_owner_credentials::replace_key_and_tokens(directory, store, key, &stored)
         .expect("persist");
     store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("load")
         .expect("row")
         .credential_generation()
@@ -568,7 +568,8 @@ async fn fleet_unresolved_refresh_is_attention_not_service_failure() {
     // A real encrypted Fleet pair with the collection scopes, under a real key:
     // its pair, key, generation, claims and scopes are independently valid.
     const SCOPED_ACCESS: &str = "e30.eyJzY3AiOlsib3BlbmlkIiwidmVoaWNsZV9kZXZpY2VfZGF0YSIsInZlaGljbGVfbG9jYXRpb24iLCJ2ZWhpY2xlX2NtZHMiLCJ2ZWhpY2xlX2NoYXJnaW5nX2NtZHMiXX0.sig";
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     crate::fleet_credentials::persist_fleet_setup_credentials(
         &store,
         temporary.path(),

@@ -119,10 +119,19 @@ fn f3_counted_row() -> CollectorAuthRow {
 fn f3_the_rejected_access_digest_is_stored_and_no_refresh_rewrites_it() {
     let (_directory, store) = lc_store_with_pair();
     let counted = f3_counted_row();
-    assert!(store.write_collector_auth_row(&counted, AS_T0 * 1_000).unwrap());
-    assert_eq!(store.load_collector_auth_row().unwrap(), Some(counted.clone()));
     assert!(
-        !store.write_collector_auth_row(&counted, AS_T0 * 1_000 + 1).unwrap(),
+        store
+            .write_collector_auth_row(&counted, AS_T0 * 1_000)
+            .unwrap()
+    );
+    assert_eq!(
+        store.load_collector_auth_row().unwrap(),
+        Some(counted.clone())
+    );
+    assert!(
+        !store
+            .write_collector_auth_row(&counted, AS_T0 * 1_000 + 1)
+            .unwrap(),
         "an unchanged row costs no write"
     );
     // The debug text of the row shows whether the digest is present, never the digest.
@@ -209,6 +218,7 @@ fn f3_the_v72_step_adds_the_digest_column_and_a_v71_row_keeps_its_count() {
             )
             .unwrap();
         assert_eq!(columns, 0, "the rewind removes the column");
+        crate::db::import_names_test_support::prepare_historical_import_names(&connection);
         drop(connection);
         drop(store);
         let migrated = HubStore::initialize(temporary.path()).expect("migrated");
@@ -244,22 +254,28 @@ fn f4_the_fill_of_a_missing_digest_is_conditional_on_the_row_the_fuse_and_the_pa
     };
     assert!(store.write_collector_auth_row(&missing, AS_T0 * 1_000).unwrap());
     let pair = store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .unwrap()
         .expect("the pair row");
     let digest = as_gen(78);
 
     // Another fuse (count or generation), or another stored pair: nothing is written.
-    assert!(store
-        .fill_collector_auth_rejected_access_digest(&pair, 2, Some(lc_gen(1)), digest)
-        .is_err());
-    assert!(store
-        .fill_collector_auth_rejected_access_digest(&pair, 1, Some(lc_gen(2)), digest)
-        .is_err());
-    assert!(store
-        .fill_collector_auth_rejected_access_digest(&pair, 1, None, digest)
-        .is_err());
-    let other_pair = TeslaMateLegacyTokenStore::imported(vec![9; 8], vec![2; 8])
+    assert!(
+        store
+            .fill_collector_auth_rejected_access_digest(&pair, 2, Some(lc_gen(1)), digest)
+            .is_err()
+    );
+    assert!(
+        store
+            .fill_collector_auth_rejected_access_digest(&pair, 1, Some(lc_gen(2)), digest)
+            .is_err()
+    );
+    assert!(
+        store
+            .fill_collector_auth_rejected_access_digest(&pair, 1, None, digest)
+            .is_err()
+    );
+    let other_pair = LegacyOwnerTokenStore::imported(vec![9; 8], vec![2; 8])
         .unwrap()
         .with_credential_generation(lc_gen(1))
         .unwrap();

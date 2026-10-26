@@ -311,7 +311,7 @@ fn rejects_wrong_source_non_object_and_oversized_observations() {
     let (source, vehicle) = test_registered_vehicle(&store);
     let other_source = store
         .register_source(
-            &SourceDescriptor::new("teslamate_import", "migration-a"),
+            &SourceDescriptor::new("source_db_import", "migration-a"),
             1_001,
         )
         .expect("second source");
@@ -438,7 +438,7 @@ fn import_delta_test_cursor(binding: &ProjectionBinding, sequence: u64) -> Opaqu
 fn v2_base_manifest(store: &HubStore) -> (VehicleRecord, ProjectionBinding, SyncManifest) {
     let source = store
         .register_source(
-            &SourceDescriptor::new("teslamate_import", "delta-fixture"),
+            &SourceDescriptor::new("source_db_import", "delta-fixture"),
             1_000,
         )
         .expect("fixture source");
@@ -740,10 +740,10 @@ fn imported_selection_uses_materialised_settings_before_defaults() {
     );
 }
 
-fn test_projection_state(root: &Path, car: &ProjectionCar) -> TeslaMateProjectionState {
-    let state = TeslaMateProjectionState::create(
+fn test_projection_state(root: &Path, car: &ProjectionCar) -> SourceDbProjectionState {
+    let state = SourceDbProjectionState::create(
         root,
-        crate::teslamate_projection_state::TeslaMateProjectionStateLimits {
+        crate::import_projection_state::SourceDbProjectionStateLimits {
             max_rows: 10,
             max_state_bytes: 128 * 1024,
             max_changed_payload_bytes: 128 * 1024,
@@ -752,7 +752,7 @@ fn test_projection_state(root: &Path, car: &ProjectionCar) -> TeslaMateProjectio
     )
     .expect("projection state");
     let mut capture =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_initial_base(state);
+        crate::import_projection_state::SourceDbProjectionStateCapture::for_initial_base(state);
     capture.record_car(car).expect("capture car");
     capture.seal().expect("seal projection state");
     capture.into_state()
@@ -761,15 +761,15 @@ fn test_projection_state(root: &Path, car: &ProjectionCar) -> TeslaMateProjectio
 fn projection_state_with_digest_rows(
     root: &Path,
     selected_car_id: i64,
-    rows: &[(TeslaMateProjectionStateEntity, i64)],
-) -> TeslaMateProjectionState {
+    rows: &[(SourceDbProjectionStateEntity, i64)],
+) -> SourceDbProjectionState {
     let maximum_rows = u64::try_from(rows.len())
         .expect("test row count fits u64")
         .checked_add(1)
         .expect("test row count has room for car");
-    let mut state = TeslaMateProjectionState::create(
+    let mut state = SourceDbProjectionState::create(
         root,
-        crate::teslamate_projection_state::TeslaMateProjectionStateLimits {
+        crate::import_projection_state::SourceDbProjectionStateLimits {
             max_rows: maximum_rows,
             max_state_bytes: 4 * 1024 * 1024,
             max_changed_payload_bytes: 4 * 1024 * 1024,
@@ -779,7 +779,7 @@ fn projection_state_with_digest_rows(
     .expect("projection state");
     state
         .record(
-            TeslaMateProjectionStateEntity::Car,
+            SourceDbProjectionStateEntity::Car,
             selected_car_id,
             selected_car_id,
             &serde_json::json!({"id": selected_car_id, "entity": "car"}),
@@ -806,7 +806,7 @@ fn create_direct_import_projection_state(
     store: &HubStore,
     run_id: Uuid,
     maximum_rows: u64,
-) -> TeslaMateProjectionState {
+) -> SourceDbProjectionState {
     let publication_gate = store
         .try_acquire_publication_gate()
         .expect("direct projection-state publication gate");
@@ -814,13 +814,13 @@ fn create_direct_import_projection_state(
         .create_import_projection_state(
             &publication_gate,
             run_id,
-            crate::teslamate_projection_state::TeslaMateProjectionStateLimits {
+            crate::import_projection_state::SourceDbProjectionStateLimits {
                 max_rows: maximum_rows,
                 max_state_bytes: 4 * 1024 * 1024,
                 max_changed_payload_bytes: 4 * 1024 * 1024,
                 minimum_free_bytes: 0,
             },
-            crate::teslamate_projection_state::DEFAULT_MAX_CHANGED_ROW_PAYLOAD_BYTES,
+            crate::import_projection_state::DEFAULT_MAX_CHANGED_ROW_PAYLOAD_BYTES,
         )
         .expect("run-bound direct projection state");
     drop(publication_gate);
@@ -831,8 +831,8 @@ fn direct_projection_state_with_digest_rows(
     store: &HubStore,
     run_id: Uuid,
     selected_car_id: i64,
-    rows: &[(TeslaMateProjectionStateEntity, i64)],
-) -> TeslaMateProjectionState {
+    rows: &[(SourceDbProjectionStateEntity, i64)],
+) -> SourceDbProjectionState {
     let maximum_rows = u64::try_from(rows.len())
         .expect("test row count fits u64")
         .checked_add(1)
@@ -840,7 +840,7 @@ fn direct_projection_state_with_digest_rows(
     let mut state = create_direct_import_projection_state(store, run_id, maximum_rows);
     state
         .record(
-            TeslaMateProjectionStateEntity::Car,
+            SourceDbProjectionStateEntity::Car,
             selected_car_id,
             selected_car_id,
             &serde_json::json!({"id": selected_car_id, "entity": "car"}),
@@ -864,10 +864,10 @@ fn direct_test_projection_state(
     store: &HubStore,
     run_id: Uuid,
     car: &ProjectionCar,
-) -> TeslaMateProjectionState {
+) -> SourceDbProjectionState {
     let state = create_direct_import_projection_state(store, run_id, 10);
     let mut capture =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_initial_base(state);
+        crate::import_projection_state::SourceDbProjectionStateCapture::for_initial_base(state);
     capture.record_car(car).expect("capture direct car");
     capture.seal().expect("seal direct projection state");
     capture.into_state()
@@ -911,7 +911,7 @@ fn write_owned_test_v1_run(store: &HubStore, run_id: Uuid) -> (PathBuf, PathBuf)
     }
     let owner_marker = serde_json::json!({
         "schema": 1,
-        "kind": "teslatlas-hub/teslamate-projection-state/v1",
+        "kind": crate::runtime::legacy_names::PROJECTION_STATE_V1,
         "runId": run_id.to_string(),
     });
     let owner_path = run_directory.join("owner.json");
@@ -952,13 +952,13 @@ fn recovery_reclaims_a_valid_owned_v1_spool_and_its_staging_generation() {
         .create_import_projection_state(
             &publication_gate,
             run_id,
-            crate::teslamate_projection_state::TeslaMateProjectionStateLimits {
+            crate::import_projection_state::SourceDbProjectionStateLimits {
                 max_rows: 10,
                 max_state_bytes: 128 * 1024,
                 max_changed_payload_bytes: 128 * 1024,
                 minimum_free_bytes: 0,
             },
-            crate::teslamate_projection_state::DEFAULT_MAX_CHANGED_ROW_PAYLOAD_BYTES,
+            crate::import_projection_state::DEFAULT_MAX_CHANGED_ROW_PAYLOAD_BYTES,
         )
         .expect("run-bound state");
     state
@@ -1010,13 +1010,13 @@ fn startup_recovery_refuses_to_scan_while_a_live_publication_gate_is_held() {
         .create_import_projection_state(
             &publication_gate,
             run_id,
-            crate::teslamate_projection_state::TeslaMateProjectionStateLimits {
+            crate::import_projection_state::SourceDbProjectionStateLimits {
                 max_rows: 10,
                 max_state_bytes: 128 * 1024,
                 max_changed_payload_bytes: 128 * 1024,
                 minimum_free_bytes: 0,
             },
-            crate::teslamate_projection_state::DEFAULT_MAX_CHANGED_ROW_PAYLOAD_BYTES,
+            crate::import_projection_state::DEFAULT_MAX_CHANGED_ROW_PAYLOAD_BYTES,
         )
         .expect("live run-bound state");
     let spool_path = state.path_for_test().to_path_buf();
@@ -1042,9 +1042,9 @@ fn startup_recovery_refuses_to_scan_while_a_live_publication_gate_is_held() {
 fn startup_recovery_preserves_a_flat_legacy_projection_state_spool() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
-    let state = TeslaMateProjectionState::create(
+    let state = SourceDbProjectionState::create(
         store.packs_dir(),
-        crate::teslamate_projection_state::TeslaMateProjectionStateLimits {
+        crate::import_projection_state::SourceDbProjectionStateLimits {
             max_rows: 10,
             max_state_bytes: 128 * 1024,
             max_changed_payload_bytes: 128 * 1024,
@@ -1101,7 +1101,7 @@ fn startup_recovery_fails_closed_for_unsafe_v1_runs_without_deleting_any_sibling
 
         assert!(matches!(
             HubStore::initialize(temporary.path()),
-            Err(StoreError::TeslaMateProjectionState(_))
+            Err(StoreError::SourceDbProjectionState(_))
         ));
         assert!(
             valid_directory.exists() && valid_spool.exists(),
@@ -1133,11 +1133,11 @@ fn run_bound_transfer_rejects_wrong_run_marker_mutation_and_attempt_substitution
         &store,
         run_id,
         binding.selected_car_id,
-        &[(TeslaMateProjectionStateEntity::Position, 10)],
+        &[(SourceDbProjectionStateEntity::Position, 10)],
     );
     assert!(matches!(
         state.sealed_transfer_for_import_generation(Uuid::new_v4(), binding.selected_car_id),
-        Err(TeslaMateProjectionStateError::ImportGenerationRunMismatch { .. })
+        Err(SourceDbProjectionStateError::ImportGenerationRunMismatch { .. })
     ));
 
     let transfer = state
@@ -1147,7 +1147,7 @@ fn run_bound_transfer_rejects_wrong_run_marker_mutation_and_attempt_substitution
         &store,
         run_id,
         binding.selected_car_id,
-        &[(TeslaMateProjectionStateEntity::Position, 99)],
+        &[(SourceDbProjectionStateEntity::Position, 99)],
     );
     assert_ne!(
         state.path_for_test(),
@@ -1158,9 +1158,9 @@ fn run_bound_transfer_rejects_wrong_run_marker_mutation_and_attempt_substitution
         .expect("substitute another attempt at descriptor path");
     let connection = store.open().expect("catalogue connection");
     assert!(matches!(
-        attach_teslamate_projection_state_transfer(&connection, &transfer),
-        Err(StoreError::TeslaMateProjectionState(
-            TeslaMateProjectionStateError::TransferDigestMismatch
+        attach_source_db_projection_state_transfer(&connection, &transfer),
+        Err(StoreError::SourceDbProjectionState(
+            SourceDbProjectionStateError::TransferDigestMismatch
         ))
     ));
     drop(connection);
@@ -1175,7 +1175,7 @@ fn run_bound_transfer_rejects_wrong_run_marker_mutation_and_attempt_substitution
     set_test_private_mode(&marker, 0o600);
     assert!(matches!(
         state.sealed_transfer_for_import_generation(run_id, binding.selected_car_id),
-        Err(TeslaMateProjectionStateError::InvalidOwnerMarker(_))
+        Err(SourceDbProjectionStateError::InvalidOwnerMarker(_))
     ));
 }
 
@@ -1188,7 +1188,7 @@ fn retry_drop_removes_only_its_exact_attempt_and_keeps_a_live_sibling() {
         &store,
         run_id,
         binding.selected_car_id,
-        &[(TeslaMateProjectionStateEntity::Position, 10)],
+        &[(SourceDbProjectionStateEntity::Position, 10)],
     );
     let first_path = first.path_for_test().to_path_buf();
     let run_directory = first_path.parent().expect("run directory").to_path_buf();
@@ -1196,7 +1196,7 @@ fn retry_drop_removes_only_its_exact_attempt_and_keeps_a_live_sibling() {
         &store,
         run_id,
         binding.selected_car_id,
-        &[(TeslaMateProjectionStateEntity::Position, 11)],
+        &[(SourceDbProjectionStateEntity::Position, 11)],
     );
     let second_path = second.path_for_test().to_path_buf();
     drop(first);
@@ -1227,7 +1227,7 @@ fn startup_recovery_reclaims_a_completed_run_orphaned_before_state_drop() {
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -1277,17 +1277,17 @@ fn startup_recovery_reclaims_a_completed_run_orphaned_before_state_drop() {
 fn persist_projection_state_rows(
     store: &HubStore,
     root: &Path,
-    rows: &[(TeslaMateProjectionStateEntity, i64)],
+    rows: &[(SourceDbProjectionStateEntity, i64)],
 ) -> (VehicleRecord, ProjectionBinding) {
     let (vehicle, binding, manifest) = v2_base_manifest(store);
-    let inventory = TeslaMateImportProjectionInventory {
+    let inventory = SourceDbImportProjectionInventory {
         source_id: binding.account_id,
         selected_car_id: binding.selected_car_id,
         rows: Vec::new(),
     };
     let state = projection_state_with_digest_rows(root, binding.selected_car_id, rows);
     store
-        .finalize_teslamate_import_snapshot_with_projection_state(
+        .finalize_source_db_import_snapshot_with_projection_state(
             &manifest,
             Sha256Digest::of_bytes(b"digest-cache-fixture"),
             &[],
@@ -1305,20 +1305,19 @@ fn unchanged_direct_successor_projection_state(
     vehicle_id: Uuid,
     binding: &ProjectionBinding,
     car: &ProjectionCar,
-) -> TeslaMateProjectionState {
+) -> SourceDbProjectionState {
     let prior = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle_id,
             binding.account_id,
             binding.selected_car_id,
         )
         .expect("verified direct prior state");
     let state = create_direct_import_projection_state(store, run_id, 10);
-    let mut capture =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_successor(
-            state,
-            Box::new(prior),
-        );
+    let mut capture = crate::import_projection_state::SourceDbProjectionStateCapture::for_successor(
+        state,
+        Box::new(prior),
+    );
     capture
         .record_car(car)
         .expect("capture unchanged direct car");
@@ -1333,10 +1332,10 @@ fn projection_state_lookup_allows_live_lineage_after_the_last_import() {
     let (vehicle, binding) = persist_projection_state_rows(
         &store,
         temporary.path(),
-        &[(TeslaMateProjectionStateEntity::Position, 10)],
+        &[(SourceDbProjectionStateEntity::Position, 10)],
     );
     let imported_head = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -1355,7 +1354,7 @@ fn projection_state_lookup_allows_live_lineage_after_the_last_import() {
         .expect("publish live Hub delta");
 
     let lookup = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -1373,13 +1372,13 @@ fn projection_state_digest_cache_reuses_one_verified_range() {
         &store,
         temporary.path(),
         &[
-            (TeslaMateProjectionStateEntity::Position, 10),
-            (TeslaMateProjectionStateEntity::Position, 20),
-            (TeslaMateProjectionStateEntity::Position, 30),
+            (SourceDbProjectionStateEntity::Position, 10),
+            (SourceDbProjectionStateEntity::Position, 20),
+            (SourceDbProjectionStateEntity::Position, 30),
         ],
     );
     let mut lookup = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -1388,26 +1387,26 @@ fn projection_state_digest_cache_reuses_one_verified_range() {
 
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 10)
+            .digest_store(SourceDbProjectionStateEntity::Position, 10)
             .expect("first cached digest")
             .is_some()
     );
     assert_eq!(lookup.digest_cache_loads, 1);
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 20)
+            .digest_store(SourceDbProjectionStateEntity::Position, 20)
             .expect("second cached digest")
             .is_some()
     );
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 20)
+            .digest_store(SourceDbProjectionStateEntity::Position, 20)
             .expect("repeated cached digest")
             .is_some()
     );
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 30)
+            .digest_store(SourceDbProjectionStateEntity::Position, 30)
             .expect("third cached digest")
             .is_some()
     );
@@ -1425,12 +1424,12 @@ fn projection_state_digest_cache_preserves_gaps_and_exhausted_absence() {
         &store,
         temporary.path(),
         &[
-            (TeslaMateProjectionStateEntity::Position, 10),
-            (TeslaMateProjectionStateEntity::Position, 20),
+            (SourceDbProjectionStateEntity::Position, 10),
+            (SourceDbProjectionStateEntity::Position, 20),
         ],
     );
     let mut lookup = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -1439,20 +1438,20 @@ fn projection_state_digest_cache_preserves_gaps_and_exhausted_absence() {
 
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 10)
+            .digest_store(SourceDbProjectionStateEntity::Position, 10)
             .expect("cached digest")
             .is_some()
     );
     assert_eq!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 15)
+            .digest_store(SourceDbProjectionStateEntity::Position, 15)
             .expect("gap lookup"),
         None,
         "a cached range may not treat a gap as unchanged"
     );
     assert_eq!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 21)
+            .digest_store(SourceDbProjectionStateEntity::Position, 21)
             .expect("exhausted tail lookup"),
         None,
         "an exhausted range must preserve a missing tail row"
@@ -1463,7 +1462,7 @@ fn projection_state_digest_cache_preserves_gaps_and_exhausted_absence() {
     );
     assert_eq!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 9)
+            .digest_store(SourceDbProjectionStateEntity::Position, 9)
             .expect("backward missing lookup"),
         None,
     );
@@ -1481,13 +1480,13 @@ fn projection_state_digest_cache_reloads_for_entity_changes_and_backtracking() {
         &store,
         temporary.path(),
         &[
-            (TeslaMateProjectionStateEntity::Drive, 1),
-            (TeslaMateProjectionStateEntity::Position, 10),
-            (TeslaMateProjectionStateEntity::Position, 20),
+            (SourceDbProjectionStateEntity::Drive, 1),
+            (SourceDbProjectionStateEntity::Position, 10),
+            (SourceDbProjectionStateEntity::Position, 20),
         ],
     );
     let mut lookup = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -1496,19 +1495,19 @@ fn projection_state_digest_cache_reloads_for_entity_changes_and_backtracking() {
 
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 10)
+            .digest_store(SourceDbProjectionStateEntity::Position, 10)
             .expect("position digest")
             .is_some()
     );
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Drive, 1)
+            .digest_store(SourceDbProjectionStateEntity::Drive, 1)
             .expect("drive digest")
             .is_some()
     );
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 20)
+            .digest_store(SourceDbProjectionStateEntity::Position, 20)
             .expect("position digest after entity change")
             .is_some()
     );
@@ -1518,7 +1517,7 @@ fn projection_state_digest_cache_reloads_for_entity_changes_and_backtracking() {
     );
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 9)
+            .digest_store(SourceDbProjectionStateEntity::Position, 9)
             .expect("backtracked position digest")
             .is_none()
     );
@@ -1532,14 +1531,14 @@ fn projection_state_digest_cache_reloads_for_entity_changes_and_backtracking() {
 fn projection_state_digest_cache_is_bounded_and_leaves_tombstone_paging_exact() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
-    let cache_limit = i64::try_from(TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS)
+    let cache_limit = i64::try_from(SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS)
         .expect("cache limit fits i64");
-    let mut rows = Vec::with_capacity(TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS + 2);
-    rows.push((TeslaMateProjectionStateEntity::Drive, 1));
-    rows.extend((1..=cache_limit + 1).map(|id| (TeslaMateProjectionStateEntity::Position, id)));
+    let mut rows = Vec::with_capacity(SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS + 2);
+    rows.push((SourceDbProjectionStateEntity::Drive, 1));
+    rows.extend((1..=cache_limit + 1).map(|id| (SourceDbProjectionStateEntity::Position, id)));
     let (vehicle, binding) = persist_projection_state_rows(&store, temporary.path(), &rows);
     let mut lookup = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -1548,23 +1547,23 @@ fn projection_state_digest_cache_is_bounded_and_leaves_tombstone_paging_exact() 
 
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, 1)
+            .digest_store(SourceDbProjectionStateEntity::Position, 1)
             .expect("first bounded digest")
             .is_some()
     );
     let cache = lookup
         .digest_caches
         .iter()
-        .find(|cache| cache.entity == TeslaMateProjectionStateEntity::Position)
+        .find(|cache| cache.entity == SourceDbProjectionStateEntity::Position)
         .expect("position cache loaded");
     assert_eq!(
         cache.rows.len(),
-        TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS
+        SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS
     );
     assert!(!cache.exhausted, "a full cache page cannot claim a tail");
     assert!(
         lookup
-            .digest_store(TeslaMateProjectionStateEntity::Position, cache_limit + 1)
+            .digest_store(SourceDbProjectionStateEntity::Position, cache_limit + 1)
             .expect("next range digest")
             .is_some()
     );
@@ -1573,16 +1572,16 @@ fn projection_state_digest_cache_is_bounded_and_leaves_tombstone_paging_exact() 
         lookup
             .digest_caches
             .iter()
-            .all(|cache| cache.rows.len() <= TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS)
+            .all(|cache| cache.rows.len() <= SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS)
     );
-    assert!(lookup.digest_caches.len() <= TeslaMateProjectionStateEntity::ALL.len());
+    assert!(lookup.digest_caches.len() <= SourceDbProjectionStateEntity::ALL.len());
 
     let first = lookup
         .page_after_store(None, 2)
         .expect("first tombstone page");
     assert_eq!(first.rows.len(), 2);
-    assert_eq!(first.rows[0].entity, TeslaMateProjectionStateEntity::Car);
-    assert_eq!(first.rows[1].entity, TeslaMateProjectionStateEntity::Drive);
+    assert_eq!(first.rows[0].entity, SourceDbProjectionStateEntity::Car);
+    assert_eq!(first.rows[1].entity, SourceDbProjectionStateEntity::Drive);
     let second = lookup
         .page_after_store(first.next_after, 2)
         .expect("second tombstone page");
@@ -1591,7 +1590,7 @@ fn projection_state_digest_cache_is_bounded_and_leaves_tombstone_paging_exact() 
         second
             .rows
             .iter()
-            .all(|row| row.entity == TeslaMateProjectionStateEntity::Position)
+            .all(|row| row.entity == SourceDbProjectionStateEntity::Position)
     );
 }
 
@@ -1603,18 +1602,22 @@ fn projection_state_tombstone_page_seeks_past_a_large_prior_prefix() {
         &store,
         temporary.path(),
         &[
-            (TeslaMateProjectionStateEntity::Drive, 1),
-            (TeslaMateProjectionStateEntity::Position, 1),
+            (SourceDbProjectionStateEntity::Drive, 1),
+            (SourceDbProjectionStateEntity::Position, 1),
         ],
     );
     let mut connection = store.open().expect("catalogue");
     let transaction = connection.transaction().expect("bulk state fixture");
     {
-        let mut insert = transaction.prepare(
-            "INSERT INTO teslamate_import_projection_state_rows
+        let mut insert = transaction
+            .prepare(concat!(
+                "INSERT INTO ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "
              (vehicle_id, entity, entity_ordinal, entity_id, car_id, projection_sha256)
-             VALUES (?1, 'position', 2, ?2, ?3, ?4)",
-        ).expect("insert prior positions");
+             VALUES (?1, 'position', 2, ?2, ?3, ?4)"
+            ))
+            .expect("insert prior positions");
         for id in 2_i64..=30_001 {
             insert.execute(params![
                 vehicle.vehicle_id.to_string(), id, binding.selected_car_id,
@@ -1623,13 +1626,19 @@ fn projection_state_tombstone_page_seeks_past_a_large_prior_prefix() {
         }
     }
     transaction.commit().expect("durable prior prefix");
-    let mut plan = connection.prepare(&format!(
-        "EXPLAIN QUERY PLAN {TESLAMATE_IMPORT_PROJECTION_STATE_PAGE_SQL}",
-    )).expect("page query plan");
-    let details = plan.query_map(
-        params![vehicle.vehicle_id.to_string(), 2_i64, 29_998_i64, 4_i64],
-        |row| row.get::<_, String>(3),
-    ).expect("explain page").collect::<Result<Vec<_>, _>>().expect("plan details");
+    let mut plan = connection
+        .prepare(&format!(
+            "EXPLAIN QUERY PLAN {SOURCE_DB_IMPORT_PROJECTION_STATE_PAGE_SQL}",
+        ))
+        .expect("page query plan");
+    let details = plan
+        .query_map(
+            params![vehicle.vehicle_id.to_string(), 2_i64, 29_998_i64, 4_i64],
+            |row| row.get::<_, String>(3),
+        )
+        .expect("explain page")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("plan details");
     assert!(
         details.iter().any(|detail| detail.contains("USING PRIMARY KEY")
             && detail.contains("(entity_ordinal,entity_id)>(?,?)")),
@@ -1638,14 +1647,24 @@ fn projection_state_tombstone_page_seeks_past_a_large_prior_prefix() {
     drop(plan);
     drop(connection);
 
-    let mut lookup = store.teslamate_import_projection_state_lookup(
-        vehicle.vehicle_id, binding.account_id, binding.selected_car_id,
-    ).expect("verified lookup");
+    let mut lookup = store
+        .source_db_import_projection_state_lookup(
+            vehicle.vehicle_id,
+            binding.account_id,
+            binding.selected_car_id,
+        )
+        .expect("verified lookup");
     let first = lookup.page_after_store(None, 2).expect("first page");
     assert_eq!(
-        first.rows.iter().map(|row| (row.entity, row.id)).collect::<Vec<_>>(),
-        vec![(TeslaMateProjectionStateEntity::Car, binding.selected_car_id),
-             (TeslaMateProjectionStateEntity::Drive, 1)],
+        first
+            .rows
+            .iter()
+            .map(|row| (row.entity, row.id))
+            .collect::<Vec<_>>(),
+        vec![
+            (SourceDbProjectionStateEntity::Car, binding.selected_car_id),
+            (SourceDbProjectionStateEntity::Drive, 1)
+        ],
     );
     let boundary = lookup.page_after_store(first.next_after, 2)
         .expect("entity boundary page");
@@ -1653,13 +1672,32 @@ fn projection_state_tombstone_page_seeks_past_a_large_prior_prefix() {
         boundary.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
         vec![1, 2],
     );
-    assert!(boundary.rows.iter().all(|row| row.entity == TeslaMateProjectionStateEntity::Position));
-    let late = lookup.page_after_store(Some(TeslaMateProjectionStateCursor {
-        entity: TeslaMateProjectionStateEntity::Position, id: 29_998,
-    }), 2).expect("late page");
-    assert_eq!(late.rows.iter().map(|row| row.id).collect::<Vec<_>>(), vec![29_999, 30_000]);
-    let tail = lookup.page_after_store(late.next_after, 2).expect("final page");
-    assert_eq!(tail.rows.iter().map(|row| row.id).collect::<Vec<_>>(), vec![30_001]);
+    assert!(
+        boundary
+            .rows
+            .iter()
+            .all(|row| row.entity == SourceDbProjectionStateEntity::Position)
+    );
+    let late = lookup
+        .page_after_store(
+            Some(SourceDbProjectionStateCursor {
+                entity: SourceDbProjectionStateEntity::Position,
+                id: 29_998,
+            }),
+            2,
+        )
+        .expect("late page");
+    assert_eq!(
+        late.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![29_999, 30_000]
+    );
+    let tail = lookup
+        .page_after_store(late.next_after, 2)
+        .expect("final page");
+    assert_eq!(
+        tail.rows.iter().map(|row| row.id).collect::<Vec<_>>(),
+        vec![30_001]
+    );
     assert!(tail.next_after.is_none());
 }
 
@@ -1671,20 +1709,24 @@ fn projection_state_digest_cache_rejects_mismatched_durable_rows() {
         &store,
         temporary.path(),
         &[
-            (TeslaMateProjectionStateEntity::Position, 77),
-            (TeslaMateProjectionStateEntity::Position, 78),
+            (SourceDbProjectionStateEntity::Position, 77),
+            (SourceDbProjectionStateEntity::Position, 78),
         ],
     );
     let connection = store.open().expect("fixture catalogue");
     connection
         .execute(
-            "UPDATE teslamate_import_projection_state_rows
+            concat!(
+                "UPDATE ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "
                     SET car_id = ?1
-                  WHERE vehicle_id = ?2 AND entity_ordinal = ?3 AND entity_id = ?4",
+                  WHERE vehicle_id = ?2 AND entity_ordinal = ?3 AND entity_id = ?4"
+            ),
             params![
                 binding.selected_car_id + 1,
                 vehicle.vehicle_id.to_string(),
-                i64::from(TeslaMateProjectionStateEntity::Position.ordinal()),
+                i64::from(SourceDbProjectionStateEntity::Position.ordinal()),
                 77_i64,
             ],
         )
@@ -1694,12 +1736,16 @@ fn projection_state_digest_cache_rejects_mismatched_durable_rows() {
         .expect("allow malformed test row");
     connection
         .execute(
-            "UPDATE teslamate_import_projection_state_rows
+            concat!(
+                "UPDATE ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "
                     SET entity = 'drive'
-                  WHERE vehicle_id = ?1 AND entity_ordinal = ?2 AND entity_id = ?3",
+                  WHERE vehicle_id = ?1 AND entity_ordinal = ?2 AND entity_id = ?3"
+            ),
             params![
                 vehicle.vehicle_id.to_string(),
-                i64::from(TeslaMateProjectionStateEntity::Position.ordinal()),
+                i64::from(SourceDbProjectionStateEntity::Position.ordinal()),
                 78_i64,
             ],
         )
@@ -1710,7 +1756,7 @@ fn projection_state_digest_cache_rejects_mismatched_durable_rows() {
     drop(connection);
 
     let mut lookup = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -1718,7 +1764,7 @@ fn projection_state_digest_cache_rejects_mismatched_durable_rows() {
         .expect("open lookup over corrupted rows");
     for id in [77_i64, 78_i64] {
         assert!(matches!(
-            lookup.digest_store(TeslaMateProjectionStateEntity::Position, id),
+            lookup.digest_store(SourceDbProjectionStateEntity::Position, id),
             Err(StoreError::LineageCatalogConflict)
         ));
     }
@@ -1876,7 +1922,7 @@ fn a_new_observation_id_is_one_above_the_largest_id_any_table_holds() {
 #[test]
 fn every_observation_id_writer_counts_the_current_table_and_the_other_two() {
     // The raw append and the two current-only writers (a discovery row and a
-    // TeslaMate position row) take their id from one rule: one above the largest
+    // Source database position row) take their id from one rule: one above the largest
     // id in `raw_observations`, `current_observations` and the lifecycle
     // cursors. Each case below makes a different table hold the largest id, so
     // a writer that leaves one table out gives a smaller id and fails.
@@ -1915,10 +1961,10 @@ fn every_observation_id_writer_counts_the_current_table_and_the_other_two() {
     let position = |observed_at_ms: i64| {
         assert!(
             store
-                .record_teslamate_current(
+                .record_source_db_current(
                     &input(
                         observed_at_ms,
-                        serde_json::json!({"record_type": "teslamate_position_v1",
+                        serde_json::json!({"record_type": crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE,
                                            "t": observed_at_ms}),
                     ),
                     observed_at_ms + 5,
@@ -1965,12 +2011,18 @@ fn every_observation_id_writer_counts_the_current_table_and_the_other_two() {
     assert_eq!(current_id("owner_api_discovery_v1"), 1_002);
     // The current table holds the largest id: a position row goes above it.
     position(30_000);
-    assert_eq!(current_id("teslamate_position_v1"), 1_003);
+    assert_eq!(
+        current_id(crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE),
+        1_003
+    );
     // The raw table holds the largest id again: a later position row goes
     // above it, not above the lowered current rows.
     set_current_ids(1);
     position(40_000);
-    assert_eq!(current_id("teslamate_position_v1"), 1_002);
+    assert_eq!(
+        current_id(crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE),
+        1_002
+    );
     // The current table holds the largest id: a later discovery goes above it.
     discovery(50_000);
     assert_eq!(current_id("owner_api_discovery_v1"), 1_003);
@@ -1987,7 +2039,10 @@ fn every_observation_id_writer_counts_the_current_table_and_the_other_two() {
         )
         .expect("lifecycle cursor");
     position(60_000);
-    assert_eq!(current_id("teslamate_position_v1"), 5_001);
+    assert_eq!(
+        current_id(crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE),
+        5_001
+    );
     discovery(70_000);
     assert_eq!(current_id("owner_api_discovery_v1"), 5_002);
     assert_eq!(append(70_100, serde_json::json!({"speed": 2})), 5_003);

@@ -172,7 +172,7 @@ fn promote_imported_open_session_in_transaction(
     source_id: Uuid,
     vehicle_id: Uuid,
     car_id: i64,
-    session: &TeslaMateOpenSession,
+    session: &SourceDbOpenSession,
     updated_at_ms: i64,
     expected: Option<(i64, i64)>,
 ) -> Result<OpenSessionSeedReport, StoreError> {

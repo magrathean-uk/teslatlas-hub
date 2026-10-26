@@ -375,7 +375,8 @@ impl HubStore {
     /// table), the v73 shape (before the retired delivery objects were dropped), the
     /// v74 shape (before the table of completed one-time data steps, C6 R63), the
     /// v75 shape (before the geofence step) and the v76 shape (before the terrain
-    /// selection step) to v77. The geofence step (C8 R12) rebuilds the fence table
+    /// selection step), and the v77 shape (before import-name migration), to
+    /// the current schema. The geofence step (C8 R12) rebuilds the fence table
     /// with a wider name, radius and session-fee rule and a source-ownership
     /// column, and adds the fence id mark and imported-fence tombstone tables.
     /// The terrain selection step (C9 R61) adds the import boundary columns,
@@ -427,8 +428,8 @@ impl HubStore {
         }
         let version = schema_version(&connection)?;
         let known_forward_upgrade = standalone_migration_candidate
-            && SCHEMA_VERSION == TERRAIN_SELECTION_SCHEMA_VERSION
-            && (66..TERRAIN_SELECTION_SCHEMA_VERSION).contains(&version);
+            && SCHEMA_VERSION == import_source_names_step::VERSION
+            && (66..import_source_names_step::VERSION).contains(&version);
         if version != SCHEMA_VERSION && !known_forward_upgrade {
             return Err(StoreError::UnsupportedSchema(version));
         }

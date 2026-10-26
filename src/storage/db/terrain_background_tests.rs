@@ -105,7 +105,10 @@ fn tesla_eid_unifies_sources_and_survives_restart() {
     let temp = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(temp.path()).expect("store");
     let imported = store
-        .register_source(&SourceDescriptor::new("teslamate", "copy"), 1)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "copy"),
+            1,
+        )
         .unwrap();
     let live = store
         .register_source(
@@ -143,7 +146,10 @@ fn distinct_eid_cars_do_not_merge_on_reused_vid_and_conflicts_fail() {
     let temp = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(temp.path()).expect("store");
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", "copy"), 1)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "copy"),
+            1,
+        )
         .unwrap();
     let one = store
         .register_vehicle(

@@ -29,10 +29,10 @@ fn doctor_config(directory: &Path, collector: &str, tail: &str) -> HubConfig {
 
 /// A Hub with an imported, enabled car, so a collector can start.
 fn doctor_seed_car(store: &HubStore) {
-    use crate::teslamate_import::{TeslaMateImportRequest, TeslaMateImportScope, publish_history};
-    use crate::teslamate_projection::{TeslaMateCar, TeslaMateHistory};
-    let history = TeslaMateHistory {
-        cars: vec![TeslaMateCar {
+    use crate::source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history};
+    use crate::source_db_projection::{SourceDbCar, SourceDbHistory};
+    let history = SourceDbHistory {
+        cars: vec![SourceDbCar {
             id: 1,
             eid: 4_100_001,
             vid: Some(4_200_001),
@@ -63,9 +63,10 @@ fn doctor_seed_car(store: &HubStore) {
     publish_history(
         store,
         &crate::protocol::CursorKey::from_bytes([0xD2; 32]),
-        &TeslaMateImportRequest {
+        &SourceDbImportRequest {
+            new_import_source: false,
             source_key: "doctor-readiness-fixture".to_owned(),
-            scope: TeslaMateImportScope::Selected(1),
+            scope: SourceDbImportScope::Selected(1),
             imported_at_ms: doctor_now_ms() - 60_000,
         },
         &history,
@@ -86,18 +87,21 @@ fn doctor_legacy_pair(
         crate::credentials::OwnerTokens::from_secret_parts(access.to_owned(), "refresh".to_owned())
             .expect("tokens");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
     let stored = match schedule {
-        Some((expires_at, next_refresh_at)) => {
-            crate::db::TeslaMateLegacyTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
-        }
-        None => crate::db::TeslaMateLegacyTokenStore::imported(access, refresh),
+        Some((expires_at, next_refresh_at)) => crate::db::LegacyOwnerTokenStore::refreshed(
+            access,
+            refresh,
+            expires_at,
+            next_refresh_at,
+        ),
+        None => crate::db::LegacyOwnerTokenStore::imported(access, refresh),
     }
     .expect("stored pair");
-    crate::teslamate_credentials::replace_key_and_tokens(directory, store, key, &stored)
+    crate::legacy_owner_credentials::replace_key_and_tokens(directory, store, key, &stored)
         .expect("persist pair");
     store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("load")
         .expect("row")
         .credential_generation()
@@ -120,7 +124,7 @@ fn doctor_fleet_pair(directory: &Path, store: &HubStore, access: &str) -> Uuid {
 }
 
 fn doctor_fleet_pair_with(directory: &Path, store: &HubStore, access: &str, refresh: &str) -> Uuid {
-    crate::teslamate_credentials::load_or_create_cursor_key(directory).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(directory).expect("cursor key");
     let credentials = crate::fleet_credentials::FleetSetupCredentials::new(
         access.to_owned(),
         refresh.to_owned(),
@@ -446,7 +450,7 @@ fn doctor_signed_out_and_integrity_failures_remain_failures() {
 
     // Missing key.
     doctor_write_row(&store, &doctor_row("ready", None, true));
-    let key_path = crate::teslamate_credentials::key_path(temporary.path());
+    let key_path = crate::legacy_owner_credentials::key_path(temporary.path());
     let key = fs::read(&key_path).expect("key");
     fs::remove_file(&key_path).expect("remove key");
     let missing = inspect_hub(&store, &config).expect("report");
@@ -465,7 +469,11 @@ fn doctor_signed_out_and_integrity_failures_remain_failures() {
         .open()
         .expect("catalogue")
         .execute(
-            "UPDATE teslamate_legacy_tokens SET access = X'0102030405060708091011121314151617'",
+            concat!(
+                "UPDATE ",
+                crate::db::import_table_names::legacy_owner_tokens_table!(),
+                " SET access = X'0102030405060708091011121314151617'"
+            ),
             [],
         )
         .expect("damage ciphertext");
@@ -587,7 +595,9 @@ fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
                 let rows: i64 = store
                     .open()
                     .expect("catalogue")
-                    .query_row("SELECT COUNT(*) FROM collector_account_state", [], |row| row.get(0))
+                    .query_row("SELECT COUNT(*) FROM collector_account_state", [], |row| {
+                        row.get(0)
+                    })
                     .expect("count");
                 assert_eq!(rows, 0, "the missing-row pass has no account row");
             }
@@ -616,7 +626,7 @@ fn cs_p1_fleet_diagnostics_ignores_retained_c5() {
     let with_key = inspect_hub(&store, &fleet_config).expect("report");
     assert!(with_key.credentials.legacy.present);
     assert!(!with_key.credentials.legacy.valid_for_collection);
-    let key = crate::teslamate_credentials::key_path(temporary.path());
+    let key = crate::legacy_owner_credentials::key_path(temporary.path());
     let key_bytes = fs::read(&key).expect("Legacy key");
     fs::remove_file(&key).expect("remove the Legacy key");
     let without_key = inspect_hub(&store, &fleet_config).expect("report");
@@ -827,7 +837,9 @@ fn readiness_context_uses_loaded_mode_with_stale_or_missing_account_rows() {
     let rows: i64 = store
         .open()
         .expect("catalogue")
-        .query_row("SELECT COUNT(*) FROM collector_account_state", [], |row| row.get(0))
+        .query_row("SELECT COUNT(*) FROM collector_account_state", [], |row| {
+            row.get(0)
+        })
         .expect("count");
     assert_eq!(rows, 0, "no account row");
     let fleet_no_row = inspect_hub(&store, &fleet_config).expect("report");
@@ -979,7 +991,11 @@ fn cadence_doctor_retains_credentials_scopes_and_service_failures() {
         .open()
         .expect("catalogue")
         .execute(
-            "UPDATE teslamate_legacy_tokens SET access = X'0102030405060708091011121314151617'",
+            concat!(
+                "UPDATE ",
+                crate::db::import_table_names::legacy_owner_tokens_table!(),
+                " SET access = X'0102030405060708091011121314151617'"
+            ),
             [],
         )
         .expect("damage ciphertext");

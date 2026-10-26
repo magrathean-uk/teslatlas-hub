@@ -1098,9 +1098,13 @@ fn c9_c1_shared_recompute_phase() {
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .unwrap();
     tx.execute(
-        "INSERT INTO teslamate_import_projection_heads(
+        concat!(
+            "INSERT INTO ",
+            crate::db::import_table_names::import_projection_heads_table!(),
+            "(
             vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence)
-         VALUES (?1, ?2, ?3, 1, 0)",
+         VALUES (?1, ?2, ?3, 1, 0)"
+        ),
         params![
             vehicle.to_string(),
             source.source_id.to_string(),
@@ -1109,7 +1113,11 @@ fn c9_c1_shared_recompute_phase() {
     )
     .unwrap();
     tx.execute(
-        "INSERT INTO teslamate_import_projection_rows VALUES (?1, 'drive', 2), (?1, 'drive', 3)",
+        concat!(
+            "INSERT INTO ",
+            crate::db::import_table_names::import_projection_rows_table!(),
+            " VALUES (?1, 'drive', 2), (?1, 'drive', 3)"
+        ),
         [vehicle.to_string()],
     )
     .unwrap();
@@ -1184,20 +1192,56 @@ fn assert_imported_closed_exclusion() {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .unwrap();
         if inventory != "durable" {
-            tx.execute("INSERT INTO teslamate_import_projection_heads(vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence)
-                VALUES (?1, ?2, ?3, 1, 0)", params![vehicle.to_string(), source.source_id.to_string(), lineage.base.snapshot_id.to_string()]).unwrap();
+            tx.execute(
+                concat!(
+                    "INSERT INTO ",
+                    crate::db::import_table_names::import_projection_heads_table!(),
+                    "(vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence)
+                VALUES (?1, ?2, ?3, 1, 0)"
+                ),
+                params![
+                    vehicle.to_string(),
+                    source.source_id.to_string(),
+                    lineage.base.snapshot_id.to_string()
+                ],
+            )
+            .unwrap();
             if inventory == "legacy" {
                 tx.execute(
-                    "INSERT INTO teslamate_import_projection_rows VALUES (?1, 'drive', 9)",
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_rows_table!(),
+                        " VALUES (?1, 'drive', 9)"
+                    ),
                     [vehicle.to_string()],
                 )
                 .unwrap();
             }
         }
         if inventory != "legacy" {
-            tx.execute("INSERT INTO teslamate_import_projection_state_heads(vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence)
-                VALUES (?1, ?2, ?3, 1, 0)", params![vehicle.to_string(), source.source_id.to_string(), lineage.base.snapshot_id.to_string()]).unwrap();
-            tx.execute("INSERT INTO teslamate_import_projection_state_rows VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))", [vehicle.to_string()]).unwrap();
+            tx.execute(
+                concat!(
+                    "INSERT INTO ",
+                    crate::db::import_table_names::import_projection_state_heads_table!(),
+                    "(vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence)
+                VALUES (?1, ?2, ?3, 1, 0)"
+                ),
+                params![
+                    vehicle.to_string(),
+                    source.source_id.to_string(),
+                    lineage.base.snapshot_id.to_string()
+                ],
+            )
+            .unwrap();
+            tx.execute(
+                concat!(
+                    "INSERT INTO ",
+                    crate::db::import_table_names::import_projection_state_rows_table!(),
+                    " VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))"
+                ),
+                [vehicle.to_string()],
+            )
+            .unwrap();
         }
         tx.execute("INSERT INTO terrain_elevation_provenance(vehicle_id, position_id, drive_id, latitude, longitude, elevation_m, status, attempts, attempted_at_ms, retry_after_ms)
             VALUES (?1, 99, 9, 10.5, 20.0, 100, 'success', 1, ?2, 0)", params![vehicle.to_string(), NOW]).unwrap();
@@ -1410,9 +1454,13 @@ fn c9_r40_relocated_retry_preserves_imported_closed_totals() {
         if inventory == "legacy" {
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_heads(
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_heads_table!(),
+                        "(
                 vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence)
-                VALUES (?1, ?2, ?3, 1, 0)",
+                VALUES (?1, ?2, ?3, 1, 0)"
+                    ),
                     params![
                         vehicle.to_string(),
                         source.source_id.to_string(),
@@ -1422,16 +1470,24 @@ fn c9_r40_relocated_retry_preserves_imported_closed_totals() {
                 .unwrap();
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_rows VALUES (?1, 'drive', 9)",
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_rows_table!(),
+                        " VALUES (?1, 'drive', 9)"
+                    ),
                     [vehicle.to_string()],
                 )
                 .unwrap();
         } else {
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_state_heads(
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_state_heads_table!(),
+                        "(
                 vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence)
-                VALUES (?1, ?2, ?3, 1, 0)",
+                VALUES (?1, ?2, ?3, 1, 0)"
+                    ),
                     params![
                         vehicle.to_string(),
                         source.source_id.to_string(),
@@ -1441,8 +1497,12 @@ fn c9_r40_relocated_retry_preserves_imported_closed_totals() {
                 .unwrap();
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_state_rows
-                VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))",
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_state_rows_table!(),
+                        "
+                VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))"
+                    ),
                     [vehicle.to_string()],
                 )
                 .unwrap();

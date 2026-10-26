@@ -8,7 +8,7 @@
 
 use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
-use clap::{ArgAction, CommandFactory, Parser, error::ErrorKind};
+use clap::{ArgAction, CommandFactory, error::ErrorKind};
 use rusqlite::params;
 use teslatlas_hub::db::{HubStore, SourceDescriptor, VehicleDescriptor};
 use teslatlas_hub::location::{

@@ -3,13 +3,13 @@
 use super::*;
 use crate::{
     db::{SourceDescriptor, VehicleDescriptor},
-    teslamate_projection::{
-        TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateSettingsPhysicalV2_2,
+    source_db_projection::{
+        SourceDbCarPhysicalV2_2, SourceDbCarSettingsPhysicalV2_2, SourceDbSettingsPhysicalV2_2,
     },
-    teslamate_reader::TeslaMateSchemaInfo,
-    teslamate_schema::{
-        MAX_VALIDATED_MIGRATION, TESLAMATE_V4_1_1_SOURCE_REVISION,
-        TESLAMATE_V4_MIGRATION_SET_SHA256,
+    source_db_reader::SourceDbSchemaInfo,
+    source_db_schema::{
+        MAX_VALIDATED_MIGRATION, SOURCE_DB_V4_1_1_SOURCE_REVISION,
+        SOURCE_DB_V4_MIGRATION_SET_SHA256,
     },
     updates_logical::decode_updates_logical_stream,
 };
@@ -20,16 +20,16 @@ use std::os::unix::fs::PermissionsExt;
 fn production_source(car_id: i16) -> DirectUpdatesSourceV2_2 {
     DirectUpdatesSourceV2_2 {
         postgres_snapshot_sha256: hex_sha256(Uuid::new_v4().as_bytes()),
-        schema: TeslaMateSchemaInfo {
+        schema: SourceDbSchemaInfo {
             observed_migration_version: MAX_VALIDATED_MIGRATION,
-            observed_migration_count: TESLAMATE_V4_MIGRATION_COUNT,
+            observed_migration_count: SOURCE_DB_V4_MIGRATION_COUNT,
             minimum_supported_migration_version: MAX_VALIDATED_MIGRATION,
             maximum_validated_migration_version: MAX_VALIDATED_MIGRATION,
-            pinned_source_revision: TESLAMATE_V4_SOURCE_REVISION,
-            pinned_migration_set_sha256: TESLAMATE_V4_MIGRATION_SET_SHA256,
+            pinned_source_revision: SOURCE_DB_V4_SOURCE_REVISION,
+            pinned_migration_set_sha256: SOURCE_DB_V4_MIGRATION_SET_SHA256,
             fingerprint: hex_sha256(b"production-repeatable-read-schema-fingerprint"),
         },
-        global_settings: TeslaMateSettingsPhysicalV2_2 {
+        global_settings: SourceDbSettingsPhysicalV2_2 {
             id: 1,
             unit_of_length: ProjectionUnitOfLengthV2_2::Kilometers,
             unit_of_temperature: ProjectionUnitOfTemperatureV2_2::Celsius,
@@ -42,7 +42,7 @@ fn production_source(car_id: i16) -> DirectUpdatesSourceV2_2 {
             inserted_at_pg_us: 0,
             updated_at_pg_us: 0,
         },
-        car: TeslaMateCarPhysicalV2_2 {
+        car: SourceDbCarPhysicalV2_2 {
             id: car_id,
             eid: 100,
             vid: 200,
@@ -60,7 +60,7 @@ fn production_source(car_id: i16) -> DirectUpdatesSourceV2_2 {
             updated_at_pg_us: 0,
             settings_id: 3,
         },
-        car_settings: TeslaMateCarSettingsPhysicalV2_2 {
+        car_settings: SourceDbCarSettingsPhysicalV2_2 {
             id: 3,
             suspend_min: 21,
             suspend_after_idle_min: 15,
@@ -71,14 +71,14 @@ fn production_source(car_id: i16) -> DirectUpdatesSourceV2_2 {
             lfp_battery: false,
         },
         updates: vec![
-            TeslaMateUpdatePhysicalV2_2 {
+            SourceDbUpdatePhysicalV2_2 {
                 id: -4,
                 car_id,
                 start_date_pg_us: -1,
                 end_date_pg_us: Some(0),
                 version: None,
             },
-            TeslaMateUpdatePhysicalV2_2 {
+            SourceDbUpdatePhysicalV2_2 {
                 id: 9,
                 car_id,
                 start_date_pg_us: 1,
@@ -96,7 +96,10 @@ fn production_capture_publishes_dynamic_exact_pair_and_reuses_exact_bytes() {
     let cursor_key = CursorKey::from_bytes([43; 32]);
     let registered_source = store
         .register_source(
-            &SourceDescriptor::new("teslamate", format!("test-source-{}", Uuid::new_v4())),
+            &SourceDescriptor::new(
+                crate::db::IMPORT_SOURCE_KIND,
+                format!("test-source-{}", Uuid::new_v4()),
+            ),
             1_000,
         )
         .expect("source");
@@ -169,7 +172,7 @@ fn production_capture_publishes_dynamic_exact_pair_and_reuses_exact_bytes() {
         schema_22_signed_artifacts(&store, binding.vehicle_id, &cursor_key)
             .expect("pair before rejection");
     let mut wrong_migration_count = source.clone();
-    wrong_migration_count.schema.observed_migration_count = TESLAMATE_V4_MIGRATION_COUNT - 1;
+    wrong_migration_count.schema.observed_migration_count = SOURCE_DB_V4_MIGRATION_COUNT - 1;
     let error =
         publish_production_updates_schema_22(&store, &cursor_key, &binding, wrong_migration_count)
             .expect_err("contradictory migration count must fail closed");
@@ -258,7 +261,7 @@ fn production_capture_publishes_dynamic_exact_pair_and_reuses_exact_bytes() {
         .source_witness
         .as_mut()
         .expect("production witness")
-        .source_revision = TESLAMATE_V4_1_1_SOURCE_REVISION.into();
+        .source_revision = SOURCE_DB_V4_1_1_SOURCE_REVISION.into();
     let legacy_witness = legacy_noop
         .source_witness
         .clone()

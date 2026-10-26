@@ -17,7 +17,7 @@
 | Pairing | Short-lived, single-use invitation; claim is the only unauthenticated mutation. |
 | Fleet Telemetry ingress | Private bearer on supervised loopback route. |
 | Provider credentials | Resident collector is the sole refresh owner. |
-| TeslaMate migration | Read-only PostgreSQL transaction and exact schema admission. |
+| history import | Read-only PostgreSQL transaction and exact schema admission. |
 | Vehicle command | Explicit action, confirmation, selected vehicle, bounded proxy. |
 | Source release | Immutable annotated tag, exact version, clean tree, provenance classification, and licence material. |
 
@@ -36,7 +36,7 @@
 
 ## Out of scope
 
-This security model does not authorise testing Tesla, TeslaMate, Apple, GitHub,
+This security model does not authorise testing Tesla, third-party source deployments, Apple, GitHub,
 another vehicle, or another person's system.
 
 Report product vulnerabilities privately under the [security policy](../../.github/SECURITY.md).

@@ -259,10 +259,10 @@ enum HubProductionEffects {
 
     static func staleImportCleaner(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        effect: @escaping () -> TeslaMateServerImporter.StaleTemporaryCleanup = {
-            TeslaMateServerImporter.cleanupStaleTemporaryDirectoriesReporting()
+        effect: @escaping () -> SourceServerImporter.StaleTemporaryCleanup = {
+            SourceServerImporter.cleanupStaleTemporaryDirectoriesReporting()
         }
-    ) -> () -> TeslaMateServerImporter.StaleTemporaryCleanup {
+    ) -> () -> SourceServerImporter.StaleTemporaryCleanup {
         {
             guard !HubTestHost.isXCTest(environment: environment) else { return .init() }
             return effect()
@@ -317,7 +317,7 @@ final class HubDataRemover: HubDataRemoving {
     private let home: URL
     private let bundleIdentifier: String
     private let suspendAppLog: () -> Void
-    private let cleanStaleImports: () -> TeslaMateServerImporter.StaleTemporaryCleanup
+    private let cleanStaleImports: () -> SourceServerImporter.StaleTemporaryCleanup
     private let clearPreferences: (String) -> Bool
     private let logWarning: (String) -> Void
     private let environment: [String: String]
@@ -329,7 +329,7 @@ final class HubDataRemover: HubDataRemoving {
     init(home: URL,
          bundleIdentifier: String,
          suspendAppLog: @escaping () -> Void,
-         cleanStaleImports: @escaping () -> TeslaMateServerImporter.StaleTemporaryCleanup,
+         cleanStaleImports: @escaping () -> SourceServerImporter.StaleTemporaryCleanup,
          clearPreferences: @escaping (String) -> Bool,
          logWarning: @escaping (String) -> Void = { _ in },
          environment: [String: String] = ProcessInfo.processInfo.environment,
@@ -360,7 +360,7 @@ final class HubDataRemover: HubDataRemoving {
                            bundleIdentifier: String? = Bundle.main.bundleIdentifier,
                            effectsEnvironment: [String: String] = ProcessInfo.processInfo.environment,
                            preferences: HubPreferencesPrimitives = .production,
-                           staleImportEffect: (() -> TeslaMateServerImporter.StaleTemporaryCleanup)? = nil,
+                           staleImportEffect: (() -> SourceServerImporter.StaleTemporaryCleanup)? = nil,
                            suspendAppLog: @escaping () -> Void = { HubAppLog.shared.suspend() }) -> HubDataRemover {
         HubDataRemover(home: home,
                        bundleIdentifier: bundleIdentifier ?? "",

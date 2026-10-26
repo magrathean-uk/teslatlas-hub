@@ -100,7 +100,7 @@ fn c6_st_s32_status() {
     store
         .upsert_geofences(
             parked,
-            &[teslatlas_hub::teslamate_projection::TeslaMateGeofence {
+            &[teslatlas_hub::source_db_projection::SourceDbGeofence {
                 id: 1,
                 name: "Home".into(),
                 latitude: Some(10.123457),

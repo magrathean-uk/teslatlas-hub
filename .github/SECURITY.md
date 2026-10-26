@@ -46,10 +46,10 @@ control failure remains in scope.
 ## Testing boundaries
 
 Only test systems and accounts you are authorised to use. Do not test Tesla,
-TeslaMate, Apple, GitHub, a vehicle, another person's system, or another
-provider merely because Teslatlas Hub can interoperate with it. Avoid actions
-that could affect vehicle safety, credentials, personal data, availability, or
-third-party services.
+Apple, GitHub, the software you import from, a vehicle, another person's
+system, or another provider merely because Teslatlas Hub can interoperate with
+it. Avoid actions that could affect vehicle safety, credentials, personal data,
+availability, or third-party services.
 
 Account support, deployment help, and requests to recover data are not
 vulnerability reports. A weakness in a third-party service is outside this

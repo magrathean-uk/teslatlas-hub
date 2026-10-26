@@ -216,6 +216,7 @@ fn rr_store_at_73(pending: &[&str]) -> (tempfile::TempDir, HubStore, Uuid, Uuid)
             )
             .unwrap();
     }
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     (temporary, store, with_state, without_state)
 }
@@ -393,6 +394,7 @@ fn retirement_creates_an_empty_gap_table_without_gaps() {
         ))
         .unwrap();
     assert!(!rr_table_exists(&connection, "edge_sequence_dispositions"));
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
     let store = HubStore::initialize(temporary.path()).unwrap();
@@ -552,6 +554,7 @@ fn rewind_constants_restore_the_previous_shape() {
             rr_table_exists(&connection, "fleet_telemetry_accumulator_states"),
             version == 73
         );
+        crate::db::import_names_test_support::prepare_historical_import_names(&connection);
         drop(connection);
         drop(store);
         let migrated = HubStore::initialize(temporary.path()).unwrap();
@@ -560,7 +563,13 @@ fn rewind_constants_restore_the_previous_shape() {
         let strip = |schema: Vec<(String, String, Option<String>)>| {
             schema
                 .into_iter()
-                .map(|(kind, name, sql)| (kind, name, sql.map(|sql| sql.split_whitespace().collect::<Vec<_>>().join(" "))))
+                .map(|(kind, name, sql)| {
+                    (
+                        kind,
+                        name,
+                        sql.map(|sql| sql.split_whitespace().collect::<Vec<_>>().join(" ")),
+                    )
+                })
                 .collect::<Vec<_>>()
         };
         assert_eq!(
@@ -625,6 +634,7 @@ fn a_failed_retirement_after_the_receiver_step_keeps_schema_73_and_retries() {
             "BEGIN IMMEDIATE; {REWIND_V73_SQL} PRAGMA user_version = 72; COMMIT;"
         ))
         .unwrap();
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
 

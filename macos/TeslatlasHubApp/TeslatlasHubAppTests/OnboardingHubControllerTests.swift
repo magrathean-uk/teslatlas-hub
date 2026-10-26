@@ -18,17 +18,17 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: false)
         let finished = expectation(description: "preflight failure presented safely")
 
-        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
                                          encryptionKeyFile: "/private/encryption",
-                                         acknowledgeV42CompatibleSchema: true) { result in
+                                         acceptSchemaEvidence: true) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("failed preflight unexpectedly imported")
             }
             XCTAssertEqual(
                 error.localizedDescription,
-                "Could not verify TeslaMate. Check the server connection and try again."
+                "Could not verify the source database. Check the server connection and try again."
             )
             XCTAssertFalse(error.localizedDescription.contains(secret))
             finished.fulfill()
@@ -50,7 +50,7 @@ final class OnboardingHubControllerTests: XCTestCase {
 
         XCTAssertEqual(
             presented,
-            "Sign in to Tesla again in TeslaMate, then retry the import."
+            "Sign in to Tesla again in the source application, then retry the import."
         )
         XCTAssertFalse(presented.contains("migration_progress"))
         XCTAssertFalse(presented.contains("11000000"))
@@ -62,13 +62,13 @@ final class OnboardingHubControllerTests: XCTestCase {
             (HubActionError.commandTimedOut, "timeout"),
             (HubActionError.commandExited(1, "SQLite error: database or disk is full"),
              "disk_space"),
-            (HubActionError.commandExited(1, "TeslaMate schema version is incompatible"),
+            (HubActionError.commandExited(1, "source database schema version is incompatible"),
              "schema_version"),
             (HubActionError.commandExited(255, "ssh tunnel: connection refused"),
              "ssh_tunnel"),
             (HubActionError.commandExited(
                 1,
-                "cannot store TeslaMate token pair: legacy refresh outcome is unresolved"
+                "cannot store source database token pair: legacy refresh outcome is unresolved"
             ), "credentials"),
             (HubActionError.commandExited(1, "SQLite database is locked"), "sqlite_database"),
             (HubActionError.commandExited(1, "unexpected secret-passphrase=do-not-log"),
@@ -88,7 +88,7 @@ final class OnboardingHubControllerTests: XCTestCase {
         let runner = OnboardingRunner(migrationResult: .failure(
             HubActionError.commandExited(
                 1,
-                "cannot store TeslaMate token pair: legacy refresh outcome is unresolved \(secret)"
+                "cannot store source database token pair: legacy refresh outcome is unresolved \(secret)"
             )
         ))
         let controller = HubController(commandRunner: runner,
@@ -97,18 +97,18 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: false)
         let finished = expectation(description: "migration failure recorded")
 
-        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
                                          encryptionKeyFile: "/private/encryption",
-                                         acknowledgeV42CompatibleSchema: true) { result in
+                                         acceptSchemaEvidence: true) { result in
             guard case .failure = result else { return XCTFail("expected migration failure") }
             finished.fulfill()
         }
 
         wait(for: [finished], timeout: 2)
         let diagnostics = HubAppLog.shared.recentText()
-        XCTAssertTrue(diagnostics.contains("teslamate_import import.process.failed"))
+        XCTAssertTrue(diagnostics.contains("history_import import.process.failed"))
         XCTAssertTrue(diagnostics.contains("reason_code=credentials"))
         XCTAssertFalse(diagnostics.contains(secret))
     }
@@ -123,7 +123,7 @@ final class OnboardingHubControllerTests: XCTestCase {
 
         let presented = HubController.migrationStoppedError(commandError).localizedDescription
 
-        XCTAssertEqual(presented, "TeslaMate import failed; retry the import.")
+        XCTAssertEqual(presented, "Source application import failed; retry the import.")
         XCTAssertFalse(presented.contains("migration_progress"))
         XCTAssertFalse(presented.contains("private diagnostic"))
         XCTAssertEqual(commandError.localizedDescription, rawDiagnostic)
@@ -150,22 +150,22 @@ final class OnboardingHubControllerTests: XCTestCase {
         XCTAssertNil(HubController.parseMigrationProgress("not json"))
     }
 
-    func testTeslaMateCompatibilityParsingAcceptsOnlyAcknowledged42CompatibleSchema() throws {
-        let compatible = try XCTUnwrap(HubController.parseTeslaMateCompatibility("""
+    func testSourceCompatibilityParsingAcceptsOnlyAcknowledged42CompatibleSchema() throws {
+        let compatible = try XCTUnwrap(HubController.parseSourceCheckReport("""
         progress line
-        {"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready to import."}
+        {"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready to import."}
         """))
         XCTAssertTrue(compatible.compatible)
         XCTAssertEqual(compatible.reasonCode, "v4_2_compatible_schema")
         XCTAssertEqual(compatible.requiredVersion, "4.2.0")
         XCTAssertEqual(compatible.message, "Ready to import.")
 
-        let mismatch = try XCTUnwrap(HubController.parseTeslaMateCompatibility("""
+        let mismatch = try XCTUnwrap(HubController.parseSourceCheckReport("""
         {"status":"compatible","reasonCode":"exact_4_2_0","requiredVersion":"4.2.0","guidance":"Invalid exactness claim."}
         """))
         XCTAssertFalse(mismatch.compatible)
         XCTAssertEqual(mismatch.reasonCode, "exact_4_2_0")
-        XCTAssertNil(HubController.parseTeslaMateCompatibility("not JSON"))
+        XCTAssertNil(HubController.parseSourceCheckReport("not JSON"))
     }
 
     func testFleetInvocationPutsCredentialsOnlyOnStandardInput() throws {
@@ -268,7 +268,11 @@ final class OnboardingHubControllerTests: XCTestCase {
         }
     }
 
-    func testHistoryOnlyImportKeepsCollectionOffAndUsesSourceRunHandover() throws {
+    func testImportHistoryArgumentVectorIsPinned() throws {
+        let argvURL = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/import-history-argv.json")
+        let expectedArgv = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: argvURL)) as? [String])
+        XCTAssertEqual(expectedArgv.first, "teslatlas-hub")
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let folder = home.appendingPathComponent("Library/Application Support/Teslatlas Hub")
@@ -278,7 +282,7 @@ final class OnboardingHubControllerTests: XCTestCase {
             to: config, atomically: true, encoding: .utf8)
         let events = OnboardingEvents()
         let runner = OnboardingRunner(events: events, compatibilityResult: .success(
-            #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+            #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
         ), preflightResults: [
             .success(Self.historyReadyPreflight), .success(Self.historyReadyPreflight),
             .failure(HubActionError.commandFailed("collection enabled"))
@@ -287,18 +291,21 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceRunner: OnboardingService(events: events),
                                        homeDirectory: home, serviceInstalledOverride: false)
         let imported = expectation(description: "history imported")
-        controller.importTeslaMateHistoryOnlyOnline(
-            source: "postgresql://reader@127.0.0.1:55438/teslamate_snapshot", carID: "1",
-            passwordFile: "/private/password", acknowledgeV42CompatibleSchema: true
+        controller.importSourceHistoryOnlyOnline(
+            source: expectedArgv[3], carID: expectedArgv[5],
+            passwordFile: expectedArgv[7], acceptSchemaEvidence: true
         ) { result in
             if case let .failure(error) = result { XCTFail(error.localizedDescription) }
             imported.fulfill()
         }
         wait(for: [imported], timeout: 2)
         XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
+        let migrate = try XCTUnwrap(runner.argumentCalls.first { $0.contains("migrate") })
+        let migrateStart = try XCTUnwrap(migrate.firstIndex(of: "migrate"))
+        XCTAssertEqual(Array(migrate[migrateStart...]), Array(expectedArgv.dropFirst()))
         XCTAssertTrue(controller.hasPendingMigrationHandover)
         XCTAssertTrue(controller.historyOnlyControlActive)
-        XCTAssertTrue(runner.argumentCalls.filter { $0.contains("teslamate-check") || $0.contains("migrate") }
+        XCTAssertTrue(runner.argumentCalls.filter { $0.contains("source-check") || $0.contains("migrate") }
             .allSatisfy { $0.contains("--history-only") && !$0.contains("--encryption-key-file")
                 && !$0.contains("--preserve-existing-credentials") })
         XCTAssertTrue(try String(contentsOf: config).contains("interval_seconds = 0"))
@@ -412,22 +419,22 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let migration = expectation(description: "online migration completes")
 
-        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
                                          encryptionKeyFile: "/private/encryption",
-                                         acknowledgeV42CompatibleSchema: true) { result in
+                                         acceptSchemaEvidence: true) { result in
             if case let .failure(error) = result { XCTFail(error.localizedDescription) }
             migration.fulfill()
         }
 
         wait(for: [migration], timeout: 2)
         XCTAssertEqual(events.values, ["check", "service:stop", "migrate"])
-        XCTAssertEqual(runner.argumentCalls.filter { $0.contains("teslamate-check") }.count, 1)
+        XCTAssertEqual(runner.argumentCalls.filter { $0.contains("source-check") }.count, 1)
         XCTAssertEqual(runner.argumentCalls.filter { $0.contains("migrate") }.count, 1)
         XCTAssertTrue(runner.argumentCalls
-            .filter { $0.contains("teslamate-check") || $0.contains("migrate") }
-            .allSatisfy { $0.contains("--acknowledge-v4-2-compatible-schema") })
+            .filter { $0.contains("source-check") || $0.contains("migrate") }
+            .allSatisfy { $0.contains("--accept-schema-evidence") })
         XCTAssertTrue(controller.hasPendingMigrationHandover)
         let config = home.appendingPathComponent(
             "Library/Application Support/Teslatlas Hub/config.toml"
@@ -831,11 +838,11 @@ final class OnboardingHubControllerTests: XCTestCase {
         let finished = expectation(description: "progress import completes")
         var updates: [HubMigrationProgress] = []
 
-        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
                                          encryptionKeyFile: "/private/encryption",
-                                         acknowledgeV42CompatibleSchema: true,
+                                         acceptSchemaEvidence: true,
                                          progress: {
                                              XCTAssertTrue(Thread.isMainThread)
                                              updates.append($0)
@@ -864,11 +871,11 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: false)
         let finished = expectation(description: "import completed")
 
-        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
                                          encryptionKeyFile: "/private/encryption",
-                                         acknowledgeV42CompatibleSchema: true,
+                                         acceptSchemaEvidence: true,
                                          progress: { _ in lateProgress.fulfill() }) { result in
             if case let .failure(error) = result { XCTFail(error.localizedDescription) }
             finished.fulfill()
@@ -889,11 +896,11 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let rejected = expectation(description: "missing acknowledgement rejected")
 
-        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
                                          encryptionKeyFile: "/private/encryption",
-                                         acknowledgeV42CompatibleSchema: false) { result in
+                                         acceptSchemaEvidence: false) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("missing acknowledgement was accepted")
             }
@@ -920,17 +927,17 @@ final class OnboardingHubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let migration = expectation(description: "missing report rejected")
 
-        controller.importTeslaMateOnline(source: "postgresql://reader@localhost/teslamate",
+        controller.importSourceOnline(source: "postgresql://reader@localhost/sourcedb",
                                          carID: "1",
                                          passwordFile: "/private/password",
                                          encryptionKeyFile: "/private/encryption",
-                                         acknowledgeV42CompatibleSchema: true) { result in
+                                         acceptSchemaEvidence: true) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("expected missing report failure")
             }
             XCTAssertEqual(
                 error.localizedDescription,
-                "TeslaMate import failed; retry the import."
+                "Source application import failed; retry the import."
             )
             migration.fulfill()
         }
@@ -1050,7 +1057,7 @@ private final class OnboardingRunner: HubCommandRunning {
 
     init(events: OnboardingEvents? = nil,
          compatibilityResult: Result<String, Error> = .success(
-             #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready."}"#
+             #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
          ),
          migrationResult: Result<String, Error> = .success(
              "{\"status\":\"imported\",\"captureMode\":\"online-snapshot\"}"
@@ -1072,7 +1079,7 @@ private final class OnboardingRunner: HubCommandRunning {
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         argumentCalls.append(arguments)
-        if arguments.contains("teslamate-check") {
+        if arguments.contains("source-check") {
             events?.append("check")
             completion(compatibilityResult)
         } else if arguments.contains("migrate") {

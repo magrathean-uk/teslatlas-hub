@@ -8,20 +8,32 @@ fn import_inventory_contains_closed_drive(
 ) -> Result<bool, StoreError> {
     transaction
         .query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM teslamate_import_projection_rows r
-                JOIN teslamate_import_projection_heads h USING(vehicle_id)
+            concat!(
+                "SELECT EXISTS(
+                SELECT 1 FROM ",
+                crate::db::import_table_names::import_projection_rows_table!(),
+                " r
+                JOIN ",
+                crate::db::import_table_names::import_projection_heads_table!(),
+                " h USING(vehicle_id)
                 JOIN sources s ON s.source_id = h.source_id
                 WHERE r.vehicle_id = ?1 AND r.entity = 'drive' AND r.entity_id = ?2
                   AND s.source_kind = ?3
                 UNION ALL
-                SELECT 1 FROM teslamate_import_projection_state_rows r
-                JOIN teslamate_import_projection_state_heads h USING(vehicle_id)
+                SELECT 1 FROM ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                " r
+                JOIN ",
+                crate::db::import_table_names::import_projection_state_heads_table!(),
+                " h USING(vehicle_id)
                 JOIN sources s ON s.source_id = h.source_id
                 WHERE r.vehicle_id = ?1 AND r.entity_ordinal = 1 AND r.entity_id = ?2
                   AND s.source_kind = ?3 AND NOT EXISTS(
-                    SELECT 1 FROM teslamate_import_projection_heads legacy
-                    WHERE legacy.vehicle_id = r.vehicle_id))",
+                    SELECT 1 FROM ",
+                crate::db::import_table_names::import_projection_heads_table!(),
+                " legacy
+                    WHERE legacy.vehicle_id = r.vehicle_id))"
+            ),
             params![vehicle_id, drive_id, IMPORT_SOURCE_KIND],
             |r| r.get(0),
         )
@@ -41,7 +53,7 @@ impl HubStore {
         cursor_key: &CursorKey,
         terminal_cursor: &OpaqueCursor,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
     ) -> Result<(), StoreError> {
         self.finalize_import_delta_successor_with_inventory(
             vehicle_id,
@@ -56,16 +68,16 @@ impl HubStore {
     }
 
     /// As [`Self::finalize_import_delta_successor`], but atomically advances
-    /// the source-owned TeslaMate history inventory with the lineage head.
-    pub fn finalize_teslamate_import_delta_successor(
+    /// the source-owned source database history inventory with the lineage head.
+    pub fn finalize_source_db_import_delta_successor(
         &self,
         vehicle_id: Uuid,
         delta: &LineageDelta,
         cursor_key: &CursorKey,
         terminal_cursor: &OpaqueCursor,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
-        inventory: &TeslaMateImportProjectionInventory,
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
+        inventory: &SourceDbImportProjectionInventory,
     ) -> Result<(), StoreError> {
         self.finalize_import_delta_successor_with_inventory(
             vehicle_id,
@@ -79,19 +91,19 @@ impl HubStore {
         )
     }
 
-    /// As [`Self::finalize_teslamate_import_delta_successor`], but also
+    /// As [`Self::finalize_source_db_import_delta_successor`], but also
     /// atomically replaces the digest-only current projection state. This is
     /// the required completion path for a changed-history successor.
-    pub fn finalize_teslamate_import_delta_successor_with_projection_state(
+    pub fn finalize_source_db_import_delta_successor_with_projection_state(
         &self,
         vehicle_id: Uuid,
         delta: &LineageDelta,
         cursor_key: &CursorKey,
         terminal_cursor: &OpaqueCursor,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
-        inventory: &TeslaMateImportProjectionInventory,
-        projection_state: &TeslaMateProjectionState,
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
+        inventory: &SourceDbImportProjectionInventory,
+        projection_state: &SourceDbProjectionState,
     ) -> Result<(), StoreError> {
         self.finalize_import_delta_successor_with_inventory(
             vehicle_id,
@@ -121,8 +133,8 @@ impl HubStore {
         cursor_key: &CursorKey,
         terminal_cursor: &OpaqueCursor,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
-        projection_state: &TeslaMateProjectionState,
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
+        projection_state: &SourceDbProjectionState,
         retain_legacy_inventory: bool,
     ) -> Result<(), StoreError> {
         self.finalize_import_generation_delta_successors_with_projection_state_inner(
@@ -156,8 +168,8 @@ impl HubStore {
         cursor_key: &CursorKey,
         terminal_cursor: &OpaqueCursor,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
-        projection_state: &TeslaMateProjectionState,
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
+        projection_state: &SourceDbProjectionState,
         materialised_car: &ProjectionCar,
         materialised_drives: &[ProjectionDrive],
     ) -> Result<(), StoreError> {
@@ -190,8 +202,8 @@ impl HubStore {
         cursor_key: &CursorKey,
         terminal_cursor: &OpaqueCursor,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
-        projection_state: &TeslaMateProjectionState,
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
+        projection_state: &SourceDbProjectionState,
         materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
         retain_legacy_inventory: bool,
     ) -> Result<(), StoreError> {
@@ -207,7 +219,7 @@ impl HubStore {
         let binding = self.v2_projection_binding(vehicle_id)?;
         // A direct import may only advance the immutable source/car binding
         // that created the base. Never let a caller reuse the vehicle UUID
-        // with another source or selected TeslaMate car while replacing its
+        // with another source or selected source car while replacing its
         // durable digest state and lifecycle session.
         if source_id != binding.account_id || car_id != binding.selected_car_id {
             return Err(StoreError::LineageCatalogConflict);
@@ -263,7 +275,7 @@ impl HubStore {
             serde_json::to_string(terminal_cursor).map_err(StoreError::SerializeManifest)?;
         let vehicle_key = vehicle_id.to_string();
         let mut connection = self.open()?;
-        attach_teslamate_projection_state_transfer(&connection, &transfer)?;
+        attach_source_db_projection_state_transfer(&connection, &transfer)?;
         let result = (|| -> Result<(), StoreError> {
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -383,7 +395,7 @@ impl HubStore {
                     PriorImportedDriveRows::Durable,
                 )?;
             }
-            replace_teslamate_import_projection_state_from_attached_in_transaction(
+            replace_source_db_import_projection_state_from_attached_in_transaction(
                 &transaction,
                 vehicle_id,
                 binding.account_id,
@@ -394,7 +406,7 @@ impl HubStore {
                 false,
             )?;
             if retain_legacy_inventory {
-                replace_teslamate_import_projection_inventory_from_attached_in_transaction(
+                replace_source_db_import_projection_inventory_from_attached_in_transaction(
                     &transaction,
                     vehicle_id,
                     binding.account_id,
@@ -451,9 +463,9 @@ impl HubStore {
                 StoreError::ImportGeneration,
             )
         })();
-        finish_teslamate_projection_state_transfer(
+        finish_source_db_projection_state_transfer(
             result,
-            detach_teslamate_projection_state_transfer(self, &connection),
+            detach_source_db_projection_state_transfer(self, &connection),
         )
     }
 
@@ -464,9 +476,9 @@ impl HubStore {
         cursor_key: &CursorKey,
         terminal_cursor: &OpaqueCursor,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
-        inventory: Option<&TeslaMateImportProjectionInventory>,
-        projection_state: Option<&TeslaMateProjectionState>,
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
+        inventory: Option<&SourceDbImportProjectionInventory>,
+        projection_state: Option<&SourceDbProjectionState>,
     ) -> Result<(), StoreError> {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
@@ -494,7 +506,7 @@ impl HubStore {
         let binding = self.v2_projection_binding(vehicle_id)?;
         self.verify_import_delta_pack(delta, &binding)?;
         if let Some(inventory) = inventory {
-            validate_teslamate_import_delta_inventory(delta, &binding, inventory)?;
+            validate_source_db_import_delta_inventory(delta, &binding, inventory)?;
         }
         if projection_state.is_some() && inventory.is_none() {
             return Err(StoreError::LineageCatalogConflict);
@@ -678,7 +690,7 @@ impl HubStore {
             return Err(StoreError::LineageCatalogConflict);
         }
         if let Some(inventory) = inventory {
-            replace_teslamate_import_inventory_in_transaction(
+            replace_source_db_import_inventory_in_transaction(
                 &transaction,
                 vehicle_id,
                 delta.pack.snapshot_id,
@@ -688,7 +700,7 @@ impl HubStore {
             )?;
         }
         if let Some(projection_state) = projection_state {
-            replace_teslamate_import_projection_state_in_transaction(
+            replace_source_db_import_projection_state_in_transaction(
                 &transaction,
                 vehicle_id,
                 binding.account_id,
@@ -727,16 +739,16 @@ impl HubStore {
     }
 
     /// Load the exact source-owned history rows from the most recent
-    /// successful TeslaMate import. New direct imports derive this legacy
+    /// successful source database import. New direct imports derive this legacy
     /// view from their durable digest state; older imports retain the original
     /// inventory table. Missing or mismatched provenance is a hard failure:
     /// callers must not guess deletes from mutable history.
-    pub fn teslamate_import_projection_inventory(
+    pub fn source_db_import_projection_inventory(
         &self,
         vehicle_id: Uuid,
         source_id: Uuid,
         selected_car_id: i64,
-    ) -> Result<TeslaMateImportProjectionInventory, StoreError> {
+    ) -> Result<SourceDbImportProjectionInventory, StoreError> {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
@@ -746,8 +758,12 @@ impl HubStore {
         let connection = self.open()?;
         let legacy_header: Option<(String, String, i64)> = connection
             .query_row(
-                "SELECT source_id, base_snapshot_id, selected_car_id
-                   FROM teslamate_import_projection_heads WHERE vehicle_id = ?1",
+                concat!(
+                    "SELECT source_id, base_snapshot_id, selected_car_id
+                   FROM ",
+                    crate::db::import_table_names::import_projection_heads_table!(),
+                    " WHERE vehicle_id = ?1"
+                ),
                 params![vehicle_id.to_string()],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
@@ -766,9 +782,13 @@ impl HubStore {
             } else {
                 let state_header: Option<(String, String, i64)> = connection
                     .query_row(
-                        "SELECT source_id, base_snapshot_id, selected_car_id
-                           FROM teslamate_import_projection_state_heads
-                          WHERE vehicle_id = ?1",
+                        concat!(
+                            "SELECT source_id, base_snapshot_id, selected_car_id
+                           FROM ",
+                            crate::db::import_table_names::import_projection_state_heads_table!(),
+                            "
+                          WHERE vehicle_id = ?1"
+                        ),
                         params![vehicle_id.to_string()],
                         |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                     )
@@ -777,7 +797,7 @@ impl HubStore {
                 let Some((stored_source_id, base_snapshot_id, stored_selected_car_id)) =
                     state_header
                 else {
-                    return Err(StoreError::TeslaMateImportInventoryMissing(vehicle_id));
+                    return Err(StoreError::SourceDbImportInventoryMissing(vehicle_id));
                 };
                 (
                     stored_source_id,
@@ -802,15 +822,23 @@ impl HubStore {
             return Err(StoreError::LineageCatalogConflict);
         }
         let query = if use_digest_state {
-            "SELECT entity, entity_id
-               FROM teslamate_import_projection_state_rows
+            concat!(
+                "SELECT entity, entity_id
+               FROM ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "
               WHERE vehicle_id = ?1 AND entity_ordinal BETWEEN 1 AND 6
               ORDER BY entity, entity_id"
+            )
         } else {
-            "SELECT entity, entity_id
-               FROM teslamate_import_projection_rows
+            concat!(
+                "SELECT entity, entity_id
+               FROM ",
+                crate::db::import_table_names::import_projection_rows_table!(),
+                "
               WHERE vehicle_id = ?1
               ORDER BY entity, entity_id"
+            )
         };
         let mut statement = connection
             .prepare(query)
@@ -824,29 +852,29 @@ impl HubStore {
         for row in rows {
             let (entity, id) = row.map_err(StoreError::LineageCatalog)?;
             inventory_rows.push(ProjectionTombstone {
-                entity: teslamate_inventory_entity(&entity)
+                entity: source_db_inventory_entity(&entity)
                     .ok_or(StoreError::LineageCatalogConflict)?,
                 id,
                 car_id: selected_car_id,
             });
         }
-        validate_teslamate_import_inventory_rows(selected_car_id, &inventory_rows)?;
-        Ok(TeslaMateImportProjectionInventory {
+        validate_source_db_import_inventory_rows(selected_car_id, &inventory_rows)?;
+        Ok(SourceDbImportProjectionInventory {
             source_id,
             selected_car_id,
             rows: inventory_rows,
         })
     }
 
-    /// Open a bounded digest lookup for a verified prior TeslaMate import.
+    /// Open a bounded digest lookup for a verified prior source database import.
     /// A legacy deletion inventory is not a substitute: this deliberately
     /// fails if the separate durable digest state was never persisted.
-    pub fn teslamate_import_projection_state_lookup(
+    pub fn source_db_import_projection_state_lookup(
         &self,
         vehicle_id: Uuid,
         source_id: Uuid,
         selected_car_id: i64,
-    ) -> Result<TeslaMateImportProjectionStateLookup, StoreError> {
+    ) -> Result<SourceDbImportProjectionStateLookup, StoreError> {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
@@ -862,9 +890,13 @@ impl HubStore {
             .map_err(StoreError::Begin)?;
         let header: Option<(String, String, i64, i64)> = connection
             .query_row(
-                "SELECT source_id, base_snapshot_id, selected_car_id, head_sequence
-                   FROM teslamate_import_projection_state_heads
-                  WHERE vehicle_id = ?1",
+                concat!(
+                    "SELECT source_id, base_snapshot_id, selected_car_id, head_sequence
+                   FROM ",
+                    crate::db::import_table_names::import_projection_state_heads_table!(),
+                    "
+                  WHERE vehicle_id = ?1"
+                ),
                 params![vehicle_id.to_string()],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
@@ -877,9 +909,7 @@ impl HubStore {
             head_sequence,
         )) = header
         else {
-            return Err(StoreError::TeslaMateImportProjectionStateMissing(
-                vehicle_id,
-            ));
+            return Err(StoreError::SourceDbImportProjectionStateMissing(vehicle_id));
         };
         let stored_source_id = Uuid::parse_str(&stored_source_id)
             .map_err(|_| StoreError::InvalidStoredUuid("projection-state source id"))?;
@@ -887,7 +917,7 @@ impl HubStore {
             .map_err(|_| StoreError::InvalidStoredUuid("projection-state base snapshot id"))?;
         let head_sequence =
             u64::try_from(head_sequence).map_err(|_| StoreError::InvalidStoredSequence)?;
-        let header = TeslaMateImportProjectionStateHeader {
+        let header = SourceDbImportProjectionStateHeader {
             source_id: stored_source_id,
             base_snapshot_id,
             selected_car_id: stored_selected_car_id,
@@ -914,7 +944,7 @@ impl HubStore {
         };
         let current_head_sequence =
             u64::try_from(current_head_sequence).map_err(|_| StoreError::InvalidStoredSequence)?;
-        // The projection-state head records the last completed TeslaMate
+        // The projection-state head records the last completed source database
         // import. Normal Hub collection may advance the same immutable
         // lineage afterward. Reject a different base or a regressed head;
         // the atomic import finalizer revalidates the newer live head before
@@ -944,7 +974,7 @@ impl HubStore {
         {
             return Err(StoreError::LineageCatalogConflict);
         }
-        Ok(TeslaMateImportProjectionStateLookup {
+        Ok(SourceDbImportProjectionStateLookup {
             connection,
             vehicle_id,
             header,
@@ -956,16 +986,16 @@ impl HubStore {
 
     /// Read one ordered bounded page of a verified prior state without
     /// exposing its SQLite connection to the caller.
-    pub fn teslamate_import_projection_state_page(
+    pub fn source_db_import_projection_state_page(
         &self,
         vehicle_id: Uuid,
         source_id: Uuid,
         selected_car_id: i64,
-        after: Option<TeslaMateProjectionStateCursor>,
+        after: Option<SourceDbProjectionStateCursor>,
         limit: u32,
-    ) -> Result<TeslaMateProjectionStateDigestPage, StoreError> {
+    ) -> Result<SourceDbProjectionStateDigestPage, StoreError> {
         let mut lookup =
-            self.teslamate_import_projection_state_lookup(vehicle_id, source_id, selected_car_id)?;
+            self.source_db_import_projection_state_lookup(vehicle_id, source_id, selected_car_id)?;
         lookup.page_after_store(after, limit)
     }
 
@@ -973,7 +1003,7 @@ impl HubStore {
     /// The direct importer uses this narrow predicate only to decide whether
     /// an old inventory-only base may attempt the one-time bridge; full
     /// binding and head validation remains in the lookup/finalizer paths.
-    pub(crate) fn teslamate_import_projection_state_exists(
+    pub(crate) fn source_db_import_projection_state_exists(
         &self,
         vehicle_id: Uuid,
     ) -> Result<bool, StoreError> {
@@ -982,10 +1012,14 @@ impl HubStore {
         }
         self.open()?
             .query_row(
-                "SELECT EXISTS(
-                    SELECT 1 FROM teslamate_import_projection_state_heads
+                concat!(
+                    "SELECT EXISTS(
+                    SELECT 1 FROM ",
+                    crate::db::import_table_names::import_projection_state_heads_table!(),
+                    "
                      WHERE vehicle_id = ?1
-                )",
+                )"
+                ),
                 params![vehicle_id.to_string()],
                 |row| row.get(0),
             )
@@ -995,7 +1029,7 @@ impl HubStore {
     /// True only for the exact legacy direct-import shape that can be safely
     /// upgraded in place. Anything less precise must use an owner-approved
     /// rebase rather than guessing a sparse successor.
-    pub(crate) fn legacy_teslamate_direct_bridge_is_eligible(
+    pub(crate) fn legacy_source_db_direct_bridge_is_eligible(
         &self,
         vehicle_id: Uuid,
         source_id: Uuid,
@@ -1015,7 +1049,7 @@ impl HubStore {
     /// back and reports that a rebase is required.
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn bridge_legacy_teslamate_direct_import(
+    pub(crate) fn bridge_legacy_source_db_direct_import(
         &self,
         run_id: Uuid,
         source_id: Uuid,
@@ -1023,9 +1057,9 @@ impl HubStore {
         selected_car_id: i64,
         legacy_fingerprint: Sha256Digest,
         logical_fingerprint: Sha256Digest,
-        projection_state: &TeslaMateProjectionState,
-    ) -> Result<TeslaMateLegacyDirectBridgeResult, StoreError> {
-        self.bridge_legacy_teslamate_direct_import_inner(
+        projection_state: &SourceDbProjectionState,
+    ) -> Result<SourceDbLegacyDirectBridgeResult, StoreError> {
+        self.bridge_legacy_source_db_direct_import_inner(
             run_id,
             source_id,
             vehicle_id,
@@ -1038,7 +1072,7 @@ impl HubStore {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn bridge_legacy_teslamate_direct_import_with_materialisation(
+    pub(crate) fn bridge_legacy_source_db_direct_import_with_materialisation(
         &self,
         run_id: Uuid,
         source_id: Uuid,
@@ -1046,11 +1080,11 @@ impl HubStore {
         selected_car_id: i64,
         legacy_fingerprint: Sha256Digest,
         logical_fingerprint: Sha256Digest,
-        projection_state: &TeslaMateProjectionState,
+        projection_state: &SourceDbProjectionState,
         materialised_car: &ProjectionCar,
         materialised_drives: &[ProjectionDrive],
-    ) -> Result<TeslaMateLegacyDirectBridgeResult, StoreError> {
-        self.bridge_legacy_teslamate_direct_import_inner(
+    ) -> Result<SourceDbLegacyDirectBridgeResult, StoreError> {
+        self.bridge_legacy_source_db_direct_import_inner(
             run_id,
             source_id,
             vehicle_id,
@@ -1063,7 +1097,7 @@ impl HubStore {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn bridge_legacy_teslamate_direct_import_inner(
+    fn bridge_legacy_source_db_direct_import_inner(
         &self,
         run_id: Uuid,
         source_id: Uuid,
@@ -1071,9 +1105,9 @@ impl HubStore {
         selected_car_id: i64,
         legacy_fingerprint: Sha256Digest,
         logical_fingerprint: Sha256Digest,
-        projection_state: &TeslaMateProjectionState,
+        projection_state: &SourceDbProjectionState,
         materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
-    ) -> Result<TeslaMateLegacyDirectBridgeResult, StoreError> {
+    ) -> Result<SourceDbLegacyDirectBridgeResult, StoreError> {
         if run_id.is_nil() || source_id.is_nil() || vehicle_id.is_nil() || selected_car_id <= 0 {
             return Err(StoreError::InvalidImportGeneration);
         }
@@ -1082,12 +1116,12 @@ impl HubStore {
             .map_err(|error| {
                 legacy_direct_bridge_state_error(
                     vehicle_id,
-                    StoreError::TeslaMateProjectionState(error),
+                    StoreError::SourceDbProjectionState(error),
                 )
             })?;
         let mut connection = self.open()?;
-        attach_teslamate_projection_state_transfer(&connection, &transfer)?;
-        let result = (|| -> Result<TeslaMateLegacyDirectBridgeResult, StoreError> {
+        attach_source_db_projection_state_transfer(&connection, &transfer)?;
+        let result = (|| -> Result<SourceDbLegacyDirectBridgeResult, StoreError> {
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(StoreError::Begin)?;
@@ -1116,9 +1150,9 @@ impl HubStore {
                 source_id,
                 selected_car_id,
             )?
-            .ok_or(StoreError::TeslaMateLegacyDirectRebaseRequired(vehicle_id))?;
+            .ok_or(StoreError::SourceDbLegacyDirectRebaseRequired(vehicle_id))?;
             if candidate.legacy_fingerprint != legacy_fingerprint {
-                return Err(StoreError::TeslaMateLegacyDirectRebaseRequired(vehicle_id));
+                return Err(StoreError::SourceDbLegacyDirectRebaseRequired(vehicle_id));
             }
             if let Some((car, drives)) = materialisation {
                 reconcile_imported_materialisation_in_transaction(
@@ -1132,7 +1166,7 @@ impl HubStore {
                 )
                 .map_err(|error| legacy_direct_bridge_state_error(vehicle_id, error))?;
             }
-            replace_teslamate_import_projection_state_from_attached_in_transaction(
+            replace_source_db_import_projection_state_from_attached_in_transaction(
                 &transaction,
                 vehicle_id,
                 source_id,
@@ -1145,7 +1179,7 @@ impl HubStore {
             .map_err(|error| legacy_direct_bridge_state_error(vehicle_id, error))?;
             if !legacy_projection_inventory_matches_state_in_transaction(&transaction, vehicle_id)?
             {
-                return Err(StoreError::TeslaMateLegacyDirectRebaseRequired(vehicle_id));
+                return Err(StoreError::SourceDbLegacyDirectRebaseRequired(vehicle_id));
             }
             if transaction
                 .execute(
@@ -1167,20 +1201,24 @@ impl HubStore {
                 .map_err(StoreError::PublishManifest)?
                 != 1
             {
-                return Err(StoreError::TeslaMateLegacyDirectRebaseRequired(vehicle_id));
+                return Err(StoreError::SourceDbLegacyDirectRebaseRequired(vehicle_id));
             }
             transaction
                 .execute(
-                    "INSERT INTO teslamate_import_projection_state_bridges(
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_state_bridges_table!(),
+                        "(
                     vehicle_id, base_snapshot_id, head_sequence, algorithm,
                     legacy_fingerprint_sha256, logical_fingerprint_sha256
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+                    ),
                     params![
                         vehicle_id.to_string(),
                         candidate.snapshot_id.to_string(),
                         i64::try_from(candidate.head_sequence)
                             .map_err(|_| StoreError::SequenceTooLarge)?,
-                        TESLAMATE_LEGACY_DIRECT_BRIDGE_ALGORITHM,
+                        SOURCE_DB_LEGACY_DIRECT_BRIDGE_ALGORITHM,
                         legacy_fingerprint.as_bytes().as_slice(),
                         logical_fingerprint.as_bytes().as_slice(),
                     ],
@@ -1197,15 +1235,15 @@ impl HubStore {
                 return Err(StoreError::ImportGenerationNotFound);
             }
             transaction.commit().map_err(StoreError::ImportGeneration)?;
-            Ok(TeslaMateLegacyDirectBridgeResult {
+            Ok(SourceDbLegacyDirectBridgeResult {
                 snapshot_id: candidate.snapshot_id,
                 head_sequence: candidate.head_sequence,
                 total_rows: candidate.total_rows,
             })
         })();
-        finish_teslamate_projection_state_transfer(
+        finish_source_db_projection_state_transfer(
             result,
-            detach_teslamate_projection_state_transfer(self, &connection),
+            detach_source_db_projection_state_transfer(self, &connection),
         )
     }
 
@@ -1555,7 +1593,7 @@ impl HubStore {
         updated_at_ms: i64,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
     ) -> Result<(), StoreError> {
         self.finalize_import_generation_with_metadata(
             run_id,
@@ -1581,7 +1619,7 @@ impl HubStore {
         updated_at_ms: i64,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
     ) -> Result<(), StoreError> {
         self.finalize_import_generation_with_metadata(
@@ -1597,7 +1635,7 @@ impl HubStore {
         )
     }
 
-    /// Finalize a direct TeslaMate V2 base together with its sealed,
+    /// Finalize a direct source database V2 base together with its sealed,
     /// digest-only state. That state is the sole current-history catalogue:
     /// legacy deletion inventory requests derive their non-car view from it
     /// instead of retaining a second multi-million-row copy. Set
@@ -1611,9 +1649,9 @@ impl HubStore {
         updated_at_ms: i64,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
-        projection_state: &TeslaMateProjectionState,
+        projection_state: &SourceDbProjectionState,
         retain_legacy_inventory: bool,
     ) -> Result<(), StoreError> {
         self.finalize_import_generation_with_projection_state_inner(
@@ -1645,9 +1683,9 @@ impl HubStore {
         updated_at_ms: i64,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
-        projection_state: &TeslaMateProjectionState,
+        projection_state: &SourceDbProjectionState,
         materialised_car: &ProjectionCar,
         materialised_drives: &[ProjectionDrive],
         retain_legacy_inventory: bool,
@@ -1683,9 +1721,9 @@ impl HubStore {
         updated_at_ms: i64,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
-        projection_state: &TeslaMateProjectionState,
+        projection_state: &SourceDbProjectionState,
         car: &ProjectionCar,
         drives: &[ProjectionDrive],
     ) -> Result<(), StoreError> {
@@ -1731,9 +1769,9 @@ impl HubStore {
         updated_at_ms: i64,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
-        projection_state: &TeslaMateProjectionState,
+        projection_state: &SourceDbProjectionState,
         materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
         retain_legacy_inventory: bool,
         replacement: Option<&LineageManifestV2>,
@@ -1757,7 +1795,7 @@ impl HubStore {
         let transfer = projection_state
             .sealed_transfer_for_import_generation(run_id, binding.selected_car_id)?;
         let mut connection = self.open()?;
-        attach_teslamate_projection_state_transfer(&connection, &transfer)?;
+        attach_source_db_projection_state_transfer(&connection, &transfer)?;
         let result = (|| -> Result<(), StoreError> {
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1813,7 +1851,7 @@ impl HubStore {
                 updated_at_ms,
                 Some((base_last_observation_id, base_updated_at_ms)),
             )?;
-            replace_teslamate_import_projection_state_from_attached_in_transaction(
+            replace_source_db_import_projection_state_from_attached_in_transaction(
                 &transaction,
                 vehicle_id,
                 binding.account_id,
@@ -1824,7 +1862,7 @@ impl HubStore {
                 true,
             )?;
             if retain_legacy_inventory {
-                replace_teslamate_import_projection_inventory_from_attached_in_transaction(
+                replace_source_db_import_projection_inventory_from_attached_in_transaction(
                     &transaction,
                     vehicle_id,
                     binding.account_id,
@@ -1855,9 +1893,9 @@ impl HubStore {
                 StoreError::ImportGeneration,
             )
         })();
-        finish_teslamate_projection_state_transfer(
+        finish_source_db_projection_state_transfer(
             result,
-            detach_teslamate_projection_state_transfer(self, &connection),
+            detach_source_db_projection_state_transfer(self, &connection),
         )
     }
 
@@ -1876,9 +1914,9 @@ impl HubStore {
         updated_at_ms: i64,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
-        projection_state: &TeslaMateProjectionState,
+        projection_state: &SourceDbProjectionState,
         schema_22_manifest: &SyncManifest,
         schema_22_noop: &crate::updates_delivery::SignedNoOpState,
     ) -> Result<(), StoreError> {
@@ -1911,9 +1949,9 @@ impl HubStore {
         updated_at_ms: i64,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
-        projection_state: &TeslaMateProjectionState,
+        projection_state: &SourceDbProjectionState,
         materialised_car: &ProjectionCar,
         materialised_drives: &[ProjectionDrive],
         schema_22_manifest: &SyncManifest,
@@ -1948,9 +1986,9 @@ impl HubStore {
         updated_at_ms: i64,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
-        projection_state: &TeslaMateProjectionState,
+        projection_state: &SourceDbProjectionState,
         materialisation: Option<(&ProjectionCar, &[ProjectionDrive])>,
         schema_22_manifest: &SyncManifest,
         schema_22_noop: &crate::updates_delivery::SignedNoOpState,
@@ -1992,7 +2030,7 @@ impl HubStore {
         let transfer = projection_state
             .sealed_transfer_for_import_generation(run_id, binding.selected_car_id)?;
         let mut connection = self.open()?;
-        attach_teslamate_projection_state_transfer(&connection, &transfer)?;
+        attach_source_db_projection_state_transfer(&connection, &transfer)?;
         let result = (|| -> Result<(), StoreError> {
             let transaction = connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -2042,7 +2080,7 @@ impl HubStore {
                 updated_at_ms,
                 Some((base_last_observation_id, base_updated_at_ms)),
             )?;
-            replace_teslamate_import_projection_state_from_attached_in_transaction(
+            replace_source_db_import_projection_state_from_attached_in_transaction(
                 &transaction,
                 vehicle_id,
                 binding.account_id,
@@ -2072,9 +2110,9 @@ impl HubStore {
                 StoreError::ImportGeneration,
             )
         })();
-        finish_teslamate_projection_state_transfer(
+        finish_source_db_projection_state_transfer(
             result,
-            detach_teslamate_projection_state_transfer(self, &connection),
+            detach_source_db_projection_state_transfer(self, &connection),
         )
     }
 
@@ -2087,7 +2125,7 @@ impl HubStore {
         updated_at_ms: i64,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: Option<&ProjectionBinding>,
     ) -> Result<(), StoreError> {
         if run_id.is_nil()
@@ -2168,7 +2206,7 @@ impl HubStore {
         &self,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
     ) -> Result<(), StoreError> {
         self.finalize_import_snapshot_with_metadata(
             manifest,
@@ -2188,7 +2226,7 @@ impl HubStore {
         &self,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
     ) -> Result<(), StoreError> {
         self.finalize_import_snapshot_with_metadata(
@@ -2201,17 +2239,17 @@ impl HubStore {
         )
     }
 
-    /// Atomically catalogue a TeslaMate V2 base together with the exact
+    /// Atomically catalogue a source database V2 base together with the exact
     /// source-owned projection inventory.  The inventory is what permits a
     /// future source rewrite to emit precise tombstones rather than silently
     /// retaining removed rows on a client.
-    pub fn finalize_teslamate_import_snapshot(
+    pub fn finalize_source_db_import_snapshot(
         &self,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
-        inventory: &TeslaMateImportProjectionInventory,
+        inventory: &SourceDbImportProjectionInventory,
     ) -> Result<(), StoreError> {
         self.finalize_import_snapshot_with_metadata(
             manifest,
@@ -2223,16 +2261,16 @@ impl HubStore {
         )
     }
 
-    /// Atomically catalogue a TeslaMate V2 base with both legacy deletion
+    /// Atomically catalogue a source database V2 base with both legacy deletion
     /// inventory and the digest-only state needed by a later sparse successor.
-    pub fn finalize_teslamate_import_snapshot_with_projection_state(
+    pub fn finalize_source_db_import_snapshot_with_projection_state(
         &self,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: &ProjectionBinding,
-        inventory: &TeslaMateImportProjectionInventory,
-        projection_state: &TeslaMateProjectionState,
+        inventory: &SourceDbImportProjectionInventory,
+        projection_state: &SourceDbProjectionState,
     ) -> Result<(), StoreError> {
         self.finalize_import_snapshot_with_metadata(
             manifest,
@@ -2248,10 +2286,10 @@ impl HubStore {
         &self,
         manifest: &SyncManifest,
         fingerprint: Sha256Digest,
-        geofences: &[crate::teslamate_projection::TeslaMateGeofence],
+        geofences: &[crate::source_db_projection::SourceDbGeofence],
         binding: Option<&ProjectionBinding>,
-        inventory: Option<&TeslaMateImportProjectionInventory>,
-        projection_state: Option<&TeslaMateProjectionState>,
+        inventory: Option<&SourceDbImportProjectionInventory>,
+        projection_state: Option<&SourceDbProjectionState>,
     ) -> Result<(), StoreError> {
         if manifest.schema == HUB_PROJECTION_SCHEMA_V2 && binding.is_none() {
             return Err(StoreError::ImmutableBaseBindingMissing(manifest.vehicle_id));
@@ -2261,7 +2299,7 @@ impl HubStore {
         }
         if let Some(inventory) = inventory {
             let binding = binding.ok_or(StoreError::LineageCatalogConflict)?;
-            validate_teslamate_import_inventory(manifest, binding, inventory)?;
+            validate_source_db_import_inventory(manifest, binding, inventory)?;
         }
         if projection_state.is_some() && inventory.is_none() {
             return Err(StoreError::LineageCatalogConflict);
@@ -2272,7 +2310,7 @@ impl HubStore {
             .map_err(StoreError::Begin)?;
         publish_manifest_in_transaction(&transaction, manifest, binding)?;
         if let Some(inventory) = inventory {
-            replace_teslamate_import_inventory_in_transaction(
+            replace_source_db_import_inventory_in_transaction(
                 &transaction,
                 manifest.vehicle_id,
                 manifest.snapshot_id,
@@ -2283,7 +2321,7 @@ impl HubStore {
         }
         if let Some(projection_state) = projection_state {
             let binding = binding.ok_or(StoreError::LineageCatalogConflict)?;
-            replace_teslamate_import_projection_state_in_transaction(
+            replace_source_db_import_projection_state_in_transaction(
                 &transaction,
                 manifest.vehicle_id,
                 binding.account_id,
@@ -2359,7 +2397,7 @@ impl HubStore {
     pub fn stage_import_generation_session(
         &self,
         run_id: Uuid,
-        session: &TeslaMateOpenSession,
+        session: &SourceDbOpenSession,
     ) -> Result<(), StoreError> {
         if run_id.is_nil() {
             return Err(StoreError::InvalidImportGeneration);
@@ -2461,7 +2499,7 @@ impl HubStore {
                 .optional()
                 .map_err(StoreError::ImportGeneration)?
                 .ok_or(StoreError::ImportGenerationNotFound)?;
-        let session: TeslaMateOpenSession =
+        let session: SourceDbOpenSession =
             serde_json::from_str(&encoded).map_err(|_| StoreError::InvalidLifecycleSession)?;
         if let Some((car, drives)) = materialisation {
             reconcile_imported_materialisation_in_transaction(
@@ -2546,12 +2584,14 @@ fn reconcile_imported_materialisation_in_transaction(
         match current_rows {
             ImportedProjectionRows::Attached => {
                 let mut statement = transaction
-                    .prepare(
+                    .prepare(concat!(
                         "SELECT entity_id, car_id, projection_sha256
-                           FROM teslamate_projection_state_spool.current_rows
+                           FROM ",
+                        crate::db::import_table_names::import_state_spool_alias!(),
+                        ".current_rows
                           WHERE entity_ordinal = ?1
-                          ORDER BY entity_id ASC",
-                    )
+                          ORDER BY entity_id ASC"
+                    ))
                     .map_err(StoreError::LineageCatalog)?;
                 let rows = statement
                     .query_map(params![i64::from(entity_ordinal)], |row| {
@@ -2563,12 +2603,14 @@ fn reconcile_imported_materialisation_in_transaction(
             }
             ImportedProjectionRows::Durable => {
                 let mut statement = transaction
-                    .prepare(
+                    .prepare(concat!(
                         "SELECT entity_id, car_id, projection_sha256
-                           FROM teslamate_import_projection_state_rows
+                           FROM ",
+                        crate::db::import_table_names::import_projection_state_rows_table!(),
+                        "
                           WHERE vehicle_id = ?1 AND entity_ordinal = ?2
-                          ORDER BY entity_id ASC",
-                    )
+                          ORDER BY entity_id ASC"
+                    ))
                     .map_err(StoreError::LineageCatalog)?;
                 let rows = statement
                     .query_map(
@@ -2583,10 +2625,10 @@ fn reconcile_imported_materialisation_in_transaction(
     };
 
     let car_digest =
-        canonical_payload_and_digest(TeslaMateProjectionStateEntity::Car, car_id, car_id, car)
-            .map_err(StoreError::TeslaMateProjectionState)?
+        canonical_payload_and_digest(SourceDbProjectionStateEntity::Car, car_id, car_id, car)
+            .map_err(StoreError::SourceDbProjectionState)?
             .1;
-    let car_rows = projection_rows(TeslaMateProjectionStateEntity::Car.ordinal())?;
+    let car_rows = projection_rows(SourceDbProjectionStateEntity::Car.ordinal())?;
     if car_rows.len() != 1
         || car_rows[0].0 != car_id
         || car_rows[0].1 != car_id
@@ -2602,19 +2644,19 @@ fn reconcile_imported_materialisation_in_transaction(
         }
         previous_id = drive.id;
     }
-    let projected_drive_rows = projection_rows(TeslaMateProjectionStateEntity::Drive.ordinal())?;
+    let projected_drive_rows = projection_rows(SourceDbProjectionStateEntity::Drive.ordinal())?;
     if projected_drive_rows.len() != drives.len() {
         return Err(StoreError::LineageCatalogConflict);
     }
     for ((id, projected_car_id, projected_digest), drive) in projected_drive_rows.iter().zip(drives)
     {
         let digest = canonical_payload_and_digest(
-            TeslaMateProjectionStateEntity::Drive,
+            SourceDbProjectionStateEntity::Drive,
             drive.id,
             drive.car_id,
             drive,
         )
-        .map_err(StoreError::TeslaMateProjectionState)?
+        .map_err(StoreError::SourceDbProjectionState)?
         .1;
         if *id != drive.id
             || *projected_car_id != drive.car_id
@@ -2628,18 +2670,20 @@ fn reconcile_imported_materialisation_in_transaction(
         PriorImportedDriveRows::None => Vec::new(),
         PriorImportedDriveRows::Durable => {
             let mut statement = transaction
-                .prepare(
+                .prepare(concat!(
                     "SELECT entity_id
-                       FROM teslamate_import_projection_state_rows
+                       FROM ",
+                    crate::db::import_table_names::import_projection_state_rows_table!(),
+                    "
                       WHERE vehicle_id = ?1 AND entity_ordinal = ?2
-                      ORDER BY entity_id ASC",
-                )
+                      ORDER BY entity_id ASC"
+                ))
                 .map_err(StoreError::LineageCatalog)?;
             let rows = statement
                 .query_map(
                     params![
                         vehicle_key.as_str(),
-                        i64::from(TeslaMateProjectionStateEntity::Drive.ordinal())
+                        i64::from(SourceDbProjectionStateEntity::Drive.ordinal())
                     ],
                     |row| row.get(0),
                 )
@@ -2649,12 +2693,14 @@ fn reconcile_imported_materialisation_in_transaction(
         }
         PriorImportedDriveRows::Legacy => {
             let mut statement = transaction
-                .prepare(
+                .prepare(concat!(
                     "SELECT entity_id
-                       FROM teslamate_import_projection_rows
+                       FROM ",
+                    crate::db::import_table_names::import_projection_rows_table!(),
+                    "
                       WHERE vehicle_id = ?1 AND entity = 'drive'
-                      ORDER BY entity_id ASC",
-                )
+                      ORDER BY entity_id ASC"
+                ))
                 .map_err(StoreError::LineageCatalog)?;
             let rows = statement
                 .query_map(params![vehicle_key.as_str()], |row| row.get(0))
@@ -2666,7 +2712,7 @@ fn reconcile_imported_materialisation_in_transaction(
     let prior_imported_drive_ids = prior_imported_drive_ids.into_iter().collect::<HashSet<_>>();
     let current_drive_ids = drives.iter().map(|drive| drive.id).collect::<HashSet<_>>();
 
-    // A numeric TeslaMate drive ID is not a durable ownership marker. Live
+    // A numeric source database drive ID is not a durable ownership marker. Live
     // collection can allocate the same next ID after the preceding import.
     // Only a row listed by the preceding imported projection is replaceable;
     // rejecting every other collision keeps the transaction (and the live

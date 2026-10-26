@@ -21,8 +21,8 @@ use super::{
     http_date::parse_http_date,
 };
 use crate::db::{
-    CollectorAuthRow, HubStore, OutboundRequestReceiptId, StoreError, StoredLegacyGeneration,
-    TeslaMateLegacyTokenStore,
+    CollectorAuthRow, HubStore, LegacyOwnerTokenStore, OutboundRequestReceiptId, StoreError,
+    StoredLegacyGeneration,
 };
 
 /// 2020-01-01T00:00:00Z (R38). Every token the `oauth2/v3` issuers mint
@@ -920,7 +920,7 @@ pub(crate) struct PairImage {
 
 impl PairImage {
     /// The image of a row about to be written under `generation`.
-    pub(crate) fn of(row: &TeslaMateLegacyTokenStore, generation: Uuid) -> Self {
+    pub(crate) fn of(row: &LegacyOwnerTokenStore, generation: Uuid) -> Self {
         Self {
             access: row.access().to_vec(),
             refresh: row.refresh().to_vec(),
@@ -939,14 +939,14 @@ impl PairImage {
         generation: Uuid,
         expires_at: i64,
         next_refresh_at: i64,
-    ) -> Option<TeslaMateLegacyTokenStore> {
+    ) -> Option<LegacyOwnerTokenStore> {
         if self.generation != generation
             || self.expires_at != expires_at
             || self.next_refresh_at != next_refresh_at
         {
             return None;
         }
-        TeslaMateLegacyTokenStore::refreshed(
+        LegacyOwnerTokenStore::refreshed(
             self.access.clone(),
             self.refresh.clone(),
             self.expires_at,
@@ -957,7 +957,7 @@ impl PairImage {
     }
 
     /// Whether a stored row is exactly this image.
-    fn is_the_row(&self, row: &TeslaMateLegacyTokenStore) -> bool {
+    fn is_the_row(&self, row: &LegacyOwnerTokenStore) -> bool {
         row.credential_generation() == Some(self.generation)
             && row.access() == self.access.as_slice()
             && row.refresh() == self.refresh.as_slice()

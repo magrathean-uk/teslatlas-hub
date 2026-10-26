@@ -600,8 +600,8 @@ fn b2_historical_backup_case(schema: i32) {
     assert!(schema == 69 || schema == 70);
     let (temporary, store) = create_fixture();
     let source_data = store.database_path().parent().expect("source data root");
-    let cursor_key =
-        crate::teslamate_credentials::load_or_create_cursor_key(source_data).expect("cursor key");
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(source_data)
+        .expect("cursor key");
     let lineage = publish_lineage_fixture(&store, &cursor_key);
     let installation_id = store.installation_id().expect("installation");
     // Populated collector tables of a v70 catalogue: account, car, counters, an

@@ -11,9 +11,9 @@
 use super::*;
 
 // The importer's snapshot types, named once here.
-type ImportedWatermark = crate::teslamate_projection::TeslaMateSourceWatermark;
-type ImportedOpenSession = crate::teslamate_projection::TeslaMateOpenSession;
-type ImportedCharge = crate::teslamate_projection::TeslaMateCharge;
+type ImportedWatermark = crate::source_db_projection::SourceDbWatermark;
+type ImportedOpenSession = crate::source_db_projection::SourceDbOpenSession;
+type ImportedCharge = crate::source_db_projection::SourceDbCharge;
 
 const T_HI: i64 = T69_T0 - 10 * T69_MIN;
 const T_MID: i64 = T69_T0 - 15 * T69_MIN;
@@ -478,7 +478,7 @@ fn kind_of_imported(samples: &[ImportedCharge]) -> crate::lifecycle::ChargeSessi
     ordered.sort_by_key(|sample| (sample.date_ms, sample.id));
     let projected = ordered
         .into_iter()
-        .map(crate::teslamate_projection::project_charge_sample)
+        .map(crate::source_db_projection::project_charge_sample)
         .collect::<Vec<_>>();
     crate::lifecycle::charge_session_kind(&projected)
 }

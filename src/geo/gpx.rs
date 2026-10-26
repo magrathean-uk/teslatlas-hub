@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Bounded TeslaMate-compatible GPX drive export.
+//! Bounded GPX 1.1 drive export.
 
 use std::io::{self, Write};
 
@@ -139,7 +139,7 @@ mod tests {
     }
 
     #[test]
-    fn position_xml_matches_the_teslamate_gpx_surface() {
+    fn position_xml_matches_the_source_db_gpx_surface() {
         let mut output = Vec::new();
         write_position(&mut output, &position(0, Some(123))).unwrap();
         let output = String::from_utf8(output).unwrap();

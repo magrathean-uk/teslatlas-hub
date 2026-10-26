@@ -66,13 +66,13 @@ async fn hub_sync_14_serves_immediate_physical_delta_and_keeps_13_rebase() {
     let key = CursorKey::from_bytes([0x14; 32]);
     let now = current_epoch_ms().expect("clock");
     let gate = store.try_acquire_publication_gate().expect("gate");
-    let (binding,first_candidate) = crate::import::teslamate::physical_fragments::tests::
+    let (binding,first_candidate) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("first"),&store,&key,1,"profile14",1);
     let first = store
         .stage_pending_physical_v3_admission(&gate, first_candidate)
         .expect("first head");
-    let (_,second_candidate) = crate::import::teslamate::physical_fragments::tests::
+    let (_,second_candidate) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("second"),&store,&key,2,"profile14",2);
     let second_preview = crate::db::physical_v3_admission_from_manifest(
@@ -80,7 +80,7 @@ async fn hub_sync_14_serves_immediate_physical_delta_and_keeps_13_rebase() {
         binding.selected_car_id,
     )
     .expect("second identity");
-    let delta = crate::import::teslamate::physical_delta_pack::prepare_changed_set(
+    let delta = crate::import::source_db::physical_delta_pack::prepare_changed_set(
         &first,
         &second_preview,
         &binding,
@@ -215,7 +215,7 @@ async fn hub_sync_14_serves_immediate_physical_delta_and_keeps_13_rebase() {
     // A later full head remains reachable to both surviving checkpoints, but
     // only its immediate predecessor is eligible for an optional delta.
     let gate = store.try_acquire_publication_gate().expect("third gate");
-    let (_, third_candidate) = crate::import::teslamate::physical_fragments::tests::
+    let (_, third_candidate) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("third"), &store, &key, 3, "profile14", 3);
     let third = store
@@ -501,7 +501,7 @@ async fn hub_sync_physical_bootstrap_serves_513_chunks_and_continues_with_noop()
         .try_acquire_publication_gate()
         .expect("publication gate");
     let (binding, candidate) =
-        crate::import::teslamate::physical_fragments::tests::public_admission_candidate_fixture(
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture(
             &temp.path().join("primary"),
             &store,
             &cursor_key,
@@ -510,8 +510,8 @@ async fn hub_sync_physical_bootstrap_serves_513_chunks_and_continues_with_noop()
     let admission = store
         .stage_pending_physical_v3_admission(&gate, candidate)
         .expect("primary physical admission");
-    let (other_binding, other_candidate) = crate::import::teslamate::physical_fragments::tests::
-        public_admission_candidate_fixture_for_source(
+    let (other_binding, other_candidate) =
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture_for_source(
             &temp.path().join("secondary"),
             &store,
             &cursor_key,
@@ -807,7 +807,7 @@ async fn prepared_receipt_route_requires_pairing_and_current_vehicle_head() {
         .try_acquire_publication_gate()
         .expect("publication gate");
     let (binding, candidate) =
-        crate::import::teslamate::physical_fragments::tests::public_admission_candidate_fixture(
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture(
             &temp.path().join("primary"),
             &store,
             &key,
@@ -821,9 +821,7 @@ async fn prepared_receipt_route_requires_pairing_and_current_vehicle_head() {
     // The route serves only a receipt that passes the current semantic and
     // signature checks, so the fixture must be genuinely signed by `key`.
     let (artifact_id, receipt) =
-        crate::import::teslamate::prepared_map::insert_signed_month_fixture(
-            &store, &key, &admission, now_ms,
-        );
+        crate::sync::prepared_map::insert_signed_month_fixture(&store, &key, &admission, now_ms);
     let invitation = store
         .create_pairing("prepared route", now_ms - 1, i64::MAX)
         .expect("pairing invitation");
@@ -913,7 +911,7 @@ async fn hub_sync_physical_rotation_stays_fail_closed_until_rebase_is_available(
     let gate = store
         .try_acquire_publication_gate()
         .expect("publication gate");
-    let (binding, first) = crate::import::teslamate::physical_fragments::tests::
+    let (binding, first) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("first"),
             &store,
@@ -925,7 +923,7 @@ async fn hub_sync_physical_rotation_stays_fail_closed_until_rebase_is_available(
     let prior = store
         .stage_pending_physical_v3_admission(&gate, first)
         .expect("first physical admission");
-    let (_, second) = crate::import::teslamate::physical_fragments::tests::
+    let (_, second) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("second"),
             &store,
@@ -998,7 +996,7 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
     let gate = store
         .try_acquire_publication_gate()
         .expect("publication gate");
-    let (binding, first) = crate::import::teslamate::physical_fragments::tests::
+    let (binding, first) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("primary-first"),
             &store,
@@ -1010,7 +1008,7 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
     let prior = store
         .stage_pending_physical_v3_admission(&gate, first)
         .expect("first physical admission");
-    let (_, second) = crate::import::teslamate::physical_fragments::tests::
+    let (_, second) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("primary-second"),
             &store,
@@ -1041,7 +1039,7 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
         .expect("activate rotated physical admission");
     assert_eq!(activated, current);
     let second = current;
-    let (_, third) = crate::import::teslamate::physical_fragments::tests::
+    let (_, third) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("primary-third"),
             &store,
@@ -1062,7 +1060,7 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
         )
         .expect("activate third physical admission");
     let third = current;
-    let (_, fourth) = crate::import::teslamate::physical_fragments::tests::
+    let (_, fourth) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("primary-fourth"),
             &store,
@@ -1083,7 +1081,7 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
         )
         .expect("activate fourth physical admission");
 
-    let (other_binding, other_first) = crate::import::teslamate::physical_fragments::tests::
+    let (other_binding, other_first) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("other-first"),
             &store,
@@ -1095,7 +1093,7 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
     let other_prior = store
         .stage_pending_physical_v3_admission(&gate, other_first)
         .expect("other first admission");
-    let (_, other_second) = crate::import::teslamate::physical_fragments::tests::
+    let (_, other_second) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("other-second"),
             &store,
@@ -1116,7 +1114,7 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
         )
         .expect("activate other rotation");
 
-    let (expired_binding, expired_first) = crate::import::teslamate::physical_fragments::tests::
+    let (expired_binding, expired_first) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("expired-first"),
             &store,
@@ -1128,7 +1126,7 @@ async fn hub_sync_physical_retained_prior_rebases_to_the_promoted_successor() {
     let expired_prior = store
         .stage_pending_physical_v3_admission(&gate, expired_first)
         .expect("expired first admission");
-    let (_, expired_second) = crate::import::teslamate::physical_fragments::tests::
+    let (_, expired_second) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("expired-second"),
             &store,
@@ -1411,7 +1409,7 @@ async fn hub_sync_physical_routes_fail_closed_for_retired_rebound_or_tampered_pa
         .try_acquire_publication_gate()
         .expect("publication gate");
     let (binding, candidate) =
-        crate::import::teslamate::physical_fragments::tests::public_admission_candidate_fixture(
+        crate::sync::physical_fragments::tests::public_admission_candidate_fixture(
             &temp.path().join("candidate"),
             &store,
             &cursor_key,
@@ -1627,7 +1625,7 @@ async fn hub_sync_physical_routes_do_not_serve_a_non_public_marker() {
     let gate = store
         .try_acquire_publication_gate()
         .expect("publication gate");
-    let (binding, candidate) = crate::import::teslamate::physical_fragments::tests::
+    let (binding, candidate) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temp.path().join("candidate"),
             &store,

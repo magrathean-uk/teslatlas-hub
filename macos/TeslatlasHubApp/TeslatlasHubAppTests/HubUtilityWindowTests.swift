@@ -34,7 +34,7 @@ final class HubUtilityWindowTests: XCTestCase {
         }
     }
 
-    func testTeslaMateImportIsHiddenForRunningHubAndShownWhenNeeded() throws {
+    func testSourceImportIsHiddenForRunningHubAndShownWhenNeeded() throws {
         var workingSnapshot = HubSnapshot.previewRunning
         workingSnapshot.database = "Healthy · 24 MB"
         let running = MainWindowController(controller: HubController(
@@ -44,7 +44,7 @@ final class HubUtilityWindowTests: XCTestCase {
         defer { running.close() }
         running.selectMainSection(.settings)
         let runningRow = try XCTUnwrap(descendants(running.window?.contentView).first {
-            $0.identifier?.rawValue == "hub.settings.import-teslamate"
+            $0.identifier?.rawValue == "hub.settings.import-history"
         })
         XCTAssertTrue(runningRow.isHidden)
         XCTAssertTrue(running.importButton.isHidden)
@@ -56,7 +56,7 @@ final class HubUtilityWindowTests: XCTestCase {
         defer { firstRun.close() }
         firstRun.selectMainSection(.settings)
         let firstRunRow = try XCTUnwrap(descendants(firstRun.window?.contentView).first {
-            $0.identifier?.rawValue == "hub.settings.import-teslamate"
+            $0.identifier?.rawValue == "hub.settings.import-history"
         })
         XCTAssertFalse(firstRunRow.isHidden)
         XCTAssertFalse(firstRun.importButton.isHidden)
@@ -69,7 +69,7 @@ final class HubUtilityWindowTests: XCTestCase {
             snapshot.accountState = .connected
             snapshot.databaseState = .healthy
             snapshot.database = "Healthy · 24 MB"
-            XCTAssertFalse(snapshot.shouldOfferTeslaMateImport)
+            XCTAssertFalse(snapshot.shouldOfferSourceImport)
         }
         // The decision reads the typed states, not the display strings.
         var unknown = HubSnapshot.firstRun
@@ -78,8 +78,8 @@ final class HubUtilityWindowTests: XCTestCase {
         unknown.accountState = .unknown
         unknown.database = "Unknown"
         unknown.databaseState = .unknown
-        XCTAssertFalse(unknown.shouldOfferTeslaMateImport)
-        XCTAssertTrue(HubSnapshot.firstRun.shouldOfferTeslaMateImport)
+        XCTAssertFalse(unknown.shouldOfferSourceImport)
+        XCTAssertTrue(HubSnapshot.firstRun.shouldOfferSourceImport)
     }
 
     func testEmbeddedEntryPointsReturnWithoutCreatingUtilityWindows() throws {
@@ -146,7 +146,7 @@ final class HubUtilityWindowTests: XCTestCase {
 
     func testNavigationHonorsDisabledState() {
         let actions = HubNavigationActions(select: { _ in }, diagnostics: {}, logs: {}, serviceDetails: {},
-            importTeslaMate: {}, connectTesla: {}, accountMenu: { NSMenu() }, appearance: {})
+            importSource: {}, connectTesla: {}, accountMenu: { NSMenu() }, appearance: {})
         let navigation = HubNavigationBar(actions: actions)
         navigation.apply(snapshot: .previewRunning, enabled: false)
         XCTAssertTrue(descendants(navigation).compactMap { $0 as? NSButton }.allSatisfy { !$0.isEnabled })
@@ -343,7 +343,7 @@ final class HubUtilityWindowTests: XCTestCase {
         let window = try XCTUnwrap(owner.window)
         defer { owner.close() }
         let field = try XCTUnwrap(descendants(window.contentView).compactMap { $0 as? NSTextField }
-            .first { $0.placeholderString == "teslamate.local" })
+            .first { $0.placeholderString == "server.local" })
         let button = try XCTUnwrap(descendants(window.contentView).compactMap { $0 as? NSButton }
             .first { $0.title == "Connect to Server" })
         let recorder = KeyboardActionRecorder()
@@ -354,7 +354,7 @@ final class HubUtilityWindowTests: XCTestCase {
         XCTAssertFalse(button.isEnabled)
         _ = window.performKeyEquivalent(with: key("\r", code: 36))
         XCTAssertEqual(recorder.count, 0)
-        field.stringValue = "teslamate.local"
+        field.stringValue = "server.local"
         owner.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: field))
         XCTAssertTrue(button.isEnabled)
         for (character, code): (String, UInt16) in [("\r", 36), ("\u{3}", 76)] {

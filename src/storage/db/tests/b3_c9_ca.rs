@@ -853,9 +853,13 @@ fn c9_r40_fill_preserves_imported_closed_totals() {
         if inventory == "legacy" {
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_heads(
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_heads_table!(),
+                        "(
                     vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence)
-                 VALUES (?1, ?2, ?3, 1, 0)",
+                 VALUES (?1, ?2, ?3, 1, 0)"
+                    ),
                     params![
                         vehicle.to_string(),
                         source.source_id.to_string(),
@@ -865,16 +869,24 @@ fn c9_r40_fill_preserves_imported_closed_totals() {
                 .unwrap();
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_rows VALUES (?1, 'drive', 9)",
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_rows_table!(),
+                        " VALUES (?1, 'drive', 9)"
+                    ),
                     [vehicle.to_string()],
                 )
                 .unwrap();
         } else {
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_state_heads(
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_state_heads_table!(),
+                        "(
                     vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence)
-                 VALUES (?1, ?2, ?3, 1, 0)",
+                 VALUES (?1, ?2, ?3, 1, 0)"
+                    ),
                     params![
                         vehicle.to_string(),
                         source.source_id.to_string(),
@@ -884,8 +896,12 @@ fn c9_r40_fill_preserves_imported_closed_totals() {
                 .unwrap();
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_state_rows
-                 VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))",
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_state_rows_table!(),
+                        "
+                 VALUES (?1, 'drive', 1, 9, 1, zeroblob(32))"
+                    ),
                     [vehicle.to_string()],
                 )
                 .unwrap();

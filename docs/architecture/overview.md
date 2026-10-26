@@ -54,7 +54,7 @@ Credential-like fields are recursively removed from retained provider envelopes.
 Raw processing rows are pruned after projection; Hub is not an unbounded
 provider-response archive.
 
-The selected-car TeslaMate importer publishes a complete schema-2.2 PhysicalV3
+The selected-car source-database importer publishes a complete schema-2.2 PhysicalV3
 head from the same exported, read-only PostgreSQL snapshot as its compatibility
 projection. For an immediate successor, Hub can also publish a signed Protocol
 1.4 changed set with bounded typed rows, removals, projection recomputation
@@ -70,11 +70,11 @@ provider credentials.
 
 ## Migration boundary
 
-TeslaMate migration opens an operator-supplied PostgreSQL source in an exported,
-repeatable-read, read-only transaction and maps supported TeslaMate
-v4.2-compatible records into Hub-owned storage. A history-only import can be
+History import opens an operator-supplied PostgreSQL source in an exported,
+repeatable-read, read-only transaction and maps supported records from a
+recognised source schema into Hub-owned storage. A history-only import can be
 repeated while preserving Hub's stored provider credentials; unchanged source
-content does not advance the signed physical head. TeslaMate is not bundled,
+content does not advance the signed physical head. The source application is not bundled,
 started, stopped, or required after migration.
 
 Hub never writes to the source database; migration is read-only.

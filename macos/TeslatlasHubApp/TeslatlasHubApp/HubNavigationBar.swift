@@ -7,7 +7,7 @@ struct HubNavigationActions {
     let diagnostics: () -> Void
     let logs: () -> Void
     let serviceDetails: () -> Void
-    let importTeslaMate: () -> Void
+    let importSource: () -> Void
     let connectTesla: () -> Void
     let accountMenu: () -> NSMenu
     let appearance: () -> Void
@@ -460,10 +460,10 @@ final class HubSettingsView: HubCompactPageView {
         databaseRow = HubPageRowView(symbol: "cylinder", title: HubL10n.text("hub.HubDashboardView.105.1361", fallback: "Local database"),
                                      detail: "", showsChevron: false)
         importRow = HubPageRowView(symbol: "square.and.arrow.down",
-                                   title: HubL10n.text("hub.HubNavigationBar.463.1502", fallback: "Import TeslaMate history"),
-                                   detail: HubL10n.text("hub.HubNavigationBar.464.1503", fallback: "Import your existing TeslaMate data."),
+                                   title: HubL10n.text("hub.HubNavigationBar.463.1502", fallback: "Import History"),
+                                   detail: HubL10n.text("hub.HubNavigationBar.464.1503", fallback: "Import your existing vehicle history."),
                                    target: self, action: #selector(importPressed))
-        importRow.identifier = NSUserInterfaceItemIdentifier("hub.settings.import-teslamate")
+        importRow.identifier = NSUserInterfaceItemIdentifier("hub.settings.import-history")
         addSection(title: HubL10n.text("hub.HubNavigationBar.467.1505", fallback: "Connections & data"),
                    view: hubGroupedCard([accountRow, databaseRow, importRow]))
         serviceRow = HubPageRowView(symbol: "gearshape.2", title: HubL10n.text("hub.HubNavigationBar.469.1507", fallback: "Background service"),
@@ -486,7 +486,7 @@ final class HubSettingsView: HubCompactPageView {
     func apply(snapshot: HubSnapshot) {
         accountRow.value = snapshot.accountDisplay
         databaseRow.value = snapshot.database
-        let hideImport = !snapshot.shouldOfferTeslaMateImport
+        let hideImport = !snapshot.shouldOfferSourceImport
         importRow.isHidden = hideImport
         if let stack = importRow.superview as? NSStackView,
            let index = stack.arrangedSubviews.firstIndex(of: importRow), index > 0 {
@@ -501,7 +501,7 @@ final class HubSettingsView: HubCompactPageView {
         let menu = actions.accountMenu()
         menu.popUp(positioning: nil, at: NSPoint(x: sender.bounds.minX, y: sender.bounds.maxY), in: sender)
     }
-    @objc private func importPressed() { actions.importTeslaMate() }
+    @objc private func importPressed() { actions.importSource() }
     @objc private func diagnosticsPressed() { actions.diagnostics() }
     @objc private func servicePressed() { actions.serviceDetails() }
     @objc private func appearancePressed() { actions.appearance() }

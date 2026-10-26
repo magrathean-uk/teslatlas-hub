@@ -671,7 +671,7 @@ fn c1_st111_seeded_nonzero_totals_are_corrected() {
 /// one (gear and speed JSON null) at + 6m, elevation 110, at (47.5 + 0.001 id,
 /// 19.0): the second closes the drive.
 fn close_seeded(
-    session: &crate::teslamate_projection::TeslaMateOpenSession,
+    session: &crate::source_db_projection::SourceDbOpenSession,
 ) -> (tempfile::TempDir, HubStore, VehicleRecord) {
     let directory = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(directory.path()).expect("store");

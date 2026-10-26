@@ -20,7 +20,7 @@ use rustix::{
     fs::{CWD, FileType, Mode, OFlags, RenameFlags, fstat, open, renameat_with},
     process::getuid,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
@@ -28,14 +28,14 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{
     db::{HubStore, StoreError},
     fleet_credentials::load_existing_fleet_key_bytes,
+    legacy_owner_credentials::{
+        SourceDbCredentialError, load_existing_cursor_key_bytes, load_key, load_key_for_tokens,
+    },
     protocol::{
         CursorKey, LineageDelta, LineageManifestV2, OpaqueCursor, PROTOCOL_V1, ProtocolLimits,
         SyncManifest, canonical_delta_chain_digest,
     },
-    teslamate_credentials::{
-        TeslaMateCredentialError, load_existing_cursor_key_bytes, load_key, load_key_for_tokens,
-    },
-    teslamate_token::{TeslaMateTokenError, decrypt_legacy_owner_tokens},
+    source_token_envelope::{SourceDbTokenError, decrypt_legacy_owner_tokens},
 };
 
 pub const RECOVERY_ENCRYPTION_KEY_BYTES: usize = 32;
@@ -44,14 +44,14 @@ const NONCE_BYTES: usize = 12;
 const AUTH_TAG_BYTES: usize = 16;
 const PRIVATE_DIRECTORY_MODE: u32 = 0o700;
 const PRIVATE_FILE_MODE: u32 = 0o600;
-const MAX_TESLAMATE_KEY_BYTES: usize = 16 * 1024;
-const MAX_PLAINTEXT_BYTES: usize = 16 + 1 + 2 + MAX_TESLAMATE_KEY_BYTES + 32 + 32;
+const MAX_SOURCE_DB_KEY_BYTES: usize = 16 * 1024;
+const MAX_PLAINTEXT_BYTES: usize = 16 + 1 + 2 + MAX_SOURCE_DB_KEY_BYTES + 32 + 32;
 const MAX_EXPORT_BYTES: usize =
     FILE_MAGIC.len() + NONCE_BYTES + MAX_PLAINTEXT_BYTES + AUTH_TAG_BYTES;
-const TESLAMATE_KEY_FLAG: u8 = 1 << 0;
+const SOURCE_DB_KEY_FLAG: u8 = 1 << 0;
 const CURSOR_KEY_FLAG: u8 = 1 << 1;
 const FLEET_KEY_FLAG: u8 = 1 << 2;
-const KNOWN_FLAGS: u8 = TESLAMATE_KEY_FLAG | CURSOR_KEY_FLAG | FLEET_KEY_FLAG;
+const KNOWN_FLAGS: u8 = SOURCE_DB_KEY_FLAG | CURSOR_KEY_FLAG | FLEET_KEY_FLAG;
 
 #[derive(Debug, Error)]
 pub enum CredentialRecoveryError {
@@ -85,27 +85,28 @@ pub enum CredentialRecoveryError {
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error(transparent)]
-    Credential(#[from] TeslaMateCredentialError),
+    Credential(#[from] SourceDbCredentialError),
     #[error(transparent)]
-    Token(#[from] TeslaMateTokenError),
+    Token(#[from] SourceDbTokenError),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CredentialRecoveryReport {
-    pub status: &'static str,
+    pub status: String,
     pub path: PathBuf,
     pub installation_id: Uuid,
     pub secret_bearing: bool,
-    pub encryption: &'static str,
-    pub teslamate_key_included: bool,
+    pub encryption: String,
+    #[serde(alias = "teslamateKeyIncluded")]
+    pub source_token_key_included: bool,
     pub cursor_key_included: bool,
     pub fleet_key_included: bool,
 }
 
 struct DecodedPayload {
     installation_id: Uuid,
-    teslamate_key: Option<Zeroizing<Vec<u8>>>,
+    source_db_key: Option<Zeroizing<Vec<u8>>>,
     cursor_key: Option<Zeroizing<Vec<u8>>>,
     fleet_key: Option<Zeroizing<Vec<u8>>>,
 }
@@ -119,8 +120,8 @@ pub fn export_credentials(
 ) -> Result<CredentialRecoveryReport, CredentialRecoveryError> {
     let cipher = recovery_cipher(recovery_key)?;
     let installation_id = store.installation_id()?;
-    let stored_tokens = store.load_teslamate_legacy_tokens()?;
-    let teslamate_key = match stored_tokens.as_ref() {
+    let stored_tokens = store.load_legacy_owner_tokens()?;
+    let source_db_key = match stored_tokens.as_ref() {
         Some(tokens) => {
             let key = load_key(data_dir)?;
             drop(decrypt_legacy_owner_tokens(
@@ -163,13 +164,13 @@ pub fn export_credentials(
     } else {
         None
     };
-    if teslamate_key.is_none() && cursor_key.is_none() && fleet_key.is_none() {
+    if source_db_key.is_none() && cursor_key.is_none() && fleet_key.is_none() {
         return Err(CredentialRecoveryError::NoKeyMaterial);
     }
 
     let mut plaintext = encode_payload(
         installation_id,
-        teslamate_key.as_ref().map(|key| key.as_bytes()),
+        source_db_key.as_ref().map(|key| key.as_bytes()),
         cursor_key.as_deref().map(Vec::as_slice),
         fleet_key.as_deref().map(Vec::as_slice),
     )?;
@@ -198,7 +199,7 @@ pub fn export_credentials(
         "exported",
         destination,
         installation_id,
-        teslamate_key.is_some(),
+        source_db_key.is_some(),
         cursor_key.is_some(),
         fleet_key.is_some(),
     ))
@@ -220,12 +221,12 @@ pub fn restore_credentials(
     }
     validate_cursor_key_catalogue(store, payload.cursor_key.as_deref().map(Vec::as_slice))?;
 
-    let stored_tokens = store.load_teslamate_legacy_tokens()?;
+    let stored_tokens = store.load_legacy_owner_tokens()?;
     let fleet_tokens = store.load_fleet_tokens()?;
-    if stored_tokens.is_some() != payload.teslamate_key.is_some() {
+    if stored_tokens.is_some() != payload.source_db_key.is_some() {
         return Err(CredentialRecoveryError::CatalogueMismatch);
     }
-    if let (Some(tokens), Some(key)) = (stored_tokens.as_ref(), payload.teslamate_key.as_ref()) {
+    if let (Some(tokens), Some(key)) = (stored_tokens.as_ref(), payload.source_db_key.as_ref()) {
         drop(decrypt_legacy_owner_tokens(
             key,
             tokens.access(),
@@ -253,7 +254,7 @@ pub fn restore_credentials(
             (None, None) => return Err(CredentialRecoveryError::CatalogueMismatch),
         }
     }
-    if payload.teslamate_key.is_none()
+    if payload.source_db_key.is_none()
         && payload.cursor_key.is_none()
         && payload.fleet_key.is_none()
     {
@@ -297,7 +298,7 @@ pub fn restore_credentials(
         "restored",
         source,
         payload.installation_id,
-        payload.teslamate_key.is_some(),
+        payload.source_db_key.is_some(),
         payload.cursor_key.is_some(),
         payload.fleet_key.is_some(),
     ))
@@ -307,17 +308,17 @@ fn report(
     status: &'static str,
     path: &Path,
     installation_id: Uuid,
-    teslamate_key_included: bool,
+    source_token_key_included: bool,
     cursor_key_included: bool,
     fleet_key_included: bool,
 ) -> CredentialRecoveryReport {
     CredentialRecoveryReport {
-        status,
+        status: status.to_owned(),
         path: path.to_path_buf(),
         installation_id,
         secret_bearing: true,
-        encryption: "AES-256-GCM",
-        teslamate_key_included,
+        encryption: "AES-256-GCM".to_owned(),
+        source_token_key_included,
         cursor_key_included,
         fleet_key_included,
     }
@@ -509,13 +510,13 @@ fn validate_catalogued_cursor_record(
 
 fn encode_payload(
     installation_id: Uuid,
-    teslamate_key: Option<&[u8]>,
+    source_db_key: Option<&[u8]>,
     cursor_key: Option<&[u8]>,
     fleet_key: Option<&[u8]>,
 ) -> Result<Zeroizing<Vec<u8>>, CredentialRecoveryError> {
     let mut flags = 0_u8;
-    if teslamate_key.is_some() {
-        flags |= TESLAMATE_KEY_FLAG;
+    if source_db_key.is_some() {
+        flags |= SOURCE_DB_KEY_FLAG;
     }
     if cursor_key.is_some() {
         flags |= CURSOR_KEY_FLAG;
@@ -523,10 +524,10 @@ fn encode_payload(
     if fleet_key.is_some() {
         flags |= FLEET_KEY_FLAG;
     }
-    let teslamate_key = teslamate_key.unwrap_or_default();
-    if teslamate_key.len() > MAX_TESLAMATE_KEY_BYTES {
+    let source_db_key = source_db_key.unwrap_or_default();
+    if source_db_key.len() > MAX_SOURCE_DB_KEY_BYTES {
         return Err(CredentialRecoveryError::InvalidPayload(
-            "TeslaMate key is too large",
+            "Legacy owner token key is too large",
         ));
     }
     if cursor_key.is_some_and(|key| key.len() != 32) {
@@ -539,13 +540,14 @@ fn encode_payload(
             "Fleet key length is invalid",
         ));
     }
-    let key_length = u16::try_from(teslamate_key.len())
-        .map_err(|_| CredentialRecoveryError::InvalidPayload("TeslaMate key length is invalid"))?;
+    let key_length = u16::try_from(source_db_key.len()).map_err(|_| {
+        CredentialRecoveryError::InvalidPayload("Legacy owner token key length is invalid")
+    })?;
     let mut bytes = Zeroizing::new(Vec::with_capacity(MAX_PLAINTEXT_BYTES));
     bytes.extend_from_slice(installation_id.as_bytes());
     bytes.push(flags);
     bytes.extend_from_slice(&key_length.to_be_bytes());
-    bytes.extend_from_slice(teslamate_key);
+    bytes.extend_from_slice(source_db_key);
     if let Some(cursor_key) = cursor_key {
         bytes.extend_from_slice(cursor_key);
     }
@@ -607,23 +609,23 @@ fn decode_payload(bytes: Zeroizing<Vec<u8>>) -> Result<DecodedPayload, Credentia
             "payload length overflowed",
         ))?;
     if expected != bytes.len()
-        || key_length > MAX_TESLAMATE_KEY_BYTES
-        || (flags & TESLAMATE_KEY_FLAG == 0) != (key_length == 0)
+        || key_length > MAX_SOURCE_DB_KEY_BYTES
+        || (flags & SOURCE_DB_KEY_FLAG == 0) != (key_length == 0)
     {
         return Err(CredentialRecoveryError::InvalidPayload(
             "key catalogue is invalid",
         ));
     }
-    let teslamate_end = 19 + key_length;
-    let cursor_end = teslamate_end + if flags & CURSOR_KEY_FLAG != 0 { 32 } else { 0 };
-    let teslamate_key = (key_length > 0).then(|| Zeroizing::new(bytes[19..teslamate_end].to_vec()));
+    let source_db_end = 19 + key_length;
+    let cursor_end = source_db_end + if flags & CURSOR_KEY_FLAG != 0 { 32 } else { 0 };
+    let source_db_key = (key_length > 0).then(|| Zeroizing::new(bytes[19..source_db_end].to_vec()));
     let cursor_key = (flags & CURSOR_KEY_FLAG != 0)
-        .then(|| Zeroizing::new(bytes[teslamate_end..cursor_end].to_vec()));
+        .then(|| Zeroizing::new(bytes[source_db_end..cursor_end].to_vec()));
     let fleet_key =
         (flags & FLEET_KEY_FLAG != 0).then(|| Zeroizing::new(bytes[cursor_end..].to_vec()));
     Ok(DecodedPayload {
         installation_id,
-        teslamate_key,
+        source_db_key,
         cursor_key,
         fleet_key,
     })
@@ -746,7 +748,7 @@ fn publish_secrets_directory(
         fs::set_permissions(&staging, fs::Permissions::from_mode(PRIVATE_DIRECTORY_MODE)).map_err(
             |source| io_error("protecting credential restore staging", &staging, source),
         )?;
-        if let Some(key) = payload.teslamate_key.as_ref() {
+        if let Some(key) = payload.source_db_key.as_ref() {
             write_private_file(&staging.join("teslamate-encryption.key"), key)?;
         }
         if let Some(key) = payload.cursor_key.as_ref() {
@@ -812,3 +814,56 @@ fn io_error(
 #[cfg(test)]
 #[path = "credential_recovery/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod n1_src_auth_credential_recovery_rs_display_tests {
+    use super::*;
+    use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
+
+    impl ErrorExample for CredentialRecoveryError {
+        fn error_example() -> Self {
+            CredentialRecoveryError::InvalidRecoveryKey
+        }
+    }
+
+    #[test]
+    fn every_reachable_error_display_omits_the_source_project_name() {
+        fn check_credential_recovery_error(error: CredentialRecoveryError) {
+            match &error {
+                CredentialRecoveryError::InvalidRecoveryKey => (),
+                CredentialRecoveryError::NoKeyMaterial => (),
+                CredentialRecoveryError::DestinationExists => (),
+                CredentialRecoveryError::UnsafeSource => (),
+                CredentialRecoveryError::InvalidPayload(..) => (),
+                CredentialRecoveryError::AuthenticationFailed => (),
+                CredentialRecoveryError::InstallationMismatch => (),
+                CredentialRecoveryError::CatalogueMismatch => (),
+                CredentialRecoveryError::EntropyUnavailable => (),
+                CredentialRecoveryError::SecretsAlreadyExist => (),
+                CredentialRecoveryError::Io { .. } => (),
+                CredentialRecoveryError::Store(..) => (),
+                CredentialRecoveryError::Credential(..) => (),
+                CredentialRecoveryError::Token(..) => (),
+            }
+            assert_name_free(&error);
+        }
+        check_credential_recovery_error(CredentialRecoveryError::InvalidRecoveryKey);
+        check_credential_recovery_error(CredentialRecoveryError::NoKeyMaterial);
+        check_credential_recovery_error(CredentialRecoveryError::DestinationExists);
+        check_credential_recovery_error(CredentialRecoveryError::UnsafeSource);
+        check_credential_recovery_error(CredentialRecoveryError::InvalidPayload(example()));
+        check_credential_recovery_error(CredentialRecoveryError::AuthenticationFailed);
+        check_credential_recovery_error(CredentialRecoveryError::InstallationMismatch);
+        check_credential_recovery_error(CredentialRecoveryError::CatalogueMismatch);
+        check_credential_recovery_error(CredentialRecoveryError::EntropyUnavailable);
+        check_credential_recovery_error(CredentialRecoveryError::SecretsAlreadyExist);
+        check_credential_recovery_error(CredentialRecoveryError::Io {
+            operation: example(),
+            path: example(),
+            source: example(),
+        });
+        check_credential_recovery_error(CredentialRecoveryError::Store(example()));
+        check_credential_recovery_error(CredentialRecoveryError::Credential(example()));
+        check_credential_recovery_error(CredentialRecoveryError::Token(example()));
+    }
+}

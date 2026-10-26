@@ -94,7 +94,7 @@ fn fill_put_fence(
     store
         .upsert_geofences(
             vehicle_id,
-            &[crate::teslamate_projection::TeslaMateGeofence {
+            &[crate::source_db_projection::SourceDbGeofence {
                 id,
                 name: format!("Fence {id}"),
                 latitude: Some(centre.0),
@@ -167,7 +167,10 @@ fn fill_import_watermark(
     max_id: i64,
 ) -> SourceRecord {
     let import = store
-        .register_source(&SourceDescriptor::new("teslamate", label), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, label),
+            1_000,
+        )
         .expect("import source");
     insert_watermark(store, &import, vehicle, "charging_processes", Some(max_id));
     import
@@ -395,7 +398,7 @@ fn r40_a_fence_without_a_complete_valid_tariff_fills_nothing() {
         .upsert_geofences(
             v,
             &[
-                crate::teslamate_projection::TeslaMateGeofence {
+                crate::source_db_projection::SourceDbGeofence {
                     id: 5,
                     name: "Fee only".to_owned(),
                     latitude: Some(10.0),
@@ -405,7 +408,7 @@ fn r40_a_fence_without_a_complete_valid_tariff_fills_nothing() {
                     cost_per_unit: None,
                     session_fee: Some(2.00),
                 },
-                crate::teslamate_projection::TeslaMateGeofence {
+                crate::source_db_projection::SourceDbGeofence {
                     id: 6,
                     name: "Negative".to_owned(),
                     latitude: Some(12.0),
@@ -452,7 +455,10 @@ fn t35b_a_migrated_vehicle_keeps_imported_rows_and_fills_its_live_ones() {
     let directory = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(directory.path()).expect("store");
     let import = store
-        .register_source(&SourceDescriptor::new("teslamate", "import-m"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-m"),
+            1_000,
+        )
         .expect("source");
     let vehicle = store
         .register_vehicle(
@@ -505,7 +511,10 @@ fn t35c_an_import_for_another_vehicle_does_not_mark_the_live_rows_imported() {
     // The same car imported as another vehicle of the import source kind, with
     // a watermark of 50 on that vehicle only.
     let import = store
-        .register_source(&SourceDescriptor::new("teslamate", "import-c"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-c"),
+            1_000,
+        )
         .expect("import source");
     let imported = store
         .register_vehicle(
@@ -624,7 +633,10 @@ fn t35e_a_live_charge_after_a_seeded_cutover_is_filled_as_a_hub_row() {
     let directory = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(directory.path()).expect("store");
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", "import-t35e"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-t35e"),
+            1_000,
+        )
         .expect("source");
     let vehicle = store
         .register_vehicle(
@@ -718,7 +730,7 @@ fn t35e_a_live_charge_after_a_seeded_cutover_is_filled_as_a_hub_row() {
     store
         .upsert_geofences(
             v,
-            &[crate::teslamate_projection::TeslaMateGeofence {
+            &[crate::source_db_projection::SourceDbGeofence {
                 id: 3,
                 name: "F3".to_owned(),
                 latitude: Some(10.0),
@@ -1232,7 +1244,7 @@ fn t44_close_fill_and_manual_entry_log_no_name_coordinate_or_vin() {
             .store
             .upsert_geofences(
                 v,
-                &[crate::teslamate_projection::TeslaMateGeofence {
+                &[crate::source_db_projection::SourceDbGeofence {
                     id: 3,
                     name: NAME.to_owned(),
                     latitude: Some(10.000123),

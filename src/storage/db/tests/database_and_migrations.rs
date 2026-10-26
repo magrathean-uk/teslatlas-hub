@@ -12,6 +12,7 @@ fn writable_catalogue_admission_rejects_foreign_and_future_databases_without_mut
                  PRAGMA application_id = {application_id}; PRAGMA user_version = {version};"
             ))
             .expect("seed foreign identity");
+        crate::db::import_names_test_support::prepare_historical_import_names(&connection);
         drop(connection);
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
         let before = fs::read(&path).unwrap();
@@ -70,6 +71,7 @@ fn rejected_0640_catalogue_and_live_wal_sidecars_keep_their_permissions() {
                 file.display()
             );
         }
+        crate::db::import_names_test_support::prepare_historical_import_names(&connection);
         drop(connection);
     }
 }
@@ -87,7 +89,7 @@ fn routine_writable_open_does_not_recreate_a_missing_catalogue() {
 }
 
 #[test]
-fn teslamate_current_migration_preserves_populated_v66_and_adds_truthful_provenance() {
+fn source_db_current_migration_preserves_populated_v66_and_adds_truthful_provenance() {
     let temporary = crate::private_tempdir().unwrap();
     let store = HubStore::initialize(temporary.path()).unwrap();
     let (source, vehicle) = test_registered_vehicle(&store);
@@ -111,8 +113,16 @@ fn teslamate_current_migration_preserves_populated_v66_and_adds_truthful_provena
         .unwrap();
     let old_schema = schema
         .replacen("current_observations", "current_v66", 1)
-        .replace(", 'teslamate_position_v1'", "");
-    assert!(!old_schema.contains("teslamate_position_v1"));
+        .replace(
+            &format!(
+                ", '{}'",
+                crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE
+            ),
+            "",
+        );
+    assert!(
+        !old_schema.contains(crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE)
+    );
     remove_v68_grant_schema(&connection);
     connection
         .execute_batch(&format!(
@@ -122,6 +132,7 @@ fn teslamate_current_migration_preserves_populated_v66_and_adds_truthful_provena
         PRAGMA user_version=66; COMMIT;"
         ))
         .unwrap();
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     let upgraded = HubStore::initialize(temporary.path()).unwrap();
     assert_eq!(
@@ -131,10 +142,10 @@ fn teslamate_current_migration_preserves_populated_v66_and_adds_truthful_provena
         before
     );
     let input = ObservationInput {
-        payload: serde_json::json!({"record_type":"teslamate_position_v1"}),
+        payload: serde_json::json!({"record_type":crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE}),
         ..owner
     };
-    assert!(upgraded.record_teslamate_current(&input, 10_002).unwrap());
+    assert!(upgraded.record_source_db_current(&input, 10_002).unwrap());
     assert_eq!(
         upgraded
             .current_observations_for_vehicle(vehicle.vehicle_id)
@@ -344,14 +355,14 @@ fn initializes_a_checked_wal_database() {
     assert_eq!(inventory.raw_observations, 0);
     assert_eq!(inventory.quarantined_sessions, 0);
     assert_eq!(inventory.referenced_packs, 0);
-    assert_eq!(inventory.teslamate_legacy_token_rows, 0);
+    assert_eq!(inventory.legacy_owner_token_rows, 0);
     assert_eq!(inventory.fleet_token_rows, 0);
     assert_eq!(
         inventory.installation_id,
         store.installation_id().expect("id")
     );
     let before = store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("legacy tokens")
         .is_some();
     let fleet_before = store.load_fleet_tokens().expect("Fleet tokens").is_some();
@@ -360,7 +371,7 @@ fn initializes_a_checked_wal_database() {
         .expect("inventory is repeatable");
     assert_eq!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("legacy tokens after inventory")
             .is_some(),
         before
@@ -379,7 +390,7 @@ fn initializes_a_checked_wal_database() {
     assert_eq!(runtime.raw_observations, 0);
     assert_eq!(runtime.quarantined_sessions, 0);
     assert_eq!(runtime.referenced_packs, 0);
-    assert_eq!(runtime.teslamate_legacy_token_rows, 0);
+    assert_eq!(runtime.legacy_owner_token_rows, 0);
     assert_eq!(runtime.fleet_token_rows, 0);
 }
 
@@ -409,7 +420,7 @@ fn schema_59_upgrade_adds_null_vehicle_retirement_state() {
         )
         .expect("downgrade test catalogue shape");
 
-    migrate(&connection).expect("migrate schema 59");
+    migrate_historical_fixture(&connection).expect("migrate schema 59");
 
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     assert_eq!(
@@ -448,7 +459,7 @@ fn schema_60_upgrade_keeps_paired_bearers_and_adds_rotation_grace() {
         )
         .expect("restore schema 60 shape");
 
-    migrate(&connection).expect("migrate schema 60");
+    migrate_historical_fixture(&connection).expect("migrate schema 60");
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     assert!(
         store
@@ -482,7 +493,10 @@ fn schema_67_upgrade_grants_active_vehicles_and_backfills_the_lifetime_cap() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("current store");
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", "v68-upgrade"), 1)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "v68-upgrade"),
+            1,
+        )
         .expect("source");
     let active = store
         .register_vehicle(&VehicleDescriptor::new(source.source_id, "eid:1"), 2)
@@ -549,7 +563,7 @@ fn schema_67_upgrade_grants_active_vehicles_and_backfills_the_lifetime_cap() {
         .expect("restore schema 67 shape");
 
     let before_ms = epoch_ms();
-    migrate(&connection).expect("migrate schema 67");
+    migrate_historical_fixture(&connection).expect("migrate schema 67");
     let after_ms = epoch_ms();
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
 
@@ -714,7 +728,7 @@ fn schema_61_upgrade_adds_physical_v3_admission_marker() {
         )
         .expect("restore schema 61 shape");
 
-    migrate(&connection).expect("migrate schema 61");
+    migrate_historical_fixture(&connection).expect("migrate schema 61");
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     let columns: Vec<String> = connection
         .prepare(
@@ -807,7 +821,7 @@ fn schema_62_upgrade_adds_physical_v3_rotation_retention() {
         )
         .expect("restore schema 62 shape");
 
-    migrate(&connection).expect("migrate schema 62");
+    migrate_historical_fixture(&connection).expect("migrate schema 62");
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     let serve_state: String = connection
         .query_row(
@@ -902,7 +916,7 @@ fn schema_63_upgrade_preserves_retained_physical_receipt_and_packs() {
         )
         .expect("schema 63 retained pack");
 
-    migrate(&connection).expect("migrate populated schema 63");
+    migrate_historical_fixture(&connection).expect("migrate populated schema 63");
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     let retained: (String, String) = connection
         .query_row(
@@ -955,7 +969,7 @@ fn schema_64_upgrade_adds_prepared_catalogue_without_losing_vehicle_state() {
          PRAGMA user_version = 64;",
         )
         .expect("restore populated schema 64 boundary");
-    migrate(&connection).expect("additive 64 to 65 migration");
+    migrate_historical_fixture(&connection).expect("additive 64 to 65 migration");
     assert_eq!(schema_version(&connection).unwrap(), SCHEMA_VERSION);
     let vehicle_count: i64 = connection
         .query_row(
@@ -971,7 +985,7 @@ fn schema_64_upgrade_adds_prepared_catalogue_without_losing_vehicle_state() {
         })
         .expect("prepared catalogue exists");
     assert_eq!(prepared_count, 0);
-    migrate(&connection).expect("repeated migration is stable");
+    migrate_historical_fixture(&connection).expect("repeated migration is stable");
 }
 
 #[test]
@@ -999,21 +1013,21 @@ fn inventory_counts_physical_pack_and_staging_bytes_once() {
 }
 
 #[test]
-fn teslamate_token_import_loads_and_reopens_as_one_row() {
+fn source_db_token_import_loads_and_reopens_as_one_row() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let imported = TeslaMateLegacyTokenStore::imported(
+    let imported = LegacyOwnerTokenStore::imported(
         b"access-ciphertext".to_vec(),
         b"refresh-ciphertext".to_vec(),
     )
     .expect("imported pair is valid");
 
     store
-        .replace_teslamate_legacy_tokens(&imported)
+        .replace_legacy_owner_tokens(&imported)
         .expect("imported pair stores");
     let reopened = HubStore::initialize(temporary.path()).expect("store reopens");
     let loaded = reopened
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("pair loads")
         .expect("pair exists");
 
@@ -1023,21 +1037,23 @@ fn teslamate_token_import_loads_and_reopens_as_one_row() {
     assert_eq!(loaded.next_refresh_at(), 0);
     let connection = reopened.open().expect("database opens");
     let rows: i64 = connection
-        .query_row("SELECT COUNT(*) FROM teslamate_legacy_tokens", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            concat!("SELECT COUNT(*) FROM ", crate::db::import_table_names::legacy_owner_tokens_table!()),
+            [],
+            |row| row.get(0),
+        )
         .expect("row count");
     assert_eq!(rows, 1);
 }
 
 #[test]
-fn teslamate_legacy_token_store_zeroizes_ciphertext() {
+fn source_db_legacy_token_store_zeroizes_ciphertext() {
     use zeroize::Zeroize;
 
     fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
-    assert_zeroize_on_drop::<TeslaMateLegacyTokenStore>();
+    assert_zeroize_on_drop::<LegacyOwnerTokenStore>();
 
-    let mut stored = TeslaMateLegacyTokenStore::refreshed(
+    let mut stored = LegacyOwnerTokenStore::refreshed(
         b"access-secret-canary".to_vec(),
         b"refresh-secret-canary".to_vec(),
         2,
@@ -1052,29 +1068,29 @@ fn teslamate_legacy_token_store_zeroizes_ciphertext() {
 }
 
 #[test]
-fn teslamate_token_replacement_is_atomic_and_refresh_schedule_is_strict() {
+fn source_db_token_replacement_is_atomic_and_refresh_schedule_is_strict() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let imported = TeslaMateLegacyTokenStore::imported(
+    let imported = LegacyOwnerTokenStore::imported(
         b"old-access-ciphertext".to_vec(),
         b"old-refresh-ciphertext".to_vec(),
     )
     .expect("imported pair is valid");
     store
-        .replace_teslamate_legacy_tokens(&imported)
+        .replace_legacy_owner_tokens(&imported)
         .expect("imported pair stores");
 
     assert!(matches!(
-        TeslaMateLegacyTokenStore::refreshed(
+        LegacyOwnerTokenStore::refreshed(
             b"new-access-ciphertext".to_vec(),
             b"new-refresh-ciphertext".to_vec(),
             1_000,
             1_000,
         ),
-        Err(StoreError::InvalidTeslaMateTokenSchedule)
+        Err(StoreError::InvalidSourceDbTokenSchedule)
     ));
 
-    let refreshed = TeslaMateLegacyTokenStore::refreshed(
+    let refreshed = LegacyOwnerTokenStore::refreshed(
         b"new-access-ciphertext".to_vec(),
         b"new-refresh-ciphertext".to_vec(),
         2_000,
@@ -1082,10 +1098,10 @@ fn teslamate_token_replacement_is_atomic_and_refresh_schedule_is_strict() {
     )
     .expect("refreshed schedule is valid");
     store
-        .replace_teslamate_legacy_tokens(&refreshed)
+        .replace_legacy_owner_tokens(&refreshed)
         .expect("replacement commits");
     let loaded = store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("pair loads")
         .expect("pair exists");
     assert_eq!(loaded.access(), refreshed.access());
@@ -1457,6 +1473,7 @@ fn upgrades_v42_with_supervised_collector_lease_schema() {
                  PRAGMA user_version = 42;",
         )
         .expect("recreate historical v42 boundary");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v42 store");
@@ -1483,7 +1500,7 @@ fn upgrades_populated_schema_65_to_delta_catalogue_without_changing_physical_hea
     let root = temporary.path().join("store");
     let store = HubStore::initialize(&root).expect("schema 66 store");
     let key = CursorKey::from_bytes([0x66; 32]);
-    let (binding,candidate) = crate::import::teslamate::physical_fragments::tests::
+    let (binding,candidate) = crate::sync::physical_fragments::tests::
         public_admission_candidate_fixture_for_source_and_sequence(
             &temporary.path().join("source"),&store,&key,1,"v65-delta-migration",1,
         );
@@ -1503,6 +1520,7 @@ fn upgrades_populated_schema_65_to_delta_catalogue_without_changing_physical_hea
          PRAGMA user_version=65;",
         )
         .expect("recreate populated schema 65 boundary");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
     let upgraded = HubStore::initialize(&root).expect("upgrade populated prior");
@@ -1537,6 +1555,7 @@ fn upgrades_v43_with_legacy_refresh_receipt_binding_schema() {
                  PRAGMA user_version = 43;",
         )
         .expect("recreate historical v43 boundary");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v43 store");
@@ -1599,6 +1618,7 @@ fn upgrades_v50_paired_bearers_with_finite_lifetime_and_revocation_columns() {
             params![future_device_id.to_string(), vec![8_u8; 32], i64::MAX],
         )
         .expect("future-dated historical paired device");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v50 store");
@@ -1637,24 +1657,28 @@ fn upgrades_v50_paired_bearers_with_finite_lifetime_and_revocation_columns() {
 fn upgrades_v51_token_row_then_binds_generation_after_authenticated_decryption() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("current store");
-    let key_bytes = b"v51 exact TeslaMate key";
-    crate::teslamate_credentials::replace_key(temporary.path(), key_bytes).expect("private key");
+    let key_bytes = b"v51 exact source token key";
+    crate::legacy_owner_credentials::replace_key(temporary.path(), key_bytes).expect("private key");
     let plaintext = crate::credentials::OwnerTokens::from_secret_parts(
         "v51-access".to_owned(),
         "v51-refresh".to_owned(),
     )
     .expect("plaintext pair");
     let expected_generation =
-        crate::teslamate_token::legacy_refresh_credential_generation(&plaintext);
+        crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key_bytes, &plaintext)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key_bytes, &plaintext)
             .expect("encrypt v51 pair");
     let connection = store.open().expect("current catalogue");
     remove_v55_fleet_schema(&connection);
     connection
-        .execute_batch(
-            "DROP TABLE teslamate_legacy_tokens;
-                 CREATE TABLE teslamate_legacy_tokens (
+        .execute_batch(concat!(
+            "DROP TABLE ",
+            crate::db::import_table_names::legacy_owner_tokens_table!(),
+            ";
+                 CREATE TABLE ",
+            crate::db::import_table_names::legacy_owner_tokens_table!(),
+            " (
                     singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
                     access BLOB NOT NULL CHECK(length(access) > 0),
                     refresh BLOB NOT NULL CHECK(length(refresh) > 0),
@@ -1662,31 +1686,36 @@ fn upgrades_v51_token_row_then_binds_generation_after_authenticated_decryption()
                     next_refresh_at INTEGER NOT NULL CHECK(next_refresh_at >= 0),
                     CHECK(expires_at > next_refresh_at AND next_refresh_at > 0)
                  ) STRICT;
-                 PRAGMA user_version = 51;",
-        )
+                 PRAGMA user_version = 51;"
+        ))
         .expect("recreate historical v51 token table");
     connection
         .execute(
-            "INSERT INTO teslamate_legacy_tokens(
+            concat!(
+                "INSERT INTO ",
+                crate::db::import_table_names::legacy_owner_tokens_table!(),
+                "(
                     singleton_id, access, refresh, expires_at, next_refresh_at
-                 ) VALUES (1, ?1, ?2, 2000000000, 1900000000)",
+                 ) VALUES (1, ?1, ?2, 2000000000, 1900000000)"
+            ),
             params![access, refresh],
         )
         .expect("historical pair");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v51 store");
     assert_eq!(
         upgraded
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("upgraded pair loads")
             .expect("upgraded pair")
             .credential_generation(),
         None
     );
     let issuer = url::Url::parse("http://127.0.0.1/").expect("test issuer");
-    let manager = crate::credentials::LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let manager = crate::credentials::LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         upgraded.clone(),
         temporary.path(),
         issuer.clone(),
@@ -1695,14 +1724,14 @@ fn upgrades_v51_token_row_then_binds_generation_after_authenticated_decryption()
     assert_eq!(manager.access_token(), "v51-access");
     assert_eq!(
         upgraded
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("bound pair loads")
             .expect("bound pair")
             .credential_generation(),
         Some(expected_generation)
     );
     drop(manager);
-    crate::credentials::LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    crate::credentials::LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         upgraded,
         temporary.path(),
         issuer,
@@ -1717,9 +1746,13 @@ fn v51_noncanonical_credential_generation_column_is_not_stamped_v52() {
     let connection = store.open().expect("current catalogue");
     remove_v55_fleet_schema(&connection);
     connection
-        .execute_batch(
-            "DROP TABLE teslamate_legacy_tokens;
-                 CREATE TABLE teslamate_legacy_tokens (
+        .execute_batch(concat!(
+            "DROP TABLE ",
+            crate::db::import_table_names::legacy_owner_tokens_table!(),
+            ";
+                 CREATE TABLE ",
+            crate::db::import_table_names::legacy_owner_tokens_table!(),
+            " (
                     singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
                     access BLOB NOT NULL,
                     refresh BLOB NOT NULL,
@@ -1727,13 +1760,16 @@ fn v51_noncanonical_credential_generation_column_is_not_stamped_v52() {
                     next_refresh_at INTEGER NOT NULL,
                     credential_generation INTEGER
                  ) STRICT;
-                 INSERT INTO teslamate_legacy_tokens(
+                 INSERT INTO ",
+            crate::db::import_table_names::legacy_owner_tokens_table!(),
+            "(
                     singleton_id, access, refresh, expires_at, next_refresh_at,
                     credential_generation
                  ) VALUES (1, x'01', x'02', 2000, 1750, 7);
-                 PRAGMA user_version = 51;",
-        )
+                 PRAGMA user_version = 51;"
+        ))
         .expect("recreate noncanonical v51 table");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
 
@@ -1751,7 +1787,7 @@ fn upgrades_v52_lifecycle_open_row_key_to_include_vehicle() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("current store");
     let (source, vehicle) = test_registered_vehicle(&store);
-    let row = crate::teslamate_projection::TeslaMateState {
+    let row = crate::source_db_projection::SourceDbState {
         id: 1,
         car_id: 10,
         state: "online".into(),
@@ -1796,6 +1832,7 @@ fn upgrades_v52_lifecycle_open_row_key_to_include_vehicle() {
             ],
         )
         .expect("historical open row");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
 
@@ -1843,6 +1880,7 @@ fn unbound_historical_legacy_receipt_does_not_block_credential_recovery() {
     connection
         .execute_batch("PRAGMA user_version = 51;")
         .expect("historical schema boundary");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
 
@@ -1872,13 +1910,19 @@ fn unbound_historical_legacy_receipt_does_not_block_credential_recovery() {
         "fresh-refresh".to_owned(),
     )
     .expect("fresh plaintext");
-    let (access, refresh) = crate::teslamate_token::encrypt_legacy_owner_tokens(key, &plaintext)
-        .expect("fresh ciphertext");
-    let fresh = TeslaMateLegacyTokenStore::imported(access, refresh).expect("fresh pair");
-    crate::teslamate_credentials::replace_key_and_tokens(temporary.path(), &upgraded, key, &fresh)
-        .expect("fresh credentials recover");
+    let (access, refresh) =
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &plaintext)
+            .expect("fresh ciphertext");
+    let fresh = LegacyOwnerTokenStore::imported(access, refresh).expect("fresh pair");
+    crate::legacy_owner_credentials::replace_key_and_tokens(
+        temporary.path(),
+        &upgraded,
+        key,
+        &fresh,
+    )
+    .expect("fresh credentials recover");
     let generation = upgraded
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("fresh credentials load")
         .expect("fresh credentials")
         .credential_generation()
@@ -1920,7 +1964,7 @@ fn read_only_catalogue_check_does_not_change_the_store_tree() {
 fn short_lived_writer_checkpoint_allows_immediate_immutable_preflight() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
-    let imported = TeslaMateLegacyTokenStore::imported(
+    let imported = LegacyOwnerTokenStore::imported(
         b"access-ciphertext".to_vec(),
         b"refresh-ciphertext".to_vec(),
     )
@@ -1933,7 +1977,7 @@ fn short_lived_writer_checkpoint_allows_immediate_immutable_preflight() {
         .query_row("SELECT COUNT(*) FROM vehicles", [], |row| row.get(0))
         .expect("read snapshot");
     store
-        .replace_teslamate_legacy_tokens(&imported)
+        .replace_legacy_owner_tokens(&imported)
         .expect("short-lived write");
     assert!(matches!(
         HubStore::open_immutable_read_only(temporary.path()),
@@ -1965,7 +2009,7 @@ fn short_lived_writer_checkpoint_allows_immediate_immutable_preflight() {
     );
     assert!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("legacy credentials")
             .is_some()
     );
@@ -1985,6 +2029,7 @@ fn read_only_open_rejects_a_stale_schema_without_migrating_it() {
     connection
         .execute_batch("PRAGMA user_version = 40;")
         .expect("mark test catalogue stale");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     let before = tree_contents(temporary.path());
 

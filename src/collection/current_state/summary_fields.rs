@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use super::ActivityState;
 use crate::{
-    collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE,
+    collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE,
     db::{LifecycleStateRecord, ObservationRecord},
     lifecycle::{
         DEFAULT_OFFLINE_DRIVE_TIMEOUT, K_SKEW_MS, OpenSessionState, VehiclePhase, group_time,
@@ -127,7 +127,7 @@ pub(super) fn accepted_rows(
                 OWNER_VEHICLE_DATA | FLEET_VEHICLE_DATA => RowKind::VehicleData,
                 OWNER_DISCOVERY | FLEET_DISCOVERY => RowKind::Discovery,
                 STREAM_UPDATE => RowKind::Stream,
-                IMPORT_POSITION_RECORD_TYPE => RowKind::ImportPosition,
+                SOURCE_DB_POSITION_RECORD_TYPE => RowKind::ImportPosition,
                 _ => return None,
             };
             Some(AcceptedRow { kind, record, root })

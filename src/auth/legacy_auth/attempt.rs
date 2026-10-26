@@ -535,7 +535,7 @@ fn successor_of(
         accepted.refresh_token.to_string(),
     )
     .ok()?;
-    let output = crate::teslamate_token::legacy_refresh_credential_generation(&tokens);
+    let output = crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
     // A rotated successor has a refresh token of its own, so a different
     // generation (K2); one that has the input's generation is not one.
     //

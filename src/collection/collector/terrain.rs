@@ -20,7 +20,11 @@ where
         config,
         admission,
         ready,
-        |region| Ok(OwnerApi::new(config.collector.owner_api_options_for_region(region)?)?),
+        |region| {
+            Ok(OwnerApi::new(
+                config.collector.owner_api_options_for_region(region)?,
+            )?)
+        },
         |region| production_fleet_clients(config, region),
         shutdown,
     )
@@ -148,7 +152,7 @@ where
 {
     let cadence = config.collector.cadence()?;
 
-    let manager = LegacyAuthManager::from_hub_teslamate_store_for_admitted_user(
+    let manager = LegacyAuthManager::from_hub_source_db_store_for_admitted_user(
         store.clone(),
         &config.data_dir,
         &AuthEndpointConfig::from_config(config, false),
@@ -162,10 +166,10 @@ where
     // Creating the cursor key, when it is absent, is a durable write of its own (a file
     // of the data directory): the run's guard stands in front of it (R-P3bF3-1).
     write_guard.check("cursor-key")?;
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(&config.data_dir)
         .map_err(|error| {
-            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
-        })?;
+        CollectorError::Credential(CredentialError::SourceDbCredentialFile(error))
+    })?;
 
     let auth = CollectionAuth::Legacy {
         manager: Arc::new(tokio::sync::Mutex::new(manager)),
@@ -266,10 +270,10 @@ where
     // Creating the cursor key, when it is absent, is a durable write of its own (a file
     // of the data directory): the guard stands in front of it (R-P3bF2-1).
     write_guard.check("cadence-cursor-key")?;
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(&config.data_dir)
         .map_err(|error| {
-            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
-        })?;
+        CollectorError::Credential(CredentialError::SourceDbCredentialFile(error))
+    })?;
     let (_collector_state, collector_state_rx) = watch::channel(SupervisedCollectorState::Active);
     let (heartbeat_shutdown, heartbeat_stop) = oneshot::channel();
     let mut heartbeat_task = tokio::spawn(run_supervised_collector_heartbeat_with(
@@ -353,7 +357,11 @@ where
         config,
         admission,
         ready,
-        |region| Ok(OwnerApi::new(config.collector.owner_api_options_for_region(region)?)?),
+        |region| {
+            Ok(OwnerApi::new(
+                config.collector.owner_api_options_for_region(region)?,
+            )?)
+        },
         |region| production_fleet_clients(config, region),
         shutdown,
     )
@@ -402,7 +410,7 @@ where
         return Err(CollectorError::AdmittedLegacyAuthRequired);
     }
 
-    let manager = LegacyAuthManager::from_hub_teslamate_store_observer_for_admitted_user(
+    let manager = LegacyAuthManager::from_hub_source_db_store_observer_for_admitted_user(
         store.clone(),
         &config.data_dir,
         &AuthEndpointConfig::from_config(config, false),
@@ -414,10 +422,10 @@ where
     let region = manager.region();
     let client = owner_client_for(region)?;
     write_guard.check("cursor-key")?;
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(&config.data_dir)
         .map_err(|error| {
-            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
-        })?;
+        CollectorError::Credential(CredentialError::SourceDbCredentialFile(error))
+    })?;
     let auth = CollectionAuth::Legacy {
         manager: Arc::new(tokio::sync::Mutex::new(manager)),
         fuse: Arc::new(tokio::sync::Mutex::new(LegacyAuthFuse::default())),
@@ -478,10 +486,10 @@ where
         command_proxy,
     } = fleet_clients_for(manager.region())?;
     write_guard.check("cursor-key")?;
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir)
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(&config.data_dir)
         .map_err(|error| {
-            CollectorError::Credential(CredentialError::TeslaMateCredentialFile(error))
-        })?;
+        CollectorError::Credential(CredentialError::SourceDbCredentialFile(error))
+    })?;
     run_fleet_supervised_with_access(
         store,
         config,

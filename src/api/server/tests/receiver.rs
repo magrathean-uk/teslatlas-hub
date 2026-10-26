@@ -1381,7 +1381,8 @@ async fn collectorless_serve_drains_the_outbox_at_start() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let (admission, data) = admitted_server_fixture(&temporary);
     let store = HubStore::initialize(&data).expect("store");
-    let key = crate::teslamate_credentials::load_or_create_cursor_key(&data).expect("cursor key");
+    let key =
+        crate::legacy_owner_credentials::load_or_create_cursor_key(&data).expect("cursor key");
     let vehicle_id = crate::collector::v2_base_with_pending_work(&store, &key, 9, VIN, None, T0);
     crate::collector::add_pending_observation(&store, 9, VIN, T0 + 60_000, "P", 0);
     let pending = |store: &HubStore| -> i64 {

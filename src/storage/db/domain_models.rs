@@ -202,12 +202,12 @@ pub struct VehicleRecord {
     pub last_seen_at_ms: i64,
 }
 
-/// Exact alias-free rows used until the first exported TeslaMate snapshot
+/// Exact alias-free rows used until the first exported source database snapshot
 /// proves the pre-read VIN/EID/VID tuple. Ordinary rejection removes unchanged
 /// provisional rows; crash residue remains non-published and is reused by the
 /// same deterministic source/vehicle registration on retry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TeslaMateIdentityRegistrationCheckpoint {
+pub(crate) struct SourceDbIdentityRegistrationCheckpoint {
     source: SourceRecord,
     source_created: bool,
     vehicle: VehicleRecord,

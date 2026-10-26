@@ -326,7 +326,8 @@ fn vehicle_has_import_evidence(
     }
     transaction
         .query_row(
-            "SELECT
+            concat!(
+                "SELECT
                 EXISTS(SELECT 1 FROM current_observations
                         WHERE vehicle_id = ?1 AND record_type = ?3)
                 OR EXISTS(SELECT 1 FROM vehicles AS v
@@ -338,15 +339,20 @@ fn vehicle_has_import_evidence(
                 OR EXISTS(SELECT 1 FROM lifecycle_source_watermarks AS w
                             JOIN sources AS s ON s.source_id = w.source_id
                            WHERE w.vehicle_id = ?1 AND s.source_kind = ?2)
-                OR EXISTS(SELECT 1 FROM teslamate_import_projection_heads
+                OR EXISTS(SELECT 1 FROM ",
+                crate::db::import_table_names::import_projection_heads_table!(),
+                "
                            WHERE vehicle_id = ?1)
-                OR EXISTS(SELECT 1 FROM teslamate_import_projection_state_heads
+                OR EXISTS(SELECT 1 FROM ",
+                crate::db::import_table_names::import_projection_state_heads_table!(),
+                "
                            WHERE vehicle_id = ?1)
-                OR EXISTS(SELECT 1 FROM import_generations WHERE vehicle_id = ?1)",
+                OR EXISTS(SELECT 1 FROM import_generations WHERE vehicle_id = ?1)"
+            ),
             params![
                 vehicle_id,
                 IMPORT_SOURCE_KIND,
-                crate::collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE
+                crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE
             ],
             |row| row.get(0),
         )

@@ -908,8 +908,8 @@ fn standalone_positions_while_driving_are_drive_children() {
 
 // ----------------------------------------------------------- imported drive
 
-fn imported_drive_session(start: i64, end_km: f64) -> TeslaMateOpenSession {
-    let drive: TeslaMateDrive = serde_json::from_value(json!({
+fn imported_drive_session(start: i64, end_km: f64) -> SourceDbOpenSession {
+    let drive: SourceDbDrive = serde_json::from_value(json!({
         "id": 70, "car_id": 1, "start_date_ms": start, "end_date_ms": null,
         "start_position_id": 700, "end_position_id": 701,
         "start_address_id": null, "end_address_id": null,
@@ -922,7 +922,7 @@ fn imported_drive_session(start: i64, end_km: f64) -> TeslaMateOpenSession {
         "duration_min": null, "ascent": 7, "descent": 2
     }))
     .expect("imported drive");
-    let mut session = TeslaMateOpenSession {
+    let mut session = SourceDbOpenSession {
         car_id: 1,
         drive: Some(drive),
         drive_positions: vec![

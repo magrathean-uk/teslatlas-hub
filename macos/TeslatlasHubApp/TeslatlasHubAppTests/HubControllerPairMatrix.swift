@@ -30,8 +30,8 @@ extension HubControllerTests {
         let invoke: (OwnerRig, @escaping (Bool) -> Void) -> Void
     }
 
-    private static let localSource = "postgresql://reader@127.0.0.1:55438/teslamate_snapshot"
-    private static let remoteSource = "postgresql://reader@teslamate.local/teslamate"
+    private static let localSource = "postgresql://reader@127.0.0.1:55438/source_snapshot"
+    private static let remoteSource = "postgresql://reader@server.local/sourcedb"
 
     private func credentials() -> HubFleetSetupCredentials {
         HubFleetSetupCredentials(accessToken: "a", refreshToken: "r", clientID: "c",
@@ -114,28 +114,28 @@ extension HubControllerTests {
                 spinUntil(3) { rig.runner.heldKeys.contains("status") }
             },
             Held(family: .migration, name: "local compatibility", options: .init(installed: false)) { rig, box in
-                rig.runner.hold("teslamate-check:history")
-                rig.controller.checkTeslaMateCompatibility(source: Self.localSource, carID: "1", passwordFile: "/p",
-                                                           acknowledgeV42CompatibleSchema: true, historyOnly: true) { _ in box.completions += 1 }
+                rig.runner.hold("source-check:history")
+                rig.controller.checkSourceCompatibility(source: Self.localSource, carID: "1", passwordFile: "/p",
+                                                           acceptSchemaEvidence: true, historyOnly: true) { _ in box.completions += 1 }
             },
             Held(family: .migration, name: "connected compatibility", options: .init(installed: false)) { rig, box in
-                rig.runner.hold("teslamate-check")
-                rig.controller.checkTeslaMateCompatibility(source: Self.remoteSource, carID: "1", passwordFile: "/p",
-                                                           acknowledgeV42CompatibleSchema: true) { _ in box.completions += 1 }
+                rig.runner.hold("source-check")
+                rig.controller.checkSourceCompatibility(source: Self.remoteSource, carID: "1", passwordFile: "/p",
+                                                           acceptSchemaEvidence: true) { _ in box.completions += 1 }
             },
             Held(family: .migration, name: "history-only import stop", options: .init(installed: false)) { rig, box in
                 rig.service.hold("stop")
-                rig.controller.importTeslaMateHistoryOnlyOnline(source: Self.localSource, carID: "1", passwordFile: "/p",
-                                                                acknowledgeV42CompatibleSchema: true) { _ in box.completions += 1 }
+                rig.controller.importSourceHistoryOnlyOnline(source: Self.localSource, carID: "1", passwordFile: "/p",
+                                                                acceptSchemaEvidence: true) { _ in box.completions += 1 }
             },
             Held(family: .migration, name: "online import", options: .init(installed: false)) { rig, box in
                 rig.runner.hold("migrate")
-                rig.controller.importTeslaMateOnline(source: Self.remoteSource, carID: "1", passwordFile: "/p", encryptionKeyFile: "/k",
-                                                     acknowledgeV42CompatibleSchema: true) { _ in box.completions += 1 }
+                rig.controller.importSourceOnline(source: Self.remoteSource, carID: "1", passwordFile: "/p", encryptionKeyFile: "/k",
+                                                     acceptSchemaEvidence: true) { _ in box.completions += 1 }
             },
             Held(family: .migration, name: "ssh preparation") { rig, box in
                 rig.connector.hold()
-                _ = rig.controller.connectMigrationServer(host: "teslamate.local", user: "user", port: 22,
+                _ = rig.controller.connectMigrationServer(host: "server.local", user: "user", port: 22,
                                                           authentication: .key(identityFile: nil),
                                                           usePasswordlessSudo: false) { _ in box.completions += 1 }
             },
@@ -197,21 +197,21 @@ extension HubControllerTests {
             Ask(family: .diagnostics, name: "Diagnostics") { rig, done in rig.controller.runFullDiagnostics { done($0.contains("not run")) } },
             Ask(family: .signOut, name: "Sign-out") { rig, done in rig.controller.signOutTeslaAccount(completion: outcome(done)) },
             Ask(family: .migration, name: "Local compatibility") { rig, done in
-                rig.controller.checkTeslaMateCompatibility(source: Self.localSource, carID: "1", passwordFile: "/p",
-                                                           acknowledgeV42CompatibleSchema: true, historyOnly: true) {
+                rig.controller.checkSourceCompatibility(source: Self.localSource, carID: "1", passwordFile: "/p",
+                                                           acceptSchemaEvidence: true, historyOnly: true) {
                     if case .failure = $0 { done(true) } else { done(false) }
                 }
             },
             Ask(family: .migration, name: "History-only import") { rig, done in
-                rig.controller.importTeslaMateHistoryOnlyOnline(source: Self.localSource, carID: "1", passwordFile: "/p",
-                                                                acknowledgeV42CompatibleSchema: true, completion: outcome(done))
+                rig.controller.importSourceHistoryOnlyOnline(source: Self.localSource, carID: "1", passwordFile: "/p",
+                                                                acceptSchemaEvidence: true, completion: outcome(done))
             },
             Ask(family: .migration, name: "Online import") { rig, done in
-                rig.controller.importTeslaMateOnline(source: Self.remoteSource, carID: "1", passwordFile: "/p", encryptionKeyFile: "/k",
-                                                     acknowledgeV42CompatibleSchema: true, completion: outcome(done))
+                rig.controller.importSourceOnline(source: Self.remoteSource, carID: "1", passwordFile: "/p", encryptionKeyFile: "/k",
+                                                     acceptSchemaEvidence: true, completion: outcome(done))
             },
             Ask(family: .migration, name: "SSH preparation") { rig, done in
-                _ = rig.controller.connectMigrationServer(host: "teslamate.local", user: "user", port: 22,
+                _ = rig.controller.connectMigrationServer(host: "server.local", user: "user", port: 22,
                                                           authentication: .key(identityFile: nil),
                                                           usePasswordlessSudo: false) { if case .failure = $0 { done(true) } else { done(false) } }
             },

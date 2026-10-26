@@ -153,15 +153,15 @@ label even when a runtime path has been removed or damaged. Production package
 installation, update, uninstall, signing, and trust checks are not reused or weakened;
 those controls are unavailable in development mode.
 
-## Optional read-only TeslaMate current telemetry
+## Optional read-only imported current telemetry
 
 The producer is disabled unless this complete table is present in the protected Hub
 configuration. It operates independently of the Legacy/Fleet collector cadence:
 
 ```toml
-[teslamate.current]
+[import_source.current]
 source_url = "postgresql://reader@127.0.0.1:PORT/DATABASE"
-source_key = "EXISTING_TESLAMATE_SOURCE_KEY"
+source_key = "EXISTING_IMPORT_SOURCE_KEY"
 vehicle_id = "EXISTING_HUB_VEHICLE_UUID"
 car_id = 1
 password_file = "/Users/owner/dev/creds/teslatlas/current-postgres-password"
@@ -177,7 +177,7 @@ an owner-configured runtime dependency, never created by the producer.
 Each attempt opens a read-only repeatable-read transaction, applies a five-second
 statement timeout and selects only the latest position for the configured car.
 No coordinates, charge/state timestamps, tokens, or Tesla commands are read or sent.
-The returned EID/VIN must resolve to the existing TeslaMate source key and exact active
+The returned EID/VIN must resolve to the existing import source key and exact active
 Hub vehicle alias. This path never registers or remaps vehicles.
 
 Battery, ideal/estimated/rated range and odometer come from that single position.
@@ -185,17 +185,18 @@ Each field is independently validated; unusable fields are omitted, and at least
 one usable supported field is required. Ranges and odometer remain in kilometres.
 The source position timestamp is preserved; rows older than five minutes, future
 rows and source/Hub clock skew over two minutes are rejected. Import/poll time is
-never substituted. Newer TeslaMate telemetry uses a sparse summary so older provider
+never substituted. Newer source application telemetry uses a sparse summary so older provider
 fields do not inherit its timestamp. Existing current endpoint authorization and
 App freshness checks remain in place.
 
 The producer polls after 30 seconds on success, bounds each attempt to 15 seconds,
 and backs off failures to at most five minutes. Failures preserve the current cache;
 unchanged source rows do not advance timestamps or allocate repeated cache records.
-Schema 67 adds truthful internal `teslamate_position_v1` provenance and preserves
-existing current records. It does not publish a new signed history checkpoint.
+Schema 67 introduced distinct imported-current provenance. Schema 78 uses
+`source_db_position_v1` for current imported positions and preserves historical
+raw payloads and digests. Neither change publishes a new signed history checkpoint.
 
-## Refresh imported TeslaMate history
+## Refresh imported source history
 
 Historical delivery changes only after an explicit import and publication. The
 current-telemetry worker above refreshes the current cache; it does not import new
@@ -210,17 +211,18 @@ control app before running this command against the same configuration and data:
 ```sh
 /absolute/path/to/teslatlas-hub --config /absolute/path/to/config.toml migrate \
   --source postgresql://reader@127.0.0.1:PORT/DATABASE \
+  --source-key EXISTING_IMPORT_SOURCE_KEY \
   --car-id 1 \
   --postgres-password-file /Users/owner/dev/creds/teslatlas/postgres-password \
-  --history-only --online-snapshot --acknowledge-v4-2-compatible-schema
+  --history-only --online-snapshot --accept-schema-evidence
 ```
 
 Use the existing source-run environment and the exact executable/configuration
 selected by the control app. Serve holds the exclusive instance lock for its
 lifetime, so an import against a serving store is refused. The import leaves the
 Hub stopped. Check its final JSON result and restart that selected Hub through the
-control app after successful publication. Do not stop an unrelated Hub or the
-TeslaMate source to perform this history-only operation.
+control app after successful publication. Do not stop an unrelated Hub or the source application to perform this
+history-only operation.
 
 CLI stdout contains progress objects followed by the final legacy import report;
 neither alone proves App-facing PhysicalV3 publication. Correlate the owned command's
@@ -230,7 +232,7 @@ describe the physical admission. The final legacy report and PhysicalV3 offer ha
 distinct sequence counters; do not require them to match.
 
 The capture uses one exported read-only repeatable-read PostgreSQL snapshot for
-completed history and its open-session tail. TeslaMate can continue collecting;
+completed history and its open-session tail. The source application can continue collecting;
 source rows added after the snapshot belong to the next refresh. This route does
 not inspect, transfer or replace Tesla credentials, and does not transfer collector
 authority. Credential migration continues to require a settled source cutover.
@@ -249,4 +251,4 @@ after checking the sealed capture and every referenced existing pack. Changed
 history publishes a successor; when a changed-set cannot fit, delivery uses the
 explicit full-snapshot replacement path. Clients refresh from the signed history
 head after the Hub restarts. The schema acknowledgement confirms operator knowledge
-of the TeslaMate application version; the database alone cannot prove that version.
+of the source application release; the database alone cannot prove that version.

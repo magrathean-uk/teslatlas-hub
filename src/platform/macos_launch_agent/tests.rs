@@ -8,7 +8,10 @@ fn standalone_preflight_allows_only_known_v66_to_v73_forward_upgrades_without_wr
     let config = source_run_config(temporary.path(), &data_dir);
     let store = HubStore::initialize(&data_dir).unwrap();
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", "preflight-fixture"), 1)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "preflight-fixture"),
+            1,
+        )
         .unwrap();
     let vehicle = store
         .register_vehicle(&VehicleDescriptor::new(source.source_id, "eid:42"), 2)
@@ -140,8 +143,8 @@ fn standalone_preflight_allows_only_known_v66_to_v73_forward_upgrades_without_wr
         .unwrap();
     let schema66 = schema
         .replacen("current_observations", "current_v66", 1)
-        .replace(", 'teslamate_position_v1'", "");
-    assert!(!schema66.contains("teslamate_position_v1"));
+        .replace(", 'source_db_position_v1'", "");
+    assert!(!schema66.contains("source_db_position_v1"));
     connection
         .execute_batch(&format!(
             "BEGIN IMMEDIATE; {schema66};
@@ -149,6 +152,11 @@ fn standalone_preflight_allows_only_known_v66_to_v73_forward_upgrades_without_wr
         DROP TABLE current_observations; ALTER TABLE current_v66 RENAME TO current_observations;
         PRAGMA user_version=66; COMMIT; PRAGMA wal_checkpoint(TRUNCATE);"
         ))
+        .unwrap();
+    // The historical version must also carry its historical import names.
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
+    connection
+        .execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")
         .unwrap();
     drop(connection);
     let before_bytes = fs::read(config.database_path()).unwrap();
@@ -203,23 +211,23 @@ use super::*;
 use crate::{
     config::{CollectorProvider, HubConfig, TlsListenerConfig},
     credentials::OwnerTokens,
-    db::{HubStore, TeslaMateLegacyTokenStore},
+    db::{HubStore, LegacyOwnerTokenStore},
     fleet_api::FleetRegion,
     fleet_credentials::{FleetSetupCredentials, persist_fleet_setup_credentials},
     hub_pack::ProjectionCarSettings,
+    legacy_owner_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
     protocol::CursorKey,
-    teslamate_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
-    teslamate_import::{TeslaMateImportRequest, TeslaMateImportScope, publish_history},
-    teslamate_projection::{TeslaMateCar, TeslaMateHistory},
-    teslamate_token::encrypt_legacy_owner_tokens,
+    source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history},
+    source_db_projection::{SourceDbCar, SourceDbHistory},
+    source_token_envelope::encrypt_legacy_owner_tokens,
 };
 use rcgen::{CertifiedKey, generate_simple_self_signed};
 use std::{os::unix::fs::PermissionsExt, time::SystemTime};
 
 fn seed_selected_car(data_dir: &Path) -> HubStore {
     let store = HubStore::initialize(data_dir).expect("store");
-    let history = TeslaMateHistory {
-        cars: vec![TeslaMateCar {
+    let history = SourceDbHistory {
+        cars: vec![SourceDbCar {
             id: 1,
             eid: 70,
             vid: Some(71),
@@ -246,9 +254,10 @@ fn seed_selected_car(data_dir: &Path) -> HubStore {
     publish_history(
         &store,
         &CursorKey::from_bytes([7; 32]),
-        &TeslaMateImportRequest {
+        &SourceDbImportRequest {
+            new_import_source: false,
             source_key: "install-fixture".to_owned(),
-            scope: TeslaMateImportScope::Selected(1),
+            scope: SourceDbImportScope::Selected(1),
             imported_at_ms: 1_000,
         },
         &history,
@@ -263,7 +272,7 @@ fn seed_ready_hub(data_dir: &Path) {
         OwnerTokens::from_secret_parts("access".to_owned(), "refresh".to_owned()).expect("tokens");
     let key = b"install-fixture-key";
     let (access, refresh) = encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
-    let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("stored tokens");
+    let stored = LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
     replace_key_and_tokens(data_dir, &store, key, &stored).expect("credentials");
 }
 
@@ -308,7 +317,7 @@ fn source_run_config(temporary: &Path, data_dir: &Path) -> HubConfig {
         }),
         collector,
         geocoder: Default::default(),
-        teslamate: Default::default(),
+        import_source: Default::default(),
         terrain: Default::default(),
         http: Default::default(),
         pairing: Default::default(),

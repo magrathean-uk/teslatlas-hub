@@ -56,7 +56,9 @@ fn read_close_tables(store: &HubStore, vehicle: &VehicleRecord) -> CloseTables {
              WHERE vehicle_id = ?1 ORDER BY position_id",
         )
         .unwrap()
-        .query_map(params![key], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .query_map(params![key], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
@@ -76,7 +78,9 @@ fn read_close_tables(store: &HubStore, vehicle: &VehicleRecord) -> CloseTables {
              WHERE vehicle_id = ?1 ORDER BY sample_id",
         )
         .unwrap()
-        .query_map(params![key], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .query_map(params![key], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
         .unwrap()
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
@@ -410,7 +414,7 @@ fn r46_cost_after_closing_with(
     store
         .upsert_geofences(
             vehicle.vehicle_id,
-            &[crate::teslamate_projection::TeslaMateGeofence {
+            &[crate::source_db_projection::SourceDbGeofence {
                 id: 3,
                 name: "F3".to_owned(),
                 latitude: Some(10.0),

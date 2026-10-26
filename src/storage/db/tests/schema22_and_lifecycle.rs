@@ -19,7 +19,7 @@ fn standalone_import_session_survives_reopen_and_generation_promotion() {
         "date_ms": 1_700_000_000_001_i64, "latitude": 0.0, "longitude": 0.0
     }))
     .expect("standalone position");
-    let session = TeslaMateOpenSession {
+    let session = SourceDbOpenSession {
         car_id: 10,
         standalone_positions: vec![position],
         ..Default::default()
@@ -292,7 +292,7 @@ fn initial_schema_22_finalizer_never_exposes_only_schema_21() {
         store
             .stage_import_generation_session(
                 run_id,
-                &crate::teslamate_projection::TeslaMateOpenSession {
+                &crate::source_db_projection::SourceDbOpenSession {
                     car_id: binding.selected_car_id,
                     ..Default::default()
                 },
@@ -377,7 +377,7 @@ fn initial_schema_22_import_atomically_seeds_public_drive_history() {
     store
         .stage_import_generation_session(
             run_id,
-            &crate::teslamate_projection::TeslaMateOpenSession {
+            &crate::source_db_projection::SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -417,7 +417,7 @@ fn initial_schema_22_import_atomically_seeds_public_drive_history() {
     };
     let state = create_direct_import_projection_state(&store, run_id, 10);
     let mut capture =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_initial_base(state);
+        crate::import_projection_state::SourceDbProjectionStateCapture::for_initial_base(state);
     capture.record_car(&car).expect("capture direct car");
     capture
         .record_drive(&drive)
@@ -468,7 +468,7 @@ fn initial_schema_22_finalizer_rejects_source_and_car_binding_mismatch() {
         let source_id = if mismatch_source {
             store
                 .register_source(
-                    &SourceDescriptor::new("teslamate_import", "mismatched-source"),
+                    &SourceDescriptor::new("source_db_import", "mismatched-source"),
                     1_500,
                 )
                 .expect("mismatched source")
@@ -487,7 +487,7 @@ fn initial_schema_22_finalizer_rejects_source_and_car_binding_mismatch() {
         store
             .stage_import_generation_session(
                 run_id,
-                &crate::teslamate_projection::TeslaMateOpenSession {
+                &crate::source_db_projection::SourceDbOpenSession {
                     car_id,
                     ..Default::default()
                 },
@@ -541,7 +541,7 @@ fn imported_home_work_geofences_match_live_endpoints_after_restart() {
     let store = HubStore::initialize(temp.path()).expect("store");
     let (_, vehicle) = test_registered_vehicle(&store);
     let imported = vec![
-        crate::teslamate_projection::TeslaMateGeofence {
+        crate::source_db_projection::SourceDbGeofence {
             id: 10,
             name: "Home".into(),
             latitude: Some(51.0000),
@@ -551,7 +551,7 @@ fn imported_home_work_geofences_match_live_endpoints_after_restart() {
             cost_per_unit: Some(0.30),
             session_fee: Some(2.0),
         },
-        crate::teslamate_projection::TeslaMateGeofence {
+        crate::source_db_projection::SourceDbGeofence {
             id: 11,
             name: "Work".into(),
             latitude: Some(51.0010),
@@ -1518,7 +1518,7 @@ fn native_controls_update_settings_geofences_and_gpx_pages() {
         .save_geofence(
             vehicle.vehicle_id,
             None,
-            crate::teslamate_projection::TeslaMateGeofence {
+            crate::source_db_projection::SourceDbGeofence {
                 id: 0,
                 name: " Home ".into(),
                 latitude: Some(47.5),
@@ -1670,7 +1670,7 @@ fn native_controls_update_settings_geofences_and_gpx_pages() {
         .save_geofence(
             vehicle.vehicle_id,
             None,
-            crate::teslamate_projection::TeslaMateGeofence {
+            crate::source_db_projection::SourceDbGeofence {
                 id: 0,
                 name: "Tariff".into(),
                 latitude: Some(47.5),

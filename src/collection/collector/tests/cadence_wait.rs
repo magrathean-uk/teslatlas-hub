@@ -60,10 +60,10 @@ where
 
 /// An imported, enabled car, with constants of this fixture only.
 fn cadence_wait_seed_car(store: &HubStore) {
-    use crate::teslamate_import::{TeslaMateImportRequest, TeslaMateImportScope, publish_history};
-    use crate::teslamate_projection::{TeslaMateCar, TeslaMateHistory};
-    let history = TeslaMateHistory {
-        cars: vec![TeslaMateCar {
+    use crate::source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history};
+    use crate::source_db_projection::{SourceDbCar, SourceDbHistory};
+    let history = SourceDbHistory {
+        cars: vec![SourceDbCar {
             id: 1,
             eid: 6_100_001,
             vid: Some(6_200_001),
@@ -94,9 +94,10 @@ fn cadence_wait_seed_car(store: &HubStore) {
     publish_history(
         store,
         &CursorKey::from_bytes([0xD4; 32]),
-        &TeslaMateImportRequest {
+        &SourceDbImportRequest {
+            new_import_source: false,
             source_key: "cadence-wait-fixture".to_owned(),
-            scope: TeslaMateImportScope::Selected(1),
+            scope: SourceDbImportScope::Selected(1),
             imported_at_ms: current_epoch_millis().expect("clock") - 60_000,
         },
         &history,

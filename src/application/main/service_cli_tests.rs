@@ -2,7 +2,7 @@
 #![cfg(target_os = "macos")]
 
 use super::super::{Cli, Command, macos_migration_start_request};
-use clap::{Parser, error::ErrorKind};
+use clap::error::ErrorKind;
 
 #[test]
 fn macos_has_no_install_or_service_verb() {

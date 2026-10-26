@@ -36,7 +36,10 @@ fn grant_fixture() -> GrantFixture {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
     let source_id = store
-        .register_source(&SourceDescriptor::new("teslamate", "grants"), 1)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "grants"),
+            1,
+        )
         .expect("source")
         .source_id;
     let register = |key: &str, name: Option<&str>, at_ms: i64| {

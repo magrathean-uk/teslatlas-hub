@@ -75,10 +75,10 @@ from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM 
 assert len(from_lines) == 2
 assert all(re.fullmatch(r"FROM [^ ]+@sha256:[0-9a-f]{64} AS (builder|runtime)", line) for line in from_lines)
 assert not re.search(r"\b(apt|apt-get|apk|dnf|yum|curl|wget)\b", dockerfile)
-fixture_path = Path("fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql")
-assert hashlib.sha256(fixture_path.read_bytes()).hexdigest() == "d8eebcbbb2f7e2039caa5cc509b0ff76b4aea56e4db1631d16f27aabf86d23db"
+fixture_path = Path("fixtures/source-corpus/v1/updates-lossless-selected-car.sql")
+assert hashlib.sha256(fixture_path.read_bytes()).hexdigest() == "3feb7d26022665e9996843bbf62b2352257d24a0019605e184528598da76dbd9"
 delivery = Path("src/sync/updates_delivery.rs").read_text(encoding="utf-8")
-assert 'include_bytes!("../../fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql")' in delivery
+assert 'include_bytes!("../../fixtures/source-corpus/v1/updates-lossless-selected-car.sql")' in delivery
 PY
 
 # Recreate only the builder-stage COPY inputs and compile the production binary.
@@ -86,16 +86,29 @@ PY
 # present in the worktree but absent from a clean Docker build context.
 context_root=$(mktemp -d)
 trap 'find "$context_root" -depth -delete' EXIT HUP INT TERM
-mkdir -p "$context_root/fixtures/teslamate-corpus/v1" "$context_root/packaging/docker"
+mkdir -p "$context_root/fixtures/source-corpus/v1" "$context_root/packaging/docker"
 cp Cargo.toml Cargo.lock build.rs source_identity.rs "$context_root/"
 cp -R compute "$context_root/"
 cp LICENSE NOTICE "$context_root/"
 cp -R src examples tests "$context_root/"
-cp fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql \
-    "$context_root/fixtures/teslamate-corpus/v1/"
+cp fixtures/source-corpus/v1/updates-lossless-selected-car.sql \
+    "$context_root/fixtures/source-corpus/v1/"
 cp packaging/docker/initialize-volume.sh "$context_root/packaging/docker/"
+docker_context_target="${CARGO_TARGET_DIR:-$context_root/target}/docker-context-check"
+docker_context_target=$(
+    python3 - "$root" "$docker_context_target" <<'PY_GUARD'
+import os
+import sys
+checkout = os.path.realpath(sys.argv[1])
+target = os.path.realpath(sys.argv[2])
+if os.path.commonpath([checkout, target]) == checkout:
+    print("Docker context check target must be outside the checkout.", file=sys.stderr)
+    raise SystemExit(1)
+print(target)
+PY_GUARD
+)
 TESLATLAS_HUB_SOURCE_COMMIT=0123456789abcdef0123456789abcdef01234567 \
-    CARGO_TARGET_DIR="$root/target/docker-context-check" \
+    CARGO_TARGET_DIR="$docker_context_target" \
     cargo check --locked --offline --manifest-path "$context_root/Cargo.toml" \
     --bin teslatlas-hub --quiet
 
@@ -132,7 +145,7 @@ test ! -e "$context_root/fabricated-remote.tar"
 grep -F 'COPY Cargo.toml Cargo.lock build.rs source_identity.rs ./' Dockerfile >/dev/null
 grep -F 'COPY compute ./compute' Dockerfile >/dev/null
 grep -F 'COPY LICENSE NOTICE ./' Dockerfile >/dev/null
-grep -F 'COPY fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql ./fixtures/teslamate-corpus/v1/updates-lossless-selected-car.sql' Dockerfile >/dev/null
+grep -F 'COPY fixtures/source-corpus/v1/updates-lossless-selected-car.sql ./fixtures/source-corpus/v1/updates-lossless-selected-car.sql' Dockerfile >/dev/null
 grep -F 'COPY packaging/docker/initialize-volume.sh ./packaging/docker/initialize-volume.sh' Dockerfile >/dev/null
 grep -F 'TESLATLAS_HUB_SOURCE_COMMIT="${TESLATLAS_HUB_SOURCE_COMMIT}"' Dockerfile >/dev/null
 grep -F 'ARG SOURCE_DATE_EPOCH' Dockerfile >/dev/null

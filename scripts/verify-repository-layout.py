@@ -30,6 +30,11 @@ DOC_CATEGORIES = {
     "releases",
 }
 REQUIRED_PATHS = {
+    "scripts/verify-name-policy.py",
+    "scripts/test-name-policy.sh",
+    "scripts/name-policy/allow.json",
+    "scripts/name-policy/pins.json",
+    "scripts/name-policy/milestones.json",
     ".github/CODE_OF_CONDUCT.md",
     ".github/CONTRIBUTING.md",
     ".github/README.md",

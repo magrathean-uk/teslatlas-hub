@@ -4,7 +4,7 @@
 //!
 //! Hub uses `ring` rather than compiling the larger AWS-LC provider on each
 //! small native host. Installing it here also keeps TLS setup deterministic
-//! when the HTTP listener and TeslaMate PostgreSQL reader run in one process.
+//! when the HTTP listener and source database PostgreSQL reader run in one process.
 
 /// Install the Hub's sole Rustls provider. Repeated calls are harmless: the
 /// first call wins and later calls observe the same provider already present.

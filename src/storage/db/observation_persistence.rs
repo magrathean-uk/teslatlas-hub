@@ -2,7 +2,7 @@
 
 impl HubStore {
     /// Bounded current-only cache: source row time is immutable on an unchanged retry.
-    pub(crate) fn record_teslamate_current(
+    pub(crate) fn record_source_db_current(
         &self,
         input: &ObservationInput,
         received_at_ms: i64,
@@ -10,7 +10,7 @@ impl HubStore {
         input.validate()?;
         validate_timestamp("current received_at_ms", received_at_ms)?;
         if input.payload.get("record_type").and_then(Value::as_str)
-            != Some(crate::collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE)
+            != Some(crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE)
         {
             return Err(StoreError::InvalidCurrentDiscovery);
         }
@@ -55,7 +55,7 @@ impl HubStore {
                     payload,
                     // C6 R70: the record type binds as the seventh parameter so
                     // that the statement's other parameters keep their numbers.
-                    crate::collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE
+                    crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE
                 ],
             )
             .map_err(StoreError::AppendObservation)?
@@ -65,8 +65,8 @@ impl HubStore {
             .map_err(StoreError::AppendObservation)?;
         Ok(inserted)
     }
-    /// Resolve the already registered TeslaMate alias, never create or remap identity.
-    pub(crate) fn teslamate_current_source(
+    /// Resolve the already registered source database alias, never create or remap identity.
+    pub(crate) fn source_db_current_source(
         &self,
         source_key: &str,
         vehicle_id: Uuid,
@@ -130,7 +130,7 @@ fn append_observation_in_transaction(
                     | "fleet_api_discovery_v1"
                     | "fleet_api_vehicle_data_v1"
                     | "tesla_stream_update_v1"
-                    | crate::collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE
+                    | crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE
             )
         });
     if let Some(record_type) = record_type
@@ -522,7 +522,7 @@ fn fold_open_charge_samples_for_parent(
 
 /// One stored open charge sample. A live sample is stored as a
 /// `ProjectionChargeSample`; an imported open session's seeded samples are
-/// stored as the imported `TeslaMateCharge` row (the seed copies them as they
+/// stored as the imported `SourceDbCharge` row (the seed copies them as they
 /// arrive), so that shape is read too and projected, as the import does. Both
 /// give the same `ProjectionChargeSample`, so the close sequence of an
 /// imported open process (C2 R5 exception b, T63) sees its imported samples.
@@ -531,8 +531,8 @@ fn parse_open_charge_sample(
 ) -> Result<crate::hub_pack::ProjectionChargeSample, StoreError> {
     match serde_json::from_str(json) {
         Ok(sample) => Ok(sample),
-        Err(error) => serde_json::from_str::<crate::teslamate_projection::TeslaMateCharge>(json)
-            .map(|imported| crate::teslamate_projection::project_charge_sample(&imported))
+        Err(error) => serde_json::from_str::<crate::source_db_projection::SourceDbCharge>(json)
+            .map(|imported| crate::source_db_projection::project_charge_sample(&imported))
             .map_err(|_| StoreError::DeserializeLifecycleRow(error)),
     }
 }

@@ -2,4 +2,4 @@
 
 //! External data-source import boundaries.
 
-pub mod teslamate;
+pub mod source_db;

@@ -172,8 +172,8 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
     }
     private var errorMessage: String?
-    private var migrationDiagnostic: TeslaMateSSHDiagnostic?
-    private var compatibility: HubTeslaMateCompatibility?
+    private var migrationDiagnostic: SourceSSHDiagnostic?
+    private var compatibility: HubSourceCheckResult?
     private var checks: [HubOnboardingCheck] = []
     private var verificationFinished = false
     private var handoverAcknowledged = false
@@ -218,7 +218,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         checkboxWithTitle: HubL10n.text("hub.OnboardingWindowController.200.1857", fallback: "Use a local PostgreSQL snapshot (history only)"), target: nil, action: nil
     )
     private let migrationVersionAcknowledgement = NSButton(
-        checkboxWithTitle: HubL10n.text("hub.OnboardingWindowController.203.1858", fallback: "I confirm this server runs TeslaMate 4.2.0 or newer"),
+        checkboxWithTitle: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.2.0 or later and will not be updated during the import."),
         target: nil,
         action: nil
     )
@@ -229,7 +229,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private let migrationCarID = NSTextField(string: "")
     private let migrationPasswordFile = NSTextField(string: "")
     private let migrationKeyFile = NSTextField(string: "")
-    private var migrationSession: TeslaMateServerImportSession?
+    private var migrationSession: SourceServerImportSession?
     private var migrationPreparation: HubMigrationPreparation?
     private var accountSignIn: HubAccountSignIn?
     private var lifecycleObservation: HubLifecycleAuthority.Observation?
@@ -270,7 +270,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             case .importing:
                 route = .migration
                 shouldAutoVerify = false
-                resumeMessage = HubL10n.text("hub.OnboardingWindowController.252.1859", fallback: "The previous import did not finish. Check TeslaMate and run the import again.")
+                resumeMessage = HubL10n.text("hub.OnboardingWindowController.252.1859", fallback: "The previous import did not finish. Check the source application and run the import again.")
             case .awaitingVerification:
                 route = .verify
                 shouldAutoVerify = true
@@ -307,16 +307,16 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         window.toolbarStyle = .unified
         window.titlebarSeparatorStyle = .automatic
         if effectivePreviewRoute == "migration-connected" {
-            migrationServer.stringValue = "teslamate.local"
-            compatibility = HubTeslaMateCompatibility(
+            migrationServer.stringValue = "server.local"
+            compatibility = HubSourceCheckResult(
                 compatible: true,
                 message: HubL10n.text("hub.OnboardingWindowController.292.1862", fallback: "Ready to import."),
                 reasonCode: "preview",
-                requiredVersion: "4.2.0"
+                requiredVersion: "4.2.0", schemaRecognised: true, schemaSetLabel: "0123456789ab"
             )
         } else if effectivePreviewRoute == "migration-error" {
-            migrationDiagnostic = TeslaMateSSHDiagnostic(
-                reasonCode: "preview", title: HubL10n.text("hub.OnboardingWindowController.298.1866", fallback: "TeslaMate connection failed"),
+            migrationDiagnostic = SourceSSHDiagnostic(
+                reasonCode: "preview", title: HubL10n.text("hub.OnboardingWindowController.298.1866", fallback: "Source application connection failed"),
                 summary: HubL10n.text("hub.OnboardingWindowController.299.1867", fallback: "This account cannot access Docker."),
                 suggestions: [HubL10n.text("hub.OnboardingWindowController.300.1868", fallback: "Check the server account and Docker access, then try again.")],
                 recoveryActions: [.openLogs])
@@ -475,14 +475,14 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationAuthentication.action = #selector(migrationAuthenticationChanged)
         migrationUseSudo.state = .off
         migrationUseSudo.title = ""
-        migrationUseSudo.setAccessibilityLabel("This user needs sudo to read the TeslaMate database")
+        migrationUseSudo.setAccessibilityLabel("This user needs sudo to read the source database")
         migrationUseSudo.controlSize = .regular
         migrationUseLocalHistory.target = self
         migrationUseLocalHistory.action = #selector(localHistorySelectionChanged)
         migrationUseLocalHistory.identifier = NSUserInterfaceItemIdentifier("onboarding.local-history")
         migrationVersionAcknowledgement.title = ""
         migrationVersionAcknowledgement.setAccessibilityLabel(
-            HubL10n.text("hub.OnboardingWindowController.203.1858", fallback: "I confirm this server runs TeslaMate 4.2.0 or newer")
+            HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.2.0 or later and will not be updated during the import.")
         )
         migrationVersionAcknowledgement.controlSize = .regular
         migrationVersionAcknowledgement.target = self
@@ -514,7 +514,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         fleetClientID.placeholderString = HubL10n.text("hub.OnboardingWindowController.482.1905", fallback: "Tesla application client ID")
         legacyAccessToken.placeholderString = HubL10n.text("hub.OnboardingWindowController.474.1900", fallback: "Access token")
         legacyRefreshToken.placeholderString = HubL10n.text("hub.OnboardingWindowController.481.1904", fallback: "Refresh token")
-        migrationServer.placeholderString = "teslamate.local"
+        migrationServer.placeholderString = "server.local"
         migrationIdentityFile.placeholderString = HubL10n.text("hub.OnboardingWindowController.486.1909", fallback: "Optional — uses SSH agent or default keys")
         migrationSSHPassword.placeholderString = HubL10n.text("hub.OnboardingWindowController.487.1910", fallback: "SSH password")
     }
@@ -622,7 +622,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .provider: return HubL10n.text("hub.OnboardingWindowController.590.1919", fallback: "Choose how Hub connects")
         case .fleet: return HubL10n.text("hub.OnboardingWindowController.591.1920", fallback: "Set up Fleet Telemetry")
         case .legacy: return HubL10n.text("hub.OnboardingWindowController.592.1921", fallback: "Connect with a token")
-        case .migration: return HubL10n.text("hub.OnboardingWindowController.593.1922", fallback: "Migrate from TeslaMate")
+        case .migration: return HubL10n.text("hub.OnboardingWindowController.593.1922", fallback: "Import History…")
         case .verify: return HubL10n.text("hub.OnboardingWindowController.594.1923", fallback: "Checking your Hub")
         case .finish: return state.path == .migration ? HubL10n.text("hub.OnboardingWindowController.595.1924", fallback: "Migration complete") : HubL10n.text("hub.OnboardingWindowController.595.1925", fallback: "Teslatlas Hub is ready")
         }
@@ -633,7 +633,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .welcome:
             return HubL10n.text("hub.OnboardingWindowController.602.1926", fallback: "Your own Tesla telemetry collector, running privately on this Mac.")
         case .choose:
-            return HubL10n.text("hub.OnboardingWindowController.604.1927", fallback: "Set up a fresh Hub or bring your history over from TeslaMate.")
+            return HubL10n.text("hub.OnboardingWindowController.604.1927", fallback: "Set up a fresh Hub or bring your history over from the source application.")
         case .provider:
             return HubL10n.text("hub.OnboardingWindowController.606.1928", fallback: "Fleet Telemetry is recommended. Legacy tokens work with older setups.")
         case .fleet:
@@ -641,12 +641,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .legacy:
             return HubL10n.text("hub.OnboardingWindowController.610.1930", fallback: "Sign in with Tesla, or paste an existing token pair.")
         case .migration:
-            return HubL10n.text("hub.OnboardingWindowController.612.1931", fallback: "Connect to your TeslaMate server to import its vehicle history.")
+            return HubL10n.text("hub.OnboardingWindowController.612.1931", fallback: "Connect to your source application server to import its vehicle history.")
         case .verify:
             return HubL10n.text("hub.OnboardingWindowController.614.1932", fallback: "Making sure everything is wired up correctly.")
         case .finish:
             return state.path == .migration
-                ? HubL10n.text("hub.OnboardingWindowController.617.1933", fallback: "Your TeslaMate history has been imported into Hub.")
+                ? HubL10n.text("hub.OnboardingWindowController.617.1933", fallback: "Your vehicle history has been imported into Hub.")
                 : HubL10n.text("hub.OnboardingWindowController.618.1934", fallback: "Hub is set up and ready to start collecting vehicle data.")
         }
     }
@@ -721,7 +721,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             onboardingFeatureRow(symbol: "cylinder", title: HubL10n.text("hub.OnboardingWindowController.689.1946", fallback: "Keep your history here"),
                                  subtitle: HubL10n.text("hub.OnboardingWindowController.690.1947", fallback: "Store data locally on this Mac.")),
             onboardingFeatureRow(symbol: "square.and.arrow.down", title: HubL10n.text("hub.OnboardingWindowController.691.1949", fallback: "Bring your existing history"),
-                                 subtitle: HubL10n.text("hub.OnboardingWindowController.692.1950", fallback: "Import from TeslaMate when you are ready."))
+                                 subtitle: HubL10n.text("hub.OnboardingWindowController.692.1950", fallback: "Import from the source application when you are ready."))
         ]
         let stack = NSStackView()
         stack.orientation = .vertical
@@ -769,7 +769,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                  subtitle: HubL10n.text("hub.OnboardingWindowController.737.1953", fallback: "Start with a fresh database."),
                                  selected: state.path == .newInstallation,
                                  action: #selector(selectNewInstallation))
-        let migration = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.593.1922", fallback: "Migrate from TeslaMate"),
+        let migration = choiceButton(title: HubL10n.text("hub.OnboardingWindowController.593.1922", fallback: "Import History…"),
                                      subtitle: HubL10n.text("hub.OnboardingWindowController.741.1955", fallback: "Bring your existing vehicle history."),
                                      selected: state.path == .migration,
                                      action: #selector(selectMigration))
@@ -837,6 +837,20 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         return withError(stack)
     }
 
+    private func sourceImportIntroduction() -> NSView {
+        let intro = NSTextField(wrappingLabelWithString: HubL10n.text("hub.import.intro", fallback: "Import history from the PostgreSQL database of the vehicle-data software you used before (the source database). Hub checks the database first and tells you whether this release can import it. Importing only reads the source database; it never changes it."))
+        let explanation = NSTextField(wrappingLabelWithString: HubL10n.text("hub.import.ackExplain", fallback: "A schema check cannot show which release of the source application wrote this database: more than one release shares this schema."))
+        explanation.textColor = .secondaryLabelColor
+        let stack = NSStackView(views: [intro, explanation])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        for view in stack.arrangedSubviews {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+        return stack
+    }
+
     private func migrationBody() -> NSView {
         if busyOperation == .importing {
             return migrationProgressBody()
@@ -879,10 +893,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             fields.append((HubL10n.text("hub.OnboardingWindowController.password_label", fallback: "Password"), migrationSSHPassword))
             migrationKeyViews.append(migrationSSHPassword)
         }
-        var views: [NSView] = [migrationUseLocalHistory, onboardingForm(fields)]
+        var views: [NSView] = [sourceImportIntroduction(), migrationUseLocalHistory, onboardingForm(fields)]
         views.append(wrappingCheckbox(
             migrationUseSudo,
-            title: HubL10n.text("hub.OnboardingWindowController.446.1897", fallback: "This user needs sudo to read the TeslaMate database")
+            title: HubL10n.text("hub.OnboardingWindowController.446.1897", fallback: "This user needs sudo to read the source database")
         ))
         migrationKeyViews.append(contentsOf: [migrationUseSudo, migrationUseLocalHistory])
 
@@ -894,10 +908,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
         if let compatibility {
-            let status = featureRow(compatibility.message,
-                                    compatibility.compatible ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
-                                    color: compatibility.compatible ? .systemGreen : .systemOrange)
+            let status = sourceStatusRow(compatibility)
             stack.addArrangedSubview(status)
+            addSourceGuidance(compatibility, to: stack)
             status.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
         if let migrationDiagnostic {
@@ -909,6 +922,41 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         return withError(stack)
     }
 
+    private func sourceStatusRow(_ report: HubSourceCheckResult) -> NSView {
+        let row = featureRow(sourceRecognitionTitle(report),
+            report.mayImport ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
+            color: report.mayImport ? .systemGreen : .systemOrange)
+        row.identifier = NSUserInterfaceItemIdentifier(report.recognitionKey ?? "hub.import.guidance")
+        return row
+    }
+
+    #if DEBUG
+    func configureLocalHistoryForTests(source: String, carID: String, passwordFile: String) {
+        migrationUseLocalHistory.state = .on
+        migrationSource.stringValue = source
+        migrationCarID.stringValue = carID
+        migrationPasswordFile.stringValue = passwordFile
+        migrationVersionAcknowledgement.state = .on
+        compatibility = nil
+        render()
+    }
+    func showSourceConnectionFormForTests() { migrationUseLocalHistory.state = .off; render() }
+    func checkLocalHistoryForTests() { checkLocalHistory() }
+    func importLocalHistoryForTests() { importLocalHistory() }
+    var localHistoryReportForTests: HubSourceCheckResult? { compatibility }
+
+    #endif
+
+    private func sourceRecognitionTitle(_ report: HubSourceCheckResult) -> String { report.recognitionTitle }
+
+    private func addSourceGuidance(_ report: HubSourceCheckResult, to stack: NSStackView) {
+        guard !report.compatible, report.recognitionKey != nil, report.message != report.recognitionTitle else { return }
+        let guidance = NSTextField(wrappingLabelWithString: report.message)
+        guidance.maximumNumberOfLines = 0
+        stack.addArrangedSubview(guidance)
+        guidance.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+    }
+
     private func localHistoryBody() -> NSView {
         let choosePassword = HubActionButton(title: HubL10n.text("hub.ImportSheetController.110.1702", fallback: "Choose…"), target: self,
                                              action: #selector(chooseMigrationPassword))
@@ -917,38 +965,37 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         passwordRow.spacing = 8
         passwordRow.alignment = .centerY
         let note = NSTextField(wrappingLabelWithString:
-            HubL10n.text("hub.OnboardingWindowController.888.1990", fallback: "History only. Hub will not inspect or import Tesla credentials. Collection remains off. The database schema can be checked; the TeslaMate application version remains unknown."))
+            HubL10n.text("hub.OnboardingWindowController.888.1990", fallback: "History only. Hub will not inspect or import Tesla credentials. Collection remains off. The database schema can be checked; the source application version remains unknown."))
         note.maximumNumberOfLines = 0
-        let stack = NSStackView(views: [migrationUseLocalHistory,
+        let stack = NSStackView(views: [sourceImportIntroduction(), migrationUseLocalHistory,
             onboardingForm([(HubL10n.text("hub.OnboardingWindowController.891.1991", fallback: "Local PostgreSQL source"), migrationSource),
                             (HubL10n.text("hub.ImportSheetController.65.1695", fallback: "Car ID"), migrationCarID),
                             (HubL10n.text("hub.ImportSheetController.69.1697", fallback: "Password file"), passwordRow)]), note,
             wrappingCheckbox(migrationVersionAcknowledgement,
-                title: HubL10n.text("hub.OnboardingWindowController.895.1994", fallback: "I acknowledge this is a v4.2-compatible database schema, not proof of the application version"))])
+                title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.2.0 or later and will not be updated during the import."))])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 12
         for view in stack.arrangedSubviews { view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true }
         if let compatibility {
-            stack.addArrangedSubview(featureRow(compatibility.message,
-                compatibility.compatible ? "checkmark.circle.fill" : "exclamationmark.triangle.fill",
-                color: compatibility.compatible ? .systemGreen : .systemOrange))
+            stack.addArrangedSubview(sourceStatusRow(compatibility))
+            addSourceGuidance(compatibility, to: stack)
         }
         migrationKeyViews = [migrationUseLocalHistory, migrationSource, migrationCarID,
                              migrationPasswordFile, choosePassword, migrationVersionAcknowledgement]
         return withError(stack)
     }
 
-    private func connectedMigrationBody(_ session: TeslaMateServerImportSession) -> NSView {
+    private func connectedMigrationBody(_ session: SourceServerImportSession) -> NSView {
         migrationConnectButton = nil
         let host = migrationServer.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        var views: [NSView] = [migrationSuccessCard(host: host)]
-        if let version = session.teslaMateVersion {
-            views.append(featureRow(HubL10n.format("hub.OnboardingWindowController.915.1997", fallback: "TeslaMate %1$@", arguments: [String(describing: version)]), "info.circle", color: HubPalette.mutedForeground))
+        var views: [NSView] = [sourceImportIntroduction(), migrationSuccessCard(host: host)]
+        if let version = session.sourceVersion {
+            views.append(featureRow(HubL10n.format("hub.OnboardingWindowController.915.1997", fallback: "Source application %1$@", arguments: [String(describing: version)]), "info.circle", color: HubPalette.mutedForeground))
         }
         views.append(wrappingCheckbox(
             migrationVersionAcknowledgement,
-            title: HubL10n.text("hub.OnboardingWindowController.203.1858", fallback: "I confirm this server runs TeslaMate 4.2.0 or newer")
+            title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.2.0 or later and will not be updated during the import.")
         ))
         migrationKeyViews = [migrationVersionAcknowledgement]
 
@@ -960,7 +1007,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             checking.spacing = 8
             checking.alignment = .centerY
             views.append(checking)
-        } else if compatibility?.compatible == true {
+        } else if compatibility?.mayImport == true {
             views.append(featureRow(HubL10n.text("hub.OnboardingWindowController.292.1862", fallback: "Ready to import."), "checkmark.circle", color: HubPalette.success))
         }
 
@@ -991,7 +1038,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             migrationSuccessCard(host: migrationServer.stringValue),
             wrappingCheckbox(
                 migrationVersionAcknowledgement,
-                title: HubL10n.text("hub.OnboardingWindowController.203.1858", fallback: "I confirm this server runs TeslaMate 4.2.0 or newer")
+                title: HubL10n.text("hub.import.ackRelease", fallback: "I confirm that the source application is at release 4.2.0 or later and will not be updated during the import.")
             )
         ])
         stack.orientation = .vertical
@@ -1014,7 +1061,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         icon.heightAnchor.constraint(equalToConstant: 16).isActive = true
         let title = NSTextField(labelWithString: HubL10n.format("hub.OnboardingWindowController.983.2008", fallback: "Connected to %1$@", arguments: [String(describing: host)]))
         title.font = HubTypography.emphasis
-        let detail = NSTextField(labelWithString: HubL10n.text("hub.OnboardingWindowController.985.2009", fallback: "Found a TeslaMate database ready to import."))
+        let detail = NSTextField(labelWithString: HubL10n.text("hub.OnboardingWindowController.985.2009", fallback: "Found a source database ready to import."))
         detail.font = HubTypography.body
         detail.textColor = HubPalette.mutedForeground
         let copy = NSStackView(views: [title, detail])
@@ -1100,10 +1147,10 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                                 fallback: "Preparing imported history…")
         }
         return HubL10n.text("hub.OnboardingWindowController.1016.2012",
-                            fallback: "Copying your TeslaMate history into Hub.")
+                            fallback: "Copying your vehicle history into Hub.")
     }
 
-    private func migrationDiagnosticView(_ diagnostic: TeslaMateSSHDiagnostic) -> NSView {
+    private func migrationDiagnosticView(_ diagnostic: SourceSSHDiagnostic) -> NSView {
         let title = NSTextField(wrappingLabelWithString: diagnostic.title)
         title.font = HubTypography.emphasis
         title.textColor = HubPalette.foreground
@@ -1246,7 +1293,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         if state.path == .migration {
             let handoverTitle = migrationUseLocalHistory.state == .on
                 ? HubL10n.text("hub.OnboardingWindowController.1198.2028", fallback: "I understand collection remains disabled; this Hub serves imported history only")
-                : HubL10n.text("hub.OnboardingWindowController.1199.2029", fallback: "I have disabled Tesla access in TeslaMate to avoid duplicate requests")
+                : HubL10n.text("hub.OnboardingWindowController.1199.2029", fallback: "I have disabled Tesla access in the source application to avoid duplicate requests")
             let acknowledgement = NSButton(checkboxWithTitle: "",
                                            target: self,
                                            action: #selector(handoverChanged(_:)))
@@ -1356,7 +1403,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             } else if isPreviewConnectedMigration {
                 continueButton.isEnabled = migrationVersionAcknowledgement.state == .on && !blocked
             } else if migrationSession != nil {
-                continueButton.isEnabled = compatibility?.compatible == true && !blocked
+                continueButton.isEnabled = compatibility?.mayImport == true && !blocked
             } else {
                 continueButton.isEnabled = migrationConnectionInputsValid && !blocked
             }
@@ -1378,7 +1425,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 footerSpinner.startAnimation(nil)
             }
             if busyOperation == .connecting {
-                migrationSpinner.toolTip = HubL10n.text("hub.OnboardingWindowController.1324.2038", fallback: "Connecting securely to TeslaMate")
+                migrationSpinner.toolTip = HubL10n.text("hub.OnboardingWindowController.1324.2038", fallback: "Connecting securely to the source application")
                 migrationSpinner.startAnimation(nil)
             } else {
                 migrationSpinner.stopAnimation(nil)
@@ -1413,7 +1460,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         case .legacy: return HubL10n.text("hub.MainWindowController.26.1772", fallback: "Connect Tesla")
         case .migration:
             if migrationUseLocalHistory.state == .on {
-                return compatibility?.compatible == true ? HubL10n.text("hub.OnboardingWindowController.1359.2044", fallback: "Import History") : HubL10n.text("hub.OnboardingWindowController.1359.2045", fallback: "Check Snapshot")
+                return compatibility?.mayImport == true ? HubL10n.text("hub.OnboardingWindowController.1359.2044", fallback: "Import History") : HubL10n.text("hub.OnboardingWindowController.1359.2045", fallback: "Check Snapshot")
             }
             return isPreviewConnectedMigration || migrationSession != nil
                 ? HubL10n.text("hub.OnboardingWindowController.1362.2046", fallback: "Import Data") : HubL10n.text("hub.OnboardingWindowController.1362.2047", fallback: "Connect to Server")
@@ -1491,7 +1538,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
             configureLegacy()
         case .migration:
             if migrationUseLocalHistory.state == .on {
-                if compatibility?.compatible == true {
+                if compatibility?.mayImport == true {
                     importLocalHistory()
                 } else {
                     checkLocalHistory()
@@ -1664,9 +1711,9 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     private func checkLocalHistory() {
         guard localHistoryInputsValid else { return }
         setBusy(true, operation: .checkingCompatibility)
-        controller.checkTeslaMateCompatibility(source: migrationSource.stringValue,
+        controller.checkSourceCompatibility(source: migrationSource.stringValue,
             carID: migrationCarID.stringValue, passwordFile: migrationPasswordFile.stringValue,
-            acknowledgeV42CompatibleSchema: true, historyOnly: true) { [weak self] result in
+            acceptSchemaEvidence: true, historyOnly: true) { [weak self] result in
             guard let self else { return }
             self.setBusy(false)
             switch result {
@@ -1680,12 +1727,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
     }
 
     private func importLocalHistory() {
-        guard localHistoryInputsValid, compatibility?.compatible == true else { return }
+        guard localHistoryInputsValid, compatibility?.mayImport == true else { return }
         startMigrationProgress()
         setBusy(true, operation: .importing)
-        controller.importTeslaMateHistoryOnlyOnline(source: migrationSource.stringValue,
+        controller.importSourceHistoryOnlyOnline(source: migrationSource.stringValue,
             carID: migrationCarID.stringValue, passwordFile: migrationPasswordFile.stringValue,
-            acknowledgeV42CompatibleSchema: true,
+            acceptSchemaEvidence: true,
             progress: { [weak self] update in self?.updateMigrationProgress(update) }) {
                 [weak self] result in self?.setupFinished(result)
             }
@@ -1696,12 +1743,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         let user = migrationUser.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let port = Int(migrationPort.stringValue), (1...65535).contains(port),
               !host.isEmpty, !user.isEmpty else {
-            HubAppLog.shared.record("compatibility.rejected", category: "teslamate_import",
+            HubAppLog.shared.record("compatibility.rejected", category: "history_import",
                                     level: "WARN", fields: ["reason": "missing_server_input"])
-            showInlineError(HubL10n.text("hub.OnboardingWindowController.1631.2105", fallback: "Enter the TeslaMate server, SSH user, and port."))
+            showInlineError(HubL10n.text("hub.OnboardingWindowController.1631.2105", fallback: "Enter the source application server, SSH user, and port."))
             return
         }
-        HubAppLog.shared.record("compatibility.started", category: "teslamate_import")
+        HubAppLog.shared.record("compatibility.started", category: "history_import")
         setBusy(true, operation: .connecting)
         let requestedMigrationIdentity = currentMigrationIdentity
         compatibility = nil
@@ -1710,7 +1757,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         migrationVersionAcknowledgement.state = .off
         closeMigrationSession()
         connectedMigrationIdentity = nil
-        let authentication: TeslaMateSSHAuthentication
+        let authentication: SourceSSHAuthentication
         if migrationAuthentication.indexOfSelectedItem == 0 {
             let path = migrationIdentityFile.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             authentication = .key(identityFile: path.isEmpty ? nil : URL(fileURLWithPath: path))
@@ -1741,7 +1788,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 self.migrationKeyFile.stringValue = session.encryptionKeyFile.path
                 self.checkConnectedMigrationSession(session)
             case let .failure(error):
-                HubAppLog.shared.record("connection.failed", category: "teslamate_import",
+                HubAppLog.shared.record("connection.failed", category: "history_import",
                                         level: "ERROR",
                                         fields: ["error_code": HubAppLog.errorCode(error)])
                 self.setBusy(false)
@@ -1752,7 +1799,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 }
                 self.compatibility = nil
                 self.errorMessage = nil
-                self.migrationDiagnostic = TeslaMateServerImporter.connectionDiagnostic(
+                self.migrationDiagnostic = SourceServerImporter.connectionDiagnostic(
                     for: error,
                     authentication: authentication
                 )
@@ -1761,32 +1808,32 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         }
     }
 
-    private func checkConnectedMigrationSession(_ session: TeslaMateServerImportSession) {
+    private func checkConnectedMigrationSession(_ session: SourceServerImportSession) {
         guard session === migrationSession else { return }
         let versionAccepted = migrationVersionAcknowledgement.state == .on
         guard versionAccepted else {
             setBusy(false)
-            compatibility = HubTeslaMateCompatibility(
+            compatibility = HubSourceCheckResult(
                 compatible: false,
-                message: HubL10n.text("hub.OnboardingWindowController.1691.2113", fallback: "The database schema cannot distinguish TeslaMate 4.1.1 from 4.2.0. Confirm the running server is 4.2.0 or newer, then continue."),
+                message: HubL10n.text("hub.OnboardingWindowController.1691.2113", fallback: "A schema check cannot establish the source application release. Confirm that the running server is at release 4.2.0 or later, then continue."),
                 reasonCode: "v4_2_version_unconfirmed",
                 requiredVersion: "4.2.0"
             )
             render()
             return
         }
-        controller.checkTeslaMateCompatibility(
+        controller.checkSourceCompatibility(
             source: session.source,
             carID: session.carID,
             passwordFile: session.passwordFile.path,
-            acknowledgeV42CompatibleSchema: versionAccepted
+            acceptSchemaEvidence: versionAccepted
         ) { [weak self] check in
             guard let self else { return }
             self.setBusy(false)
             switch check {
             case let .success(report):
                 HubAppLog.shared.record("compatibility.completed",
-                                        category: "teslamate_import",
+                                        category: "history_import",
                                         fields: [
                                             "compatible": report.compatible ? "true" : "false",
                                             "reason": report.reasonCode
@@ -1794,12 +1841,12 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
                 self.compatibility = report
                 self.errorMessage = nil
             case let .failure(error):
-                HubAppLog.shared.record("compatibility.failed", category: "teslamate_import",
+                HubAppLog.shared.record("compatibility.failed", category: "history_import",
                                         level: "ERROR",
                                         fields: ["error_code": HubAppLog.errorCode(error)])
                 self.closeMigrationSession()
                 self.connectedMigrationIdentity = nil
-                self.compatibility = HubTeslaMateCompatibility(compatible: false,
+                self.compatibility = HubSourceCheckResult(compatible: false,
                                                                message: error.localizedDescription,
                                                                reasonCode: "unavailable",
                                                                requiredVersion: "4.2.0")
@@ -1813,28 +1860,28 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate, NS
         guard let session = migrationSession,
               migrationInputsComplete,
               versionAccepted,
-              compatibility?.compatible == true else {
-            HubAppLog.shared.record("import.rejected", category: "teslamate_import",
+              compatibility?.mayImport == true else {
+            HubAppLog.shared.record("import.rejected", category: "history_import",
                                     level: "WARN", fields: ["reason": "connection_not_ready"])
-            showInlineError(HubL10n.text("hub.OnboardingWindowController.1740.2131", fallback: "Connect to the TeslaMate server before importing."))
+            showInlineError(HubL10n.text("hub.OnboardingWindowController.1740.2131", fallback: "Connect to the source application server before importing."))
             return
         }
         guard connectedMigrationIdentity == currentMigrationIdentity else {
-            HubAppLog.shared.record("import.rejected", category: "teslamate_import",
+            HubAppLog.shared.record("import.rejected", category: "history_import",
                                     level: "WARN", fields: ["reason": "settings_changed"])
             closeMigrationSession()
             connectedMigrationIdentity = nil
             compatibility = nil
-            showInlineError(HubL10n.text("hub.OnboardingWindowController.1750.2137", fallback: "Server settings changed. Connect to the TeslaMate server again before importing."))
+            showInlineError(HubL10n.text("hub.OnboardingWindowController.1750.2137", fallback: "Server settings changed. Connect to the source application server again before importing."))
             return
         }
         startMigrationProgress()
         setBusy(true, operation: .importing)
-        controller.importTeslaMateOnline(source: session.source,
+        controller.importSourceOnline(source: session.source,
                                          carID: session.carID,
                                          passwordFile: session.passwordFile.path,
                                          encryptionKeyFile: session.encryptionKeyFile.path,
-                                         acknowledgeV42CompatibleSchema: versionAccepted,
+                                         acceptSchemaEvidence: versionAccepted,
                                          progress: { [weak self] update in
                                              self?.updateMigrationProgress(update)
                                          }) { [weak self, controller] result in

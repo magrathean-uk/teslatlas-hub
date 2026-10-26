@@ -14,7 +14,7 @@ use super::{
     tests::record,
 };
 use crate::{
-    collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE,
+    collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE,
     db::{
         HubStore, LifecycleStateRecord, ObservationInput, ObservationRecord, SourceDescriptor,
         VehicleDescriptor,
@@ -180,7 +180,7 @@ pub(super) fn discovery(id: i64, t: i64, state: &str) -> ObservationRecord {
 /// `IP(id, t, {..})`: an import-source position row; its type comes from the
 /// one definition (C6 R64), never from a literal.
 pub(super) fn import_position(id: i64, t: i64, keys: Value) -> ObservationRecord {
-    let mut payload = json!({"record_type": IMPORT_POSITION_RECORD_TYPE, "position_id": 7});
+    let mut payload = json!({"record_type": SOURCE_DB_POSITION_RECORD_TYPE, "position_id": 7});
     for (key, value) in keys.as_object().expect("keys") {
         payload[key] = value.clone();
     }

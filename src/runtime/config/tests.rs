@@ -239,8 +239,8 @@ fn collector_uses_the_legacy_owner_api_by_default() {
 }
 
 #[test]
-fn teslamate_read_limits_use_configured_stage_cap() {
-    let mut config = TeslaMateConfig::default();
+fn source_db_read_limits_use_configured_stage_cap() {
+    let mut config = ImportSourceConfig::default();
     assert_eq!(config.maximum_stage_bytes, 16 * 1024 * 1024 * 1024);
     assert_eq!(config.page_size, 10_000);
     config.maximum_stage_bytes = 8 * 1024 * 1024 * 1024;
@@ -294,8 +294,8 @@ fn china_region_replaces_only_the_canonical_global_owner_api_default() {
 }
 
 #[test]
-fn teslamate_read_limits_only_apply_a_non_raising_parallel_lane_cap() {
-    let mut config = TeslaMateConfig::default();
+fn source_db_read_limits_only_apply_a_non_raising_parallel_lane_cap() {
+    let mut config = ImportSourceConfig::default();
     config.performance_profile.max_parallel_copy_lanes = Some(8);
     assert_eq!(
         config
@@ -331,7 +331,7 @@ fn teslamate_read_limits_only_apply_a_non_raising_parallel_lane_cap() {
     config.performance_profile.max_parallel_copy_lanes = Some(0);
     assert!(matches!(
         config.read_limits(),
-        Err(ConfigError::InvalidTeslaMateLimits)
+        Err(ConfigError::InvalidImportSourceLimits)
     ));
 }
 
@@ -566,22 +566,22 @@ fn retired_edge_table_fails_with_the_retirement_error() {
 }
 
 #[test]
-fn teslamate_debug_redacts_nested_plain_and_encoded_userinfo() {
+fn source_db_debug_redacts_nested_plain_and_encoded_userinfo() {
     let accepted: HubConfig = toml::from_str(
         "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
-         [teslamate]\n\
-         source_url = 'postgresql://plain-user-marker%40encoded-user-marker@db.example:5433/teslamate'\n\
-         source_key = 'garage-teslamate'",
+         [import_source]\n\
+         source_url = 'postgresql://plain-user-marker%40encoded-user-marker@db.example:5433/sourcedb'\n\
+         source_key = 'garage-source'",
     )
     .expect("parse accepted source configuration");
     accepted.validate().expect("validate accepted source");
     let import = accepted
-        .teslamate
+        .import_source
         .import_config()
         .expect("build import configuration");
 
     for rendered in [
-        format!("{:?}", accepted.teslamate),
+        format!("{:?}", accepted.import_source),
         format!("{accepted:?}"),
         format!("{import:?}"),
     ] {
@@ -594,22 +594,22 @@ fn teslamate_debug_redacts_nested_plain_and_encoded_userinfo() {
     assert!(import_debug.contains("[redacted]"));
     assert!(import_debug.contains("db.example"));
     assert!(import_debug.contains("5433"));
-    assert!(import_debug.contains("teslamate"));
-    assert!(import_debug.contains("garage-teslamate"));
+    assert!(import_debug.contains("sourcedb"));
+    assert!(import_debug.contains("garage-source"));
 
     let rejected: HubConfig = toml::from_str(
         "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
-         [teslamate]\n\
-         source_url = 'postgresql://password-user-marker:percent%2Dencoded%2Dpassword@db.example/teslamate'\n\
-         source_key = 'garage-teslamate'",
+         [import_source]\n\
+         source_url = 'postgresql://password-user-marker:percent%2Dencoded%2Dpassword@db.example/sourcedb'\n\
+         source_key = 'garage-source'",
     )
     .expect("parse rejected source configuration before validation");
     let error = rejected
-        .teslamate
+        .import_source
         .import_config()
         .expect_err("embedded password must be rejected");
     for rendered in [
-        format!("{:?}", rejected.teslamate),
+        format!("{:?}", rejected.import_source),
         format!("{rejected:?}"),
         format!("{error} {error:?}"),
     ] {
@@ -659,38 +659,38 @@ fn permits_remote_tls_only_with_safe_public_origin() {
 }
 
 #[test]
-fn teslamate_import_requires_a_complete_safe_source_configuration() {
+fn source_db_import_requires_a_complete_safe_source_configuration() {
     let incomplete: HubConfig = toml::from_str(
         "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
-         [teslamate]\nsource_url = 'postgresql://reader@127.0.0.1/teslamate'",
+         [import_source]\nsource_url = 'postgresql://reader@127.0.0.1/sourcedb'",
     )
     .expect("parse");
     assert!(matches!(
         incomplete.validate(),
-        Err(ConfigError::TeslaMatePartialConfiguration)
+        Err(ConfigError::SourceDbPartialConfiguration)
     ));
 
     let complete: HubConfig = toml::from_str(
         "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
-         [teslamate]\nsource_url = 'postgresql://reader@127.0.0.1/teslamate'\n\
-         source_key = 'garage-teslamate'",
+         [import_source]\nsource_url = 'postgresql://reader@127.0.0.1/sourcedb'\n\
+         source_key = 'garage-source'",
     )
     .expect("parse");
     assert!(complete.validate().is_ok());
     assert_eq!(
-        complete.teslamate.import_config().unwrap().source_key,
-        "garage-teslamate"
+        complete.import_source.import_config().unwrap().source_key,
+        "garage-source"
     );
 
     let unsafe_stage: HubConfig = toml::from_str(
         "data_dir = '/var/lib/teslatlas'\nbind = '127.0.0.1:8080'\n\
-         [teslamate]\nsource_url = 'postgresql://reader@127.0.0.1/teslamate'\n\
-         source_key = 'garage-teslamate'\nmaximum_stage_bytes = 1",
+         [import_source]\nsource_url = 'postgresql://reader@127.0.0.1/sourcedb'\n\
+         source_key = 'garage-source'\nmaximum_stage_bytes = 1",
     )
     .expect("parse");
     assert!(matches!(
         unsafe_stage.validate(),
-        Err(ConfigError::InvalidTeslaMateLimits)
+        Err(ConfigError::InvalidImportSourceLimits)
     ));
 }
 
@@ -1384,18 +1384,18 @@ fn cadence_views_use_their_loaded_configuration_snapshot() {
     let tokens = crate::credentials::OwnerTokens::from_secret_parts(access, "refresh".to_owned())
         .expect("tokens");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
-    let stored = crate::db::TeslaMateLegacyTokenStore::refreshed(
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
+    let stored = crate::db::LegacyOwnerTokenStore::refreshed(
         access,
         refresh,
         usable_until + 1_000,
         usable_until - 500,
     )
     .expect("pair");
-    crate::teslamate_credentials::replace_key_and_tokens(temporary.path(), &store, key, &stored)
+    crate::legacy_owner_credentials::replace_key_and_tokens(temporary.path(), &store, key, &stored)
         .expect("persist");
     let generation = store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("load")
         .expect("row")
         .credential_generation()
@@ -2102,3 +2102,6 @@ fn cmp3_01_the_last_releases_guide_example_loads_logs_one_notice_and_collects() 
 // Geocoder defaults (C7 part C).
 #[path = "b3_c7_c_tests.rs"]
 mod b3_c7_c;
+
+#[path = "tests/n1.rs"]
+mod n1;

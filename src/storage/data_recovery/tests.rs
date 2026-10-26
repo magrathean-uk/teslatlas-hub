@@ -473,6 +473,10 @@ fn reseal_backup_as_schema(backup: &Path, schema: i32) -> BackupManifest {
 /// the backup's catalogue as it is now, declaring `schema`.
 fn reseal_backup_manifest(backup: &Path, schema: i32) -> BackupManifest {
     let catalogue = backup.join(CATALOGUE_MEMBER);
+    if schema < 78 {
+        let connection = Connection::open(&catalogue).unwrap();
+        crate::db::import_names_test_support::prepare_historical_import_names(&connection);
+    }
     let manifest_path = backup.join(MANIFEST_NAME);
     let mut manifest: BackupManifest =
         parse_canonical_json(&fs::read(&manifest_path).expect("manifest bytes"))
@@ -974,8 +978,8 @@ fn backup_member_admission_counts_physical_noop_and_ignores_orphans() {
 
 fn publish_schema_22_fixture(store: &HubStore) -> (SyncManifest, SignedNoOpState) {
     let data = store.database_path().parent().expect("fixture data root");
-    let cursor_key =
-        crate::teslamate_credentials::load_or_create_cursor_key(data).expect("fixture cursor key");
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(data)
+        .expect("fixture cursor key");
     let (built, snapshot) =
         crate::updates_delivery::write_updates_schema_22_pack(store.packs_dir(), Vec::new())
             .expect("write schema 2.2 backup fixture pack");
@@ -1019,27 +1023,29 @@ fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
             .is_some()
     );
     assert_eq!(pairing_authority_counts(source_data), (1, 1));
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(source_data)
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(source_data)
         .expect("source cursor key");
     let source_lineage = publish_lineage_fixture(&store, &cursor_key);
     store
         .retire_vehicle(source_lineage.vehicle_id, 4_000)
         .expect("retire source vehicle before backup");
     assert!(!store.vehicle_is_active(source_lineage.vehicle_id).unwrap());
-    let source_cursor = fs::read(crate::teslamate_credentials::cursor_key_path(source_data))
-        .expect("source cursor bytes");
+    let source_cursor = fs::read(crate::legacy_owner_credentials::cursor_key_path(
+        source_data,
+    ))
+    .expect("source cursor bytes");
     let owner_tokens = crate::credentials::OwnerTokens::from_secret_parts(
         "backup-access".to_owned(),
         "backup-refresh".to_owned(),
     )
     .expect("owner tokens");
-    let encryption_key = b"backup exact TeslaMate key";
+    let encryption_key = b"backup exact source token key";
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(encryption_key, &owner_tokens)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(encryption_key, &owner_tokens)
             .expect("encrypt owner tokens");
     let stored_tokens =
-        crate::db::TeslaMateLegacyTokenStore::imported(access, refresh).expect("stored tokens");
-    crate::teslamate_credentials::replace_key_and_tokens(
+        crate::db::LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
+    crate::legacy_owner_credentials::replace_key_and_tokens(
         source_data,
         &store,
         encryption_key,
@@ -1160,16 +1166,18 @@ fn data_backup_revokes_pairing_authority_and_preserves_identity_and_lineage() {
         .expect("restored authority rows");
     assert_eq!(restored_authority_rows, 0);
     let restored_tokens = restored_store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("restored token row")
         .expect("restored credentials");
     assert!(
-        crate::teslamate_credentials::load_key_for_tokens(&restored, &restored_tokens).is_err(),
+        crate::legacy_owner_credentials::load_key_for_tokens(&restored, &restored_tokens).is_err(),
         "default data restore must not recover the credential key"
     );
     assert_eq!(
-        fs::read(crate::teslamate_credentials::cursor_key_path(source_data))
-            .expect("source cursor key after backup"),
+        fs::read(crate::legacy_owner_credentials::cursor_key_path(
+            source_data
+        ))
+        .expect("source cursor key after backup"),
         source_cursor,
         "backup must not mutate source key material"
     );
@@ -1222,7 +1230,7 @@ fn legacy_v3_backup_is_accepted_but_pairing_authority_is_revoked_before_publicat
 fn restore_removes_vehicle_grants_challenge_vehicles_and_rotation_grace() {
     let (temporary, store) = create_fixture();
     let source_data = store.database_path().parent().expect("source data root");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(source_data)
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(source_data)
         .expect("source cursor key");
     let lineage = publish_lineage_fixture(&store, &cursor_key);
     let backup = temporary.path().join("grant-backup");
@@ -1453,7 +1461,7 @@ fn schema_67_backups_verify_and_restore_with_the_grant_tables_created_empty() {
     // A clean v67 backup (no grant tables) verifies without counting them.
     let (temporary, store) = create_fixture();
     let source_data = store.database_path().parent().expect("source data root");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(source_data)
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(source_data)
         .expect("source cursor key");
     let lineage = publish_lineage_fixture(&store, &cursor_key);
     let installation_id = store.installation_id().expect("installation");
@@ -1839,3 +1847,6 @@ fn noncanonical_or_scope_expanding_manifest_is_rejected() {
 
 #[path = "tests/b2.rs"]
 mod b2;
+
+#[path = "tests/import_names.rs"]
+mod import_names;

@@ -7,7 +7,6 @@
 //! usage error), T47 (a) to (d) and T35 (the `--recalculate-missing-costs`
 //! wiring). Synthetic data only.
 
-use clap::Parser;
 use teslatlas_hub::db::{HubStore, SourceDescriptor, VehicleDescriptor};
 use uuid::Uuid;
 

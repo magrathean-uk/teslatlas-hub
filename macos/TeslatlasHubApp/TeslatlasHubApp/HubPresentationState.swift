@@ -43,7 +43,7 @@ struct HubModalState {
 
 enum HubSessionEvent: Equatable {
     case hubSetUp
-    case teslaMateImported
+    case historyImported
     case hubStarted
     case hubStopped
     case hubRestarted
@@ -67,7 +67,7 @@ private extension HubSessionEvent {
     var message: String {
         switch self {
         case .hubSetUp: return HubL10n.text("hub.HubPresentationState.69.1522", fallback: "Hub set up and started")
-        case .teslaMateImported: return HubL10n.text("hub.HubPresentationState.70.1523", fallback: "Imported TeslaMate history")
+        case .historyImported: return HubL10n.text("hub.HubPresentationState.70.1523", fallback: "Imported history")
         case .hubStarted: return HubL10n.text("hub.HubPresentationState.71.1524", fallback: "Hub service started")
         case .hubStopped: return HubL10n.text("hub.HubPresentationState.72.1525", fallback: "Hub service stopped")
         case .hubRestarted: return HubL10n.text("hub.HubPresentationState.73.1526", fallback: "Hub service restarted")
@@ -81,7 +81,7 @@ private extension HubSessionEvent {
     var color: NSColor {
         switch self {
         case .hubStopped, .accountDisconnected: return .systemOrange
-        case .teslaMateImported, .hubSetUp, .hubStarted, .hubRestarted,
+        case .historyImported, .hubSetUp, .hubStarted, .hubRestarted,
              .accountChanged, .vehicleCommandAccepted: return .systemGreen
         }
     }

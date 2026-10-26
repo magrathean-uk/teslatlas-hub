@@ -757,9 +757,9 @@ impl HubStore {
         &self,
         _publication_gate: &PublicationGate,
         run_id: Uuid,
-        limits: TeslaMateProjectionStateLimits,
+        limits: SourceDbProjectionStateLimits,
         maximum_changed_row_payload_bytes: u64,
-    ) -> Result<TeslaMateProjectionState, StoreError> {
+    ) -> Result<SourceDbProjectionState, StoreError> {
         if run_id.is_nil() {
             return Err(StoreError::InvalidImportGeneration);
         }
@@ -791,13 +791,13 @@ impl HubStore {
             &self.private_import_spool_dir,
             expected_spool_identity,
         )?;
-        TeslaMateProjectionState::create_for_import_generation(
+        SourceDbProjectionState::create_for_import_generation(
             &self.private_import_spool_dir,
             run_id,
             limits,
             maximum_changed_row_payload_bytes,
         )
-        .map_err(StoreError::TeslaMateProjectionState)
+        .map_err(StoreError::SourceDbProjectionState)
     }
 
     fn recover_stale_import_projection_state_spools(
@@ -851,7 +851,7 @@ impl HubStore {
         Ok(())
     }
 
-    /// Private, disposable local capture area. TeslaMate source snapshots are
+    /// Private, disposable local capture area. source database snapshots are
     /// never written into the Hub catalogue database.
     pub fn imports_dir(&self) -> PathBuf {
         self.database_path
@@ -1241,9 +1241,9 @@ impl HubStore {
             )?,
             referenced_packs: u64::try_from(referenced_packs)
                 .map_err(|_| StoreError::InvalidStoredCount)?,
-            teslamate_legacy_token_rows: read_only_count(
+            legacy_owner_token_rows: read_only_count(
                 &connection,
-                "SELECT COUNT(*) FROM teslamate_legacy_tokens",
+                concat!("SELECT COUNT(*) FROM ", crate::db::import_table_names::legacy_owner_tokens_table!()),
             )?,
             fleet_token_rows: read_only_count(&connection, "SELECT COUNT(*) FROM fleet_tokens")?,
         })
@@ -1342,9 +1342,9 @@ impl HubStore {
             referenced_pack_bytes,
             physical_pack_files,
             physical_pack_bytes,
-            teslamate_legacy_token_rows: read_only_count(
+            legacy_owner_token_rows: read_only_count(
                 &connection,
-                "SELECT COUNT(*) FROM teslamate_legacy_tokens",
+                concat!("SELECT COUNT(*) FROM ", crate::db::import_table_names::legacy_owner_tokens_table!()),
             )?,
             fleet_token_rows: read_only_count(&connection, "SELECT COUNT(*) FROM fleet_tokens")?,
             paired_devices: read_only_count(&connection, "SELECT COUNT(*) FROM paired_devices")?,

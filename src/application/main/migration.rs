@@ -25,7 +25,7 @@ fn collector_can_start(
     config: &HubConfig,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let credentials_present = match config.collector.provider {
-        CollectorProvider::Legacy => store.load_teslamate_legacy_tokens()?.is_some(),
+        CollectorProvider::Legacy => store.load_legacy_owner_tokens()?.is_some(),
         CollectorProvider::Fleet => store.load_fleet_tokens()?.is_some(),
     };
     Ok(config.collector.interval_seconds > 0
@@ -53,6 +53,8 @@ struct MacMigrationInput<'a> {
     config_path: &'a Path,
     source_url: &'a str,
     car_id: i64,
+    source_key: Option<&'a str>,
+    new_import_source: bool,
     postgres_password_file: &'a Path,
     history_only: bool,
     encryption_key_file: Option<&'a Path>,
@@ -81,7 +83,7 @@ const MAX_MIGRATION_POSTGRES_PASSWORD_BYTES: usize = 4 * 1024;
 const MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES: usize = MAX_MIGRATION_POSTGRES_PASSWORD_BYTES + 2;
 #[cfg(unix)]
 const MAX_MIGRATION_TOKEN_BYTES: usize =
-    teslatlas_hub::teslamate_token::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
+    teslatlas_hub::source_token_envelope::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
 #[cfg(unix)]
 const MAX_MIGRATION_TOKEN_FILE_BYTES: usize = MAX_MIGRATION_TOKEN_BYTES + 2;
 #[cfg(unix)]
@@ -161,6 +163,8 @@ async fn run_macos_migration(
         config_path,
         source_url,
         car_id,
+        source_key,
+        new_import_source,
         postgres_password_file,
         history_only,
         encryption_key_file,
@@ -171,7 +175,7 @@ async fn run_macos_migration(
     }: MacMigrationInput<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     if car_id <= 0 {
-        return Err("--car-id must be a positive TeslaMate car id".into());
+        return Err("--car-id must be a positive source car id".into());
     }
     if history_only
         && (!online_snapshot
@@ -198,26 +202,31 @@ async fn run_macos_migration(
     }
 
     let config = HubConfig::load(config_path)?;
+    let import_source_key =
+        migration_source_key(source_key, config.import_source.source_key.as_deref());
+    teslatlas_hub::config::validate_import_source_key(import_source_key)?;
     if history_only {
         validate_history_only_config(&config)?;
     }
     admission.assert_sensitive_access()?;
     admission.assert_store_path(&config.data_dir)?;
+    HubStore::preflight_import_source_key(&config.data_dir, import_source_key, new_import_source)?;
     let source = ReadOnlySource::parse(source_url)?;
     if history_only && !source.is_loopback() {
         return Err("history-only import requires a numeric loopback PostgreSQL source".into());
     }
     let postgres_password = read_migration_postgres_password(postgres_password_file)?;
-    let mut limits = config.teslamate.read_limits()?;
+    let mut limits = config.import_source.read_limits()?;
     let profile = derive_effective_import_profile(
         limits.parallel_copy_lanes,
-        &config.teslamate.performance_profile,
+        &config.import_source.performance_profile,
         &config.data_dir,
     )?;
     limits.parallel_copy_lanes = profile.parallel_copy_lanes;
     if history_only {
         let store = HubStore::initialize(&config.data_dir)?;
         let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
+        store.check_import_source_key(import_source_key, new_import_source)?;
         let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
         let progress = migration_progress_reporter(true);
         let (report, captured_ciphertexts) = import_direct_migration_snapshot(
@@ -226,6 +235,8 @@ async fn run_macos_migration(
             &source,
             &postgres_password,
             car_id,
+            import_source_key,
+            new_import_source,
             limits,
             MigrationCaptureScope::HistorySnapshot,
             progress.clone(),
@@ -235,7 +246,7 @@ async fn run_macos_migration(
             return Err("history-only import unexpectedly captured credentials".into());
         }
         catalogue_checkpoint.finish()?;
-        progress.complete(TeslaMateMigrationPhase::Complete);
+        progress.complete(SourceDbMigrationPhase::Complete);
         println!(
             "{}",
             serde_json::json!({
@@ -260,11 +271,8 @@ async fn run_macos_migration(
         );
         return Ok(false);
     }
-    let copy_teslamate_ciphertext = match (
-        encryption_key_file,
-        access_token_file,
-        refresh_token_file,
-    ) {
+    let copy_source_ciphertext = match (encryption_key_file, access_token_file, refresh_token_file)
+    {
         (Some(_), None, None) => true,
         (None, Some(_), Some(_)) => false,
         _ => {
@@ -278,10 +286,11 @@ async fn run_macos_migration(
     let store = HubStore::initialize(&config.data_dir)?;
     let preserve_existing_credentials = should_preserve_existing_migration_credentials(
         preserve_existing_credentials,
-        store.load_teslamate_legacy_tokens()?.is_some(),
+        store.load_legacy_owner_tokens()?.is_some(),
     );
-    let capture_teslamate_ciphertext = copy_teslamate_ciphertext && !preserve_existing_credentials;
+    let capture_source_db_ciphertext = copy_source_ciphertext && !preserve_existing_credentials;
     let mut catalogue_checkpoint = CatalogueCheckpointGuard::new(store.clone());
+    store.check_import_source_key(import_source_key, new_import_source)?;
     let cursor_key = load_or_create_cursor_key(&config.data_dir)?;
     if !online_snapshot {
         let initial_progress = migration_progress_reporter(online_snapshot);
@@ -292,6 +301,8 @@ async fn run_macos_migration(
             &source,
             &postgres_password,
             car_id,
+            import_source_key,
+            new_import_source,
             limits,
             MigrationCaptureScope::SettledWithoutCredentials,
             initial_progress,
@@ -299,7 +310,7 @@ async fn run_macos_migration(
         .await?;
         tracing::info!(
             duration_ms = elapsed_migration_millis(initial_copy_started),
-            "finished initial TeslaMate migration copy"
+            "finished initial source database migration copy"
         );
 
         println!(
@@ -316,20 +327,21 @@ async fn run_macos_migration(
                 "profileReason": profile.reason.as_str(),
             })
         );
-        print!("Stop TeslaMate now. Confirm it is stopped before final copy [y/N] ");
+        print!("stop the source application now. Confirm it is stopped before final copy [y/N] ");
         std::io::stdout().flush()?;
         let mut answer = String::new();
         std::io::stdin().read_line(&mut answer)?;
         if !migration_stop_confirmed(&answer) {
             return Err(
-                "TeslaMate stop was not confirmed; final migration capture was not started".into(),
+                "Source application stop was not confirmed; final migration capture was not started"
+                    .into(),
             );
         }
     }
 
-    // Cutover mode re-captures after the operator stops TeslaMate. Online mode
-    // performs this once while TeslaMate remains live. In both modes history
-    // and source ciphertext, when selected, share this exact source snapshot.
+    // Cutover mode re-captures after the operator stops the source application.
+    // Online mode captures while it remains live. History and encrypted legacy
+    // owner tokens, when selected, share this exact database snapshot.
     let progress = migration_progress_reporter(online_snapshot);
     let final_copy_started = Instant::now();
     let (report, captured_ciphertexts) = import_direct_migration_snapshot(
@@ -338,8 +350,10 @@ async fn run_macos_migration(
         &source,
         &postgres_password,
         car_id,
+        import_source_key,
+        new_import_source,
         limits,
-        if capture_teslamate_ciphertext {
+        if capture_source_db_ciphertext {
             MigrationCaptureScope::SettledWithCredentials
         } else {
             MigrationCaptureScope::SettledWithoutCredentials
@@ -349,7 +363,7 @@ async fn run_macos_migration(
     .await?;
     tracing::info!(
         duration_ms = elapsed_migration_millis(final_copy_started),
-        "finished final TeslaMate migration copy"
+        "finished final source database migration copy"
     );
     progress.advance_finalizing(1, 2);
 
@@ -358,18 +372,18 @@ async fn run_macos_migration(
         if captured_ciphertexts.is_some() {
             return Err("history-only migration unexpectedly retained source credentials".into());
         }
-        tracing::info!("preserved existing Hub credentials during TeslaMate history import");
+        tracing::info!("preserved existing Hub credentials during source database history import");
         None
     } else {
         // The encrypted source pair came from the same final snapshot as history.
-        let (encryption_key, access_ciphertext, refresh_ciphertext) = if copy_teslamate_ciphertext {
+        let (encryption_key, access_ciphertext, refresh_ciphertext) = if copy_source_ciphertext {
             let key_path = encryption_key_file.expect("validated encrypted-token input");
             let key = read_migration_encryption_key(key_path)?;
             if key.is_empty() {
-                return Err("TeslaMate ENCRYPTION_KEY is empty".into());
+            return Err("the source application's ENCRYPTION_KEY is empty".into());
             }
             let ciphertexts = captured_ciphertexts
-                .ok_or("final migration snapshot did not retain TeslaMate credentials")?;
+                .ok_or("final migration snapshot did not retain legacy owner tokens")?;
             // Validate compatibility without exposing either plaintext token.
             drop(decrypt_legacy_owner_tokens(
                 &key,
@@ -389,7 +403,7 @@ async fn run_macos_migration(
             )?;
             (key, access, refresh)
         };
-        let stored = TeslaMateLegacyTokenStore::imported(access_ciphertext, refresh_ciphertext)?;
+        let stored = LegacyOwnerTokenStore::imported(access_ciphertext, refresh_ciphertext)?;
         persist_migrated_legacy_tokens(&config.data_dir, &store, &encryption_key, &stored)
             .map_err(|error| {
                 migration_outcome_ambiguous("persisting imported credentials", error)
@@ -402,7 +416,7 @@ async fn run_macos_migration(
         projected_rows = report.projected_rows,
         fleet_tokens_preserved = fleet_still_present,
         existing_legacy_credentials_preserved = preserve_existing_credentials,
-        "TeslaMate history imported; source PostgreSQL was not written; Fleet tokens were not deleted"
+        "Source database history imported; source PostgreSQL was not written; Fleet tokens were not deleted"
     );
 
     let checkpoint_started = Instant::now();
@@ -411,9 +425,9 @@ async fn run_macos_migration(
         .map_err(|error| migration_outcome_ambiguous("checkpointing imported catalogue", error))?;
     tracing::info!(
         duration_ms = elapsed_migration_millis(checkpoint_started),
-        "checkpointed imported TeslaMate catalogue"
+        "checkpointed imported source database catalogue"
     );
-    progress.complete(TeslaMateMigrationPhase::Complete);
+    progress.complete(SourceDbMigrationPhase::Complete);
 
     println!(
         "{}",
@@ -464,18 +478,15 @@ async fn import_direct_migration_snapshot(
     store: &HubStore,
     cursor_key: &CursorKey,
     source: &ReadOnlySource,
-    postgres_password: &TeslaMatePostgresPassword,
+    postgres_password: &SourceDbPassword,
     car_id: i64,
-    limits: teslatlas_hub::teslamate_reader::TeslaMateReadLimits,
+    source_key: &str,
+    new_import_source: bool,
+    limits: teslatlas_hub::source_db_reader::SourceDbReadLimits,
     scope: MigrationCaptureScope,
-    progress: TeslaMateMigrationProgressReporter,
-) -> Result<
-    (
-        TeslaMateImportReport,
-        Option<TeslaMateLegacyTokenCiphertexts>,
-    ),
-    Box<dyn std::error::Error>,
-> {
+    progress: SourceDbMigrationProgressReporter,
+) -> Result<(SourceDbImportReport, Option<LegacyOwnerTokenCiphertexts>), Box<dyn std::error::Error>>
+{
     let include_legacy_token = matches!(scope, MigrationCaptureScope::SettledWithCredentials);
     tracing::info!(
         host = source.host(),
@@ -483,12 +494,13 @@ async fn import_direct_migration_snapshot(
         database = source.database_name(),
         car_id,
         include_legacy_token,
-        "starting TeslaMate read-only snapshot import"
+        "starting source database read-only snapshot import"
     );
     let imported_at_ms = current_epoch_ms()?;
-    let request = TeslaMateImportRequest {
-        source_key: "teslamate".to_owned(),
-        scope: TeslaMateImportScope::Selected(car_id),
+    let request = SourceDbImportRequest {
+        new_import_source,
+        source_key: source_key.to_owned(),
+        scope: SourceDbImportScope::Selected(car_id),
         imported_at_ms,
     };
     if include_legacy_token {
@@ -552,13 +564,13 @@ fn should_preserve_existing_migration_credentials(
 }
 
 #[cfg(unix)]
-fn migration_progress_reporter(online_snapshot: bool) -> TeslaMateMigrationProgressReporter {
+fn migration_progress_reporter(online_snapshot: bool) -> SourceDbMigrationProgressReporter {
     if !should_emit_migration_progress(online_snapshot) {
-        return TeslaMateMigrationProgressReporter::default();
+        return SourceDbMigrationProgressReporter::default();
     }
     let phase = std::sync::Mutex::new(None);
     let started = Instant::now();
-    TeslaMateMigrationProgressReporter::new(move |event: TeslaMateMigrationProgressEvent| {
+    SourceDbMigrationProgressReporter::new(move |event: SourceDbMigrationProgressEvent| {
         use teslatlas_hub::runtime::development_event_log as dev;
         let mut previous = phase
             .lock()
@@ -567,13 +579,13 @@ fn migration_progress_reporter(online_snapshot: bool) -> TeslaMateMigrationProgr
             *previous = Some(event.phase);
             let mut record = dev::Event::new(dev::Kind::Import, dev::Outcome::Progress);
             record.phase = Some(match event.phase {
-                TeslaMateMigrationPhase::Counting => dev::Phase::Counting,
-                TeslaMateMigrationPhase::Metadata => dev::Phase::Metadata,
-                TeslaMateMigrationPhase::RelatedPositions => dev::Phase::RelatedPositions,
-                TeslaMateMigrationPhase::Positions => dev::Phase::Positions,
-                TeslaMateMigrationPhase::Charges => dev::Phase::Charges,
-                TeslaMateMigrationPhase::Finalizing => dev::Phase::Finalizing,
-                TeslaMateMigrationPhase::Complete => dev::Phase::Complete,
+                SourceDbMigrationPhase::Counting => dev::Phase::Counting,
+                SourceDbMigrationPhase::Metadata => dev::Phase::Metadata,
+                SourceDbMigrationPhase::RelatedPositions => dev::Phase::RelatedPositions,
+                SourceDbMigrationPhase::Positions => dev::Phase::Positions,
+                SourceDbMigrationPhase::Charges => dev::Phase::Charges,
+                SourceDbMigrationPhase::Finalizing => dev::Phase::Finalizing,
+                SourceDbMigrationPhase::Complete => dev::Phase::Complete,
             });
             record.rows = event.completed_rows;
             record.total_rows = event.total_rows;
@@ -584,7 +596,7 @@ fn migration_progress_reporter(online_snapshot: bool) -> TeslaMateMigrationProgr
         let stdout = std::io::stdout();
         let mut output = stdout.lock();
         if let Err(error) = write_migration_progress_event(&mut output, &event) {
-            tracing::warn!(%error, "could not write TeslaMate migration progress");
+            tracing::warn!(%error, "could not write source database migration progress");
         }
     })
 }
@@ -592,7 +604,7 @@ fn migration_progress_reporter(online_snapshot: bool) -> TeslaMateMigrationProgr
 #[cfg(unix)]
 fn write_migration_progress_event(
     writer: &mut impl Write,
-    event: &TeslaMateMigrationProgressEvent,
+    event: &SourceDbMigrationProgressEvent,
 ) -> Result<(), Box<dyn std::error::Error>> {
     serde_json::to_writer(&mut *writer, event)?;
     writer.write_all(b"\n")?;
@@ -682,9 +694,9 @@ fn read_migration_encryption_key(
 #[cfg(unix)]
 fn read_migration_postgres_password(
     path: &Path,
-) -> Result<TeslaMatePostgresPassword, Box<dyn std::error::Error>> {
+) -> Result<SourceDbPassword, Box<dyn std::error::Error>> {
     let bytes = read_migration_secret(path, MAX_MIGRATION_POSTGRES_PASSWORD_FILE_BYTES)?;
-    TeslaMatePostgresPassword::from_bytes(&bytes).map_err(Into::into)
+    SourceDbPassword::from_bytes(&bytes).map_err(Into::into)
 }
 
 #[cfg(unix)]
@@ -788,4 +800,11 @@ fn safe_migration_secret_metadata(metadata: &fs::Metadata) -> bool {
     metadata.uid() == getuid().as_raw()
         && (metadata.mode() & 0o077) == 0
         && (metadata.mode() & 0o400) != 0
+}
+
+#[cfg(unix)]
+fn migration_source_key<'a>(explicit: Option<&'a str>, configured: Option<&'a str>) -> &'a str {
+    explicit
+        .or(configured)
+        .unwrap_or(teslatlas_hub::db::DEFAULT_IMPORT_SOURCE_KEY)
 }

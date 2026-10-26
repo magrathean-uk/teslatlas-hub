@@ -23,7 +23,7 @@ use crate::geo::location::{
 };
 use crate::hub_pack::GeofenceBillingType;
 
-pub(super) type Fence = crate::teslamate_projection::TeslaMateGeofence;
+pub(super) type Fence = crate::source_db_projection::SourceDbGeofence;
 
 /// A fence record with `id` 0 and every optional field omitted.
 pub(super) fn fence(name: &str, latitude: f64, longitude: f64) -> Fence {
@@ -924,6 +924,7 @@ fn c8_t12_upgrade() {
         count(&connection, "sync_mutations"),
         count(&connection, "export_outbox"),
     );
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
     // Standalone Serve migrates this shape: the preflight accepts it.
@@ -978,6 +979,7 @@ fn c8_t12_upgrade() {
         ),
         sync_before
     );
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     // The widened checks hold what an import copies: a 255-character name of
@@ -1031,6 +1033,7 @@ fn c8_t12_foreign_key_check_rolls_the_step_back() {
         )
         .expect("row");
     let before = quoted_fence_rows(&connection);
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
 
@@ -1052,7 +1055,7 @@ fn c8_t12_foreign_key_check_rolls_the_step_back() {
     connection
         .execute_batch("PRAGMA foreign_keys = OFF;")
         .expect("foreign keys off");
-    let refused = migrate(&connection);
+    let refused = migrate_historical_fixture(&connection);
     assert!(
         matches!(refused, Err(StoreError::Migrate(_))),
         "got {refused:?}"

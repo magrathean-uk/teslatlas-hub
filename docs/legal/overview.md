@@ -66,13 +66,12 @@ Whoever runs a Hub decides how its data is used and is responsible for that
 data under data-protection law. We receive no data from your Hub unless you
 send it to us. See [Privacy](privacy.md).
 
-## Compatibility
+## Importing from other software
 
 Teslatlas Hub can import data from other vehicle-data software by reading that
-software's database. Compatibility does not imply any affiliation or
-endorsement. Teslatlas Hub is not affiliated with, endorsed by or supported by
-Tesla, Inc., the TeslaMate project, or the makers of any other software it
-works with.
+software's database. Being able to do so does not mean that the makers of that
+software made, approved or sponsored Teslatlas Hub, and they did not. Nor did
+Tesla, Inc.
 
 ## Governing law
 

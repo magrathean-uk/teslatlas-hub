@@ -166,7 +166,7 @@ fn persist_legacy_setup_and_drop_fleet(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let encryption_key = random_encryption_key()?;
     let (access, refresh) = encrypt_legacy_owner_tokens(&encryption_key, tokens)?;
-    let stored = TeslaMateLegacyTokenStore::imported(access, refresh)?;
+    let stored = LegacyOwnerTokenStore::imported(access, refresh)?;
     replace_key_and_tokens(data_dir, store, &encryption_key, &stored).map_err(|error| {
         provider_switch_outcome_ambiguous("persisting Legacy credentials", error)
     })?;
@@ -176,14 +176,14 @@ fn persist_legacy_setup_and_drop_fleet(
     Ok(())
 }
 
-/// Copy TeslaMate Owner tokens into Hub. Import never writes TeslaMate
+/// Copy source database Owner tokens into Hub. Import never writes source database
 /// PostgreSQL and never deletes Fleet credentials — those stay until an
 /// explicit `setup` / `setup-fleet` / `sign-out`.
 fn persist_migrated_legacy_tokens(
     data_dir: &Path,
     store: &HubStore,
     encryption_key: &[u8],
-    stored: &TeslaMateLegacyTokenStore,
+    stored: &LegacyOwnerTokenStore,
 ) -> Result<(), Box<dyn std::error::Error>> {
     replace_key_and_tokens(data_dir, store, encryption_key, stored)?;
     Ok(())
@@ -356,7 +356,7 @@ fn run_set_geofence(
     let geofence = store.save_geofence(
         vehicle_id,
         *id,
-        teslatlas_hub::teslamate_projection::TeslaMateGeofence {
+        teslatlas_hub::source_db_projection::SourceDbGeofence {
             id: id.unwrap_or_default(),
             name: name.clone(),
             latitude: Some(*latitude),

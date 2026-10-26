@@ -56,8 +56,12 @@ async fn r3_one_probe_period(bed: &mut FleetBed, answer: R3ProbeAnswer, first: b
     // reservation does not cover is withheld, and the probe, still owed, is due at
     // once and goes out at the next tick (C3 R27, R47): that is the same probe, not
     // another period's.
-    let probe_still_owed =
-        |bed: &FleetBed| bed.scheduler.account.next_billing_probe.is_some_and(|probe| probe <= bed.clock.mono_now());
+    let probe_still_owed = |bed: &FleetBed| {
+        bed.scheduler
+            .account
+            .next_billing_probe
+            .is_some_and(|probe| probe <= bed.clock.mono_now())
+    };
     if matches!(answer, R3ProbeAnswer::UnauthorisedAfterRefresh) && probe_still_owed(bed) {
         outcome = bed.tick().await;
         assert!(outcome.requests_sent, "{answer:?}: the withheld resend goes out");
@@ -385,19 +389,19 @@ fn r3_run_owner_start(
     crate::crypto::install_default_provider();
     if seed {
         seed_the_late_import(store);
-        crate::teslamate_credentials::replace_key(temporary, b"r3-cloak-key")
+        crate::legacy_owner_credentials::replace_key(temporary, b"r3-cloak-key")
             .expect("0600 Cloak key");
-        let key = crate::teslamate_credentials::load_key(temporary).expect("Cloak key");
+        let key = crate::legacy_owner_credentials::load_key(temporary).expect("Cloak key");
         let initial =
             OwnerTokens::from_secret_parts("r3-access".to_owned(), "r3-refresh".to_owned())
                 .expect("initial pair");
         let (access, refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
                 .expect("Cloak pair");
         let now_seconds = current_epoch_millis().expect("clock") / 1_000;
         store
-            .replace_teslamate_legacy_tokens(
-                &crate::db::TeslaMateLegacyTokenStore::refreshed(
+            .replace_legacy_owner_tokens(
+                &crate::db::LegacyOwnerTokenStore::refreshed(
                     access,
                     refresh,
                     now_seconds + 36_000,
@@ -409,7 +413,7 @@ fn r3_run_owner_start(
     }
     let base = url::Url::parse("http://127.0.0.1:9/").expect("unroutable");
     let admission = crate::hub_user_process::AdmittedUserHub::for_test(temporary).expect("admit");
-    let manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         temporary,
         base.join("oauth2/v3/").expect("issuer"),
@@ -457,7 +461,7 @@ fn r3_run_fleet_start(
 ) -> Result<(), CollectorError> {
     crate::crypto::install_default_provider();
     let cursor_key =
-        crate::teslamate_credentials::load_or_create_cursor_key(temporary).expect("cursor key");
+        crate::legacy_owner_credentials::load_or_create_cursor_key(temporary).expect("cursor key");
     if seed {
         guard_block_on(finish_collection_for_provider(
             store,
@@ -819,7 +823,9 @@ fn r3_enrichment_job_status(store: &HubStore) -> String {
     store
         .open()
         .expect("catalogue")
-        .query_row("SELECT status FROM address_enrichment_jobs", [], |row| row.get(0))
+        .query_row("SELECT status FROM address_enrichment_jobs", [], |row| {
+            row.get(0)
+        })
         .expect("the address job")
 }
 
@@ -963,7 +969,10 @@ async fn i3_01_a_fenced_telemetry_loop_still_replays_enriches_and_wakes_the_terr
     // leave; the test waits for those acknowledgements (a bounded number of polls is
     // only the watchdog against a stall, never a measured span), then lets one
     // maintenance interval pass and waits for the second interval's own.
-    r3_poll_until("the first replay completes", || seam.replay_completions() >= 1).await;
+    r3_poll_until("the first replay completes", || {
+        seam.replay_completions() >= 1
+    })
+    .await;
     r3_poll_until("the address job completes", || {
         r3_enrichment_job_status(&store) == "complete"
     })
@@ -975,9 +984,18 @@ async fn i3_01_a_fenced_telemetry_loop_still_replays_enriches_and_wakes_the_terr
         seam.enrichment_calls() > enrichments
     })
     .await;
-    r3_poll_until("the second interval's replay", || seam.replay_calls() > replays).await;
-    assert!(!task.is_finished(), "the run goes on over the unknown outcome");
-    assert!(seam.replay_claims() >= 1, "the replay claimed the waiting outbox row");
+    r3_poll_until("the second interval's replay", || {
+        seam.replay_calls() > replays
+    })
+    .await;
+    assert!(
+        !task.is_finished(),
+        "the run goes on over the unknown outcome"
+    );
+    assert!(
+        seam.replay_claims() >= 1,
+        "the replay claimed the waiting outbox row"
+    );
     assert!(seam.replay_completions() >= 1, "the replay completed");
     assert_eq!(r3_enrichment_job_status(&store), "complete", "the address job was processed");
     assert!(terrain_rx.try_recv().is_ok(), "the terrain worker was woken");

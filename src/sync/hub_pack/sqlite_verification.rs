@@ -388,10 +388,10 @@ fn verify_projection_sqlite_2_2(
             "unreconciled_fields",
             THP2_2_UNRECONCILED_FIELD_COUNT.to_string(),
         ),
-        ("source_revision", TESLAMATE_V4_SOURCE_REVISION.to_owned()),
+        ("source_revision", SOURCE_DB_V4_SOURCE_REVISION.to_owned()),
         (
             "migration_set_sha256",
-            TESLAMATE_V4_MIGRATION_SET_SHA256.to_owned(),
+            SOURCE_DB_V4_MIGRATION_SET_SHA256.to_owned(),
         ),
         (
             "car_settings_slice_sha256",

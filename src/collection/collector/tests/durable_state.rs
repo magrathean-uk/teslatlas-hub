@@ -1919,17 +1919,17 @@ async fn the_loop_stores_a_sleeping_car_once_records_its_stop_and_stays_quiet_af
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_supervised_restart_import(&store);
-    crate::teslamate_credentials::replace_key(temporary.path(), b"chain-cloak-key")
+    crate::legacy_owner_credentials::replace_key(temporary.path(), b"chain-cloak-key")
         .expect("0600 Cloak key");
-    let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
     let initial = OwnerTokens::from_secret_parts("k3-access".to_owned(), "k3-refresh".to_owned())
         .expect("initial pair");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("Cloak pair");
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(access, refresh, 2, 1)
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, 2, 1)
                 .expect("due refresh schedule"),
         )
         .expect("store pair");
@@ -1947,7 +1947,7 @@ async fn the_loop_stores_a_sleeping_car_once_records_its_stop_and_stays_quiet_af
         let stream_endpoint = fake.stream_endpoint().to_owned();
         let data_dir = temporary.path().to_path_buf();
         async move {
-            let manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+            let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
                 store.clone(),
                 &data_dir,
                 issuer,

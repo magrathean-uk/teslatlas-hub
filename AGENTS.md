@@ -51,9 +51,10 @@ validate prose. Layout and provenance scripts inspect tracked paths:
 ```sh
 python3 scripts/verify-repository-layout.py
 python3 scripts/verify-provenance.py
+python3 scripts/verify-name-policy.py --strict
 ```
 
-Both gates must pass on the current tree. They read the tracked-file list
+All three gates (layout, provenance and name policy) must pass on the current tree. They read the tracked-file list
 (`git ls-files`), so run them again after staging added or deleted paths, and classify
 every new tracked file in `provenance-manifest.json`. Do not force-add or remove files
 to satisfy them as part of a docs edit.

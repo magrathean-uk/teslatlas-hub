@@ -883,14 +883,14 @@ impl HubStore {
     /// `source_key` is an opaque stable identifier such as an account or
     /// migration installation id. It must never be a bearer token, URL with a
     /// password, or other secret.
-    pub(crate) fn provision_teslamate_import_identity(
+    pub(crate) fn provision_source_db_import_identity(
         &self,
         source: &SourceRecord,
         source_created: bool,
         identity_hint: &VehicleDescriptor,
         registered_at_ms: i64,
         expected_vehicle_id: Uuid,
-    ) -> Result<(VehicleRecord, TeslaMateIdentityRegistrationCheckpoint), StoreError> {
+    ) -> Result<(VehicleRecord, SourceDbIdentityRegistrationCheckpoint), StoreError> {
         identity_hint.validate()?;
         if identity_hint.source_id != source.source_id {
             return Err(StoreError::VehicleIdentityConflict);
@@ -920,7 +920,7 @@ impl HubStore {
                 (source_vehicle, false)
             }
             (Some(source_vehicle), Some(identity_vehicle)) => {
-                // A prior crash may leave this TeslaMate-owned row before the
+                // A prior crash may leave this source database-owned row before the
                 // exported snapshot proves VIN/EID/VID. It has no aliases and
                 // is never published. If a collector has since registered the
                 // real identity, remove only the exact untouched placeholder
@@ -999,7 +999,7 @@ impl HubStore {
             }
         };
         transaction.commit().map_err(StoreError::RegisterVehicle)?;
-        let checkpoint = TeslaMateIdentityRegistrationCheckpoint {
+        let checkpoint = SourceDbIdentityRegistrationCheckpoint {
             source: source.clone(),
             source_created,
             vehicle: vehicle.clone(),
@@ -1008,9 +1008,9 @@ impl HubStore {
         Ok((vehicle, checkpoint))
     }
 
-    pub(crate) fn rollback_teslamate_identity_registration(
+    pub(crate) fn rollback_source_db_identity_registration(
         &self,
-        checkpoint: &TeslaMateIdentityRegistrationCheckpoint,
+        checkpoint: &SourceDbIdentityRegistrationCheckpoint,
     ) -> Result<(), StoreError> {
         if checkpoint.vehicle.vehicle_id.is_nil() || checkpoint.source.source_id.is_nil() {
             return Err(StoreError::InvalidVehicleIdentity);
@@ -1088,12 +1088,18 @@ impl HubStore {
         transaction.commit().map_err(StoreError::RegisterVehicle)
     }
 
-    pub(crate) fn register_teslamate_import_source(
+    pub(crate) fn register_source_db_import_source(
         &self,
         descriptor: &SourceDescriptor,
         created_at_ms: i64,
+        new_import_source: bool,
     ) -> Result<(SourceRecord, bool), StoreError> {
-        self.register_source_with_creation_state(descriptor, created_at_ms, None)
+        self.register_source_with_creation_state(
+            descriptor,
+            created_at_ms,
+            None,
+            Some(new_import_source),
+        )
     }
 
     pub fn register_source(
@@ -1101,7 +1107,7 @@ impl HubStore {
         descriptor: &SourceDescriptor,
         created_at_ms: i64,
     ) -> Result<SourceRecord, StoreError> {
-        self.register_source_with_creation_state(descriptor, created_at_ms, None)
+        self.register_source_with_creation_state(descriptor, created_at_ms, None, None)
             .map(|(source, _)| source)
     }
 
@@ -1110,6 +1116,7 @@ impl HubStore {
         descriptor: &SourceDescriptor,
         created_at_ms: i64,
         expected_source_id: Option<Uuid>,
+        import_permission: Option<bool>,
     ) -> Result<(SourceRecord, bool), StoreError> {
         #[cfg(test)]
         StoreInstrumentation::bump(&self.instrumentation.source_registration_calls);
@@ -1120,6 +1127,9 @@ impl HubStore {
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(StoreError::Begin)?;
+        if let Some(new_import_source) = import_permission {
+            require_import_source_key(&transaction, &descriptor.key, new_import_source)?;
+        }
         if let Some(source) = find_source(&transaction, descriptor)? {
             if expected_source_id.is_some_and(|expected| expected != source.source_id) {
                 return Err(StoreError::InvalidSourceId);
@@ -1309,7 +1319,7 @@ impl HubStore {
     }
 
     /// Register one source-owned vehicle with an expected stable UUID. This
-    /// is for non-Fleet sources such as TeslaMate, where the source identity
+    /// is for non-Fleet sources such as source database, where the source identity
     /// and VIN/EID deterministically define the app-facing vehicle identity.
     pub fn register_vehicle_with_id(
         &self,
@@ -1517,7 +1527,7 @@ impl HubStore {
 
     /// Capture the latest durable observation for an exact Hub vehicle. This
     /// avoids ambiguity when separate imported vehicles reuse the same
-    /// pack-local TeslaMate car id.
+    /// pack-local source car id.
     pub fn observation_watermark_for_vehicle(
         &self,
         vehicle_id: Uuid,

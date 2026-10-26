@@ -1235,19 +1235,19 @@ fn p3bf2_owner_start(trip: Option<(&'static str, usize)>, deny: bool) -> StartOu
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_the_late_import(&store);
-    crate::teslamate_credentials::replace_key(temporary.path(), b"guard-cloak-key")
+    crate::legacy_owner_credentials::replace_key(temporary.path(), b"guard-cloak-key")
         .expect("0600 Cloak key");
-    let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("guard-access".to_owned(), "guard-refresh".to_owned())
             .expect("initial pair");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("Cloak pair");
     let now_seconds = current_epoch_millis().expect("clock") / 1_000;
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(
                 access,
                 refresh,
                 now_seconds + 36_000,
@@ -1259,7 +1259,7 @@ fn p3bf2_owner_start(trip: Option<(&'static str, usize)>, deny: bool) -> StartOu
     let base = url::Url::parse("http://127.0.0.1:9/").expect("unroutable");
     let admission =
         crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
-    let manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         temporary.path(),
         base.join("oauth2/v3/").expect("issuer"),
@@ -1375,7 +1375,7 @@ fn p3bf2_fleet_start(trip: Option<(&'static str, usize)>, deny: bool) -> StartOu
     crate::crypto::install_default_provider();
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+    let cursor_key = crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
         .expect("cursor key");
     guard_block_on(finish_collection_for_provider(
         &store,
@@ -1592,7 +1592,7 @@ fn p3bf2_cadence_wait(point: &'static str) {
                 refused_with_the_sensitive_failure(point, &result);
                 // The key file is a durable write of its own: it was not created.
                 assert!(
-                    !crate::teslamate_credentials::cursor_key_path(temporary.path()).exists(),
+                    !crate::legacy_owner_credentials::cursor_key_path(temporary.path()).exists(),
                     "{point}: the cursor key was created after the refusal"
                 );
             }
@@ -1967,7 +1967,9 @@ fn p3bf2_audit_rows(store: &HubStore) -> i64 {
     let connection = store.open().expect("connection");
     let count = |table: &str| -> i64 {
         connection
-            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row.get(0)
+            })
             .expect("count")
     };
     count("stream_session_receipts") + count("outbound_request_receipts")
@@ -2073,19 +2075,19 @@ async fn p3bf2_the_maintenance_raises_the_sensitive_outcome_the_units_service_me
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_the_late_import(&store);
-    crate::teslamate_credentials::replace_key(temporary.path(), b"guard-cloak-key")
+    crate::legacy_owner_credentials::replace_key(temporary.path(), b"guard-cloak-key")
         .expect("0600 Cloak key");
-    let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("guard-access".to_owned(), "guard-refresh".to_owned())
             .expect("initial pair");
     let (access, refresh_bytes) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("Cloak pair");
     let now_seconds = current_epoch_millis().expect("clock") / 1_000;
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(
                 access,
                 refresh_bytes,
                 now_seconds + 36_000,
@@ -2109,7 +2111,7 @@ async fn p3bf2_the_maintenance_raises_the_sensitive_outcome_the_units_service_me
         axum::serve(listener, router).await.expect("token endpoint");
     });
     let base = url::Url::parse(&format!("http://{address}/")).expect("base");
-    let mut manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let mut manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         temporary.path(),
         base.join("oauth2/v3/").expect("issuer"),

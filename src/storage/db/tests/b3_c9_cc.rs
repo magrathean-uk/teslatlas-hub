@@ -1211,7 +1211,11 @@ fn c9_r40_tidy_preserves_copied_drive_totals() {
         if inventory == "legacy" {
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_heads VALUES (?1,?2,?3,1,0)",
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_heads_table!(),
+                        " VALUES (?1,?2,?3,1,0)"
+                    ),
                     params![
                         v.to_string(),
                         source.to_string(),
@@ -1221,14 +1225,22 @@ fn c9_r40_tidy_preserves_copied_drive_totals() {
                 .unwrap();
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_rows VALUES (?1,'drive',9)",
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_rows_table!(),
+                        " VALUES (?1,'drive',9)"
+                    ),
                     [v.to_string()],
                 )
                 .unwrap();
         } else {
             connection
                 .execute(
-                    "INSERT INTO teslamate_import_projection_state_heads VALUES (?1,?2,?3,1,0)",
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_state_heads_table!(),
+                        " VALUES (?1,?2,?3,1,0)"
+                    ),
                     params![
                         v.to_string(),
                         source.to_string(),
@@ -1236,9 +1248,16 @@ fn c9_r40_tidy_preserves_copied_drive_totals() {
                     ],
                 )
                 .unwrap();
-            connection.execute(
-                "INSERT INTO teslamate_import_projection_state_rows VALUES (?1,'drive',1,9,1,zeroblob(32))",
-                [v.to_string()]).unwrap();
+            connection
+                .execute(
+                    concat!(
+                        "INSERT INTO ",
+                        crate::db::import_table_names::import_projection_state_rows_table!(),
+                        " VALUES (?1,'drive',1,9,1,zeroblob(32))"
+                    ),
+                    [v.to_string()],
+                )
+                .unwrap();
         }
         let before = data(&store, &["materialised_drives"]);
         C9_RECOMPUTE_CALLS.with(|slot| *slot.borrow_mut() = Some(Vec::new()));
@@ -1357,6 +1376,7 @@ fn c9_r56_upgrade_pending_run_drives_first_tidy() {
             params![v.to_string(), T0],
         )
         .unwrap();
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
     let store = HubStore::initialize(dir.path()).unwrap();

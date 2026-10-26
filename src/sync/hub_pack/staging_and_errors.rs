@@ -166,3 +166,126 @@ pub enum ProjectionPackError {
     #[error("projection protocol validation failed: {0}")]
     Protocol(#[from] ProtocolError),
 }
+
+#[cfg(test)]
+mod n1_src_sync_hub_pack_staging_and_errors_rs_display_tests {
+    use super::*;
+    use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
+
+    impl ErrorExample for ProjectionPackError {
+        fn error_example() -> Self {
+            ProjectionPackError::TooManyRows
+        }
+    }
+
+    #[test]
+    fn every_reachable_error_display_omits_the_source_project_name() {
+        fn check_projection_pack_error(error: ProjectionPackError) {
+            match &error {
+                ProjectionPackError::Invalid(..) => (),
+                ProjectionPackError::TooManyRows => (),
+                ProjectionPackError::TooManyChunks => (),
+                ProjectionPackError::ManifestTotalsOverflow => (),
+                ProjectionPackError::CapacityOverflow => (),
+                ProjectionPackError::FilesystemSpace { .. } => (),
+                ProjectionPackError::InsufficientFreeSpace { .. } => (),
+                ProjectionPackError::CreateDirectory { .. } => (),
+                ProjectionPackError::InspectStaging { .. } => (),
+                ProjectionPackError::UnsafeStaging(..) => (),
+                ProjectionPackError::ProtectStaging { .. } => (),
+                ProjectionPackError::CleanupStaging { .. } => (),
+                ProjectionPackError::CreateTemporary { .. } => (),
+                ProjectionPackError::Metadata { .. } => (),
+                ProjectionPackError::OpenSqlite(..) => (),
+                ProjectionPackError::ConfigureSqlite(..) => (),
+                ProjectionPackError::CreateSchema(..) => (),
+                ProjectionPackError::BeginTransaction(..) => (),
+                ProjectionPackError::Prepare(..) => (),
+                ProjectionPackError::Insert(..) => (),
+                ProjectionPackError::Commit(..) => (),
+                ProjectionPackError::FinalizeSqlite(..) => (),
+                ProjectionPackError::IntegrityCheck(..) => (),
+                ProjectionPackError::IntegrityFailure => (),
+                ProjectionPackError::ReadSource { .. } => (),
+                ProjectionPackError::CreateCompressed { .. } => (),
+                ProjectionPackError::Compress(..) => (),
+                ProjectionPackError::Decompress(..) => (),
+                ProjectionPackError::SyncCompressed(..) => (),
+                ProjectionPackError::Durability(..) => (),
+                ProjectionPackError::OpenCompressed { .. } => (),
+                ProjectionPackError::Publish { .. } => (),
+                ProjectionPackError::Protocol(..) => (),
+            }
+            assert_name_free(&error);
+        }
+        check_projection_pack_error(ProjectionPackError::Invalid(example()));
+        check_projection_pack_error(ProjectionPackError::TooManyRows);
+        check_projection_pack_error(ProjectionPackError::TooManyChunks);
+        check_projection_pack_error(ProjectionPackError::ManifestTotalsOverflow);
+        check_projection_pack_error(ProjectionPackError::CapacityOverflow);
+        check_projection_pack_error(ProjectionPackError::FilesystemSpace {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::InsufficientFreeSpace {
+            required: example(),
+            available: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::CreateDirectory {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::InspectStaging {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::UnsafeStaging(example()));
+        check_projection_pack_error(ProjectionPackError::ProtectStaging {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::CleanupStaging {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::CreateTemporary {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::Metadata {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::OpenSqlite(example()));
+        check_projection_pack_error(ProjectionPackError::ConfigureSqlite(example()));
+        check_projection_pack_error(ProjectionPackError::CreateSchema(example()));
+        check_projection_pack_error(ProjectionPackError::BeginTransaction(example()));
+        check_projection_pack_error(ProjectionPackError::Prepare(example()));
+        check_projection_pack_error(ProjectionPackError::Insert(example()));
+        check_projection_pack_error(ProjectionPackError::Commit(example()));
+        check_projection_pack_error(ProjectionPackError::FinalizeSqlite(example()));
+        check_projection_pack_error(ProjectionPackError::IntegrityCheck(example()));
+        check_projection_pack_error(ProjectionPackError::IntegrityFailure);
+        check_projection_pack_error(ProjectionPackError::ReadSource {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::CreateCompressed {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::Compress(example()));
+        check_projection_pack_error(ProjectionPackError::Decompress(example()));
+        check_projection_pack_error(ProjectionPackError::SyncCompressed(example()));
+        check_projection_pack_error(ProjectionPackError::Durability(example()));
+        check_projection_pack_error(ProjectionPackError::OpenCompressed {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::Publish {
+            path: example(),
+            source: example(),
+        });
+        check_projection_pack_error(ProjectionPackError::Protocol(example()));
+    }
+}

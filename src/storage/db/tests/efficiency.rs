@@ -312,7 +312,10 @@ fn t58b_a_migrated_vehicle_is_split_by_the_charge_watermark_not_by_its_source() 
     let directory = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(directory.path()).expect("store");
     let import = store
-        .register_source(&SourceDescriptor::new("teslamate", "import-m"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-m"),
+            1_000,
+        )
         .expect("import source");
     let migrated = store
         .register_vehicle(&VehicleDescriptor::new(import.source_id, "vehicle-m"), 1_001)
@@ -341,7 +344,10 @@ fn t58b_a_migrated_vehicle_is_split_by_the_charge_watermark_not_by_its_source() 
         .register_vehicle(&VehicleDescriptor::new(live_source.source_id, "vehicle-l"), 1_003)
         .expect("live vehicle");
     let other_import = store
-        .register_source(&SourceDescriptor::new("teslamate", "import-n"), 1_004)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "import-n"),
+            1_004,
+        )
         .expect("other import source");
     let same_vin = store
         .register_vehicle(&VehicleDescriptor::new(other_import.source_id, "vehicle-n"), 1_005)

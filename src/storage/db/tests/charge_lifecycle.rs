@@ -109,7 +109,7 @@ fn st64_a_closed_charge_is_labelled_from_its_start_coordinates() {
     let temp = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(temp.path()).expect("store");
     let (source, vehicle) = test_registered_vehicle(&store);
-    let fence = |name: &str, radius: f64| crate::teslamate_projection::TeslaMateGeofence {
+    let fence = |name: &str, radius: f64| crate::source_db_projection::SourceDbGeofence {
         id: 0,
         name: name.to_owned(),
         latitude: Some(10.0),

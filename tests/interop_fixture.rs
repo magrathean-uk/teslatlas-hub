@@ -34,7 +34,7 @@ fn standard_fixtures_publish_matching_schema_22_pairs_and_keep_query_rows() {
         };
         let store = HubStore::initialize(root.join("hub")).unwrap();
         let key =
-            teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub"))
+            teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
                 .unwrap();
 
         for vehicle_id in prepared.vehicle_ids {
@@ -101,8 +101,8 @@ async fn physical_v3_fixture_rotates_and_completes_the_retained_rebase_journey()
     assert_eq!(initial.chunk_count, 513);
     assert!(!initial.collector_enabled);
     let store = HubStore::initialize(root.join("hub")).unwrap();
-    let key =
-        teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub")).unwrap();
+    let key = teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+        .unwrap();
     let app = paired_router(store, &key);
     let invitation: Value =
         serde_json::from_slice(&std::fs::read(&prepared.invitation_path).unwrap()).unwrap();
@@ -315,8 +315,8 @@ fn dynamic_fixture_exposure_repairs_registered_but_unpublished_vehicle() {
     assert_eq!(repaired.status, "repaired");
     assert_eq!(repaired.vehicle_id, vehicle_id);
     let reopened = HubStore::initialize(root.join("hub")).unwrap();
-    let key =
-        teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub")).unwrap();
+    let key = teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+        .unwrap();
     teslatlas_hub::updates_delivery::schema_22_signed_artifacts(&reopened, vehicle_id, &key)
         .unwrap();
     assert_eq!(reopened.published_vehicles().unwrap().len(), 3);
@@ -338,8 +338,8 @@ async fn dynamic_fixture_vehicle_retires_and_returns_with_stable_signed_state() 
         exposed.vehicle_id.to_string(),
         "33333333-3333-4333-8333-333333333333"
     );
-    let key =
-        teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub")).unwrap();
+    let key = teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+        .unwrap();
     let store = HubStore::initialize(root.join("hub")).unwrap();
     assert_eq!(store.published_vehicles().unwrap().len(), 3);
     let signed_before = teslatlas_hub::updates_delivery::schema_22_signed_artifacts(
@@ -627,8 +627,8 @@ async fn fixture_has_two_vehicles_and_three_exact_drive_pages() {
     let root = parent.path().join("isolated");
     let prepared = seed::prepare(&root, 18443).unwrap();
     let store = HubStore::initialize(root.join("hub")).unwrap();
-    let key =
-        teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub")).unwrap();
+    let key = teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+        .unwrap();
     // C6 R28 (c) measures class T freshness from the Hub's clock and the seeded
     // observations are fixed past times. The seed records the time its values
     // are measured at in the fixture directory; a Fixture-mode source run
@@ -775,8 +775,8 @@ async fn viewer_r1_fixture_has_exact_twenty_five_twenty_five_one_drive_pages() {
     let root = parent.path().join("viewer-r1");
     let prepared = seed::prepare_viewer_r1(&root, 18444).unwrap();
     let store = HubStore::initialize(root.join("hub")).unwrap();
-    let key =
-        teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(&root.join("hub")).unwrap();
+    let key = teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(&root.join("hub"))
+        .unwrap();
     let app = paired_router(store, &key);
     let invitation: Value =
         serde_json::from_slice(&std::fs::read(&prepared.invitation_path).unwrap()).unwrap();

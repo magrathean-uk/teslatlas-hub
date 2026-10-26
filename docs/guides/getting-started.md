@@ -28,8 +28,8 @@ app and ordinary-use checks.
 ## Choose a setup path
 
 - **New installation:** configure Fleet or Legacy credentials, run diagnostics
-  and start collecting. You do not need TeslaMate.
-- **Migrate from TeslaMate:** bring supported history from your own server.
+  and start collecting. You do not need another source application.
+- **Import History:** bring supported history from your own server.
   Read the [migration checklist](../releases/migration.md#before-you-start)
   before connecting. Keep the source and a backup until you verify the result.
 
@@ -50,7 +50,7 @@ Confirm fresh data appropriate to the vehicle's state; an asleep car does not
 need to be woken merely to test setup.
 
 If checks fail, use [Troubleshooting](troubleshooting.md). Do not run a second
-collector or let TeslaMate and Hub refresh the same Legacy credentials.
+collector or let the source application and Hub refresh the same Legacy credentials.
 
 ## Pair your client
 

@@ -15,7 +15,7 @@ provided; existing source tags and historical notes remain available.
 ## First installation
 
 1. [Choose your setup path](guides/getting-started.md): new collection or an
-   existing TeslaMate history import.
+   existing source history import.
 2. Follow [Mac setup and everyday use](guides/install-macos.md) or
    [Debian installation](guides/install-debian.md), or use the
    [source-built Docker workflow](guides/install-docker.md).
@@ -40,7 +40,7 @@ If something fails, start with [Troubleshooting](guides/troubleshooting.md).
 | Operate and diagnose Hub | [Operations](operations/runbook.md) |
 | Back up or recover a deployment | [Backup and recovery](operations/backup-and-recovery.md) |
 | Upgrade or plan rollback | [Upgrade and rollback](releases/upgrade.md) |
-| Import TeslaMate history | [TeslaMate migration](releases/migration.md) |
+| Import source history | [history import](releases/migration.md) |
 | Solve a fault | [Troubleshooting](guides/troubleshooting.md) |
 
 ## Understand the system

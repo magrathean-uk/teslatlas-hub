@@ -10,12 +10,12 @@
 /// switched off in its settings (the journey proves the REST path; the stream's own
 /// gate is C4's).
 fn seed_journey_import(store: &HubStore) {
-    use crate::teslamate_import::{TeslaMateImportRequest, TeslaMateImportScope, publish_history};
-    use crate::teslamate_projection::{TeslaMateCar, TeslaMateHistory};
+    use crate::source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history};
+    use crate::source_db_projection::{SourceDbCar, SourceDbHistory};
 
     let imported_at_ms = current_epoch_millis().expect("clock") - 60_000;
-    let history = TeslaMateHistory {
-        cars: vec![TeslaMateCar {
+    let history = SourceDbHistory {
+        cars: vec![SourceDbCar {
             id: 1,
             eid: crate::fake_tesla::FIXTURE_EID as i64,
             vid: Some(crate::fake_tesla::FIXTURE_VID as i64),
@@ -46,9 +46,10 @@ fn seed_journey_import(store: &HubStore) {
     publish_history(
         store,
         &CursorKey::from_bytes([0xD3; 32]),
-        &TeslaMateImportRequest {
+        &SourceDbImportRequest {
+            new_import_source: false,
             source_key: "journey-fixture".to_owned(),
-            scope: TeslaMateImportScope::Selected(1),
+            scope: SourceDbImportScope::Selected(1),
             imported_at_ms,
         },
         &history,
@@ -71,7 +72,7 @@ impl JourneyRun {
     ) -> Self {
         // Observer mode: the Hub is not the refresh owner, so no token request is
         // made and the fake's audit holds only the collector's reads.
-        let manager = LegacyAuthManager::from_hub_teslamate_store_observer_with_issuer(
+        let manager = LegacyAuthManager::from_hub_source_db_store_observer_with_issuer(
             store.clone(),
             data_dir,
             fake.oauth_issuer_url(),
@@ -147,18 +148,18 @@ async fn ct33_the_canonical_scenario_with_a_restart_never_wakes_the_car() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_journey_import(&store);
-    crate::teslamate_credentials::replace_key(temporary.path(), b"journey-cloak-key")
+    crate::legacy_owner_credentials::replace_key(temporary.path(), b"journey-cloak-key")
         .expect("0600 Cloak key");
-    let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("journey-access".to_owned(), "journey-refresh".to_owned())
             .expect("initial pair");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("Cloak initial pair");
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(access, refresh, 2, 1)
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, 2, 1)
                 .expect("due refresh schedule"),
         )
         .expect("store encrypted pair");
@@ -272,18 +273,18 @@ async fn the_loop_closes_an_open_drive_when_the_car_falls_silent() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_journey_import(&store);
-    crate::teslamate_credentials::replace_key(temporary.path(), b"journey-cloak-key")
+    crate::legacy_owner_credentials::replace_key(temporary.path(), b"journey-cloak-key")
         .expect("0600 Cloak key");
-    let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("journey-access".to_owned(), "journey-refresh".to_owned())
             .expect("initial pair");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("Cloak initial pair");
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(access, refresh, 2, 1)
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, 2, 1)
                 .expect("due refresh schedule"),
         )
         .expect("store encrypted pair");

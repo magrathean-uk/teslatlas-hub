@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let fileMenu = NSMenu(title: HubL10n.text("hub.AppDelegate.94.31", fallback: "File"))
         fileItem.submenu = fileMenu
         mainMenu.addItem(fileItem)
-        let importData = fileMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.97.32", fallback: "Import TeslaMate Data…"),
+        let importData = fileMenu.addItem(withTitle: HubL10n.text("hub.AppDelegate.97.32", fallback: "Import History…"),
                                           action: #selector(importData(_:)),
                                           keyEquivalent: "i")
         importData.target = actionTarget
@@ -213,7 +213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         if menuItem.action == #selector(importData(_:)) {
-            return mainWindowController?.canImportTeslaMate == true
+            return mainWindowController?.canImportSource == true
         }
         let navigationActions: [Selector] = [#selector(showOverview(_:)), #selector(showVehicles(_:)),
             #selector(showActivity(_:)), #selector(showSettings(_:)), #selector(showDiagnostics(_:)),
@@ -455,7 +455,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         Copyright © 2026 MAGRATHEAN UK LTD.
         Teslatlas Hub — originally authored by György Bolyki and published by MAGRATHEAN UK LTD. Source: https://github.com/magrathean-uk/teslatlas-hub
         \(source)
-        Unofficial; not affiliated with Tesla or TeslaMate; no warranty.
+        Unofficial; not affiliated with Tesla, Inc. or with the makers of software it can import from; no warranty.
         """
     }
 

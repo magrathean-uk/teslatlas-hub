@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 impl HubStore {
-    /// Atomically replace the sole persisted TeslaMate token pair.
-    pub fn replace_teslamate_legacy_tokens(
+    /// Atomically replace the sole persisted legacy owner token pair.
+    pub fn replace_legacy_owner_tokens(
         &self,
-        tokens: &TeslaMateLegacyTokenStore,
+        tokens: &LegacyOwnerTokenStore,
     ) -> Result<(), StoreError> {
         let replacement_generation = tokens
             .credential_generation()
@@ -43,13 +43,17 @@ impl HubStore {
         if !unresolved_inputs.is_empty() {
             let current_generation: Option<String> = transaction
                 .query_row(
-                    "SELECT credential_generation FROM teslamate_legacy_tokens
-                      WHERE singleton_id = 1",
+                    concat!(
+                        "SELECT credential_generation FROM ",
+                        crate::db::import_table_names::legacy_owner_tokens_table!(),
+                        "
+                      WHERE singleton_id = 1"
+                    ),
                     [],
                     |row| row.get(0),
                 )
                 .optional()
-                .map_err(StoreError::TeslaMateTokenStore)?
+                .map_err(StoreError::LegacyOwnerTokenStore)?
                 .flatten();
             if unresolved_inputs.len() != 1
                 || current_generation.as_ref() != unresolved_inputs.first()
@@ -78,7 +82,10 @@ impl HubStore {
         }
         transaction
             .execute(
-                "INSERT INTO teslamate_legacy_tokens(
+                concat!(
+                    "INSERT INTO ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    "(
                     singleton_id, access, refresh, expires_at, next_refresh_at,
                     credential_generation
                  ) VALUES (1, ?1, ?2, ?3, ?4, ?5)
@@ -87,7 +94,8 @@ impl HubStore {
                     refresh = excluded.refresh,
                     expires_at = excluded.expires_at,
                     next_refresh_at = excluded.next_refresh_at,
-                    credential_generation = excluded.credential_generation",
+                    credential_generation = excluded.credential_generation"
+                ),
                 params![
                     tokens.access(),
                     tokens.refresh(),
@@ -96,17 +104,17 @@ impl HubStore {
                     replacement_generation,
                 ],
             )
-            .map_err(StoreError::TeslaMateTokenStore)?;
+            .map_err(StoreError::LegacyOwnerTokenStore)?;
         transaction
             .commit()
-            .map_err(StoreError::TeslaMateTokenStore)
+            .map_err(StoreError::LegacyOwnerTokenStore)
     }
 
     /// Bind a legacy row to the deterministic plaintext refresh identity after
     /// authenticated decryption. This is the one-time v51-to-v52 upgrade path.
-    pub(crate) fn bind_teslamate_legacy_credential_generation(
+    pub(crate) fn bind_source_db_legacy_credential_generation(
         &self,
-        tokens: &TeslaMateLegacyTokenStore,
+        tokens: &LegacyOwnerTokenStore,
         credential_generation: Uuid,
     ) -> Result<(), StoreError> {
         if credential_generation.is_nil() {
@@ -118,13 +126,17 @@ impl HubStore {
             .map_err(StoreError::Begin)?;
         let current: Option<(Vec<u8>, Vec<u8>, Option<String>)> = transaction
             .query_row(
-                "SELECT access, refresh, credential_generation
-                   FROM teslamate_legacy_tokens WHERE singleton_id = 1",
+                concat!(
+                    "SELECT access, refresh, credential_generation
+                   FROM ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    " WHERE singleton_id = 1"
+                ),
                 [],
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .optional()
-            .map_err(StoreError::TeslaMateTokenStore)?;
+            .map_err(StoreError::LegacyOwnerTokenStore)?;
         let Some((access, refresh, stored_generation)) = current else {
             return Err(StoreError::LegacyRefreshOutcomeUnknown);
         };
@@ -138,13 +150,17 @@ impl HubStore {
             None => {
                 let changed = transaction
                     .execute(
-                        "UPDATE teslamate_legacy_tokens
+                        concat!(
+                            "UPDATE ",
+                            crate::db::import_table_names::legacy_owner_tokens_table!(),
+                            "
                             SET credential_generation = ?1
                           WHERE singleton_id = 1 AND credential_generation IS NULL
-                            AND access = ?2 AND refresh = ?3",
+                            AND access = ?2 AND refresh = ?3"
+                        ),
                         params![expected, tokens.access(), tokens.refresh()],
                     )
-                    .map_err(StoreError::TeslaMateTokenStore)?;
+                    .map_err(StoreError::LegacyOwnerTokenStore)?;
                 if changed != 1 {
                     return Err(StoreError::LegacyRefreshOutcomeUnknown);
                 }
@@ -152,7 +168,7 @@ impl HubStore {
         }
         transaction
             .commit()
-            .map_err(StoreError::TeslaMateTokenStore)
+            .map_err(StoreError::LegacyOwnerTokenStore)
     }
 
     /// Reserve the single-use legacy refresh input before any token HTTP
@@ -173,12 +189,16 @@ impl HubStore {
             .map_err(StoreError::Begin)?;
         let current_generation: Option<String> = transaction
             .query_row(
-                "SELECT credential_generation FROM teslamate_legacy_tokens WHERE singleton_id = 1",
+                concat!(
+                    "SELECT credential_generation FROM ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    " WHERE singleton_id = 1"
+                ),
                 [],
                 |row| row.get(0),
             )
             .optional()
-            .map_err(StoreError::TeslaMateTokenStore)?
+            .map_err(StoreError::LegacyOwnerTokenStore)?
             .flatten();
         if current_generation.as_deref() != Some(input_generation.to_string().as_str()) {
             return Err(StoreError::LegacyRefreshOutcomeUnknown);
@@ -269,7 +289,7 @@ impl HubStore {
         receipt_id: OutboundRequestReceiptId,
         input_generation: Uuid,
         output_generation: Uuid,
-        tokens: &TeslaMateLegacyTokenStore,
+        tokens: &LegacyOwnerTokenStore,
     ) -> Result<(), StoreError> {
         if receipt_id.0 <= 0
             || input_generation.is_nil()
@@ -300,12 +320,16 @@ impl HubStore {
         }
         let current_generation: Option<String> = transaction
             .query_row(
-                "SELECT credential_generation FROM teslamate_legacy_tokens WHERE singleton_id = 1",
+                concat!(
+                    "SELECT credential_generation FROM ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    " WHERE singleton_id = 1"
+                ),
                 [],
                 |row| row.get(0),
             )
             .optional()
-            .map_err(StoreError::TeslaMateTokenStore)?
+            .map_err(StoreError::LegacyOwnerTokenStore)?
             .flatten();
         if current_generation.as_deref() != Some(input_generation.to_string().as_str()) {
             return Err(StoreError::LegacyRefreshOutcomeUnknown);
@@ -325,7 +349,10 @@ impl HubStore {
         }
         transaction
             .execute(
-                "INSERT INTO teslamate_legacy_tokens(
+                concat!(
+                    "INSERT INTO ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    "(
                     singleton_id, access, refresh, expires_at, next_refresh_at,
                     credential_generation
                  ) VALUES (1, ?1, ?2, ?3, ?4, ?5)
@@ -334,7 +361,8 @@ impl HubStore {
                     refresh = excluded.refresh,
                     expires_at = excluded.expires_at,
                     next_refresh_at = excluded.next_refresh_at,
-                    credential_generation = excluded.credential_generation",
+                    credential_generation = excluded.credential_generation"
+                ),
                 params![
                     tokens.access(),
                     tokens.refresh(),
@@ -343,7 +371,7 @@ impl HubStore {
                     output_generation.to_string(),
                 ],
             )
-            .map_err(StoreError::TeslaMateTokenStore)?;
+            .map_err(StoreError::LegacyOwnerTokenStore)?;
         let bound = transaction
             .execute(
                 "UPDATE legacy_refresh_receipt_bindings
@@ -440,7 +468,7 @@ impl HubStore {
     /// `release_input` is true, deletes the binding and the input fence exactly
     /// as the cancel does. When it is false the binding and the fence stay, so
     /// `begin_legacy_refresh` refuses that input forever and
-    /// `replace_teslamate_legacy_tokens` refuses to import it again: the store
+    /// `replace_legacy_owner_tokens` refuses to import it again: the store
     /// itself records the token as dead (R45 row 8, R50).
     ///
     /// Only the five outcomes a sent request can end in are accepted:
@@ -561,7 +589,7 @@ impl HubStore {
         &self,
         receipt_id: OutboundRequestReceiptId,
         generation: Uuid,
-        tokens: &TeslaMateLegacyTokenStore,
+        tokens: &LegacyOwnerTokenStore,
     ) -> Result<(), StoreError> {
         if receipt_id.0 <= 0
             || generation.is_nil()
@@ -594,9 +622,13 @@ impl HubStore {
         }
         let written = transaction
             .execute(
-                "UPDATE teslamate_legacy_tokens
+                concat!(
+                    "UPDATE ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    "
                     SET access = ?1, refresh = ?2, expires_at = ?3, next_refresh_at = ?4
-                  WHERE singleton_id = 1 AND credential_generation = ?5",
+                  WHERE singleton_id = 1 AND credential_generation = ?5"
+                ),
                 params![
                     tokens.access(),
                     tokens.refresh(),
@@ -605,7 +637,7 @@ impl HubStore {
                     generation.to_string(),
                 ],
             )
-            .map_err(StoreError::TeslaMateTokenStore)?;
+            .map_err(StoreError::LegacyOwnerTokenStore)?;
         if written != 1 {
             return Err(StoreError::LegacyRefreshOutcomeUnknown);
         }
@@ -653,8 +685,12 @@ impl HubStore {
         let transaction = connection.transaction().map_err(StoreError::Begin)?;
         let row: Option<(Vec<u8>, Vec<u8>, i64, i64, Option<String>)> = transaction
             .query_row(
-                "SELECT access, refresh, expires_at, next_refresh_at, credential_generation
-                   FROM teslamate_legacy_tokens WHERE singleton_id = 1",
+                concat!(
+                    "SELECT access, refresh, expires_at, next_refresh_at, credential_generation
+                   FROM ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    " WHERE singleton_id = 1"
+                ),
                 [],
                 |row| {
                     Ok((
@@ -667,7 +703,7 @@ impl HubStore {
                 },
             )
             .optional()
-            .map_err(StoreError::TeslaMateTokenStore)?;
+            .map_err(StoreError::LegacyOwnerTokenStore)?;
         let receipt: Option<(String, String, String)> = transaction
             .query_row(
                 "SELECT transport, operation, outcome
@@ -678,19 +714,21 @@ impl HubStore {
             .optional()
             .map_err(StoreError::LegacyRefreshReceipt)?;
         let row = row
-            .map(|(access, refresh, expires_at, next_refresh_at, generation)| {
-                let generation = generation
-                    .map(|value| Uuid::parse_str(&value))
-                    .transpose()
-                    .map_err(|_| StoreError::InvalidLegacyRefreshGeneration)?;
-                TeslaMateLegacyTokenStore::new(
-                    access,
-                    refresh,
-                    expires_at,
-                    next_refresh_at,
-                    generation,
-                )
-            })
+            .map(
+                |(access, refresh, expires_at, next_refresh_at, generation)| {
+                    let generation = generation
+                        .map(|value| Uuid::parse_str(&value))
+                        .transpose()
+                        .map_err(|_| StoreError::InvalidLegacyRefreshGeneration)?;
+                    LegacyOwnerTokenStore::new(
+                        access,
+                        refresh,
+                        expires_at,
+                        next_refresh_at,
+                        generation,
+                    )
+                },
+            )
             .transpose()?;
         Ok(LegacyPairSnapshot {
             row,
@@ -766,15 +804,17 @@ impl HubStore {
             .map_err(StoreError::LegacyRefreshReceipt)
     }
 
-    /// Load the sole persisted TeslaMate token pair without decrypting it.
-    pub fn load_teslamate_legacy_tokens(
-        &self,
-    ) -> Result<Option<TeslaMateLegacyTokenStore>, StoreError> {
+    /// Load the sole persisted legacy owner token pair without decrypting it.
+    pub fn load_legacy_owner_tokens(&self) -> Result<Option<LegacyOwnerTokenStore>, StoreError> {
         let connection = self.open_read_only_connection()?;
         let row: Option<(Vec<u8>, Vec<u8>, i64, i64, Option<String>)> = connection
             .query_row(
-                "SELECT access, refresh, expires_at, next_refresh_at, credential_generation
-                 FROM teslamate_legacy_tokens WHERE singleton_id = 1",
+                concat!(
+                    "SELECT access, refresh, expires_at, next_refresh_at, credential_generation
+                 FROM ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    " WHERE singleton_id = 1"
+                ),
                 [],
                 |row| {
                     Ok((
@@ -787,20 +827,14 @@ impl HubStore {
                 },
             )
             .optional()
-            .map_err(StoreError::TeslaMateTokenStore)?;
+            .map_err(StoreError::LegacyOwnerTokenStore)?;
         row.map(
             |(access, refresh, expires_at, next_refresh_at, generation)| {
                 let generation = generation
                     .map(|value| Uuid::parse_str(&value))
                     .transpose()
                     .map_err(|_| StoreError::InvalidLegacyRefreshGeneration)?;
-                TeslaMateLegacyTokenStore::new(
-                    access,
-                    refresh,
-                    expires_at,
-                    next_refresh_at,
-                    generation,
-                )
+                LegacyOwnerTokenStore::new(access, refresh, expires_at, next_refresh_at, generation)
             },
         )
         .transpose()
@@ -810,7 +844,7 @@ impl HubStore {
 /// The pair row and one receipt as one snapshot saw them (see
 /// `HubStore::legacy_pair_and_receipt_snapshot`).
 pub(crate) struct LegacyPairSnapshot {
-    pub(crate) row: Option<TeslaMateLegacyTokenStore>,
+    pub(crate) row: Option<LegacyOwnerTokenStore>,
     pub(crate) receipt: Option<LegacyReceiptFacts>,
 }
 

@@ -7,3 +7,8 @@ pub mod diagnostics;
 pub mod lifecycle;
 
 pub mod development_event_log;
+
+pub mod legacy_names;
+
+#[cfg(test)]
+pub(crate) mod name_test_support;

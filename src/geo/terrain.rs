@@ -2,7 +2,7 @@
 
 //! Pure SRTM HGT tile naming and sample decoding.
 //!
-//! This matches the tile and sample behavior of the pinned TeslaMate SRTM
+//! This matches the tile and sample behavior of the pinned source database SRTM
 //! 0.8.0 dependency. It deliberately does not download, cache, or schedule
 //! terrain work.
 
@@ -320,7 +320,7 @@ impl HgtTile {
         self.try_cell(row, column).ok().flatten()
     }
 
-    /// Return the raw HGT cell selected by TeslaMate's SRTM dependency.
+    /// Return the raw HGT cell selected by the source application's SRTM dependency.
     /// There is no interpolation. Invalid and void cells return `None`.
     pub fn elevation_at(&self, latitude: f64, longitude: f64) -> Result<Option<i16>, TerrainError> {
         let requested = TileId::from_coordinates(latitude, longitude)?;

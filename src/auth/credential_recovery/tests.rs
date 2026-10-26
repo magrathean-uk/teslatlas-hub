@@ -4,12 +4,12 @@ use super::*;
 use crate::{
     credentials::OwnerTokens,
     data_recovery::{create_data_backup, restore_data_backup},
-    db::TeslaMateLegacyTokenStore,
-    protocol::{CursorClaims, PROTOCOL_V1, SyncManifest, TRANSPORT_SCHEMA_V1, TransferMode},
-    teslamate_credentials::{
+    db::LegacyOwnerTokenStore,
+    legacy_owner_credentials::{
         load_or_create_cursor_key, random_encryption_key, replace_key_and_tokens,
     },
-    teslamate_token::encrypt_legacy_owner_tokens,
+    protocol::{CursorClaims, PROTOCOL_V1, SyncManifest, TRANSPORT_SCHEMA_V1, TransferMode},
+    source_token_envelope::encrypt_legacy_owner_tokens,
 };
 
 #[test]
@@ -22,11 +22,11 @@ fn encrypted_export_round_trips_after_data_only_restore() {
         "credential-recovery-refresh".to_owned(),
     )
     .expect("tokens");
-    let teslamate_key = random_encryption_key().expect("random TeslaMate key");
+    let source_db_key = random_encryption_key().expect("random source database key");
     let (access, refresh) =
-        encrypt_legacy_owner_tokens(&teslamate_key, &tokens).expect("ciphertext");
-    let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("stored tokens");
-    replace_key_and_tokens(&source_data, &source, &teslamate_key, &stored)
+        encrypt_legacy_owner_tokens(&source_db_key, &tokens).expect("ciphertext");
+    let stored = LegacyOwnerTokenStore::imported(access, refresh).expect("stored tokens");
+    replace_key_and_tokens(&source_data, &source, &source_db_key, &stored)
         .expect("source credentials");
     load_or_create_cursor_key(&source_data).expect("source cursor");
     let source_cursor = load_existing_cursor_key_bytes(&source_data)
@@ -47,8 +47,8 @@ fn encrypted_export_round_trips_after_data_only_restore() {
     let bytes = fs::read(&export).expect("encrypted bytes");
     assert!(
         !bytes
-            .windows(teslamate_key.len())
-            .any(|part| part == teslamate_key.as_slice())
+            .windows(source_db_key.len())
+            .any(|part| part == source_db_key.as_slice())
     );
     assert!(
         !bytes
@@ -59,12 +59,12 @@ fn encrypted_export_round_trips_after_data_only_restore() {
     restore_credentials(&restored, &restored_data, &export, &recovery_key)
         .expect("credential restore");
     let restored_tokens = restored
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("token query")
         .expect("stored token row");
-    let restored_key =
-        load_key_for_tokens(&restored_data, &restored_tokens).expect("restored TeslaMate key");
-    assert_eq!(restored_key.as_bytes(), teslamate_key.as_slice());
+    let restored_key = load_key_for_tokens(&restored_data, &restored_tokens)
+        .expect("restored source database key");
+    assert_eq!(restored_key.as_bytes(), source_db_key.as_slice());
     assert_eq!(
         load_existing_cursor_key_bytes(&restored_data)
             .expect("cursor read")
@@ -186,7 +186,7 @@ fn wrong_cursor_key_is_rejected_against_manifests_before_secrets_publication() {
         .expect("manifest catalogue");
     assert!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("token query")
             .is_none()
     );
@@ -347,4 +347,33 @@ fn write_cursor_only_export(
     envelope.extend_from_slice(&nonce_bytes);
     envelope.extend_from_slice(&ciphertext);
     publish_private_file(destination, &envelope).expect("publish recovery export");
+}
+
+#[test]
+fn credential_recovery_report_reads_the_earlier_key() {
+    let report = report(
+        "exported",
+        Path::new("/synthetic/recovery.bin"),
+        Uuid::nil(),
+        true,
+        false,
+        false,
+    );
+    let mut value = serde_json::to_value(report).expect("encode report");
+    let included = value
+        .as_object_mut()
+        .unwrap()
+        .remove("sourceTokenKeyIncluded")
+        .unwrap();
+    value[crate::runtime::legacy_names::RECOVERY_PREVIOUS_KEY] = included;
+    let restored: CredentialRecoveryReport =
+        serde_json::from_value(value).expect("read earlier report key");
+    assert!(restored.source_token_key_included);
+    let output = serde_json::to_value(restored).unwrap();
+    assert_eq!(output["sourceTokenKeyIncluded"], true);
+    assert!(
+        output
+            .get(crate::runtime::legacy_names::RECOVERY_PREVIOUS_KEY)
+            .is_none()
+    );
 }

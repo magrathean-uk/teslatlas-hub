@@ -156,7 +156,7 @@ fn record_immutable_v2_base_binding_values_in_transaction(
     Ok(())
 }
 
-fn teslamate_inventory_entity_name(entity: ProjectionDeltaEntity) -> Option<&'static str> {
+fn source_db_inventory_entity_name(entity: ProjectionDeltaEntity) -> Option<&'static str> {
     match entity {
         ProjectionDeltaEntity::Drive => Some("drive"),
         ProjectionDeltaEntity::Position => Some("position"),
@@ -171,7 +171,7 @@ fn teslamate_inventory_entity_name(entity: ProjectionDeltaEntity) -> Option<&'st
     }
 }
 
-fn teslamate_inventory_entity(value: &str) -> Option<ProjectionDeltaEntity> {
+fn source_db_inventory_entity(value: &str) -> Option<ProjectionDeltaEntity> {
     match value {
         "drive" => Some(ProjectionDeltaEntity::Drive),
         "position" => Some(ProjectionDeltaEntity::Position),
@@ -186,11 +186,11 @@ fn teslamate_inventory_entity(value: &str) -> Option<ProjectionDeltaEntity> {
 fn stored_projection_state_entity(
     name: &str,
     ordinal: i64,
-) -> Result<TeslaMateProjectionStateEntity, StoreError> {
-    let by_name: TeslaMateProjectionStateEntity =
-        name.parse().map_err(StoreError::TeslaMateProjectionState)?;
-    let by_ordinal = TeslaMateProjectionStateEntity::from_ordinal(ordinal)
-        .map_err(StoreError::TeslaMateProjectionState)?;
+) -> Result<SourceDbProjectionStateEntity, StoreError> {
+    let by_name: SourceDbProjectionStateEntity =
+        name.parse().map_err(StoreError::SourceDbProjectionState)?;
+    let by_ordinal = SourceDbProjectionStateEntity::from_ordinal(ordinal)
+        .map_err(StoreError::SourceDbProjectionState)?;
     if by_name != by_ordinal {
         return Err(StoreError::LineageCatalogConflict);
     }
@@ -200,11 +200,11 @@ fn stored_projection_state_entity(
 fn projection_state_digest_from_blob(blob: Vec<u8>) -> Result<Sha256Digest, StoreError> {
     let digest: [u8; 32] = blob
         .try_into()
-        .map_err(|_: Vec<u8>| TeslaMateProjectionStateError::InvalidStoredDigest)?;
+        .map_err(|_: Vec<u8>| SourceDbProjectionStateError::InvalidStoredDigest)?;
     Ok(Sha256Digest::from_bytes(digest))
 }
 
-fn validate_teslamate_import_inventory_rows(
+fn validate_source_db_import_inventory_rows(
     selected_car_id: i64,
     rows: &[ProjectionTombstone],
 ) -> Result<(), StoreError> {
@@ -215,7 +215,7 @@ fn validate_teslamate_import_inventory_rows(
     for row in rows {
         if row.id <= 0
             || row.car_id != selected_car_id
-            || teslamate_inventory_entity_name(row.entity).is_none()
+            || source_db_inventory_entity_name(row.entity).is_none()
             || !seen.insert((row.entity, row.id))
         {
             return Err(StoreError::LineageCatalogConflict);
@@ -224,10 +224,10 @@ fn validate_teslamate_import_inventory_rows(
     Ok(())
 }
 
-fn validate_teslamate_import_inventory(
+fn validate_source_db_import_inventory(
     manifest: &SyncManifest,
     binding: &ProjectionBinding,
-    inventory: &TeslaMateImportProjectionInventory,
+    inventory: &SourceDbImportProjectionInventory,
 ) -> Result<(), StoreError> {
     validate_immutable_v2_base_binding(manifest, binding)?;
     if inventory.source_id.is_nil()
@@ -236,13 +236,13 @@ fn validate_teslamate_import_inventory(
     {
         return Err(StoreError::LineageCatalogConflict);
     }
-    validate_teslamate_import_inventory_rows(inventory.selected_car_id, &inventory.rows)
+    validate_source_db_import_inventory_rows(inventory.selected_car_id, &inventory.rows)
 }
 
-fn validate_teslamate_import_delta_inventory(
+fn validate_source_db_import_delta_inventory(
     delta: &LineageDelta,
     binding: &ProjectionBinding,
-    inventory: &TeslaMateImportProjectionInventory,
+    inventory: &SourceDbImportProjectionInventory,
 ) -> Result<(), StoreError> {
     if inventory.source_id.is_nil()
         || inventory.source_id != binding.account_id
@@ -251,21 +251,21 @@ fn validate_teslamate_import_delta_inventory(
     {
         return Err(StoreError::LineageCatalogConflict);
     }
-    validate_teslamate_import_inventory_rows(inventory.selected_car_id, &inventory.rows)
+    validate_source_db_import_inventory_rows(inventory.selected_car_id, &inventory.rows)
 }
 
-fn replace_teslamate_import_inventory_in_transaction(
+fn replace_source_db_import_inventory_in_transaction(
     transaction: &Transaction<'_>,
     vehicle_id: Uuid,
     base_snapshot_id: Uuid,
     head_sequence: u64,
-    inventory: &TeslaMateImportProjectionInventory,
+    inventory: &SourceDbImportProjectionInventory,
     allow_create: bool,
 ) -> Result<(), StoreError> {
     if vehicle_id.is_nil() || base_snapshot_id.is_nil() {
         return Err(StoreError::LineageCatalogConflict);
     }
-    validate_teslamate_import_inventory_rows(inventory.selected_car_id, &inventory.rows)?;
+    validate_source_db_import_inventory_rows(inventory.selected_car_id, &inventory.rows)?;
     let head_sequence = i64::try_from(head_sequence).map_err(|_| StoreError::SequenceTooLarge)?;
     let vehicle_key = vehicle_id.to_string();
     let base_matches: bool = transaction
@@ -291,8 +291,12 @@ fn replace_teslamate_import_inventory_in_transaction(
     }
     let existing: Option<(String, String, i64)> = transaction
         .query_row(
-            "SELECT source_id, base_snapshot_id, selected_car_id
-               FROM teslamate_import_projection_heads WHERE vehicle_id = ?1",
+            concat!(
+                "SELECT source_id, base_snapshot_id, selected_car_id
+               FROM ",
+                crate::db::import_table_names::import_projection_heads_table!(),
+                " WHERE vehicle_id = ?1"
+            ),
             params![vehicle_key.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
@@ -306,14 +310,18 @@ fn replace_teslamate_import_inventory_in_transaction(
             return Err(StoreError::LineageCatalogConflict);
         }
     } else if !allow_create {
-        return Err(StoreError::TeslaMateImportInventoryMissing(vehicle_id));
+        return Err(StoreError::SourceDbImportInventoryMissing(vehicle_id));
     }
     transaction
         .execute(
-            "INSERT INTO teslamate_import_projection_heads(
+            concat!(
+                "INSERT INTO ",
+                crate::db::import_table_names::import_projection_heads_table!(),
+                "(
                 vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence
              ) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(vehicle_id) DO UPDATE SET head_sequence = excluded.head_sequence",
+             ON CONFLICT(vehicle_id) DO UPDATE SET head_sequence = excluded.head_sequence"
+            ),
             params![
                 vehicle_key.as_str(),
                 inventory.source_id.to_string(),
@@ -325,22 +333,28 @@ fn replace_teslamate_import_inventory_in_transaction(
         .map_err(StoreError::LineageCatalog)?;
     transaction
         .execute(
-            "DELETE FROM teslamate_import_projection_rows WHERE vehicle_id = ?1",
+            concat!(
+                "DELETE FROM ",
+                crate::db::import_table_names::import_projection_rows_table!(),
+                " WHERE vehicle_id = ?1"
+            ),
             params![vehicle_key.as_str()],
         )
         .map_err(StoreError::LineageCatalog)?;
     let mut statement = transaction
-        .prepare_cached(
-            "INSERT INTO teslamate_import_projection_rows(vehicle_id, entity, entity_id)
-             VALUES (?1, ?2, ?3)",
-        )
+        .prepare_cached(concat!(
+            "INSERT INTO ",
+            crate::db::import_table_names::import_projection_rows_table!(),
+            "(vehicle_id, entity, entity_id)
+             VALUES (?1, ?2, ?3)"
+        ))
         .map_err(StoreError::LineageCatalog)?;
     for row in &inventory.rows {
         statement
             .execute(params![
                 vehicle_key.as_str(),
-                teslamate_inventory_entity_name(row.entity)
-                    .expect("validated TeslaMate inventory entity"),
+                source_db_inventory_entity_name(row.entity)
+                    .expect("validated source database inventory entity"),
                 row.id,
             ])
             .map_err(StoreError::LineageCatalog)?;
@@ -370,7 +384,8 @@ fn legacy_direct_bridge_candidate(
     }
     let row: Option<(String, i64, Vec<u8>, Vec<u8>)> = connection
         .query_row(
-            "SELECT base.snapshot_id, head.head_sequence,
+            concat!(
+                "SELECT base.snapshot_id, head.head_sequence,
                     fingerprints.fingerprint_sha256, manifests.manifest_json
                FROM sync_bases AS base
                JOIN sync_heads AS head
@@ -379,7 +394,9 @@ fn legacy_direct_bridge_candidate(
                JOIN v2_base_bindings AS binding
                  ON binding.vehicle_id = base.vehicle_id
                 AND binding.snapshot_id = base.snapshot_id
-               JOIN teslamate_import_projection_heads AS inventory
+               JOIN ",
+                crate::db::import_table_names::import_projection_heads_table!(),
+                " AS inventory
                  ON inventory.vehicle_id = base.vehicle_id
                 AND inventory.base_snapshot_id = base.snapshot_id
                JOIN snapshot_fingerprints AS fingerprints
@@ -402,13 +419,18 @@ fn legacy_direct_bridge_candidate(
                      WHERE vehicle_id = base.vehicle_id
                 )
                 AND NOT EXISTS(
-                    SELECT 1 FROM teslamate_import_projection_state_heads
+                    SELECT 1 FROM ",
+                crate::db::import_table_names::import_projection_state_heads_table!(),
+                "
                      WHERE vehicle_id = base.vehicle_id
                 )
                 AND NOT EXISTS(
-                    SELECT 1 FROM teslamate_import_projection_state_bridges
+                    SELECT 1 FROM ",
+                crate::db::import_table_names::import_projection_state_bridges_table!(),
+                "
                      WHERE vehicle_id = base.vehicle_id
-                )",
+                )"
+            ),
             params![
                 vehicle_id.to_string(),
                 source_id.to_string(),
@@ -457,14 +479,19 @@ fn legacy_projection_inventory_matches_state_in_transaction(
 ) -> Result<bool, StoreError> {
     transaction
         .query_row(
-            "SELECT
+            concat!(
+                "SELECT
                 NOT EXISTS(
                     SELECT 1
-                      FROM teslamate_import_projection_rows AS inventory
+                      FROM ",
+                crate::db::import_table_names::import_projection_rows_table!(),
+                " AS inventory
                      WHERE inventory.vehicle_id = ?1
                        AND NOT EXISTS(
                            SELECT 1
-                             FROM teslamate_import_projection_state_rows AS state
+                             FROM ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                " AS state
                             WHERE state.vehicle_id = inventory.vehicle_id
                               AND state.entity = inventory.entity
                               AND state.entity_id = inventory.entity_id
@@ -472,17 +499,22 @@ fn legacy_projection_inventory_matches_state_in_transaction(
                 )
                 AND NOT EXISTS(
                     SELECT 1
-                      FROM teslamate_import_projection_state_rows AS state
+                      FROM ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                " AS state
                      WHERE state.vehicle_id = ?1
                        AND state.entity <> 'car'
                        AND NOT EXISTS(
                            SELECT 1
-                             FROM teslamate_import_projection_rows AS inventory
+                             FROM ",
+                crate::db::import_table_names::import_projection_rows_table!(),
+                " AS inventory
                             WHERE inventory.vehicle_id = state.vehicle_id
                               AND inventory.entity = state.entity
                               AND inventory.entity_id = state.entity_id
                        )
-                )",
+                )"
+            ),
             params![vehicle_id.to_string()],
             |row| row.get(0),
         )
@@ -493,10 +525,10 @@ fn legacy_direct_bridge_state_error(vehicle_id: Uuid, error: StoreError) -> Stor
     match error {
         StoreError::LineageCatalogConflict
         | StoreError::ImmutableBaseBindingMissing(_)
-        | StoreError::TeslaMateImportInventoryMissing(_)
-        | StoreError::TeslaMateImportProjectionStateMissing(_)
-        | StoreError::TeslaMateProjectionState(_) => {
-            StoreError::TeslaMateLegacyDirectRebaseRequired(vehicle_id)
+        | StoreError::SourceDbImportInventoryMissing(_)
+        | StoreError::SourceDbImportProjectionStateMissing(_)
+        | StoreError::SourceDbProjectionState(_) => {
+            StoreError::SourceDbLegacyDirectRebaseRequired(vehicle_id)
         }
         error => error,
     }
@@ -506,14 +538,14 @@ fn legacy_direct_bridge_state_error(vehicle_id: Uuid, error: StoreError) -> Stor
 /// URI mode, then authenticate the attachment once more before a catalogue
 /// transaction can read it. The fixed schema name is internal and never
 /// accepts a caller-controlled identifier.
-fn attach_teslamate_projection_state_transfer(
+fn attach_source_db_projection_state_transfer(
     connection: &Connection,
-    transfer: &TeslaMateProjectionStateTransfer,
+    transfer: &SourceDbProjectionStateTransfer,
 ) -> Result<(), StoreError> {
     let uri = transfer.read_only_attachment_uri()?;
     connection
         .execute(
-            "ATTACH DATABASE ?1 AS teslamate_projection_state_spool",
+            concat!("ATTACH DATABASE ?1 AS ", crate::db::import_table_names::import_state_spool_alias!()),
             params![uri],
         )
         .map_err(StoreError::LineageCatalog)?;
@@ -521,13 +553,16 @@ fn attach_teslamate_projection_state_transfer(
         // Validation happens before the Hub transaction begins. An explicit
         // detach keeps this connection reusable on the normal error path;
         // dropping the connection remains a final close-on-error backstop.
-        let _ = connection.execute_batch("DETACH DATABASE teslamate_projection_state_spool");
+        let _ = connection.execute_batch(concat!(
+            "DETACH DATABASE ",
+            crate::db::import_table_names::import_state_spool_alias!()
+        ));
         return Err(error.into());
     }
     Ok(())
 }
 
-fn detach_teslamate_projection_state_transfer(
+fn detach_source_db_projection_state_transfer(
     store: &HubStore,
     connection: &Connection,
 ) -> Result<(), StoreError> {
@@ -545,7 +580,10 @@ fn detach_teslamate_projection_state_transfer(
         }
     }
     connection
-        .execute_batch("DETACH DATABASE teslamate_projection_state_spool")
+        .execute_batch(concat!(
+            "DETACH DATABASE ",
+            crate::db::import_table_names::import_state_spool_alias!()
+        ))
         .map_err(StoreError::LineageCatalog)
 }
 
@@ -553,7 +591,7 @@ fn detach_teslamate_projection_state_transfer(
 /// needed. If SQLite then declines the best-effort detach, closing this local
 /// connection releases the attachment; reporting an error would make callers
 /// discard packs that the committed catalogue now owns.
-fn finish_teslamate_projection_state_transfer<T>(
+fn finish_source_db_projection_state_transfer<T>(
     result: Result<T, StoreError>,
     detach: Result<(), StoreError>,
 ) -> Result<T, StoreError> {
@@ -561,24 +599,24 @@ fn finish_teslamate_projection_state_transfer<T>(
         (Err(error), _) => Err(error),
         (Ok(value), Ok(())) => Ok(value),
         (Ok(value), Err(error)) => {
-            tracing::warn!(%error, "could not detach committed TeslaMate projection-state spool; closing connection releases attachment");
+            tracing::warn!(%error, "could not detach committed source database projection-state spool; closing connection releases attachment");
             Ok(value)
         }
     }
 }
 
 /// Set-based counterpart of
-/// [`replace_teslamate_import_projection_state_in_transaction`]. The source
+/// [`replace_source_db_import_projection_state_in_transaction`]. The source
 /// was authenticated while attached read-only, so this writes one SQLite
 /// `INSERT … SELECT` rather than crossing Rust for every source fact.
-fn replace_teslamate_import_projection_state_from_attached_in_transaction(
+fn replace_source_db_import_projection_state_from_attached_in_transaction(
     transaction: &Transaction<'_>,
     vehicle_id: Uuid,
     source_id: Uuid,
     base_snapshot_id: Uuid,
     head_sequence: u64,
     selected_car_id: i64,
-    transfer: &TeslaMateProjectionStateTransfer,
+    transfer: &SourceDbProjectionStateTransfer,
     allow_create: bool,
 ) -> Result<(), StoreError> {
     if vehicle_id.is_nil()
@@ -634,8 +672,12 @@ fn replace_teslamate_import_projection_state_from_attached_in_transaction(
     }
     let existing: Option<(String, String, i64)> = transaction
         .query_row(
-            "SELECT source_id, base_snapshot_id, selected_car_id
-               FROM teslamate_import_projection_state_heads WHERE vehicle_id = ?1",
+            concat!(
+                "SELECT source_id, base_snapshot_id, selected_car_id
+               FROM ",
+                crate::db::import_table_names::import_projection_state_heads_table!(),
+                " WHERE vehicle_id = ?1"
+            ),
             params![vehicle_key.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
@@ -649,16 +691,18 @@ fn replace_teslamate_import_projection_state_from_attached_in_transaction(
             return Err(StoreError::LineageCatalogConflict);
         }
     } else if !allow_create {
-        return Err(StoreError::TeslaMateImportProjectionStateMissing(
-            vehicle_id,
-        ));
+        return Err(StoreError::SourceDbImportProjectionStateMissing(vehicle_id));
     }
     transaction
         .execute(
-            "INSERT INTO teslamate_import_projection_state_heads(
+            concat!(
+                "INSERT INTO ",
+                crate::db::import_table_names::import_projection_state_heads_table!(),
+                "(
                 vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence
              ) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(vehicle_id) DO UPDATE SET head_sequence = excluded.head_sequence",
+             ON CONFLICT(vehicle_id) DO UPDATE SET head_sequence = excluded.head_sequence"
+            ),
             params![
                 vehicle_key.as_str(),
                 source_id.to_string(),
@@ -670,19 +714,32 @@ fn replace_teslamate_import_projection_state_from_attached_in_transaction(
         .map_err(StoreError::LineageCatalog)?;
     transaction
         .execute(
-            "DELETE FROM teslamate_import_projection_state_rows
+            concat!(
+                "DELETE FROM ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "
               WHERE vehicle_id = ?1
                 AND NOT EXISTS (
-                    SELECT 1 FROM teslamate_projection_state_spool.current_rows AS current
-                     WHERE current.entity_ordinal = teslamate_import_projection_state_rows.entity_ordinal
-                       AND current.entity_id = teslamate_import_projection_state_rows.entity_id
-                )",
+                    SELECT 1 FROM ",
+                crate::db::import_table_names::import_state_spool_alias!(),
+                ".current_rows AS current
+                     WHERE current.entity_ordinal = ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                ".entity_ordinal
+                       AND current.entity_id = ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                ".entity_id
+                )"
+            ),
             params![vehicle_key.as_str()],
         )
         .map_err(StoreError::LineageCatalog)?;
     transaction
         .execute(
-            "INSERT INTO teslamate_import_projection_state_rows(
+            concat!(
+                "INSERT INTO ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "(
                 vehicle_id, entity, entity_ordinal, entity_id, car_id, projection_sha256
              )
              SELECT ?1,
@@ -696,22 +753,35 @@ fn replace_teslamate_import_projection_state_from_attached_in_transaction(
                         WHEN 6 THEN 'update'
                     END,
                     entity_ordinal, entity_id, car_id, projection_sha256
-               FROM teslamate_projection_state_spool.current_rows
+               FROM ",
+                crate::db::import_table_names::import_state_spool_alias!(),
+                ".current_rows
               WHERE true
               ORDER BY entity_ordinal ASC, entity_id ASC
              ON CONFLICT(vehicle_id, entity_ordinal, entity_id) DO UPDATE SET
                 entity = excluded.entity,
                 car_id = excluded.car_id,
                 projection_sha256 = excluded.projection_sha256
-             WHERE teslamate_import_projection_state_rows.entity IS NOT excluded.entity
-                OR teslamate_import_projection_state_rows.car_id IS NOT excluded.car_id
-                OR teslamate_import_projection_state_rows.projection_sha256 IS NOT excluded.projection_sha256",
+             WHERE ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                ".entity IS NOT excluded.entity
+                OR ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                ".car_id IS NOT excluded.car_id
+                OR ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                ".projection_sha256 IS NOT excluded.projection_sha256"
+            ),
             params![vehicle_key.as_str()],
         )
         .map_err(StoreError::LineageCatalog)?;
     let installed: i64 = transaction
         .query_row(
-            "SELECT COUNT(*) FROM teslamate_import_projection_state_rows WHERE vehicle_id = ?1",
+            concat!(
+                "SELECT COUNT(*) FROM ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                " WHERE vehicle_id = ?1"
+            ),
             params![vehicle_key.as_str()],
             |row| row.get(0),
         )
@@ -729,14 +799,14 @@ fn replace_teslamate_import_projection_state_from_attached_in_transaction(
 /// intentionally remains absent from this legacy table. Reading the target
 /// rather than the attachment makes the two catalogue views exactly identical
 /// even if an outside process replaces the spool path after attachment.
-fn replace_teslamate_import_projection_inventory_from_attached_in_transaction(
+fn replace_source_db_import_projection_inventory_from_attached_in_transaction(
     transaction: &Transaction<'_>,
     vehicle_id: Uuid,
     source_id: Uuid,
     base_snapshot_id: Uuid,
     head_sequence: u64,
     selected_car_id: i64,
-    transfer: &TeslaMateProjectionStateTransfer,
+    transfer: &SourceDbProjectionStateTransfer,
     allow_create: bool,
 ) -> Result<(), StoreError> {
     if vehicle_id.is_nil()
@@ -771,8 +841,12 @@ fn replace_teslamate_import_projection_inventory_from_attached_in_transaction(
     }
     let existing: Option<(String, String, i64)> = transaction
         .query_row(
-            "SELECT source_id, base_snapshot_id, selected_car_id
-               FROM teslamate_import_projection_heads WHERE vehicle_id = ?1",
+            concat!(
+                "SELECT source_id, base_snapshot_id, selected_car_id
+               FROM ",
+                crate::db::import_table_names::import_projection_heads_table!(),
+                " WHERE vehicle_id = ?1"
+            ),
             params![vehicle_key.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
@@ -786,14 +860,18 @@ fn replace_teslamate_import_projection_inventory_from_attached_in_transaction(
             return Err(StoreError::LineageCatalogConflict);
         }
     } else if !allow_create {
-        return Err(StoreError::TeslaMateImportInventoryMissing(vehicle_id));
+        return Err(StoreError::SourceDbImportInventoryMissing(vehicle_id));
     }
     transaction
         .execute(
-            "INSERT INTO teslamate_import_projection_heads(
+            concat!(
+                "INSERT INTO ",
+                crate::db::import_table_names::import_projection_heads_table!(),
+                "(
                 vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence
              ) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(vehicle_id) DO UPDATE SET head_sequence = excluded.head_sequence",
+             ON CONFLICT(vehicle_id) DO UPDATE SET head_sequence = excluded.head_sequence"
+            ),
             params![
                 vehicle_key.as_str(),
                 source_id.to_string(),
@@ -805,17 +883,27 @@ fn replace_teslamate_import_projection_inventory_from_attached_in_transaction(
         .map_err(StoreError::LineageCatalog)?;
     transaction
         .execute(
-            "DELETE FROM teslamate_import_projection_rows WHERE vehicle_id = ?1",
+            concat!(
+                "DELETE FROM ",
+                crate::db::import_table_names::import_projection_rows_table!(),
+                " WHERE vehicle_id = ?1"
+            ),
             params![vehicle_key.as_str()],
         )
         .map_err(StoreError::LineageCatalog)?;
     let inserted = transaction
         .execute(
-            "INSERT INTO teslamate_import_projection_rows(vehicle_id, entity, entity_id)
+            concat!(
+                "INSERT INTO ",
+                crate::db::import_table_names::import_projection_rows_table!(),
+                "(vehicle_id, entity, entity_id)
              SELECT vehicle_id, entity, entity_id
-               FROM teslamate_import_projection_state_rows
+               FROM ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "
               WHERE vehicle_id = ?1 AND entity_ordinal BETWEEN 1 AND 6
-              ORDER BY entity_ordinal ASC, entity_id ASC",
+              ORDER BY entity_ordinal ASC, entity_id ASC"
+            ),
             params![vehicle_key.as_str()],
         )
         .map_err(StoreError::LineageCatalog)?;
@@ -834,14 +922,14 @@ fn replace_teslamate_import_projection_inventory_from_attached_in_transaction(
 /// that advances the immutable-base lineage head. `allow_create` is true only
 /// while cataloguing an initial base; a successor must refuse missing state
 /// rather than silently treating a legacy inventory as equivalent provenance.
-pub(crate) fn replace_teslamate_import_projection_state_in_transaction(
+pub(crate) fn replace_source_db_import_projection_state_in_transaction(
     transaction: &Transaction<'_>,
     vehicle_id: Uuid,
     source_id: Uuid,
     base_snapshot_id: Uuid,
     head_sequence: u64,
     selected_car_id: i64,
-    state: &TeslaMateProjectionState,
+    state: &SourceDbProjectionState,
     allow_create: bool,
 ) -> Result<(), StoreError> {
     if vehicle_id.is_nil()
@@ -852,8 +940,8 @@ pub(crate) fn replace_teslamate_import_projection_state_in_transaction(
         return Err(StoreError::LineageCatalogConflict);
     }
     if !state.stats().sealed {
-        return Err(StoreError::TeslaMateProjectionState(
-            TeslaMateProjectionStateError::StateNotSealed,
+        return Err(StoreError::SourceDbProjectionState(
+            SourceDbProjectionStateError::StateNotSealed,
         ));
     }
     let head_sequence = i64::try_from(head_sequence).map_err(|_| StoreError::SequenceTooLarge)?;
@@ -902,8 +990,12 @@ pub(crate) fn replace_teslamate_import_projection_state_in_transaction(
     }
     let existing: Option<(String, String, i64)> = transaction
         .query_row(
-            "SELECT source_id, base_snapshot_id, selected_car_id
-               FROM teslamate_import_projection_state_heads WHERE vehicle_id = ?1",
+            concat!(
+                "SELECT source_id, base_snapshot_id, selected_car_id
+               FROM ",
+                crate::db::import_table_names::import_projection_state_heads_table!(),
+                " WHERE vehicle_id = ?1"
+            ),
             params![vehicle_key.as_str()],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
@@ -917,16 +1009,18 @@ pub(crate) fn replace_teslamate_import_projection_state_in_transaction(
             return Err(StoreError::LineageCatalogConflict);
         }
     } else if !allow_create {
-        return Err(StoreError::TeslaMateImportProjectionStateMissing(
-            vehicle_id,
-        ));
+        return Err(StoreError::SourceDbImportProjectionStateMissing(vehicle_id));
     }
     transaction
         .execute(
-            "INSERT INTO teslamate_import_projection_state_heads(
+            concat!(
+                "INSERT INTO ",
+                crate::db::import_table_names::import_projection_state_heads_table!(),
+                "(
                 vehicle_id, source_id, base_snapshot_id, selected_car_id, head_sequence
              ) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(vehicle_id) DO UPDATE SET head_sequence = excluded.head_sequence",
+             ON CONFLICT(vehicle_id) DO UPDATE SET head_sequence = excluded.head_sequence"
+            ),
             params![
                 vehicle_key.as_str(),
                 source_id.to_string(),
@@ -938,16 +1032,22 @@ pub(crate) fn replace_teslamate_import_projection_state_in_transaction(
         .map_err(StoreError::LineageCatalog)?;
     transaction
         .execute(
-            "DELETE FROM teslamate_import_projection_state_rows WHERE vehicle_id = ?1",
+            concat!(
+                "DELETE FROM ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                " WHERE vehicle_id = ?1"
+            ),
             params![vehicle_key.as_str()],
         )
         .map_err(StoreError::LineageCatalog)?;
     let mut statement = transaction
-        .prepare_cached(
-            "INSERT INTO teslamate_import_projection_state_rows(
+        .prepare_cached(concat!(
+            "INSERT INTO ",
+            crate::db::import_table_names::import_projection_state_rows_table!(),
+            "(
                 vehicle_id, entity, entity_ordinal, entity_id, car_id, projection_sha256
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        )
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+        ))
         .map_err(StoreError::LineageCatalog)?;
     let mut saw_car = false;
     let mut after = None;
@@ -956,12 +1056,12 @@ pub(crate) fn replace_teslamate_import_projection_state_in_transaction(
         for row in &page.rows {
             if row.id <= 0
                 || row.car_id != selected_car_id
-                || matches!(row.entity, TeslaMateProjectionStateEntity::Car)
+                || matches!(row.entity, SourceDbProjectionStateEntity::Car)
                     && (row.id != selected_car_id || saw_car)
             {
                 return Err(StoreError::LineageCatalogConflict);
             }
-            if matches!(row.entity, TeslaMateProjectionStateEntity::Car) {
+            if matches!(row.entity, SourceDbProjectionStateEntity::Car) {
                 saw_car = true;
             }
             statement

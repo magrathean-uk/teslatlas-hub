@@ -4,7 +4,7 @@ impl HubStore {
     pub fn geofences(
         &self,
         vehicle_id: Uuid,
-    ) -> Result<Vec<crate::teslamate_projection::TeslaMateGeofence>, StoreError> {
+    ) -> Result<Vec<crate::source_db_projection::SourceDbGeofence>, StoreError> {
         if vehicle_id.is_nil() {
             return Err(StoreError::NilVehicleId);
         }
@@ -21,7 +21,7 @@ impl HubStore {
                 let billing_type = row
                     .get::<_, Option<String>>(5)?
                     .and_then(|value| value.parse().ok());
-                Ok(crate::teslamate_projection::TeslaMateGeofence {
+                Ok(crate::source_db_projection::SourceDbGeofence {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     latitude: Some(row.get(2)?),
@@ -933,9 +933,12 @@ impl HubStore {
         cursor_key: &CursorKey,
         minimum_free_bytes: u64,
     ) -> Result<bool, StoreError> {
-        self.publish_terrain_revision_guarded(vehicle_id, cursor_key, minimum_free_bytes, &mut |_| {
-            false
-        })
+        self.publish_terrain_revision_guarded(
+            vehicle_id,
+            cursor_key,
+            minimum_free_bytes,
+            &mut |_| false,
+        )
     }
 
     /// [`Self::publish_terrain_revision`] for a caller that must not write after it lost
@@ -1245,7 +1248,13 @@ fn close_charges_in_transaction(
         let continues = crate::lifecycle::charge_continues_plug_in_from(&row, &facts);
         let tariff = fence
             .and_then(crate::lifecycle::ChargeTariff::of_fence)
-            .map(|tariff| if continues { tariff.waive_fee() } else { tariff });
+            .map(|tariff| {
+                if continues {
+                    tariff.waive_fee()
+                } else {
+                    tariff
+                }
+            });
         row.billing_type = tariff.map(|tariff| tariff.billing_type);
         row.cost_per_unit = tariff.and_then(|tariff| tariff.cost_per_unit);
         row.session_fee = tariff.and_then(|tariff| tariff.session_fee);

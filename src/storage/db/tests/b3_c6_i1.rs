@@ -31,8 +31,8 @@ fn imported_source(
     vin: Option<&str>,
     trim: Option<&str>,
     marketing: Option<&str>,
-) -> crate::teslamate_projection::TeslaMateCar {
-    crate::teslamate_projection::TeslaMateCar {
+) -> crate::source_db_projection::SourceDbCar {
+    crate::source_db_projection::SourceDbCar {
         id: car_id,
         eid: 70,
         vid: Some(71),
@@ -55,7 +55,7 @@ fn project(
     trim: Option<&str>,
     marketing: Option<&str>,
 ) -> ProjectionCar {
-    crate::teslamate_projection::project_car(&imported_source(7, model, vin, trim, marketing), None)
+    crate::source_db_projection::project_car(&imported_source(7, model, vin, trim, marketing), None)
         .expect("project the imported car")
 }
 
@@ -96,7 +96,7 @@ fn served_summaries(car: &ProjectionCar) -> [serde_json::Value; 2] {
         received_at_ms: 1_000,
         payload_sha256: Sha256Digest::of_bytes(b"c6-i1-position"),
         payload: serde_json::json!({
-            "record_type": crate::collection::teslamate_current::IMPORT_POSITION_RECORD_TYPE,
+            "record_type": crate::collection::source_db_current::SOURCE_DB_POSITION_RECORD_TYPE,
             "position_id": 7,
             "battery_level": 80
         }),
@@ -238,7 +238,7 @@ fn import_finalise(
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -246,7 +246,7 @@ fn import_finalise(
         .expect("staging the session");
     let state = create_direct_import_projection_state(store, run_id, 32);
     let mut capture =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_initial_base(state);
+        crate::import_projection_state::SourceDbProjectionStateCapture::for_initial_base(state);
     capture.record_car(car).expect("capture the car");
     capture.seal().expect("seal the state");
     let state = capture.into_state();
@@ -287,7 +287,7 @@ fn import_again(
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -635,7 +635,7 @@ fn c6_st_i15_to_i22_identity_stability() {
     // stored bytes alone: the retained `IS NOT` guard writes no row and the car
     // journal gains nothing.
     let (_directory, store, vehicle, binding, car) = imported_store(|car_id| {
-        crate::teslamate_projection::project_car(
+        crate::source_db_projection::project_car(
             &imported_source(
                 car_id,
                 Some("Model 3"),
@@ -756,7 +756,7 @@ fn c6_st_i15_to_i22_identity_stability() {
         .expect("live car");
     let imported = ProjectionCar {
         exterior_color: some("Black"),
-        ..crate::teslamate_projection::project_car(
+        ..crate::source_db_projection::project_car(
             &imported_source(
                 binding.selected_car_id,
                 Some("Model 3"),
@@ -808,7 +808,7 @@ fn c6_st_i15_to_i22_identity_stability() {
     // filled by the first live statement.
     for (imported_trim, expected) in [(Some(""), some("")), (None, some("74d"))] {
         let (_directory, store, vehicle, binding, _car) = imported_store(|car_id| {
-            crate::teslamate_projection::project_car(
+            crate::source_db_projection::project_car(
                 &imported_source(car_id, Some("Model 3"), Some(V3), imported_trim, None),
                 None,
             )

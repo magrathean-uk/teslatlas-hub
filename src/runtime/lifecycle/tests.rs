@@ -95,14 +95,14 @@ fn imported_stale_charge_public_store_replay_and_complete_reopen() {
     let store = HubStore::initialize(root.path()).unwrap();
     let source = store
         .register_source(
-            &SourceDescriptor::new("teslamate_import", "freshness-test"),
+            &SourceDescriptor::new("source_db_import", "freshness-test"),
             at,
         )
         .unwrap();
     let vehicle = store
         .register_vehicle(&VehicleDescriptor::new(source.source_id, "10"), at)
         .unwrap();
-    let mut session = TeslaMateOpenSession {
+    let mut session = SourceDbOpenSession {
         car_id: 10,
         ..Default::default()
     };
@@ -208,7 +208,7 @@ pub(super) fn imported_position_fixture(
     battery_level: i64,
     outside_temp: f64,
     inside_temp: f64,
-) -> TeslaMatePosition {
+) -> SourceDbPosition {
     serde_json::from_value(json!({
         "id": id,
         "car_id": 1,
@@ -251,7 +251,7 @@ pub(super) fn imported_charge_fixture(
     energy_added: f64,
     battery_level: i64,
     outside_temp: f64,
-) -> TeslaMateCharge {
+) -> SourceDbCharge {
     serde_json::from_value(json!({
         "id": id,
         "charging_process_id": process_id,
@@ -282,7 +282,7 @@ pub(super) fn imported_charge_fixture(
 #[test]
 fn imported_active_charge_refreshes_and_survives_restart() {
     let start = 1_800_200_000_000_i64;
-    let process: TeslaMateChargingProcess = serde_json::from_value(json!({
+    let process: SourceDbChargingProcess = serde_json::from_value(json!({
         "id": 80,
         "car_id": 1,
         "position_id": null,
@@ -303,7 +303,7 @@ fn imported_active_charge_refreshes_and_survives_restart() {
         "cost": null
     }))
     .expect("imported charging process");
-    let mut session = TeslaMateOpenSession {
+    let mut session = SourceDbOpenSession {
         car_id: 1,
         charge: Some(process),
         charge_samples: vec![

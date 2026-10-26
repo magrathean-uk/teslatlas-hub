@@ -6,7 +6,7 @@ use crate::protocol::{
     CursorClaims, LINEAGE_PROTOCOL_V2, LineageBase, LineageCapability, LineageDelta,
     LineageManifestV2, OpaqueCursor, PROTOCOL_V1,
 };
-use crate::teslamate_projection::TeslaMateGeofencePhysicalV2_2;
+use crate::source_db_projection::SourceDbGeofencePhysicalV2_2;
 
 use super::*;
 

@@ -41,26 +41,26 @@ use crate::{
         ProjectionPackError, ProjectionPackRequest, ProjectionPackWriter, ProjectionPosition,
         ProjectionSnapshot, ProjectionTombstone, cleanup_stale_pack_staging,
     },
+    import_projection_state::{
+        MAX_PAGE_SIZE, PriorProjectionStateLookup, SourceDbProjectionState,
+        SourceDbProjectionStateCursor, SourceDbProjectionStateDigestPage,
+        SourceDbProjectionStateDigestRow, SourceDbProjectionStateEntity,
+        SourceDbProjectionStateError, SourceDbProjectionStateLimits,
+        SourceDbProjectionStateTransfer, canonical_payload_and_digest,
+        recover_stale_import_generation_spools,
+    },
     protocol::{
         CursorKey, HUB_PROJECTION_SCHEMA_V2, HUB_PROJECTION_SCHEMA_V3, LINEAGE_PROTOCOL_V2,
         LineageBase, LineageCapability, LineageDelta, LineageManifestV2, OpaqueCursor,
         ProtocolLimits, SQLITE_HUB_PROJECTION_APPLICATION_ID, SchemaSupport, SequenceRange,
         Sha256Digest, SyncManifest, TransportPack, canonical_delta_chain_digest,
     },
-    teslamate_projection::TeslaMateOpenSession,
-    teslamate_projection_state::{
-        MAX_PAGE_SIZE, PriorProjectionStateLookup, TeslaMateProjectionState,
-        TeslaMateProjectionStateCursor, TeslaMateProjectionStateDigestPage,
-        TeslaMateProjectionStateDigestRow, TeslaMateProjectionStateEntity,
-        TeslaMateProjectionStateError, TeslaMateProjectionStateLimits,
-        TeslaMateProjectionStateTransfer, canonical_payload_and_digest,
-        recover_stale_import_generation_spools,
-    },
-    teslamate_token::MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
+    source_db_projection::SourceDbOpenSession,
+    source_token_envelope::MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
 };
 
 pub const APPLICATION_ID: i32 = 0x5441_4855; // TAHU
-pub const SCHEMA_VERSION: i32 = 77;
+pub const SCHEMA_VERSION: i32 = 78;
 pub const BUNDLED_SQLITE_VERSION: &str = "3.53.2";
 /// Paired-device bearers are renewable, but never permanent.
 pub const PAIRED_DEVICE_TOKEN_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1_000;
@@ -210,7 +210,7 @@ const PRIVATE_SCHEMA_22_NOOP_STAGING_MODE: u32 = 0o600;
 const MAX_SCHEMA_22_NOOP_BYTES: u64 = 16 * 1024;
 const PRIVATE_IMPORT_SPOOL_DIRECTORY_MODE: u32 = 0o700;
 const PRIVATE_IMPORT_SPOOL_DIRECTORY_NAME: &str = "import-spool";
-const TESLAMATE_LEGACY_DIRECT_BRIDGE_ALGORITHM: &str = "logical_projection_v1";
+const SOURCE_DB_LEGACY_DIRECT_BRIDGE_ALGORITHM: &str = "logical_projection_v1";
 const FULL_SNAPSHOT_METADATA_KEYS: [&str; 16] = [
     "protocol",
     "pack_format",
@@ -581,10 +581,10 @@ impl StreamObservationWriter {
     }
 }
 
-/// One encrypted TeslaMate legacy OAuth pair plus its refresh schedule.
+/// One encrypted source database legacy OAuth pair plus its refresh schedule.
 /// Schedule values are epoch seconds. Ciphertext must not be logged or formatted.
 #[derive(zeroize::Zeroize, zeroize::ZeroizeOnDrop)]
-pub struct TeslaMateLegacyTokenStore {
+pub struct LegacyOwnerTokenStore {
     access: Vec<u8>,
     refresh: Vec<u8>,
     expires_at: i64,
@@ -593,8 +593,8 @@ pub struct TeslaMateLegacyTokenStore {
     credential_generation: Option<Uuid>,
 }
 
-impl TeslaMateLegacyTokenStore {
-    /// Imported TeslaMate ciphertext has no Hub-owned refresh schedule yet.
+impl LegacyOwnerTokenStore {
+    /// Imported source database ciphertext has no Hub-owned refresh schedule yet.
     pub fn imported(access: Vec<u8>, refresh: Vec<u8>) -> Result<Self, StoreError> {
         Self::new(access, refresh, 0, 0, None)
     }
@@ -608,7 +608,7 @@ impl TeslaMateLegacyTokenStore {
     ) -> Result<Self, StoreError> {
         let value = Self::new(access, refresh, expires_at, next_refresh_at, None)?;
         if value.expires_at == 0 {
-            return Err(StoreError::InvalidTeslaMateTokenSchedule);
+            return Err(StoreError::InvalidSourceDbTokenSchedule);
         }
         Ok(value)
     }
@@ -621,17 +621,17 @@ impl TeslaMateLegacyTokenStore {
         credential_generation: Option<Uuid>,
     ) -> Result<Self, StoreError> {
         if access.is_empty() || refresh.is_empty() {
-            return Err(StoreError::TeslaMateTokenPairEmpty);
+            return Err(StoreError::SourceDbTokenPairEmpty);
         }
         if access.len() > MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
             || refresh.len() > MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES
         {
-            return Err(StoreError::TeslaMateTokenCiphertextTooLarge);
+            return Err(StoreError::SourceDbTokenCiphertextTooLarge);
         }
         let imported = expires_at == 0 && next_refresh_at == 0;
         let scheduled = expires_at > next_refresh_at && next_refresh_at > 0;
         if !imported && !scheduled {
-            return Err(StoreError::InvalidTeslaMateTokenSchedule);
+            return Err(StoreError::InvalidSourceDbTokenSchedule);
         }
         Ok(Self {
             access,
@@ -681,10 +681,10 @@ impl TeslaMateLegacyTokenStore {
     }
 }
 
-impl std::fmt::Debug for TeslaMateLegacyTokenStore {
+impl std::fmt::Debug for LegacyOwnerTokenStore {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
-            .debug_struct("TeslaMateLegacyTokenStore")
+            .debug_struct("LegacyOwnerTokenStore")
             .field("access", &"[redacted]")
             .field("refresh", &"[redacted]")
             .field("expires_at", &self.expires_at)
@@ -1167,12 +1167,12 @@ struct ImmutableCatalogueFingerprint {
     sha256: String,
 }
 
-/// The source-scoped completed-history rows that a TeslaMate import has
+/// The source-scoped completed-history rows that a source database import has
 /// actually published.  This is deliberately separate from the live
 /// materialisation tables: a later source rewrite may only tombstone rows for
 /// which the importer has durable provenance.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TeslaMateImportProjectionInventory {
+pub struct SourceDbImportProjectionInventory {
     pub source_id: Uuid,
     pub selected_car_id: i64,
     pub rows: Vec<ProjectionTombstone>,
@@ -1182,7 +1182,7 @@ pub struct TeslaMateImportProjectionInventory {
 /// and lineage head. Unlike the legacy deletion inventory, this includes the
 /// car row and is required before any changed-history import can be planned.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TeslaMateImportProjectionStateHeader {
+pub struct SourceDbImportProjectionStateHeader {
     pub source_id: Uuid,
     pub base_snapshot_id: Uuid,
     pub selected_car_id: i64,
@@ -1193,7 +1193,7 @@ pub struct TeslaMateImportProjectionStateHeader {
 /// base and head are retained verbatim; the bridge writes neither a pack nor
 /// a sequence reservation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TeslaMateLegacyDirectBridgeResult {
+pub(crate) struct SourceDbLegacyDirectBridgeResult {
     pub snapshot_id: Uuid,
     pub head_sequence: u64,
     pub total_rows: u64,
@@ -1202,11 +1202,11 @@ pub(crate) struct TeslaMateLegacyDirectBridgeResult {
 /// A read-only, verified prior-state cursor bound to one vehicle/source/car
 /// and the Hub's current immutable base/head. It intentionally owns a SQLite
 /// connection so capture can use bounded lookup calls without loading a map.
-pub struct TeslaMateImportProjectionStateLookup {
+pub struct SourceDbImportProjectionStateLookup {
     connection: Connection,
     vehicle_id: Uuid,
-    header: TeslaMateImportProjectionStateHeader,
-    digest_caches: Vec<TeslaMateImportProjectionStateDigestCache>,
+    header: SourceDbImportProjectionStateHeader,
+    digest_caches: Vec<SourceDbImportProjectionStateDigestCache>,
     #[cfg(test)]
     digest_cache_loads: usize,
 }
@@ -1216,30 +1216,33 @@ pub struct TeslaMateImportProjectionStateLookup {
 // history-sized map: a direct successor with ten million unchanged positions
 // performs a bounded number of SQLite reads while a backtrack replaces only
 // that entity's range.
-const TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS: usize = 1_024;
-const TESLAMATE_IMPORT_PROJECTION_STATE_PAGE_SQL: &str =
+const SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS: usize = 1_024;
+const SOURCE_DB_IMPORT_PROJECTION_STATE_PAGE_SQL: &str = concat!(
     "SELECT entity, entity_ordinal, entity_id, car_id, projection_sha256
-       FROM teslamate_import_projection_state_rows
+       FROM ",
+    crate::db::import_table_names::import_projection_state_rows_table!(),
+    "
       WHERE vehicle_id = ?1
         AND (entity_ordinal, entity_id) > (?2, ?3)
       ORDER BY entity_ordinal ASC, entity_id ASC
-      LIMIT ?4";
+      LIMIT ?4"
+);
 
 #[derive(Debug)]
-struct TeslaMateImportProjectionStateDigestCache {
-    entity: TeslaMateProjectionStateEntity,
+struct SourceDbImportProjectionStateDigestCache {
+    entity: SourceDbProjectionStateEntity,
     lower_bound_id: i64,
-    rows: Vec<TeslaMateProjectionStateDigestRow>,
+    rows: Vec<SourceDbProjectionStateDigestRow>,
     exhausted: bool,
 }
 
-impl TeslaMateImportProjectionStateDigestCache {
+impl SourceDbImportProjectionStateDigestCache {
     /// Returns `None` only when this range cannot answer the lookup. An inner
     /// `None` is an exact cached absence, including a gap between two stored
     /// IDs or the exhausted tail of an entity.
     fn digest(
         &self,
-        entity: TeslaMateProjectionStateEntity,
+        entity: SourceDbProjectionStateEntity,
         id: i64,
     ) -> Option<Option<Sha256Digest>> {
         if self.entity != entity || id < self.lower_bound_id {
@@ -1260,29 +1263,29 @@ impl TeslaMateImportProjectionStateDigestCache {
     }
 }
 
-impl std::fmt::Debug for TeslaMateImportProjectionStateLookup {
+impl std::fmt::Debug for SourceDbImportProjectionStateLookup {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
-            .debug_struct("TeslaMateImportProjectionStateLookup")
+            .debug_struct("SourceDbImportProjectionStateLookup")
             .field("vehicle_id", &self.vehicle_id)
             .field("header", &self.header)
             .finish_non_exhaustive()
     }
 }
 
-impl TeslaMateImportProjectionStateLookup {
-    pub fn header(&self) -> &TeslaMateImportProjectionStateHeader {
+impl SourceDbImportProjectionStateLookup {
+    pub fn header(&self) -> &SourceDbImportProjectionStateHeader {
         &self.header
     }
 
     fn digest_store(
         &mut self,
-        entity: TeslaMateProjectionStateEntity,
+        entity: SourceDbProjectionStateEntity,
         id: i64,
     ) -> Result<Option<Sha256Digest>, StoreError> {
         if id <= 0 {
-            return Err(StoreError::TeslaMateProjectionState(
-                TeslaMateProjectionStateError::InvalidRowId,
+            return Err(StoreError::SourceDbProjectionState(
+                SourceDbProjectionStateError::InvalidRowId,
             ));
         }
         if let Some(cache) = self
@@ -1303,22 +1306,24 @@ impl TeslaMateImportProjectionStateLookup {
 
     fn load_digest_cache(
         &mut self,
-        entity: TeslaMateProjectionStateEntity,
+        entity: SourceDbProjectionStateEntity,
         lower_bound_id: i64,
     ) -> Result<(), StoreError> {
-        let query_limit = i64::try_from(TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS)
+        let query_limit = i64::try_from(SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS)
             .expect("fixed cache limit fits SQLite integer");
         let mut statement = self
             .connection
-            .prepare_cached(
+            .prepare_cached(concat!(
                 "SELECT entity, entity_ordinal, entity_id, car_id, projection_sha256
-                   FROM teslamate_import_projection_state_rows
+                   FROM ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "
                   WHERE vehicle_id = ?1
                     AND entity_ordinal = ?2
                     AND entity_id >= ?3
                   ORDER BY entity_id ASC
-                  LIMIT ?4",
-            )
+                  LIMIT ?4"
+            ))
             .map_err(StoreError::LineageCatalog)?;
         let raw_rows = statement
             .query_map(
@@ -1339,7 +1344,7 @@ impl TeslaMateImportProjectionStateLookup {
                 },
             )
             .map_err(StoreError::LineageCatalog)?;
-        let mut rows = Vec::with_capacity(TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS);
+        let mut rows = Vec::with_capacity(SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS);
         let mut previous_id = None;
         for raw_row in raw_rows {
             let (stored_name, stored_ordinal, stored_id, stored_car_id, digest) =
@@ -1352,20 +1357,20 @@ impl TeslaMateImportProjectionStateLookup {
                 return Err(StoreError::LineageCatalogConflict);
             }
             previous_id = Some(stored_id);
-            rows.push(TeslaMateProjectionStateDigestRow {
+            rows.push(SourceDbProjectionStateDigestRow {
                 entity,
                 id: stored_id,
                 car_id: stored_car_id,
                 digest: projection_state_digest_from_blob(digest)?,
             });
         }
-        if rows.len() > TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS {
+        if rows.len() > SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS {
             return Err(StoreError::LineageCatalogConflict);
         }
-        let cache = TeslaMateImportProjectionStateDigestCache {
+        let cache = SourceDbImportProjectionStateDigestCache {
             entity,
             lower_bound_id,
-            exhausted: rows.len() < TESLAMATE_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS,
+            exhausted: rows.len() < SOURCE_DB_IMPORT_PROJECTION_STATE_DIGEST_CACHE_ROWS,
             rows,
         };
         if let Some(existing) = self
@@ -1375,7 +1380,7 @@ impl TeslaMateImportProjectionStateLookup {
         {
             *existing = cache;
         } else {
-            if self.digest_caches.len() >= TeslaMateProjectionStateEntity::ALL.len() {
+            if self.digest_caches.len() >= SourceDbProjectionStateEntity::ALL.len() {
                 return Err(StoreError::LineageCatalogConflict);
             }
             self.digest_caches.push(cache);
@@ -1389,17 +1394,17 @@ impl TeslaMateImportProjectionStateLookup {
 
     fn page_after_store(
         &mut self,
-        after: Option<TeslaMateProjectionStateCursor>,
+        after: Option<SourceDbProjectionStateCursor>,
         limit: u32,
-    ) -> Result<TeslaMateProjectionStateDigestPage, StoreError> {
+    ) -> Result<SourceDbProjectionStateDigestPage, StoreError> {
         if !(1..=MAX_PAGE_SIZE).contains(&limit) {
-            return Err(StoreError::TeslaMateProjectionState(
-                TeslaMateProjectionStateError::InvalidPageSize,
+            return Err(StoreError::SourceDbProjectionState(
+                SourceDbProjectionStateError::InvalidPageSize,
             ));
         }
         if after.is_some_and(|cursor| cursor.id <= 0) {
-            return Err(StoreError::TeslaMateProjectionState(
-                TeslaMateProjectionStateError::InvalidCursor,
+            return Err(StoreError::SourceDbProjectionState(
+                SourceDbProjectionStateError::InvalidCursor,
             ));
         }
         let (after_entity, after_id) = after.map_or((-1_i64, 0_i64), |cursor| {
@@ -1408,7 +1413,7 @@ impl TeslaMateImportProjectionStateLookup {
         let query_limit = i64::from(limit) + 1;
         let mut statement = self
             .connection
-            .prepare(TESLAMATE_IMPORT_PROJECTION_STATE_PAGE_SQL)
+            .prepare(SOURCE_DB_IMPORT_PROJECTION_STATE_PAGE_SQL)
             .map_err(StoreError::LineageCatalog)?;
         let raw_rows = statement
             .query_map(
@@ -1436,7 +1441,7 @@ impl TeslaMateImportProjectionStateLookup {
             if id <= 0 || car_id != self.header.selected_car_id {
                 return Err(StoreError::LineageCatalogConflict);
             }
-            rows.push(TeslaMateProjectionStateDigestRow {
+            rows.push(SourceDbProjectionStateDigestRow {
                 entity: stored_projection_state_entity(&name, ordinal)?,
                 id,
                 car_id,
@@ -1445,21 +1450,21 @@ impl TeslaMateImportProjectionStateLookup {
         }
         let next_after = if rows.len() > usize::try_from(limit).expect("u32 fits usize") {
             rows.pop();
-            rows.last().map(|row| TeslaMateProjectionStateCursor {
+            rows.last().map(|row| SourceDbProjectionStateCursor {
                 entity: row.entity,
                 id: row.id,
             })
         } else {
             None
         };
-        Ok(TeslaMateProjectionStateDigestPage { rows, next_after })
+        Ok(SourceDbProjectionStateDigestPage { rows, next_after })
     }
 }
 
-impl PriorProjectionStateLookup for TeslaMateImportProjectionStateLookup {
+impl PriorProjectionStateLookup for SourceDbImportProjectionStateLookup {
     fn digest(
         &mut self,
-        entity: TeslaMateProjectionStateEntity,
+        entity: SourceDbProjectionStateEntity,
         id: i64,
     ) -> Result<Option<Sha256Digest>, Box<dyn std::error::Error + Send + Sync>> {
         self.digest_store(entity, id)
@@ -1468,9 +1473,9 @@ impl PriorProjectionStateLookup for TeslaMateImportProjectionStateLookup {
 
     fn page_after(
         &mut self,
-        after: Option<TeslaMateProjectionStateCursor>,
+        after: Option<SourceDbProjectionStateCursor>,
         limit: u32,
-    ) -> Result<TeslaMateProjectionStateDigestPage, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<SourceDbProjectionStateDigestPage, Box<dyn std::error::Error + Send + Sync>> {
         self.page_after_store(after, limit)
             .map_err(|error| Box::new(error) as Box<dyn std::error::Error + Send + Sync>)
     }
@@ -1590,6 +1595,7 @@ include!("db/import_finalization.rs");
 include!("db/lineage_verification.rs");
 include!("db/lineage_digest_cache.rs");
 include!("db/identity_and_audit.rs");
+include!("db/source_key_guards.rs");
 include!("db/device_credentials.rs");
 include!("db/device_grants.rs");
 include!("db/observations_and_lifecycle.rs");
@@ -1601,6 +1607,10 @@ include!("db/catalogue_models.rs");
 include!("db/domain_models.rs");
 include!("db/catalogue_helpers.rs");
 include!("db/receiver_state.rs");
+#[path = "db/import_source_names_step.rs"]
+mod import_source_names_step;
+#[path = "db/import_table_names.rs"]
+pub(crate) mod import_table_names;
 include!("db/migrations.rs");
 include!("db/catalogue_maintenance.rs");
 include!("db/observation_persistence.rs");
@@ -1622,6 +1632,10 @@ include!("db/geofence_relabel.rs");
 include!("db/geocoder_provider_state.rs");
 
 #[cfg(test)]
+#[path = "db/import_names_test_support.rs"]
+pub(crate) mod import_names_test_support;
+
+#[cfg(test)]
 #[path = "db/tests.rs"]
 mod tests;
 
@@ -1632,3 +1646,9 @@ mod terrain_background_tests;
 #[cfg(test)]
 #[path = "db/observation_verification_tests.rs"]
 mod observation_verification_tests;
+
+#[cfg(test)]
+fn migrate_historical_fixture(connection: &Connection) -> Result<(), StoreError> {
+    import_names_test_support::prepare_historical_import_names(connection);
+    migrate(connection)
+}

@@ -404,7 +404,8 @@ async fn r47_a_terminal_read_leaves_no_car_marked_in_flight_and_every_car_due_af
 async fn r06_shutdown_waits_for_a_started_fleet_exchange_to_store_its_successor() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         "fleet-old-access".to_owned(),
         "fleet-old-refresh".to_owned(),
@@ -499,7 +500,7 @@ impl SettlementBed {
     async fn new(admitted: bool) -> Self {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
-        crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
+        crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
             .expect("cursor key");
         let credentials = FleetSetupCredentials::new(
             "fleet-old-access".to_owned(),

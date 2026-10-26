@@ -20,8 +20,8 @@ use url::Url;
 use crate::{
     owner_api::{OwnerApiBase, OwnerApiOptions},
     protocol::Sha256Digest,
-    teslamate::ReadOnlySource,
-    teslamate_reader::TeslaMateReadLimits,
+    source_db_connection::ReadOnlySource,
+    source_db_reader::SourceDbReadLimits,
 };
 
 const MAX_CONFIG_BYTES: usize = 1024 * 1024;
@@ -61,7 +61,7 @@ pub struct HubConfig {
     #[serde(default)]
     pub geocoder: GeocoderConfig,
     #[serde(default)]
-    pub teslamate: TeslaMateConfig,
+    pub import_source: ImportSourceConfig,
     #[serde(default)]
     pub terrain: TerrainConfig,
     #[serde(default)]
@@ -1689,40 +1689,40 @@ impl CollectorConfig {
     }
 }
 
-/// Opt-in TeslaMate import source. The endpoint excludes its password and the
+/// Opt-in source database import source. The endpoint excludes its password and the
 /// source key is a durable owner label, not an endpoint alias.
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct TeslaMateConfig {
+pub struct ImportSourceConfig {
     /// Independent read-only current-state producer; absent means disabled.
     #[serde(default)]
-    pub current: Option<TeslaMateCurrentConfig>,
+    pub current: Option<ImportSourceCurrentConfig>,
     #[serde(default)]
     pub source_url: Option<String>,
     #[serde(default)]
     pub source_key: Option<String>,
-    #[serde(default = "default_teslamate_connect_timeout_seconds")]
+    #[serde(default = "default_import_source_connect_timeout_seconds")]
     pub connect_timeout_seconds: u64,
-    #[serde(default = "default_teslamate_copy_statement_timeout_seconds")]
+    #[serde(default = "default_import_source_copy_statement_timeout_seconds")]
     pub copy_statement_timeout_seconds: u64,
-    #[serde(default = "default_teslamate_page_size")]
+    #[serde(default = "default_import_source_page_size")]
     pub page_size: i32,
-    #[serde(default = "default_teslamate_maximum_rows")]
+    #[serde(default = "default_import_source_maximum_rows")]
     pub maximum_rows: usize,
-    #[serde(default = "default_teslamate_maximum_stage_bytes")]
+    #[serde(default = "default_import_source_maximum_stage_bytes")]
     pub maximum_stage_bytes: u64,
-    #[serde(default = "default_teslamate_minimum_free_bytes")]
+    #[serde(default = "default_import_source_minimum_free_bytes")]
     pub minimum_free_bytes: u64,
-    #[serde(default = "default_teslamate_parallel_copy_lanes")]
+    #[serde(default = "default_import_source_parallel_copy_lanes")]
     pub parallel_copy_lanes: usize,
     #[serde(default)]
     pub performance_profile: PerformanceProfileConfig,
 }
 
-impl fmt::Debug for TeslaMateConfig {
+impl fmt::Debug for ImportSourceConfig {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("TeslaMateConfig")
+            .debug_struct("ImportSourceConfig")
             .field("current", &self.current.as_ref().map(|_| "[configured]"))
             .field(
                 "source_url",
@@ -1746,32 +1746,33 @@ impl fmt::Debug for TeslaMateConfig {
 
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct TeslaMateCurrentConfig {
+pub struct ImportSourceCurrentConfig {
     pub source_url: String,
     pub source_key: String,
     pub vehicle_id: uuid::Uuid,
     pub car_id: i64,
     pub password_file: PathBuf,
 }
-impl TeslaMateCurrentConfig {
+impl ImportSourceCurrentConfig {
     pub fn validate(&self) -> Result<(), ConfigError> {
+        validate_import_source_key(&self.source_key)?;
         let source = ReadOnlySource::parse(&self.source_url)
-            .map_err(|_| ConfigError::Invalid("invalid TeslaMate current endpoint"))?;
+            .map_err(|_| ConfigError::Invalid("invalid source database current endpoint"))?;
         if source.user().is_none()
-            || self.source_key.is_empty()
-            || self.source_key.len() > 256
             || self.vehicle_id.is_nil()
             || self.car_id <= 0
             || self.car_id > i64::from(i16::MAX)
             || !self.password_file.is_absolute()
         {
-            return Err(ConfigError::Invalid("invalid TeslaMate current binding"));
+            return Err(ConfigError::Invalid(
+                "invalid source database current binding",
+            ));
         }
         Ok(())
     }
 }
 
-/// Conservative host-local tuning for the TeslaMate import reader.
+/// Conservative host-local tuning for the source database import reader.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PerformanceProfileConfig {
@@ -1794,64 +1795,64 @@ impl Default for PerformanceProfileConfig {
     }
 }
 
-const fn default_teslamate_connect_timeout_seconds() -> u64 {
+const fn default_import_source_connect_timeout_seconds() -> u64 {
     10
 }
 
-const fn default_teslamate_copy_statement_timeout_seconds() -> u64 {
+const fn default_import_source_copy_statement_timeout_seconds() -> u64 {
     2 * 60 * 60
 }
 
-const fn default_teslamate_page_size() -> i32 {
+const fn default_import_source_page_size() -> i32 {
     10_000
 }
 
-const fn default_teslamate_maximum_rows() -> usize {
+const fn default_import_source_maximum_rows() -> usize {
     20_000_000
 }
 
-const fn default_teslamate_maximum_stage_bytes() -> u64 {
+const fn default_import_source_maximum_stage_bytes() -> u64 {
     16 * 1024 * 1024 * 1024
 }
 
-const fn default_teslamate_minimum_free_bytes() -> u64 {
+const fn default_import_source_minimum_free_bytes() -> u64 {
     512 * 1024 * 1024
 }
 
-const fn default_teslamate_parallel_copy_lanes() -> usize {
+const fn default_import_source_parallel_copy_lanes() -> usize {
     4
 }
 
-impl Default for TeslaMateConfig {
+impl Default for ImportSourceConfig {
     fn default() -> Self {
         Self {
             current: None,
             source_url: None,
             source_key: None,
-            connect_timeout_seconds: default_teslamate_connect_timeout_seconds(),
-            copy_statement_timeout_seconds: default_teslamate_copy_statement_timeout_seconds(),
-            page_size: default_teslamate_page_size(),
-            maximum_rows: default_teslamate_maximum_rows(),
-            maximum_stage_bytes: default_teslamate_maximum_stage_bytes(),
-            minimum_free_bytes: default_teslamate_minimum_free_bytes(),
-            parallel_copy_lanes: default_teslamate_parallel_copy_lanes(),
+            connect_timeout_seconds: default_import_source_connect_timeout_seconds(),
+            copy_statement_timeout_seconds: default_import_source_copy_statement_timeout_seconds(),
+            page_size: default_import_source_page_size(),
+            maximum_rows: default_import_source_maximum_rows(),
+            maximum_stage_bytes: default_import_source_maximum_stage_bytes(),
+            minimum_free_bytes: default_import_source_minimum_free_bytes(),
+            parallel_copy_lanes: default_import_source_parallel_copy_lanes(),
             performance_profile: PerformanceProfileConfig::default(),
         }
     }
 }
 
 #[derive(Clone)]
-pub struct TeslaMateImportConfig {
+pub struct SourceDbImportConfig {
     pub source: ReadOnlySource,
     pub source_key: String,
-    pub limits: TeslaMateReadLimits,
+    pub limits: SourceDbReadLimits,
     pub performance_profile: PerformanceProfileConfig,
 }
 
-impl fmt::Debug for TeslaMateImportConfig {
+impl fmt::Debug for SourceDbImportConfig {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
-            .debug_struct("TeslaMateImportConfig")
+            .debug_struct("SourceDbImportConfig")
             .field("source", &self.source)
             .field("source_key", &self.source_key)
             .field("limits", &self.limits)
@@ -1860,11 +1861,11 @@ impl fmt::Debug for TeslaMateImportConfig {
     }
 }
 
-impl TeslaMateConfig {
+impl ImportSourceConfig {
     /// Build and validate source-read limits for both configured and CLI
-    /// supplied TeslaMate sources. Source URL/key are intentionally separate.
-    pub fn read_limits(&self) -> Result<TeslaMateReadLimits, ConfigError> {
-        let limits = TeslaMateReadLimits {
+    /// supplied source databases. Source URL/key are intentionally separate.
+    pub fn read_limits(&self) -> Result<SourceDbReadLimits, ConfigError> {
+        let limits = SourceDbReadLimits {
             connect_timeout: Duration::from_secs(self.connect_timeout_seconds),
             copy_statement_timeout: Duration::from_secs(self.copy_statement_timeout_seconds),
             page_size: self.page_size,
@@ -1875,7 +1876,7 @@ impl TeslaMateConfig {
         };
         limits
             .validate()
-            .map_err(|_| ConfigError::InvalidTeslaMateLimits)?;
+            .map_err(|_| ConfigError::InvalidImportSourceLimits)?;
 
         let maximum = self.performance_profile.max_parallel_copy_lanes;
         if let Some(maximum) = maximum {
@@ -1883,7 +1884,7 @@ impl TeslaMateConfig {
             validation_probe.parallel_copy_lanes = maximum;
             validation_probe
                 .validate()
-                .map_err(|_| ConfigError::InvalidTeslaMateLimits)?;
+                .map_err(|_| ConfigError::InvalidImportSourceLimits)?;
         }
         if !self.performance_profile.enabled {
             return Ok(limits);
@@ -1896,31 +1897,95 @@ impl TeslaMateConfig {
         Ok(effective)
     }
 
-    pub fn import_config(&self) -> Result<TeslaMateImportConfig, ConfigError> {
+    pub fn import_config(&self) -> Result<SourceDbImportConfig, ConfigError> {
         let source_url = self
             .source_url
             .as_deref()
-            .ok_or(ConfigError::TeslaMateSourceRequired)?;
+            .ok_or(ConfigError::ImportSourceRequired)?;
         let source =
-            ReadOnlySource::parse(source_url).map_err(|_| ConfigError::InvalidTeslaMateSource)?;
+            ReadOnlySource::parse(source_url).map_err(|_| ConfigError::InvalidImportSource)?;
         let source_key = self
             .source_key
             .as_deref()
             .filter(|value| !value.is_empty())
-            .ok_or(ConfigError::TeslaMateSourceKeyRequired)?;
-        if source_key.contains("://")
-            || source_key.contains('@')
-            || source_key.chars().any(char::is_control)
-        {
-            return Err(ConfigError::InvalidTeslaMateSourceKey);
-        }
+            .ok_or(ConfigError::ImportSourceKeyRequired)?;
+        validate_import_source_key(source_key)?;
         let limits = self.read_limits()?;
-        Ok(TeslaMateImportConfig {
+        Ok(SourceDbImportConfig {
             source,
             source_key: source_key.to_owned(),
             limits,
             performance_profile: self.performance_profile.clone(),
         })
+    }
+}
+
+/// Import source keys are opaque non-secret labels, never URLs or credentials.
+pub fn validate_import_source_key(key: &str) -> Result<(), ConfigError> {
+    if key.trim().is_empty()
+        || key.len() > 256
+        || key.contains("://")
+        || key.contains('@')
+        || key.chars().any(char::is_control)
+    {
+        return Err(ConfigError::InvalidImportSourceKey);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod import_source_key_validation_tests {
+    #[test]
+    fn source_keys_refuse_urls_credentials_controls_and_blank_labels() {
+        for key in [
+            "",
+            "  ",
+            "postgres://private",
+            "user@host",
+            "line\nbreak",
+            "tab\tkey",
+        ] {
+            assert!(super::validate_import_source_key(key).is_err());
+        }
+        assert!(super::validate_import_source_key("home-source").is_ok());
+        for key in ["a".repeat(256), "é".repeat(128)] {
+            assert!(super::validate_import_source_key(&key).is_ok());
+        }
+        for key in ["a".repeat(257), "é".repeat(129)] {
+            assert!(super::validate_import_source_key(&key).is_err());
+        }
+    }
+
+    #[test]
+    fn current_mode_uses_the_shared_source_key_validator() {
+        let mut config = super::ImportSourceCurrentConfig {
+            source_url: "postgresql://reader@localhost/source_history".into(),
+            source_key: "home-source".into(),
+            vehicle_id: uuid::Uuid::from_u128(1),
+            car_id: 1,
+            password_file: std::path::PathBuf::from("/fictional/source-password"),
+        };
+        assert!(config.validate().is_ok());
+        for key in [
+            String::new(),
+            "  ".into(),
+            "postgres://private".into(),
+            "user@host".into(),
+            "line\nbreak".into(),
+            "tab\tkey".into(),
+            "a".repeat(257),
+            "é".repeat(129),
+        ] {
+            config.source_key = key;
+            assert!(matches!(
+                config.validate(),
+                Err(super::ConfigError::InvalidImportSourceKey)
+            ));
+        }
+        for key in ["a".repeat(256), "é".repeat(128)] {
+            config.source_key = key;
+            assert!(config.validate().is_ok());
+        }
     }
 }
 
@@ -1956,7 +2021,29 @@ impl HubConfig {
         {
             return Err(ConfigError::EdgeDeliveryRetired);
         }
-        let config: Self = toml::from_str(source).map_err(ConfigError::Parse)?;
+        let unknown_top_level = source.parse::<toml::Table>().ok().is_some_and(|root| {
+            root.keys().any(|key| {
+                !matches!(
+                    key.as_str(),
+                    "data_dir"
+                        | "bind"
+                        | "tls"
+                        | "collector"
+                        | "geocoder"
+                        | "import_source"
+                        | "terrain"
+                        | "http"
+                        | "pairing"
+                )
+            })
+        });
+        let config: Self = toml::from_str(source).map_err(|error| {
+            if unknown_top_level {
+                ConfigError::UnknownTopLevelField(error)
+            } else {
+                ConfigError::Parse(error)
+            }
+        })?;
         config.validate()?;
         Ok((config, digest))
     }
@@ -2025,15 +2112,15 @@ impl HubConfig {
                 return Err(ConfigError::InvalidFleetTelemetry);
             }
         }
-        let source_set = self.teslamate.source_url.is_some();
-        let source_key_set = self.teslamate.source_key.is_some();
+        let source_set = self.import_source.source_url.is_some();
+        let source_key_set = self.import_source.source_key.is_some();
         if source_set != source_key_set {
-            return Err(ConfigError::TeslaMatePartialConfiguration);
+            return Err(ConfigError::SourceDbPartialConfiguration);
         }
         if source_set {
-            self.teslamate.import_config()?;
+            self.import_source.import_config()?;
         }
-        if let Some(current) = &self.teslamate.current {
+        if let Some(current) = &self.import_source.current {
             current.validate()?;
         }
         Ok(())
@@ -2108,6 +2195,8 @@ pub enum ConfigError {
     FileIdentityChanged,
     #[error("invalid configuration: {0}")]
     Parse(toml::de::Error),
+    #[error("{0}\nImport settings are in [import_source]; see docs/guides/configuration.md.")]
+    UnknownTopLevelField(toml::de::Error),
     #[error("invalid configuration: {0}")]
     Invalid(&'static str),
     #[error("collector owner API base URL is required for manual collection")]
@@ -2152,20 +2241,105 @@ pub enum ConfigError {
     TlsPathsMustDiffer,
     #[error("TLS public_url must be an origin-only HTTPS URL without credentials")]
     InvalidTlsPublicUrl,
-    #[error("TeslaMate source URL and source key must be configured together")]
-    TeslaMatePartialConfiguration,
-    #[error("TeslaMate source URL is required for import")]
-    TeslaMateSourceRequired,
-    #[error("TeslaMate source URL is invalid")]
-    InvalidTeslaMateSource,
-    #[error("TeslaMate source key is required for import")]
-    TeslaMateSourceKeyRequired,
-    #[error("TeslaMate source key must be an opaque non-secret label")]
-    InvalidTeslaMateSourceKey,
-    #[error("TeslaMate import limits are invalid")]
-    InvalidTeslaMateLimits,
+    #[error("Source database URL and import source key must be configured together")]
+    SourceDbPartialConfiguration,
+    #[error("Source database URL is required for import")]
+    ImportSourceRequired,
+    #[error("Source database URL is invalid")]
+    InvalidImportSource,
+    #[error("Import source key is required for import")]
+    ImportSourceKeyRequired,
+    #[error("Import source key must be an opaque non-secret label")]
+    InvalidImportSourceKey,
+    #[error("Source database import limits are invalid")]
+    InvalidImportSourceLimits,
 }
 
 #[cfg(test)]
 #[path = "config/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod n1_src_runtime_config_rs_display_tests {
+    use super::*;
+    use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
+
+    impl ErrorExample for ConfigError {
+        fn error_example() -> Self {
+            ConfigError::Read
+        }
+    }
+
+    #[test]
+    fn every_reachable_error_display_omits_the_source_project_name() {
+        fn check_config_error(error: ConfigError) {
+            match &error {
+                ConfigError::Read => (),
+                ConfigError::TooLarge => (),
+                ConfigError::UnsafeFile => (),
+                ConfigError::FileIdentityChanged => (),
+                ConfigError::Parse(..) => (),
+                ConfigError::UnknownTopLevelField(..) => (),
+                ConfigError::Invalid(..) => (),
+                ConfigError::OwnerApiBaseRequired => (),
+                ConfigError::InvalidOwnerApiBase => (),
+                ConfigError::InvalidOwnerApiTimeout => (),
+                ConfigError::StreamRegionRequired => (),
+                ConfigError::InvalidStreamEndpoint => (),
+                ConfigError::InvalidFleetCommandProxy => (),
+                ConfigError::InvalidFleetTelemetry => (),
+                ConfigError::FleetTelemetryListenerCollision => (),
+                ConfigError::EdgeDeliveryRetired => (),
+                ConfigError::InvalidGeocoderEndpoint => (),
+                ConfigError::InvalidGeocoderLanguage => (),
+                ConfigError::InvalidGeocoderTimeout => (),
+                ConfigError::InvalidTerrainConfig => (),
+                ConfigError::SupervisedIntervalRequired => (),
+                ConfigError::InvalidCollectorCadence(..) => (),
+                ConfigError::NonLoopbackBind => (),
+                ConfigError::TlsPathMustBeAbsolute => (),
+                ConfigError::TlsPathsMustDiffer => (),
+                ConfigError::InvalidTlsPublicUrl => (),
+                ConfigError::SourceDbPartialConfiguration => (),
+                ConfigError::ImportSourceRequired => (),
+                ConfigError::InvalidImportSource => (),
+                ConfigError::ImportSourceKeyRequired => (),
+                ConfigError::InvalidImportSourceKey => (),
+                ConfigError::InvalidImportSourceLimits => (),
+            }
+            assert_name_free(&error);
+        }
+        check_config_error(ConfigError::Read);
+        check_config_error(ConfigError::TooLarge);
+        check_config_error(ConfigError::UnsafeFile);
+        check_config_error(ConfigError::FileIdentityChanged);
+        check_config_error(ConfigError::Parse(example()));
+        check_config_error(ConfigError::UnknownTopLevelField(example()));
+        check_config_error(ConfigError::Invalid(example()));
+        check_config_error(ConfigError::OwnerApiBaseRequired);
+        check_config_error(ConfigError::InvalidOwnerApiBase);
+        check_config_error(ConfigError::InvalidOwnerApiTimeout);
+        check_config_error(ConfigError::StreamRegionRequired);
+        check_config_error(ConfigError::InvalidStreamEndpoint);
+        check_config_error(ConfigError::InvalidFleetCommandProxy);
+        check_config_error(ConfigError::InvalidFleetTelemetry);
+        check_config_error(ConfigError::FleetTelemetryListenerCollision);
+        check_config_error(ConfigError::EdgeDeliveryRetired);
+        check_config_error(ConfigError::InvalidGeocoderEndpoint);
+        check_config_error(ConfigError::InvalidGeocoderLanguage);
+        check_config_error(ConfigError::InvalidGeocoderTimeout);
+        check_config_error(ConfigError::InvalidTerrainConfig);
+        check_config_error(ConfigError::SupervisedIntervalRequired);
+        check_config_error(ConfigError::InvalidCollectorCadence(example()));
+        check_config_error(ConfigError::NonLoopbackBind);
+        check_config_error(ConfigError::TlsPathMustBeAbsolute);
+        check_config_error(ConfigError::TlsPathsMustDiffer);
+        check_config_error(ConfigError::InvalidTlsPublicUrl);
+        check_config_error(ConfigError::SourceDbPartialConfiguration);
+        check_config_error(ConfigError::ImportSourceRequired);
+        check_config_error(ConfigError::InvalidImportSource);
+        check_config_error(ConfigError::ImportSourceKeyRequired);
+        check_config_error(ConfigError::InvalidImportSourceKey);
+        check_config_error(ConfigError::InvalidImportSourceLimits);
+    }
+}

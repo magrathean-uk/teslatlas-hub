@@ -133,7 +133,7 @@ impl LegacyAuthManager {
                 && sign_in.is_none()
                 && self.auth.stop.is_none(),
             holder,
-            access_digest: crate::teslamate_token::legacy_access_token_digest(
+            access_digest: crate::source_token_envelope::legacy_access_token_digest(
                 self.auth.access_token(),
             ),
             sign_in,

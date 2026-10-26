@@ -21,7 +21,7 @@ use crate::legacy_auth::{
         clock_is_valid, persist_reread, restore_at_start, skew_after_answer, stored_pair_relation,
     },
 };
-use crate::teslamate_token::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
+use crate::source_token_envelope::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
 use reqwest::Client;
 use std::{
     path::Path,
@@ -214,7 +214,7 @@ impl LegacyAuthManagerError {
 
 #[derive(Clone)]
 enum LegacyAuthPersistence {
-    HubTeslaMate(Arc<HubTeslaMatePersistence>),
+    HubSourceDb(Arc<HubSourceDbPersistence>),
     #[cfg(test)]
     TestCallback(Arc<dyn Fn(&str, &str) -> Result<(), CredentialError> + Send + Sync>),
 }
@@ -222,9 +222,9 @@ enum LegacyAuthPersistence {
 impl LegacyAuthPersistence {
     /// The store-backed persistence, if this manager has one. A manager built
     /// for a test with a callback has no store, no fences and no status row.
-    fn hub(&self) -> Option<&Arc<HubTeslaMatePersistence>> {
+    fn hub(&self) -> Option<&Arc<HubSourceDbPersistence>> {
         match self {
-            Self::HubTeslaMate(persistence) => Some(persistence),
+            Self::HubSourceDb(persistence) => Some(persistence),
             #[cfg(test)]
             Self::TestCallback(_) => None,
         }
@@ -279,9 +279,9 @@ impl StatusSink for StatusStore {
     }
 }
 
-struct HubTeslaMatePersistence {
+struct HubSourceDbPersistence {
     store: crate::db::HubStore,
-    encryption_key: Arc<crate::teslamate_credentials::TeslaMateEncryptionKey>,
+    encryption_key: Arc<crate::legacy_owner_credentials::SourceTokenKey>,
     credential_generation: Mutex<uuid::Uuid>,
     /// The row of the unit's latest write of an equal-generation successor, kept
     /// from before the write (CL-14, R-P3b-12): the recovery after a write that
@@ -300,7 +300,7 @@ struct HubTeslaMatePersistence {
     #[cfg(test)]
     begin_faults: std::sync::atomic::AtomicUsize,
 }
-impl HubTeslaMatePersistence {
+impl HubSourceDbPersistence {
     /// Test only: take one planted fault from `counter`, if any is left.
     #[cfg(test)]
     fn take_fault(counter: &std::sync::atomic::AtomicUsize) -> bool {
@@ -316,17 +316,19 @@ impl HubTeslaMatePersistence {
     ) -> Result<(crate::db::OutboundRequestReceiptId, uuid::Uuid), CredentialError> {
         #[cfg(test)]
         if Self::take_fault(&self.begin_faults) {
-            return Err(CredentialError::TeslaMateTokenStore(
+            return Err(CredentialError::LegacyOwnerTokenStore(
                 crate::db::StoreError::LegacyRefreshReceipt(rusqlite::Error::InvalidQuery),
             ));
         }
         let input_generation = *self.credential_generation.lock().map_err(|_| {
-            CredentialError::TeslaMateTokenStore(crate::db::StoreError::LegacyRefreshOutcomeUnknown)
+            CredentialError::LegacyOwnerTokenStore(
+                crate::db::StoreError::LegacyRefreshOutcomeUnknown,
+            )
         })?;
         let receipt_id = self
             .store
             .begin_legacy_refresh(input_generation)
-            .map_err(CredentialError::TeslaMateTokenStore)?;
+            .map_err(CredentialError::LegacyOwnerTokenStore)?;
         Ok((receipt_id, input_generation))
     }
 
@@ -341,7 +343,7 @@ impl HubTeslaMatePersistence {
         }
         self.store
             .cancel_unsent_legacy_refresh(receipt_id, input_generation)
-            .map_err(CredentialError::TeslaMateTokenStore)
+            .map_err(CredentialError::LegacyOwnerTokenStore)
     }
 
     /// The generation of the pair this manager holds.
@@ -393,7 +395,7 @@ impl HubTeslaMatePersistence {
         }
         let tokens = OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned())?;
         let output_generation =
-            crate::teslamate_token::legacy_refresh_credential_generation(&tokens);
+            crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
         // A retry of this attempt's equal-generation write puts the row it put before,
         // not a new encryption of the same pair (R-P3bF-3): the witness then always
         // names an image that was stored, whatever the retries met.
@@ -408,20 +410,20 @@ impl HubTeslaMatePersistence {
         let stored = match kept {
             Some(row) => row,
             None => {
-                let (access, refresh) = crate::teslamate_token::encrypt_legacy_owner_tokens(
+                let (access, refresh) = crate::source_token_envelope::encrypt_legacy_owner_tokens(
                     self.encryption_key.as_bytes(),
                     &tokens,
                 )
-                .map_err(CredentialError::TeslaMateTokenCipher)?;
-                crate::db::TeslaMateLegacyTokenStore::refreshed(
+                .map_err(CredentialError::SourceDbTokenCipher)?;
+                crate::db::LegacyOwnerTokenStore::refreshed(
                     access,
                     refresh,
                     expires_at,
                     next_refresh_at,
                 )
-                .map_err(CredentialError::TeslaMateTokenStore)?
+                .map_err(CredentialError::LegacyOwnerTokenStore)?
                 .with_credential_generation(output_generation)
-                .map_err(CredentialError::TeslaMateTokenStore)?
+                .map_err(CredentialError::LegacyOwnerTokenStore)?
             }
         };
         if output_generation == input_generation {
@@ -447,11 +449,11 @@ impl HubTeslaMatePersistence {
             // write returns.
             self.store
                 .complete_unrotated_legacy_refresh(receipt_id, input_generation, &stored)
-                .map_err(CredentialError::TeslaMateTokenStore)?;
+                .map_err(CredentialError::LegacyOwnerTokenStore)?;
         } else {
             self.store
                 .complete_legacy_refresh(receipt_id, input_generation, output_generation, &stored)
-                .map_err(CredentialError::TeslaMateTokenStore)?;
+                .map_err(CredentialError::LegacyOwnerTokenStore)?;
         }
         #[cfg(test)]
         if fault == Some(PersistFault::Ambiguous) {
@@ -490,13 +492,13 @@ impl AttemptPorts for ManagerPorts {
             return Err(BeginFailure::Store);
         }
         match &self.persistence {
-            LegacyAuthPersistence::HubTeslaMate(persistence) => {
+            LegacyAuthPersistence::HubSourceDb(persistence) => {
                 match persistence.begin_refresh() {
                     Ok((receipt, input)) => Ok(Attempt {
                         receipt: Some(receipt),
                         input,
                     }),
-                    Err(CredentialError::TeslaMateTokenStore(
+                    Err(CredentialError::LegacyOwnerTokenStore(
                         crate::db::StoreError::LegacyRefreshOutcomeUnknown,
                     )) => {
                         // K1 refuses for three reasons that mean different things:
@@ -532,7 +534,7 @@ impl AttemptPorts for ManagerPorts {
             return Err(PortError);
         }
         match (&self.persistence, attempt.receipt) {
-            (LegacyAuthPersistence::HubTeslaMate(persistence), Some(receipt)) => persistence
+            (LegacyAuthPersistence::HubSourceDb(persistence), Some(receipt)) => persistence
                 .cancel_refresh(receipt, attempt.input)
                 .map_err(|_| PortError),
             _ => Ok(()),
@@ -544,13 +546,13 @@ impl AttemptPorts for ManagerPorts {
             return Err(PortError);
         }
         #[cfg(test)]
-        if let LegacyAuthPersistence::HubTeslaMate(persistence) = &self.persistence
-            && HubTeslaMatePersistence::take_fault(&persistence.close_faults)
+        if let LegacyAuthPersistence::HubSourceDb(persistence) = &self.persistence
+            && HubSourceDbPersistence::take_fault(&persistence.close_faults)
         {
             return Err(PortError);
         }
         match (&self.persistence, attempt.receipt) {
-            (LegacyAuthPersistence::HubTeslaMate(persistence), Some(receipt)) => persistence
+            (LegacyAuthPersistence::HubSourceDb(persistence), Some(receipt)) => persistence
                 .store
                 .close_legacy_refresh_attempt(
                     receipt,
@@ -576,7 +578,7 @@ impl AttemptPorts for ManagerPorts {
             // is left unresolved the attempt was closed by an earlier try that
             // reported an error after it committed, or an external credential
             // write resolved it (K4): there is nothing left to close.
-            (Err(_), LegacyAuthPersistence::HubTeslaMate(persistence)) => {
+            (Err(_), LegacyAuthPersistence::HubSourceDb(persistence)) => {
                 match persistence.store.has_unresolved_legacy_refresh() {
                     Ok(false) => Ok(()),
                     _ => Err(PortError),
@@ -594,7 +596,7 @@ impl AttemptPorts for ManagerPorts {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(self.env.now());
         match (&self.persistence, attempt.receipt) {
-            (LegacyAuthPersistence::HubTeslaMate(persistence), Some(receipt)) => persistence
+            (LegacyAuthPersistence::HubSourceDb(persistence), Some(receipt)) => persistence
                 .persist_refreshed(
                     receipt,
                     attempt.input,
@@ -614,7 +616,7 @@ impl AttemptPorts for ManagerPorts {
 
     fn reread(&self, attempt: &Attempt, successor: uuid::Uuid) -> PersistReread {
         match &self.persistence {
-            LegacyAuthPersistence::HubTeslaMate(persistence) => {
+            LegacyAuthPersistence::HubSourceDb(persistence) => {
                 // The attempt's receipt and the row it wrote reach the recovery, so
                 // an equal-generation successor is proved by its own row and
                 // receipt in one snapshot. A read that fails leaves the write to be
@@ -640,10 +642,7 @@ impl AttemptPorts for ManagerPorts {
 /// Rebuilds the in-memory pair from a stored row: at start, and when the row
 /// changes under the unit (R44a, R62).
 type Rebuild = Arc<
-    dyn Fn(
-            &OwnerTokens,
-            &crate::db::TeslaMateLegacyTokenStore,
-        ) -> Result<LegacyAuth, LegacyAuthError>
+    dyn Fn(&OwnerTokens, &crate::db::LegacyOwnerTokenStore) -> Result<LegacyAuth, LegacyAuthError>
         + Send
         + Sync,
 >;
@@ -807,12 +806,12 @@ impl std::fmt::Debug for LegacyAuthManager {
 }
 impl LegacyAuthManager {
     #[cfg(test)]
-    pub(crate) fn from_hub_teslamate_store(
+    pub(crate) fn from_hub_source_db_store(
         store: crate::db::HubStore,
         data_dir: &Path,
         endpoint: &AuthEndpointConfig,
     ) -> Result<Self, LegacyAuthManagerError> {
-        Self::from_hub_teslamate_store_with_policy(
+        Self::from_hub_source_db_store_with_policy(
             store,
             data_dir,
             LegacyAuthRefreshPolicy::Managed,
@@ -827,12 +826,12 @@ impl LegacyAuthManager {
     /// Load the same local token pair for a bounded observer. This manager can
     /// use its current access token, but will never submit its refresh token.
     #[cfg(test)]
-    pub(crate) fn from_hub_teslamate_store_observer(
+    pub(crate) fn from_hub_source_db_store_observer(
         store: crate::db::HubStore,
         data_dir: &Path,
         endpoint: &AuthEndpointConfig,
     ) -> Result<Self, LegacyAuthManagerError> {
-        Self::from_hub_teslamate_store_with_policy(
+        Self::from_hub_source_db_store_with_policy(
             store,
             data_dir,
             LegacyAuthRefreshPolicy::Observer,
@@ -849,14 +848,14 @@ impl LegacyAuthManager {
     /// the stored pair and before it writes its first status row, with no await between,
     /// and the unit keeps it as its loss observer from then on.
     #[cfg(unix)]
-    pub(crate) fn from_hub_teslamate_store_for_admitted_user(
+    pub(crate) fn from_hub_source_db_store_for_admitted_user(
         store: crate::db::HubStore,
         data_dir: &Path,
         endpoint: &AuthEndpointConfig,
         admission: Arc<crate::hub_user_process::AdmittedUserHub>,
         loss: Option<LossObserver>,
     ) -> Result<Self, LegacyAuthManagerError> {
-        Self::from_hub_teslamate_store_with_policy(
+        Self::from_hub_source_db_store_with_policy(
             store,
             data_dir,
             LegacyAuthRefreshPolicy::Managed,
@@ -870,14 +869,14 @@ impl LegacyAuthManager {
     }
 
     #[cfg(unix)]
-    pub(crate) fn from_hub_teslamate_store_observer_for_admitted_user(
+    pub(crate) fn from_hub_source_db_store_observer_for_admitted_user(
         store: crate::db::HubStore,
         data_dir: &Path,
         endpoint: &AuthEndpointConfig,
         admission: Arc<crate::hub_user_process::AdmittedUserHub>,
         loss: Option<LossObserver>,
     ) -> Result<Self, LegacyAuthManagerError> {
-        Self::from_hub_teslamate_store_with_policy(
+        Self::from_hub_source_db_store_with_policy(
             store,
             data_dir,
             LegacyAuthRefreshPolicy::Observer,
@@ -910,7 +909,7 @@ impl LegacyAuthManager {
     ///
     /// `fallback_region` names the data hosts when the pair gives no region (a
     /// stopped manager calls none of them).
-    fn from_hub_teslamate_store_with_policy(
+    fn from_hub_source_db_store_with_policy(
         store: crate::db::HubStore,
         data_dir: &Path,
         refresh_policy: LegacyAuthRefreshPolicy,
@@ -921,31 +920,35 @@ impl LegacyAuthManager {
         loss: Option<LossObserver>,
     ) -> Result<Self, LegacyAuthManagerError> {
         let stored = store
-            .load_teslamate_legacy_tokens()
-            .map_err(CredentialError::TeslaMateTokenStore)?
-            .ok_or(CredentialError::TeslaMateTokenStoreMissing)?;
+            .load_legacy_owner_tokens()
+            .map_err(CredentialError::LegacyOwnerTokenStore)?
+            .ok_or(CredentialError::SourceDbTokenStoreMissing)?;
         // An interrupted key replacement is settled here, by removing or restoring a key
         // file: each of those mutations is guarded by the run, immediately before it, so
         // a loss acknowledged earlier leaves both key files as they were (B2 fix round,
         // P3b fix 4, R-P3bF4-4). Managed and observer constructions alike.
         let may_settle = || !loss.as_ref().is_some_and(|lost| lost());
         let encryption_key = Arc::new(
-            crate::teslamate_credentials::load_key_for_tokens_with(data_dir, &stored, &may_settle)
-                .map_err(|error| match error {
-                    crate::teslamate_credentials::TeslaMateCredentialError::SettlementRefused => {
-                        CredentialError::SensitiveAccessUnavailable
-                    }
-                    other => CredentialError::TeslaMateCredentialFile(other),
-                })?,
+            crate::legacy_owner_credentials::load_key_for_tokens_with(
+                data_dir,
+                &stored,
+                &may_settle,
+            )
+            .map_err(|error| match error {
+                crate::legacy_owner_credentials::SourceDbCredentialError::SettlementRefused => {
+                    CredentialError::SensitiveAccessUnavailable
+                }
+                other => CredentialError::SourceDbCredentialFile(other),
+            })?,
         );
-        let tokens = crate::teslamate_token::decrypt_legacy_owner_tokens(
+        let tokens = crate::source_token_envelope::decrypt_legacy_owner_tokens(
             encryption_key.as_bytes(),
             stored.access(),
             stored.refresh(),
         )
-        .map_err(CredentialError::TeslaMateTokenCipher)?;
+        .map_err(CredentialError::SourceDbTokenCipher)?;
         let credential_generation =
-            crate::teslamate_token::legacy_refresh_credential_generation(&tokens);
+            crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
         let built = rebuild(&tokens, &stored);
         let now = env.now();
         let observer = refresh_policy == LegacyAuthRefreshPolicy::Observer;
@@ -984,11 +987,11 @@ impl LegacyAuthManager {
                 c3_reset_refusal: false,
             },
         )
-        .map_err(CredentialError::TeslaMateTokenStore)?;
+        .map_err(CredentialError::LegacyOwnerTokenStore)?;
         // The digest of the access token the stored pair holds (hub fix pass 3): what a
         // counted rejection's stored digest is compared with.
         let access_digest =
-            crate::teslamate_token::legacy_access_token_digest(tokens.access_token());
+            crate::source_token_envelope::legacy_access_token_digest(tokens.access_token());
         // A row migrated from before the digest column (schema step 72) counted a
         // rejection outside a stop and holds no digest, and the pair is encrypted, so the
         // migration could not fill it: the rejected token is taken to be the one the pair
@@ -1014,12 +1017,12 @@ impl LegacyAuthManager {
                     restored.status.fuse.generation,
                     access_digest,
                 )
-                .map_err(CredentialError::TeslaMateTokenStore)?;
+                .map_err(CredentialError::LegacyOwnerTokenStore)?;
             restored.status.fuse.rejected_access = Some(access_digest);
         }
         let stored_row = store
             .load_collector_auth_row()
-            .map_err(CredentialError::TeslaMateTokenStore)?;
+            .map_err(CredentialError::LegacyOwnerTokenStore)?;
         let stored_refusal = stored_row
             .as_ref()
             .filter(|row| row.state == "api_refused")
@@ -1052,8 +1055,8 @@ impl LegacyAuthManager {
             return Err(CredentialError::SensitiveAccessUnavailable.into());
         }
         store
-            .bind_teslamate_legacy_credential_generation(&stored, credential_generation)
-            .map_err(CredentialError::TeslaMateTokenStore)?;
+            .bind_source_db_legacy_credential_generation(&stored, credential_generation)
+            .map_err(CredentialError::LegacyOwnerTokenStore)?;
         // A pair the configuration cannot use, or that fails the grammar, builds
         // no `LegacyAuth`: the manager holds an inert one, and the status the
         // restore decided (a stop, or a configuration error) stops it (C5-B2).
@@ -1069,7 +1072,7 @@ impl LegacyAuthManager {
         auth.stop = restored.status.stop();
         let mut manager = Self {
             auth,
-            persistence: LegacyAuthPersistence::HubTeslaMate(Arc::new(HubTeslaMatePersistence {
+            persistence: LegacyAuthPersistence::HubSourceDb(Arc::new(HubSourceDbPersistence {
                 store,
                 encryption_key,
                 credential_generation: Mutex::new(credential_generation),
@@ -1208,12 +1211,12 @@ impl LegacyAuthManager {
     }
 
     #[cfg(test)]
-    pub(crate) fn from_hub_teslamate_store_with_issuer(
+    pub(crate) fn from_hub_legacy_owner_store_with_issuer(
         store: crate::db::HubStore,
         data_dir: &Path,
         issuer: url::Url,
     ) -> Result<Self, LegacyAuthManagerError> {
-        Self::from_hub_teslamate_store_with_policy(
+        Self::from_hub_source_db_store_with_policy(
             store,
             data_dir,
             LegacyAuthRefreshPolicy::Managed,
@@ -1225,12 +1228,12 @@ impl LegacyAuthManager {
         )
     }
     #[cfg(test)]
-    pub(crate) fn from_hub_teslamate_store_observer_with_issuer(
+    pub(crate) fn from_hub_source_db_store_observer_with_issuer(
         store: crate::db::HubStore,
         data_dir: &Path,
         issuer: url::Url,
     ) -> Result<Self, LegacyAuthManagerError> {
-        Self::from_hub_teslamate_store_with_policy(
+        Self::from_hub_source_db_store_with_policy(
             store,
             data_dir,
             LegacyAuthRefreshPolicy::Observer,
@@ -1246,7 +1249,7 @@ impl LegacyAuthManager {
     /// loopback server while the selected endpoint stays the one asserted
     /// (section 8 fixtures), and an environment the test controls.
     #[cfg(test)]
-    pub(crate) fn from_hub_teslamate_store_for_test(
+    pub(crate) fn from_hub_source_db_store_for_test(
         store: crate::db::HubStore,
         data_dir: &Path,
         endpoint: &AuthEndpointConfig,
@@ -1263,7 +1266,7 @@ impl LegacyAuthManager {
                 None => auth,
             })
         });
-        Self::from_hub_teslamate_store_with_policy(
+        Self::from_hub_source_db_store_with_policy(
             store,
             data_dir,
             if observer {
@@ -1338,7 +1341,7 @@ impl LegacyAuthManager {
     /// manager has no store.
     pub(crate) fn generation(&self) -> uuid::Uuid {
         match &self.persistence {
-            LegacyAuthPersistence::HubTeslaMate(persistence) => persistence.current_generation(),
+            LegacyAuthPersistence::HubSourceDb(persistence) => persistence.current_generation(),
             #[cfg(test)]
             LegacyAuthPersistence::TestCallback(_) => self.callback_generation(),
         }
@@ -1350,7 +1353,7 @@ impl LegacyAuthManager {
             self.auth.access_token().to_owned(),
             self.auth.refresh_token().to_owned(),
         )
-        .map(|tokens| crate::teslamate_token::legacy_refresh_credential_generation(&tokens))
+        .map(|tokens| crate::source_token_envelope::legacy_refresh_credential_generation(&tokens))
         .unwrap_or_else(|_| uuid::Uuid::nil())
     }
 
@@ -1677,20 +1680,21 @@ impl LegacyAuthManager {
         let persistence = Arc::clone(persistence);
         let stored = persistence
             .store
-            .load_teslamate_legacy_tokens()
-            .map_err(CredentialError::TeslaMateTokenStore)?
-            .ok_or(CredentialError::TeslaMateTokenStoreMissing)?;
-        let tokens = crate::teslamate_token::decrypt_legacy_owner_tokens(
+            .load_legacy_owner_tokens()
+            .map_err(CredentialError::LegacyOwnerTokenStore)?
+            .ok_or(CredentialError::SourceDbTokenStoreMissing)?;
+        let tokens = crate::source_token_envelope::decrypt_legacy_owner_tokens(
             persistence.encryption_key.as_bytes(),
             stored.access(),
             stored.refresh(),
         )
-        .map_err(CredentialError::TeslaMateTokenCipher)?;
-        let generation = crate::teslamate_token::legacy_refresh_credential_generation(&tokens);
+        .map_err(CredentialError::SourceDbTokenCipher)?;
+        let generation =
+            crate::source_token_envelope::legacy_refresh_credential_generation(&tokens);
         persistence
             .store
-            .bind_teslamate_legacy_credential_generation(&stored, generation)
-            .map_err(CredentialError::TeslaMateTokenStore)?;
+            .bind_source_db_legacy_credential_generation(&stored, generation)
+            .map_err(CredentialError::LegacyOwnerTokenStore)?;
         let generation = stored.credential_generation().unwrap_or(generation);
         persistence.set_generation(generation);
         let now = self.env.now();
@@ -2318,8 +2322,8 @@ fn issuer_rebuild(issuer: url::Url) -> Rebuild {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-pub struct TeslaMatePostgresPassword(Zeroizing<String>);
-impl TeslaMatePostgresPassword {
+pub struct SourceDbPassword(Zeroizing<String>);
+impl SourceDbPassword {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CredentialError> {
         let bytes = bytes
             .strip_suffix(b"\r\n")
@@ -2343,9 +2347,9 @@ impl TeslaMatePostgresPassword {
         self.0.as_str()
     }
 }
-impl std::fmt::Debug for TeslaMatePostgresPassword {
+impl std::fmt::Debug for SourceDbPassword {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("TeslaMatePostgresPassword([redacted])")
+        f.write_str("SourceDbPassword([redacted])")
     }
 }
 
@@ -2372,22 +2376,22 @@ pub enum CredentialError {
     TokenTooLarge,
     #[error("owner token contains unsupported bytes")]
     InvalidTokenBytes,
-    #[error("TeslaMate PostgreSQL password is empty")]
+    #[error("Source database PostgreSQL password is empty")]
     EmptyPostgresPassword,
-    #[error("TeslaMate PostgreSQL password exceeds the size limit")]
+    #[error("Source database PostgreSQL password exceeds the size limit")]
     PostgresPasswordTooLarge,
-    #[error("TeslaMate PostgreSQL password contains unsupported bytes")]
+    #[error("Source database PostgreSQL password contains unsupported bytes")]
     InvalidPostgresPasswordBytes,
-    #[error("TeslaMate PostgreSQL password is not UTF-8")]
+    #[error("Source database PostgreSQL password is not UTF-8")]
     InvalidPostgresPasswordEncoding,
-    #[error("Hub TeslaMate token pair is missing")]
-    TeslaMateTokenStoreMissing,
-    #[error("Hub TeslaMate token store failed: {0}")]
-    TeslaMateTokenStore(#[source] crate::db::StoreError),
-    #[error("Hub TeslaMate key file failed: {0}")]
-    TeslaMateCredentialFile(#[source] crate::teslamate_credentials::TeslaMateCredentialError),
-    #[error("TeslaMate token operation failed: {0}")]
-    TeslaMateTokenCipher(#[source] crate::teslamate_token::TeslaMateTokenError),
+    #[error("Hub legacy owner token pair is missing")]
+    SourceDbTokenStoreMissing,
+    #[error("Hub legacy owner token store failed: {0}")]
+    LegacyOwnerTokenStore(#[source] crate::db::StoreError),
+    #[error("Hub legacy owner token key file failed: {0}")]
+    SourceDbCredentialFile(#[source] crate::legacy_owner_credentials::SourceDbCredentialError),
+    #[error("Legacy owner token operation failed: {0}")]
+    SourceDbTokenCipher(#[source] crate::source_token_envelope::SourceDbTokenError),
     #[error("Hub runtime admission is unavailable")]
     SensitiveAccessUnavailable,
     #[cfg(test)]
@@ -2404,3 +2408,73 @@ pub(crate) use rejection_support::{AuthWait, CollectorStartView, RefusalRefresh}
 #[cfg(test)]
 #[path = "credentials/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod n1_src_auth_credentials_rs_display_tests {
+    use super::*;
+    use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
+
+    impl ErrorExample for LegacyAuthManagerError {
+        fn error_example() -> Self {
+            LegacyAuthManagerError::ObserverRefreshDisabled
+        }
+    }
+
+    impl ErrorExample for CredentialError {
+        fn error_example() -> Self {
+            CredentialError::EmptyToken
+        }
+    }
+
+    #[test]
+    fn every_reachable_error_display_omits_the_source_project_name() {
+        fn check_legacy_auth_manager_error(error: LegacyAuthManagerError) {
+            match &error {
+                LegacyAuthManagerError::Credential(..) => (),
+                LegacyAuthManagerError::Auth(..) => (),
+                LegacyAuthManagerError::ObserverRefreshDisabled => (),
+            }
+            assert_name_free(&error);
+        }
+        check_legacy_auth_manager_error(LegacyAuthManagerError::Credential(example()));
+        check_legacy_auth_manager_error(LegacyAuthManagerError::Auth(example()));
+        check_legacy_auth_manager_error(LegacyAuthManagerError::ObserverRefreshDisabled);
+        fn check_credential_error(error: CredentialError) {
+            match &error {
+                CredentialError::EmptyToken => (),
+                CredentialError::TokenTooLarge => (),
+                CredentialError::InvalidTokenBytes => (),
+                CredentialError::EmptyPostgresPassword => (),
+                CredentialError::PostgresPasswordTooLarge => (),
+                CredentialError::InvalidPostgresPasswordBytes => (),
+                CredentialError::InvalidPostgresPasswordEncoding => (),
+                CredentialError::SourceDbTokenStoreMissing => (),
+                CredentialError::LegacyOwnerTokenStore(..) => (),
+                CredentialError::SourceDbCredentialFile(..) => (),
+                CredentialError::SourceDbTokenCipher(..) => (),
+                CredentialError::SensitiveAccessUnavailable => (),
+                #[cfg(test)]
+                CredentialError::MacKeychainHelperInvalid => (),
+                #[cfg(test)]
+                CredentialError::LegacyTokenStateWrite => (),
+            }
+            assert_name_free(&error);
+        }
+        check_credential_error(CredentialError::EmptyToken);
+        check_credential_error(CredentialError::TokenTooLarge);
+        check_credential_error(CredentialError::InvalidTokenBytes);
+        check_credential_error(CredentialError::EmptyPostgresPassword);
+        check_credential_error(CredentialError::PostgresPasswordTooLarge);
+        check_credential_error(CredentialError::InvalidPostgresPasswordBytes);
+        check_credential_error(CredentialError::InvalidPostgresPasswordEncoding);
+        check_credential_error(CredentialError::SourceDbTokenStoreMissing);
+        check_credential_error(CredentialError::LegacyOwnerTokenStore(example()));
+        check_credential_error(CredentialError::SourceDbCredentialFile(example()));
+        check_credential_error(CredentialError::SourceDbTokenCipher(example()));
+        check_credential_error(CredentialError::SensitiveAccessUnavailable);
+        #[cfg(test)]
+        check_credential_error(CredentialError::MacKeychainHelperInvalid);
+        #[cfg(test)]
+        check_credential_error(CredentialError::LegacyTokenStateWrite);
+    }
+}

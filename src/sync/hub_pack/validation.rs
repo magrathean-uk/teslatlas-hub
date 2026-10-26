@@ -968,7 +968,7 @@ fn validate_states(
         require_unique_positive(&mut ids, state.id, "state.id")?;
         require_same_car(state.car_id, selected_car_id, "state.car_id")?;
         if !matches!(state.state.as_str(), "online" | "offline" | "asleep") {
-            return Err(invalid("state.state is not a TeslaMate state"));
+            return Err(invalid("state.state is not a recognised source state"));
         }
         require_positive(state.start_date_ms, "state.start_date_ms")?;
         if let Some(end) = state.end_date_ms {
@@ -1069,7 +1069,7 @@ fn validate_binding(binding: &ProjectionBinding) -> Result<(), ProjectionPackErr
     require_positive(binding.selected_car_id, "selected_car_id")
 }
 
-/// Schema 2.2 carries the physical TeslaMate `cars.id` domain: source
+/// Schema 2.2 carries the physical source database `cars.id` domain: source
 /// `smallint` permits signed and zero values even though legacy projection
 /// bindings deliberately require a positive normalized mirror identity.
 fn validate_binding_v2_2(binding: &ProjectionBinding) -> Result<(), ProjectionPackError> {
@@ -1082,7 +1082,7 @@ fn validate_binding_v2_2(binding: &ProjectionBinding) -> Result<(), ProjectionPa
     }
     if i16::try_from(binding.selected_car_id).is_err() {
         return Err(invalid(
-            "schema 2.2 selected_car_id is outside the TeslaMate smallint source domain",
+            "schema 2.2 selected_car_id is outside the import source smallint domain",
         ));
     }
     Ok(())

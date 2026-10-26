@@ -931,8 +931,8 @@ fn r14_a_seeded_session_is_the_fold_of_its_imported_samples() {
 
 /// The imported rows of T63: an open process and two charge rows.
 struct ImportedChargeFixture {
-    process: TeslaMateChargingProcess,
-    samples: Vec<TeslaMateCharge>,
+    process: SourceDbChargingProcess,
+    samples: Vec<SourceDbCharge>,
 }
 
 impl ImportedChargeFixture {
@@ -1208,7 +1208,7 @@ fn t19_the_incremental_fold_equals_the_slice_across_encode_and_decode() {
 fn t63_a_seeded_session_continues_live_with_baseline_zero() {
     let start = T0 - HOUR;
     let process = ImportedChargeFixture::new(start);
-    let session = TeslaMateOpenSession {
+    let session = SourceDbOpenSession {
         car_id: 1,
         charge: Some(process.process.clone()),
         charge_samples: process.samples.clone(),

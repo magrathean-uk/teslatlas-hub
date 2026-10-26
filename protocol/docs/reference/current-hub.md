@@ -111,7 +111,7 @@ picks a 64-bit type (an annotation: no validator of this package assigns it a ch
 verdict), `end_date_ms` of a drive and of a charge is never null
 (closed sessions only), and every other field may be null. `cost`, `cost_per_unit` and
 `session_fee` are JSON numbers. `position.power` and the charge-sample charger fields are
-whole numbers in TeslaMate but are typed `number`, because the page routes serve the
+whole numbers in the source database but are typed `number`, because the page routes serve the
 materialised projections of the Hub, which hold them as floating point: expect `12` or `12.0`. `address_provenance` is
 `{source: import|geocoder|manual, provider, endpoint_host, language, licence, looked_up_at_ms}`
 and `elevation_provenance` is `{source: vehicle|import|terrain, dataset, dataset_version, tile}`;

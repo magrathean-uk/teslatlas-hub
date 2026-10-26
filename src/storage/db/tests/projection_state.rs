@@ -6,14 +6,14 @@ fn digest_projection_state_is_atomic_with_base_and_successor_heads() {
     let store = HubStore::initialize(temporary.path()).expect("store");
     let (vehicle, binding, manifest) = v2_base_manifest(&store);
     let car = import_delta_test_car(binding.selected_car_id);
-    let inventory = TeslaMateImportProjectionInventory {
+    let inventory = SourceDbImportProjectionInventory {
         source_id: binding.account_id,
         selected_car_id: binding.selected_car_id,
         rows: Vec::new(),
     };
     let state = test_projection_state(temporary.path(), &car);
     store
-        .finalize_teslamate_import_snapshot_with_projection_state(
+        .finalize_source_db_import_snapshot_with_projection_state(
             &manifest,
             Sha256Digest::of_bytes(b"projection-state-base"),
             &[],
@@ -24,7 +24,7 @@ fn digest_projection_state_is_atomic_with_base_and_successor_heads() {
         .expect("catalogue base and state atomically");
 
     let mut lookup = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -34,20 +34,23 @@ fn digest_projection_state_is_atomic_with_base_and_successor_heads() {
     assert_eq!(lookup.header().head_sequence, manifest.head_sequence);
     assert!(
         lookup
-            .digest(TeslaMateProjectionStateEntity::Car, binding.selected_car_id)
+            .digest(SourceDbProjectionStateEntity::Car, binding.selected_car_id)
             .expect("lookup car digest")
             .is_some()
     );
     let page = lookup.page_after(None, 10).expect("bounded state page");
     assert_eq!(page.rows.len(), 1);
-    assert_eq!(page.rows[0].entity, TeslaMateProjectionStateEntity::Car);
+    assert_eq!(page.rows[0].entity, SourceDbProjectionStateEntity::Car);
     drop(lookup);
 
     let connection = store.open().expect("state catalogue");
     let (rows, digest_bytes): (i64, i64) = connection
         .query_row(
-            "SELECT COUNT(*), COALESCE(MAX(length(projection_sha256)), 0)
-                   FROM teslamate_import_projection_state_rows",
+            concat!(
+                "SELECT COUNT(*), COALESCE(MAX(length(projection_sha256)), 0)
+                   FROM ",
+                crate::db::import_table_names::import_projection_state_rows_table!()
+            ),
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -61,15 +64,15 @@ fn digest_projection_state_is_atomic_with_base_and_successor_heads() {
         .expect("base lineage exists");
     let delta = imported_typed_delta(&store, &binding, &base);
     let prior = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
         )
         .expect("prior state");
-    let successor_state = TeslaMateProjectionState::create(
+    let successor_state = SourceDbProjectionState::create(
         temporary.path(),
-        crate::teslamate_projection_state::TeslaMateProjectionStateLimits {
+        crate::import_projection_state::SourceDbProjectionStateLimits {
             max_rows: 10,
             max_state_bytes: 128 * 1024,
             max_changed_payload_bytes: 128 * 1024,
@@ -78,18 +81,18 @@ fn digest_projection_state_is_atomic_with_base_and_successor_heads() {
     )
     .expect("successor state");
     let mut successor =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_successor(
+        crate::import_projection_state::SourceDbProjectionStateCapture::for_successor(
             successor_state,
             Box::new(prior),
         );
     assert_eq!(
         successor.record_car(&car).expect("capture unchanged car"),
-        crate::teslamate_projection_state::TeslaMateProjectionStateChange::Unchanged
+        crate::import_projection_state::SourceDbProjectionStateChange::Unchanged
     );
     successor.seal().expect("seal successor state");
     let successor_state = successor.into_state();
     store
-        .finalize_teslamate_import_delta_successor_with_projection_state(
+        .finalize_source_db_import_delta_successor_with_projection_state(
             vehicle.vehicle_id,
             &delta,
             &import_delta_test_cursor_key(),
@@ -101,7 +104,7 @@ fn digest_projection_state_is_atomic_with_base_and_successor_heads() {
         )
         .expect("catalogue successor and replacement state atomically");
     let lookup = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -148,7 +151,7 @@ fn direct_materialised_base_with_firmware(
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -156,7 +159,7 @@ fn direct_materialised_base_with_firmware(
         .expect("stage direct base session");
     let state = create_direct_import_projection_state(store, run_id, 32);
     let mut capture =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_initial_base(state);
+        crate::import_projection_state::SourceDbProjectionStateCapture::for_initial_base(state);
     capture.record_car(&car).expect("capture base car");
     for drive in drives {
         capture.record_drive(drive).expect("capture base drive");
@@ -209,7 +212,7 @@ fn unchanged_direct_import_self_heals_missing_materialisation() {
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -258,7 +261,7 @@ fn direct_materialisation_validation_rolls_back_initial_publication() {
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -345,25 +348,24 @@ fn direct_successor_reconciles_imported_drives_and_preserves_live_only_rows() {
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
         )
         .expect("successor staged session");
     let prior = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
         )
         .expect("prior imported state");
     let state = create_direct_import_projection_state(&store, run_id, 32);
-    let mut capture =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_successor(
-            state,
-            Box::new(prior),
-        );
+    let mut capture = crate::import_projection_state::SourceDbProjectionStateCapture::for_successor(
+        state,
+        Box::new(prior),
+    );
     car.firmware_version = Some("2026.20".into());
     let updated = import_materialised_test_drive(7, binding.selected_car_id, 6.0);
     capture.record_car(&car).expect("capture updated car");
@@ -436,14 +438,14 @@ fn sparse_direct_successor_writes_only_changed_projection_and_drive_rows() {
         store
             .stage_import_generation_session(
                 run_id,
-                &TeslaMateOpenSession {
+                &SourceDbOpenSession {
                     car_id: binding.selected_car_id,
                     ..Default::default()
                 },
             )
             .expect("session");
         let prior = store
-            .teslamate_import_projection_state_lookup(
+            .source_db_import_projection_state_lookup(
                 vehicle.vehicle_id,
                 binding.account_id,
                 binding.selected_car_id,
@@ -451,7 +453,7 @@ fn sparse_direct_successor_writes_only_changed_projection_and_drive_rows() {
             .expect("prior state");
         let state = create_direct_import_projection_state(&store, run_id, 32);
         let mut capture =
-            crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_successor(
+            crate::import_projection_state::SourceDbProjectionStateCapture::for_successor(
                 state,
                 Box::new(prior),
             );
@@ -461,8 +463,7 @@ fn sparse_direct_successor_writes_only_changed_projection_and_drive_rows() {
         for drive in &drives {
             let change = capture.record_drive(drive).expect("capture drive");
             changed += usize::from(
-                change
-                    != crate::teslamate_projection_state::TeslaMateProjectionStateChange::Unchanged,
+                change != crate::import_projection_state::SourceDbProjectionStateChange::Unchanged,
             );
         }
         assert_eq!(changed, 1);
@@ -473,14 +474,21 @@ fn sparse_direct_successor_writes_only_changed_projection_and_drive_rows() {
             "UPDATE materialised_drives SET inside_temp_avg=12345 WHERE vehicle_id=?1 AND drive_id=?2",
             params![vehicle.vehicle_id.to_string(), drives[1].id],
         ).expect("stale derived-only column with unchanged canonical JSON");
-        connection.execute_batch(
-            "CREATE TABLE remediation_write_counts(kind TEXT PRIMARY KEY, n INTEGER NOT NULL);
+        connection
+            .execute_batch(concat!(
+                "CREATE TABLE remediation_write_counts(kind TEXT PRIMARY KEY, n INTEGER NOT NULL);
              INSERT INTO remediation_write_counts VALUES ('projection', 0), ('drive', 0);
-             CREATE TRIGGER remediation_projection_delete AFTER DELETE ON teslamate_import_projection_state_rows
+             CREATE TRIGGER remediation_projection_delete AFTER DELETE ON ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "
                BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='projection'; END;
-             CREATE TRIGGER remediation_projection_insert AFTER INSERT ON teslamate_import_projection_state_rows
+             CREATE TRIGGER remediation_projection_insert AFTER INSERT ON ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "
                BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='projection'; END;
-             CREATE TRIGGER remediation_projection_update AFTER UPDATE ON teslamate_import_projection_state_rows
+             CREATE TRIGGER remediation_projection_update AFTER UPDATE ON ",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "
                BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='projection'; END;
              CREATE TRIGGER remediation_drive_update AFTER UPDATE ON materialised_drives
                BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='drive'; END;
@@ -489,7 +497,8 @@ fn sparse_direct_successor_writes_only_changed_projection_and_drive_rows() {
              CREATE TRIGGER remediation_drive_delete AFTER DELETE ON materialised_drives
                BEGIN UPDATE remediation_write_counts SET n=n+1 WHERE kind='drive'; END;
              PRAGMA wal_checkpoint(TRUNCATE);"
-        ).expect("bounded fixture write counters");
+            ))
+            .expect("bounded fixture write counters");
         let delta = imported_typed_delta(&store, &binding, &base);
         let started = std::time::Instant::now();
         store
@@ -592,25 +601,24 @@ fn direct_successor_rejects_a_new_import_id_owned_by_live_collection_atomically(
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
         )
         .expect("successor staged session");
     let prior = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
         )
         .expect("prior imported state");
     let state = create_direct_import_projection_state(&store, run_id, 32);
-    let mut capture =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_successor(
-            state,
-            Box::new(prior),
-        );
+    let mut capture = crate::import_projection_state::SourceDbProjectionStateCapture::for_successor(
+        state,
+        Box::new(prior),
+    );
     successor_car.firmware_version = Some("2026.21".into());
     let updated = import_materialised_test_drive(7, binding.selected_car_id, 6.0);
     let imported_collision = import_materialised_test_drive(9, binding.selected_car_id, 10.0);
@@ -691,14 +699,14 @@ fn direct_import_successor_batch_is_atomic_and_advances_every_durable_head() {
     let store = HubStore::initialize(temporary.path()).expect("store");
     let (vehicle, binding, manifest) = v2_base_manifest(&store);
     let car = import_delta_test_car(binding.selected_car_id);
-    let inventory = TeslaMateImportProjectionInventory {
+    let inventory = SourceDbImportProjectionInventory {
         source_id: binding.account_id,
         selected_car_id: binding.selected_car_id,
         rows: Vec::new(),
     };
     let base_state = test_projection_state(temporary.path(), &car);
     store
-        .finalize_teslamate_import_snapshot_with_projection_state(
+        .finalize_source_db_import_snapshot_with_projection_state(
             &manifest,
             Sha256Digest::of_bytes(b"direct-batch-base"),
             &[],
@@ -731,7 +739,7 @@ fn direct_import_successor_batch_is_atomic_and_advances_every_durable_head() {
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -769,7 +777,7 @@ fn direct_import_successor_batch_is_atomic_and_advances_every_durable_head() {
     assert_eq!(lineage.deltas, vec![first, second.clone()]);
     assert_eq!(lineage.head_sequence, second.to_sequence);
     let state = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -791,14 +799,14 @@ fn direct_import_successor_batch_rejects_out_of_scope_state_without_advancing_he
     let store = HubStore::initialize(temporary.path()).expect("store");
     let (vehicle, binding, manifest) = v2_base_manifest(&store);
     let car = import_delta_test_car(binding.selected_car_id);
-    let inventory = TeslaMateImportProjectionInventory {
+    let inventory = SourceDbImportProjectionInventory {
         source_id: binding.account_id,
         selected_car_id: binding.selected_car_id,
         rows: Vec::new(),
     };
     let base_state = test_projection_state(temporary.path(), &car);
     store
-        .finalize_teslamate_import_snapshot_with_projection_state(
+        .finalize_source_db_import_snapshot_with_projection_state(
             &manifest,
             Sha256Digest::of_bytes(b"direct-batch-rollback-base"),
             &[],
@@ -831,7 +839,7 @@ fn direct_import_successor_batch_rejects_out_of_scope_state_without_advancing_he
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -861,8 +869,8 @@ fn direct_import_successor_batch_rejects_out_of_scope_state_without_advancing_he
             &wrong_car_state,
             false,
         ),
-        Err(StoreError::TeslaMateProjectionState(
-            TeslaMateProjectionStateError::TransferRowContractMismatch
+        Err(StoreError::SourceDbProjectionState(
+            SourceDbProjectionStateError::TransferRowContractMismatch
         ))
     ));
     assert_eq!(
@@ -873,7 +881,7 @@ fn direct_import_successor_batch_rejects_out_of_scope_state_without_advancing_he
         "a bad second-stage state must not expose a prefix of the delta batch"
     );
     let state = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -895,14 +903,14 @@ fn direct_import_successor_batch_refuses_a_gap_in_pack_ordinals() {
     let store = HubStore::initialize(temporary.path()).expect("store");
     let (vehicle, binding, manifest) = v2_base_manifest(&store);
     let car = import_delta_test_car(binding.selected_car_id);
-    let inventory = TeslaMateImportProjectionInventory {
+    let inventory = SourceDbImportProjectionInventory {
         source_id: binding.account_id,
         selected_car_id: binding.selected_car_id,
         rows: Vec::new(),
     };
     let base_state = test_projection_state(temporary.path(), &car);
     store
-        .finalize_teslamate_import_snapshot_with_projection_state(
+        .finalize_source_db_import_snapshot_with_projection_state(
             &manifest,
             Sha256Digest::of_bytes(b"direct-batch-ordinal-base"),
             &[],
@@ -935,7 +943,7 @@ fn direct_import_successor_batch_refuses_a_gap_in_pack_ordinals() {
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -987,13 +995,13 @@ fn legacy_inventory_without_digest_state_fails_closed_distinctly() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
     let (vehicle, binding, manifest) = v2_base_manifest(&store);
-    let inventory = TeslaMateImportProjectionInventory {
+    let inventory = SourceDbImportProjectionInventory {
         source_id: binding.account_id,
         selected_car_id: binding.selected_car_id,
         rows: Vec::new(),
     };
     store
-        .finalize_teslamate_import_snapshot(
+        .finalize_source_db_import_snapshot(
             &manifest,
             Sha256Digest::of_bytes(b"legacy-inventory-only"),
             &[],
@@ -1002,12 +1010,12 @@ fn legacy_inventory_without_digest_state_fails_closed_distinctly() {
         )
         .expect("legacy inventory base");
     assert!(matches!(
-        store.teslamate_import_projection_state_lookup(
+        store.source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
         ),
-        Err(StoreError::TeslaMateImportProjectionStateMissing(id)) if id == vehicle.vehicle_id
+        Err(StoreError::SourceDbImportProjectionStateMissing(id)) if id == vehicle.vehicle_id
     ));
 }
 
@@ -1016,7 +1024,7 @@ fn legacy_direct_bridge_fixture(
     legacy_fingerprint: Sha256Digest,
 ) -> (VehicleRecord, ProjectionBinding, SyncManifest) {
     let (vehicle, binding, manifest) = v2_base_manifest(store);
-    let inventory = TeslaMateImportProjectionInventory {
+    let inventory = SourceDbImportProjectionInventory {
         source_id: binding.account_id,
         selected_car_id: binding.selected_car_id,
         rows: vec![ProjectionTombstone {
@@ -1026,7 +1034,7 @@ fn legacy_direct_bridge_fixture(
         }],
     };
     store
-        .finalize_teslamate_import_snapshot(
+        .finalize_source_db_import_snapshot(
             &manifest,
             legacy_fingerprint,
             &[],
@@ -1053,7 +1061,7 @@ fn legacy_direct_bridge_generation(
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -1074,14 +1082,18 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
         .open()
         .expect("legacy catalogue")
         .execute(
-            "INSERT INTO teslamate_import_projection_rows(vehicle_id, entity, entity_id)
-             VALUES (?1, 'drive', ?2)",
+            concat!(
+                "INSERT INTO ",
+                crate::db::import_table_names::import_projection_rows_table!(),
+                "(vehicle_id, entity, entity_id)
+             VALUES (?1, 'drive', ?2)"
+            ),
             params![vehicle.vehicle_id.to_string(), drive.id],
         )
         .expect("seed legacy imported drive ownership");
     assert!(
         store
-            .legacy_teslamate_direct_bridge_is_eligible(
+            .legacy_source_db_direct_bridge_is_eligible(
                 vehicle.vehicle_id,
                 binding.account_id,
                 binding.selected_car_id,
@@ -1106,12 +1118,12 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
     let car = import_delta_test_car(binding.selected_car_id);
     let state = create_direct_import_projection_state(&store, run_id, 10);
     let mut capture =
-        crate::teslamate_projection_state::TeslaMateProjectionStateCapture::for_initial_base(state);
+        crate::import_projection_state::SourceDbProjectionStateCapture::for_initial_base(state);
     capture.record_car(&car).expect("capture bridged car");
     capture.record_drive(&drive).expect("capture bridged drive");
     capture
         .record(
-            TeslaMateProjectionStateEntity::Position,
+            SourceDbProjectionStateEntity::Position,
             10,
             binding.selected_car_id,
             &serde_json::json!({"id": 10, "entity": "position"}),
@@ -1121,7 +1133,7 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
     let state = capture.into_state();
 
     let bridged = store
-        .bridge_legacy_teslamate_direct_import_with_materialisation(
+        .bridge_legacy_source_db_direct_import_with_materialisation(
             run_id,
             binding.account_id,
             vehicle.vehicle_id,
@@ -1149,11 +1161,11 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
     );
     assert!(
         store
-            .teslamate_import_projection_state_exists(vehicle.vehicle_id)
+            .source_db_import_projection_state_exists(vehicle.vehicle_id)
             .expect("state head exists")
     );
     let state_lookup = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -1164,7 +1176,7 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
     drop(state_lookup);
     assert!(
         !store
-            .legacy_teslamate_direct_bridge_is_eligible(
+            .legacy_source_db_direct_bridge_is_eligible(
                 vehicle.vehicle_id,
                 binding.account_id,
                 binding.selected_car_id,
@@ -1196,7 +1208,7 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
         ("sync_bases", 1),
         ("sync_deltas", 0),
         ("sync_packs", 1),
-        ("teslamate_import_projection_state_bridges", 1),
+        (crate::db::import_table_names::import_projection_state_bridges_table!(), 1),
         ("import_generations", 0),
     ] {
         let count: i64 = connection
@@ -1231,12 +1243,12 @@ fn legacy_direct_bridge_rejects_changed_physical_fingerprint_without_mutation() 
         &store,
         run_id,
         binding.selected_car_id,
-        &[(TeslaMateProjectionStateEntity::Position, 10)],
+        &[(SourceDbProjectionStateEntity::Position, 10)],
     );
     let changed_physical = Sha256Digest::of_bytes(b"changed-direct-physical");
 
     assert!(matches!(
-        store.bridge_legacy_teslamate_direct_import(
+        store.bridge_legacy_source_db_direct_import(
             run_id,
             binding.account_id,
             vehicle.vehicle_id,
@@ -1245,13 +1257,13 @@ fn legacy_direct_bridge_rejects_changed_physical_fingerprint_without_mutation() 
             Sha256Digest::of_bytes(b"logical-direct-projection"),
             &state,
         ),
-        Err(StoreError::TeslaMateLegacyDirectRebaseRequired(id)) if id == vehicle.vehicle_id
+        Err(StoreError::SourceDbLegacyDirectRebaseRequired(id)) if id == vehicle.vehicle_id
     ));
     let connection = store.open().expect("catalogue after rejection");
     for (table, expected) in [
-        ("teslamate_import_projection_state_heads", 0),
-        ("teslamate_import_projection_state_rows", 0),
-        ("teslamate_import_projection_state_bridges", 0),
+        (crate::db::import_table_names::import_projection_state_heads_table!(), 0),
+        (crate::db::import_table_names::import_projection_state_rows_table!(), 0),
+        (crate::db::import_table_names::import_projection_state_bridges_table!(), 0),
         ("sync_deltas", 0),
         ("sync_packs", 1),
         ("import_generations", 1),
@@ -1288,13 +1300,13 @@ fn legacy_direct_bridge_rolls_back_state_when_inventory_semantics_mismatch() {
         run_id,
         binding.selected_car_id,
         &[
-            (TeslaMateProjectionStateEntity::Position, 10),
-            (TeslaMateProjectionStateEntity::Position, 11),
+            (SourceDbProjectionStateEntity::Position, 10),
+            (SourceDbProjectionStateEntity::Position, 11),
         ],
     );
 
     assert!(matches!(
-        store.bridge_legacy_teslamate_direct_import(
+        store.bridge_legacy_source_db_direct_import(
             run_id,
             binding.account_id,
             vehicle.vehicle_id,
@@ -1303,13 +1315,13 @@ fn legacy_direct_bridge_rolls_back_state_when_inventory_semantics_mismatch() {
             Sha256Digest::of_bytes(b"logical-direct-projection"),
             &mismatched_state,
         ),
-        Err(StoreError::TeslaMateLegacyDirectRebaseRequired(id)) if id == vehicle.vehicle_id
+        Err(StoreError::SourceDbLegacyDirectRebaseRequired(id)) if id == vehicle.vehicle_id
     ));
     let connection = store.open().expect("catalogue after rollback");
     for (table, expected) in [
-        ("teslamate_import_projection_state_heads", 0),
-        ("teslamate_import_projection_state_rows", 0),
-        ("teslamate_import_projection_state_bridges", 0),
+        (crate::db::import_table_names::import_projection_state_heads_table!(), 0),
+        (crate::db::import_table_names::import_projection_state_rows_table!(), 0),
+        (crate::db::import_table_names::import_projection_state_bridges_table!(), 0),
         ("snapshot_fingerprints", 1),
         ("import_generations", 1),
     ] {
@@ -1337,7 +1349,7 @@ fn legacy_direct_bridge_rejects_a_carless_sealed_state_without_installing_a_head
     let mut carless_state = create_direct_import_projection_state(&store, run_id, 10);
     carless_state
         .record(
-            TeslaMateProjectionStateEntity::Position,
+            SourceDbProjectionStateEntity::Position,
             10,
             binding.selected_car_id,
             &serde_json::json!({"id": 10}),
@@ -1346,7 +1358,7 @@ fn legacy_direct_bridge_rejects_a_carless_sealed_state_without_installing_a_head
     carless_state.seal().expect("seal carless state");
 
     assert!(matches!(
-        store.bridge_legacy_teslamate_direct_import(
+        store.bridge_legacy_source_db_direct_import(
             run_id,
             binding.account_id,
             vehicle.vehicle_id,
@@ -1355,13 +1367,13 @@ fn legacy_direct_bridge_rejects_a_carless_sealed_state_without_installing_a_head
             Sha256Digest::of_bytes(b"logical-direct-projection"),
             &carless_state,
         ),
-        Err(StoreError::TeslaMateLegacyDirectRebaseRequired(id)) if id == vehicle.vehicle_id
+        Err(StoreError::SourceDbLegacyDirectRebaseRequired(id)) if id == vehicle.vehicle_id
     ));
     let connection = store.open().expect("catalogue after rejection");
     for table in [
-        "teslamate_import_projection_state_heads",
-        "teslamate_import_projection_state_rows",
-        "teslamate_import_projection_state_bridges",
+        crate::db::import_table_names::import_projection_state_heads_table!(),
+        crate::db::import_table_names::import_projection_state_rows_table!(),
+        crate::db::import_table_names::import_projection_state_bridges_table!(),
     ] {
         let count: i64 = connection
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
@@ -1383,14 +1395,14 @@ fn unsealed_state_refuses_base_finalization_without_partial_catalogue() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("store");
     let (vehicle, binding, manifest) = v2_base_manifest(&store);
-    let inventory = TeslaMateImportProjectionInventory {
+    let inventory = SourceDbImportProjectionInventory {
         source_id: binding.account_id,
         selected_car_id: binding.selected_car_id,
         rows: Vec::new(),
     };
-    let mut unsealed = TeslaMateProjectionState::create(
+    let mut unsealed = SourceDbProjectionState::create(
         temporary.path(),
-        crate::teslamate_projection_state::TeslaMateProjectionStateLimits {
+        crate::import_projection_state::SourceDbProjectionStateLimits {
             max_rows: 10,
             max_state_bytes: 128 * 1024,
             max_changed_payload_bytes: 128 * 1024,
@@ -1402,7 +1414,7 @@ fn unsealed_state_refuses_base_finalization_without_partial_catalogue() {
         .record_car(&import_delta_test_car(binding.selected_car_id))
         .expect("capture car");
     assert!(matches!(
-        store.finalize_teslamate_import_snapshot_with_projection_state(
+        store.finalize_source_db_import_snapshot_with_projection_state(
             &manifest,
             Sha256Digest::of_bytes(b"unsealed-projection-state"),
             &[],
@@ -1410,8 +1422,8 @@ fn unsealed_state_refuses_base_finalization_without_partial_catalogue() {
             &inventory,
             &unsealed,
         ),
-        Err(StoreError::TeslaMateProjectionState(
-            TeslaMateProjectionStateError::StateNotSealed
+        Err(StoreError::SourceDbProjectionState(
+            SourceDbProjectionStateError::StateNotSealed
         ))
     ));
     assert!(
@@ -1424,8 +1436,8 @@ fn unsealed_state_refuses_base_finalization_without_partial_catalogue() {
     for table in [
         "sync_bases",
         "sync_heads",
-        "teslamate_import_projection_state_heads",
-        "teslamate_import_projection_state_rows",
+        crate::db::import_table_names::import_projection_state_heads_table!(),
+        crate::db::import_table_names::import_projection_state_rows_table!(),
     ] {
         let count: i64 = connection
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
@@ -1452,18 +1464,18 @@ fn direct_base_set_transfer_preserves_state_and_legacy_inventory_semantics() {
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
         )
         .expect("staging session");
     let rows = [
-        (TeslaMateProjectionStateEntity::Drive, 11),
-        (TeslaMateProjectionStateEntity::Position, 12),
-        (TeslaMateProjectionStateEntity::Charge, 13),
-        (TeslaMateProjectionStateEntity::ChargeSample, 14),
-        (TeslaMateProjectionStateEntity::State, 15),
+        (SourceDbProjectionStateEntity::Drive, 11),
+        (SourceDbProjectionStateEntity::Position, 12),
+        (SourceDbProjectionStateEntity::Charge, 13),
+        (SourceDbProjectionStateEntity::ChargeSample, 14),
+        (SourceDbProjectionStateEntity::State, 15),
     ];
     let state =
         direct_projection_state_with_digest_rows(&store, run_id, binding.selected_car_id, &rows);
@@ -1489,7 +1501,7 @@ fn direct_base_set_transfer_preserves_state_and_legacy_inventory_semantics() {
         .expect("set-based direct base finalization");
 
     let mut lookup = store
-        .teslamate_import_projection_state_lookup(
+        .source_db_import_projection_state_lookup(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -1505,7 +1517,7 @@ fn direct_base_set_transfer_preserves_state_and_legacy_inventory_semantics() {
     );
     drop(lookup);
     let inventory = store
-        .teslamate_import_projection_inventory(
+        .source_db_import_projection_inventory(
             vehicle.vehicle_id,
             binding.account_id,
             binding.selected_car_id,
@@ -1532,8 +1544,8 @@ fn direct_base_set_transfer_preserves_state_and_legacy_inventory_semantics() {
     );
     let connection = store.open().expect("catalogue after transfer");
     for table in [
-        "teslamate_import_projection_heads",
-        "teslamate_import_projection_rows",
+        crate::db::import_table_names::import_projection_heads_table!(),
+        crate::db::import_table_names::import_projection_rows_table!(),
     ] {
         let count: i64 = connection
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
@@ -1569,7 +1581,7 @@ fn direct_base_rejects_carless_sealed_state_before_catalogue_mutation() {
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: binding.selected_car_id,
                 ..Default::default()
             },
@@ -1578,7 +1590,7 @@ fn direct_base_rejects_carless_sealed_state_before_catalogue_mutation() {
     let mut state = create_direct_import_projection_state(&store, run_id, 10);
     state
         .record(
-            TeslaMateProjectionStateEntity::Position,
+            SourceDbProjectionStateEntity::Position,
             12,
             binding.selected_car_id,
             &serde_json::json!({"id": 12}),
@@ -1600,18 +1612,18 @@ fn direct_base_rejects_carless_sealed_state_before_catalogue_mutation() {
             &state,
             false,
         ),
-        Err(StoreError::TeslaMateProjectionState(
-            TeslaMateProjectionStateError::TransferCarContractMismatch
+        Err(StoreError::SourceDbProjectionState(
+            SourceDbProjectionStateError::TransferCarContractMismatch
         ))
     ));
     let connection = store.open().expect("catalogue after rejection");
     for table in [
         "sync_bases",
         "sync_heads",
-        "teslamate_import_projection_state_heads",
-        "teslamate_import_projection_state_rows",
-        "teslamate_import_projection_heads",
-        "teslamate_import_projection_rows",
+        crate::db::import_table_names::import_projection_state_heads_table!(),
+        crate::db::import_table_names::import_projection_state_rows_table!(),
+        crate::db::import_table_names::import_projection_heads_table!(),
+        crate::db::import_table_names::import_projection_rows_table!(),
     ] {
         let count: i64 = connection
             .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
@@ -1636,7 +1648,7 @@ fn sealed_transfer_rejects_a_same_shape_spool_substitution() {
     let state = projection_state_with_digest_rows(
         temporary.path(),
         binding.selected_car_id,
-        &[(TeslaMateProjectionStateEntity::Position, 12)],
+        &[(SourceDbProjectionStateEntity::Position, 12)],
     );
     let transfer = state
         .sealed_transfer(binding.selected_car_id)
@@ -1644,21 +1656,25 @@ fn sealed_transfer_rejects_a_same_shape_spool_substitution() {
     let replacement = projection_state_with_digest_rows(
         temporary.path(),
         binding.selected_car_id,
-        &[(TeslaMateProjectionStateEntity::Position, 99)],
+        &[(SourceDbProjectionStateEntity::Position, 99)],
     );
     std::fs::rename(replacement.path_for_test(), transfer.path())
         .expect("replace descriptor path with same-shape foreign spool");
 
     let connection = store.open().expect("catalogue connection");
     assert!(matches!(
-        attach_teslamate_projection_state_transfer(&connection, &transfer),
-        Err(StoreError::TeslaMateProjectionState(
-            TeslaMateProjectionStateError::TransferDigestMismatch
+        attach_source_db_projection_state_transfer(&connection, &transfer),
+        Err(StoreError::SourceDbProjectionState(
+            SourceDbProjectionStateError::TransferDigestMismatch
         ))
     ));
     let state_heads: i64 = connection
         .query_row(
-            "SELECT COUNT(*) FROM teslamate_import_projection_state_heads WHERE vehicle_id = ?1",
+            concat!(
+                "SELECT COUNT(*) FROM ",
+                crate::db::import_table_names::import_projection_state_heads_table!(),
+                " WHERE vehicle_id = ?1"
+            ),
             params![vehicle.vehicle_id.to_string()],
             |row| row.get(0),
         )
@@ -1674,24 +1690,28 @@ fn sealed_transfer_attachment_is_read_only() {
     let state = projection_state_with_digest_rows(
         temporary.path(),
         binding.selected_car_id,
-        &[(TeslaMateProjectionStateEntity::Position, 12)],
+        &[(SourceDbProjectionStateEntity::Position, 12)],
     );
     let transfer = state
         .sealed_transfer(binding.selected_car_id)
         .expect("sealed transfer descriptor");
     let connection = store.open().expect("catalogue connection");
-    attach_teslamate_projection_state_transfer(&connection, &transfer)
+    attach_source_db_projection_state_transfer(&connection, &transfer)
         .expect("attach sealed spool read-only");
     assert!(
         connection
             .execute(
-                "DELETE FROM teslamate_projection_state_spool.current_rows",
+                concat!(
+                    "DELETE FROM ",
+                    crate::db::import_table_names::import_state_spool_alias!(),
+                    ".current_rows"
+                ),
                 [],
             )
             .is_err(),
         "SQLite mode=ro attachment must reject source mutation"
     );
-    detach_teslamate_projection_state_transfer(&store, &connection)
+    detach_source_db_projection_state_transfer(&store, &connection)
         .expect("detach read-only sealed spool");
     assert_eq!(
         state
@@ -1716,7 +1736,7 @@ fn direct_import_base_refuses_a_staging_car_outside_its_v2_binding() {
     store
         .stage_import_generation_session(
             run_id,
-            &TeslaMateOpenSession {
+            &SourceDbOpenSession {
                 car_id: wrong_car_id,
                 ..Default::default()
             },
@@ -1863,19 +1883,24 @@ fn schema_35_upgrade_recovers_v2_binding_from_immutable_base_not_mutable_source(
         )
         .expect("mutate current source vehicle key");
     connection
-        .execute_batch(
+        .execute_batch(concat!(
             "DROP TABLE legacy_refresh_input_fences;
                  DROP INDEX legacy_refresh_receipt_output_generation;
                  DROP TABLE legacy_refresh_receipt_bindings;
                  DROP TABLE supervised_collector_lease;
                  DROP TABLE sync_retired_lineage_packs;
                  DROP TABLE sync_retired_lineages;
-                 DROP TABLE teslamate_import_projection_rows;
-                 DROP TABLE teslamate_import_projection_heads;
+                 DROP TABLE ",
+            crate::db::import_table_names::import_projection_rows_table!(),
+            ";
+                 DROP TABLE ",
+            crate::db::import_table_names::import_projection_heads_table!(),
+            ";
                  DROP TABLE v2_base_bindings;
-                 PRAGMA user_version = 35;",
-        )
+                 PRAGMA user_version = 35;"
+        ))
         .expect("restore historical schema boundary");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("recover immutable binding");
@@ -1892,8 +1917,10 @@ fn schema_35_upgrade_recovers_v2_binding_from_immutable_base_not_mutable_source(
     let inspected: Vec<_> = crate::platform::file_attempts::entries_under(upgraded.packs_dir())
         .into_iter()
         .filter(|(path, _)| {
-            path.file_name()
-                .is_some_and(|name| name.to_string_lossy().starts_with(".legacy-binding-inspection-"))
+            path.file_name().is_some_and(|name| {
+                name.to_string_lossy()
+                    .starts_with(".legacy-binding-inspection-")
+            })
         })
         .collect();
     assert_eq!(inspected.len(), 1, "{inspected:?}");

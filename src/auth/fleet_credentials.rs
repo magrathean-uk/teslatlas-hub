@@ -32,10 +32,10 @@ use crate::{
         FleetAccessToken, FleetApiConfigError, FleetApiError, FleetAuthApi, FleetClientId,
         FleetRefreshToken, FleetRegion,
     },
+    legacy_owner_credentials::{SourceDbCredentialError, load_existing_cursor_key_bytes},
     protocol::CursorKey,
-    teslamate_credentials::{TeslaMateCredentialError, load_existing_cursor_key_bytes},
-    teslamate_token::{
-        TeslaMateTokenError, decrypt_legacy_owner_tokens, encrypt_legacy_owner_tokens,
+    source_token_envelope::{
+        SourceDbTokenError, decrypt_legacy_owner_tokens, encrypt_legacy_owner_tokens,
     },
 };
 
@@ -270,7 +270,7 @@ pub fn inspect_stored_fleet_credentials(
     let plaintext =
         decrypt_legacy_owner_tokens(&encryption_key, stored.access(), stored.refresh())?;
     let credential_generation =
-        crate::teslamate_token::legacy_refresh_credential_generation(&plaintext);
+        crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
     if stored
         .credential_generation()
         .is_some_and(|stored| stored != credential_generation)
@@ -607,7 +607,7 @@ impl FleetAuthManager {
         let plaintext =
             decrypt_legacy_owner_tokens(&encryption_key, stored.access(), stored.refresh())?;
         let credential_generation =
-            crate::teslamate_token::legacy_refresh_credential_generation(&plaintext);
+            crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
         if !fenced {
             if loss.as_ref().is_some_and(|lost| lost()) {
                 return Err(FleetCredentialError::SensitiveAccessUnavailable);
@@ -1372,7 +1372,7 @@ fn encrypt_store(
 ) -> Result<FleetTokenStore, FleetCredentialError> {
     let plaintext =
         OwnerTokens::from_secret_parts(access_token.to_owned(), refresh_token.to_owned())?;
-    let generation = crate::teslamate_token::legacy_refresh_credential_generation(&plaintext);
+    let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
     let (access, refresh) = encrypt_legacy_owner_tokens(encryption_key, &plaintext)?;
     FleetTokenStore::new(
         access,
@@ -1428,9 +1428,9 @@ pub enum FleetCredentialError {
     #[error(transparent)]
     Credential(#[from] crate::credentials::CredentialError),
     #[error(transparent)]
-    Cipher(#[from] TeslaMateTokenError),
+    Cipher(#[from] SourceDbTokenError),
     #[error(transparent)]
-    Key(#[from] TeslaMateCredentialError),
+    Key(#[from] SourceDbCredentialError),
     #[error(transparent)]
     Store(#[from] StoreError),
 }
@@ -1448,3 +1448,68 @@ impl FleetCredentialError {
 #[cfg(test)]
 #[path = "fleet_credentials/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod n1_src_auth_fleet_credentials_rs_display_tests {
+    use super::*;
+    use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
+
+    impl ErrorExample for FleetCredentialError {
+        fn error_example() -> Self {
+            FleetCredentialError::EntropyUnavailable
+        }
+    }
+
+    #[test]
+    fn every_reachable_error_display_omits_the_source_project_name() {
+        fn check_fleet_credential_error(error: FleetCredentialError) {
+            match &error {
+                FleetCredentialError::EntropyUnavailable => (),
+                FleetCredentialError::Missing => (),
+                FleetCredentialError::KeyMissing => (),
+                FleetCredentialError::MigrationRequired => (),
+                FleetCredentialError::UnsafeKeyMaterial => (),
+                FleetCredentialError::UnsafeMigrationState => (),
+                FleetCredentialError::KeyIo { .. } => (),
+                FleetCredentialError::InvalidLifetime => (),
+                FleetCredentialError::InvalidAccessTokenClaims => (),
+                FleetCredentialError::MissingCollectionScopes => (),
+                FleetCredentialError::Clock(..) => (),
+                FleetCredentialError::ClockOverflow => (),
+                FleetCredentialError::RotationOutcomeUnknown => (),
+                FleetCredentialError::SensitiveAccessUnavailable => (),
+                FleetCredentialError::ApiConfig(..) => (),
+                FleetCredentialError::Api(..) => (),
+                FleetCredentialError::Credential(..) => (),
+                FleetCredentialError::Cipher(..) => (),
+                FleetCredentialError::Key(..) => (),
+                FleetCredentialError::Store(..) => (),
+            }
+            assert_name_free(&error);
+        }
+        check_fleet_credential_error(FleetCredentialError::EntropyUnavailable);
+        check_fleet_credential_error(FleetCredentialError::Missing);
+        check_fleet_credential_error(FleetCredentialError::KeyMissing);
+        check_fleet_credential_error(FleetCredentialError::MigrationRequired);
+        check_fleet_credential_error(FleetCredentialError::UnsafeKeyMaterial);
+        check_fleet_credential_error(FleetCredentialError::UnsafeMigrationState);
+        check_fleet_credential_error(FleetCredentialError::KeyIo {
+            operation: example(),
+            path: example(),
+            source: example(),
+        });
+        check_fleet_credential_error(FleetCredentialError::InvalidLifetime);
+        check_fleet_credential_error(FleetCredentialError::InvalidAccessTokenClaims);
+        check_fleet_credential_error(FleetCredentialError::MissingCollectionScopes);
+        check_fleet_credential_error(FleetCredentialError::Clock(example()));
+        check_fleet_credential_error(FleetCredentialError::ClockOverflow);
+        check_fleet_credential_error(FleetCredentialError::RotationOutcomeUnknown);
+        check_fleet_credential_error(FleetCredentialError::SensitiveAccessUnavailable);
+        check_fleet_credential_error(FleetCredentialError::ApiConfig(example()));
+        check_fleet_credential_error(FleetCredentialError::Api(example()));
+        check_fleet_credential_error(FleetCredentialError::Credential(example()));
+        check_fleet_credential_error(FleetCredentialError::Cipher(example()));
+        check_fleet_credential_error(FleetCredentialError::Key(example()));
+        check_fleet_credential_error(FleetCredentialError::Store(example()));
+    }
+}

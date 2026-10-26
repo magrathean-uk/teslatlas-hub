@@ -299,7 +299,7 @@ enum ControlCommand {
         )]
         mode: ChargeCostModeChoice,
     },
-    /// Write one completed drive as TeslaMate-compatible GPX to stdout.
+    /// Write one completed drive as GPX 1.1 to stdout.
     #[command(name = "export-gpx")]
     ExportGpx {
         #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
@@ -402,25 +402,25 @@ enum Command {
     Doctor,
     /// Print the redacted local status consumed by the native control app.
     Status,
-    /// Validate one TeslaMate source, connection, and selected-car inventory without mutating TeslaMate or Hub.
+    /// Validate one source database, connection, and selected-car inventory without mutating source database or Hub.
     #[cfg(unix)]
-    #[command(name = "teslamate-check")]
-    TeslaMateCheck {
+    #[command(name = "source-check")]
+    SourceCheck {
         /// Password-free PostgreSQL URL. Password is read from a file or stdin.
         #[arg(long)]
         source: String,
-        /// Positive TeslaMate car id that will be imported.
+        /// Positive source car id that will be imported.
         #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
         car_id: i64,
         /// PostgreSQL password file, or `-` for stdin.
         #[arg(long)]
         postgres_password_file: PathBuf,
-        /// Check history compatibility without inspecting TeslaMate's private token schema.
+        /// Check history compatibility without inspecting the source application's private token schema.
         #[arg(long)]
         history_only: bool,
-        /// Accept that database evidence proves a TeslaMate v4.2-compatible schema, not the app version.
-        #[arg(long)]
-        acknowledge_v4_2_compatible_schema: bool,
+        /// Accept that database evidence proves a recognised schema set, while the source application release remains unverified.
+        #[arg(long, alias = "acknowledge-v4-2-compatible-schema")]
+        accept_schema_evidence: bool,
     },
     /// Validate that one configured car and its credentials are ready to serve.
     #[cfg(unix)]
@@ -442,14 +442,14 @@ enum Command {
     /// Capture the current durable observation watermark for one source car.
     #[command(name = "observation-watermark")]
     ObservationWatermark {
-        /// Source/import car id selected for the cutover.
+        /// Source car id selected for the cutover.
         #[arg(long)]
         car_id: i64,
     },
     /// Verify that a strictly newer observation is durably committed.
     #[command(name = "verify-observation")]
     VerifyObservation {
-        /// Source/import car id selected for the cutover.
+        /// Source car id selected for the cutover.
         #[arg(long)]
         car_id: i64,
         /// Observation id returned by observation-watermark.
@@ -485,13 +485,19 @@ enum Command {
         #[command(subcommand)]
         command: CollectorCommand,
     },
-    /// Import one TeslaMate car, its history, and its opaque legacy token pair.
+    /// Import one source car, its history, and its opaque legacy token pair.
     #[cfg(unix)]
     Migrate {
         /// Password-free PostgreSQL URL. Password is read from a file or stdin.
         #[arg(long)]
         source: String,
-        /// Positive TeslaMate car id to import.
+        /// Stable owner-chosen import source key; omitted means the configured key or default.
+        #[arg(long)]
+        source_key: Option<String>,
+        /// Explicitly allow registration of another import source.
+        #[arg(long)]
+        new_import_source: bool,
+        /// Positive source car id to import.
         #[arg(long)]
         car_id: i64,
         /// PostgreSQL password file, or `-` for stdin.
@@ -500,17 +506,17 @@ enum Command {
         /// Import and publish history without reading or storing Tesla credentials.
         #[arg(long, requires = "online_snapshot", conflicts_with_all = ["encryption_key_file", "access_token_file", "refresh_token_file", "preserve_existing_credentials"])]
         history_only: bool,
-        /// TeslaMate ENCRYPTION_KEY file, or `-` for stdin. Omit only with both fresh-token files.
+        /// Source application's ENCRYPTION_KEY file, or `-` for stdin. Omit only with both fresh-token files.
         #[arg(long)]
         encryption_key_file: Option<PathBuf>,
-        /// Fresh legacy access-token file when the TeslaMate key is unavailable.
+        /// Fresh legacy access-token file when the source application's encryption key is unavailable.
         #[arg(
             long,
             requires = "refresh_token_file",
             conflicts_with = "encryption_key_file"
         )]
         access_token_file: Option<PathBuf>,
-        /// Fresh legacy refresh-token file when the TeslaMate key is unavailable.
+        /// Fresh legacy refresh-token file when the source application's encryption key is unavailable.
         #[arg(
             long,
             requires = "access_token_file",
@@ -520,12 +526,12 @@ enum Command {
         /// Take one live read-only snapshot, never prompt for cutover, and leave Hub stopped.
         #[arg(long)]
         online_snapshot: bool,
-        /// Preserve an existing Hub account while importing TeslaMate history.
+        /// Preserve an existing Hub account while importing source database history.
         #[arg(long, requires = "online_snapshot", hide = true)]
         preserve_existing_credentials: bool,
-        /// Confirm TeslaMate 4.2.0+ and accept that its database schema alone cannot prove the app version.
-        #[arg(long, required = true)]
-        acknowledge_v4_2_compatible_schema: bool,
+        /// Confirm source application release 4.2.0 or later; database evidence alone cannot prove the application release.
+        #[arg(long, required = true, alias = "acknowledge-v4-2-compatible-schema")]
+        accept_schema_evidence: bool,
     },
     /// Display one short-lived, single-use device pairing QR.
     #[command(alias = "create-pairing")]
@@ -628,4 +634,53 @@ fn geofence_session_fee_help() -> String {
         "Flat fee per charging session, 0 to {}. An edit keeps the stored fee unless this is given.",
         teslatlas_hub::location::MAX_GEOFENCE_SESSION_FEE
     )
+}
+
+const IMPORT_COMMAND_HINT: &str = "Import checks use source-check; see docs/guides/cli.md.";
+const SCHEMA_FLAG_DEPRECATION: &str = "--acknowledge-v4-2-compatible-schema is deprecated; use --accept-schema-evidence. The alias will be removed in a later version.";
+
+impl Cli {
+    fn try_parse_from<I, T>(arguments: I) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        <Self as clap::Parser>::try_parse_from(arguments).map_err(|error| {
+            if error.kind() == clap::error::ErrorKind::InvalidSubcommand {
+                let text = error.to_string();
+                let message = text.strip_prefix("error: ").unwrap_or(&text);
+                clap::Error::raw(error.kind(), format!("{message}\n{IMPORT_COMMAND_HINT}\n"))
+            } else {
+                error
+            }
+        })
+    }
+
+    fn parse_with_schema_warning<I, T>(
+        arguments: I,
+        stderr: &mut impl std::io::Write,
+    ) -> Result<Self, clap::Error>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        let arguments = arguments
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<std::ffi::OsString>>();
+        let deprecated = arguments
+            .iter()
+            .any(|argument| argument == "--acknowledge-v4-2-compatible-schema");
+        let cli = Self::try_parse_from(arguments)?;
+        if deprecated {
+            writeln!(stderr, "{SCHEMA_FLAG_DEPRECATION}")
+                .map_err(|error| clap::Error::raw(clap::error::ErrorKind::Io, error))?;
+        }
+        Ok(cli)
+    }
+
+    fn parse() -> Self {
+        Self::parse_with_schema_warning(std::env::args_os(), &mut std::io::stderr())
+            .unwrap_or_else(|error| error.exit())
+    }
 }

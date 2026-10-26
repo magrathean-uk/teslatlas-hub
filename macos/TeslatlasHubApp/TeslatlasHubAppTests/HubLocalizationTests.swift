@@ -18,7 +18,7 @@ final class HubLocalizationTests: XCTestCase {
         }
         let englishKeys = Set(try table(english, "Localizable.strings").keys)
         let pluralKeys = Set(try table(english, "Localizable.stringsdict").keys)
-        XCTAssertEqual(englishKeys.count, 608)
+        XCTAssertEqual(englishKeys.count, 613)
         XCTAssertEqual(pluralKeys.count, 6)
         for language in languages {
             let directory = resources.appendingPathComponent("\(language).lproj")
@@ -43,14 +43,14 @@ final class HubLocalizationTests: XCTestCase {
         snapshot.account = "Verbunden"
         snapshot.database = "Datenbank bereit"
         XCTAssertEqual(snapshot.accountState, .connected)
-        XCTAssertFalse(snapshot.shouldOfferTeslaMateImport)
+        XCTAssertFalse(snapshot.shouldOfferSourceImport)
 
         snapshot.account = "Nicht eingerichtet"
         snapshot.accountState = .notConfigured
         snapshot.database = "Wartet auf Einrichtung"
         snapshot.databaseState = .awaitingSetup
         snapshot.health = .stopped
-        XCTAssertTrue(snapshot.shouldOfferTeslaMateImport)
+        XCTAssertTrue(snapshot.shouldOfferSourceImport)
     }
 
     func testTranslatedButtonTitleCannotChangeStartAction() throws {

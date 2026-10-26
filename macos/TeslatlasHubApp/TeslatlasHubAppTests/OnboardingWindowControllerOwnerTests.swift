@@ -553,7 +553,7 @@ extension OnboardingWindowControllerTests {
         func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
         let root = try XCTUnwrap(onboarding?.window?.contentView)
         let field = try XCTUnwrap(views(root).compactMap { $0 as? NSTextField }
-            .first { $0.placeholderString == "teslamate.local" })
+            .first { $0.placeholderString == "server.local" })
         field.stringValue = host
     }
 }

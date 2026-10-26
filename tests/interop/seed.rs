@@ -14,17 +14,15 @@ use std::{
 use teslatlas_hub::protocol::HUB_PROJECTION_SCHEMA_V3;
 use teslatlas_hub::{
     credentials::OwnerTokens,
-    db::{
-        HubStore, ObservationInput, SourceDescriptor, TeslaMateLegacyTokenStore, VehicleDescriptor,
-    },
+    db::{HubStore, LegacyOwnerTokenStore, ObservationInput, SourceDescriptor, VehicleDescriptor},
     hub_pack::{
         ProjectionBinding, ProjectionCar, ProjectionCharge, ProjectionDrive, ProjectionPackRequest,
         ProjectionPackRequestV2_2, ProjectionPackWriter, ProjectionSnapshot,
         ProjectionSnapshotV2_2,
     },
+    legacy_owner_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
     protocol::{SequenceRange, Sha256Digest},
-    teslamate_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
-    teslamate_token::encrypt_legacy_owner_tokens,
+    source_token_envelope::encrypt_legacy_owner_tokens,
     updates_delivery::{
         publish_updates_schema_22, sign_updates_schema_22_manifest, sign_updates_schema_22_noop,
         updates_snapshot_v2_2,
@@ -36,16 +34,16 @@ use teslatlas_hub::{
         ProjectionFixedNumericV2_2, ProjectionFloat64BitsV2_2, ProjectionPreferredRangeV2_2,
         ProjectionUnitOfLengthV2_2, ProjectionUnitOfPressureV2_2, ProjectionUnitOfTemperatureV2_2,
     },
-    teslamate_physical_fragments::{
-        StagedPhysicalProjectionV3, TeslaMatePhysicalFragmentLimits,
+    physical_fragments::{
+        SourceDbPhysicalFragmentLimits, StagedPhysicalProjectionV3,
         write_staged_physical_updates_snapshot_v3_with_limits,
     },
-    teslamate_projection::{
-        TeslaMateCarPhysicalV2_2, TeslaMateCarSettingsPhysicalV2_2, TeslaMateChargePhysicalV2_2,
-        TeslaMateChargingProcessPhysicalV2_2, TeslaMateDrivePhysicalV2_2,
-        TeslaMatePositionPhysicalV2_2, TeslaMateSettingsPhysicalV2_2, TeslaMateUpdatePhysicalV2_2,
+    source_db_projection::{
+        SourceDbCarPhysicalV2_2, SourceDbCarSettingsPhysicalV2_2, SourceDbChargePhysicalV2_2,
+        SourceDbChargingProcessPhysicalV2_2, SourceDbDrivePhysicalV2_2,
+        SourceDbPositionPhysicalV2_2, SourceDbSettingsPhysicalV2_2, SourceDbUpdatePhysicalV2_2,
     },
-    teslamate_stage::{TeslaMateStage, TeslaMateStageLimits, TeslaMateStageTable},
+    source_db_stage::{SourceDbStage, SourceDbStageLimits, SourceDbStageTable},
 };
 use uuid::Uuid;
 
@@ -360,7 +358,7 @@ fn prepare_with_vehicle_identities(
         store.persist_materialised_car_if_absent(vehicle_id, &snapshot.cars[0])?;
         // Publishing a transport pack does not materialise query rows. This
         // harness-only setup seeds the same catalogue tables as lifecycle
-        // writes; it is HTTP/query evidence, not a TeslaMate import receipt.
+        // writes; it is HTTP/query evidence, not a source database import receipt.
         let mut connection = rusqlite::Connection::open(store.database_path())?;
         connection.pragma_update(None, "foreign_keys", true)?;
         let transaction = connection.transaction()?;
@@ -483,7 +481,7 @@ fn prepare_with_vehicle_identities(
             &data_dir,
             &store,
             encryption_key,
-            &TeslaMateLegacyTokenStore::imported(access, refresh)?,
+            &LegacyOwnerTokenStore::imported(access, refresh)?,
         )?;
     }
     let now = std::time::SystemTime::now()
@@ -557,15 +555,15 @@ fn build_physical_v3_candidate(
     if binding.selected_car_id != i64::from(CAR_ID) {
         return Err("physical fixture selected-car binding changed".into());
     }
-    let mut stage = TeslaMateStage::create_physical_v3(
+    let mut stage = SourceDbStage::create_physical_v3(
         root.join(stage_directory),
-        TeslaMateStageLimits {
+        SourceDbStageLimits {
             max_rows: ROOT_ROWS + RELATION_ROWS + u64::try_from(PHYSICAL_V3_UPDATE_COUNT)?,
             max_stage_bytes: 8 * 1024 * 1024,
             minimum_free_bytes: 0,
         },
     )?;
-    let settings = TeslaMateSettingsPhysicalV2_2 {
+    let settings = SourceDbSettingsPhysicalV2_2 {
         id: 1,
         unit_of_length: ProjectionUnitOfLengthV2_2::Kilometers,
         unit_of_temperature: ProjectionUnitOfTemperatureV2_2::Celsius,
@@ -578,7 +576,7 @@ fn build_physical_v3_candidate(
         inserted_at_pg_us: 1_000_000,
         updated_at_pg_us: 2_000_000,
     };
-    let car_settings = TeslaMateCarSettingsPhysicalV2_2 {
+    let car_settings = SourceDbCarSettingsPhysicalV2_2 {
         id: i64::from(CAR_ID),
         suspend_min: 21,
         suspend_after_idle_min: 15,
@@ -588,7 +586,7 @@ fn build_physical_v3_candidate(
         enabled: true,
         lfp_battery: false,
     };
-    let car = TeslaMateCarPhysicalV2_2 {
+    let car = SourceDbCarPhysicalV2_2 {
         id: CAR_ID,
         eid: 9,
         vid: 9,
@@ -606,15 +604,15 @@ fn build_physical_v3_candidate(
         updated_at_pg_us: 4_000_000,
         settings_id: car_settings.id,
     };
-    stage.insert(TeslaMateStageTable::GlobalSettings, settings.id, &settings)?;
+    stage.insert(SourceDbStageTable::GlobalSettings, settings.id, &settings)?;
     stage.insert(
-        TeslaMateStageTable::CarSettings,
+        SourceDbStageTable::CarSettings,
         car_settings.id,
         &car_settings,
     )?;
-    stage.insert(TeslaMateStageTable::Cars, i64::from(car.id), &car)?;
+    stage.insert(SourceDbStageTable::Cars, i64::from(car.id), &car)?;
 
-    let drive = TeslaMateDrivePhysicalV2_2 {
+    let drive = SourceDbDrivePhysicalV2_2 {
         id: PHYSICAL_V3_DRIVE_ID,
         car_id: CAR_ID,
         start_date_pg_us: 5_000_000,
@@ -641,9 +639,9 @@ fn build_physical_v3_candidate(
         ascent: Some(10),
         descent: Some(8),
     };
-    stage.insert(TeslaMateStageTable::Drives, i64::from(drive.id), &drive)?;
+    stage.insert(SourceDbStageTable::Drives, i64::from(drive.id), &drive)?;
     for (index, id) in PHYSICAL_V3_POSITION_IDS.into_iter().enumerate() {
-        let position = TeslaMatePositionPhysicalV2_2 {
+        let position = SourceDbPositionPhysicalV2_2 {
             id,
             car_id: CAR_ID,
             drive_id: Some(PHYSICAL_V3_DRIVE_ID),
@@ -677,9 +675,9 @@ fn build_physical_v3_candidate(
             tpms_pressure_rl_e1: None,
             tpms_pressure_rr_e1: None,
         };
-        stage.insert(TeslaMateStageTable::Positions, i64::from(id), &position)?;
+        stage.insert(SourceDbStageTable::Positions, i64::from(id), &position)?;
     }
-    let process = TeslaMateChargingProcessPhysicalV2_2 {
+    let process = SourceDbChargingProcessPhysicalV2_2 {
         id: PHYSICAL_V3_CHARGING_PROCESS_ID,
         car_id: CAR_ID,
         position_id: PHYSICAL_V3_POSITION_IDS[1],
@@ -700,12 +698,12 @@ fn build_physical_v3_candidate(
         cost_e2: Some(ProjectionFixedNumericV2_2::Finite(325)),
     };
     stage.insert(
-        TeslaMateStageTable::ChargingProcesses,
+        SourceDbStageTable::ChargingProcesses,
         i64::from(process.id),
         &process,
     )?;
     for (index, id) in PHYSICAL_V3_CHARGE_IDS.into_iter().enumerate() {
-        let charge = TeslaMateChargePhysicalV2_2 {
+        let charge = SourceDbChargePhysicalV2_2 {
             id,
             charging_process_id: PHYSICAL_V3_CHARGING_PROCESS_ID,
             date_pg_us: 7_000_000 + i64::try_from(index)? * 1_000_000,
@@ -731,17 +729,17 @@ fn build_physical_v3_candidate(
             not_enough_power_to_heat: Some(false),
             outside_temp_e1: Some(ProjectionFixedNumericV2_2::Finite(130)),
         };
-        stage.insert(TeslaMateStageTable::Charges, i64::from(id), &charge)?;
+        stage.insert(SourceDbStageTable::Charges, i64::from(id), &charge)?;
     }
     for id in 1..=PHYSICAL_V3_UPDATE_COUNT {
-        let update = TeslaMateUpdatePhysicalV2_2 {
+        let update = SourceDbUpdatePhysicalV2_2 {
             id: 10_000 + id,
             car_id: CAR_ID,
             start_date_pg_us: 10_000_000 + i64::from(id) * 1_000_000,
             end_date_pg_us: None,
             version: Some(format!("{update_version_prefix}-{id:04}")),
         };
-        stage.insert(TeslaMateStageTable::Updates, i64::from(update.id), &update)?;
+        stage.insert(SourceDbStageTable::Updates, i64::from(update.id), &update)?;
     }
     let sealed = stage.seal()?;
     let head_sequence = store.next_full_snapshot_sequence(vehicle_id)?;
@@ -755,7 +753,7 @@ fn build_physical_v3_candidate(
             to_inclusive: head_sequence,
         },
         cursor_key,
-        TeslaMatePhysicalFragmentLimits {
+        SourceDbPhysicalFragmentLimits {
             max_rows_per_chunk: 5,
             max_projected_json_bytes: 64 * 1024,
         },
@@ -923,7 +921,7 @@ pub fn rotate_physical_v3_public_admission(root: &Path) -> Result<RotatedPhysica
 
 /// Build the minimal physical schema-2.2 snapshot for one synthetic fixture
 /// vehicle. Compatibility drive and charge JSON remains in the materialised
-/// query tables above; inventing physical TeslaMate relationships for it would
+/// query tables above; inventing physical source database relationships for it would
 /// make the fixture less honest, not more complete.
 fn schema_22_snapshot(car_id: i64, name: &str, vin: &str) -> Result<ProjectionSnapshotV2_2> {
     let physical_car_id = i16::try_from(car_id)?;

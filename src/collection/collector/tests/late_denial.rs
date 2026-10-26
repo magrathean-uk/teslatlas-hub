@@ -16,11 +16,11 @@ const LATE_VIN: &str = "LATEDNL0000000001";
 
 /// Import the one selected car the supervised start needs as its vehicle lineage.
 fn seed_the_late_import(store: &HubStore) {
-    use crate::teslamate_import::{TeslaMateImportRequest, TeslaMateImportScope, publish_history};
-    use crate::teslamate_projection::{TeslaMateCar, TeslaMateHistory};
+    use crate::source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history};
+    use crate::source_db_projection::{SourceDbCar, SourceDbHistory};
 
-    let history = TeslaMateHistory {
-        cars: vec![TeslaMateCar {
+    let history = SourceDbHistory {
+        cars: vec![SourceDbCar {
             id: 1,
             eid: LATE_EID,
             vid: Some(LATE_VID),
@@ -51,9 +51,10 @@ fn seed_the_late_import(store: &HubStore) {
     publish_history(
         store,
         &CursorKey::from_bytes([0xD2; 32]),
-        &TeslaMateImportRequest {
+        &SourceDbImportRequest {
+            new_import_source: false,
             source_key: "late-denial-fixture".to_owned(),
-            scope: TeslaMateImportScope::Selected(1),
+            scope: SourceDbImportScope::Selected(1),
             imported_at_ms: current_epoch_millis().expect("clock") - 60_000,
         },
         &history,
@@ -91,9 +92,9 @@ fn auth_and_receipt_stamp(store: &HubStore) -> String {
         ),
         text("SELECT group_concat(input_credential_generation, ';') FROM legacy_refresh_input_fences"),
         text(
-            "SELECT group_concat(hex(access) || '|' || hex(refresh) || '|' || expires_at
+            concat!("SELECT group_concat(hex(access) || '|' || hex(refresh) || '|' || expires_at
                     || '|' || next_refresh_at || '|' || COALESCE(credential_generation, ''), ';')
-               FROM teslamate_legacy_tokens",
+               FROM ", crate::db::import_table_names::legacy_owner_tokens_table!()),
         ),
     ]
     .join("\n")
@@ -179,20 +180,20 @@ impl LateBed {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         seed_the_late_import(&store);
-        crate::teslamate_credentials::replace_key(temporary.path(), b"late-cloak-key")
+        crate::legacy_owner_credentials::replace_key(temporary.path(), b"late-cloak-key")
             .expect("0600 Cloak key");
-        let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+        let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
         let initial =
             OwnerTokens::from_secret_parts("late-access".to_owned(), "late-refresh".to_owned())
                 .expect("initial pair");
         let (access, refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
                 .expect("Cloak pair");
         // A pair whose refresh is due: the loop's first request starts the exchange.
         let now_seconds = current_epoch_millis().expect("clock") / 1_000;
         store
-            .replace_teslamate_legacy_tokens(
-                &crate::db::TeslaMateLegacyTokenStore::refreshed(
+            .replace_legacy_owner_tokens(
+                &crate::db::LegacyOwnerTokenStore::refreshed(
                     access,
                     refresh,
                     now_seconds + 36_000,
@@ -221,7 +222,7 @@ impl LateBed {
         let base = url::Url::parse(&format!("http://{address}/")).expect("fake URL");
         let admission =
             crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
-        let mut manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+        let mut manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
             store.clone(),
             temporary.path(),
             base.join("oauth2/v3/").expect("issuer"),

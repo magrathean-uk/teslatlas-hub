@@ -444,7 +444,7 @@ fn st49_a_deleted_fence_relabels_stored_drives_identically() {
     let temp = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(temp.path()).expect("store");
     let (source, vehicle) = test_registered_vehicle(&store);
-    let fence = |name: &str, radius: f64| crate::teslamate_projection::TeslaMateGeofence {
+    let fence = |name: &str, radius: f64| crate::source_db_projection::SourceDbGeofence {
         id: 0,
         name: name.to_owned(),
         latitude: Some(10.0),
@@ -491,8 +491,12 @@ fn st49_a_deleted_fence_relabels_stored_drives_identically() {
 
 // ------------------------------------------------ C1 B2 amendment A (R87)
 
-fn r87_fence(name: &str, centre: (f64, f64), radius: f64) -> crate::teslamate_projection::TeslaMateGeofence {
-    crate::teslamate_projection::TeslaMateGeofence {
+fn r87_fence(
+    name: &str,
+    centre: (f64, f64),
+    radius: f64,
+) -> crate::source_db_projection::SourceDbGeofence {
+    crate::source_db_projection::SourceDbGeofence {
         id: 0,
         name: name.to_owned(),
         latitude: Some(centre.0),

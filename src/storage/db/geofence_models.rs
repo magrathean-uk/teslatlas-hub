@@ -19,7 +19,7 @@ struct ImportedGeofenceTariff {
 }
 
 impl ImportedGeofenceTariff {
-    fn of(geofence: &crate::teslamate_projection::TeslaMateGeofence) -> Self {
+    fn of(geofence: &crate::source_db_projection::SourceDbGeofence) -> Self {
         let finite = |value: Option<f64>| value.filter(|number| number.is_finite());
         Self {
             billing_type: geofence.billing_type,

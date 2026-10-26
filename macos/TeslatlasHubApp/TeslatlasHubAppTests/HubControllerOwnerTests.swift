@@ -201,7 +201,7 @@ extension HubControllerTests {
             let run: (Rig, @escaping () -> Void) -> Void
         }
         let credentials = fleetCredentials()
-        let source = "postgresql://reader@127.0.0.1:55438/teslamate_snapshot"
+        let source = "postgresql://reader@127.0.0.1:55438/source_snapshot"
         let exits: [Exit] = [
             Exit(label: "admission refused after acquisition (handover pending)", family: .start,
                  options: .init(marker: "awaiting_handover"), arrange: { _ in }) { rig, done in
@@ -226,8 +226,8 @@ extension HubControllerTests {
                 rig.controller.runFullDiagnostics { _ in done() }
             },
             Exit(label: "migration child failure", family: .migration, options: .init(installed: false), arrange: { $0.runner.results["migrate:history"] = .failure(HubActionError.commandFailed("migrate")) }) { rig, done in
-                rig.controller.importTeslaMateHistoryOnlyOnline(source: source, carID: "1", passwordFile: "/p",
-                                                               acknowledgeV42CompatibleSchema: true) { _ in done() }
+                rig.controller.importSourceHistoryOnlyOnline(source: source, carID: "1", passwordFile: "/p",
+                                                               acceptSchemaEvidence: true) { _ in done() }
             },
             Exit(label: "readiness rollback", family: .handover, options: .init(marker: "awaiting_handover"), arrange: { $0.runner.results["status"] = .failure(HubActionError.commandFailed("status")) }) { rig, done in
                 rig.controller.acknowledgeMigrationHandoverAndStart { _ in done() }
@@ -345,7 +345,7 @@ extension HubControllerTests {
         XCTAssertTrue(MainWindowController.vehicleControlOutcomeIsUnknown(error))
         XCTAssertFalse(MainWindowController.vehicleControlOutcomeIsUnknown(HubActionError.commandFailed("vehicle is offline")))
         XCTAssertEqual(HubAppLog.errorCode(error), "command_not_quiescent")
-        XCTAssertEqual(TeslaMateServerImporter.discoveryFailureReason(error), "process_not_stopped")
+        XCTAssertEqual(SourceServerImporter.discoveryFailureReason(error), "process_not_stopped")
         XCTAssertTrue(error.localizedDescription.contains("could not be stopped"), error.localizedDescription)
         // F7-6: the migration failure log and the development event log read the underlying error.
         let timedOut = HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence)
@@ -462,36 +462,36 @@ extension HubControllerTests {
     }
 
     func testDiscoveryFailureKeepsTheQuiescenceOfItsSSHProcess() {
-        let diagnostic = TeslaMateSSHDiagnostic(reasonCode: "timed_out", title: "t", summary: "s", suggestions: [],
+        let diagnostic = SourceSSHDiagnostic(reasonCode: "timed_out", title: "t", summary: "s", suggestions: [],
                                                 recoveryActions: [.openLogs])
         let quiescence = HubChildQuiescence()
         quiescence.childMayRun()
         let stuck = HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence)
-        let kept = TeslaMateServerImporter.discoveryFailure(stuck, diagnostic: diagnostic)
+        let kept = SourceServerImporter.discoveryFailure(stuck, diagnostic: diagnostic)
         guard case let HubActionError.commandNotQuiescent(inner, held) = kept else {
             return XCTFail("the diagnostic dropped the quiescence: \(kept)")
         }
         XCTAssertTrue(held === quiescence)
-        XCTAssertEqual(inner as? TeslaMateSSHDiagnostic, diagnostic)
+        XCTAssertEqual(inner as? SourceSSHDiagnostic, diagnostic)
         // The window reads the diagnostic through the wrapper.
-        XCTAssertEqual(TeslaMateServerImporter.connectionDiagnostic(for: kept, authentication: .key(identityFile: nil)), diagnostic)
+        XCTAssertEqual(SourceServerImporter.connectionDiagnostic(for: kept, authentication: .key(identityFile: nil)), diagnostic)
         // A reaped process, and any other error, is the plain diagnostic.
         quiescence.childReaped()
-        XCTAssertEqual(TeslaMateServerImporter.discoveryFailure(stuck, diagnostic: diagnostic) as? TeslaMateSSHDiagnostic, diagnostic)
-        XCTAssertEqual(TeslaMateServerImporter.discoveryFailure(HubActionError.commandTimedOut, diagnostic: diagnostic) as? TeslaMateSSHDiagnostic,
+        XCTAssertEqual(SourceServerImporter.discoveryFailure(stuck, diagnostic: diagnostic) as? SourceSSHDiagnostic, diagnostic)
+        XCTAssertEqual(SourceServerImporter.discoveryFailure(HubActionError.commandTimedOut, diagnostic: diagnostic) as? SourceSSHDiagnostic,
                        diagnostic)
     }
 
     func testAnSSHPreparationKeepsItsOwnerWhileItsProcessMayStillRun() throws {
         let rig = try Rig()
         defer { rig.tearDown() }
-        let diagnostic = TeslaMateSSHDiagnostic(reasonCode: "timed_out", title: "t", summary: "s", suggestions: [],
+        let diagnostic = SourceSSHDiagnostic(reasonCode: "timed_out", title: "t", summary: "s", suggestions: [],
                                                 recoveryActions: [.openLogs])
         let quiescence = HubChildQuiescence()
         quiescence.childMayRun()
         rig.connector.failure = HubActionError.commandNotQuiescent(diagnostic, quiescence)
-        var outcomes: [Result<TeslaMateServerImportSession, Error>] = []
-        _ = rig.controller.connectMigrationServer(host: "teslamate.local", user: "user", port: 22,
+        var outcomes: [Result<SourceServerImportSession, Error>] = []
+        _ = rig.controller.connectMigrationServer(host: "server.local", user: "user", port: 22,
                                                   authentication: .key(identityFile: nil),
                                                   usePasswordlessSudo: false) { outcomes.append($0) }
         spinUntil(5) { rig.connector.callCount == 1 }
@@ -506,7 +506,7 @@ extension HubControllerTests {
         spinUntil(5) { !outcomes.isEmpty }
         XCTAssertEqual(outcomes.count, 1)
         guard case let .failure(error)? = outcomes.first else { return XCTFail("the failure is reported once the process is gone") }
-        XCTAssertEqual(TeslaMateServerImporter.connectionDiagnostic(for: error, authentication: .key(identityFile: nil)), diagnostic)
+        XCTAssertEqual(SourceServerImporter.connectionDiagnostic(for: error, authentication: .key(identityFile: nil)), diagnostic)
         XCTAssertEqual(rig.releases(.migration), 1)
         XCTAssertTrue(rig.capabilities.isIdle)
     }
@@ -977,21 +977,21 @@ extension HubControllerTests {
         let foreign = try acquireForeign(rig)
         let before = rig.signature()
         var refused = 0
-        let source = "postgresql://reader@127.0.0.1:55438/teslamate_snapshot"
-        let online = "postgresql://reader@teslamate.local/teslamate"
-        rig.controller.checkTeslaMateCompatibility(source: source, carID: "1", passwordFile: "/p",
-                                                   acknowledgeV42CompatibleSchema: true, historyOnly: true) {
+        let source = "postgresql://reader@127.0.0.1:55438/source_snapshot"
+        let online = "postgresql://reader@server.local/sourcedb"
+        rig.controller.checkSourceCompatibility(source: source, carID: "1", passwordFile: "/p",
+                                                   acceptSchemaEvidence: true, historyOnly: true) {
             if case .failure = $0 { refused += 1 }
         }
-        rig.controller.importTeslaMateHistoryOnlyOnline(source: source, carID: "1", passwordFile: "/p",
-                                                        acknowledgeV42CompatibleSchema: true) {
+        rig.controller.importSourceHistoryOnlyOnline(source: source, carID: "1", passwordFile: "/p",
+                                                        acceptSchemaEvidence: true) {
             if case .failure = $0 { refused += 1 }
         }
-        rig.controller.importTeslaMateOnline(source: online, carID: "1", passwordFile: "/p", encryptionKeyFile: "/k",
-                                             acknowledgeV42CompatibleSchema: true) {
+        rig.controller.importSourceOnline(source: online, carID: "1", passwordFile: "/p", encryptionKeyFile: "/k",
+                                             acceptSchemaEvidence: true) {
             if case .failure = $0 { refused += 1 }
         }
-        let preparation = rig.controller.connectMigrationServer(host: "teslamate.local", user: "user", port: 22,
+        let preparation = rig.controller.connectMigrationServer(host: "server.local", user: "user", port: 22,
                                                                 authentication: .key(identityFile: nil),
                                                                 usePasswordlessSudo: false) {
             if case .failure = $0 { refused += 1 }
@@ -1005,8 +1005,8 @@ extension HubControllerTests {
         XCTAssertFalse(rig.markerExists)
 
         releaseForeign(rig, foreign)
-        var connected: Result<TeslaMateServerImportSession, Error>?
-        _ = rig.controller.connectMigrationServer(host: "teslamate.local", user: "user", port: 22,
+        var connected: Result<SourceServerImportSession, Error>?
+        _ = rig.controller.connectMigrationServer(host: "server.local", user: "user", port: 22,
                                                   authentication: .key(identityFile: nil),
                                                   usePasswordlessSudo: false) { connected = $0 }
         spinUntil { connected != nil }
@@ -1285,8 +1285,8 @@ extension HubControllerTests {
         rig.controller.performVehicleControl(.lock) { if case .failure = $0 { refused += 1 } }
         rig.controller.runOnboardingChecks(expectRunning: false) { if case .failure = $0 { refused += 1 } }
         rig.controller.acknowledgeMigrationHandoverAndStart { if case .failure = $0 { refused += 1 } }
-        rig.controller.importTeslaMateHistoryOnlyOnline(source: "postgresql://reader@127.0.0.1:55438/t", carID: "1",
-                                                        passwordFile: "/p", acknowledgeV42CompatibleSchema: true) {
+        rig.controller.importSourceHistoryOnlyOnline(source: "postgresql://reader@127.0.0.1:55438/t", carID: "1",
+                                                        passwordFile: "/p", acceptSchemaEvidence: true) {
             if case .failure = $0 { refused += 1 }
         }
         var reconciled = false
@@ -1406,35 +1406,35 @@ extension HubControllerTests {
         quiescence.childMayRun()
         let lock = NSLock()
         var launched: [(arguments: [String], stdin: String)] = []
-        let runner: TeslaMateServerImporter.DiscoveryRunner = { arguments, stdin, _, completion in
+        let runner: SourceServerImporter.DiscoveryRunner = { arguments, stdin, _, completion in
             lock.lock(); launched.append((arguments, stdin)); lock.unlock()
             completion(.failure(HubActionError.commandNotQuiescent(HubActionError.commandTimedOut, quiescence)))
         }
-        var outcomes: [Result<TeslaMateServerImportSession, Error>] = []
-        TeslaMateServerImporter.connect(host: "teslamate.local", user: "user", port: 22,
+        var outcomes: [Result<SourceServerImportSession, Error>] = []
+        SourceServerImporter.connect(host: "server.local", user: "user", port: 22,
                                         authentication: .key(identityFile: nil), usePasswordlessSudo: false,
                                         temporaryRoot: root, runDiscovery: runner) { outcomes.append($0) }
         spinUntil(5) { !outcomes.isEmpty }
         XCTAssertEqual(outcomes.count, 1)
         lock.lock(); let seen = launched; lock.unlock()
         XCTAssertEqual(seen.count, 1, "the discovery ran through the injected runner, not a real ssh")
-        XCTAssertTrue(seen.first?.arguments.contains("user@teslamate.local") ?? false, "\(String(describing: seen.first?.arguments))")
+        XCTAssertTrue(seen.first?.arguments.contains("user@server.local") ?? false, "\(String(describing: seen.first?.arguments))")
         XCTAssertTrue(seen.first?.stdin.contains("docker") ?? false, "the discovery script is what is fed to the process")
         guard case let .failure(error)? = outcomes.first,
               case let HubActionError.commandNotQuiescent(inner, held) = error else {
             return XCTFail("the SSH process may still run, so the failure must carry it: \(String(describing: outcomes.first))")
         }
         XCTAssertTrue(held === quiescence)
-        XCTAssertEqual((inner as? TeslaMateSSHDiagnostic)?.reasonCode, "process_not_stopped")
+        XCTAssertEqual((inner as? SourceSSHDiagnostic)?.reasonCode, "process_not_stopped")
 
         // Once the process is gone the very same failure is the plain diagnostic.
         quiescence.childReaped()
-        TeslaMateServerImporter.connect(host: "teslamate.local", user: "user", port: 22,
+        SourceServerImporter.connect(host: "server.local", user: "user", port: 22,
                                         authentication: .key(identityFile: nil), usePasswordlessSudo: false,
                                         temporaryRoot: root, runDiscovery: runner) { outcomes.append($0) }
         spinUntil(5) { outcomes.count == 2 }
         guard case let .failure(second)? = outcomes.last else { return XCTFail("no second outcome") }
-        XCTAssertEqual((second as? TeslaMateSSHDiagnostic)?.reasonCode, "process_not_stopped", "\(second)")
+        XCTAssertEqual((second as? SourceSSHDiagnostic)?.reasonCode, "process_not_stopped", "\(second)")
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), [],
                        "the temporary secrets directory of each failed discovery is removed")
     }

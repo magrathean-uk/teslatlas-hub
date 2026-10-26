@@ -5,7 +5,8 @@
 pub mod collector;
 pub mod current_state;
 #[cfg(test)]
+#[rustfmt::skip]
 pub mod fake_tesla;
 pub mod fleet_telemetry;
+pub mod source_db_current;
 pub mod tesla_stream;
-pub mod teslamate_current;

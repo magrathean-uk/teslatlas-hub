@@ -363,7 +363,7 @@ impl Bed {
 
     /// The same, built as an observer.
     fn observer(&self) -> LegacyAuthManager {
-        LegacyAuthManager::from_hub_teslamate_store_for_test(
+        LegacyAuthManager::from_hub_source_db_store_for_test(
             self.rig.store.clone(),
             self.rig.directory.path(),
             &self.rig.endpoint(None),
@@ -440,23 +440,24 @@ impl Bed {
             .and_then(|row| row.fuse_rejected_access_digest);
         digest.is_some()
             && digest
-                == Some(crate::teslamate_token::legacy_access_token_digest(
+                == Some(crate::source_token_envelope::legacy_access_token_digest(
                     &self.rig.stored_pair().0,
                 ))
     }
 
     /// Store a pair as the owner would: an external credential write.
     fn external_write(&self, access: &str, refresh: &str) {
-        let key = crate::teslamate_credentials::load_key(self.rig.directory.path()).expect("key");
+        let key =
+            crate::legacy_owner_credentials::load_key(self.rig.directory.path()).expect("key");
         let tokens =
             OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).expect("tokens");
         let (access, refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
                 .expect("encrypt");
         self.rig
             .store
-            .replace_teslamate_legacy_tokens(
-                &crate::db::TeslaMateLegacyTokenStore::imported(access, refresh).expect("row"),
+            .replace_legacy_owner_tokens(
+                &crate::db::LegacyOwnerTokenStore::imported(access, refresh).expect("row"),
             )
             .expect("external write");
     }
@@ -2461,18 +2462,18 @@ async fn cs_p3_external_write_with_a_configuration_error_lifts_the_unknown_outco
         })
     ));
     // The external write: a pair of its own generation, stored over the fenced one.
-    let key = crate::teslamate_credentials::load_key(bed.rig.directory.path()).unwrap();
+    let key = crate::legacy_owner_credentials::load_key(bed.rig.directory.path()).unwrap();
     let tokens = OwnerTokens::from_secret_parts(
         "opaque-token-no-issuer-2".to_owned(),
         "refresh-1".to_owned(),
     )
     .unwrap();
     let (cipher_access, cipher_refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens).unwrap();
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens).unwrap();
     bed.rig
         .store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(
                 cipher_access,
                 cipher_refresh,
                 T0 + 28_800,
@@ -2480,7 +2481,7 @@ async fn cs_p3_external_write_with_a_configuration_error_lifts_the_unknown_outco
             )
             .unwrap()
             .with_credential_generation(
-                crate::teslamate_token::legacy_refresh_credential_generation(&tokens),
+                crate::source_token_envelope::legacy_refresh_credential_generation(&tokens),
             )
             .unwrap(),
         )

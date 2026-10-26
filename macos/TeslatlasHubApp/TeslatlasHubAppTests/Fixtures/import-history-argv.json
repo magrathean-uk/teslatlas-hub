@@ -1,0 +1,1 @@
+["teslatlas-hub","migrate","--source","postgresql://reader@127.0.0.1:55439/sourcedb","--car-id","42","--postgres-password-file","fictional-password","--online-snapshot","--accept-schema-evidence","--history-only"]

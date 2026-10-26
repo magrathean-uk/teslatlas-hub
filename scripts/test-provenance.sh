@@ -32,7 +32,7 @@ make_repo() {
   "declared_classes": [
     "MAGRATHEAN-ORIGINAL",
     "COMPANY-ASSIGNED-CONTRIBUTION",
-    "TESLAMATE-COMPATIBILITY",
+    "IMPORT-COMPATIBILITY",
     "THIRD-PARTY",
     "GENERATED",
     "DATA-OR-FACTS",

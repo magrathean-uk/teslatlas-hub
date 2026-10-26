@@ -387,7 +387,10 @@ fn accepts_a_deterministic_vehicle_id_and_allocates_snapshot_markers() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", "test-source"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "test-source"),
+            1_000,
+        )
         .expect("source registers");
     let expected_vehicle_id = Uuid::from_u128(7);
     let descriptor = VehicleDescriptor {
@@ -910,13 +913,12 @@ fn generic_completion_cannot_close_bound_legacy_refresh_receipt() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
     let input_generation = Uuid::from_u128(31);
-    let input =
-        TeslaMateLegacyTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
-            .expect("input tokens")
-            .with_credential_generation(input_generation)
-            .expect("input generation");
+    let input = LegacyOwnerTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
+        .expect("input tokens")
+        .with_credential_generation(input_generation)
+        .expect("input generation");
     store
-        .replace_teslamate_legacy_tokens(&input)
+        .replace_legacy_owner_tokens(&input)
         .expect("input persists");
     let receipt = store
         .begin_legacy_refresh(input_generation)
@@ -977,12 +979,12 @@ fn legacy_refresh_terminalization_clamps_backwards_clock() {
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
     let first_generation = Uuid::from_u128(51);
     let first =
-        TeslaMateLegacyTokenStore::imported(b"first-access".to_vec(), b"first-refresh".to_vec())
+        LegacyOwnerTokenStore::imported(b"first-access".to_vec(), b"first-refresh".to_vec())
             .expect("first tokens")
             .with_credential_generation(first_generation)
             .expect("first generation");
     store
-        .replace_teslamate_legacy_tokens(&first)
+        .replace_legacy_owner_tokens(&first)
         .expect("first tokens persist");
 
     let cancelled = store
@@ -1000,12 +1002,12 @@ fn legacy_refresh_terminalization_clamps_backwards_clock() {
     let future = move_start_into_future(&store, replaced);
     let second_generation = Uuid::from_u128(52);
     let second =
-        TeslaMateLegacyTokenStore::imported(b"second-access".to_vec(), b"second-refresh".to_vec())
+        LegacyOwnerTokenStore::imported(b"second-access".to_vec(), b"second-refresh".to_vec())
             .expect("second tokens")
             .with_credential_generation(second_generation)
             .expect("second generation");
     store
-        .replace_teslamate_legacy_tokens(&second)
+        .replace_legacy_owner_tokens(&second)
         .expect("replacement clamps clock");
     assert_clamped(&store, replaced, future);
 
@@ -1014,7 +1016,7 @@ fn legacy_refresh_terminalization_clamps_backwards_clock() {
         .expect("sign-out refresh begins");
     let future = move_start_into_future(&store, signed_out);
     store
-        .clear_teslamate_legacy_tokens()
+        .clear_source_db_legacy_tokens()
         .expect("sign out clamps clock");
     assert_clamped(&store, signed_out, future);
 }
@@ -1024,13 +1026,12 @@ fn legacy_refresh_intent_fences_restart_and_commits_atomically() {
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
     let input = Uuid::from_u128(1);
-    let initial =
-        TeslaMateLegacyTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
-            .expect("initial token pair")
-            .with_credential_generation(input)
-            .expect("initial generation");
+    let initial = LegacyOwnerTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
+        .expect("initial token pair")
+        .with_credential_generation(input)
+        .expect("initial generation");
     store
-        .replace_teslamate_legacy_tokens(&initial)
+        .replace_legacy_owner_tokens(&initial)
         .expect("initial pair persists");
     assert!(matches!(
         store.begin_legacy_refresh(Uuid::new_v4()),
@@ -1071,7 +1072,7 @@ fn legacy_refresh_intent_fences_restart_and_commits_atomically() {
         .begin_legacy_refresh(input)
         .expect("second intent persists");
     let output = Uuid::from_u128(2);
-    let successor = TeslaMateLegacyTokenStore::refreshed(
+    let successor = LegacyOwnerTokenStore::refreshed(
         b"new-access".to_vec(),
         b"new-refresh".to_vec(),
         2_000,
@@ -1094,7 +1095,7 @@ fn legacy_refresh_intent_fences_restart_and_commits_atomically() {
     );
     assert_eq!(
         restarted
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("successor load")
             .expect("successor")
             .access(),
@@ -1107,22 +1108,21 @@ fn explicit_new_credentials_supersede_ambiguous_refresh_without_reusing_input() 
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
     let old_generation = Uuid::from_u128(11);
-    let initial =
-        TeslaMateLegacyTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
-            .expect("initial pair")
-            .with_credential_generation(old_generation)
-            .expect("initial generation");
+    let initial = LegacyOwnerTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
+        .expect("initial pair")
+        .with_credential_generation(old_generation)
+        .expect("initial generation");
     store
-        .replace_teslamate_legacy_tokens(&initial)
+        .replace_legacy_owner_tokens(&initial)
         .expect("initial pair persists");
     store
         .begin_legacy_refresh(old_generation)
         .expect("ambiguous intent persists");
     assert!(matches!(
-        store.replace_teslamate_legacy_tokens(&initial),
+        store.replace_legacy_owner_tokens(&initial),
         Err(StoreError::LegacyRefreshOutcomeUnknown)
     ));
-    let same_refresh_reencrypted = TeslaMateLegacyTokenStore::imported(
+    let same_refresh_reencrypted = LegacyOwnerTokenStore::imported(
         b"different-random-access-envelope".to_vec(),
         b"different-random-refresh-envelope".to_vec(),
     )
@@ -1130,18 +1130,18 @@ fn explicit_new_credentials_supersede_ambiguous_refresh_without_reusing_input() 
     .with_credential_generation(old_generation)
     .expect("same plaintext generation");
     assert!(matches!(
-        store.replace_teslamate_legacy_tokens(&same_refresh_reencrypted),
+        store.replace_legacy_owner_tokens(&same_refresh_reencrypted),
         Err(StoreError::LegacyRefreshOutcomeUnknown)
     ));
 
     let replacement_generation = Uuid::from_u128(12);
     let replacement =
-        TeslaMateLegacyTokenStore::imported(b"fresh-access".to_vec(), b"fresh-refresh".to_vec())
+        LegacyOwnerTokenStore::imported(b"fresh-access".to_vec(), b"fresh-refresh".to_vec())
             .expect("explicit replacement pair")
             .with_credential_generation(replacement_generation)
             .expect("replacement generation");
     store
-        .replace_teslamate_legacy_tokens(&replacement)
+        .replace_legacy_owner_tokens(&replacement)
         .expect("new credential generation supersedes ambiguity");
     assert!(
         !store
@@ -1150,7 +1150,7 @@ fn explicit_new_credentials_supersede_ambiguous_refresh_without_reusing_input() 
     );
     assert_eq!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("replacement load")
             .expect("replacement")
             .credential_generation(),
@@ -1174,19 +1174,19 @@ fn legacy_refresh_rejects_successor_generation_already_consumed() {
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
     let first_generation = Uuid::from_u128(41);
     let first =
-        TeslaMateLegacyTokenStore::imported(b"first-access".to_vec(), b"first-refresh".to_vec())
+        LegacyOwnerTokenStore::imported(b"first-access".to_vec(), b"first-refresh".to_vec())
             .expect("first tokens")
             .with_credential_generation(first_generation)
             .expect("first generation");
     store
-        .replace_teslamate_legacy_tokens(&first)
+        .replace_legacy_owner_tokens(&first)
         .expect("first tokens persist");
 
     let first_receipt = store
         .begin_legacy_refresh(first_generation)
         .expect("first refresh begins");
     let second_generation = Uuid::from_u128(42);
-    let second = TeslaMateLegacyTokenStore::refreshed(
+    let second = LegacyOwnerTokenStore::refreshed(
         b"second-access".to_vec(),
         b"second-refresh".to_vec(),
         2_000,
@@ -1202,7 +1202,7 @@ fn legacy_refresh_rejects_successor_generation_already_consumed() {
     let second_receipt = store
         .begin_legacy_refresh(second_generation)
         .expect("second refresh begins");
-    let consumed_successor = TeslaMateLegacyTokenStore::refreshed(
+    let consumed_successor = LegacyOwnerTokenStore::refreshed(
         b"cycled-access".to_vec(),
         b"cycled-refresh".to_vec(),
         3_000,
@@ -1222,7 +1222,7 @@ fn legacy_refresh_rejects_successor_generation_already_consumed() {
     ));
     assert_eq!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("tokens load")
             .expect("tokens remain")
             .credential_generation(),
@@ -1240,20 +1240,19 @@ fn explicit_replacement_rejects_previously_consumed_generation_after_successor_c
     let temporary = crate::private_tempdir().expect("temporary database");
     let store = HubStore::initialize(temporary.path()).expect("store initializes");
     let input_generation = Uuid::from_u128(21);
-    let input =
-        TeslaMateLegacyTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
-            .expect("input tokens")
-            .with_credential_generation(input_generation)
-            .expect("input generation");
+    let input = LegacyOwnerTokenStore::imported(b"old-access".to_vec(), b"old-refresh".to_vec())
+        .expect("input tokens")
+        .with_credential_generation(input_generation)
+        .expect("input generation");
     store
-        .replace_teslamate_legacy_tokens(&input)
+        .replace_legacy_owner_tokens(&input)
         .expect("input persists");
     let receipt = store
         .begin_legacy_refresh(input_generation)
         .expect("refresh begins");
 
     let output_generation = Uuid::from_u128(22);
-    let output = TeslaMateLegacyTokenStore::refreshed(
+    let output = LegacyOwnerTokenStore::refreshed(
         b"new-access".to_vec(),
         b"new-refresh".to_vec(),
         2_000,
@@ -1267,11 +1266,11 @@ fn explicit_replacement_rejects_previously_consumed_generation_after_successor_c
         .expect("refresh completes");
 
     assert!(matches!(
-        store.replace_teslamate_legacy_tokens(&input),
+        store.replace_legacy_owner_tokens(&input),
         Err(StoreError::LegacyRefreshOutcomeUnknown)
     ));
     let current = store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("current tokens load")
         .expect("current tokens remain");
     assert_eq!(current.credential_generation(), Some(output_generation));

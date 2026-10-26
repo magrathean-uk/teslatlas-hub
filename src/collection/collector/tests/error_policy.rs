@@ -1505,7 +1505,7 @@ struct Ct67Bed {
 async fn ct67_bed() -> Ct67Bed {
     let dir = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(dir.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(dir.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(dir.path()).expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         CT67_SCOPED_ACCESS.to_owned(),
         "fleet-refresh".to_owned(),

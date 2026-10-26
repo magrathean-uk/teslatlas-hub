@@ -5,7 +5,6 @@
 
 use std::{fs, os::unix::fs::PermissionsExt};
 
-use clap::Parser;
 use teslatlas_hub::db::HubStore;
 use uuid::Uuid;
 

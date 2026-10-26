@@ -1,6 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 fn migrate(connection: &Connection) -> Result<(), StoreError> {
+    let version = schema_version(connection)?;
+    if version < import_source_names_step::VERSION {
+        migrate_to_previous_import_names(connection)?;
+        import_source_names_step::migrate(connection)?;
+    }
+    let version = schema_version(connection)?;
+    if version == SCHEMA_VERSION {
+        Ok(())
+    } else {
+        Err(StoreError::UnsupportedSchema(version))
+    }
+}
+
+fn migrate_to_previous_import_names(connection: &Connection) -> Result<(), StoreError> {
     let mut version = schema_version(connection)?;
     if version == 0 {
         connection
@@ -2555,7 +2569,7 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
         migrate_terrain_selection(connection)?;
         version = TERRAIN_SELECTION_SCHEMA_VERSION;
     }
-    if version == SCHEMA_VERSION {
+    if version == TERRAIN_SELECTION_SCHEMA_VERSION {
         Ok(())
     } else {
         Err(StoreError::UnsupportedSchema(version))
@@ -2564,6 +2578,8 @@ fn migrate(connection: &Connection) -> Result<(), StoreError> {
 
 include!("migrations/b3.rs");
 
+/// Current v78 fixtures also call `prepare_historical_import_names` before
+/// migration; its Rust rewind preserves current payload digests and type checks.
 /// Test fixtures that rewind a current catalogue to the shape before the v72
 /// step run this: it drops the rejected-access-digest column of the credential
 /// status table (hub fix pass 3). Every older rewind drops the whole table. It

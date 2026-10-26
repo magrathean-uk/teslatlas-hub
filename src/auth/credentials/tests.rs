@@ -51,17 +51,18 @@ fn owner_token_files_accept_one_line_ending_and_enforce_semantic_bounds() {
 async fn observer_never_posts_a_refresh_token() {
     let data = crate::private_tempdir().expect("data directory");
     let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
-    crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key").expect("private key");
-    let key = crate::teslamate_credentials::load_key(data.path()).expect("load private key");
+    crate::legacy_owner_credentials::replace_key(data.path(), b"test-cloak-key")
+        .expect("private key");
+    let key = crate::legacy_owner_credentials::load_key(data.path()).expect("load private key");
     let tokens =
         OwnerTokens::from_secret_parts("observer-access".to_owned(), "observer-refresh".to_owned())
             .expect("observer tokens");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
             .expect("encrypt observer tokens");
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(
                 access,
                 refresh,
                 2_000_000_000,
@@ -75,7 +76,7 @@ async fn observer_never_posts_a_refresh_token() {
         crate::fake_tesla::FakeTeslaSource::spawn_canonical(crate::fake_tesla::AdvanceMode::Manual)
             .await
             .expect("fake Tesla");
-    let mut manager = LegacyAuthManager::from_hub_teslamate_store_observer_with_issuer(
+    let mut manager = LegacyAuthManager::from_hub_source_db_store_observer_with_issuer(
         store,
         data.path(),
         fake.oauth_issuer_url(),
@@ -136,39 +137,36 @@ async fn replaced_runtime_admission_blocks_refresh_before_token_transport() {
 }
 
 #[tokio::test]
-async fn hub_teslamate_store_refreshes_and_reopens_with_the_successor() {
+async fn hub_source_db_store_refreshes_and_reopens_with_the_successor() {
     let data = crate::private_tempdir().expect("data directory");
     let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
-    crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key").expect("private key");
-    let key = crate::teslamate_credentials::load_key(data.path()).expect("load private key");
+    crate::legacy_owner_credentials::replace_key(data.path(), b"test-cloak-key")
+        .expect("private key");
+    let key = crate::legacy_owner_credentials::load_key(data.path()).expect("load private key");
     let initial =
         OwnerTokens::from_secret_parts("initial-access".to_owned(), "initial-refresh".to_owned())
             .expect("initial tokens");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("encrypt initial tokens");
-    let stored = crate::db::TeslaMateLegacyTokenStore::refreshed(
-        access,
-        refresh,
-        2_000_000_000,
-        1_900_000_000,
-    )
-    .expect("initial schedule");
+    let stored =
+        crate::db::LegacyOwnerTokenStore::refreshed(access, refresh, 2_000_000_000, 1_900_000_000)
+            .expect("initial schedule");
     store
-        .replace_teslamate_legacy_tokens(&stored)
+        .replace_legacy_owner_tokens(&stored)
         .expect("store initial pair");
 
     let fake =
         crate::fake_tesla::FakeTeslaSource::spawn_canonical(crate::fake_tesla::AdvanceMode::Manual)
             .await
             .expect("fake Tesla");
-    let mut manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let mut manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         data.path(),
         fake.oauth_issuer_url(),
     )
     .expect("load initial pair");
-    let mut stale_manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let mut stale_manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         data.path(),
         fake.oauth_issuer_url(),
@@ -184,10 +182,10 @@ async fn hub_teslamate_store_refreshes_and_reopens_with_the_successor() {
     let expected_next_refresh = manager.next_refresh_at();
 
     let stored = store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("load stored pair")
         .expect("stored pair");
-    let decrypted = crate::teslamate_token::decrypt_legacy_owner_tokens(
+    let decrypted = crate::source_token_envelope::decrypt_legacy_owner_tokens(
         key.as_bytes(),
         stored.access(),
         stored.refresh(),
@@ -224,14 +222,14 @@ async fn hub_teslamate_store_refreshes_and_reopens_with_the_successor() {
     );
     assert_eq!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("load successor after stale attempt")
             .expect("successor remains")
             .credential_generation(),
         stored.credential_generation()
     );
 
-    let reopened = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let reopened = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store,
         data.path(),
         fake.oauth_issuer_url(),
@@ -254,17 +252,18 @@ async fn runtime_replacement_after_refresh_receipt_begin_cancels_before_token_po
 
     let data = crate::private_tempdir().expect("data directory");
     let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
-    crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key").expect("private key");
-    let key = crate::teslamate_credentials::load_key(data.path()).expect("load private key");
+    crate::legacy_owner_credentials::replace_key(data.path(), b"test-cloak-key")
+        .expect("private key");
+    let key = crate::legacy_owner_credentials::load_key(data.path()).expect("load private key");
     let initial =
         OwnerTokens::from_secret_parts("initial-access".to_owned(), "initial-refresh".to_owned())
             .expect("initial tokens");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("encrypt initial tokens");
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(
                 access,
                 refresh,
                 2_000_000_000,
@@ -278,7 +277,7 @@ async fn runtime_replacement_after_refresh_receipt_begin_cancels_before_token_po
         crate::fake_tesla::FakeTeslaSource::spawn_canonical(crate::fake_tesla::AdvanceMode::Manual)
             .await
             .expect("fake Tesla");
-    let mut manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let mut manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         data.path(),
         fake.oauth_issuer_url(),
@@ -311,7 +310,7 @@ async fn runtime_replacement_after_refresh_receipt_begin_cancels_before_token_po
             .expect("cancelled receipt is terminal")
     );
     let generation = store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("tokens load")
         .expect("tokens remain")
         .credential_generation()
@@ -331,19 +330,20 @@ async fn post_send_refresh_failure_is_terminal_until_explicit_new_credentials() 
 
     let data = crate::private_tempdir().expect("data directory");
     let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
-    crate::teslamate_credentials::replace_key(data.path(), b"test-cloak-key").expect("private key");
-    let key = crate::teslamate_credentials::load_key(data.path()).expect("load private key");
+    crate::legacy_owner_credentials::replace_key(data.path(), b"test-cloak-key")
+        .expect("private key");
+    let key = crate::legacy_owner_credentials::load_key(data.path()).expect("load private key");
     let initial = OwnerTokens::from_secret_parts(
         "ambiguous-access".to_owned(),
         "ambiguous-refresh".to_owned(),
     )
     .expect("initial tokens");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("encrypt initial tokens");
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(
                 access,
                 refresh,
                 2_000_000_000,
@@ -373,7 +373,7 @@ async fn post_send_refresh_failure_is_terminal_until_explicit_new_credentials() 
             .expect("malformed success response");
     });
     let issuer = url::Url::parse(&format!("http://{address}/")).expect("loopback issuer");
-    let mut manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let mut manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         data.path(),
         issuer.clone(),
@@ -412,7 +412,7 @@ async fn post_send_refresh_failure_is_terminal_until_explicit_new_credentials() 
     // A restart builds the manager in its stopped state (C5-B2, R57 step 3): it
     // sends nothing, hands out no token and says why, so the collector can start,
     // show the state and wait for the owner.
-    let restarted = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let restarted = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         data.path(),
         issuer.clone(),
@@ -436,13 +436,13 @@ async fn post_send_refresh_failure_is_terminal_until_explicit_new_credentials() 
         OwnerTokens::from_secret_parts("fresh-access".to_owned(), "fresh-refresh".to_owned())
             .expect("explicit replacement tokens");
     let replacement_generation =
-        crate::teslamate_token::legacy_refresh_credential_generation(&replacement);
+        crate::source_token_envelope::legacy_refresh_credential_generation(&replacement);
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &replacement)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &replacement)
             .expect("encrypt replacement tokens");
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(
                 access,
                 refresh,
                 2_100_000_000,
@@ -454,7 +454,7 @@ async fn post_send_refresh_failure_is_terminal_until_explicit_new_credentials() 
         )
         .expect("explicit replacement supersedes ambiguity");
     let recovered =
-        LegacyAuthManager::from_hub_teslamate_store_with_issuer(store, data.path(), issuer)
+        LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(store, data.path(), issuer)
             .expect("new credential authority starts");
     assert_eq!(recovered.access_token(), "fresh-access");
     assert_eq!(recovered.refresh_token(), "fresh-refresh");
@@ -463,18 +463,16 @@ async fn post_send_refresh_failure_is_terminal_until_explicit_new_credentials() 
 #[test]
 fn postgres_password_parsing() {
     assert_eq!(
-        TeslaMatePostgresPassword::from_bytes(b"postgres")
-            .unwrap()
-            .as_str(),
+        SourceDbPassword::from_bytes(b"postgres").unwrap().as_str(),
         "postgres"
     );
     assert_eq!(
-        TeslaMatePostgresPassword::from_bytes(b"postgres\n")
+        SourceDbPassword::from_bytes(b"postgres\n")
             .unwrap()
             .as_str(),
         "postgres"
     );
-    assert!(TeslaMatePostgresPassword::from_bytes(b"bad\n\n").is_err());
+    assert!(SourceDbPassword::from_bytes(b"bad\n\n").is_err());
 }
 
 /// C5T-03, R45 row 5, R24: a failed write of a successor is a wait for the write
@@ -518,25 +516,25 @@ fn seed_pair(
     refresh: &str,
     schedule: Option<(i64, i64)>,
 ) {
-    crate::teslamate_credentials::replace_key(data_dir, b"test-cloak-key").expect("private key");
-    let key = crate::teslamate_credentials::load_key(data_dir).expect("load private key");
+    crate::legacy_owner_credentials::replace_key(data_dir, b"test-cloak-key").expect("private key");
+    let key = crate::legacy_owner_credentials::load_key(data_dir).expect("load private key");
     let tokens = OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned())
         .expect("stored tokens");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
             .expect("encrypt tokens");
     let stored = match schedule {
-        Some((expires_at, next_refresh_at)) => crate::db::TeslaMateLegacyTokenStore::refreshed(
+        Some((expires_at, next_refresh_at)) => crate::db::LegacyOwnerTokenStore::refreshed(
             access,
             refresh,
             expires_at,
             next_refresh_at,
         ),
-        None => crate::db::TeslaMateLegacyTokenStore::imported(access, refresh),
+        None => crate::db::LegacyOwnerTokenStore::imported(access, refresh),
     }
     .expect("schedule");
     store
-        .replace_teslamate_legacy_tokens(&stored)
+        .replace_legacy_owner_tokens(&stored)
         .expect("store tokens");
 }
 
@@ -574,16 +572,16 @@ fn production_constructors_take_the_endpoint_and_key_the_fence_by_the_stored_byt
     let raw_tokens =
         OwnerTokens::from_secret_parts(padded_access, "refresh-0 ".to_owned()).expect("raw tokens");
     let expected_generation =
-        crate::teslamate_token::legacy_refresh_credential_generation(&raw_tokens);
+        crate::source_token_envelope::legacy_refresh_credential_generation(&raw_tokens);
     let trimmed_tokens =
         OwnerTokens::from_secret_parts(access.clone(), "refresh-0".to_owned()).expect("trimmed");
     assert_ne!(
         expected_generation,
-        crate::teslamate_token::legacy_refresh_credential_generation(&trimmed_tokens),
+        crate::source_token_envelope::legacy_refresh_credential_generation(&trimmed_tokens),
         "the trimmed copy would be a different generation"
     );
 
-    let managed = LegacyAuthManager::from_hub_teslamate_store(
+    let managed = LegacyAuthManager::from_hub_source_db_store(
         store.clone(),
         data.path(),
         &tesla_endpoint(None),
@@ -594,11 +592,11 @@ fn production_constructors_take_the_endpoint_and_key_the_fence_by_the_stored_byt
     assert_eq!(managed.region(), crate::tesla_stream::StreamRegion::China);
     // The row is bound to the generation of its stored bytes at construction.
     let stored_generation = store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("load row")
         .expect("a row")
         .credential_generation();
-    let LegacyAuthPersistence::HubTeslaMate(persistence) = &managed.persistence else {
+    let LegacyAuthPersistence::HubSourceDb(persistence) = &managed.persistence else {
         panic!("a store-backed manager");
     };
     let (receipt, input_generation) = persistence.begin_refresh().expect("begin the attempt");
@@ -608,7 +606,7 @@ fn production_constructors_take_the_endpoint_and_key_the_fence_by_the_stored_byt
         .cancel_refresh(receipt, input_generation)
         .expect("cancel the unsent attempt");
 
-    let observer = LegacyAuthManager::from_hub_teslamate_store_observer(
+    let observer = LegacyAuthManager::from_hub_source_db_store_observer(
         store,
         data.path(),
         &tesla_endpoint(None),
@@ -631,7 +629,7 @@ fn the_manager_is_built_in_a_configuration_error_for_a_conflicting_or_missing_re
     let data = crate::private_tempdir().expect("data directory");
     let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
     seed_pair(&store, data.path(), "opaque-access-0001", "refresh-0", None);
-    let manager = LegacyAuthManager::from_hub_teslamate_store(
+    let manager = LegacyAuthManager::from_hub_source_db_store(
         store.clone(),
         data.path(),
         &tesla_endpoint(None),
@@ -664,7 +662,7 @@ fn the_manager_is_built_in_a_configuration_error_for_a_conflicting_or_missing_re
     assert!(row.stopped_generation.is_none(), "not a stored stop (R5)");
     drop(manager);
     // The configuration fixed, the next start is ready with no owner action.
-    let manager = LegacyAuthManager::from_hub_teslamate_store(
+    let manager = LegacyAuthManager::from_hub_source_db_store(
         store.clone(),
         data.path(),
         &tesla_endpoint(Some(crate::tesla_stream::StreamRegion::China)),
@@ -682,7 +680,7 @@ fn the_manager_is_built_in_a_configuration_error_for_a_conflicting_or_missing_re
         "exp": 1_800_028_800_i64,
     }));
     seed_pair(&store, data.path(), &global_token, "refresh-0", None);
-    let manager = LegacyAuthManager::from_hub_teslamate_store(
+    let manager = LegacyAuthManager::from_hub_source_db_store(
         store,
         data.path(),
         &tesla_endpoint(Some(crate::tesla_stream::StreamRegion::China)),
@@ -704,13 +702,16 @@ fn a_refused_key_settlement_is_the_bare_loss_of_the_sensitive_access() {
         let store = crate::db::HubStore::initialize(data.path()).expect("Hub store");
         seed_pair(&store, data.path(), "opaque-access-0001", "refresh-0", None);
         if replacement_committed {
-            crate::teslamate_credentials::leave_previous_key_for_test(data.path(), b"left-over")
+            crate::legacy_owner_credentials::leave_previous_key_for_test(data.path(), b"left-over")
                 .expect("a leftover previous generation");
         } else {
-            crate::teslamate_credentials::begin_key_replacement_for_test(data.path(), b"newer-key")
-                .expect("a replacement that did not commit");
+            crate::legacy_owner_credentials::begin_key_replacement_for_test(
+                data.path(),
+                b"newer-key",
+            )
+            .expect("a replacement that did not commit");
         }
-        let current = crate::teslamate_credentials::key_path(data.path());
+        let current = crate::legacy_owner_credentials::key_path(data.path());
         let previous = data
             .path()
             .join("secrets")
@@ -720,7 +721,7 @@ fn a_refused_key_settlement_is_the_bare_loss_of_the_sensitive_access() {
             std::fs::read(&previous).expect("the previous generation was seeded"),
         );
         let lost: LossObserver = Arc::new(|| true);
-        let outcome = LegacyAuthManager::from_hub_teslamate_store_with_policy(
+        let outcome = LegacyAuthManager::from_hub_source_db_store_with_policy(
             store,
             data.path(),
             LegacyAuthRefreshPolicy::Managed,

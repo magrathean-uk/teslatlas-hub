@@ -16,7 +16,7 @@ use super::location::{
 };
 use crate::hub_pack::GeofenceBillingType;
 use crate::lifecycle::round_to_precision;
-use crate::teslamate_projection::TeslaMateGeofence;
+use crate::source_db_projection::SourceDbGeofence;
 
 /// The values a validated save stores (C8 section 1.2).
 #[derive(Debug, Clone, PartialEq)]
@@ -118,8 +118,8 @@ impl GeofenceInactiveReason {
 /// resolves an omitted radius to the create default, so a caller that builds
 /// `existing` itself must copy every geometry field of the row it read.
 pub(crate) fn validate_geofence_save(
-    input: &TeslaMateGeofence,
-    existing: Option<&TeslaMateGeofence>,
+    input: &SourceDbGeofence,
+    existing: Option<&SourceDbGeofence>,
     clear_tariff: bool,
 ) -> Result<ValidatedGeofence, GeofenceRejection> {
     let name = validated_name(&input.name)?;
@@ -198,7 +198,7 @@ fn validated_centre(
 /// on a create.
 fn resolved_radius(
     given: Option<f64>,
-    existing: Option<&TeslaMateGeofence>,
+    existing: Option<&SourceDbGeofence>,
 ) -> Result<f64, GeofenceRejection> {
     let Some(radius) = given else {
         return Ok(existing
@@ -244,8 +244,8 @@ type ResolvedTariff = (Option<GeofenceBillingType>, Option<f64>, Option<f64>);
 /// `clear_tariff`, nothing on a create or with it. Given values are checked in
 /// the order cost, fee, billing type; kept values are not.
 fn resolved_tariff(
-    input: &TeslaMateGeofence,
-    existing: Option<&TeslaMateGeofence>,
+    input: &SourceDbGeofence,
+    existing: Option<&SourceDbGeofence>,
     clear_tariff: bool,
 ) -> Result<ResolvedTariff, GeofenceRejection> {
     let base = existing.filter(|_| !clear_tariff);

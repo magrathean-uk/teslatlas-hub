@@ -343,9 +343,9 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     use std::os::unix::fs::PermissionsExt;
     use teslatlas_hub::{
         credentials::OwnerTokens,
-        db::TeslaMateLegacyTokenStore,
-        teslamate_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
-        teslamate_token::encrypt_legacy_owner_tokens,
+        db::LegacyOwnerTokenStore,
+        legacy_owner_credentials::{load_or_create_cursor_key, replace_key_and_tokens},
+        source_token_envelope::encrypt_legacy_owner_tokens,
     };
 
     let root = tempfile::tempdir().expect("isolated smoke root");
@@ -363,7 +363,7 @@ async fn source_binary_standalone_mode_serves_seeded_schema_21_snapshot() {
     let key = b"smoke-test-local-encryption-key";
     let (access, refresh) =
         encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt synthetic pair");
-    let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("synthetic pair");
+    let stored = LegacyOwnerTokenStore::imported(access, refresh).expect("synthetic pair");
     replace_key_and_tokens(&data_dir, &store, key, &stored).expect("seed synthetic pair");
     let invitation = store
         .create_pairing("binary-smoke", 1_000, i64::MAX)

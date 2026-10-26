@@ -66,12 +66,12 @@ pub struct RuntimeInventory {
     pub raw_observations: u64,
     pub quarantined_sessions: u64,
     pub referenced_packs: u64,
-    pub teslamate_legacy_token_rows: u64,
+    pub legacy_owner_token_rows: u64,
     pub fleet_token_rows: u64,
 }
 
 /// Read-only catalogue facts used by `doctor`. Counts and PRAGMA values only;
-/// this never hashes packs and never mutates tokens or TeslaMate.
+/// this never hashes packs and never mutates tokens or source database.
 #[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogueInventory {
@@ -94,7 +94,7 @@ pub struct CatalogueInventory {
     pub referenced_pack_bytes: u64,
     pub physical_pack_files: u64,
     pub physical_pack_bytes: u64,
-    pub teslamate_legacy_token_rows: u64,
+    pub legacy_owner_token_rows: u64,
     pub fleet_token_rows: u64,
     pub paired_devices: u64,
     pub installation_id: Uuid,

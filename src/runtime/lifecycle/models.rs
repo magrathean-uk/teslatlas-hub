@@ -268,7 +268,7 @@ impl OpenSessionState {
 /// is requested, rather than being copied into the 64 KiB lifecycle blob.
 pub fn seed_imported_open_session_state(
     source_id: uuid::Uuid,
-    session: &TeslaMateOpenSession,
+    session: &SourceDbOpenSession,
     existing: Option<&OpenSessionState>,
 ) -> Result<OpenSessionState, LifecycleError> {
     session
@@ -380,7 +380,7 @@ pub fn seed_imported_open_session_state(
     Ok(state)
 }
 
-fn imported_open_content_sha256(session: &TeslaMateOpenSession) -> Result<String, LifecycleError> {
+fn imported_open_content_sha256(session: &SourceDbOpenSession) -> Result<String, LifecycleError> {
     struct DigestWriter(Sha256);
     impl std::io::Write for DigestWriter {
         fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
@@ -408,7 +408,7 @@ fn imported_open_content_sha256(session: &TeslaMateOpenSession) -> Result<String
     Ok(hex::encode(writer.0.finalize()))
 }
 
-fn session_max_timestamp(session: &TeslaMateOpenSession) -> Option<i64> {
+fn session_max_timestamp(session: &SourceDbOpenSession) -> Option<i64> {
     session
         .drive_positions
         .iter()
@@ -421,7 +421,7 @@ fn session_max_timestamp(session: &TeslaMateOpenSession) -> Option<i64> {
         .max()
 }
 
-fn open_drive_from_source(row: &TeslaMateDrive, positions: &[TeslaMatePosition]) -> OpenDrive {
+fn open_drive_from_source(row: &SourceDbDrive, positions: &[SourceDbPosition]) -> OpenDrive {
     let mut open = OpenDrive {
         id: row.id,
         car_id: row.car_id,
@@ -497,8 +497,8 @@ fn open_drive_from_source(row: &TeslaMateDrive, positions: &[TeslaMatePosition])
 }
 
 fn open_charge_from_source(
-    row: &TeslaMateChargingProcess,
-    samples: &[TeslaMateCharge],
+    row: &SourceDbChargingProcess,
+    samples: &[SourceDbCharge],
 ) -> OpenCharge {
     let mut open = OpenCharge {
         id: row.id,
@@ -576,7 +576,7 @@ fn open_charge_from_source(
     open
 }
 
-fn open_state_from_source(row: &TeslaMateState) -> OpenState {
+fn open_state_from_source(row: &SourceDbState) -> OpenState {
     OpenState {
         id: row.id,
         car_id: row.car_id,
@@ -585,7 +585,7 @@ fn open_state_from_source(row: &TeslaMateState) -> OpenState {
     }
 }
 
-pub fn imported_position(row: &TeslaMatePosition) -> ProjectionPosition {
+pub fn imported_position(row: &SourceDbPosition) -> ProjectionPosition {
     ProjectionPosition {
         id: row.id,
         drive_id: row.drive_id,

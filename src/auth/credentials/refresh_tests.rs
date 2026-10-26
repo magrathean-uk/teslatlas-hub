@@ -406,7 +406,7 @@ impl Rig {
         region: Option<crate::tesla_stream::StreamRegion>,
         loopback: Url,
     ) -> LegacyAuthManager {
-        LegacyAuthManager::from_hub_teslamate_store_for_test(
+        LegacyAuthManager::from_hub_source_db_store_for_test(
             self.store.clone(),
             self.directory.path(),
             &self.endpoint(region),
@@ -425,7 +425,7 @@ impl Rig {
     /// it is built in its stopped state and holds the stop `signed_out(
     /// refresh_outcome_unknown)` (C5-B2).
     fn restarted_stopped(&self) -> LegacyAuthManager {
-        let manager = LegacyAuthManager::from_hub_teslamate_store_for_test(
+        let manager = LegacyAuthManager::from_hub_source_db_store_for_test(
             self.store.clone(),
             self.directory.path(),
             &self.endpoint(None),
@@ -482,11 +482,11 @@ impl Rig {
     fn stored_pair(&self) -> (String, String, i64, i64) {
         let stored = self
             .store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("load")
             .expect("a pair");
-        let key = crate::teslamate_credentials::load_key(self.directory.path()).expect("key");
-        let tokens = crate::teslamate_token::decrypt_legacy_owner_tokens(
+        let key = crate::legacy_owner_credentials::load_key(self.directory.path()).expect("key");
+        let tokens = crate::source_token_envelope::decrypt_legacy_owner_tokens(
             key.as_bytes(),
             stored.access(),
             stored.refresh(),
@@ -502,7 +502,7 @@ impl Rig {
 
     fn stored_generation(&self) -> uuid::Uuid {
         self.store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("load")
             .expect("a pair")
             .credential_generation()
@@ -2041,16 +2041,16 @@ async fn t88_a_released_input_is_sent_again_and_a_dead_one_is_fenced_against_eve
         rig.store.begin_legacy_refresh(g0),
         Err(crate::db::StoreError::LegacyRefreshOutcomeUnknown)
     ));
-    let key = crate::teslamate_credentials::load_key(rig.directory.path()).unwrap();
+    let key = crate::legacy_owner_credentials::load_key(rig.directory.path()).unwrap();
     let same = OwnerTokens::from_secret_parts(jg(), "refresh-0".to_owned()).unwrap();
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &same).unwrap();
-    let same = crate::db::TeslaMateLegacyTokenStore::imported(access, refresh)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &same).unwrap();
+    let same = crate::db::LegacyOwnerTokenStore::imported(access, refresh)
         .unwrap()
         .with_credential_generation(g0)
         .unwrap();
     assert!(matches!(
-        rig.store.replace_teslamate_legacy_tokens(&same),
+        rig.store.replace_legacy_owner_tokens(&same),
         Err(crate::db::StoreError::LegacyRefreshOutcomeUnknown)
     ));
 }
@@ -2060,16 +2060,16 @@ async fn t88_a_released_input_is_sent_again_and_a_dead_one_is_fenced_against_eve
 // ---------------------------------------------------------------------------
 
 fn replace_with_new_login(rig: &Rig, access: &str, refresh: &str) {
-    let key = crate::teslamate_credentials::load_key(rig.directory.path()).unwrap();
+    let key = crate::legacy_owner_credentials::load_key(rig.directory.path()).unwrap();
     let tokens = OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned()).unwrap();
     let (cipher_access, cipher_refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens).unwrap();
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens).unwrap();
     rig.store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::imported(cipher_access, cipher_refresh)
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::imported(cipher_access, cipher_refresh)
                 .unwrap()
                 .with_credential_generation(
-                    crate::teslamate_token::legacy_refresh_credential_generation(&tokens),
+                    crate::source_token_envelope::legacy_refresh_credential_generation(&tokens),
                 )
                 .unwrap(),
         )
@@ -2278,7 +2278,7 @@ async fn r38_a_clock_below_the_floor_sends_nothing_and_hands_out_no_token() {
 async fn r14_an_observer_never_sends_a_token_request_for_any_trigger() {
     let rig = new_rig().await;
     rig.seed(&jg(), "refresh-0", None);
-    let observer = LegacyAuthManager::from_hub_teslamate_store_for_test(
+    let observer = LegacyAuthManager::from_hub_source_db_store_for_test(
         rig.store.clone(),
         rig.directory.path(),
         &rig.endpoint(None),

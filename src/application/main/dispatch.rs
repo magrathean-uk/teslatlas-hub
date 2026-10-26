@@ -73,9 +73,9 @@ fn build_status_report(
                 config.collector.offline_drive_timeout_seconds,
             ),
         )?;
-        let tesla_eid = configured.iter().find_map(|(vehicle_id, eid, _)| {
-            (*vehicle_id == vehicle.vehicle_id).then_some(*eid)
-        });
+        let tesla_eid = configured
+            .iter()
+            .find_map(|(vehicle_id, eid, _)| (*vehicle_id == vehicle.vehicle_id).then_some(*eid));
         vehicle_summaries.push(serde_json::json!({
             "vehicleId": vehicle.vehicle_id,
             "displayName": vehicle.display_name,
@@ -91,19 +91,15 @@ fn build_status_report(
         }));
     }
     let vehicle = (vehicle_summaries.len() == 1).then(|| vehicle_summaries[0].clone());
-    let legacy_credentials = store.load_teslamate_legacy_tokens()?;
+    let legacy_credentials = store.load_legacy_owner_tokens()?;
     let fleet_credentials = store.load_fleet_tokens()?;
     let (fleet_scope_summary, fleet_scope_status) = if fleet_credentials.is_some() {
         match stored_fleet_scope_summary(store, &config.data_dir) {
             Ok(summary) => (summary, Some("ready")),
             Err(error) => {
                 let status = match error {
-                    FleetCredentialError::MissingCollectionScopes => {
-                        "missing_collection_scopes"
-                    }
-                    FleetCredentialError::InvalidAccessTokenClaims => {
-                        "invalid_access_token_claims"
-                    }
+                    FleetCredentialError::MissingCollectionScopes => "missing_collection_scopes",
+                    FleetCredentialError::InvalidAccessTokenClaims => "invalid_access_token_claims",
                     FleetCredentialError::MigrationRequired => "migration_required",
                     _ => "unavailable",
                 };
@@ -135,57 +131,57 @@ fn build_status_report(
     let database_bytes = fs::metadata(store.database_path())?.len();
 
     let mut report = serde_json::json!({
-            "status": "ok",
-            "version": teslatlas_hub::BUILD_VERSION,
-            "database": {
-                "path": store.database_path(),
-                "bytes": database_bytes,
+        "status": "ok",
+        "version": teslatlas_hub::BUILD_VERSION,
+        "database": {
+            "path": store.database_path(),
+            "bytes": database_bytes,
+        },
+        "ready": view.service.is_ok(),
+        "readinessReason": view.service.err().map(|failure| failure.code),
+        "collectionAttention": view.attention,
+        "readinessDetail": view.detail,
+        "collectorRunning": view.running,
+        "collector": collector,
+        "provider": config.collector.provider,
+        "vehicle": vehicle,
+        "vehicles": vehicle_summaries,
+        "credentials": {
+            "present": selected_credentials_present,
+        },
+        "legacyCredentials": {
+            "present": legacy_credentials.is_some(),
+            "expiresAt": legacy_credentials.as_ref().map(LegacyOwnerTokenStore::expires_at),
+            "nextRefreshAt": legacy_credentials
+                .as_ref()
+                .map(LegacyOwnerTokenStore::next_refresh_at),
+        },
+        "fleetCredentials": {
+            "present": fleet_credentials.is_some(),
+            "expiresAt": fleet_credentials.as_ref().map(|credentials| credentials.expires_at()),
+            "nextRefreshAt": fleet_credentials.as_ref().map(|credentials| credentials.next_refresh_at()),
+            "scopes": fleet_scope_summary,
+            "scopeStatus": fleet_scope_status,
+        },
+        "fleetTelemetry": {
+            "enabled": config.collector.fleet_telemetry.is_some(),
+            "configured": config.collector.fleet_telemetry.is_some(),
+            "mode": if config.collector.fleet_telemetry.is_some() {
+                "native_push_configured"
+            } else {
+                "disabled"
             },
-            "ready": view.service.is_ok(),
-            "readinessReason": view.service.err().map(|failure| failure.code),
-            "collectionAttention": view.attention,
-            "readinessDetail": view.detail,
-            "collectorRunning": view.running,
-            "collector": collector,
-            "provider": config.collector.provider,
-            "vehicle": vehicle,
-            "vehicles": vehicle_summaries,
-            "credentials": {
-                "present": selected_credentials_present,
+            "operationalState": if config.collector.fleet_telemetry.is_some() {
+                "requires_receiver_and_vehicle_receipt_proof"
+            } else {
+                "disabled"
             },
-            "legacyCredentials": {
-                "present": legacy_credentials.is_some(),
-                "expiresAt": legacy_credentials.as_ref().map(TeslaMateLegacyTokenStore::expires_at),
-                "nextRefreshAt": legacy_credentials
-                    .as_ref()
-                    .map(TeslaMateLegacyTokenStore::next_refresh_at),
-            },
-            "fleetCredentials": {
-                "present": fleet_credentials.is_some(),
-                "expiresAt": fleet_credentials.as_ref().map(|credentials| credentials.expires_at()),
-                "nextRefreshAt": fleet_credentials.as_ref().map(|credentials| credentials.next_refresh_at()),
-                "scopes": fleet_scope_summary,
-                "scopeStatus": fleet_scope_status,
-            },
-            "fleetTelemetry": {
-                "enabled": config.collector.fleet_telemetry.is_some(),
-                "configured": config.collector.fleet_telemetry.is_some(),
-                "mode": if config.collector.fleet_telemetry.is_some() {
-                    "native_push_configured"
-                } else {
-                    "disabled"
-                },
-                "operationalState": if config.collector.fleet_telemetry.is_some() {
-                    "requires_receiver_and_vehicle_receipt_proof"
-                } else {
-                    "disabled"
-                },
-                "paidVehicleDataPolling": config.collector.provider == CollectorProvider::Fleet
-                    && config.collector.interval_seconds > 0
-                    && config.collector.fleet_telemetry.is_none(),
-                "deliveryPolicy": config.collector.fleet_telemetry.as_ref().map(|_| "latest"),
-            },
-        });
+            "paidVehicleDataPolling": config.collector.provider == CollectorProvider::Fleet
+                && config.collector.interval_seconds > 0
+                && config.collector.fleet_telemetry.is_none(),
+            "deliveryPolicy": config.collector.fleet_telemetry.as_ref().map(|_| "latest"),
+        },
+    });
     if let Some(violation) = cadence_violation {
         report["collectorCadenceError"] = serde_json::to_value(violation.report())?;
     }
@@ -259,35 +255,35 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     #[cfg(unix)]
-    if let Command::TeslaMateCheck {
+    if let Command::SourceCheck {
         source,
         car_id,
         postgres_password_file,
         history_only,
-        acknowledge_v4_2_compatible_schema,
+        accept_schema_evidence,
     } = &cli.command
     {
-        return run_teslamate_check(
+        return run_source_check(
             source,
             *car_id,
             postgres_password_file,
             *history_only,
-            *acknowledge_v4_2_compatible_schema,
+            *accept_schema_evidence,
         )
         .await;
     }
 
     #[cfg(unix)]
     if let Command::Migrate {
-        acknowledge_v4_2_compatible_schema: false,
+        accept_schema_evidence: false,
         history_only,
         ..
     } = &cli.command
     {
         return Err(if *history_only {
-            "history-only import requires --acknowledge-v4-2-compatible-schema; the database schema is reviewed but the TeslaMate application version remains unknown"
+            "history-only import requires --accept-schema-evidence; the database schema is reviewed but the source application version remains unknown"
         } else {
-            "TeslaMate migration requires --acknowledge-v4-2-compatible-schema after confirming TeslaMate 4.2.0 or newer"
+            "History import requires --accept-schema-evidence after confirming source application release 4.2.0 or later"
         }.into());
     }
 
@@ -384,6 +380,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
     if let Command::Migrate {
         source,
         car_id,
+        source_key,
+        new_import_source,
         postgres_password_file,
         history_only,
         encryption_key_file,
@@ -391,7 +389,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         refresh_token_file,
         online_snapshot,
         preserve_existing_credentials,
-        acknowledge_v4_2_compatible_schema: _,
+        accept_schema_evidence: _,
     } = &cli.command
     {
         let start_hub = run_macos_migration(
@@ -402,6 +400,8 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 config_path: &config_path,
                 source_url: source,
                 car_id: *car_id,
+                source_key: source_key.as_deref(),
+                new_import_source: *new_import_source,
                 postgres_password_file,
                 history_only: *history_only,
                 encryption_key_file: encryption_key_file.as_deref(),
@@ -509,9 +509,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                 match config.collector.provider {
                     CollectorProvider::Legacy => {
                         let tokens = store
-                            .load_teslamate_legacy_tokens()?
+                            .load_legacy_owner_tokens()?
                             .ok_or("legacy Owner API credentials are required")?;
-                        teslatlas_hub::teslamate_credentials::load_key_for_tokens(
+                        teslatlas_hub::legacy_owner_credentials::load_key_for_tokens(
                             &config.data_dir,
                             &tokens,
                         )?;
@@ -755,7 +755,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         | Command::Healthcheck { .. }
         | Command::Doctor
         | Command::Status
-        | Command::TeslaMateCheck { .. }
+        | Command::SourceCheck { .. }
         | Command::Control { .. }
         | Command::Collector { .. }
         | Command::ObservationWatermark { .. }
@@ -822,7 +822,7 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
                     provider = ?config.collector.provider,
                     interval_seconds = config.collector.interval_seconds,
                     bind = %config.bind,
-                    teslamate_current_enabled = config.teslamate.current.is_some(),
+                    source_db_current_enabled = config.import_source.current.is_some(),
                     "Hub serve starting"
                 );
                 let collector_store = store.clone();

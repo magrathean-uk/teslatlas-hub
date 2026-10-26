@@ -50,37 +50,37 @@ extension HubControllerTests {
         }
     }
 
-    private var localSource: String { "postgresql://reader@127.0.0.1:55438/teslamate_snapshot" }
-    private var remoteSource: String { "postgresql://reader@teslamate.local/teslamate" }
+    private var localSource: String { "postgresql://reader@127.0.0.1:55438/source_snapshot" }
+    private var remoteSource: String { "postgresql://reader@server.local/sourcedb" }
 
     // MARK: 9. Migration stages (the controller requests the onboarding window makes)
 
     func testEntryConnectedCompatibilityUsesLifecycleOwner() throws {
         try assertAPIEntry(APIRoute(name: "ConnectedCompatibility", family: .migration, options: .init(installed: false),
-                                    effect: { $0.runner.count("teslamate-check") >= 1 }) { rig in
-            rig.controller.checkTeslaMateCompatibility(source: self.remoteSource, carID: "1", passwordFile: "/p",
-                                                       acknowledgeV42CompatibleSchema: true) { _ in }
+                                    effect: { $0.runner.count("source-check") >= 1 }) { rig in
+            rig.controller.checkSourceCompatibility(source: self.remoteSource, carID: "1", passwordFile: "/p",
+                                                       acceptSchemaEvidence: true) { _ in }
         })
     }
 
     func testEntryVersionAcknowledgementRecheckUsesLifecycleOwner() throws {
         try assertAPIEntry(APIRoute(name: "VersionAcknowledgementRecheck", family: .migration, options: .init(installed: false),
-                                    effect: { $0.runner.count("teslamate-check") >= 1 }) { rig in
+                                    effect: { $0.runner.count("source-check") >= 1 }) { rig in
             // Ticking the acknowledgement re-runs the check against the connected session.
-            var session: TeslaMateServerImportSession?
-            _ = rig.controller.connectMigrationServer(host: "teslamate.local", user: "user", port: 22,
+            var session: SourceServerImportSession?
+            _ = rig.controller.connectMigrationServer(host: "server.local", user: "user", port: 22,
                                                       authentication: .key(identityFile: nil),
                                                       usePasswordlessSudo: false) {
                 if case let .success(value) = $0 { session = value }
             }
             if let session {
-                rig.controller.checkTeslaMateCompatibility(source: session.source, carID: session.carID,
+                rig.controller.checkSourceCompatibility(source: session.source, carID: session.carID,
                                                            passwordFile: session.passwordFile.path,
-                                                           acknowledgeV42CompatibleSchema: true) { _ in }
+                                                           acceptSchemaEvidence: true) { _ in }
             } else {
                 // Refused at the connection: the recheck is asked for against a known source.
-                rig.controller.checkTeslaMateCompatibility(source: self.remoteSource, carID: "1", passwordFile: "/p",
-                                                           acknowledgeV42CompatibleSchema: true) { _ in }
+                rig.controller.checkSourceCompatibility(source: self.remoteSource, carID: "1", passwordFile: "/p",
+                                                           acceptSchemaEvidence: true) { _ in }
             }
         })
     }
@@ -88,16 +88,16 @@ extension HubControllerTests {
     func testEntryOnlineImportUsesLifecycleOwner() throws {
         try assertAPIEntry(APIRoute(name: "OnlineImport", family: .migration, options: .init(installed: false),
                                     effect: { $0.runner.count("migrate") >= 1 }) { rig in
-            rig.controller.importTeslaMateOnline(source: self.remoteSource, carID: "1", passwordFile: "/p",
-                                                 encryptionKeyFile: "/k", acknowledgeV42CompatibleSchema: true) { _ in }
+            rig.controller.importSourceOnline(source: self.remoteSource, carID: "1", passwordFile: "/p",
+                                                 encryptionKeyFile: "/k", acceptSchemaEvidence: true) { _ in }
         })
     }
 
     func testEntryHistoryOnlyImportUsesLifecycleOwner() throws {
         try assertAPIEntry(APIRoute(name: "HistoryOnlyImport", family: .migration, options: .init(installed: false),
                                     effect: { $0.runner.count("migrate:history") >= 1 }) { rig in
-            rig.controller.importTeslaMateHistoryOnlyOnline(source: self.localSource, carID: "1", passwordFile: "/p",
-                                                            acknowledgeV42CompatibleSchema: true) { _ in }
+            rig.controller.importSourceHistoryOnlyOnline(source: self.localSource, carID: "1", passwordFile: "/p",
+                                                            acceptSchemaEvidence: true) { _ in }
         })
     }
 

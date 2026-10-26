@@ -30,7 +30,7 @@ use super::{
     LegacyAuthError,
     endpoint::{is_access_token, is_refresh_token, parse_jwt},
 };
-use crate::teslamate_token::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
+use crate::source_token_envelope::MAX_LEGACY_TOKEN_PLAINTEXT_BYTES;
 
 /// The connect timeout of the auth client, TCP and TLS handshake (R33). F11's
 /// initial retransmission timeout is 1 s and doubles, so three SYN attempts take

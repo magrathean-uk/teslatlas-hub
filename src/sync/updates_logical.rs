@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Canonical TeslaMate `updates` logical-row stream and three-layer receipt.
+//! Canonical source database `updates` logical-row stream and three-layer receipt.
 //!
 //! Counts, bounds, and SHA-256 are derived from the same
 //! `teslatlas-updates-logical-row-v1` bytes. Null/unknown values stay tagged
@@ -8,11 +8,11 @@
 
 use sha2::{Digest, Sha256};
 
-use crate::teslamate_projection::TeslaMateUpdatePhysicalV2_2 as UpdateRow;
+use crate::source_db_projection::SourceDbUpdatePhysicalV2_2 as UpdateRow;
 
 pub const LOGICAL_STREAM_HEADER: &[u8] = b"teslatlas-updates-logical-row-v1\n";
 pub const LOGICAL_STREAM_SCHEMA: &str = "teslatlas-updates-logical-row-v1";
-pub const PINNED_TESLAMATE_REVISION: &str = "7054517c10475f39f480edeae8f90c6f717985a3";
+pub const PINNED_SOURCE_DB_REVISION: &str = "7054517c10475f39f480edeae8f90c6f717985a3";
 pub const PINNED_CANONICAL_SHA256: &str =
     "0c74cec3c0a5fb956d53600b5cb9bad76479e3234f011a415e47d3b0f4bdabf4";
 pub const PINNED_CANONICAL_BYTES: usize = 218;

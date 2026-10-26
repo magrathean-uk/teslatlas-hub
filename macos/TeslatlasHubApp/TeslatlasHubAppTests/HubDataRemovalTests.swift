@@ -1136,7 +1136,7 @@ final class HubDataRemovalTests: XCTestCase {
             try? manager.removeItem(at: root)
         }
 
-        let result = TeslaMateServerImporter.cleanupStaleTemporaryDirectoriesReporting(in: root)
+        let result = SourceServerImporter.cleanupStaleTemporaryDirectoriesReporting(in: root)
 
         XCTAssertEqual(result.removed, 1)
         XCTAssertEqual(result.failures.map { URL(fileURLWithPath: $0.path).resolvingSymlinksInPath().path },
@@ -1146,13 +1146,13 @@ final class HubDataRemovalTests: XCTestCase {
         XCTAssertTrue(manager.fileExists(atPath: stuck.path))
         XCTAssertFalse(manager.fileExists(atPath: removable.path))
         // The Int entry point keeps returning the count.
-        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 0)
+        XCTAssertEqual(SourceServerImporter.cleanupStaleTemporaryDirectories(in: root), 0)
     }
 
     func testStaleImportCleanerReportsAScanFailure() {
         let missing = HubTestScratch.directory
             .appendingPathComponent("teslatlas-hub-missing-cleanup-report-\(UUID().uuidString)", isDirectory: true)
-        let result = TeslaMateServerImporter.cleanupStaleTemporaryDirectoriesReporting(in: missing)
+        let result = SourceServerImporter.cleanupStaleTemporaryDirectoriesReporting(in: missing)
         XCTAssertEqual(result.removed, 0)
         XCTAssertEqual(result.scanFailure?.path, missing.path, "\(result)")
         XCTAssertFalse(result.scanFailure?.reason.isEmpty ?? true)
@@ -1237,8 +1237,8 @@ final class HubDataRemovalTests: XCTestCase {
         private(set) var preferencesDomains: [String] = []
         private(set) var logged: [String] = []
         var staleCount = 1
-        var staleFailures: [TeslaMateServerImporter.StaleTemporaryCleanup.Failure] = []
-        var staleScanFailure: TeslaMateServerImporter.StaleTemporaryCleanup.Failure?
+        var staleFailures: [SourceServerImporter.StaleTemporaryCleanup.Failure] = []
+        var staleScanFailure: SourceServerImporter.StaleTemporaryCleanup.Failure?
         var clearSucceeds = true
 
         init(fixture: Fixture) { self.fixture = fixture }

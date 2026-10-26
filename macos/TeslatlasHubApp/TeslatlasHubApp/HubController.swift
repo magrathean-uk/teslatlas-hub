@@ -133,12 +133,6 @@ struct HubFleetSetupCredentials: Equatable {
     let expiresInSeconds: Int64
 }
 
-struct HubTeslaMateCompatibility: Equatable {
-    let compatible: Bool
-    let message: String
-    let reasonCode: String
-    let requiredVersion: String
-}
 
 struct HubMigrationProgress: Equatable {
     let completedRows: UInt64
@@ -179,7 +173,7 @@ private final class HubMigrationProgressDiagnostics {
             Self.logPhaseCompleted(completedPhase.name, duration: completedPhase.duration)
         }
         if let startedPhase {
-            HubAppLog.shared.record("import.phase.started", category: "teslamate_import",
+            HubAppLog.shared.record("import.phase.started", category: "history_import",
                                     fields: ["phase": startedPhase])
         }
     }
@@ -204,7 +198,7 @@ private final class HubMigrationProgressDiagnostics {
     }
 
     private static func logPhaseCompleted(_ phase: String, duration: TimeInterval) {
-        HubAppLog.shared.record("import.phase.completed", category: "teslamate_import", fields: [
+        HubAppLog.shared.record("import.phase.completed", category: "history_import", fields: [
             "phase": phase,
             "duration_ms": String(Int(duration * 1_000))
         ])
@@ -405,7 +399,7 @@ struct HubSnapshot {
         checkingStatus || (accountState == .unknown && databaseState == .unknown && health != .needsInstall)
     }
 
-    var shouldOfferTeslaMateImport: Bool {
+    var shouldOfferSourceImport: Bool {
         health != .running && accountState == .notConfigured
             && databaseState == .awaitingSetup
     }
@@ -442,7 +436,7 @@ struct HubSnapshot {
         database: "teslatlas.sqlite · 3.51 GB (imported)",
         databaseState: .healthy,
         activity: [
-            HubActivity(message: "Imported TeslaMate history", age: "just now", color: .systemGreen)
+            HubActivity(message: "Imported history", age: "just now", color: .systemGreen)
         ],
         version: HubRelease.fallbackVersion,
         dataDirectory: URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support/Teslatlas Hub"),
@@ -1168,7 +1162,7 @@ final class EmbeddedHubCommandRunner: HubCommandRunning {
     static func timeout(for arguments: [String]) -> TimeInterval {
         if arguments.contains("migrate") { return 24 * 60 * 60 }
         if arguments.contains("doctor") { return 15 * 60 }
-        if arguments.contains("teslamate-check") { return 5 * 60 }
+        if arguments.contains("source-check") { return 5 * 60 }
         if arguments.contains("setup") { return 5 * 60 }
         if arguments.contains("control") { return 45 }
         if arguments.contains("status") || arguments.contains("preflight") { return 30 }
@@ -1346,7 +1340,7 @@ enum HubLifecycleFamily: String, CaseIterable, Equatable {
         case .account: return "setting up the Tesla account"
         case .diagnostics: return "running diagnostics"
         case .signOut: return "disconnecting Tesla"
-        case .migration: return "preparing or importing TeslaMate data"
+        case .migration: return "preparing or importing history"
         case .verification: return "checking the Hub"
         case .handover: return "starting the Hub after migration"
         case .vehicleControl: return "sending a vehicle command"
@@ -1966,9 +1960,9 @@ typealias HubMigrationConnector = (
     _ host: String,
     _ user: String,
     _ port: Int,
-    _ authentication: TeslaMateSSHAuthentication,
+    _ authentication: SourceSSHAuthentication,
     _ usePasswordlessSudo: Bool,
-    _ completion: @escaping (Result<TeslaMateServerImportSession, Error>) -> Void
+    _ completion: @escaping (Result<SourceServerImportSession, Error>) -> Void
 ) -> Void
 
 /// A window's handle on an active SSH preparation. Cancelling it never abandons the
@@ -2906,14 +2900,14 @@ final class HubController {
     private let statusLifecycle: HubStatusProcessLifecycle
     private let statusPauseBound: TimeInterval
     private let restorationBarrier: HubRestorationBarrier
-    private let staleImportCleaner: () -> TeslaMateServerImporter.StaleTemporaryCleanup
+    private let staleImportCleaner: () -> SourceServerImporter.StaleTemporaryCleanup
     private let migrationConnector: HubMigrationConnector
     /// Background reconciliation requested while another owner held the lifecycle.
     private let deferredLock = NSLock()
     private var deferredReconciles: [(completion: (() -> Void)?, intent: UInt64)] = []
     /// Prepared (idle) migration sessions: their tunnel and directory lease belong here.
     private let sessionLock = NSLock()
-    private var registeredSessions: [ObjectIdentifier: TeslaMateServerImportSession] = [:]
+    private var registeredSessions: [ObjectIdentifier: SourceServerImportSession] = [:]
     private var serviceDiagnostic: String?
     private let homeDirectory: URL
     private let configuredConfigPath: URL?
@@ -2963,11 +2957,11 @@ final class HubController {
          statusLifecycle: HubStatusProcessLifecycle = .shared,
          statusPauseBound: TimeInterval = 10,
          restorationBarrier: HubRestorationBarrier = HubWindowRestorationBarrier(),
-         staleImportCleaner: @escaping () -> TeslaMateServerImporter.StaleTemporaryCleanup = {
-             TeslaMateServerImporter.cleanupStaleTemporaryDirectoriesReporting()
+         staleImportCleaner: @escaping () -> SourceServerImporter.StaleTemporaryCleanup = {
+             SourceServerImporter.cleanupStaleTemporaryDirectoriesReporting()
          },
          migrationConnector: @escaping HubMigrationConnector = { host, user, port, authentication, sudo, completion in
-             TeslaMateServerImporter.connect(host: host, user: user, port: port,
+             SourceServerImporter.connect(host: host, user: user, port: port,
                                              authentication: authentication,
                                              usePasswordlessSudo: sudo, completion: completion)
          }) {
@@ -3375,7 +3369,7 @@ final class HubController {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         guard !hasPendingMigrationHandover else {
             completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1486.555", fallback: "Finish or cancel the TeslaMate migration handover before signing out.")
+                HubL10n.text("hub.HubController.1486.555", fallback: "Finish or cancel the source application migration handover before signing out.")
             )))
             return
         }
@@ -3426,19 +3420,19 @@ final class HubController {
         }
     }
 
-    func checkTeslaMateCompatibility(source: String,
+    func checkSourceCompatibility(source: String,
                                      carID: String,
                                      passwordFile: String,
-                                     acknowledgeV42CompatibleSchema: Bool,
+                                     acceptSchemaEvidence: Bool,
                                      historyOnly: Bool = false,
-                                     completion: @escaping (Result<HubTeslaMateCompatibility, Error>) -> Void) {
+                                     completion: @escaping (Result<HubSourceCheckResult, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
         // Pure validation first: it writes nothing and launches nothing.
         let arguments: [String]
         do {
             arguments = try compatibilityArguments(source: source, carID: carID,
                                                    passwordFile: passwordFile,
-                                                   acknowledgeV42CompatibleSchema: acknowledgeV42CompatibleSchema,
+                                                   acceptSchemaEvidence: acceptSchemaEvidence,
                                                    historyOnly: historyOnly)
         } catch {
             completion(.failure(error))
@@ -3454,13 +3448,13 @@ final class HubController {
     private func compatibilityArguments(source: String,
                                         carID: String,
                                         passwordFile: String,
-                                        acknowledgeV42CompatibleSchema: Bool,
+                                        acceptSchemaEvidence: Bool,
                                         historyOnly: Bool) throws -> [String] {
-        guard acknowledgeV42CompatibleSchema else {
+        guard acceptSchemaEvidence else {
             throw HubActionError.commandFailed(
                 historyOnly
-                    ? HubL10n.text("hub.HubController.1522.568", fallback: "Acknowledge the reviewed TeslaMate history schema before checking compatibility.")
-                    : HubL10n.text("hub.HubController.1523.569", fallback: "Confirm TeslaMate 4.2.0 or newer before checking compatibility.")
+                    ? HubL10n.text("hub.HubController.1522.568", fallback: "Acknowledge the reviewed source database schema before checking compatibility.")
+                    : HubL10n.text("hub.HubController.1523.569", fallback: "Confirm the source application's release is 4.2.0 or later before checking compatibility.")
             )
         }
         try Self.validateMigrationSource(source)
@@ -3471,39 +3465,39 @@ final class HubController {
             }
         }
         guard let selectedCarID = Int64(carID), selectedCarID > 0 else {
-            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1536.571", fallback: "TeslaMate car ID must be a positive number."))
+            throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1536.571", fallback: "Source car ID must be a positive number."))
         }
         guard !passwordFile.isEmpty else {
             throw HubActionError.commandFailed(HubL10n.text("hub.HubController.1539.572", fallback: "Choose the protected PostgreSQL password file."))
         }
-        return ["--config", configPath.path, "teslamate-check",
+        return ["--config", configPath.path, "source-check",
                 "--source", source, "--car-id", String(selectedCarID),
                 "--postgres-password-file", passwordFile,
-                "--acknowledge-v4-2-compatible-schema"]
+                "--accept-schema-evidence"]
             + (historyOnly ? ["--history-only"] : [])
     }
 
     private func runCompatibilityCheck(_ op: HubLifecycleOperation,
                                        arguments: [String],
                                        historyOnly: Bool,
-                                       completion: @escaping (Result<HubTeslaMateCompatibility, Error>) -> Void) {
+                                       completion: @escaping (Result<HubSourceCheckResult, Error>) -> Void) {
         op.run(arguments) { result in
             DispatchQueue.main.async {
                 switch result {
-                case let .success(output):
-                    guard let report = Self.parseTeslaMateCompatibility(output, historyOnly: historyOnly) else {
+                case .success:
+                    guard let report = HubSourceCheckResult.fromCommandResult(result, historyOnly: historyOnly) else {
                         completion(.failure(HubActionError.commandFailed(
-                            HubL10n.text("hub.HubController.1552.580", fallback: "TeslaMate compatibility check returned no valid report.")
+                            HubL10n.text("hub.HubController.1552.580", fallback: "The source application compatibility check returned no valid report.")
                         )))
                         return
                     }
                     completion(.success(report))
-                case let .failure(error):
-                    if let report = Self.parseTeslaMateCompatibility(error.localizedDescription, historyOnly: historyOnly) {
+                case .failure:
+                    if let report = HubSourceCheckResult.fromCommandResult(result, historyOnly: historyOnly) {
                         completion(.success(report))
                     } else {
                         completion(.failure(HubActionError.commandFailed(
-                            HubL10n.text("hub.HubController.1562.581", fallback: "Could not verify TeslaMate. Check the server connection and try again.")
+                            HubL10n.text("hub.HubController.1562.581", fallback: "Could not verify the source database. Check the server connection and try again.")
                         )))
                     }
                 }
@@ -3511,25 +3505,25 @@ final class HubController {
         }
     }
 
-    func importTeslaMateOnline(source: String,
+    func importSourceOnline(source: String,
                                carID: String,
                                passwordFile: String,
                                encryptionKeyFile: String,
-                               acknowledgeV42CompatibleSchema: Bool,
+                               acceptSchemaEvidence: Bool,
                                progress: @escaping (HubMigrationProgress) -> Void = { _ in },
                                completion: @escaping (Result<Void, Error>) -> Void) {
-        HubAppLog.shared.record("import.requested", category: "teslamate_import",
+        HubAppLog.shared.record("import.requested", category: "history_import",
                                 fields: ["capture_mode": "online_snapshot"])
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
-        guard acknowledgeV42CompatibleSchema else {
+        guard acceptSchemaEvidence else {
             completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1585.586", fallback: "Confirm TeslaMate 4.2.0 or newer before importing.")
+                HubL10n.text("hub.HubController.1585.586", fallback: "Confirm the source application's release is 4.2.0 or later before importing.")
             )))
             return
         }
         guard !encryptionKeyFile.isEmpty else {
             completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1591.587", fallback: "Choose the TeslaMate ENCRYPTION_KEY file.")
+                HubL10n.text("hub.HubController.1591.587", fallback: "Choose the source application's ENCRYPTION_KEY file.")
             )))
             return
         }
@@ -3537,10 +3531,10 @@ final class HubController {
         do {
             checkArguments = try compatibilityArguments(source: source, carID: carID,
                                                         passwordFile: passwordFile,
-                                                        acknowledgeV42CompatibleSchema: acknowledgeV42CompatibleSchema,
+                                                        acceptSchemaEvidence: acceptSchemaEvidence,
                                                         historyOnly: false)
         } catch {
-            HubAppLog.shared.record("import.preflight.failed", category: "teslamate_import",
+            HubAppLog.shared.record("import.preflight.failed", category: "history_import",
                                     level: "ERROR",
                                     fields: ["error_code": HubAppLog.errorCode(error)])
             completion(.failure(error))
@@ -3551,18 +3545,18 @@ final class HubController {
         runCompatibilityCheck(op, arguments: checkArguments, historyOnly: false) { [self] checkResult in
             switch checkResult {
             case let .failure(error):
-                HubAppLog.shared.record("import.preflight.failed", category: "teslamate_import",
+                HubAppLog.shared.record("import.preflight.failed", category: "history_import",
                                         level: "ERROR",
                                         fields: ["error_code": HubAppLog.errorCode(error)])
                 op.finish(.failure(error), completion: completion)
             case let .success(report):
-                guard report.compatible else {
-                    HubAppLog.shared.record("import.preflight.rejected", category: "teslamate_import",
+                guard report.mayImport else {
+                    HubAppLog.shared.record("import.preflight.rejected", category: "history_import",
                                             level: "WARN", fields: ["reason": report.reasonCode])
                     op.finish(.failure(HubActionError.commandFailed(report.message)), completion: completion)
                     return
                 }
-                HubAppLog.shared.record("import.preflight.completed", category: "teslamate_import")
+                HubAppLog.shared.record("import.preflight.completed", category: "history_import")
                 op.phase("import")
                 prepareOnlineMigration(op,
                                        source: source,
@@ -3576,10 +3570,10 @@ final class HubController {
         }
     }
 
-    func importTeslaMateHistoryOnlyOnline(source: String,
+    func importSourceHistoryOnlyOnline(source: String,
                                           carID: String,
                                           passwordFile: String,
-                                          acknowledgeV42CompatibleSchema: Bool,
+                                          acceptSchemaEvidence: Bool,
                                           progress: @escaping (HubMigrationProgress) -> Void = { _ in },
                                           completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
@@ -3587,7 +3581,7 @@ final class HubController {
         do {
             checkArguments = try compatibilityArguments(source: source, carID: carID,
                                                         passwordFile: passwordFile,
-                                                        acknowledgeV42CompatibleSchema: acknowledgeV42CompatibleSchema,
+                                                        acceptSchemaEvidence: acceptSchemaEvidence,
                                                         historyOnly: true)
         } catch {
             completion(.failure(error))
@@ -3596,7 +3590,7 @@ final class HubController {
         guard let op = admit(.migration, phase: "compatibility", completion: completion) else { return }
         runCompatibilityCheck(op, arguments: checkArguments, historyOnly: true) { [self] result in
             switch result {
-            case let .success(report) where report.compatible:
+            case let .success(report) where report.mayImport:
                 op.phase("import")
                 prepareOnlineMigration(op, source: source, carID: carID,
                                        passwordFile: passwordFile,
@@ -3618,15 +3612,15 @@ final class HubController {
     func connectMigrationServer(host: String,
                                 user: String,
                                 port: Int,
-                                authentication: TeslaMateSSHAuthentication,
+                                authentication: SourceSSHAuthentication,
                                 usePasswordlessSudo: Bool,
-                                completion: @escaping (Result<TeslaMateServerImportSession, Error>) -> Void)
+                                completion: @escaping (Result<SourceServerImportSession, Error>) -> Void)
         -> HubMigrationPreparation? {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return nil }
         guard let op = admit(.migration, phase: "ssh-preparation", completion: completion) else { return nil }
         let preparation = HubMigrationPreparation()
         let connector = migrationConnector
-        op.track({ (done: @escaping (Result<TeslaMateServerImportSession, Error>) -> Void) in
+        op.track({ (done: @escaping (Result<SourceServerImportSession, Error>) -> Void) in
             connector(host, user, port, authentication, usePasswordlessSudo, done)
         }, stale: .failure(HubActionError.commandFailed(
             HubL10n.text("hub.lifecycle.stale", fallback: "That Hub operation had already finished. Nothing was changed."))),
@@ -3642,7 +3636,7 @@ final class HubController {
                 registerMigrationSession(session)
                 op.finish(.success(session), completion: completion)
             case let .failure(error):
-                op.finish(.failure(error)) { (outcome: Result<TeslaMateServerImportSession, Error>) in
+                op.finish(.failure(error)) { (outcome: Result<SourceServerImportSession, Error>) in
                     if !preparation.isCancelled { completion(outcome) }
                 }
             }
@@ -3685,7 +3679,7 @@ final class HubController {
                          "--source", source, "--car-id", carID,
                          "--postgres-password-file", passwordFile,
                          "--online-snapshot",
-                         "--acknowledge-v4-2-compatible-schema"]
+                         "--accept-schema-evidence"]
             + (historyOnly ? ["--history-only"] : ["--encryption-key-file", encryptionKeyFile ?? "",
                                                   "--preserve-existing-credentials"])
         let finish: (Result<Void, Error>) -> Void = { result in
@@ -3701,7 +3695,7 @@ final class HubController {
             op.phase("migrate")
             let diagnostics = HubMigrationProgressDiagnostics()
             let progressDelivery = HubMigrationProgressDelivery()
-            HubAppLog.shared.record("import.process.started", category: "teslamate_import",
+            HubAppLog.shared.record("import.process.started", category: "history_import",
                                     fields: ["capture_mode": "online_snapshot"])
             op.run(arguments, onOutputLine: { line in
                 guard let update = Self.parseMigrationProgress(line) else { return }
@@ -3714,10 +3708,10 @@ final class HubController {
                 case let .success(output):
                     guard Self.containsOnlineMigrationReport(output) else {
                         HubAppLog.shared.record("import.process.invalid_report",
-                                                category: "teslamate_import", level: "ERROR",
+                                                category: "history_import", level: "ERROR",
                                                 fields: durationFields)
                         failStartedImport(HubActionError.commandFailed(
-                            HubL10n.text("hub.HubController.1718.615", fallback: "TeslaMate import returned no valid completion report. Hub remains stopped.")
+                            HubL10n.text("hub.HubController.1718.615", fallback: "Source application import returned no valid completion report. Hub remains stopped.")
                         ))
                         return
                     }
@@ -3729,13 +3723,13 @@ final class HubController {
                                                       previousProvider: previousProvider,
                                                       historyOnly: historyOnly)
                         )
-                        HubAppLog.shared.record("import.completed", category: "teslamate_import",
+                        HubAppLog.shared.record("import.completed", category: "history_import",
                                                 fields: durationFields.merging(
                                                     ["handover": "awaiting_verification"]
                                                 ) { _, new in new })
                         finish(.success(()))
                     } catch {
-                        HubAppLog.shared.record("import.handover.failed", category: "teslamate_import",
+                        HubAppLog.shared.record("import.handover.failed", category: "history_import",
                                                 level: "ERROR",
                                                 fields: durationFields.merging(
                                                     ["error_code": HubAppLog.errorCode(error)]
@@ -3745,7 +3739,7 @@ final class HubController {
                         )))
                     }
                 case let .failure(error):
-                    HubAppLog.shared.record("import.process.failed", category: "teslamate_import",
+                    HubAppLog.shared.record("import.process.failed", category: "history_import",
                                             level: "ERROR",
                                             fields: durationFields.merging(
                                                 [
@@ -3757,7 +3751,7 @@ final class HubController {
                 }
             }
         }
-        // This controls Teslatlas Hub only. TeslaMate is never stopped or changed.
+        // This controls Teslatlas Hub only. The source application is never stopped or changed.
         if historyOnly {
             op.phase("stop")
             op.service(["service", "stop"]) { result in
@@ -3776,10 +3770,10 @@ final class HubController {
         op.service(["service", "stop"]) { stopResult in
             switch stopResult {
             case .success:
-                HubAppLog.shared.record("local_hub.stopped", category: "teslamate_import")
+                HubAppLog.shared.record("local_hub.stopped", category: "history_import")
                 runImport()
             case let .failure(error):
-                HubAppLog.shared.record("local_hub.stop_failed", category: "teslamate_import",
+                HubAppLog.shared.record("local_hub.stop_failed", category: "history_import",
                                         level: "ERROR",
                                         fields: ["error_code": HubAppLog.errorCode(error)])
                 abortBeforeImport(error)
@@ -3787,29 +3781,11 @@ final class HubController {
         }
     }
 
-    static func parseTeslaMateCompatibility(_ output: String,
-                                            historyOnly: Bool = false) -> HubTeslaMateCompatibility? {
-        for line in output.split(whereSeparator: { $0.isNewline }) {
-            guard let data = String(line).data(using: .utf8),
-                  let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let status = root["status"] as? String,
-                  let reason = root["reasonCode"] as? String,
-                  let required = root["requiredVersion"] as? String,
-                  let guidance = root["guidance"] as? String else { continue }
-            if historyOnly && (root["credentialScope"] as? String != "history-only"
-                               || root["applicationVersionStatus"] as? String != "unknown") {
-                continue
-            }
-            return HubTeslaMateCompatibility(
-                compatible: status == "compatible"
-                    && reason == "v4_2_compatible_schema"
-                    && required == "4.2.0",
-                message: guidance,
-                reasonCode: reason,
-                requiredVersion: required
-            )
-        }
-        return nil
+    static func parseSourceCheckReport(_ output: String,
+                                       historyOnly: Bool = false,
+                                       processSucceeded: Bool = true) -> HubSourceCheckResult? {
+        HubSourceCheckResult.parse(output, historyOnly: historyOnly,
+                                   processSucceeded: processSucceeded)
     }
 
     static func parseMigrationProgress(_ line: String) -> HubMigrationProgress? {
@@ -3838,24 +3814,24 @@ final class HubController {
         }
     }
 
-    func importTeslaMate(source: String,
+    func importSource(source: String,
                          carID: String,
                          passwordFile: String,
                          encryptionKeyFile: String,
-                         acknowledgeV42CompatibleSchema: Bool,
+                         acceptSchemaEvidence: Bool,
                          completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else { completion(.failure(HubActionError.preview)); return }
-        guard acknowledgeV42CompatibleSchema else {
+        guard acceptSchemaEvidence else {
             completion(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.1846.655", fallback: "Confirm TeslaMate 4.2.0 or newer before importing from a direct PostgreSQL source.")
+                HubL10n.text("hub.HubController.1846.655", fallback: "Confirm the source application's release is 4.2.0 or later before importing from a direct PostgreSQL source.")
             )))
             return
         }
-        importTeslaMateOnline(source: source,
+        importSourceOnline(source: source,
                               carID: carID,
                               passwordFile: passwordFile,
                               encryptionKeyFile: encryptionKeyFile,
-                              acknowledgeV42CompatibleSchema: acknowledgeV42CompatibleSchema,
+                              acceptSchemaEvidence: acceptSchemaEvidence,
                               completion: completion)
     }
 
@@ -4277,11 +4253,11 @@ final class HubController {
                 && diagnostic.contains("credential")
                 && diagnostic.contains("consum")) {
             return HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.2385.784", fallback: "Sign in to Tesla again in TeslaMate, then retry the import.")
+                HubL10n.text("hub.HubController.2385.784", fallback: "Sign in to Tesla again in the source application, then retry the import.")
             )
         }
         return HubActionError.commandFailed(
-            HubL10n.text("hub.HubController.2389.785", fallback: "TeslaMate import failed; retry the import.")
+            HubL10n.text("hub.HubController.2389.785", fallback: "Source application import failed; retry the import.")
         )
     }
 
@@ -4308,9 +4284,9 @@ final class HubController {
             || diagnostic.contains("incompatible schema")
             || diagnostic.contains("unsupported schema")
             || diagnostic.contains("migration version")
-            || diagnostic.contains("teslamate version")
-            || diagnostic.contains("requires teslamate")
-            || diagnostic.contains("update teslamate") {
+            || diagnostic.contains("recognised schema contract")
+            || diagnostic.contains("source_version_too_old")
+            || diagnostic.contains("schema_mismatch") {
             return "schema_version"
         }
         if diagnostic.contains("ssh ")
@@ -4354,7 +4330,7 @@ final class HubController {
             HubAppLog.shared.record("service.rejected", category: "service", level: "WARN",
                                     fields: ["action": "start", "reason": "handover_pending"])
             op.finish(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.2457.838", fallback: "Finish the TeslaMate handover before starting Hub.")
+                HubL10n.text("hub.HubController.2457.838", fallback: "Finish the source application handover before starting Hub.")
             )), completion: completion)
             return
         }
@@ -4381,7 +4357,7 @@ final class HubController {
             HubAppLog.shared.record("service.rejected", category: "service", level: "WARN",
                                     fields: ["action": "restart", "reason": "handover_pending"])
             op.finish(.failure(HubActionError.commandFailed(
-                HubL10n.text("hub.HubController.2479.850", fallback: "Finish the TeslaMate handover before restarting Hub.")
+                HubL10n.text("hub.HubController.2479.850", fallback: "Finish the source application handover before restarting Hub.")
             )), completion: completion)
             return
         }
@@ -4397,14 +4373,14 @@ final class HubController {
 
     func acknowledgeMigrationHandoverAndStart(completion: @escaping (Result<Void, Error>) -> Void) {
         guard !previewMode else {
-            HubAppLog.shared.record("handover_start.rejected", category: "teslamate_import",
+            HubAppLog.shared.record("handover_start.rejected", category: "history_import",
                                     level: "WARN", fields: ["reason": "preview_read_only"])
             completion(.failure(HubActionError.preview))
             return
         }
         // H is acquired before the configuration changes or the readiness baseline is read.
         guard let op = admit(.handover, phase: "validate", refused: { refusal in
-            HubAppLog.shared.record("handover_start.rejected", category: "teslamate_import",
+            HubAppLog.shared.record("handover_start.rejected", category: "history_import",
                                     level: "WARN", fields: ["reason": "already_in_progress"])
             if case .busy(.handover) = refusal {
                 completion(.failure(HubActionError.commandFailed(
@@ -4421,7 +4397,7 @@ final class HubController {
         }
         guard let handover = migrationHandoverState,
               handover.phase == .awaitingHandover else {
-            HubAppLog.shared.record("handover_start.rejected", category: "teslamate_import",
+            HubAppLog.shared.record("handover_start.rejected", category: "history_import",
                                     level: "WARN", fields: ["reason": "checks_incomplete"])
             finish(.failure(HubActionError.commandFailed(
                 HubL10n.text("hub.HubController.2519.869", fallback: "Finish the migration checks before starting Hub.")
@@ -4429,7 +4405,7 @@ final class HubController {
             return
         }
         let started = Date()
-        HubAppLog.shared.record("handover_start.requested", category: "teslamate_import")
+        HubAppLog.shared.record("handover_start.requested", category: "history_import")
         if handover.historyOnly == true {
             op.phase("policy")
             verifyHistoryOnlyStartPolicy(op) { [self] policyResult in
@@ -4458,7 +4434,7 @@ final class HubController {
                 try ensureConfig(provider: handover.previousProvider,
                                  collectorIntervalSeconds: handover.previousIntervalSeconds)
             } catch {
-                HubAppLog.shared.record("handover_start.failed", category: "teslamate_import",
+                HubAppLog.shared.record("handover_start.failed", category: "history_import",
                                         level: "ERROR", fields: [
                                         "error_code": HubAppLog.errorCode(error),
                                         "reason": "config_restore_failed"
@@ -4501,7 +4477,7 @@ final class HubController {
                         }
                     }
                 case let .failure(startError):
-                    HubAppLog.shared.record("handover_start.failed", category: "teslamate_import",
+                    HubAppLog.shared.record("handover_start.failed", category: "history_import",
                                             level: "ERROR", fields: [
                                                 "error_code": HubAppLog.errorCode(startError),
                                                 "reason": "service_start_failed"
@@ -4513,7 +4489,7 @@ final class HubController {
                         finish(.failure(startError))
                     } catch {
                         HubAppLog.shared.record("handover_recovery.failed",
-                                                category: "teslamate_import", level: "ERROR",
+                                                category: "history_import", level: "ERROR",
                                                 fields: [
                                                     "error_code": HubAppLog.errorCode(error),
                                                     "reason": "start_failure_rollback"
@@ -4661,14 +4637,14 @@ final class HubController {
         do {
             try FileManager.default.removeItem(at: migrationHandoverMarker)
             HubAppLog.shared.record("handover_start.completed",
-                                    category: "teslamate_import", fields: [
+                                    category: "history_import", fields: [
                                         "duration_ms": String(Int(Date().timeIntervalSince(started) * 1000))
                                     ])
             completion(.success(()))
         } catch {
             let cleanupError = error
             HubAppLog.shared.record("handover_start.failed",
-                                    category: "teslamate_import", level: "ERROR",
+                                    category: "history_import", level: "ERROR",
                                     fields: [
                                         "error_code": HubAppLog.errorCode(error),
                                         "reason": "handover_gate_cleanup_failed"
@@ -4683,7 +4659,7 @@ final class HubController {
                     try writeMigrationHandoverMarker(handover)
                 } catch {
                     HubAppLog.shared.record("handover_recovery.failed",
-                                            category: "teslamate_import", level: "ERROR",
+                                            category: "history_import", level: "ERROR",
                                             fields: [
                                                 "error_code": HubAppLog.errorCode(error),
                                                 "reason": "cleanup_failure_rollback"
@@ -4702,7 +4678,7 @@ final class HubController {
         readinessError: Error,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        HubAppLog.shared.record("handover_start.failed", category: "teslamate_import",
+        HubAppLog.shared.record("handover_start.failed", category: "history_import",
                                 level: "ERROR", fields: [
                                     "error_code": HubAppLog.errorCode(readinessError),
                                     "reason": "startup_readiness_failed"
@@ -4717,7 +4693,7 @@ final class HubController {
             } catch {
                 pauseRestored = false
                 HubAppLog.shared.record("handover_recovery.failed",
-                                        category: "teslamate_import", level: "ERROR",
+                                        category: "history_import", level: "ERROR",
                                         fields: [
                                             "error_code": HubAppLog.errorCode(error),
                                             "reason": "readiness_failure_rollback"
@@ -4728,9 +4704,9 @@ final class HubController {
             case (.success, true):
                 message = HubL10n.text("hub.HubController.2832.942", fallback: "Hub did not become ready and was stopped. The migration handover remains pending.")
             case (.success, false):
-                message = HubL10n.text("hub.HubController.2834.943", fallback: "Hub was stopped after startup failed, but the collector pause could not be restored. Keep TeslaMate disabled and try again.")
+                message = HubL10n.text("hub.HubController.2834.943", fallback: "Hub was stopped after startup failed, but the collector pause could not be restored. Keep the source application disabled and try again.")
             case (.failure, _):
-                message = HubL10n.text("hub.HubController.2836.944", fallback: "Hub did not become ready and could not be confirmed stopped. Keep TeslaMate disabled, stop Hub, and try again.")
+                message = HubL10n.text("hub.HubController.2836.944", fallback: "Hub did not become ready and could not be confirmed stopped. Keep the source application disabled, stop Hub, and try again.")
             }
             completion(.failure(HubActionError.commandFailed(message)))
         }
@@ -5151,7 +5127,7 @@ final class HubController {
                         }
                         let report = [
                             "Teslatlas Hub diagnostics",
-                            "TeslaMate is not written. Stored Owner and Fleet tokens are not deleted.",
+                            "The source database is not changed. Stored Owner and Fleet tokens are not deleted.",
                             "",
                             supportMetadata(),
                             "",
@@ -5355,7 +5331,7 @@ final class HubController {
         guard !previewMode, lifecycle.capabilities.state == .open else { return 0 }
         let result = staleImportCleaner()
         if result.removed > 0 {
-            HubAppLog.shared.record("temporary_files.removed", category: "teslamate_import",
+            HubAppLog.shared.record("temporary_files.removed", category: "history_import",
                                     fields: ["directories": String(result.removed)])
         }
         return result.removed
@@ -5386,7 +5362,7 @@ final class HubController {
 
     // MARK: Prepared migration sessions
 
-    func closeMigrationSession(_ session: TeslaMateServerImportSession) {
+    func closeMigrationSession(_ session: SourceServerImportSession) {
         sessionLock.lock()
         registeredSessions.removeValue(forKey: ObjectIdentifier(session))
         sessionLock.unlock()
@@ -5398,7 +5374,7 @@ final class HubController {
         return registeredSessions.count
     }
 
-    private func registerMigrationSession(_ session: TeslaMateServerImportSession) {
+    private func registerMigrationSession(_ session: SourceServerImportSession) {
         sessionLock.lock()
         registeredSessions[ObjectIdentifier(session)] = session
         sessionLock.unlock()
@@ -5599,7 +5575,7 @@ final class HubController {
                 ? HubL10n.text("hub.HubController.3543.1188", fallback: "The migration safety marker remains and Hub must stay stopped.")
                 : HubL10n.text("hub.HubController.3544.1189", fallback: "Hub must stay stopped until its configuration is repaired.")
             return HubActionError.commandFailed(
-                HubL10n.format("hub.HubController.3546.1190", fallback: "TeslaMate import failed: %1$@ Configuration recovery also failed: %2$@ %3$@", arguments: [String(describing: importError.localizedDescription), String(describing: recoveryError.localizedDescription), String(describing: safetyState)])
+                HubL10n.format("hub.HubController.3546.1190", fallback: "Source application import failed: %1$@ Configuration recovery also failed: %2$@ %3$@", arguments: [String(describing: importError.localizedDescription), String(describing: recoveryError.localizedDescription), String(describing: safetyState)])
             )
         }
     }

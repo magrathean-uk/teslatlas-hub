@@ -694,3 +694,88 @@ fn epoch_seconds(now: SystemTime) -> Result<i64, LegacyAuthError> {
 #[cfg(test)]
 #[path = "legacy_auth/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod n1_src_auth_legacy_auth_rs_display_tests {
+    use super::*;
+    use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
+
+    impl ErrorExample for LegacyAuthError {
+        fn error_example() -> Self {
+            LegacyAuthError::InvalidAccessToken
+        }
+    }
+
+    #[test]
+    fn every_reachable_error_display_omits_the_source_project_name() {
+        fn check_legacy_auth_error(error: LegacyAuthError) {
+            match &error {
+                LegacyAuthError::InvalidAccessToken => (),
+                LegacyAuthError::InvalidIssuer => (),
+                LegacyAuthError::InvalidRefreshToken => (),
+                LegacyAuthError::InvalidResponse => (),
+                LegacyAuthError::ResponseTooLarge => (),
+                LegacyAuthError::Transport => (),
+                LegacyAuthError::RotationOutcomeUnknown => (),
+                LegacyAuthError::SensitiveRotationOutcomeUnknown => (),
+                LegacyAuthError::HttpStatus(..) => (),
+                LegacyAuthError::RefreshDeferred => (),
+                LegacyAuthError::InvalidClock => (),
+                LegacyAuthError::InvalidPersistedSchedule => (),
+                LegacyAuthError::Persistence => (),
+                LegacyAuthError::SensitivePersistenceUnavailable => (),
+                LegacyAuthError::SensitiveAccessUnavailable => (),
+                LegacyAuthError::RegionConflict => (),
+                LegacyAuthError::RegionRequired => (),
+                LegacyAuthError::TokenUrlInvalid => (),
+                LegacyAuthError::TokenUrlNotAllowed => (),
+                LegacyAuthError::RefreshTokenRejected => (),
+                LegacyAuthError::ClientRefused => (),
+                LegacyAuthError::OwnerApiRefused { .. } => (),
+                LegacyAuthError::AccessTokenRejected => (),
+                LegacyAuthError::ProviderTokenRejected => (),
+                LegacyAuthError::ProviderTokenExpired => (),
+                LegacyAuthError::RefreshNotRenewed => (),
+                LegacyAuthError::RefreshNotPossible => (),
+                LegacyAuthError::VehicleAccessRejected => (),
+                LegacyAuthError::AuthUnavailable { .. } => (),
+                LegacyAuthError::RetryNotPossible { .. } => (),
+                LegacyAuthError::SignedOut { .. } => (),
+            }
+            assert_name_free(&error);
+        }
+        check_legacy_auth_error(LegacyAuthError::InvalidAccessToken);
+        check_legacy_auth_error(LegacyAuthError::InvalidIssuer);
+        check_legacy_auth_error(LegacyAuthError::InvalidRefreshToken);
+        check_legacy_auth_error(LegacyAuthError::InvalidResponse);
+        check_legacy_auth_error(LegacyAuthError::ResponseTooLarge);
+        check_legacy_auth_error(LegacyAuthError::Transport);
+        check_legacy_auth_error(LegacyAuthError::RotationOutcomeUnknown);
+        check_legacy_auth_error(LegacyAuthError::SensitiveRotationOutcomeUnknown);
+        check_legacy_auth_error(LegacyAuthError::HttpStatus(example()));
+        check_legacy_auth_error(LegacyAuthError::RefreshDeferred);
+        check_legacy_auth_error(LegacyAuthError::InvalidClock);
+        check_legacy_auth_error(LegacyAuthError::InvalidPersistedSchedule);
+        check_legacy_auth_error(LegacyAuthError::Persistence);
+        check_legacy_auth_error(LegacyAuthError::SensitivePersistenceUnavailable);
+        check_legacy_auth_error(LegacyAuthError::SensitiveAccessUnavailable);
+        check_legacy_auth_error(LegacyAuthError::RegionConflict);
+        check_legacy_auth_error(LegacyAuthError::RegionRequired);
+        check_legacy_auth_error(LegacyAuthError::TokenUrlInvalid);
+        check_legacy_auth_error(LegacyAuthError::TokenUrlNotAllowed);
+        check_legacy_auth_error(LegacyAuthError::RefreshTokenRejected);
+        check_legacy_auth_error(LegacyAuthError::ClientRefused);
+        check_legacy_auth_error(LegacyAuthError::OwnerApiRefused { reason: example() });
+        check_legacy_auth_error(LegacyAuthError::AccessTokenRejected);
+        check_legacy_auth_error(LegacyAuthError::ProviderTokenRejected);
+        check_legacy_auth_error(LegacyAuthError::ProviderTokenExpired);
+        check_legacy_auth_error(LegacyAuthError::RefreshNotRenewed);
+        check_legacy_auth_error(LegacyAuthError::RefreshNotPossible);
+        check_legacy_auth_error(LegacyAuthError::VehicleAccessRejected);
+        check_legacy_auth_error(LegacyAuthError::AuthUnavailable {
+            retry_at: example(),
+        });
+        check_legacy_auth_error(LegacyAuthError::RetryNotPossible { reason: example() });
+        check_legacy_auth_error(LegacyAuthError::SignedOut { reason: example() });
+    }
+}

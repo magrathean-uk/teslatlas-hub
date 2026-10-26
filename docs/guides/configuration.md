@@ -101,6 +101,31 @@ authentication or certificate validation. Browsers must trust Hub's TLS
 certificate through their normal trust store. Plaintext loopback remains a
 development mode with pairing disabled and cannot verify client authentication.
 
+## Import source configuration
+
+Use `[import_source]` for import defaults and `[import_source.current]` for an
+optional read-only current-state source. Unknown earlier table names are refused
+with replacement guidance. Keep the key already recorded in an upgraded Hub;
+a first keyless import uses `default`.
+
+```toml
+[import_source]
+source_url = "postgresql://reader@source.example/sourcedb"
+source_key = "default"
+
+[import_source.current]
+source_url = "postgresql://reader@source.example/sourcedb"
+source_key = "default"
+vehicle_id = "11111111-1111-4111-8111-111111111111"
+car_id = 42
+password_file = "/private/source-postgres-password"
+```
+
+The current-state key must match an existing `source_db` import identity. On a
+mismatch, the worker stops with the stored keys in its guidance and `doctor`
+reports the same failure. Hub continues serving. An explicit second historical
+source needs a distinct `--source-key` and `--new-import-source`.
+
 ## Collector mode
 
 The collector reads from Tesla in one of three modes. Two settings choose it.

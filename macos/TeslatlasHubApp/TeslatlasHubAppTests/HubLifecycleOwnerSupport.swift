@@ -164,8 +164,8 @@ final class OwnerService: HubServiceControlling {
 
 /// A command runner double: records every command and holds a named one on request.
 final class OwnerRunner: HubCommandRunning {
-    static let compatible = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready."}"#
-    static let historyCompatible = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+    static let compatible = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
+    static let historyCompatible = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
     static let historyReady = #"{"status":"ready","credentialScope":"history-only","publishedVehicles":1,"collectorEnabled":false}"#
     static let imported = #"{"status":"imported","captureMode":"online-snapshot"}"#
     static let ready = #"{"status":"ok","ready":true}"#
@@ -220,8 +220,8 @@ final class OwnerRunner: HubCommandRunning {
 
     private func defaultResult(_ key: String) -> Result<String, Error> {
         switch key {
-        case "teslamate-check": return .success(Self.compatible)
-        case "teslamate-check:history": return .success(Self.historyCompatible)
+        case "source-check": return .success(Self.compatible)
+        case "source-check:history": return .success(Self.historyCompatible)
         case "preflight:history": return .success(Self.historyReady)
         case "migrate", "migrate:history": return .success(Self.imported)
         case "status": return .success(Self.ready)
@@ -263,7 +263,7 @@ final class OwnerConnector {
     private var heldThunks: [() -> Void] = []
     private var shouldHold = false
     private(set) var callCount = 0
-    private(set) var created: [TeslaMateServerImportSession] = []
+    private(set) var created: [SourceServerImportSession] = []
     private(set) var directories: [URL] = []
     var failure: Error?
 
@@ -292,13 +292,13 @@ final class OwnerConnector {
             let finish: () -> Void = { [self] in
                 if let failure { completion(.failure(failure)); return }
                 do {
-                    let owner = try TeslaMateImportDirectoryOwner.create(in: root)
-                    let session = TeslaMateServerImportSession(
-                        source: "postgresql://reader@127.0.0.1:5432/teslamate",
+                    let owner = try SourceImportDirectoryOwner.create(in: root)
+                    let session = SourceServerImportSession(
+                        source: "postgresql://reader@127.0.0.1:5432/sourcedb",
                         carID: "1",
                         passwordFile: owner.directory.appendingPathComponent("password"),
                         encryptionKeyFile: owner.directory.appendingPathComponent("key"),
-                        teslaMateVersion: "4.2.0",
+                        sourceVersion: "4.2.0",
                         tunnel: Process(),
                         temporaryDirectory: owner.directory,
                         directoryOwner: owner)

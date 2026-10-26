@@ -22,17 +22,16 @@ use teslatlas_hub::hub_user_process::AdmittedUserHub;
 #[cfg(unix)]
 use teslatlas_hub::protocol::CursorKey;
 #[cfg(unix)]
-use teslatlas_hub::teslamate_import::derive_effective_import_profile;
+use teslatlas_hub::source_db_import::derive_effective_import_profile;
 use teslatlas_hub::{
     collector,
     config::{CollectorProvider, HubConfig, collector_mode},
     credential_recovery::{RECOVERY_ENCRYPTION_KEY_BYTES, export_credentials, restore_credentials},
-    credentials::{OwnerTokens, TeslaMatePostgresPassword},
+    credentials::{OwnerTokens, SourceDbPassword},
     current_state::build_current_vehicle_summary,
     data_recovery::{create_data_backup, restore_data_backup, verify_data_backup},
     db::{
-        HubStore, ObservationVerificationError, ReadinessContext, StoreError,
-        TeslaMateLegacyTokenStore,
+        HubStore, LegacyOwnerTokenStore, ObservationVerificationError, ReadinessContext, StoreError,
     },
     diagnostics::{inspect_hub, log_runtime_inventory},
     fleet_api::FleetRegion,
@@ -43,32 +42,31 @@ use teslatlas_hub::{
     },
     gpx::export_drive_gpx,
     hub_pack::GeofenceBillingType,
-    owner_api::LegacyVehicleAction,
-    server,
-    teslamate::ReadOnlySource,
-    teslamate_credentials::{
+    legacy_owner_credentials::{
         load_or_create_cursor_key, random_encryption_key, remove_key_and_tokens,
         replace_key_and_tokens,
     },
-    teslamate_import::{
-        TeslaMateImportReport, TeslaMateImportRequest, TeslaMateImportScope,
+    owner_api::LegacyVehicleAction,
+    server,
+    source_db_connection::ReadOnlySource,
+    source_db_import::{
+        SourceDbImportReport, SourceDbImportRequest, SourceDbImportScope,
         import_selected_from_postgres_with_schema_22_and_legacy_token_and_progress,
         import_selected_from_postgres_with_schema_22_and_progress,
         import_selected_history_snapshot_from_postgres_with_schema_22_and_progress,
     },
-    teslamate_progress::{
-        TeslaMateMigrationPhase, TeslaMateMigrationProgressEvent,
-        TeslaMateMigrationProgressReporter,
+    source_db_progress::{
+        SourceDbMigrationPhase, SourceDbMigrationProgressEvent, SourceDbMigrationProgressReporter,
     },
-    teslamate_reader::{
-        TeslaMateCheckSnapshot, TeslaMateLegacyTokenCiphertexts, TeslaMateReadLimits,
-        TeslaMateReaderError, check_teslamate_compatibility, check_teslamate_history_compatibility,
+    source_db_reader::{
+        LegacyOwnerTokenCiphertexts, SourceDbCheckSnapshot, SourceDbReadLimits,
+        SourceDbReaderError, check_source_compatibility, check_source_history_compatibility,
     },
-    teslamate_schema::{
-        MAX_VALIDATED_MIGRATION, SchemaCompatibilityError, TESLAMATE_V4_MIGRATION_COUNT,
-        TESLAMATE_V4_SOURCE_REVISION,
+    source_db_schema::{
+        MAX_VALIDATED_MIGRATION, SOURCE_DB_V4_MIGRATION_COUNT, SOURCE_DB_V4_SOURCE_REVISION,
+        SchemaCompatibilityError,
     },
-    teslamate_token::{
+    source_token_envelope::{
         decrypt_legacy_owner_tokens, encrypt_legacy_owner_token_files, encrypt_legacy_owner_tokens,
     },
 };
@@ -88,7 +86,7 @@ include!("main/macos_service.rs");
 include!("main/cli.rs");
 include!("main/healthcheck.rs");
 include!("main/control.rs");
-include!("main/teslamate_check.rs");
+include!("main/source_check.rs");
 include!("main/dispatch.rs");
 include!("main/migration.rs");
 include!("main/pairing.rs");

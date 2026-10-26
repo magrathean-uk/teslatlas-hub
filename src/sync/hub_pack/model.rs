@@ -16,7 +16,7 @@ impl GeofenceBillingType {
     }
 }
 
-/// Exact physical `unit_of_length` labels from TeslaMate global settings.
+/// Exact physical `unit_of_length` labels from source database global settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProjectionUnitOfLengthV2_2 {
     #[serde(rename = "km")]
@@ -34,7 +34,7 @@ impl ProjectionUnitOfLengthV2_2 {
     }
 }
 
-/// Exact physical `unit_of_temperature` labels from TeslaMate global settings.
+/// Exact physical `unit_of_temperature` labels from source database global settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProjectionUnitOfTemperatureV2_2 {
     #[serde(rename = "C")]
@@ -52,7 +52,7 @@ impl ProjectionUnitOfTemperatureV2_2 {
     }
 }
 
-/// Exact physical `unit_of_pressure` labels from TeslaMate global settings.
+/// Exact physical `unit_of_pressure` labels from source database global settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProjectionUnitOfPressureV2_2 {
     #[serde(rename = "bar")]
@@ -70,7 +70,7 @@ impl ProjectionUnitOfPressureV2_2 {
     }
 }
 
-/// Exact physical TeslaMate `range` enum labels from global settings.
+/// Exact physical source database `range` enum labels from global settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProjectionPreferredRangeV2_2 {
     #[serde(rename = "ideal")]
@@ -909,7 +909,7 @@ pub struct ProjectionUpdateV2_2 {
     pub version: Option<String>,
 }
 
-/// A normalized, selected-car-referenced TeslaMate address for the schema-2.2
+/// A normalized, selected-car-referenced source database address for the schema-2.2
 /// full snapshot.  The source `addresses.raw` payload has no representation at
 /// this boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -934,7 +934,7 @@ pub struct ProjectionAddressV2_2 {
     pub osm_type: Option<String>,
 }
 
-/// A normalized, selected-car-referenced TeslaMate geofence for the
+/// A normalized, selected-car-referenced source database geofence for the
 /// schema-2.2 local candidate.  Its source numerics use exact fixed scales:
 /// latitude/longitude e6, cost-per-unit e4, and session-fee e2.  `radius`
 /// preserves the source `smallint` verbatim, including zero and signed bounds.
@@ -952,7 +952,7 @@ pub struct ProjectionGeofenceV2_2 {
     pub updated_at_pg_us: i64,
 }
 
-/// Exact physical TeslaMate `drives` values for the schema-2.2 local
+/// Exact physical source database `drives` values for the schema-2.2 local
 /// candidate. The compatibility `ProjectionDrive` is intentionally separate:
 /// this type retains signed source identities, open/end-before-start rows,
 /// raw PostgreSQL timestamps, tagged source NUMERIC values, and FLOAT8 bits.
@@ -985,7 +985,7 @@ pub struct ProjectionDriveV2_2 {
     pub descent: Option<i16>,
 }
 
-/// Exact physical TeslaMate `positions` values for the schema-2.2 local
+/// Exact physical source database `positions` values for the schema-2.2 local
 /// candidate. The compatibility `ProjectionPosition` remains separate: this
 /// type retains signed source identities, raw PostgreSQL timestamps, tagged
 /// NUMERIC values, and exact FLOAT8 odometer bits without semantic policy.
@@ -1023,7 +1023,7 @@ pub struct ProjectionPositionV2_2 {
     pub tpms_pressure_rr_e1: Option<ProjectionFixedNumericV2_2>,
 }
 
-/// Exact physical TeslaMate `charging_processes` values for the schema-2.2
+/// Exact physical source database `charging_processes` values for the schema-2.2
 /// local candidate. Compatibility charge summaries are deliberately absent:
 /// this type keeps raw source IDs, timestamps, tagged NUMERIC values, and
 /// nullable source fields without interval, SOC, or relation-closure policy.
@@ -1049,7 +1049,7 @@ pub struct ProjectionChargingProcessV2_2 {
     pub cost_e2: Option<ProjectionFixedNumericV2_2>,
 }
 
-/// Exact physical TeslaMate `charges` values for the schema-2.2 local
+/// Exact physical source database `charges` values for the schema-2.2 local
 /// candidate. These are individual source samples, not normalized charge
 /// sessions; tri-state booleans, source widths, and tagged NUMERIC values are
 /// retained verbatim. The selected-car reader scopes rows through an extant
@@ -1080,7 +1080,7 @@ pub struct ProjectionChargeV2_2 {
     pub outside_temp_e1: Option<ProjectionFixedNumericV2_2>,
 }
 
-/// Exact physical source-wide TeslaMate `settings` singleton for the schema-2.2
+/// Exact physical source-wide source database `settings` singleton for the schema-2.2
 /// local candidate. It deliberately remains independent of a selected car:
 /// URLs stay opaque nullable source text, language/theme keep their physical
 /// text domain, and timestamp(0) values retain raw PostgreSQL microseconds.

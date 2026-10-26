@@ -17,7 +17,7 @@
 //!   a pack's parent directory;
 //! - the transient inspection files of the lineage catalogue (`LineagePackInspection`:
 //!   create, write, sync and the removal when it is dropped);
-//! - the credential files (`secrets/`, the cursor key) of the Fleet and TeslaMate units.
+//! - the credential files (`secrets/`, the cursor key) of the Fleet and source database units.
 //!
 //! Not counted: the resident control socket (the unlink, bind and chmod of its path, and
 //! the removal when it is dropped), the removal of packs by repair, import and the

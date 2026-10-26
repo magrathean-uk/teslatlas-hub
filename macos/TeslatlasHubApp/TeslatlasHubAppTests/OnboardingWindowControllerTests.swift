@@ -7,6 +7,22 @@ import XCTest
 @testable import Teslatlas_Hub
 
 final class OnboardingWindowControllerTests: XCTestCase {
+    func testLegalNoticeAttributionLineEqualsAdditionalTerms() throws {
+        let path = try XCTUnwrap(
+            ProcessInfo.processInfo.environment["TESLATLAS_HUB_ADDITIONAL_TERMS"],
+            "The AppKit runner must supply the original additional terms reference"
+        )
+        let reference = try Data(contentsOf: URL(fileURLWithPath: path))
+        let lines = reference.split(separator: 10, omittingEmptySubsequences: false)
+        let section = try XCTUnwrap(lines.firstIndex { $0.starts(with: Array("## 1.".utf8)) })
+        let quoted = try XCTUnwrap(lines.dropFirst(section + 1).prefix { !$0.starts(with: Array("## ".utf8)) }
+            .first { $0.starts(with: [62, 32]) })
+        let expected = Array(quoted.dropFirst(2))
+        let actual = try XCTUnwrap(AppDelegate.legalNoticeText.utf8.split(separator: 10)
+            .first { String(decoding: $0, as: UTF8.self).contains("originally authored by") })
+        XCTAssertEqual(Array(actual), expected)
+    }
+
     func testTeslaLoginKeepsWindowOpenForInterruptedNavigation() throws {
         for error in [
             NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled),
@@ -161,7 +177,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         try manager.createSymbolicLink(at: linked, withDestinationURL: outside)
         defer { try? manager.removeItem(at: root) }
 
-        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 2)
+        XCTAssertEqual(SourceServerImporter.cleanupStaleTemporaryDirectories(in: root), 2)
         XCTAssertFalse(manager.fileExists(atPath: eligible.path))
         XCTAssertFalse(manager.fileExists(atPath: legacy.path))
         XCTAssertTrue(manager.fileExists(atPath: unrelated.path))
@@ -174,14 +190,14 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let root = HubTestScratch.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try manager.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? manager.removeItem(at: root) }
-        let owner = try TeslaMateImportDirectoryOwner.create(in: root)
+        let owner = try SourceImportDirectoryOwner.create(in: root)
         let secret = owner.directory.appendingPathComponent("ssh-password")
         try Data("synthetic secret".utf8).write(to: secret)
 
-        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 0)
+        XCTAssertEqual(SourceServerImporter.cleanupStaleTemporaryDirectories(in: root), 0)
         XCTAssertEqual(try String(contentsOf: secret, encoding: .utf8), "synthetic secret")
         owner.release()
-        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
+        XCTAssertEqual(SourceServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
         XCTAssertFalse(manager.fileExists(atPath: owner.directory.path))
     }
 
@@ -190,7 +206,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let root = HubTestScratch.directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try manager.createDirectory(at: root, withIntermediateDirectories: false)
         defer { try? manager.removeItem(at: root) }
-        let owner = try TeslaMateImportDirectoryOwner.create(in: root)
+        let owner = try SourceImportDirectoryOwner.create(in: root)
         let directory = owner.directory
         owner.release()
         let ready = root.appendingPathComponent("owner-ready")
@@ -203,7 +219,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             open(my $ready, '>', $ARGV[1]) or die $!;
             close($ready);
             sleep 20;
-            """, directory.appendingPathComponent(TeslaMateImportDirectoryOwner.lockFileName).path,
+            """, directory.appendingPathComponent(SourceImportDirectoryOwner.lockFileName).path,
             ready.path]
         try child.run()
         defer {
@@ -216,14 +232,14 @@ final class OnboardingWindowControllerTests: XCTestCase {
         }
         XCTAssertTrue(manager.fileExists(atPath: ready.path))
         guard manager.fileExists(atPath: ready.path) else { return }
-        let abandoned = try TeslaMateImportDirectoryOwner.create(in: root)
+        let abandoned = try SourceImportDirectoryOwner.create(in: root)
         abandoned.release()
-        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
+        XCTAssertEqual(SourceServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
         XCTAssertTrue(manager.fileExists(atPath: directory.path))
         XCTAssertFalse(manager.fileExists(atPath: abandoned.directory.path))
         Darwin.kill(child.processIdentifier, SIGKILL)
         child.waitUntilExit()
-        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
+        XCTAssertEqual(SourceServerImporter.cleanupStaleTemporaryDirectories(in: root), 1)
     }
 
     func testStaleSSHSecretCleanupRejectsSymlinkOwnerLock() throws {
@@ -234,9 +250,9 @@ final class OnboardingWindowControllerTests: XCTestCase {
         defer { try? manager.removeItem(at: root) }
         let unrelated = root.appendingPathComponent("unrelated")
         try Data("preserve".utf8).write(to: unrelated)
-        try manager.createSymbolicLink(at: directory.appendingPathComponent(TeslaMateImportDirectoryOwner.lockFileName),
+        try manager.createSymbolicLink(at: directory.appendingPathComponent(SourceImportDirectoryOwner.lockFileName),
                                        withDestinationURL: unrelated)
-        XCTAssertEqual(TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: root), 0)
+        XCTAssertEqual(SourceServerImporter.cleanupStaleTemporaryDirectories(in: root), 0)
         XCTAssertTrue(manager.fileExists(atPath: directory.path))
         XCTAssertEqual(try String(contentsOf: unrelated, encoding: .utf8), "preserve")
     }
@@ -247,7 +263,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
                                     isDirectory: true)
 
         XCTAssertEqual(
-            TeslaMateServerImporter.cleanupStaleTemporaryDirectories(in: missingRoot),
+            SourceServerImporter.cleanupStaleTemporaryDirectories(in: missingRoot),
             0
         )
         let diagnostics = HubAppLog.shared.recentText()
@@ -343,7 +359,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
                 && $0.contains("serves imported history only")
         })
         XCTAssertFalse(acknowledgements.contains(
-            "I have disabled Tesla access in TeslaMate to avoid duplicate requests"
+            "I have disabled Tesla access in the source application to avoid duplicate requests"
         ))
     }
 
@@ -456,13 +472,13 @@ final class OnboardingWindowControllerTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let file = directory.appendingPathComponent("app.log")
         let log = HubAppLog(fileURL: file)
-        log.record("ssh.failed", category: "teslamate_import", level: "ERROR", fields: [
+        log.record("ssh.failed", category: "history_import", level: "ERROR", fields: [
             "password": "secret-value",
             "path": HubTestScratch.realHomePath + "/.ssh/id_rsa"
         ])
 
         let text = log.recentText()
-        XCTAssertTrue(text.contains("teslamate_import ssh.failed"))
+        XCTAssertTrue(text.contains("history_import ssh.failed"))
         XCTAssertTrue(text.contains("password=[redacted]"))
         XCTAssertTrue(text.contains("path=~/.ssh/id_rsa"))
         XCTAssertFalse(text.contains("secret-value"))
@@ -903,13 +919,13 @@ final class OnboardingWindowControllerTests: XCTestCase {
             .first { $0.title == "Back" }).image)
 
         let migration = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
-            .first { $0.title == "Migrate from TeslaMate" })
+            .first { $0.title == "Import History" })
         XCTAssertFalse(migration.isHidden)
         XCTAssertTrue(labels(in: onboarding.window?.contentView).contains {
             $0.stringValue == "Bring your existing vehicle history."
         })
         XCTAssertFalse(labels(in: onboarding.window?.contentView)
-            .contains { $0.stringValue.contains("Exact TeslaMate") })
+            .contains { $0.stringValue.contains("Exact source database") })
         let fresh = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
             .first { $0.title == "New installation" })
         XCTAssertTrue(labels(in: onboarding.window?.contentView).contains {
@@ -920,7 +936,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         try XCTUnwrap(buttons(in: onboarding.window?.contentView)
             .first { $0.title == "Continue" }).performClick(nil)
         XCTAssertTrue(labels(in: onboarding.window?.contentView)
-            .contains { $0.stringValue == "Migrate from TeslaMate" })
+            .contains { $0.stringValue == "Import History" })
         let back = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
             .first { $0.title == "Back" })
         back.performClick(nil)
@@ -947,7 +963,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(text.contains("Keep your history here"))
         XCTAssertTrue(text.contains("Store data locally on this Mac."))
         XCTAssertTrue(text.contains("Bring your existing history"))
-        XCTAssertTrue(text.contains("Import from TeslaMate when you are ready."))
+        XCTAssertTrue(text.contains("Import from the source application when you are ready."))
 
         let title = try XCTUnwrap(labels(in: view).first { $0.stringValue == "Welcome to Teslatlas Hub" })
         let subtitle = try XCTUnwrap(labels(in: view).first {
@@ -1054,7 +1070,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let text = labels(in: root).map(\.stringValue)
 
         XCTAssertTrue(text.contains("How would you like to start?"))
-        XCTAssertTrue(text.contains("Set up a fresh Hub or bring your history over from TeslaMate."))
+        XCTAssertTrue(text.contains("Set up a fresh Hub or bring your history over from the source application."))
         XCTAssertTrue(text.contains(
             "Start with a fresh database."
         ))
@@ -1064,7 +1080,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(text.contains { $0.hasPrefix("Step ") })
 
         let fresh = try XCTUnwrap(buttons(in: root).first { $0.title == "New installation" })
-        let migration = try XCTUnwrap(buttons(in: root).first { $0.title == "Migrate from TeslaMate" })
+        let migration = try XCTUnwrap(buttons(in: root).first { $0.title == "Import History" })
         let freshRow = try XCTUnwrap(fresh.superview)
         let migrationRow = try XCTUnwrap(migration.superview)
         XCTAssertEqual(freshRow.frame.width, HubMetrics.onboardingContentWidth, accuracy: 0.5)
@@ -1079,7 +1095,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         defer { onboarding.close(); main.close() }
         let root = try XCTUnwrap(onboarding.window?.contentView)
         root.layoutSubtreeIfNeeded()
-        let server = try XCTUnwrap(labels(in: root).first { $0.placeholderString == "teslamate.local" })
+        let server = try XCTUnwrap(labels(in: root).first { $0.placeholderString == "server.local" })
         XCTAssertTrue(server.stringValue.isEmpty)
         XCTAssertGreaterThan(server.frame.width, 250)
         server.stringValue = "a"
@@ -1101,13 +1117,13 @@ final class OnboardingWindowControllerTests: XCTestCase {
         root.displayIfNeeded()
         let text = labels(in: root).map(\.stringValue)
 
-        XCTAssertTrue(text.contains("Migrate from TeslaMate"))
+        XCTAssertTrue(text.contains("Import History"))
         XCTAssertTrue(text.contains(
-            "Connect to your TeslaMate server to import its vehicle history."
+            "Connect to your source application server to import its vehicle history."
         ))
-        XCTAssertTrue(text.contains("This user needs sudo to read the TeslaMate database"))
+        XCTAssertTrue(text.contains("This user needs sudo to read the source database"))
         XCTAssertTrue(buttons(in: root).contains {
-            $0.accessibilityLabel() == "This user needs sudo to read the TeslaMate database"
+            $0.accessibilityLabel() == "This user needs sudo to read the source database"
         })
         XCTAssertEqual(popups(in: root).first?.itemTitles, ["SSH key", "Password"])
         let authentication = try XCTUnwrap(popups(in: root).first)
@@ -1119,9 +1135,9 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(authentication.font, HubTypography.body)
         let inputFields = labels(in: root).filter { $0.isEditable }
         XCTAssertTrue(inputFields.allSatisfy { $0.controlSize != .large })
-        let heading = try XCTUnwrap(labels(in: root).first { $0.stringValue == "Migrate from TeslaMate" })
+        let heading = try XCTUnwrap(labels(in: root).first { $0.stringValue == "Import History" })
         XCTAssertEqual(heading.alignment, .natural)
-        let server = try XCTUnwrap(inputFields.first { $0.placeholderString == "teslamate.local" })
+        let server = try XCTUnwrap(inputFields.first { $0.placeholderString == "server.local" })
         let user = try XCTUnwrap(inputFields.first { $0.stringValue == "user" })
         let key = try XCTUnwrap(inputFields.first {
             $0.placeholderString == "Optional — uses SSH agent or default keys"
@@ -1200,9 +1216,9 @@ final class OnboardingWindowControllerTests: XCTestCase {
         )
 
         let connectedText = labels(in: connected.window?.contentView).map(\.stringValue)
-        XCTAssertTrue(connectedText.contains("Connected to teslamate.local"))
-        XCTAssertTrue(connectedText.contains("Found a TeslaMate database ready to import."))
-        XCTAssertTrue(connectedText.contains("I confirm this server runs TeslaMate 4.2.0 or newer"))
+        XCTAssertTrue(connectedText.contains("Connected to server.local"))
+        XCTAssertTrue(connectedText.contains("Found a source database ready to import."))
+        XCTAssertTrue(connectedText.contains("I confirm that the source application is at release 4.2.0 or later and will not be updated during the import."))
         XCTAssertTrue(buttons(in: connected.window?.contentView).contains { $0.title == "Import Data" })
 
         let verifyText = labels(in: verify.window?.contentView).map(\.stringValue)
@@ -1219,9 +1235,9 @@ final class OnboardingWindowControllerTests: XCTestCase {
 
         let finishText = labels(in: finish.window?.contentView).map(\.stringValue)
         XCTAssertTrue(finishText.contains("Migration complete"))
-        XCTAssertTrue(finishText.contains("Your TeslaMate history has been imported into Hub."))
+        XCTAssertTrue(finishText.contains("Your vehicle history has been imported into Hub."))
         XCTAssertTrue(finishText.contains(
-            "I have disabled Tesla access in TeslaMate to avoid duplicate requests"
+            "I have disabled Tesla access in the source application to avoid duplicate requests"
         ))
         XCTAssertFalse(try XCTUnwrap(buttons(in: finish.window?.contentView)
             .first { $0.title == "Start Hub" }).isEnabled)
@@ -1244,7 +1260,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         })
         XCTAssertTrue(buttons(in: view).contains { $0.title == "Choose Key…" })
         let sudo = try XCTUnwrap(buttons(in: view).first {
-            $0.accessibilityLabel() == "This user needs sudo to read the TeslaMate database"
+            $0.accessibilityLabel() == "This user needs sudo to read the source database"
         })
         XCTAssertEqual(sudo.state, .off)
         let connect = try XCTUnwrap(buttons(in: view).first { $0.title == "Connect to Server" })
@@ -1274,10 +1290,10 @@ final class OnboardingWindowControllerTests: XCTestCase {
         let view = onboarding.window?.contentView
         let text = labels(in: view).map(\.stringValue)
         XCTAssertEqual(text.filter { $0 == "Importing data…" }.count, 1)
-        XCTAssertFalse(text.contains("Import from TeslaMate"))
+        XCTAssertFalse(text.contains("Import from source application"))
         XCTAssertFalse(text.contains { $0.hasPrefix("Step ") })
         XCTAssertFalse(text.contains {
-            $0.localizedCaseInsensitiveContains("Enter your TeslaMate")
+            $0.localizedCaseInsensitiveContains("Enter your source database")
                 || $0.localizedCaseInsensitiveContains("Elapsed")
                 || $0.localizedCaseInsensitiveContains("Hub stays stopped")
         })
@@ -1330,7 +1346,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         ))
         onboarding.updateMigrationProgress(copying)
         XCTAssertTrue(labels(in: view).contains {
-            $0.stringValue == "Copying your TeslaMate history into Hub."
+            $0.stringValue == "Copying your vehicle history into Hub."
         })
         let finalizing = try XCTUnwrap(HubController.parseMigrationProgress(
             #"{"event":"migration_progress","completedRows":80,"totalRows":100,"phase":"finalizing"}"#
@@ -1338,7 +1354,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         onboarding.updateMigrationProgress(finalizing)
         XCTAssertTrue(labels(in: view).contains { $0.stringValue == "Preparing imported history…" })
         XCTAssertFalse(labels(in: view).contains {
-            $0.stringValue == "Copying your TeslaMate history into Hub."
+            $0.stringValue == "Copying your vehicle history into Hub."
         })
         XCTAssertEqual(bar.maxValue, 100)
         XCTAssertEqual(bar.doubleValue, 80)
@@ -1361,7 +1377,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         onboarding.setBusy(false)
         onboarding.setBusy(true, operation: .importing)
         XCTAssertTrue(labels(in: onboarding.window?.contentView).contains {
-            $0.stringValue == "Copying your TeslaMate history into Hub."
+            $0.stringValue == "Copying your vehicle history into Hub."
         }, "a later import must start with its own progress phase")
     }
 
@@ -1391,7 +1407,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
                                                      onComplete: { _ in })
         let view = onboarding.window?.contentView
         let server = try XCTUnwrap(labels(in: view).first {
-            $0.placeholderString == "teslamate.local"
+            $0.placeholderString == "server.local"
         })
         let user = try XCTUnwrap(labels(in: view).first { $0.stringValue == "user" })
         let port = try XCTUnwrap(labels(in: view).first { $0.stringValue == "22" })
@@ -1460,7 +1476,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
                                                      onComplete: { _ in })
         let view = onboarding.window?.contentView
         let server = try XCTUnwrap(labels(in: view).first {
-            $0.placeholderString == "teslamate.local"
+            $0.placeholderString == "server.local"
         })
         let authentication = try XCTUnwrap(popups(in: view).first {
             $0.itemTitles == ["SSH key", "Password"]
@@ -1480,49 +1496,35 @@ final class OnboardingWindowControllerTests: XCTestCase {
 
     func testTunnelFailuresAreSafeAndActionable() {
         XCTAssertEqual(
-            TeslaMateServerImporter.classifyVersionForTests(
-                image: "teslamate/teslamate:v4.1.1", labelVersion: nil
-            ),
+            SourceServerImporter.classifyVersionForTests(ociVersion: "4.1.1"),
             .tooOld("4.1.1")
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.classifyVersionForTests(
-                image: "docker.io/teslamate/teslamate:4.2.0", labelVersion: nil
-            ),
+            SourceServerImporter.classifyVersionForTests(ociVersion: "4.2.0"),
             .supported("4.2.0")
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.classifyVersionForTests(
-                image: "teslamate/teslamate:4.2", labelVersion: nil
-            ),
+            SourceServerImporter.classifyVersionForTests(ociVersion: "4.2"),
             .supported("4.2")
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.classifyVersionForTests(
-                image: "teslamate/teslamate:4.3.2", labelVersion: nil
-            ),
+            SourceServerImporter.classifyVersionForTests(ociVersion: "4.3.2"),
             .supported("4.3.2")
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.classifyVersionForTests(
-                image: "custom/teslamate:4.2.0", labelVersion: "4.2.0"
-            ),
+            SourceServerImporter.classifyVersionForTests(ociVersion: nil),
             .unknown
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.classifyVersionForTests(
-                image: "teslamate/teslamate:latest", labelVersion: "4.2.0"
-            ),
+            SourceServerImporter.classifyVersionForTests(ociVersion: nil),
             .unknown
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.classifyVersionForTests(
-                image: "teslamate/teslamate:4.2.0", labelVersion: "4.1.1"
-            ),
+            SourceServerImporter.classifyVersionForTests(ociVersion: "4.1.1"),
             .tooOld("4.1.1")
         )
 
-        let isolation = TeslaMateServerImporter.sshIsolationArgumentsForTests.joined(separator: " ")
+        let isolation = SourceServerImporter.sshIsolationArgumentsForTests.joined(separator: " ")
         XCTAssertTrue(isolation.contains("ControlMaster=no"))
         XCTAssertTrue(isolation.contains("ControlPath=none"))
         XCTAssertTrue(isolation.contains("ControlPersist=no"))
@@ -1530,7 +1532,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(isolation.contains("RemoteCommand=none"))
         XCTAssertTrue(isolation.contains("StrictHostKeyChecking=yes"))
         XCTAssertFalse(isolation.contains("StrictHostKeyChecking=accept-new"))
-        let ownedTunnel = TeslaMateServerImporter.ownedTunnelArgumentsForTests(
+        let ownedTunnel = SourceServerImporter.ownedTunnelArgumentsForTests(
             controlPath: "/tmp/owned-control"
         ).joined(separator: " ")
         XCTAssertTrue(ownedTunnel.contains("ControlMaster=yes"))
@@ -1539,7 +1541,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertTrue(ownedTunnel.contains("StrictHostKeyChecking=yes"))
         XCTAssertFalse(ownedTunnel.contains("StrictHostKeyChecking=accept-new"))
 
-        let hostKeyDiagnostic = TeslaMateServerImporter.connectionDiagnostic(
+        let hostKeyDiagnostic = SourceServerImporter.connectionDiagnostic(
             for: HubActionError.commandExited(255, "Host key verification failed"),
             authentication: .password("unused")
         )
@@ -1550,7 +1552,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             ["Verify the server fingerprint through a trusted channel, then add or update its entry in ~/.ssh/known_hosts."]
         )
 
-        let keyDiagnostic = TeslaMateServerImporter.connectionDiagnostic(
+        let keyDiagnostic = SourceServerImporter.connectionDiagnostic(
             for: HubActionError.commandExited(255, "Permission denied"),
             authentication: .key(identityFile: nil)
         )
@@ -1559,87 +1561,87 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(keyDiagnostic.safeReport.contains("Permission denied"))
 
         XCTAssertEqual(
-            TeslaMateServerImporter.tunnelFailureMessage("open failed: administratively prohibited"),
+            SourceServerImporter.tunnelFailureMessage("open failed: administratively prohibited"),
             "The SSH server does not permit database forwarding. Enable TCP forwarding for this account."
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.tunnelFailureMessage("Permission denied for secret-host"),
+            SourceServerImporter.tunnelFailureMessage("Permission denied for secret-host"),
             "SSH authentication failed while opening the database tunnel."
         )
         XCTAssertFalse(
-            TeslaMateServerImporter.tunnelFailureMessage("unexpected secret-host diagnostic")
+            SourceServerImporter.tunnelFailureMessage("unexpected secret-host diagnostic")
                 .contains("secret-host")
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.discoveryFailureReason(
+            SourceServerImporter.discoveryFailureReason(
                 HubActionError.commandExited(255, "ssh: connect to private-host failed")
             ),
             "ssh_authentication_or_connection"
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.discoveryFailureMessage(
+            SourceServerImporter.discoveryFailureMessage(
                 HubActionError.commandExited(22, "private container diagnostic")
             ),
-            "The TeslaMate database container is not running or could not be found."
+            "The source database container is not running or could not be found."
         )
         XCTAssertFalse(
-            TeslaMateServerImporter.discoveryFailureMessage(
+            SourceServerImporter.discoveryFailureMessage(
                 HubActionError.commandExited(27, "unexpected secret-host diagnostic")
             ).contains("secret-host")
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.discoveryFailureReason(
+            SourceServerImporter.discoveryFailureReason(
                 HubActionError.commandExited(27, "multiple instances")
             ),
-            "multiple_teslamate_instances"
+            "multiple_source_instances"
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.discoveryFailureReason(
+            SourceServerImporter.discoveryFailureReason(
                 HubActionError.commandExited(28, "multiple databases")
             ),
             "multiple_database_instances"
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.discoveryFailureMessage(
+            SourceServerImporter.discoveryFailureMessage(
                 HubActionError.commandExited(255, "ssh: connect to private-host port 40022: Connection refused")
             ),
             "The SSH server refused the connection. Check that SSH is running and the port is correct."
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.discoveryFailureReason(
+            SourceServerImporter.discoveryFailureReason(
                 HubActionError.commandExited(1, "sudo: a password is required")
             ),
             "passwordless_sudo_required"
         )
         XCTAssertTrue(
-            TeslaMateServerImporter.discoveryFailureMessage(
+            SourceServerImporter.discoveryFailureMessage(
                 HubActionError.commandExited(1, "permission denied while trying to connect to /var/run/docker.sock")
             ).contains("cannot access Docker")
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.discoveryFailureReason(
+            SourceServerImporter.discoveryFailureReason(
                 HubActionError.commandExited(127, "sh: docker: not found")
             ),
             "docker_missing"
         )
         XCTAssertFalse(
-            TeslaMateServerImporter.discoveryFailureMessage(
+            SourceServerImporter.discoveryFailureMessage(
                 HubActionError.commandExited(1, "sudo: private-host is not in the sudoers file")
             ).contains("private-host")
         )
         XCTAssertEqual(
-            TeslaMateServerImporter.tunnelFailureMessage(
+            SourceServerImporter.tunnelFailureMessage(
                 "WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED for secret-host"
             ),
             "SSH host identity verification failed. Verify or update this server in your SSH known-hosts file."
         )
         XCTAssertFalse(
-            TeslaMateServerImporter.tunnelFailureMessage(
+            SourceServerImporter.tunnelFailureMessage(
                 "ssh: Could not resolve hostname secret-host: nodename nor servname provided"
             ).contains("secret-host")
         )
         XCTAssertFalse(
-            TeslaMateServerImporter.tunnelFailureMessage(
+            SourceServerImporter.tunnelFailureMessage(
                 "unix_listener: path /private/tmp/private-socket too long for Unix domain socket"
             ).contains("private-socket")
         )

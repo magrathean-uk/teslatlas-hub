@@ -35,17 +35,19 @@ fn as_row(state: &str, reason: Option<&str>, collecting: bool) -> CollectorAuthR
 
 fn as_put_pair(store: &HubStore, generation: Option<Uuid>) {
     let imported =
-        TeslaMateLegacyTokenStore::imported(vec![1; 8], vec![2; 8]).expect("placeholder pair");
+        LegacyOwnerTokenStore::imported(vec![1; 8], vec![2; 8]).expect("placeholder pair");
     let pair = match generation {
         Some(generation) => imported.with_credential_generation(generation).expect("generation"),
         None => imported,
     };
-    store.replace_teslamate_legacy_tokens(&pair).expect("store pair");
+    store
+        .replace_legacy_owner_tokens(&pair)
+        .expect("store pair");
 }
 
 fn as_refresh(store: &HubStore, input: Uuid, output: Uuid) {
     let receipt = store.begin_legacy_refresh(input).expect("begin");
-    let successor = TeslaMateLegacyTokenStore::refreshed(
+    let successor = LegacyOwnerTokenStore::refreshed(
         vec![output.as_bytes()[0]; 8],
         vec![3; 8],
         AS_T0 + 28_800,
@@ -89,6 +91,7 @@ fn the_v71_step_adds_the_credential_status_table_and_a_v70_catalogue_migrates_to
     assert!(!as_exists(&store, "collector_auth_state"));
     // The v70 collector tables are untouched by the rewind.
     assert!(as_exists(&store, "collector_account_state"));
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
     let migrated = HubStore::initialize(temporary.path()).expect("migrated");
@@ -263,11 +266,24 @@ fn a_status_row_round_trips_and_is_rewritten_only_when_a_value_changes() {
     // `fuse_rejected_access_digest` holds a 36-character digest of the access token a
     // counted rejection rejected (hub fix pass 3; the column's CHECK pins the length),
     // not a token.
-    assert!(columns.iter().filter(|name| *name != "fuse_rejected_access_digest").all(|name| {
-        !["token", "access", "refresh", "url", "vin", "latitude", "longitude"]
+    assert!(
+        columns
             .iter()
-            .any(|word| name.contains(word))
-    }));
+            .filter(|name| *name != "fuse_rejected_access_digest")
+            .all(|name| {
+                ![
+                    "token",
+                    "access",
+                    "refresh",
+                    "url",
+                    "vin",
+                    "latitude",
+                    "longitude",
+                ]
+                .iter()
+                .any(|word| name.contains(word))
+            })
+    );
 }
 
 #[test]
@@ -356,18 +372,18 @@ fn as_real_pair(
         crate::credentials::OwnerTokens::from_secret_parts(access.to_owned(), "refresh".to_owned())
             .expect("tokens");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
     let stored = match schedule {
         Some((expires_at, next_refresh_at)) => {
-            TeslaMateLegacyTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
+            LegacyOwnerTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
         }
-        None => TeslaMateLegacyTokenStore::imported(access, refresh),
+        None => LegacyOwnerTokenStore::imported(access, refresh),
     }
     .expect("stored pair");
-    crate::teslamate_credentials::replace_key_and_tokens(temporary.path(), store, key, &stored)
+    crate::legacy_owner_credentials::replace_key_and_tokens(temporary.path(), store, key, &stored)
         .expect("persist pair");
     store
-        .load_teslamate_legacy_tokens()
+        .load_legacy_owner_tokens()
         .expect("load")
         .expect("row")
         .credential_generation()
@@ -855,7 +871,9 @@ fn cs_p1_c5_mode_gates_all_readiness_tiers() {
                     store
                         .open()
                         .unwrap()
-                        .query_row("SELECT COUNT(*) FROM collector_account_state", [], |row| row.get::<_, i64>(0))
+                        .query_row("SELECT COUNT(*) FROM collector_account_state", [], |row| {
+                            row.get::<_, i64>(0)
+                        })
                         .unwrap()
                         == 0,
                     "the missing-row pass has no account row"
@@ -962,8 +980,8 @@ fn cs_p1_signed_out_and_refusal_use_service_and_attention() {
 
 #[test]
 fn fleet_unknown_refresh_attention_has_fixed_combination_precedence() {
-    use CollectionAttentionCode as Code;
     use crate::config::CollectorMode::FleetPolling;
+    use CollectionAttentionCode as Code;
     let (_temporary, store) = as_store();
     store.acquire_supervised_collector_lease(1_000).unwrap();
     let now = 1_001;
@@ -1109,11 +1127,14 @@ fn a_generation_is_a_refresh_output_only_when_a_completed_binding_produced_it() 
     let receipt = store.begin_legacy_refresh(g0).unwrap();
     // A started attempt has produced nothing yet.
     assert!(!store.legacy_generation_is_refresh_output(g1).unwrap());
-    let successor = TeslaMateLegacyTokenStore::refreshed(vec![2; 8], vec![3; 8], AS_T0 + 28_800, AS_T0 + 21_600)
-        .unwrap()
-        .with_credential_generation(g1)
+    let successor =
+        LegacyOwnerTokenStore::refreshed(vec![2; 8], vec![3; 8], AS_T0 + 28_800, AS_T0 + 21_600)
+            .unwrap()
+            .with_credential_generation(g1)
+            .unwrap();
+    store
+        .complete_legacy_refresh(receipt, g0, g1, &successor)
         .unwrap();
-    store.complete_legacy_refresh(receipt, g0, g1, &successor).unwrap();
     assert!(store.legacy_generation_is_refresh_output(g1).unwrap());
     assert!(!store.legacy_generation_is_refresh_output(g0).unwrap());
     assert!(!store.legacy_generation_is_refresh_output(g2).unwrap());
@@ -1181,7 +1202,14 @@ fn the_credential_identity_is_the_generation_of_the_last_external_write() {
     store
         .open()
         .unwrap()
-        .execute("UPDATE teslamate_legacy_tokens SET access = x'00', refresh = x'00'", [])
+        .execute(
+            concat!(
+                "UPDATE ",
+                crate::db::import_table_names::legacy_owner_tokens_table!(),
+                " SET access = x'00', refresh = x'00'"
+            ),
+            [],
+        )
         .unwrap();
     assert_eq!(store.owner_wire_credential_identity().unwrap(), g9.to_string());
 }

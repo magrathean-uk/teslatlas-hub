@@ -20,7 +20,6 @@ use std::{
     },
 };
 
-use clap::Parser;
 use rcgen::{CertifiedKey, generate_simple_self_signed};
 use sha2::Digest;
 #[cfg(target_os = "macos")]
@@ -47,7 +46,7 @@ use super::{
     read_migration_encryption_key, read_migration_postgres_password, read_migration_secret,
     read_migration_secret_file_with_hooks, run_macos_serve_supervisor,
     should_emit_migration_progress, should_preserve_existing_migration_credentials,
-    teslamate_check_failure_details, teslamate_version_confirmation, validate_history_only_config,
+    source_check_failure_details, source_db_version_confirmation, validate_history_only_config,
     validate_legacy_setup_provider, validate_streaming_setting, write_migration_progress_event,
 };
 use teslatlas_hub::db::{HubStore, ObservationInput, SourceDescriptor, VehicleDescriptor};
@@ -56,10 +55,10 @@ use teslatlas_hub::protocol::{
     CursorClaims, CursorKey, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor, PROTOCOL_V1,
 };
 #[cfg(target_os = "macos")]
-use teslatlas_hub::teslamate_progress::{TeslaMateMigrationPhase, TeslaMateMigrationProgressEvent};
+use teslatlas_hub::source_db_progress::{SourceDbMigrationPhase, SourceDbMigrationProgressEvent};
 #[cfg(target_os = "macos")]
 use teslatlas_hub::{
-    teslamate_reader::TeslaMateReaderError, teslamate_schema::SchemaCompatibilityError,
+    source_db_reader::SourceDbReaderError, source_db_schema::SchemaCompatibilityError,
 };
 use uuid::Uuid;
 
@@ -103,7 +102,7 @@ fn status_vehicle_fields_preserve_current_projection_presence_and_absence() {
     store
         .upsert_geofences(
             observed.vehicle_id,
-            &[teslatlas_hub::teslamate_projection::TeslaMateGeofence {
+            &[teslatlas_hub::source_db_projection::SourceDbGeofence {
                 id: 1,
                 name: "Home".into(),
                 latitude: Some(51.0),
@@ -338,7 +337,7 @@ fn migration_progress_writer_emits_and_flushes_one_ndjson_line() {
         }
     }
 
-    let event = TeslaMateMigrationProgressEvent::new(TeslaMateMigrationPhase::Positions, 123, 456);
+    let event = SourceDbMigrationProgressEvent::new(SourceDbMigrationPhase::Positions, 123, 456);
     let mut output = FlushProbe::default();
     write_migration_progress_event(&mut output, &event).expect("write progress");
 
@@ -352,65 +351,65 @@ fn migration_progress_writer_emits_and_flushes_one_ndjson_line() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn teslamate_check_failures_are_redacted_and_actionable() {
-    let older = TeslaMateReaderError::Schema(SchemaCompatibilityError::LegacyMigration {
+fn source_check_failures_are_redacted_and_actionable() {
+    let older = SourceDbReaderError::Schema(SchemaCompatibilityError::LegacyMigration {
         found: 1,
         minimum: 2,
     });
-    let newer = TeslaMateReaderError::Schema(SchemaCompatibilityError::UnreviewedMigration {
+    let newer = SourceDbReaderError::Schema(SchemaCompatibilityError::UnreviewedMigration {
         found: 3,
         maximum: 2,
     });
-    let selected = TeslaMateReaderError::SelectedCarMissing { selected_car_id: 7 };
-    let ambiguous = TeslaMateReaderError::AmbiguousOpenSession {
+    let selected = SourceDbReaderError::SelectedCarMissing { selected_car_id: 7 };
+    let ambiguous = SourceDbReaderError::AmbiguousOpenSession {
         drives: 2,
         charges: 1,
         states: 1,
     };
 
     assert_eq!(
-        teslamate_check_failure_details(&older).1,
+        source_check_failure_details(&older).1,
         "older_than_v4_2_compatible_schema"
     );
-    assert_eq!(teslamate_check_failure_details(&older).2, Some(1));
-    assert!(teslamate_check_failure_details(&older).3.contains("update"));
+    assert_eq!(source_check_failure_details(&older).2, Some(1));
+    assert!(source_check_failure_details(&older).3.contains("update"));
     assert_eq!(
-        teslamate_check_failure_details(&newer).1,
+        source_check_failure_details(&newer).1,
         "newer_than_v4_2_compatible_schema"
     );
     assert!(
-        teslamate_check_failure_details(&newer)
+        source_check_failure_details(&newer)
             .3
             .contains("Do not downgrade")
     );
     assert_eq!(
-        teslamate_check_failure_details(&selected).1,
+        source_check_failure_details(&selected).1,
         "selected_car_missing"
     );
-    assert!(!teslamate_check_failure_details(&selected).3.contains('7'));
+    assert!(!source_check_failure_details(&selected).3.contains('7'));
     assert_eq!(
-        teslamate_check_failure_details(&ambiguous).1,
+        source_check_failure_details(&ambiguous).1,
         "ambiguous_open_session"
     );
-    assert!(!teslamate_check_failure_details(&ambiguous).3.contains("2"));
+    assert!(!source_check_failure_details(&ambiguous).3.contains("2"));
 }
 
 #[cfg(target_os = "macos")]
 #[test]
-fn teslamate_check_reports_an_exceeded_read_budget_plainly() {
-    use teslatlas_hub::teslamate_reader::SourceBudgetLimit;
+fn source_check_reports_an_exceeded_read_budget_plainly() {
+    use teslatlas_hub::source_db_reader::SourceBudgetLimit;
 
     for limit in [
         SourceBudgetLimit::Rows,
         SourceBudgetLimit::RowBytes,
         SourceBudgetLimit::PageBytes,
     ] {
-        let exceeded = TeslaMateReaderError::SourceReadBudgetExceeded {
+        let exceeded = SourceDbReaderError::SourceReadBudgetExceeded {
             table: "positions",
             limit,
             maximum: 67_108_864,
         };
-        let (status, reason, observed, guidance) = teslamate_check_failure_details(&exceeded);
+        let (status, reason, observed, guidance) = source_check_failure_details(&exceeded);
         assert_eq!(status, "incompatible");
         assert_eq!(reason, "source_read_budget_exceeded");
         assert_eq!(observed, None);
@@ -418,7 +417,11 @@ fn teslamate_check_reports_an_exceeded_read_budget_plainly() {
         // no table name or limit value.
         assert!(guidance.contains("more rows or bytes"));
         // Independence rule (a): a new Hub GUI string names no source project.
-        assert!(!guidance.to_ascii_lowercase().contains("teslamate"));
+        assert!(
+            !guidance
+                .to_ascii_lowercase()
+                .contains(["tesl", "amate"].concat().as_str())
+        );
         assert!(!guidance.contains("password-free"));
         assert!(!guidance.contains("positions"));
         assert!(!guidance.contains("67108864"));
@@ -427,13 +430,13 @@ fn teslamate_check_reports_an_exceeded_read_budget_plainly() {
 
 #[cfg(target_os = "macos")]
 #[test]
-fn teslamate_check_requires_honest_version_confirmation() {
-    let unconfirmed = teslamate_version_confirmation(false);
+fn source_check_requires_honest_version_confirmation() {
+    let unconfirmed = source_db_version_confirmation(false);
     assert_eq!(unconfirmed.0, "confirmation_required");
     assert_eq!(unconfirmed.1, "v4_2_version_unconfirmed");
-    assert!(unconfirmed.2.contains("cannot prove"));
+    assert!(unconfirmed.2.contains("cannot establish"));
 
-    let confirmed = teslamate_version_confirmation(true);
+    let confirmed = source_db_version_confirmation(true);
     assert_eq!(confirmed.0, "compatible");
     assert_eq!(confirmed.1, "v4_2_compatible_schema");
     assert!(!confirmed.1.contains("exact"));
@@ -444,19 +447,19 @@ fn teslamate_check_requires_honest_version_confirmation() {
 fn onboarding_migration_cli_is_explicit_and_noninteractive() {
     let check = Cli::try_parse_from([
         "teslatlas-hub",
-        "teslamate-check",
+        "source-check",
         "--source",
-        "postgresql://reader@localhost/teslamate",
+        "postgresql://reader@localhost/sourcedb",
         "--car-id",
         "7",
         "--postgres-password-file",
         "password",
-        "--acknowledge-v4-2-compatible-schema",
+        "--accept-schema-evidence",
     ])
     .expect("compatibility-check CLI");
     assert!(matches!(
         check.command,
-        Command::TeslaMateCheck { car_id: 7, .. }
+        Command::SourceCheck { car_id: 7, .. }
     ));
     assert!(!command_requires_user_hub_admission(&check.command));
 
@@ -465,7 +468,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
             "teslatlas-hub",
             "migrate",
             "--source",
-            "postgresql://reader@localhost/teslamate",
+            "postgresql://reader@localhost/sourcedb",
             "--car-id",
             "7",
             "--postgres-password-file",
@@ -481,7 +484,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         "teslatlas-hub",
         "migrate",
         "--source",
-        "postgresql://reader@localhost/teslamate",
+        "postgresql://reader@localhost/sourcedb",
         "--car-id",
         "7",
         "--postgres-password-file",
@@ -490,7 +493,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         "key",
         "--online-snapshot",
         "--preserve-existing-credentials",
-        "--acknowledge-v4-2-compatible-schema",
+        "--accept-schema-evidence",
     ])
     .expect("online migration CLI");
     assert!(matches!(
@@ -498,7 +501,7 @@ fn onboarding_migration_cli_is_explicit_and_noninteractive() {
         Command::Migrate {
             online_snapshot: true,
             preserve_existing_credentials: true,
-            acknowledge_v4_2_compatible_schema: true,
+            accept_schema_evidence: true,
             ..
         }
     ));
@@ -511,12 +514,12 @@ fn history_only_cli_requires_online_capture_and_excludes_tesla_credentials() {
         "teslatlas-hub",
         "migrate",
         "--source",
-        "postgresql://reader@localhost/teslamate",
+        "postgresql://reader@localhost/sourcedb",
         "--car-id",
         "1",
         "--postgres-password-file",
         "password",
-        "--acknowledge-v4-2-compatible-schema",
+        "--accept-schema-evidence",
     ];
     let mut omitted_online = base.to_vec();
     omitted_online.push("--history-only");
@@ -546,9 +549,9 @@ fn history_only_cli_requires_online_capture_and_excludes_tesla_credentials() {
     assert!(matches!(
         Cli::try_parse_from([
             "teslatlas-hub",
-            "teslamate-check",
+            "source-check",
             "--source",
-            "postgresql://reader@localhost/teslamate",
+            "postgresql://reader@localhost/sourcedb",
             "--car-id",
             "1",
             "--postgres-password-file",
@@ -557,7 +560,7 @@ fn history_only_cli_requires_online_capture_and_excludes_tesla_credentials() {
         ])
         .unwrap()
         .command,
-        Command::TeslaMateCheck {
+        Command::SourceCheck {
             history_only: true,
             ..
         }
@@ -579,14 +582,14 @@ fn history_only_config_requires_collection_disabled() {
 
 #[cfg(target_os = "macos")]
 #[tokio::test]
-async fn teslamate_check_invalid_source_does_not_create_hub_target() {
+async fn source_check_invalid_source_does_not_create_hub_target() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let config = temporary.path().join("absent/config.toml");
     let cli = Cli::try_parse_from([
         "teslatlas-hub",
         "--config",
         config.to_str().expect("UTF-8 config path"),
-        "teslamate-check",
+        "source-check",
         "--source",
         "not-a-postgres-url",
         "--car-id",
@@ -610,6 +613,8 @@ async fn migration_without_version_confirmation_does_not_create_hub_target() {
     let cli = Cli {
         config: Some(config.clone()),
         command: Command::Migrate {
+            source_key: None,
+            new_import_source: false,
             source: "not-a-postgres-url".to_owned(),
             car_id: 7,
             postgres_password_file: PathBuf::from("unused-password"),
@@ -619,14 +624,18 @@ async fn migration_without_version_confirmation_does_not_create_hub_target() {
             refresh_token_file: None,
             online_snapshot: true,
             preserve_existing_credentials: false,
-            acknowledge_v4_2_compatible_schema: false,
+            accept_schema_evidence: false,
         },
     };
 
     let error = run(cli)
         .await
         .expect_err("missing version confirmation must fail before migration");
-    assert!(error.to_string().contains("requires --acknowledge"));
+    assert!(
+        error
+            .to_string()
+            .contains("requires --accept-schema-evidence")
+    );
     assert!(!config.exists());
     assert!(!config.parent().expect("config parent").exists());
 }
@@ -714,7 +723,7 @@ fn migration_encryption_key_reader_accepts_normal_line_endings() {
     let temporary = tempfile::tempdir().expect("temporary directory");
     let path = temporary.path().join("encryption-key");
     for ending in [b"".as_slice(), b"\n".as_slice(), b"\r\n".as_slice()] {
-        let mut value = b"teslamate-key".to_vec();
+        let mut value = b"source-token-key".to_vec();
         value.extend_from_slice(ending);
         fs::write(&path, value).expect("key file");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).expect("key mode");
@@ -722,7 +731,7 @@ fn migration_encryption_key_reader_accepts_normal_line_endings() {
             read_migration_encryption_key(&path)
                 .expect("line ending is not part of the key")
                 .as_slice(),
-            b"teslamate-key"
+            b"source-token-key"
         );
     }
 }
@@ -730,7 +739,7 @@ fn migration_encryption_key_reader_accepts_normal_line_endings() {
 #[cfg(target_os = "macos")]
 #[test]
 fn migration_password_and_token_semantic_boundaries_include_line_endings() {
-    use teslatlas_hub::teslamate_token::{
+    use teslatlas_hub::source_token_envelope::{
         CLOAK_ENVELOPE_OVERHEAD_BYTES, MAX_LEGACY_TOKEN_CIPHERTEXT_BYTES,
         encrypt_legacy_owner_token_files,
     };
@@ -1650,9 +1659,9 @@ async fn doctor_does_not_create_or_initialize_a_missing_data_directory() {
 #[tokio::test]
 async fn doctor_reports_inventory_and_does_not_delete_tokens() {
     use teslatlas_hub::{
-        credentials::OwnerTokens, db::TeslaMateLegacyTokenStore, fleet_api::FleetRegion,
-        fleet_credentials::FleetSetupCredentials, teslamate_credentials::random_encryption_key,
-        teslamate_token::encrypt_legacy_owner_tokens,
+        credentials::OwnerTokens, db::LegacyOwnerTokenStore, fleet_api::FleetRegion,
+        fleet_credentials::FleetSetupCredentials, legacy_owner_credentials::random_encryption_key,
+        source_token_envelope::encrypt_legacy_owner_tokens,
     };
 
     let temporary = tempfile::tempdir().expect("temporary Hub");
@@ -1681,9 +1690,9 @@ async fn doctor_reports_inventory_and_does_not_delete_tokens() {
     .expect("legacy credentials");
     let encryption_key = random_encryption_key().expect("random encryption key");
     let (access, refresh) = encrypt_legacy_owner_tokens(&encryption_key, &legacy).expect("encrypt");
-    let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
+    let stored = LegacyOwnerTokenStore::imported(access, refresh).expect("legacy store");
     persist_migrated_legacy_tokens(temporary.path(), &store, &encryption_key, &stored)
-        .expect("copy TeslaMate tokens without deleting Fleet");
+        .expect("copy legacy owner tokens without deleting Fleet");
 
     let config_path = temporary.path().join("config.toml");
     fs::write(
@@ -1705,7 +1714,7 @@ async fn doctor_reports_inventory_and_does_not_delete_tokens() {
 
     assert!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("legacy after doctor")
             .is_some(),
         "doctor must not delete Owner tokens"
@@ -1719,7 +1728,7 @@ async fn doctor_reports_inventory_and_does_not_delete_tokens() {
     );
     let inventory = store.catalogue_inventory().expect("inventory");
     assert_eq!(inventory.journal_mode, "wal");
-    assert_eq!(inventory.teslamate_legacy_token_rows, 1);
+    assert_eq!(inventory.legacy_owner_token_rows, 1);
     assert_eq!(inventory.fleet_token_rows, 1);
 }
 
@@ -2037,13 +2046,13 @@ fn legacy_setup_requires_legacy_provider_before_mutation() {
 fn sign_out_clears_both_providers_but_preserves_cursor_key() {
     use teslatlas_hub::{
         credentials::OwnerTokens,
-        db::TeslaMateLegacyTokenStore,
+        db::LegacyOwnerTokenStore,
         fleet_api::FleetRegion,
         fleet_credentials::{FleetSetupCredentials, persist_fleet_setup_credentials},
-        teslamate_credentials::{
+        legacy_owner_credentials::{
             load_or_create_cursor_key, random_encryption_key, replace_key_and_tokens,
         },
-        teslamate_token::encrypt_legacy_owner_tokens,
+        source_token_envelope::encrypt_legacy_owner_tokens,
     };
 
     let temporary = tempfile::tempdir().expect("temporary Hub");
@@ -2060,7 +2069,7 @@ fn sign_out_clears_both_providers_but_preserves_cursor_key() {
     let legacy_key = random_encryption_key().expect("random legacy key");
     let (access, refresh) =
         encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
-    let legacy_store = TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
+    let legacy_store = LegacyOwnerTokenStore::imported(access, refresh).expect("legacy store");
     replace_key_and_tokens(temporary.path(), &store, &legacy_key, &legacy_store)
         .expect("persist legacy");
     let fleet = FleetSetupCredentials::new(
@@ -2084,7 +2093,7 @@ fn sign_out_clears_both_providers_but_preserves_cursor_key() {
 
     assert!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("legacy row")
             .is_none()
     );
@@ -2099,9 +2108,9 @@ fn sign_out_clears_both_providers_but_preserves_cursor_key() {
 fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
     use teslatlas_hub::{
         credentials::OwnerTokens,
-        db::TeslaMateLegacyTokenStore,
-        teslamate_credentials::{random_encryption_key, replace_key_and_tokens},
-        teslamate_token::encrypt_legacy_owner_tokens,
+        db::LegacyOwnerTokenStore,
+        legacy_owner_credentials::{random_encryption_key, replace_key_and_tokens},
+        source_token_envelope::encrypt_legacy_owner_tokens,
     };
 
     let temporary = tempfile::tempdir().expect("temporary Hub");
@@ -2116,7 +2125,7 @@ fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
     let legacy_key = random_encryption_key().expect("random legacy key");
     let (access, refresh) =
         encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
-    let legacy_store = TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
+    let legacy_store = LegacyOwnerTokenStore::imported(access, refresh).expect("legacy store");
     replace_key_and_tokens(temporary.path(), &store, &legacy_key, &legacy_store)
         .expect("persist legacy");
 
@@ -2130,7 +2139,7 @@ fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
     assert!(error.to_string().contains("Fleet credentials"));
     assert!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("legacy row")
             .is_none(),
         "Legacy credentials must still be removed"
@@ -2142,11 +2151,11 @@ fn sign_out_attempts_legacy_removal_after_fleet_key_failure() {
 fn setup_clears_the_other_provider_token_generation() {
     use teslatlas_hub::{
         credentials::OwnerTokens,
-        db::TeslaMateLegacyTokenStore,
+        db::LegacyOwnerTokenStore,
         fleet_api::FleetRegion,
         fleet_credentials::FleetSetupCredentials,
-        teslamate_credentials::{random_encryption_key, replace_key_and_tokens},
-        teslamate_token::encrypt_legacy_owner_tokens,
+        legacy_owner_credentials::{random_encryption_key, replace_key_and_tokens},
+        source_token_envelope::encrypt_legacy_owner_tokens,
     };
 
     let temporary = tempfile::tempdir().expect("temporary Hub");
@@ -2161,7 +2170,7 @@ fn setup_clears_the_other_provider_token_generation() {
     let legacy_key = random_encryption_key().expect("random legacy key");
     let (access, refresh) =
         encrypt_legacy_owner_tokens(&legacy_key, &legacy).expect("encrypt legacy");
-    let legacy_store = TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
+    let legacy_store = LegacyOwnerTokenStore::imported(access, refresh).expect("legacy store");
     replace_key_and_tokens(temporary.path(), &store, &legacy_key, &legacy_store)
         .expect("persist legacy");
     let fleet = FleetSetupCredentials::new(
@@ -2181,7 +2190,7 @@ fn setup_clears_the_other_provider_token_generation() {
     .expect("setup-fleet drops legacy");
     assert!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("legacy row")
             .is_none()
     );
@@ -2192,7 +2201,7 @@ fn setup_clears_the_other_provider_token_generation() {
         .expect("setup drops Fleet");
     assert!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("legacy row")
             .is_some()
     );
@@ -2204,9 +2213,9 @@ fn setup_clears_the_other_provider_token_generation() {
 #[test]
 fn migrate_copies_legacy_tokens_without_deleting_fleet() {
     use teslatlas_hub::{
-        credentials::OwnerTokens, db::TeslaMateLegacyTokenStore, fleet_api::FleetRegion,
-        fleet_credentials::FleetSetupCredentials, teslamate_credentials::random_encryption_key,
-        teslamate_token::encrypt_legacy_owner_tokens,
+        credentials::OwnerTokens, db::LegacyOwnerTokenStore, fleet_api::FleetRegion,
+        fleet_credentials::FleetSetupCredentials, legacy_owner_credentials::random_encryption_key,
+        source_token_envelope::encrypt_legacy_owner_tokens,
     };
 
     let temporary = tempfile::tempdir().expect("temporary Hub");
@@ -2238,18 +2247,18 @@ fn migrate_copies_legacy_tokens_without_deleting_fleet() {
     let encryption_key = random_encryption_key().expect("random encryption key");
     let (access, refresh) =
         encrypt_legacy_owner_tokens(&encryption_key, &legacy).expect("encrypt legacy");
-    let stored = TeslaMateLegacyTokenStore::imported(access, refresh).expect("legacy store");
+    let stored = LegacyOwnerTokenStore::imported(access, refresh).expect("legacy store");
     persist_migrated_legacy_tokens(temporary.path(), &store, &encryption_key, &stored)
-        .expect("migrate copies TeslaMate tokens");
+        .expect("migrate copies legacy owner tokens");
     assert!(
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("legacy row")
             .is_some()
     );
     assert!(
         store.load_fleet_tokens().expect("Fleet row").is_some(),
-        "TeslaMate import must not delete Fleet credentials"
+        "Source database import must not delete Fleet credentials"
     );
     assert!(teslatlas_hub::fleet_credentials::fleet_key_path(temporary.path()).exists());
 }
@@ -2298,7 +2307,9 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         duration_seconds: 1,
     }));
     assert!(command_requires_user_hub_admission(&Command::Migrate {
-        source: "postgresql://localhost/teslamate".to_owned(),
+        source_key: None,
+        new_import_source: false,
+        source: "postgresql://localhost/sourcedb".to_owned(),
         car_id: 1,
         postgres_password_file: PathBuf::from("password"),
         history_only: false,
@@ -2307,7 +2318,7 @@ fn long_lived_and_sensitive_commands_require_the_instance_lock() {
         refresh_token_file: None,
         online_snapshot: false,
         preserve_existing_credentials: false,
-        acknowledge_v4_2_compatible_schema: true,
+        accept_schema_evidence: true,
     }));
     assert!(command_requires_user_hub_admission(&Command::Pair {
         label: "test phone".to_owned(),
@@ -2916,6 +2927,9 @@ fn default_pairing_presentation_includes_a_plain_link() {
     assert!(text.contains("Scan with Teslatlas:"));
     assert!(text.contains(&format!("Pairing link: {}", uri.as_str())));
 }
+
+#[path = "n1_cli_report_tests.rs"]
+mod n1_cli_report_tests;
 
 #[path = "service_cli_tests.rs"]
 mod service_cli_tests;

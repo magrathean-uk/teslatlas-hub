@@ -11,8 +11,8 @@ use crate::{
     lifecycle::{LifecycleDelta, OpenSessionState},
     protocol::{CursorKey, SequenceRange, Sha256Digest},
     server::paired_router,
-    teslamate_projection::{
-        DriveRelations, TeslaMateAddress, TeslaMateDrive, TeslaMateGeofence, project_drive,
+    source_db_projection::{
+        DriveRelations, SourceDbAddress, SourceDbDrive, SourceDbGeofence, project_drive,
     },
 };
 use axum::{
@@ -155,7 +155,7 @@ async fn variant(
     let store_path = root.join(label);
     let store = HubStore::initialize(&store_path).expect("new synthetic store");
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate_import", label), 1_000)
+        .register_source(&SourceDescriptor::new("source_db_import", label), 1_000)
         .expect("source");
     let vehicle = store
         .register_vehicle(
@@ -167,12 +167,12 @@ async fn variant(
         .v2_projection_binding(vehicle.vehicle_id)
         .expect("binding");
     let key = CursorKey::from_bytes([63; 32]);
-    let source_address = TeslaMateAddress {
+    let source_address = SourceDbAddress {
         id: 1,
         display_name: Some(address),
         name: None,
     };
-    let source_fence = fence.map(|name| TeslaMateGeofence {
+    let source_fence = fence.map(|name| SourceDbGeofence {
         id: 1,
         name,
         latitude: Some(51.5),
@@ -196,7 +196,7 @@ async fn variant(
             fence.name = source_width_text(255, id as u64 + 10_000, false);
         }
         // Missing Option fields deserialize as None, exactly the projected nullable values.
-        let source_drive: TeslaMateDrive = serde_json::from_value(json!({
+        let source_drive: SourceDbDrive = serde_json::from_value(json!({
             "id": id, "car_id": binding.selected_car_id,
             "start_date_ms": ((id + 1) / 2) * 1_000, "end_date_ms": ((id + 1) / 2) * 1_000 + 500,
             "start_address_id": address.id, "end_address_id": address.id,

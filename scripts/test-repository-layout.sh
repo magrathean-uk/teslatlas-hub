@@ -27,6 +27,13 @@ make_fixture() {
         printf '%s\n' '// SPDX-License-Identifier: AGPL-3.0-only' \
             >"$destination/src/$domain/mod.rs"
     done
+    mkdir -p "$destination/scripts/name-policy"
+    for name in verify-name-policy.py test-name-policy.sh; do
+        printf '%s\n' '# synthetic required gate fixture' >"$destination/scripts/$name"
+    done
+    for name in allow pins milestones; do
+        printf '%s\n' '{}' >"$destination/scripts/name-policy/$name.json"
+    done
     git -C "$destination" add .
 }
 

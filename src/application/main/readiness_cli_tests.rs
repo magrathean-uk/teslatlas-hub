@@ -13,11 +13,11 @@ use rusqlite::{Connection, params};
 use teslatlas_hub::{
     config::HubConfig,
     credentials::OwnerTokens,
-    db::{HubStore, TeslaMateLegacyTokenStore},
+    db::{HubStore, LegacyOwnerTokenStore},
     fleet_api::FleetRegion,
     fleet_credentials::{FleetSetupCredentials, persist_fleet_setup_credentials},
-    teslamate_credentials::replace_key_and_tokens,
-    teslamate_token::encrypt_legacy_owner_tokens,
+    legacy_owner_credentials::replace_key_and_tokens,
+    source_token_envelope::encrypt_legacy_owner_tokens,
 };
 use uuid::Uuid;
 
@@ -203,15 +203,15 @@ fn legacy_pair(
     let (access, refresh) = encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
     let stored = match schedule {
         Some((expires_at, next_refresh_at)) => {
-            TeslaMateLegacyTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
+            LegacyOwnerTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
         }
-        None => TeslaMateLegacyTokenStore::imported(access, refresh),
+        None => LegacyOwnerTokenStore::imported(access, refresh),
     }
     .expect("stored pair");
     replace_key_and_tokens(directory, store, key, &stored).expect("persist pair");
     let generation: String = sql(store)
         .query_row(
-            "SELECT credential_generation FROM teslamate_legacy_tokens",
+            concat!("SELECT credential_generation FROM ", "legacy_owner_tokens"),
             [],
             |row| row.get(0),
         )
@@ -220,7 +220,8 @@ fn legacy_pair(
 }
 
 fn fleet_pair(directory: &Path, store: &HubStore) -> Uuid {
-    teslatlas_hub::teslamate_credentials::load_or_create_cursor_key(directory).expect("cursor key");
+    teslatlas_hub::legacy_owner_credentials::load_or_create_cursor_key(directory)
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         SCOPED_ACCESS.to_owned(),
         "fleet-refresh".to_owned(),
@@ -260,11 +261,11 @@ fn seed_car(store: &HubStore) {
     use teslatlas_hub::{
         hub_pack::ProjectionCarSettings,
         protocol::CursorKey,
-        teslamate_import::{TeslaMateImportRequest, TeslaMateImportScope, publish_history},
-        teslamate_projection::{TeslaMateCar, TeslaMateHistory},
+        source_db_import::{SourceDbImportRequest, SourceDbImportScope, publish_history},
+        source_db_projection::{SourceDbCar, SourceDbHistory},
     };
-    let history = TeslaMateHistory {
-        cars: vec![TeslaMateCar {
+    let history = SourceDbHistory {
+        cars: vec![SourceDbCar {
             id: 1,
             eid: 5_100_001,
             vid: Some(5_200_001),
@@ -295,9 +296,10 @@ fn seed_car(store: &HubStore) {
     publish_history(
         store,
         &CursorKey::from_bytes([0xD3; 32]),
-        &TeslaMateImportRequest {
+        &SourceDbImportRequest {
+            new_import_source: false,
             source_key: "cli-readiness-fixture".to_owned(),
-            scope: TeslaMateImportScope::Selected(1),
+            scope: SourceDbImportScope::Selected(1),
             imported_at_ms: real_now_ms() - 60_000,
         },
         &history,
@@ -847,8 +849,8 @@ fn cadence_invalid_keeps_otherwise_eligible_serve_supervised() {
 async fn cadence_serve_wait_hands_over_cursor_before_server_start() {
     use teslatlas_hub::{
         hub_user_process::AdmittedUserHub,
+        legacy_owner_credentials::load_or_create_cursor_key,
         protocol::{CursorClaims, HUB_PROJECTION_SCHEMA_V3, OpaqueCursor, PROTOCOL_V1},
-        teslamate_credentials::load_or_create_cursor_key,
     };
     let (temporary, store) = private_hub();
     seed_car(&store);

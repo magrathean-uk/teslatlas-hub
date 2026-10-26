@@ -205,9 +205,9 @@ fn import_generation_staging_survives_active_state_and_promotes_once() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store");
     let (source, vehicle) = test_registered_vehicle(&store);
-    let active = crate::teslamate_projection::TeslaMateOpenSession {
+    let active = crate::source_db_projection::SourceDbOpenSession {
         car_id: 10,
-        state: Some(crate::teslamate_projection::TeslaMateState {
+        state: Some(crate::source_db_projection::SourceDbState {
             id: 1,
             car_id: 10,
             state: "online".into(),
@@ -289,7 +289,10 @@ fn imported_open_rows_with_reused_source_ids_are_isolated_by_vehicle() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store");
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", "multi-car"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "multi-car"),
+            1_000,
+        )
         .expect("source");
     let first_vehicle = store
         .register_vehicle(
@@ -303,9 +306,9 @@ fn imported_open_rows_with_reused_source_ids_are_isolated_by_vehicle() {
             1_002,
         )
         .expect("second vehicle");
-    let first_session = crate::teslamate_projection::TeslaMateOpenSession {
+    let first_session = crate::source_db_projection::SourceDbOpenSession {
         car_id: 10,
-        state: Some(crate::teslamate_projection::TeslaMateState {
+        state: Some(crate::source_db_projection::SourceDbState {
             id: 1,
             car_id: 10,
             state: "online".into(),
@@ -314,9 +317,9 @@ fn imported_open_rows_with_reused_source_ids_are_isolated_by_vehicle() {
         }),
         ..Default::default()
     };
-    let second_session = crate::teslamate_projection::TeslaMateOpenSession {
+    let second_session = crate::source_db_projection::SourceDbOpenSession {
         car_id: 20,
-        state: Some(crate::teslamate_projection::TeslaMateState {
+        state: Some(crate::source_db_projection::SourceDbState {
             id: 1,
             car_id: 20,
             state: "asleep".into(),
@@ -375,9 +378,9 @@ fn finalize_import_generation_promotes_fresh_vehicle_from_zero_cursor() {
     let temp = crate::private_tempdir().expect("temp directory");
     let store = HubStore::initialize(temp.path()).expect("store");
     let (source, vehicle) = test_registered_vehicle(&store);
-    let session = crate::teslamate_projection::TeslaMateOpenSession {
+    let session = crate::source_db_projection::SourceDbOpenSession {
         car_id: 10,
-        state: Some(crate::teslamate_projection::TeslaMateState {
+        state: Some(crate::source_db_projection::SourceDbState {
             id: 1,
             car_id: 10,
             state: "online".into(),
@@ -426,9 +429,9 @@ fn import_generation_promotion_rejects_newer_live_cursor_without_reopening_state
     let vehicle = store
         .register_vehicle(&VehicleDescriptor::new(source.source_id, "race-car"), 1_000)
         .expect("vehicle");
-    let active = crate::teslamate_projection::TeslaMateOpenSession {
+    let active = crate::source_db_projection::SourceDbOpenSession {
         car_id: 10,
-        state: Some(crate::teslamate_projection::TeslaMateState {
+        state: Some(crate::source_db_projection::SourceDbState {
             id: 1,
             car_id: 10,
             state: "online".into(),
@@ -481,7 +484,7 @@ fn export_outbox_coalesces_retries_survives_restart_and_respects_v2_base() {
             1_000,
         )
         .expect("vehicle");
-    let session = crate::teslamate_projection::TeslaMateOpenSession {
+    let session = crate::source_db_projection::SourceDbOpenSession {
         car_id: 10,
         ..Default::default()
     };
@@ -790,6 +793,7 @@ fn upgrades_v39_with_durable_live_delta_compaction_provenance() {
                  PRAGMA user_version = 39;",
         )
         .expect("recreate historical v39 boundary");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v39 store");
@@ -832,6 +836,7 @@ fn upgrades_v41_with_bounded_prior_lineage_pack_authorization() {
                  PRAGMA user_version = 41;",
         )
         .expect("recreate historical v41 boundary");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v41 store");
@@ -916,6 +921,7 @@ fn upgrades_v40_stream_receipts_without_reclassifying_crash_evidence() {
             params![correlation_id.to_string()],
         )
         .expect("historical orderly receipt");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v40 store");
@@ -932,6 +938,7 @@ fn upgrades_v40_stream_receipts_without_reclassifying_crash_evidence() {
         .collect::<Result<Vec<_>, _>>()
         .expect("receipt outcomes");
     assert_eq!(outcomes, ["started", "orderly_shutdown"]);
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     upgraded
         .complete_stream_session_terminal(
@@ -983,6 +990,7 @@ fn upgrades_a_v2_database_without_losing_existing_tables() {
             params![legacy_source_id.to_string()],
         )
         .expect("legacy source");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     // Schema migration is exercised only after the caller has established
     // the split-UID catalogue contract. A legacy 0644 catalogue remains
@@ -1045,6 +1053,7 @@ fn upgrades_a_v1_database_through_v2_and_v3() {
                 ",
         )
         .expect("make v1 schema");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     // See the v2 migration test: old catalogue permissions are not
     // upgraded in place by a service process.
@@ -1085,7 +1094,7 @@ fn upgrades_v36_catalogue_to_a_separate_digest_only_projection_state() {
     let connection = store.open().expect("current catalogue");
     remove_v50_current_observation_schema(&connection);
     connection
-        .execute_batch(
+        .execute_batch(concat!(
             "
                 DROP TABLE legacy_refresh_input_fences;
                 DROP INDEX legacy_refresh_receipt_output_generation;
@@ -1093,12 +1102,17 @@ fn upgrades_v36_catalogue_to_a_separate_digest_only_projection_state() {
                 DROP TABLE supervised_collector_lease;
                 DROP TABLE sync_retired_lineage_packs;
                 DROP TABLE sync_retired_lineages;
-                DROP TABLE teslamate_import_projection_state_rows;
-                DROP TABLE teslamate_import_projection_state_heads;
+                DROP TABLE ",
+            crate::db::import_table_names::import_projection_state_rows_table!(),
+            ";
+                DROP TABLE ",
+            crate::db::import_table_names::import_projection_state_heads_table!(),
+            ";
                 PRAGMA user_version = 36;
-                ",
-        )
+                "
+        ))
         .expect("recreate historical v36 boundary");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("upgrade from v36");
@@ -1108,8 +1122,8 @@ fn upgrades_v36_catalogue_to_a_separate_digest_only_projection_state() {
         SCHEMA_VERSION
     );
     for table in [
-        "teslamate_import_projection_state_heads",
-        "teslamate_import_projection_state_rows",
+        crate::db::import_table_names::import_projection_state_heads_table!(),
+        crate::db::import_table_names::import_projection_state_rows_table!(),
     ] {
         let found: i64 = connection
             .query_row(
@@ -1122,8 +1136,12 @@ fn upgrades_v36_catalogue_to_a_separate_digest_only_projection_state() {
     }
     let payload_column_count: i64 = connection
         .query_row(
-            "SELECT COUNT(*) FROM pragma_table_info('teslamate_import_projection_state_rows')
-                  WHERE name = 'payload_json'",
+            concat!(
+                "SELECT COUNT(*) FROM pragma_table_info('",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "')
+                  WHERE name = 'payload_json'"
+            ),
             [],
             |row| row.get(0),
         )
@@ -1135,34 +1153,46 @@ fn upgrades_v36_catalogue_to_a_separate_digest_only_projection_state() {
 }
 
 #[test]
-fn upgrades_v38_teslamate_projection_catalogues_for_update_history() {
+fn upgrades_v38_source_db_projection_catalogues_for_update_history() {
     let temporary = crate::private_tempdir().expect("temporary store");
     let store = HubStore::initialize(temporary.path()).expect("current store");
     let connection = store.open().expect("current catalogue");
     remove_v50_current_observation_schema(&connection);
     connection
-            .execute_batch(
-                "
+        .execute_batch(concat!(
+            "
                 DROP TABLE legacy_refresh_input_fences;
                 DROP INDEX legacy_refresh_receipt_output_generation;
                 DROP TABLE legacy_refresh_receipt_bindings;
                 DROP TABLE supervised_collector_lease;
                 DROP TABLE sync_retired_lineage_packs;
                 DROP TABLE sync_retired_lineages;
-                DROP TABLE teslamate_import_projection_rows;
-                DROP TABLE teslamate_import_projection_state_rows;
-                CREATE TABLE teslamate_import_projection_rows (
+                DROP TABLE ",
+            crate::db::import_table_names::import_projection_rows_table!(),
+            ";
+                DROP TABLE ",
+            crate::db::import_table_names::import_projection_state_rows_table!(),
+            ";
+                CREATE TABLE ",
+            crate::db::import_table_names::import_projection_rows_table!(),
+            " (
                     vehicle_id TEXT NOT NULL
-                        REFERENCES teslamate_import_projection_heads(vehicle_id) ON DELETE CASCADE,
+                        REFERENCES ",
+            crate::db::import_table_names::import_projection_heads_table!(),
+            "(vehicle_id) ON DELETE CASCADE,
                     entity TEXT NOT NULL CHECK(entity IN (
                         'drive', 'position', 'charge', 'charge_sample', 'state'
                     )),
                     entity_id INTEGER NOT NULL CHECK(entity_id > 0),
                     PRIMARY KEY(vehicle_id, entity, entity_id)
                 ) STRICT;
-                CREATE TABLE teslamate_import_projection_state_rows (
+                CREATE TABLE ",
+            crate::db::import_table_names::import_projection_state_rows_table!(),
+            " (
                     vehicle_id TEXT NOT NULL
-                        REFERENCES teslamate_import_projection_state_heads(vehicle_id) ON DELETE CASCADE,
+                        REFERENCES ",
+            crate::db::import_table_names::import_projection_state_heads_table!(),
+            "(vehicle_id) ON DELETE CASCADE,
                     entity TEXT NOT NULL CHECK(entity IN (
                         'car', 'drive', 'position', 'charge', 'charge_sample', 'state'
                     )),
@@ -1182,9 +1212,10 @@ fn upgrades_v38_teslamate_projection_catalogues_for_update_history() {
                     UNIQUE(vehicle_id, entity, entity_id)
                 ) STRICT, WITHOUT ROWID;
                 PRAGMA user_version = 38;
-                ",
-            )
-            .expect("recreate historical v38 boundary");
+                "
+        ))
+        .expect("recreate historical v38 boundary");
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     let upgraded = HubStore::initialize(temporary.path()).expect("upgrade v38 store");
@@ -1194,8 +1225,8 @@ fn upgrades_v38_teslamate_projection_catalogues_for_update_history() {
         SCHEMA_VERSION
     );
     for table in [
-        "teslamate_import_projection_rows",
-        "teslamate_import_projection_state_rows",
+        crate::db::import_table_names::import_projection_rows_table!(),
+        crate::db::import_table_names::import_projection_state_rows_table!(),
     ] {
         let sql: String = connection
             .query_row(
@@ -1208,8 +1239,12 @@ fn upgrades_v38_teslamate_projection_catalogues_for_update_history() {
     }
     let state_sql: String = connection
         .query_row(
-            "SELECT sql FROM sqlite_master
-                  WHERE type = 'table' AND name = 'teslamate_import_projection_state_rows'",
+            concat!(
+                "SELECT sql FROM sqlite_master
+                  WHERE type = 'table' AND name = '",
+                crate::db::import_table_names::import_projection_state_rows_table!(),
+                "'"
+            ),
             [],
             |row| row.get(0),
         )

@@ -44,7 +44,8 @@ fn fleet_scope_claims_are_bounded_and_collection_scopes_are_required() {
 fn fleet_setup_round_trips_encrypted_and_redacted() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         TEST_SCOPED_ACCESS.to_owned(),
         "fleet-refresh".to_owned(),
@@ -88,7 +89,8 @@ fn fleet_setup_round_trips_encrypted_and_redacted() {
 fn stored_fleet_credentials_require_collection_scopes() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         "e30.eyJzY3AiOlsidmVoaWNsZV9kZXZpY2VfZGF0YSJdfQ.sig".to_owned(),
         "fleet-refresh".to_owned(),
@@ -118,7 +120,8 @@ fn operational_validation_rejects_a_refresh_that_begins_after_its_first_check() 
     // operational answer must be the fenced one, never success.
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         TEST_SCOPED_ACCESS.to_owned(),
         "fleet-refresh".to_owned(),
@@ -169,7 +172,8 @@ fn operational_validation_rejects_a_refresh_that_begins_after_its_first_check() 
 fn schema_55_cursor_encrypted_row_upgrades_and_scrubs_live_sqlite_traces() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let cursor = load_existing_cursor_key_bytes(temporary.path())
         .expect("cursor read")
         .expect("cursor bytes");
@@ -184,7 +188,7 @@ fn schema_55_cursor_encrypted_row_upgrades_and_scrubs_live_sqlite_traces() {
         "legacy-fleet-refresh".to_owned(),
     )
     .expect("legacy plaintext");
-    let generation = crate::teslamate_token::legacy_refresh_credential_generation(&plaintext);
+    let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
     let (access, refresh) =
         encrypt_legacy_owner_tokens(&legacy_key, &plaintext).expect("legacy encryption");
     let old_access = access.clone();
@@ -282,7 +286,8 @@ fn schema_55_cursor_encrypted_row_upgrades_and_scrubs_live_sqlite_traces() {
 fn signout_deletes_fleet_key_and_preserves_cursor_authority() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let cursor_before = load_existing_cursor_key_bytes(temporary.path())
         .expect("cursor read")
         .expect("cursor bytes");
@@ -340,7 +345,8 @@ fn signout_deletes_fleet_key_and_preserves_cursor_authority() {
 async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         "fleet-old-access".to_owned(),
         "fleet-old-refresh".to_owned(),
@@ -493,7 +499,8 @@ async fn due_refresh_rotates_encrypted_generation_receipt_and_restart_state() {
 async fn post_send_refresh_error_remains_fenced_after_restart() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         "fleet-old-access".to_owned(),
         "fleet-old-refresh".to_owned(),
@@ -631,7 +638,8 @@ fn only_definitively_unconsumed_refresh_failures_are_retryable() {
 async fn invalidated_admission_blocks_due_refresh_before_transport() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         "fleet-admission-access".to_owned(),
         "fleet-admission-refresh".to_owned(),
@@ -719,7 +727,8 @@ async fn invalidated_admission_blocks_due_refresh_before_transport() {
 async fn a_started_refresh_is_stored_when_its_caller_is_dropped() {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         "fleet-old-access".to_owned(),
         "fleet-old-refresh".to_owned(),
@@ -892,7 +901,8 @@ impl GatedAuth {
 fn due_fleet_store() -> (tempfile::TempDir, HubStore) {
     let temporary = crate::private_tempdir().expect("temporary Hub");
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
-    crate::teslamate_credentials::load_or_create_cursor_key(temporary.path()).expect("cursor key");
+    crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+        .expect("cursor key");
     let credentials = FleetSetupCredentials::new(
         "fleet-old-access".to_owned(),
         "fleet-old-refresh".to_owned(),

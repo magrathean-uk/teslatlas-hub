@@ -12,8 +12,8 @@ Teslatlas Hub is a Rust self-hosted collector, local store, sync service, CLI an
 
 Modules that import from other vehicle-data software read that software's
 PostgreSQL database through the standard database interface and handle its
-published data formats. The manifest classifies them as
-`TESLAMATE-COMPATIBILITY`, and they are reviewed before each release.
+published data formats. The manifest classifies these modules as
+`IMPORT-COMPATIBILITY`, and they are reviewed before each release.
 
 ## Tesla Auth reference material
 
@@ -113,7 +113,7 @@ Every release file must be classified as:
 
 - `MAGRATHEAN-ORIGINAL`
 - `COMPANY-ASSIGNED-CONTRIBUTION`
-- `TESLAMATE-COMPATIBILITY`
+- `IMPORT-COMPATIBILITY`
 - `THIRD-PARTY`
 - `GENERATED`
 - `DATA-OR-FACTS`

@@ -428,7 +428,7 @@ fn c1_st111_reencoded_and_seeded() {
 pub(crate) const SEEDED_START: i64 = 1_800_100_000_000;
 
 /// An imported open drive 70, with or without one imported position.
-pub(crate) fn seeded_session(with_position: bool) -> TeslaMateOpenSession {
+pub(crate) fn seeded_session(with_position: bool) -> SourceDbOpenSession {
     seeded_session_with_totals(with_position, Some(7), Some(2))
 }
 
@@ -439,8 +439,8 @@ pub(crate) fn seeded_session_with_totals(
     with_position: bool,
     ascent: Option<i64>,
     descent: Option<i64>,
-) -> TeslaMateOpenSession {
-    let drive: TeslaMateDrive = serde_json::from_value(json!({
+) -> SourceDbOpenSession {
+    let drive: SourceDbDrive = serde_json::from_value(json!({
         "id": 70, "car_id": 1, "start_date_ms": SEEDED_START, "end_date_ms": null,
         "start_position_id": 700, "end_position_id": 701,
         "start_address_id": null, "end_address_id": null,
@@ -453,7 +453,7 @@ pub(crate) fn seeded_session_with_totals(
         "duration_min": null, "ascent": ascent, "descent": descent
     }))
     .expect("imported drive");
-    let mut session = TeslaMateOpenSession {
+    let mut session = SourceDbOpenSession {
         car_id: 1,
         drive: Some(drive),
         ..Default::default()

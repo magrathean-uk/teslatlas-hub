@@ -35,9 +35,10 @@ Write "Teslatlas" and "Teslatlas Hub" exactly as shown. Use `teslatlas` and
 ## Other names
 
 - Tesla and its product names are trade marks of Tesla, Inc.
-- TeslaMate is the name of an independent open-source project.
 - Apple, PostgreSQL and other names belong to their owners.
+- Teslatlas Hub does not name the software it imports from, apart from some
+  internal file and format names that later releases replace. It calls that
+  software the source application and its database the source database.
 
-We use these names only to describe compatibility. Teslatlas is not affiliated
-with, endorsed by or supported by Tesla, Inc., the TeslaMate project, or the
-makers of any other software it works with.
+We use other names only to identify the products and services Teslatlas Hub
+works with. Their owners did not make, approve or sponsor Teslatlas.

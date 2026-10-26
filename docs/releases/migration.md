@@ -1,18 +1,33 @@
-# Move from TeslaMate
+# Import your existing history
 
-Migration exists to move authorised historical data and, where expressly selected, encrypted legacy credentials into Teslatlas-owned storage.
+Teslatlas Hub can import vehicle history from another program's PostgreSQL
+database, which this guide calls the source database. Hub does not go by that
+program's name: it reads the database's schema and compares it with the schema
+sets this release recognises. Run the check first
+(`teslatlas-hub source-check`, or Import History in the Mac app). It only reads
+the database, and it tells you whether Hub recognises it before anything is
+imported.
 
-New Hub installations do not require TeslaMate.
+Teslatlas Hub is developed independently of the software it imports from.
+
+## Which databases Hub recognises
+
+Each release recognises a fixed list of schema sets. A schema set is the list
+of schema changes the source application has applied to its database, and Hub
+identifies it by a SHA-256 digest. The release notes list the recognised sets
+by the first 12 characters of that digest, with the source application
+releases each set was tested with. If the check does not recognise your
+database, do not import it with this release.
 
 ## Before you start
 
-1. Back up TeslaMate and keep a recoverable copy. Do not remove the original
+1. Back up the source application and keep a recoverable copy. Do not remove the original
    installation after the first successful import.
-2. Update TeslaMate to 4.2.0 or newer, start it once, and let its database
-   migrations finish. A newer version is not automatically compatible: Hub
-   must recognise the exact reviewed schema described below.
+2. Update the source application to release 4.2.0 or later, start it once, and
+   let its database changes finish. A newer release is not automatically
+   supported: the check tells you.
 3. Prepare your server address, SSH port, user and authentication. The account
-   must be able to access the TeslaMate Docker deployment; if it needs sudo,
+   must be able to access the source application Docker deployment; if it needs sudo,
    select that option in the Mac form. Do not grant broad permissions simply
    to bypass a failed check.
 4. Decide whether you are importing history only or also selecting the
@@ -21,7 +36,7 @@ New Hub installations do not require TeslaMate.
 
 ## Import using the Mac app
 
-1. Choose **Migrate from TeslaMate** during setup, or from **Manage Tesla**.
+1. Choose **Import History** during setup, or from **Manage Tesla**.
 2. Enter the server, port and SSH user. For **SSH key**, use **Choose Key…**
    to select the private key, or leave the field empty for your SSH agent or
    default keys. Use **Password** only for the password authentication path.
@@ -29,9 +44,9 @@ New Hub installations do not require TeslaMate.
    acknowledgement before selecting **Import Data**.
 4. Wait for the import and Hub checks. If a step fails, read the error and use
    **Open Logs** before retrying. Keep both the source and partial-run diagnostics.
-5. Complete the cutover acknowledgement truthfully: stop TeslaMate's access
+5. Complete the cutover acknowledgement truthfully: stop the source application's access
    before Hub takes ownership of the same Legacy refresh credentials. Hub
-   does not stop or modify TeslaMate for you.
+   does not stop or modify the source application for you.
 6. Start Hub when setup permits it. Check the intended vehicle, imported
    journeys and charges, diagnostics, and subsequent collection. Keep the
    original data until you are satisfied with the result.
@@ -45,11 +60,9 @@ use the [CLI reference](../guides/cli.md) and the technical requirements below.
 
 An import selects one car and its supported driving, charging, position, state
 and update history, with referenced settings, addresses and geofences. It is
-not a copy of the entire TeslaMate deployment. Grafana dashboards, containers,
+not a copy of the entire source deployment. Grafana dashboards, containers,
 logs, custom tables and unselected vehicles are not transferred. Credentials
 are separate from an ordinary history import. The exact scope follows below.
-
-**Teslatlas Hub is an independent project and is not affiliated with, endorsed by or supported by the TeslaMate project.**
 
 ## Source protection
 
@@ -69,8 +82,8 @@ The explicit credential-transfer path may read the relevant encrypted token rela
 
 ## Operator duties
 
-The operator must have authority, back up and test recovery, update TeslaMate
-to 4.2.0 or newer, start it once, wait for its database migrations to finish,
+The operator must have authority, back up and test recovery, update the source application
+to a supported release, start it once, wait for its database migrations to finish,
 stop concurrent credential refresh during cutover, preserve the source until
 validation, and comply with privacy/employment rules.
 
@@ -79,17 +92,17 @@ validation, and comply with privacy/employment rules.
 The importer is a selected-car projection, not a PostgreSQL backup or live
 replication service. An operator can repeat a history-only, read-only import
 with `--online-snapshot --preserve-existing-credentials` while retaining the
-Hub's stored Legacy pair. The running app must be TeslaMate 4.2.0 or
-newer, and the database must match the exact reviewed v4.2-compatible migration
-set. That schema is also present in v4.1.1, so database evidence cannot prove
-the app version and the operator must acknowledge the limitation explicitly.
+Hub's stored Legacy pair. The running source application must use a supported
+release, and the database must match a schema set this Hub recognises. Several
+application releases can share one schema set, so the schema cannot establish
+the running release; the operator must acknowledge that limit explicitly.
 Extra tables and columns are allowed, but a missing or changed reviewed column,
-enum, relationship, or migration set fails closed. A later TeslaMate release
+enum, relationship, or migration set fails closed. A later source application release
 that adds migrations remains blocked until its schema delta is reviewed.
 
 ### Imported records
 
-One import selects one TeslaMate car. Run a separately reviewed import for each
+One import selects one source car. Run a separately reviewed import for each
 additional car. The read-only snapshot captures:
 
 - the selected `cars` row, its referenced `car_settings` row, and the single
@@ -119,7 +132,7 @@ The importer does not copy:
 - the contents of `schema_migrations` (the ordered versions are checked only as
   source-admission evidence);
 - token ciphertext during an ordinary history import;
-- TeslaMate runtime configuration, database users/permissions, containers,
+- source deployment configuration, database users/permissions, containers,
   dashboards, Grafana data, logs, caches, or any unlisted relation;
 - custom columns or tables. They may remain in the source, but are not part of
   the fixed projection.
@@ -145,9 +158,9 @@ policy is applied:
 - PostgreSQL `double precision` odometer, distance, start/end kilometre, and
   efficiency values retain their exact IEEE-754 bit patterns in the physical
   import.
-- Hub does not convert history according to the TeslaMate display preferences.
-  TeslaMate's unit-of-length, temperature, pressure, and preferred-range labels
-  are preserved separately. Fields already defined by TeslaMate as kilometres,
+- Hub does not convert history according to the source display preferences.
+  The source application's unit-of-length, temperature, pressure, and preferred-range labels
+  are preserved separately. Fields already defined by the source application as kilometres,
   minutes, energy, power, cost, elevation, speed, or pressure retain those
   source values; no currency or tariff conversion is inferred.
 - Exact car/settings text is retained in the physical import. Compatibility
@@ -182,9 +195,9 @@ snapshot but are not part of the tombstone inventory. Open-child reconciliation
 unions rows by source ID and replaces an older value with the later value rather
 than duplicating it.
 
-### TeslaMate customisations
+### Source customisations
 
-Global and per-car TeslaMate settings, referenced geofences, and supported
+Global and per-car source application settings, referenced geofences, and supported
 address fields are captured as data; they are not executed as Hub service
 configuration. Extra custom tables/columns are ignored. A customisation that
 changes a reviewed type, nullability, fixed precision, enum ordering, settings

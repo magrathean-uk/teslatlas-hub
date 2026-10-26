@@ -6,8 +6,8 @@ This guide explains the four ways Teslatlas Hub can receive data from a Tesla, w
 
 | Path | What you need | Monthly cost | Data quality | Who sees your data |
 | --- | --- | --- | --- | --- |
-| 1. Legacy (default) | Your Tesla account token pair (from TeslaMate or a token app) | Free | Best resolution (streaming every second while driving) | Tesla and your Hub only |
-| 2. Provider | An account with Teslemetry, MyTeslaMate or Tessie | Provider subscription (see below) | Fleet Telemetry, usually 1 to 60 s intervals; provider polling sometimes | Tesla, the provider and your Hub |
+| 1. Legacy (default) | Your Tesla account token pair (from the source application or a token app) | Free | Best resolution (streaming every second while driving) | Tesla and your Hub only |
+| 2. Provider | An account with Teslemetry, Tessie or an Owner-API-compatible provider | Provider subscription (see below) | Fleet Telemetry, usually 1 to 60 s intervals; provider polling sometimes | Tesla, the provider and your Hub |
 | 3. Direct Fleet polling | Your own Tesla developer application, a card on file, a web page you control for the key file | Tesla usage charges, about $0.12 per awake hour at a 60 s interval; a $10 monthly allowance covers light use | Snapshots at the interval you choose | Tesla and your Hub only |
 | 4. Self-hosted Fleet Telemetry | Everything in 3 plus a public hostname with a certificate and inbound TCP 443 to your Hub | Tesla streaming charges, roughly $0.007 per awake hour | Fleet Telemetry at the intervals you configure | Tesla and your Hub only |
 
@@ -17,35 +17,35 @@ Legacy is the default because it is free, has the highest resolution, and needs 
 
 Tesla's official data feed, Fleet Telemetry, is pushed by the car to a server. Tesla only sends it to an application that has registered a domain, hosts its public key on that domain, has a payment method on file, and whose "virtual key" the owner has installed in the car through the Tesla app. That is a lot of infrastructure for one car.
 
-Tessie, Teslemetry and MyTeslaMate are such registered applications. When you sign in to one of them with your Tesla account, you authorise *their* application, install *their* virtual key (`https://tesla.com/_ak/teslemetry.com` and so on), and your car streams to *their* servers. They pay Tesla per signal and charge you a subscription. They then hand the data on to you: Teslemetry as Server-Sent Events, webhooks and a Fleet API proxy; Tessie as a WebSocket at `streaming.tessie.com/<VIN>` plus its REST API; MyTeslaMate as a proxy that speaks the old Owner API and a websocket that reproduces the old streaming feed (which is how TeslaMate itself uses it).
+Tessie, Teslemetry and Owner-API-compatible providers are such registered applications. When you sign in to one of them with your Tesla account, you authorise *their* application, install *their* virtual key (`https://tesla.com/_ak/teslemetry.com` and so on), and your car streams to *their* servers. They pay Tesla per signal and charge you a subscription. They then hand the data on to you: Teslemetry as Server-Sent Events, webhooks and a Fleet API proxy; Tessie as a WebSocket at `streaming.tessie.com/<VIN>` plus its REST API; an Owner-API-compatible provider as a proxy that speaks the old Owner API and a websocket that reproduces the old streaming feed (which is how the source application itself uses it).
 
 So "no domain needed" means "the provider owns the domain". Hub's provider mode connects outward from your computer to that provider; nothing on your network has to accept connections. Tesla allows a car to stream to at most five third-party applications at once (Teslemetry documents three), so a car already used with other services may need one removed.
 
-Teslatlas itself is not a Tesla partner application and does not operate such a relay. That is a deliberate privacy choice: Magrathean never sees your car's data. You bring your own provider account, exactly as TeslaMate users do.
+Teslatlas itself is not a Tesla partner application and does not operate such a relay. That is a deliberate privacy choice: Magrathean never sees your car's data. You bring your own provider account, exactly as users of the source application do.
 
 The Mac app shows this guide, with screenshots, as the Collection step of its setup, and again from the Collection screen later.
 
 ## Path 1: Legacy (Tesla Owner API)
 
-**How it works.** Hub uses the same unofficial Owner API and streaming connection that TeslaMate has used for years, with a token pair from your Tesla account. The car streams position, speed and power every second while driving; Hub polls state at a slow cadence otherwise, and never wakes a sleeping car.
+**How it works.** Hub uses the same unofficial Owner API and streaming connection that the source application has used for years, with a token pair from your Tesla account. The car streams position, speed and power every second while driving; Hub polls state at a slow cadence otherwise, and never wakes a sleeping car.
 
 **What you need.** A Tesla access and refresh token. Hub does not take your Tesla password.
 
 **Steps.**
 1. In Hub, choose *Legacy* (the default) on the Collection screen.
 2. Provide the token pair in one of two ways:
-   - *Migrating from TeslaMate*: Hub reads TeslaMate's stored token during the migration (optional; Hub can also sign in with its own token so TeslaMate keeps working if you roll back).
+   - *Migrating from the source application*: Hub reads the source application's stored token during the migration (optional; Hub can also sign in with its own token so the source application keeps working if you roll back).
    - *Fresh*: generate a token pair with a token tool such as "Auth app for Tesla" and paste it into Hub. Hub stores it encrypted and refreshes it automatically.
 3. Hub shows the vehicles on the account. Pick the ones to record.
 4. Wait for the first observation. Status shows "recording" and the last data time.
 
-**What can go wrong.** Tesla may refuse the Owner API in future. Hub reports that as "Owner API refused" (not as a wrong password) and offers the other paths; your history stays. A refresh token is single-use: if another logger (TeslaMate) refreshes with the same chain, one of them is logged out. Run only one.
+**What can go wrong.** Tesla may refuse the Owner API in future. Hub reports that as "Owner API refused" (not as a wrong password) and offers the other paths; your history stays. A refresh token is single-use: if another logger (the source application) refreshes with the same chain, one of them is logged out. Run only one.
 
-## Path 2: Provider (Teslemetry, MyTeslaMate, Tessie)
+## Path 2: Provider (Teslemetry, Tessie or an Owner-API-compatible provider)
 
 **How it works.** You authorise the provider's application with Tesla, install its virtual key, and Hub connects to the provider's API from your computer to receive the data. Hub treats the provider like Tesla: everything is stored locally and the provider token stays on your computer.
 
-**What you need.** A provider account and its API token. Prices on 2026-10-08 (check the provider): Teslemetry $32.70 per vehicle per month including streaming and 500 command credits, extra on-demand polling by credit; MyTeslaMate pay-as-you-go API plan (its hosted TeslaMate plan is 4.99 € per vehicle per month); Tessie $6.99 to $19.99 per vehicle per month with Fleet Telemetry access on every plan.
+**What you need.** A provider account and its API token. Prices on 2026-10-08 (check the provider): Teslemetry $32.70 per vehicle per month including streaming and 500 command credits, extra on-demand polling by credit; an Owner-API-compatible provider: a pay-as-you-go API plan; Tessie $6.99 to $19.99 per vehicle per month with Fleet Telemetry access on every plan.
 
 **Steps (Teslemetry).**
 1. Sign in at `teslemetry.com/login` with your Tesla account and grant *Vehicle Information* and *Vehicle Location* (commands are not needed for Hub).
@@ -54,11 +54,11 @@ The Mac app shows this guide, with screenshots, as the Collection step of its se
 4. Create an access token in the console.
 5. In Hub, choose *Provider > Teslemetry*, paste the token. Hub connects to `api.teslemetry.com` for vehicle data and to the SSE stream for telemetry. Status shows "receiving" once the first signal arrives.
 
-**Steps (MyTeslaMate).**
-1. Sign in at `app.myteslamate.com` with your Tesla account and open the *Fleet* page.
-2. Pair your vehicle(s) there (it installs MyTeslaMate's virtual key through the Tesla app).
+**Steps (Owner-API-compatible provider).**
+1. Sign in to your provider at the address it supplies, using your Tesla account, and open its Fleet page.
+2. Pair your vehicle(s) there; the provider installs its virtual key through the Tesla app.
 3. Copy the token from the Fleet page.
-4. In Hub, choose *Provider > MyTeslaMate*, paste the token. Hub uses `https://api.myteslamate.com` for the Owner-API-compatible proxy and `wss://streaming.myteslamate.com` for the reproduced streaming feed, keyed by VIN.
+4. In Hub, choose *Provider > Owner-API-compatible provider* and paste the token. Enter the Owner-API-compatible proxy URL and WebSocket URL supplied by your provider. Hub uses those entered addresses for the proxy and the streaming feed, keyed by VIN.
 
 **Steps (Tessie).**
 1. Sign in at `dash.tessie.com` with your Tesla account and subscribe.

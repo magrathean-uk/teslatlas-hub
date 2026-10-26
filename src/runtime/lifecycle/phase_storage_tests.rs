@@ -233,7 +233,7 @@ fn st87_the_imported_version_seeds_the_first_update_row() {
                 delta: &delta,
             })
             .expect("imported updates");
-        let mut session = TeslaMateOpenSession {
+        let mut session = SourceDbOpenSession {
             car_id: CAR,
             ..Default::default()
         };

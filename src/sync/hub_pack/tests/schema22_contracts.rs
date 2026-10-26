@@ -788,7 +788,7 @@ fn schema_2_2_preserves_signed_and_zero_selected_car_ids() {
     assert!(matches!(
         validate_request_v2_2(&request, ProtocolLimits::default()),
         Err(ProjectionPackError::Invalid(message))
-            if message == "schema 2.2 selected_car_id is outside the TeslaMate smallint source domain"
+            if message == "schema 2.2 selected_car_id is outside the import source smallint domain"
     ));
     assert!(matches!(
         validate_binding(&ProjectionBinding {

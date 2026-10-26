@@ -1097,7 +1097,7 @@ where
     let cursor_key = match (cursor_key, config.tls.is_some()) {
         (Some(cursor_key), _) => Some(cursor_key),
         (None, true) => Some(
-            crate::teslamate_credentials::load_or_create_cursor_key(&config.data_dir).map_err(
+            crate::legacy_owner_credentials::load_or_create_cursor_key(&config.data_dir).map_err(
                 |error| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
@@ -1107,7 +1107,7 @@ where
             )?,
         ),
         (None, false) => {
-            crate::teslamate_credentials::load_existing_cursor_key_bytes(&config.data_dir)
+            crate::legacy_owner_credentials::load_existing_cursor_key_bytes(&config.data_dir)
                 .map_err(|error| {
                     std::io::Error::new(
                         std::io::ErrorKind::InvalidData,
@@ -1131,8 +1131,8 @@ where
         _ => None,
     };
     let (current_stop, stopped) = tokio::sync::oneshot::channel();
-    let mut current_worker = config.teslamate.current.clone().map(|current| {
-        tokio::spawn(crate::collection::teslamate_current::run(
+    let mut current_worker = config.import_source.current.clone().map(|current| {
+        tokio::spawn(crate::collection::source_db_current::run(
             store.clone(),
             current,
             std::sync::Arc::clone(&admission),
@@ -1996,7 +1996,7 @@ async fn prepared_artefact(
     let Some(cursor_key) = state.cursor_key.as_deref() else {
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
-    match crate::import::teslamate::prepared_map::current_receipt(
+    match crate::sync::prepared_map::current_receipt(
         &state.store,
         cursor_key,
         vehicle_id,
@@ -2197,7 +2197,7 @@ async fn pack(State(state): State<AppState>, uri: Uri, headers: HeaderMap) -> Re
                         let Some(cursor_key) = state.cursor_key.as_deref() else {
                             return prepared_pack_without_cursor_key(&state.store, digest, scope);
                         };
-                        match crate::import::teslamate::prepared_map::current_pack(
+                        match crate::sync::prepared_map::current_pack(
                             &state.store,
                             cursor_key,
                             digest,
@@ -2273,9 +2273,7 @@ fn prepared_pack_without_cursor_key(
     digest: Sha256Digest,
     scope: VehicleScope,
 ) -> Response {
-    match crate::import::teslamate::prepared_map::current_pack_candidate_exists(
-        store, digest, scope,
-    ) {
+    match crate::sync::prepared_map::current_pack_candidate_exists(store, digest, scope) {
         Ok(false) => StatusCode::NOT_FOUND.into_response(),
         Ok(true) => StatusCode::SERVICE_UNAVAILABLE.into_response(),
         Err(error) => {

@@ -32,7 +32,12 @@ fn p3bf3_the_sink_counts_a_write_that_leaves_every_row_as_it_was() {
         after_first != after_second,
         "an idempotent write still moves the sink"
     );
-    let sink_lines = |stamp: &str| stamp.lines().filter(|line| !line.starts_with("sink:")).count();
+    let sink_lines = |stamp: &str| {
+        stamp
+            .lines()
+            .filter(|line| !line.starts_with("sink:"))
+            .count()
+    };
     assert_eq!(sink_lines(&after_first), sink_lines(&after_second));
     // The lease's heartbeat is the one exemption: it does not move the stamp.
     let lease = bed
@@ -113,19 +118,19 @@ fn secrets_stamp(directory: &std::path::Path) -> String {
 fn p3bf3_seed_the_owner_store(temporary: &tempfile::TempDir) -> HubStore {
     let store = HubStore::initialize(temporary.path()).expect("Hub store");
     seed_the_late_import(&store);
-    crate::teslamate_credentials::replace_key(temporary.path(), b"guard-cloak-key")
+    crate::legacy_owner_credentials::replace_key(temporary.path(), b"guard-cloak-key")
         .expect("0600 Cloak key");
-    let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+    let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
     let initial =
         OwnerTokens::from_secret_parts("guard-access".to_owned(), "guard-refresh".to_owned())
             .expect("initial pair");
     let (access, refresh) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
             .expect("Cloak pair");
     let now_seconds = current_epoch_millis().expect("clock") / 1_000;
     store
-        .replace_teslamate_legacy_tokens(
-            &crate::db::TeslaMateLegacyTokenStore::refreshed(
+        .replace_legacy_owner_tokens(
+            &crate::db::LegacyOwnerTokenStore::refreshed(
                 access,
                 refresh,
                 now_seconds + 36_000,
@@ -189,7 +194,7 @@ fn p3bf3_entry_seeded(
         _ => p3bf3_seed_the_owner_store(&temporary),
     };
     assert!(
-        !crate::teslamate_credentials::cursor_key_path(temporary.path()).exists(),
+        !crate::legacy_owner_credentials::cursor_key_path(temporary.path()).exists(),
         "the cursor key does not exist yet"
     );
     seed(temporary.path());
@@ -287,7 +292,7 @@ fn p3bf3_entry_seeded(
         before,
         at_trip: at_trip.lock().expect("stamp").clone(),
         after: whole_store_stamp(&store),
-        key_file: crate::teslamate_credentials::cursor_key_path(temporary.path()).exists(),
+        key_file: crate::legacy_owner_credentials::cursor_key_path(temporary.path()).exists(),
         lease_left: store
             .supervised_collector_lease_status()
             .expect("lease query")
@@ -459,7 +464,7 @@ fn p3bf3_run_the_owner_loop(
     let base = url::Url::parse("http://127.0.0.1:9/").expect("unroutable");
     let admission =
         crate::hub_user_process::AdmittedUserHub::for_test(temporary.path()).expect("admit");
-    let manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         store.clone(),
         temporary.path(),
         base.join("oauth2/v3/").expect("issuer"),
@@ -805,11 +810,11 @@ enum InterruptedReplacement {
 fn p3bf4_interrupt_the_replacement(state: InterruptedReplacement, data_dir: &std::path::Path) {
     match state {
         InterruptedReplacement::LeftoverPrevious => {
-            crate::teslamate_credentials::leave_previous_key_for_test(data_dir, b"left-over")
+            crate::legacy_owner_credentials::leave_previous_key_for_test(data_dir, b"left-over")
                 .expect("a previous generation");
         }
         InterruptedReplacement::PreviousMatches => {
-            crate::teslamate_credentials::begin_key_replacement_for_test(data_dir, b"newer-key")
+            crate::legacy_owner_credentials::begin_key_replacement_for_test(data_dir, b"newer-key")
                 .expect("a replacement that did not commit");
         }
     }
@@ -861,7 +866,7 @@ fn p3bf4_the_admitted_legacy_entry_settles_the_interrupted_replacement() {
         let store = p3bf3_seed_the_owner_store(&temporary);
         p3bf4_interrupt_the_replacement(state, temporary.path());
         let stored = store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("tokens")
             .expect("stored pair");
         let consulted = std::cell::Cell::new(0_usize);
@@ -869,7 +874,7 @@ fn p3bf4_the_admitted_legacy_entry_settles_the_interrupted_replacement() {
             consulted.set(consulted.get() + 1);
             true
         };
-        let key = crate::teslamate_credentials::load_key_for_tokens_with(
+        let key = crate::legacy_owner_credentials::load_key_for_tokens_with(
             temporary.path(),
             &stored,
             &may_settle,
@@ -934,7 +939,7 @@ fn p3bf5_seed_the_migrated_count_row(store: &HubStore) {
                 stopped_mode: None,
                 fuse_consecutive: 1,
                 fuse_generation: Some(
-                    crate::teslamate_token::legacy_refresh_credential_generation(&pair),
+                    crate::source_token_envelope::legacy_refresh_credential_generation(&pair),
                 ),
                 fuse_last_rejection_at: Some(now_ms / 1_000 - 10),
                 fuse_pause_until: None,
@@ -996,7 +1001,7 @@ fn p3bf5_construct_over_the_migrated_row(trip: Option<(&'static str, usize)>) ->
         Arc::clone(&seam),
         async move {
             let guard = RunWriteGuard::for_run(Some(Arc::clone(&admission)));
-            LegacyAuthManager::from_hub_teslamate_store_for_admitted_user(
+            LegacyAuthManager::from_hub_source_db_store_for_admitted_user(
                 unit_store,
                 &data_dir,
                 &endpoint,
@@ -1042,7 +1047,9 @@ fn p3bf5_null_digest_fill_stands_behind_the_write_guard() {
     assert_eq!(row.fuse_consecutive, 1);
     assert_eq!(
         row.fuse_rejected_access_digest,
-        Some(crate::teslamate_token::legacy_access_token_digest("guard-access")),
+        Some(crate::source_token_envelope::legacy_access_token_digest(
+            "guard-access"
+        )),
         "the construction filled the digest of the stored pair's access token"
     );
     assert!(

@@ -288,7 +288,7 @@ async fn s5_a_padded_refresh_token_that_the_answer_keeps_is_persisted_as_a_chang
         OwnerTokens::from_secret_parts(jg(), "refresh-0 ".to_owned()).expect("padded tokens");
     assert_eq!(
         stored,
-        crate::teslamate_token::legacy_refresh_credential_generation(&padded),
+        crate::source_token_envelope::legacy_refresh_credential_generation(&padded),
         "the row is keyed by the stored bytes (R46)"
     );
     rig.refresh(&mut manager).await.expect("the refresh");
@@ -309,7 +309,7 @@ async fn s5_a_padded_refresh_token_that_the_answer_keeps_is_persisted_as_a_chang
     let after = rig.stored_generation();
     assert_eq!(
         after,
-        crate::teslamate_token::legacy_refresh_credential_generation(&trimmed)
+        crate::source_token_envelope::legacy_refresh_credential_generation(&trimmed)
     );
     assert_ne!(
         after, stored,
@@ -429,7 +429,11 @@ async fn s6_a_fault_of_the_store_while_the_stored_pair_is_adopted_is_a_wait_too(
         .open()
         .unwrap()
         .execute(
-            "UPDATE teslamate_legacy_tokens SET access = x'00', refresh = x'00'",
+            concat!(
+                "UPDATE ",
+                crate::db::import_table_names::legacy_owner_tokens_table!(),
+                " SET access = x'00', refresh = x'00'"
+            ),
             [],
         )
         .unwrap();
@@ -579,7 +583,7 @@ async fn t16_under_a_test_override_the_successor_must_name_the_issuer_the_test_g
     })
     .to_string();
     rig.backend.script(vec![Reply::json(200, &body)]);
-    let mut manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+    let mut manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
         rig.store.clone(),
         rig.directory.path(),
         issuer,
@@ -1125,7 +1129,7 @@ async fn c5t10_a_refusal_row_in_the_store_is_restored_only_for_the_configured_mo
         .expect("rows")
         .account
         .expect("the account row");
-    let mut provider = LegacyAuthManager::from_hub_teslamate_store_for_test(
+    let mut provider = LegacyAuthManager::from_hub_source_db_store_for_test(
         bed.rig.store.clone(),
         bed.rig.directory.path(),
         &AuthEndpointConfig {
@@ -1213,10 +1217,12 @@ async fn r03_a_non_rotating_answer_whose_write_fails_leaves_the_receipt_started_
     rig.store
         .open()
         .unwrap()
-        .execute_batch(
-            "CREATE TRIGGER block_the_pair_write BEFORE UPDATE ON teslamate_legacy_tokens
-             BEGIN SELECT RAISE(ABORT, 'blocked'); END;",
-        )
+        .execute_batch(concat!(
+            "CREATE TRIGGER block_the_pair_write BEFORE UPDATE ON ",
+            crate::db::import_table_names::legacy_owner_tokens_table!(),
+            "
+             BEGIN SELECT RAISE(ABORT, 'blocked'); END;"
+        ))
         .unwrap();
     rig.refresh(&mut manager).await.expect("a pending write");
     assert_eq!(row_of(&rig).0, "persistence_pending");
@@ -1341,15 +1347,16 @@ async fn c5t11_unresolved_refresh_constructs_a_stopped_manager_without_transport
         // pair, collects again, and the fenced refresh token is never presented again.
         // (A pair in its refreshed form, not due: the recovered unit then sends no token
         // request at all.)
-        let key = crate::teslamate_credentials::load_key(rig.directory.path()).unwrap();
+        let key = crate::legacy_owner_credentials::load_key(rig.directory.path()).unwrap();
         let new_access = jg_exp(1_800_050_000);
         let tokens =
             OwnerTokens::from_secret_parts(new_access.clone(), "refresh-9".to_owned()).unwrap();
         let (cipher_access, cipher_refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens).unwrap();
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+                .unwrap();
         rig.store
-            .replace_teslamate_legacy_tokens(
-                &crate::db::TeslaMateLegacyTokenStore::refreshed(
+            .replace_legacy_owner_tokens(
+                &crate::db::LegacyOwnerTokenStore::refreshed(
                     cipher_access,
                     cipher_refresh,
                     T0 + 40_000,
@@ -1357,7 +1364,7 @@ async fn c5t11_unresolved_refresh_constructs_a_stopped_manager_without_transport
                 )
                 .unwrap()
                 .with_credential_generation(
-                    crate::teslamate_token::legacy_refresh_credential_generation(&tokens),
+                    crate::source_token_envelope::legacy_refresh_credential_generation(&tokens),
                 )
                 .unwrap(),
             )
@@ -1394,11 +1401,11 @@ async fn c5t11_unresolved_refresh_constructs_a_stopped_manager_without_transport
         let due_tokens =
             OwnerTokens::from_secret_parts(jg_exp(1_800_060_000), "refresh-10".to_owned()).unwrap();
         let (due_access, due_refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &due_tokens)
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &due_tokens)
                 .unwrap();
         rig.store
-            .replace_teslamate_legacy_tokens(
-                &crate::db::TeslaMateLegacyTokenStore::refreshed(
+            .replace_legacy_owner_tokens(
+                &crate::db::LegacyOwnerTokenStore::refreshed(
                     due_access,
                     due_refresh,
                     T0 + 40_000,
@@ -1406,7 +1413,7 @@ async fn c5t11_unresolved_refresh_constructs_a_stopped_manager_without_transport
                 )
                 .unwrap()
                 .with_credential_generation(
-                    crate::teslamate_token::legacy_refresh_credential_generation(&due_tokens),
+                    crate::source_token_envelope::legacy_refresh_credential_generation(&due_tokens),
                 )
                 .unwrap(),
             )
@@ -1456,19 +1463,31 @@ async fn c5t11_a_genuine_construction_failure_stays_an_error() {
             rig.store
                 .open()
                 .unwrap()
-                .execute("DELETE FROM teslamate_legacy_tokens", [])
+                .execute(
+                    concat!(
+                        "DELETE FROM ",
+                        crate::db::import_table_names::legacy_owner_tokens_table!()
+                    ),
+                    [],
+                )
                 .unwrap();
         }),
         ("missing key", |rig| {
-            std::fs::remove_file(crate::teslamate_credentials::key_path(rig.directory.path()))
-                .expect("remove the key");
+            std::fs::remove_file(crate::legacy_owner_credentials::key_path(
+                rig.directory.path(),
+            ))
+            .expect("remove the key");
         }),
         ("ciphertext that does not open", |rig| {
             rig.store
                 .open()
                 .unwrap()
                 .execute(
-                    "UPDATE teslamate_legacy_tokens SET access = X'0102030405060708090a0b0c0d0e0f1011'",
+                    concat!(
+                        "UPDATE ",
+                        crate::db::import_table_names::legacy_owner_tokens_table!(),
+                        " SET access = X'0102030405060708090a0b0c0d0e0f1011'"
+                    ),
                     [],
                 )
                 .unwrap();
@@ -1477,14 +1496,18 @@ async fn c5t11_a_genuine_construction_failure_stays_an_error() {
             rig.store
                 .open()
                 .unwrap()
-                .execute_batch("ALTER TABLE teslamate_legacy_tokens RENAME TO c5t11_hidden")
+                .execute_batch(concat!(
+                    "ALTER TABLE ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    " RENAME TO c5t11_hidden"
+                ))
                 .unwrap();
         }),
     ];
     for (label, fault) in faults {
         let rig = c5t11_unresolved_rig("row 4").await;
         fault(&rig);
-        let built = LegacyAuthManager::from_hub_teslamate_store_for_test(
+        let built = LegacyAuthManager::from_hub_source_db_store_for_test(
             rig.store.clone(),
             rig.directory.path(),
             &rig.endpoint(None),
@@ -1554,30 +1577,26 @@ async fn committed_unrotated_write() -> (Rig, LegacyAuthManager, uuid::Uuid) {
 /// Store a pair that an external writer put there, bound to `generation` when one
 /// is given (the unbound form is what the setup and import paths write).
 fn external_replacement(rig: &Rig, access: &str, refresh: &str, schedule: (i64, i64), bound: bool) {
-    let key = crate::teslamate_credentials::load_key(rig.directory.path()).expect("key");
+    let key = crate::legacy_owner_credentials::load_key(rig.directory.path()).expect("key");
     let tokens = OwnerTokens::from_secret_parts(access.to_owned(), refresh.to_owned())
         .expect("replacement tokens");
     let (access, refresh_bytes) =
-        crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
+        crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &tokens)
             .expect("encrypt");
-    let stored = crate::db::TeslaMateLegacyTokenStore::refreshed(
-        access,
-        refresh_bytes,
-        schedule.0,
-        schedule.1,
-    )
-    .expect("replacement row");
+    let stored =
+        crate::db::LegacyOwnerTokenStore::refreshed(access, refresh_bytes, schedule.0, schedule.1)
+            .expect("replacement row");
     let stored = if bound {
         stored
             .with_credential_generation(
-                crate::teslamate_token::legacy_refresh_credential_generation(&tokens),
+                crate::source_token_envelope::legacy_refresh_credential_generation(&tokens),
             )
             .expect("generation")
     } else {
         stored
     };
     rig.store
-        .replace_teslamate_legacy_tokens(&stored)
+        .replace_legacy_owner_tokens(&stored)
         .expect("the external write is accepted");
 }
 
@@ -1716,13 +1735,13 @@ async fn nc_external_replacement_after_ambiguous_commit_wins() {
 #[tokio::test]
 async fn nc_removal_after_ambiguous_commit_is_not_success_proof() {
     let (rig, mut manager, _) = committed_unrotated_write().await;
-    rig.store.clear_teslamate_legacy_tokens().expect("sign out");
+    rig.store.clear_source_db_legacy_tokens().expect("sign out");
     rig.at(T0 + 5);
     manager.service();
     // The row is gone: the closed receipt is no proof, nothing is written back, the
     // held successor is not adopted and the write is not reported as done.
     assert!(
-        rig.store.load_teslamate_legacy_tokens().unwrap().is_none(),
+        rig.store.load_legacy_owner_tokens().unwrap().is_none(),
         "the removed pair is not resurrected"
     );
     assert_ne!(row_of(&rig).0, "ready");

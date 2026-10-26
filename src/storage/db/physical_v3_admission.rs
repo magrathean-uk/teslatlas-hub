@@ -12,7 +12,7 @@ impl HubStore {
     #[doc(hidden)]
     pub fn stage_interop_physical_v3_admission(
         &self,
-        candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        candidate: crate::sync::physical_fragments::StagedPhysicalProjectionV3,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
         let publication_gate = self.try_acquire_publication_gate()?;
         self.stage_pending_physical_v3_admission(&publication_gate, candidate)
@@ -26,7 +26,7 @@ impl HubStore {
     #[doc(hidden)]
     pub fn rotate_and_activate_interop_physical_v3_admission_at(
         &self,
-        candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        candidate: crate::sync::physical_fragments::StagedPhysicalProjectionV3,
         retained_receipt_id: &str,
         retained_at_ms: i64,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
@@ -64,7 +64,7 @@ impl HubStore {
     pub(crate) fn stage_pending_physical_v3_admission(
         &self,
         publication_gate: &PublicationGate,
-        mut candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        mut candidate: crate::sync::physical_fragments::StagedPhysicalProjectionV3,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
         let result = self.stage_pending_physical_v3_admission_inner(&candidate);
         candidate.retain_catalogued_objects();
@@ -91,7 +91,7 @@ impl HubStore {
 
     fn stage_pending_physical_v3_admission_inner(
         &self,
-        candidate: &crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        candidate: &crate::sync::physical_fragments::StagedPhysicalProjectionV3,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
         let admission = self.validate_physical_v3_candidate(candidate)?;
         if let Some(existing) =
@@ -134,7 +134,7 @@ impl HubStore {
     pub(crate) fn rotate_pending_physical_v3_admission_at(
         &self,
         publication_gate: &PublicationGate,
-        candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        candidate: crate::sync::physical_fragments::StagedPhysicalProjectionV3,
         retained_at_ms: i64,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
         self.rotate_pending_physical_v3_admission_with_delta_at(
@@ -146,8 +146,8 @@ impl HubStore {
     pub(crate) fn rotate_pending_physical_v3_admission_with_delta_at(
         &self,
         publication_gate: &PublicationGate,
-        candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
-        delta: Option<crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta>,
+        candidate: crate::sync::physical_fragments::StagedPhysicalProjectionV3,
+        delta: Option<crate::import::source_db::physical_delta_pack::StagedPhysicalDelta>,
         retained_at_ms: i64,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
         self.rotate_physical_v3_admission_at(publication_gate, candidate, delta, retained_at_ms, false)
@@ -159,8 +159,8 @@ impl HubStore {
     pub(crate) fn rotate_and_activate_physical_v3_admission_with_delta_at(
         &self,
         publication_gate: &PublicationGate,
-        candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
-        delta: Option<crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta>,
+        candidate: crate::sync::physical_fragments::StagedPhysicalProjectionV3,
+        delta: Option<crate::import::source_db::physical_delta_pack::StagedPhysicalDelta>,
         retained_at_ms: i64,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
         self.rotate_physical_v3_admission_at(publication_gate, candidate, delta, retained_at_ms, true)
@@ -169,8 +169,8 @@ impl HubStore {
     fn rotate_physical_v3_admission_at(
         &self,
         publication_gate: &PublicationGate,
-        mut candidate: crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
-        mut delta: Option<crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta>,
+        mut candidate: crate::sync::physical_fragments::StagedPhysicalProjectionV3,
+        mut delta: Option<crate::import::source_db::physical_delta_pack::StagedPhysicalDelta>,
         retained_at_ms: i64,
         public: bool,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
@@ -205,8 +205,8 @@ impl HubStore {
 
     fn rotate_pending_physical_v3_admission_inner(
         &self,
-        candidate: &crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
-        delta: Option<&crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta>,
+        candidate: &crate::sync::physical_fragments::StagedPhysicalProjectionV3,
+        delta: Option<&crate::import::source_db::physical_delta_pack::StagedPhysicalDelta>,
         retained_at_ms: i64,
         serve_state: &'static str,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
@@ -285,7 +285,7 @@ impl HubStore {
 
     fn validate_physical_v3_candidate(
         &self,
-        candidate: &crate::import::teslamate::physical_fragments::StagedPhysicalProjectionV3,
+        candidate: &crate::sync::physical_fragments::StagedPhysicalProjectionV3,
     ) -> Result<PendingPhysicalV3Admission, StoreError> {
         let manifest = &candidate.manifest;
         let limits = ProtocolLimits::hub_sync_v1_1_3_schema_2_2();
@@ -345,9 +345,7 @@ impl HubStore {
             return match self.physical_v3_admission_commit_state(admission)? {
                 ManifestCommitState::Exact => Ok(()),
                 ManifestCommitState::Absent => Err(StoreError::PhysicalV3AdmissionConflict),
-                ManifestCommitState::Conflicting => {
-                    Err(StoreError::PhysicalV3AdmissionConflict)
-                }
+                ManifestCommitState::Conflicting => Err(StoreError::PhysicalV3AdmissionConflict),
             };
         }
         if crate::durability_fault::check(
@@ -469,9 +467,7 @@ impl HubStore {
             {
                 Ok(ManifestCommitState::Exact)
             }
-            (Ok(Some(current)), Ok(None)) if current == *prior => {
-                Ok(ManifestCommitState::Absent)
-            }
+            (Ok(Some(current)), Ok(None)) if current == *prior => Ok(ManifestCommitState::Absent),
             (Err(error), _) | (_, Err(error)) => Err(error),
             _ => Ok(ManifestCommitState::Conflicting),
         }
@@ -1111,7 +1107,7 @@ fn insert_physical_v3_delta_transition(
     transaction: &Transaction<'_>,
     prior: &PendingPhysicalV3Admission,
     target: &PendingPhysicalV3Admission,
-    delta: &crate::import::teslamate::physical_delta_pack::StagedPhysicalDelta,
+    delta: &crate::import::source_db::physical_delta_pack::StagedPhysicalDelta,
     packs_dir: &std::path::Path,
 ) -> Result<(), StoreError> {
     if delta.vehicle_id != target.vehicle_id

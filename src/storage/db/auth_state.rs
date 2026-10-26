@@ -136,7 +136,9 @@ impl HubStore {
                         retry_at,
                         stopped_generation: stopped_generation
                             .as_deref()
-                            .map(|value| parse_stored_uuid("collector auth stopped generation", value))
+                            .map(|value| {
+                                parse_stored_uuid("collector auth stopped generation", value)
+                            })
                             .transpose()?,
                         stopped_mode,
                         fuse_consecutive: u8::try_from(fuse_consecutive)
@@ -240,7 +242,7 @@ impl HubStore {
     /// status the owner sees.
     pub(crate) fn fill_collector_auth_rejected_access_digest(
         &self,
-        pair: &TeslaMateLegacyTokenStore,
+        pair: &LegacyOwnerTokenStore,
         consecutive: u8,
         generation: Option<Uuid>,
         digest: Uuid,
@@ -251,12 +253,16 @@ impl HubStore {
             .map_err(StoreError::Begin)?;
         let same_pair: bool = transaction
             .query_row(
-                "SELECT EXISTS(SELECT 1 FROM teslamate_legacy_tokens
-                  WHERE singleton_id = 1 AND access = ?1 AND refresh = ?2)",
+                concat!(
+                    "SELECT EXISTS(SELECT 1 FROM ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    "
+                  WHERE singleton_id = 1 AND access = ?1 AND refresh = ?2)"
+                ),
                 params![pair.access(), pair.refresh()],
                 |row| row.get(0),
             )
-            .map_err(StoreError::TeslaMateTokenStore)?;
+            .map_err(StoreError::LegacyOwnerTokenStore)?;
         if !same_pair {
             return Err(StoreError::LegacyRefreshOutcomeUnknown);
         }
@@ -331,13 +337,17 @@ impl HubStore {
         let connection = self.open_read_only_connection()?;
         let row: Option<Option<String>> = connection
             .query_row(
-                "SELECT credential_generation FROM teslamate_legacy_tokens
-                  WHERE singleton_id = 1",
+                concat!(
+                    "SELECT credential_generation FROM ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    "
+                  WHERE singleton_id = 1"
+                ),
                 [],
                 |row| row.get(0),
             )
             .optional()
-            .map_err(StoreError::TeslaMateTokenStore)?;
+            .map_err(StoreError::LegacyOwnerTokenStore)?;
         Ok(match row {
             None => StoredLegacyGeneration::NoRow,
             Some(None) => StoredLegacyGeneration::Unbound,
@@ -395,13 +405,17 @@ impl HubStore {
         let connection = self.open_read_only_connection()?;
         let current: Option<Option<String>> = connection
             .query_row(
-                "SELECT credential_generation FROM teslamate_legacy_tokens
-                  WHERE singleton_id = 1",
+                concat!(
+                    "SELECT credential_generation FROM ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    "
+                  WHERE singleton_id = 1"
+                ),
                 [],
                 |row| row.get(0),
             )
             .optional()
-            .map_err(StoreError::TeslaMateTokenStore)?;
+            .map_err(StoreError::LegacyOwnerTokenStore)?;
         let Some(Some(current)) = current else {
             return Ok(String::new());
         };

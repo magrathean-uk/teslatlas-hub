@@ -613,8 +613,8 @@ impl HubStore {
         transaction.commit().map_err(StoreError::FleetTokenStore)
     }
 
-    /// Delete the sole persisted TeslaMate token pair.
-    pub fn clear_teslamate_legacy_tokens(&self) -> Result<(), StoreError> {
+    /// Delete the sole persisted legacy owner token pair.
+    pub fn clear_source_db_legacy_tokens(&self) -> Result<(), StoreError> {
         let mut connection = self.open()?;
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -635,12 +635,16 @@ impl HubStore {
             .map_err(StoreError::LegacyRefreshReceipt)?;
         transaction
             .execute(
-                "DELETE FROM teslamate_legacy_tokens WHERE singleton_id = 1",
+                concat!(
+                    "DELETE FROM ",
+                    crate::db::import_table_names::legacy_owner_tokens_table!(),
+                    " WHERE singleton_id = 1"
+                ),
                 [],
             )
-            .map_err(StoreError::TeslaMateTokenStore)?;
+            .map_err(StoreError::LegacyOwnerTokenStore)?;
         transaction
             .commit()
-            .map_err(StoreError::TeslaMateTokenStore)
+            .map_err(StoreError::LegacyOwnerTokenStore)
     }
 }

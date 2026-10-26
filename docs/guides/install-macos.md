@@ -15,7 +15,7 @@ installation, follow [Upgrade and rollback](../releases/upgrade.md).
    `~/Applications`. Keep it on the Mac's local disk; an external volume or
    an App Translocation location cannot host the per-user agent.
 2. Open the app from that location.
-3. Choose Fleet API, legacy login, or migration from the source database.
+3. Choose Fleet API, legacy login, or history import.
 4. Complete account setup and diagnostics, then choose **Start Hub**. The app
    writes and loads its per-user LaunchAgent after configuration preflight.
 5. Confirm the dashboard reports **Hub is running**, diagnostics pass, and
@@ -29,16 +29,16 @@ your Tesla Developer application and the configuration described in
 [Fleet setup](fleet-setup.md). Legacy requires an existing Owner API token
 pair. Do not leave another service refreshing the same Legacy credentials.
 
-To bring existing history across, choose **Migrate from TeslaMate** and follow
+To bring existing history across, choose **Import History** and follow
 the [migration checklist](../releases/migration.md#before-you-start). Enter the
 server, SSH port and user. Select **SSH key** and use **Choose Key…** to select
 your private key, or select **Password** for that authentication path. Leaving
 the key field empty uses the SSH agent or default keys. Do not choose the
 public key ending in `.pub` or share the private key with support.
 
-Select **This user needs sudo to read the TeslaMate database** only when the
+Select **This user needs sudo to read the source database** only when the
 server account needs that access. Read the compatibility confirmation before
-importing. Keep TeslaMate and its backup until you have verified the imported
+importing. Keep the source application and its backup until you have verified the imported
 history and completed the explicit cutover step.
 
 ![Mac migration form with server, port, SSH user and Choose Key control](../assets/hub-migration.png)

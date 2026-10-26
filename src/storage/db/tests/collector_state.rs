@@ -153,6 +153,7 @@ fn a_v69_catalogue_migrates_to_empty_collector_tables() {
             .unwrap()
     };
     assert!(!exists(&connection));
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
     let migrated = HubStore::initialize(temporary.path()).expect("migrated");
@@ -243,7 +244,7 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
     for table in [
         "vehicles",
         "supervised_collector_lease",
-        "teslamate_legacy_tokens",
+        crate::db::import_table_names::legacy_owner_tokens_table!(),
         "outbound_request_receipts",
         "legacy_refresh_receipt_bindings",
     ] {
@@ -259,6 +260,7 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
     ] {
         assert!(!before.contains_key(table), "{table} does not exist in v69");
     }
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
 
@@ -320,6 +322,7 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
         assert!(after[table].is_empty(), "{table} is not backfilled");
     }
     assert_eq!(migrated.load_collector_auth_row().unwrap(), None);
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
 
     // The retained heartbeat is read before a replacement acquisition, and the
@@ -1037,9 +1040,14 @@ fn cadence_wait_gap_bookkeeping_preserves_collection_state() {
             ..CollectorRowsWrite::default()
         },
     );
-    store.insert_collector_owner_action("retry_collection", None, CS_W0).unwrap();
     store
-        .write_collector_auth_row(&as_row("observer_waiting", Some("token_expired"), false), CS_W0)
+        .insert_collector_owner_action("retry_collection", None, CS_W0)
+        .unwrap();
+    store
+        .write_collector_auth_row(
+            &as_row("observer_waiting", Some("token_expired"), false),
+            CS_W0,
+        )
         .unwrap();
     let state_before = cs_state_dump(&store);
     let gaps_before = cs_gap_dump(&store);

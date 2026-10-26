@@ -194,14 +194,15 @@ pub fn preflight_hub_for_serve(
             "fixture source-run Serve requires published fixture data",
         ));
     }
-    let key_bytes = crate::teslamate_credentials::load_existing_cursor_key_bytes(&config.data_dir)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                "source-run fixture cursor key is unavailable",
-            )
-        })?;
+    let key_bytes =
+        crate::legacy_owner_credentials::load_existing_cursor_key_bytes(&config.data_dir)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "source-run fixture cursor key is unavailable",
+                )
+            })?;
     let mut key = [0_u8; 32];
     key.copy_from_slice(key_bytes.as_slice());
     let cursor_key = crate::protocol::CursorKey::from_bytes(key);
@@ -399,7 +400,7 @@ fn provider_credentials_are_usable(
     match provider {
         crate::config::CollectorProvider::Legacy => {
             let tokens = store
-                .load_teslamate_legacy_tokens()
+                .load_legacy_owner_tokens()
                 .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
                 .ok_or_else(|| {
                     io::Error::new(
@@ -407,7 +408,7 @@ fn provider_credentials_are_usable(
                         "legacy Owner API credentials are required before install",
                     )
                 })?;
-            crate::teslamate_credentials::load_key_for_tokens(data_dir, &tokens).map_err(
+            crate::legacy_owner_credentials::load_key_for_tokens(data_dir, &tokens).map_err(
                 |error| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,

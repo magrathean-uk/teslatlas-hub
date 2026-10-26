@@ -196,9 +196,9 @@ fn address_lookup_key(
 /// kind, the current-source lookup in `observation_persistence.rs` that binds
 /// it, C2 R5's import-bound reader (`charge_import_bound`), C6 Part I's
 /// identity tidy (the evidence of C6 R55 (c)), C6 Part S1, and C9 Part Q's
-/// reads. The schema's CHECK text and the stored rows are not changed here
-/// (N1's).
-pub(crate) const IMPORT_SOURCE_KIND: &str = "teslamate";
+/// reads. The import-name schema step migrates the stored kinds and CHECK text.
+pub const IMPORT_SOURCE_KIND: &str = "source_db";
+pub const DEFAULT_IMPORT_SOURCE_KEY: &str = "default";
 
 /// Which charge rows of one vehicle are imported (C2 R5): those with
 /// `charge_id <= max_imported_charge_id`, the vehicle's `W(V)`; zero means

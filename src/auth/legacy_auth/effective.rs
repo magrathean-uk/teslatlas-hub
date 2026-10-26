@@ -57,9 +57,9 @@ pub(crate) enum EffectiveAuthError {
     #[error("store fault")]
     Store(#[from] StoreError),
     #[error("key fault")]
-    Key(#[from] crate::teslamate_credentials::TeslaMateCredentialError),
+    Key(#[from] crate::legacy_owner_credentials::SourceDbCredentialError),
     #[error("cipher fault")]
-    Cipher(#[from] crate::teslamate_token::TeslaMateTokenError),
+    Cipher(#[from] crate::source_token_envelope::SourceDbTokenError),
 }
 
 /// The stored status of a reader that has no loaded mode (an explicitly
@@ -107,20 +107,20 @@ pub(crate) fn effective_auth_row(
         }
         "sign_in_required" | "signed_out" | "retrying" | "persistence_pending" => {
             let status = AuthStatus::from_row(&row)?;
-            let Some(tokens) = store.load_teslamate_legacy_tokens()? else {
+            let Some(tokens) = store.load_legacy_owner_tokens()? else {
                 // No pair: nothing can match or expire, the stored word stands.
                 return unchanged(row);
             };
-            let key = crate::teslamate_credentials::select_stored_legacy_key_read_only(
+            let key = crate::legacy_owner_credentials::select_stored_legacy_key_read_only(
                 data_dir, &tokens,
             )?;
-            let plaintext = crate::teslamate_token::decrypt_legacy_owner_tokens(
+            let plaintext = crate::source_token_envelope::decrypt_legacy_owner_tokens(
                 key.as_bytes(),
                 tokens.access(),
                 tokens.refresh(),
             )?;
             let generation =
-                crate::teslamate_token::legacy_refresh_credential_generation(&plaintext);
+                crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
             let usable_until = stored_usable_until(
                 plaintext.access_token(),
                 tokens.expires_at(),
@@ -187,5 +187,32 @@ pub(crate) fn effective_auth_row(
             }))
         }
         _ => unchanged(row),
+    }
+}
+
+#[cfg(test)]
+mod n1_src_auth_legacy_auth_effective_rs_display_tests {
+    use super::*;
+    use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
+
+    impl ErrorExample for EffectiveAuthError {
+        fn error_example() -> Self {
+            EffectiveAuthError::Store(example())
+        }
+    }
+
+    #[test]
+    fn every_reachable_error_display_omits_the_source_project_name() {
+        fn check_effective_auth_error(error: EffectiveAuthError) {
+            match &error {
+                EffectiveAuthError::Store(..) => (),
+                EffectiveAuthError::Key(..) => (),
+                EffectiveAuthError::Cipher(..) => (),
+            }
+            assert_name_free(&error);
+        }
+        check_effective_auth_error(EffectiveAuthError::Store(example()));
+        check_effective_auth_error(EffectiveAuthError::Key(example()));
+        check_effective_auth_error(EffectiveAuthError::Cipher(example()));
     }
 }

@@ -319,7 +319,7 @@ final class HubControllerTests: XCTestCase {
             if case .failure = result { failures += 1 }
             if failures == 8 { expectation.fulfill() }
         }
-        controller.importTeslaMate(source: "postgres://example", carID: "1", passwordFile: "/tmp/password", encryptionKeyFile: "/tmp/encryption", acknowledgeV42CompatibleSchema: true, completion: done)
+        controller.importSource(source: "postgres://example", carID: "1", passwordFile: "/tmp/password", encryptionKeyFile: "/tmp/encryption", acceptSchemaEvidence: true, completion: done)
         controller.configureTeslaAccount(tokens: TeslaAuthTokens(accessToken: "access", refreshToken: "refresh"), completion: done)
         controller.performVehicleControl(.climateStart, completion: done)
         controller.stopHub(completion: done)
@@ -399,7 +399,7 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(text.contains("status — vehicles and credential presence"))
             XCTAssertTrue(text.contains("Duration:"))
             XCTAssertTrue(text.contains("Read duration:"))
-            XCTAssertTrue(text.contains("TeslaMate is not written"))
+            XCTAssertTrue(text.contains("source database is not written"))
             XCTAssertTrue(text.contains("tokens are not deleted") || text.contains("Tokens are not deleted") || text.contains("Owner and Fleet tokens"))
             XCTAssertTrue(text.contains("== support metadata =="))
             XCTAssertTrue(text.contains("Expected Hub: \(HubRelease.bundledVersion)"))
@@ -681,7 +681,7 @@ final class HubControllerTests: XCTestCase {
         {"accessToken":"access-secret-value","refresh_token":"refresh-secret-value"}
         {"ingestToken":"ingest-secret-value","private_key":"private-secret-value"}
         callback=https://fleet.example/callback?code=EU_secret_code&state=public-state
-        source=postgresql://reader:database-secret@127.0.0.1/teslamate
+        source=postgresql://reader:database-secret@127.0.0.1/source database
         jwt=eyJheader.payload.signature
         vehicle=5YJ3E1EA7KF317000
         display_name="Athena Road Trip"
@@ -2021,14 +2021,14 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(alert.informativeText.contains("Do not repeat"))
     }
 
-    func testImportSheetExplainsManualTeslaMateHandover() {
-        XCTAssertTrue(ImportSheetController.teslaMateHandoverDetail.contains("without stopping"))
-        XCTAssertTrue(ImportSheetController.teslaMateHandoverDetail.contains("yourself"))
-        for fragment in ["back up TeslaMate", "update it to version 4.2.0 or newer", "start it once",
+    func testImportSheetExplainsManualSourceHandover() {
+        XCTAssertTrue(ImportSheetController.sourceHandoverDetail.contains("without stopping"))
+        XCTAssertTrue(ImportSheetController.sourceHandoverDetail.contains("yourself"))
+        for fragment in ["back up the source application", "update it to release 4.2.0 or later", "start it once",
                          "wait for its database migrations to finish"] {
-            XCTAssertTrue(ImportSheetController.teslaMateVersionRequirement.contains(fragment))
+            XCTAssertTrue(ImportSheetController.sourceVersionRequirement.contains(fragment))
         }
-        XCTAssertTrue(ImportSheetController.teslaMateVersionRequirement.contains("cannot prove"))
+        XCTAssertTrue(ImportSheetController.sourceVersionRequirement.contains("cannot prove"))
 
         let sheet = ImportSheetController(controller: HubController(
             environment: ["TESLATLAS_HUB_UI_PREVIEW": "1"]
@@ -2036,7 +2036,7 @@ final class HubControllerTests: XCTestCase {
         let visibleGuidance = labels(in: sheet.window?.contentView)
             .map(\.stringValue)
             .joined(separator: " ")
-        for fragment in ["back up TeslaMate", "update it to version 4.2.0 or newer", "start it once",
+        for fragment in ["back up the source application", "update it to release 4.2.0 or later", "start it once",
                          "wait for its database migrations to finish"] {
             XCTAssertTrue(visibleGuidance.contains(fragment))
         }
@@ -2048,10 +2048,10 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: false)
         let rejected = expectation(description: "missing version acknowledgement rejected")
 
-        controller.checkTeslaMateCompatibility(source: "postgresql://reader@localhost/teslamate",
+        controller.checkSourceCompatibility(source: "postgresql://reader@localhost/sourcedb",
                                                 carID: "1",
                                                 passwordFile: "/tmp/password",
-                                                acknowledgeV42CompatibleSchema: false) { result in
+                                                acceptSchemaEvidence: false) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("missing acknowledgement was accepted")
             }
@@ -2069,11 +2069,11 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: false)
         let rejected = expectation(description: "missing version acknowledgement rejected")
 
-        controller.importTeslaMate(source: "postgresql://reader@localhost/teslamate",
+        controller.importSource(source: "postgresql://reader@localhost/sourcedb",
                                    carID: "1",
                                    passwordFile: "/tmp/password",
                                    encryptionKeyFile: "/tmp/key",
-                                   acknowledgeV42CompatibleSchema: false) { result in
+                                   acceptSchemaEvidence: false) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("missing acknowledgement was accepted")
             }
@@ -2089,7 +2089,7 @@ final class HubControllerTests: XCTestCase {
         let home = try temporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }
         let runner = RecordingCommandRunner(result: .success(
-            #"{"status":"incompatible","reasonCode":"schema_mismatch","requiredVersion":"4.2.0","guidance":"Update TeslaMate first."}"#
+            #"{"status":"incompatible","reasonCode":"schema_mismatch","requiredVersion":"4.2.0","guidance":"Check the source application first."}"#
         ))
         let events = EventRecorder()
         let controller = HubController(commandRunner: runner,
@@ -2098,11 +2098,11 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let rejected = expectation(description: "incompatible source rejected before mutation")
 
-        controller.importTeslaMate(source: "postgresql://reader@localhost/teslamate",
+        controller.importSource(source: "postgresql://reader@localhost/sourcedb",
                                    carID: "1",
                                    passwordFile: "/tmp/password",
                                    encryptionKeyFile: "/tmp/key",
-                                   acknowledgeV42CompatibleSchema: true) { result in
+                                   acceptSchemaEvidence: true) { result in
             guard case .failure = result else {
                 return XCTFail("incompatible schema was accepted")
             }
@@ -2111,15 +2111,15 @@ final class HubControllerTests: XCTestCase {
 
         wait(for: [rejected], timeout: 1)
         XCTAssertEqual(runner.arguments.count, 1)
-        XCTAssertTrue(runner.arguments[0].contains("teslamate-check"))
-        XCTAssertTrue(runner.arguments[0].contains("--acknowledge-v4-2-compatible-schema"))
+        XCTAssertTrue(runner.arguments[0].contains("source-check"))
+        XCTAssertTrue(runner.arguments[0].contains("--accept-schema-evidence"))
         XCTAssertTrue(events.values.isEmpty)
         XCTAssertFalse(controller.hasPendingMigrationHandover)
         XCTAssertFalse(FileManager.default.fileExists(atPath: home
             .appendingPathComponent("Library/Application Support/Teslatlas Hub/config.toml").path))
     }
 
-    func testInstalledMigrationUsesLiveSnapshotWithoutStoppingTeslaMate() throws {
+    func testInstalledMigrationUsesLiveSnapshotWithoutStoppingSource() throws {
         let events = EventRecorder()
         let runner = ScriptedRunner(events: events, result: .success(
             #"{"status":"imported","captureMode":"online-snapshot"}"#
@@ -2133,11 +2133,11 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "migration finished")
 
-        controller.importTeslaMate(source: "postgresql://reader@localhost/teslamate",
+        controller.importSource(source: "postgresql://reader@localhost/sourcedb",
                                    carID: "1",
                                    passwordFile: "/tmp/password",
                                    encryptionKeyFile: "/tmp/key",
-                                   acknowledgeV42CompatibleSchema: true) { result in
+                                   acceptSchemaEvidence: true) { result in
             if case let .failure(error) = result { XCTFail(error.localizedDescription) }
             finished.fulfill()
         }
@@ -2148,11 +2148,11 @@ final class HubControllerTests: XCTestCase {
         XCTAssertTrue(runner.arguments.joined().contains("--online-snapshot"))
         XCTAssertTrue(runner.arguments.joined().contains("--preserve-existing-credentials"))
         let versionAcknowledgedCommands = runner.arguments.filter {
-            $0.contains("teslamate-check") || $0.contains("migrate")
+            $0.contains("source-check") || $0.contains("migrate")
         }
         XCTAssertEqual(versionAcknowledgedCommands.count, 2)
         XCTAssertTrue(versionAcknowledgedCommands.allSatisfy {
-            $0.contains("--acknowledge-v4-2-compatible-schema")
+            $0.contains("--accept-schema-evidence")
         })
         XCTAssertTrue(controller.hasPendingMigrationHandover)
         XCTAssertFalse(events.values.contains("service:start"))
@@ -2173,11 +2173,11 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "migration finished")
 
-        controller.importTeslaMate(source: "postgresql://reader@localhost/teslamate",
+        controller.importSource(source: "postgresql://reader@localhost/sourcedb",
                                    carID: "1",
                                    passwordFile: "/tmp/password",
                                    encryptionKeyFile: "/tmp/key",
-                                   acknowledgeV42CompatibleSchema: true) { result in
+                                   acceptSchemaEvidence: true) { result in
             if case let .failure(error) = result { XCTFail(error.localizedDescription) }
             finished.fulfill()
         }
@@ -2206,11 +2206,11 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: false)
         let finished = expectation(description: "fresh migration installed")
 
-        controller.importTeslaMate(source: "postgresql://reader@localhost/teslamate",
+        controller.importSource(source: "postgresql://reader@localhost/sourcedb",
                                    carID: "1",
                                    passwordFile: "/tmp/password",
                                    encryptionKeyFile: "/tmp/key",
-                                   acknowledgeV42CompatibleSchema: true) { result in
+                                   acceptSchemaEvidence: true) { result in
             if case let .failure(error) = result { XCTFail(error.localizedDescription) }
             finished.fulfill()
         }
@@ -2241,15 +2241,15 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "migration failure returned")
 
-        controller.importTeslaMate(source: "postgres://reader@localhost/teslamate",
+        controller.importSource(source: "postgres://reader@localhost/sourcedb",
                                    carID: "1",
                                    passwordFile: "/tmp/password",
                                    encryptionKeyFile: "/tmp/key",
-                                   acknowledgeV42CompatibleSchema: true) { result in
+                                   acceptSchemaEvidence: true) { result in
             guard case let .failure(error) = result else { return XCTFail("expected migration timeout") }
             XCTAssertEqual(
                 error.localizedDescription,
-                "TeslaMate import failed; retry the import."
+                "Source application import failed; retry the import."
             )
             finished.fulfill()
         }
@@ -2281,17 +2281,17 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "ambiguous migration stopped")
 
-        controller.importTeslaMate(source: "postgres://reader@localhost/teslamate",
+        controller.importSource(source: "postgres://reader@localhost/sourcedb",
                                    carID: "1",
                                    passwordFile: "/tmp/password",
                                    encryptionKeyFile: "/tmp/key",
-                                   acknowledgeV42CompatibleSchema: true) { result in
+                                   acceptSchemaEvidence: true) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("expected ambiguous migration failure")
             }
             XCTAssertEqual(
                 error.localizedDescription,
-                "TeslaMate import failed; retry the import."
+                "Source application import failed; retry the import."
             )
             finished.fulfill()
         }
@@ -2322,17 +2322,17 @@ final class HubControllerTests: XCTestCase {
                                        serviceInstalledOverride: true)
         let finished = expectation(description: "started import failure surfaced")
 
-        controller.importTeslaMate(source: "postgres://reader@localhost/teslamate",
+        controller.importSource(source: "postgres://reader@localhost/sourcedb",
                                    carID: "1",
                                    passwordFile: "/tmp/password",
                                    encryptionKeyFile: "/tmp/key",
-                                   acknowledgeV42CompatibleSchema: true) { result in
+                                   acceptSchemaEvidence: true) { result in
             guard case let .failure(error) = result else {
                 return XCTFail("expected import failure")
             }
             XCTAssertEqual(
                 error.localizedDescription,
-                "TeslaMate import failed; retry the import."
+                "Source application import failed; retry the import."
             )
             finished.fulfill()
         }
@@ -2646,11 +2646,11 @@ final class HubControllerTests: XCTestCase {
     }
 
     func testMigrationSourceAllowsUsernameButRejectsPassword() throws {
-        XCTAssertNoThrow(try HubController.validateMigrationSource("postgresql://reader@localhost/teslamate"))
-        XCTAssertThrowsError(try HubController.validateMigrationSource("postgresql://reader:secret@localhost/teslamate"))
-        XCTAssertThrowsError(try HubController.validateMigrationSource("postgres://reader:s%40cret@localhost/teslamate"))
-        XCTAssertThrowsError(try HubController.validateMigrationSource("https://localhost/teslamate"))
-        XCTAssertThrowsError(try HubController.validateMigrationSource("postgresql:///teslamate"))
+        XCTAssertNoThrow(try HubController.validateMigrationSource("postgresql://reader@localhost/sourcedb"))
+        XCTAssertThrowsError(try HubController.validateMigrationSource("postgresql://reader:secret@localhost/sourcedb"))
+        XCTAssertThrowsError(try HubController.validateMigrationSource("postgres://reader:s%40cret@localhost/sourcedb"))
+        XCTAssertThrowsError(try HubController.validateMigrationSource("https://localhost/sourcedb"))
+        XCTAssertThrowsError(try HubController.validateMigrationSource("postgresql:///sourcedb"))
         XCTAssertThrowsError(try HubController.validateMigrationSource("postgresql://localhost"))
     }
 
@@ -3269,7 +3269,7 @@ private extension HubVehicleCardActions {
 
 private extension HubNavigationActions {
     static let noOp = HubNavigationActions(select: { _ in }, diagnostics: {}, logs: {},
-                                           serviceDetails: {}, importTeslaMate: {}, connectTesla: {},
+                                           serviceDetails: {}, importSource: {}, connectTesla: {},
                                            accountMenu: { NSMenu() }, appearance: {})
 }
 
@@ -3453,9 +3453,9 @@ private final class MutatingFailureRunner: HubCommandRunning {
     }
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
-        if arguments.contains("teslamate-check") {
+        if arguments.contains("source-check") {
             completion(.success(
-                #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready."}"#
+                #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
             ))
             return
         }
@@ -3502,10 +3502,10 @@ private final class ScriptedRunner: HubCommandRunning {
 
     func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
         self.arguments.append(arguments)
-        if arguments.contains("teslamate-check") {
+        if arguments.contains("source-check") {
             events.append("check")
             completion(.success(
-                #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready."}"#
+                #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
             ))
             return
         }
@@ -3628,8 +3628,8 @@ private final class ScriptedService: HubServiceControlling {
 extension HubControllerTests {
     /// Every `service` action a site issues, in order, plus the sites' own commands.
     private final class SiteRunner: HubCommandRunning {
-        static let historyCompatibility = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
-        static let compatibility = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","guidance":"Ready."}"#
+        static let historyCompatibility = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready.","credentialScope":"history-only","applicationVersionStatus":"unknown"}"#
+        static let compatibility = #"{"status":"compatible","reasonCode":"v4_2_compatible_schema","requiredVersion":"4.2.0","sourceSchemaRecognised":true,"schemaSetLabel":"0123456789ab","guidance":"Ready."}"#
         static let historyReady = #"{"status":"ready","credentialScope":"history-only","publishedVehicles":1,"collectorEnabled":false}"#
         private(set) var commands: [String] = []
         var historyPreflightFails = false
@@ -3637,7 +3637,7 @@ extension HubControllerTests {
         func run(arguments: [String], completion: @escaping (Result<String, Error>) -> Void) {
             let command = arguments.first { !$0.hasPrefix("-") && !$0.hasSuffix("config.toml") } ?? ""
             commands.append(command)
-            if arguments.contains("teslamate-check") {
+            if arguments.contains("source-check") {
                 completion(.success(arguments.contains("--history-only") ? Self.historyCompatibility : Self.compatibility))
             } else if arguments.contains("migrate") {
                 completion(.success(#"{"status":"imported","captureMode":"online-snapshot"}"#))
@@ -3691,15 +3691,15 @@ extension HubControllerTests {
                 controller.signOutTeslaAccount { _ in done() }
             },
             Site(label: "prepareOnlineMigration history-only", expected: "stop", installed: false) { controller, done in
-                controller.importTeslaMateHistoryOnlyOnline(
-                    source: "postgresql://reader@127.0.0.1:55438/teslamate_snapshot", carID: "1",
-                    passwordFile: "/private/password", acknowledgeV42CompatibleSchema: true) { _ in done() }
+                controller.importSourceHistoryOnlyOnline(
+                    source: "postgresql://reader@127.0.0.1:55438/source_snapshot", carID: "1",
+                    passwordFile: "/private/password", acceptSchemaEvidence: true) { _ in done() }
             },
             Site(label: "prepareOnlineMigration installed", expected: "stop") { controller, done in
-                controller.importTeslaMateOnline(
-                    source: "postgresql://reader@localhost/teslamate", carID: "1",
+                controller.importSourceOnline(
+                    source: "postgresql://reader@localhost/sourcedb", carID: "1",
                     passwordFile: "/private/password", encryptionKeyFile: "/private/key",
-                    acknowledgeV42CompatibleSchema: true) { _ in done() }
+                    acceptSchemaEvidence: true) { _ in done() }
             },
             Site(label: "acknowledgeMigrationHandoverAndStart failed history-only start", expected: "start",
                  failStart: true, historyMarker: ("awaiting_handover", true)) { controller, done in

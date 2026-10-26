@@ -131,21 +131,21 @@ impl LoopBed {
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
         seed_supervised_restart_import(&store);
-        crate::teslamate_credentials::replace_key(temporary.path(), b"loop-cloak-key")
+        crate::legacy_owner_credentials::replace_key(temporary.path(), b"loop-cloak-key")
             .expect("0600 Cloak key");
-        let key = crate::teslamate_credentials::load_key(temporary.path()).expect("Cloak key");
+        let key = crate::legacy_owner_credentials::load_key(temporary.path()).expect("Cloak key");
         let initial =
             OwnerTokens::from_secret_parts("loop-access".to_owned(), "loop-refresh".to_owned())
                 .expect("initial pair");
         let (access, refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key.as_bytes(), &initial)
                 .expect("Cloak pair");
         // A pair whose refresh is not due for hours: the loop makes no token request
         // at its start (a successful refresh would reset a blown fuse).
         let now_seconds = current_epoch_millis().expect("clock") / 1_000;
         store
-            .replace_teslamate_legacy_tokens(
-                &crate::db::TeslaMateLegacyTokenStore::refreshed(
+            .replace_legacy_owner_tokens(
+                &crate::db::LegacyOwnerTokenStore::refreshed(
                     access,
                     refresh,
                     now_seconds + 36_000,
@@ -172,7 +172,7 @@ impl LoopBed {
             axum::serve(listener, router).await.expect("fake Owner");
         });
         let base = url::Url::parse(&format!("http://{address}/")).expect("fake URL");
-        let manager = LegacyAuthManager::from_hub_teslamate_store_with_issuer(
+        let manager = LegacyAuthManager::from_hub_legacy_owner_store_with_issuer(
             store.clone(),
             temporary.path(),
             base.join("oauth2/v3/").expect("issuer"),
@@ -195,7 +195,7 @@ impl LoopBed {
                     Arc::new(|_, _| Ok(())),
                     Arc::new(move || {
                         if flag.load(Ordering::SeqCst) {
-                            Err(CredentialError::TeslaMateTokenStoreMissing)
+                            Err(CredentialError::SourceDbTokenStoreMissing)
                         } else {
                             Ok(())
                         }
@@ -937,8 +937,9 @@ impl FleetLoopBed {
         crate::crypto::install_default_provider();
         let temporary = crate::private_tempdir().expect("temporary Hub");
         let store = HubStore::initialize(temporary.path()).expect("Hub store");
-        let cursor_key = crate::teslamate_credentials::load_or_create_cursor_key(temporary.path())
-            .expect("cursor key");
+        let cursor_key =
+            crate::legacy_owner_credentials::load_or_create_cursor_key(temporary.path())
+                .expect("cursor key");
         finish_collection_for_provider(
             &store,
             &cursor_key,
@@ -1491,7 +1492,9 @@ async fn step_the_controlled_loop_until_within(
     };
     match timeout(TRAVERSAL_STALL_WATCHDOG, traversal).await {
         Ok(outcome) => outcome,
-        Err(_) => Err("the traversal stalled: the watchdog ended it (not an acceptance bound)".to_owned()),
+        Err(_) => {
+            Err("the traversal stalled: the watchdog ended it (not an acceptance bound)".to_owned())
+        }
     }
 }
 

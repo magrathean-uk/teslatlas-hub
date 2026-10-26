@@ -97,6 +97,8 @@ const STORE_DATA_STEPS_TABLE_SQL: &str = "
     ) STRICT;
 ";
 
+/// Current fixtures run the SQL rewind below, then restore v78 import names
+/// through `prepare_historical_import_names` before running migration again.
 /// The undo of the completed-data-step table (C6 R63 (b) 3, C6 R69): first
 /// undo terrain selection (C9 R61, v77) and geofences (C8 R49, v76), then drop
 /// the table. Every older cumulative rewind expands this chain first.

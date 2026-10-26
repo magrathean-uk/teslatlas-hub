@@ -1,0 +1,1343 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! Unpublished schema-2.2 physical source database relation chunks.
+//!
+//! This module proves the bounded stage-to-pack boundary only. It does not
+//! capture PostgreSQL rows and cannot publish a manifest to the Hub catalogue.
+//! Selected-car address and geofence rows are owned by their first deterministic
+//! referrer so every emitted relation satisfies the V3 same-pack boundary.
+
+use std::{collections::HashSet, fs, mem};
+
+use serde::{Serialize, de::DeserializeOwned};
+use thiserror::Error;
+use uuid::Uuid;
+
+use crate::{
+    hub_pack::{
+        BuiltProjectionPack, ProjectionAddressV2_2, ProjectionBinding, ProjectionChargeV2_2,
+        ProjectionChargingProcessV2_2, ProjectionGeofenceV2_2, ProjectionPackError,
+        ProjectionPackRequestV2_2, ProjectionPackWriter, ProjectionSnapshotV2_2,
+        signed_full_snapshot_manifest_with_limits,
+    },
+    protocol::{CursorKey, ProtocolLimits, SequenceRange, SyncManifest},
+    source_db_projection::{
+        SourceDbAddressPhysicalV2_2, SourceDbCarPhysicalV2_2, SourceDbCarSettingsPhysicalV2_2,
+        SourceDbChargePhysicalV2_2, SourceDbChargingProcessPhysicalV2_2, SourceDbDrivePhysicalV2_2,
+        SourceDbGeofencePhysicalV2_2, SourceDbPositionPhysicalV2_2, SourceDbSettingsPhysicalV2_2,
+        SourceDbStatePhysicalV2_2, SourceDbUpdatePhysicalV2_2,
+    },
+    source_db_stage::{
+        SourceDbStage, SourceDbStageError, SourceDbStageFormat, SourceDbStageState,
+        SourceDbStageTable,
+    },
+};
+
+const STAGE_PAGE_ROWS: u32 = 10_000;
+const CHARGE_STAGE_PAGE_ROWS: u32 = 512;
+const DEFAULT_MAX_ROWS_PER_CHUNK: u64 = 50_000;
+const DEFAULT_MAX_PROJECTED_JSON_BYTES: u64 = 8 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SourceDbPhysicalFragmentLimits {
+    pub max_rows_per_chunk: u64,
+    pub max_projected_json_bytes: u64,
+}
+
+impl Default for SourceDbPhysicalFragmentLimits {
+    fn default() -> Self {
+        Self {
+            max_rows_per_chunk: DEFAULT_MAX_ROWS_PER_CHUNK,
+            max_projected_json_bytes: DEFAULT_MAX_PROJECTED_JSON_BYTES,
+        }
+    }
+}
+
+impl SourceDbPhysicalFragmentLimits {
+    fn validate(self) -> Result<(), SourceDbPhysicalFragmentError> {
+        let protocol = ProtocolLimits::default();
+        if self.max_rows_per_chunk < 3 || self.max_rows_per_chunk > protocol.max_rows_per_pack {
+            return Err(SourceDbPhysicalFragmentError::InvalidRowTarget);
+        }
+        if self.max_projected_json_bytes == 0
+            || self.max_projected_json_bytes > protocol.max_uncompressed_pack_bytes
+        {
+            return Err(SourceDbPhysicalFragmentError::InvalidByteTarget);
+        }
+        Ok(())
+    }
+}
+
+/// A complete signed candidate whose immutable objects are not catalogued.
+/// Dropping it removes only files created by this candidate. A later
+/// publication slice may explicitly transfer that ownership after a durable
+/// catalogue commit.
+#[derive(Debug)]
+pub struct StagedPhysicalProjectionV3 {
+    pub chunks: Vec<BuiltProjectionPack>,
+    pub manifest: SyncManifest,
+    pub binding: ProjectionBinding,
+    /// Unique rows in the sealed source stage. The signed internal manifest
+    /// separately counts transport rows, including roots repeated per chunk.
+    pub logical_source_rows: u64,
+    cleanup_on_drop: bool,
+}
+
+impl StagedPhysicalProjectionV3 {
+    /// Transfer deletion ownership only after the exact manifest, pack rows,
+    /// and physical admission marker have committed durably.
+    pub(crate) fn retain_catalogued_objects(&mut self) {
+        self.cleanup_on_drop = false;
+    }
+}
+
+impl Drop for StagedPhysicalProjectionV3 {
+    fn drop(&mut self) {
+        if self.cleanup_on_drop {
+            cleanup_chunks(&mut self.chunks);
+        }
+    }
+}
+
+/// Stream one sealed physical stage into
+/// independently verified V3 SQLite chunks, then sign exactly one manifest
+/// over all chunks. No catalogue method is reachable from this boundary.
+pub fn write_staged_physical_updates_snapshot_v3(
+    stage: &SourceDbStage,
+    writer: &ProjectionPackWriter,
+    binding: ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    cursor_key: &CursorKey,
+) -> Result<StagedPhysicalProjectionV3, SourceDbPhysicalFragmentError> {
+    write_staged_physical_updates_snapshot_v3_with_limits(
+        stage,
+        writer,
+        binding,
+        snapshot_id,
+        sequence,
+        cursor_key,
+        SourceDbPhysicalFragmentLimits::default(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn write_staged_physical_updates_snapshot_v3_with_limits(
+    stage: &SourceDbStage,
+    writer: &ProjectionPackWriter,
+    binding: ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    cursor_key: &CursorKey,
+    limits: SourceDbPhysicalFragmentLimits,
+) -> Result<StagedPhysicalProjectionV3, SourceDbPhysicalFragmentError> {
+    write_staged_physical_updates_snapshot_v3_inner(
+        stage,
+        writer,
+        binding,
+        snapshot_id,
+        sequence,
+        cursor_key,
+        limits,
+        None,
+    )
+}
+
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn write_staged_physical_updates_snapshot_v3_with_test_failure(
+    stage: &SourceDbStage,
+    writer: &ProjectionPackWriter,
+    binding: ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    cursor_key: &CursorKey,
+    limits: SourceDbPhysicalFragmentLimits,
+    fail_before_ordinal: u32,
+) -> Result<StagedPhysicalProjectionV3, SourceDbPhysicalFragmentError> {
+    write_staged_physical_updates_snapshot_v3_inner(
+        stage,
+        writer,
+        binding,
+        snapshot_id,
+        sequence,
+        cursor_key,
+        limits,
+        Some(fail_before_ordinal),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_staged_physical_updates_snapshot_v3_inner(
+    stage: &SourceDbStage,
+    writer: &ProjectionPackWriter,
+    binding: ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    cursor_key: &CursorKey,
+    limits: SourceDbPhysicalFragmentLimits,
+    fail_before_ordinal: Option<u32>,
+) -> Result<StagedPhysicalProjectionV3, SourceDbPhysicalFragmentError> {
+    limits.validate()?;
+    if snapshot_id.is_nil() {
+        return Err(SourceDbPhysicalFragmentError::NilSnapshotId);
+    }
+    if !sequence.is_ordered() {
+        return Err(SourceDbPhysicalFragmentError::UnorderedSequence);
+    }
+    let stage_stats = stage.stats()?;
+    if stage_stats.state != SourceDbStageState::Sealed {
+        return Err(SourceDbPhysicalFragmentError::StageNotSealed);
+    }
+    if stage.format()? != SourceDbStageFormat::PhysicalV3 {
+        return Err(SourceDbPhysicalFragmentError::WrongStageFormat);
+    }
+    let settings =
+        exactly_one::<SourceDbSettingsPhysicalV2_2>(stage, SourceDbStageTable::GlobalSettings)?;
+    require_source_id(settings.source_id, settings.value.id, "global_settings")?;
+    let car = exactly_one::<SourceDbCarPhysicalV2_2>(stage, SourceDbStageTable::Cars)?;
+    require_source_id(car.source_id, i64::from(car.value.id), "cars")?;
+    if i64::from(car.value.id) != binding.selected_car_id {
+        return Err(SourceDbPhysicalFragmentError::SelectedCarMismatch);
+    }
+    let car_settings =
+        exactly_one::<SourceDbCarSettingsPhysicalV2_2>(stage, SourceDbStageTable::CarSettings)?;
+    require_source_id(
+        car_settings.source_id,
+        car_settings.value.id,
+        "car_settings",
+    )?;
+    if car.value.settings_id != car_settings.value.id {
+        return Err(SourceDbPhysicalFragmentError::CarSettingsMismatch);
+    }
+
+    preflight_charges(stage, binding.selected_car_id)?;
+    let relation_preflight = preflight_relations(stage, binding.selected_car_id)?;
+
+    let roots = PhysicalRoots {
+        global_settings: settings.value.into(),
+        car: car.value.into(),
+        car_settings: car_settings.value.into(),
+    };
+    let mut accumulator = PhysicalChunkAccumulator::new(roots, limits)?;
+    let mut chunks = Vec::new();
+    let mut emitted_address_ids = HashSet::with_capacity(relation_preflight.address_count);
+    let mut emitted_geofence_ids = HashSet::with_capacity(relation_preflight.geofence_count);
+
+    let drives = stream_drives(
+        stage,
+        writer,
+        &binding,
+        snapshot_id,
+        sequence,
+        limits,
+        &mut accumulator,
+        &mut chunks,
+        &mut emitted_address_ids,
+        &mut emitted_geofence_ids,
+        fail_before_ordinal,
+    );
+    if let Err(error) = drives {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
+    }
+
+    let positions = for_each_page::<SourceDbPositionPhysicalV2_2, _>(
+        stage,
+        SourceDbStageTable::Positions,
+        |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "positions")?;
+            if i64::from(row.value.car_id) != binding.selected_car_id {
+                return Err(SourceDbPhysicalFragmentError::SelectedCarMismatch);
+            }
+            let projected = row.value.into();
+            let projected_bytes = serialized_bytes(&projected)?;
+            if accumulator.needs_flush(projected_bytes, limits)? {
+                flush_chunk(
+                    writer,
+                    &binding,
+                    snapshot_id,
+                    sequence,
+                    &mut accumulator,
+                    &mut chunks,
+                    fail_before_ordinal,
+                )?;
+            }
+            accumulator.snapshot.positions.push(projected);
+            accumulator.add_payload(projected_bytes)?;
+            Ok(())
+        },
+    );
+    if let Err(error) = positions {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
+    }
+
+    let charging_processes = stream_charging_processes(
+        stage,
+        writer,
+        &binding,
+        snapshot_id,
+        sequence,
+        limits,
+        &mut accumulator,
+        &mut chunks,
+        &mut emitted_address_ids,
+        &mut emitted_geofence_ids,
+        fail_before_ordinal,
+    );
+    if let Err(error) = charging_processes {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
+    }
+    if emitted_address_ids.len() != relation_preflight.address_count
+        || emitted_geofence_ids.len() != relation_preflight.geofence_count
+    {
+        cleanup_chunks(&mut chunks);
+        return Err(SourceDbPhysicalFragmentError::UnemittedRelationRows);
+    }
+
+    let states =
+        for_each_page::<SourceDbStatePhysicalV2_2, _>(stage, SourceDbStageTable::States, |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "states")?;
+            if i64::from(row.value.car_id) != binding.selected_car_id {
+                return Err(SourceDbPhysicalFragmentError::SelectedCarMismatch);
+            }
+            let projected = row.value.into();
+            let projected_bytes = serialized_bytes(&projected)?;
+            if accumulator.needs_flush(projected_bytes, limits)? {
+                flush_chunk(
+                    writer,
+                    &binding,
+                    snapshot_id,
+                    sequence,
+                    &mut accumulator,
+                    &mut chunks,
+                    fail_before_ordinal,
+                )?;
+            }
+            accumulator.snapshot.states.push(projected);
+            accumulator.add_payload(projected_bytes)?;
+            Ok(())
+        });
+    if let Err(error) = states {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
+    }
+
+    let updates =
+        for_each_page::<SourceDbUpdatePhysicalV2_2, _>(stage, SourceDbStageTable::Updates, |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "updates")?;
+            if i64::from(row.value.car_id) != binding.selected_car_id {
+                return Err(SourceDbPhysicalFragmentError::SelectedCarMismatch);
+            }
+            let projected = row.value.into();
+            let projected_bytes = serialized_bytes(&projected)?;
+            if accumulator.needs_flush(projected_bytes, limits)? {
+                flush_chunk(
+                    writer,
+                    &binding,
+                    snapshot_id,
+                    sequence,
+                    &mut accumulator,
+                    &mut chunks,
+                    fail_before_ordinal,
+                )?;
+            }
+            accumulator.snapshot.updates.push(projected);
+            accumulator.add_payload(projected_bytes)?;
+            Ok(())
+        });
+    if let Err(error) = updates {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
+    }
+
+    if (accumulator.payload_rows != 0 || chunks.is_empty())
+        && let Err(error) = flush_chunk(
+            writer,
+            &binding,
+            snapshot_id,
+            sequence,
+            &mut accumulator,
+            &mut chunks,
+            fail_before_ordinal,
+        )
+    {
+        cleanup_chunks(&mut chunks);
+        return Err(error);
+    }
+    let total_rows = chunks.iter().try_fold(0_u64, |total, chunk| {
+        total
+            .checked_add(chunk.metadata.row_count)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)
+    })?;
+    let manifest = match signed_full_snapshot_manifest_with_limits(
+        &binding,
+        snapshot_id,
+        sequence,
+        &chunks,
+        total_rows,
+        cursor_key,
+        ProtocolLimits::hub_sync_v1_1_3_schema_2_2(),
+    ) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            cleanup_chunks(&mut chunks);
+            return Err(error.into());
+        }
+    };
+    Ok(StagedPhysicalProjectionV3 {
+        chunks,
+        manifest,
+        binding,
+        logical_source_rows: stage_stats.row_count,
+        cleanup_on_drop: true,
+    })
+}
+
+#[derive(Clone)]
+struct PhysicalRoots {
+    global_settings: crate::hub_pack::ProjectionGlobalSettingsV2_2,
+    car: crate::hub_pack::ProjectionCarV2_2,
+    car_settings: crate::hub_pack::ProjectionCarSettingsV2_2,
+}
+
+struct PhysicalChunkAccumulator {
+    roots: PhysicalRoots,
+    snapshot: ProjectionSnapshotV2_2,
+    payload_rows: u64,
+    projected_json_bytes: u64,
+}
+
+impl PhysicalChunkAccumulator {
+    fn new(
+        roots: PhysicalRoots,
+        limits: SourceDbPhysicalFragmentLimits,
+    ) -> Result<Self, SourceDbPhysicalFragmentError> {
+        let projected_json_bytes = root_serialized_bytes(&roots)?;
+        if projected_json_bytes > limits.max_projected_json_bytes {
+            return Err(SourceDbPhysicalFragmentError::RootRowsExceedTarget);
+        }
+        Ok(Self {
+            snapshot: snapshot_with_roots(&roots),
+            roots,
+            payload_rows: 0,
+            projected_json_bytes,
+        })
+    }
+
+    fn needs_flush(
+        &self,
+        next_bytes: u64,
+        limits: SourceDbPhysicalFragmentLimits,
+    ) -> Result<bool, SourceDbPhysicalFragmentError> {
+        let next_rows = self
+            .payload_rows
+            .checked_add(4)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        let next_total_bytes = self
+            .projected_json_bytes
+            .checked_add(next_bytes)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        if self.payload_rows == 0
+            && (next_rows > limits.max_rows_per_chunk
+                || next_total_bytes > limits.max_projected_json_bytes)
+        {
+            return Err(SourceDbPhysicalFragmentError::SingleRowExceedsTarget);
+        }
+        Ok(self.payload_rows != 0
+            && (next_rows > limits.max_rows_per_chunk
+                || next_total_bytes > limits.max_projected_json_bytes))
+    }
+
+    fn add_payload(&mut self, bytes: u64) -> Result<(), SourceDbPhysicalFragmentError> {
+        self.add_payload_group(1, bytes)
+    }
+
+    fn group_needs_flush(
+        &self,
+        group_rows: u64,
+        group_bytes: u64,
+        limits: SourceDbPhysicalFragmentLimits,
+    ) -> Result<bool, SourceDbPhysicalFragmentError> {
+        let next_rows = self
+            .payload_rows
+            .checked_add(3)
+            .and_then(|value| value.checked_add(group_rows))
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        let next_total_bytes = self
+            .projected_json_bytes
+            .checked_add(group_bytes)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        if self.payload_rows == 0
+            && (next_rows > limits.max_rows_per_chunk
+                || next_total_bytes > limits.max_projected_json_bytes)
+        {
+            return Err(SourceDbPhysicalFragmentError::ParentRelationsExceedTarget);
+        }
+        Ok(self.payload_rows != 0
+            && (next_rows > limits.max_rows_per_chunk
+                || next_total_bytes > limits.max_projected_json_bytes))
+    }
+
+    fn add_payload_group(
+        &mut self,
+        rows: u64,
+        bytes: u64,
+    ) -> Result<(), SourceDbPhysicalFragmentError> {
+        self.payload_rows = self
+            .payload_rows
+            .checked_add(rows)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        self.projected_json_bytes = self
+            .projected_json_bytes
+            .checked_add(bytes)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        Ok(())
+    }
+
+    fn parent_child_needs_flush(
+        &self,
+        parent_bytes: u64,
+        child_bytes: u64,
+        limits: SourceDbPhysicalFragmentLimits,
+    ) -> Result<bool, SourceDbPhysicalFragmentError> {
+        let next_rows = self
+            .payload_rows
+            .checked_add(5)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        let total_bytes = self
+            .projected_json_bytes
+            .checked_add(parent_bytes)
+            .and_then(|value| value.checked_add(child_bytes))
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        if self.payload_rows == 0
+            && (next_rows > limits.max_rows_per_chunk
+                || total_bytes > limits.max_projected_json_bytes)
+        {
+            return Err(SourceDbPhysicalFragmentError::ParentChildExceedsTarget);
+        }
+        Ok(self.payload_rows != 0
+            && (next_rows > limits.max_rows_per_chunk
+                || total_bytes > limits.max_projected_json_bytes))
+    }
+
+    fn take_snapshot(&mut self) -> Result<ProjectionSnapshotV2_2, SourceDbPhysicalFragmentError> {
+        self.payload_rows = 0;
+        self.projected_json_bytes = root_serialized_bytes(&self.roots)?;
+        Ok(mem::replace(
+            &mut self.snapshot,
+            snapshot_with_roots(&self.roots),
+        ))
+    }
+}
+
+fn snapshot_with_roots(roots: &PhysicalRoots) -> ProjectionSnapshotV2_2 {
+    ProjectionSnapshotV2_2 {
+        global_settings: vec![roots.global_settings.clone()],
+        cars: vec![roots.car.clone()],
+        car_settings: vec![roots.car_settings.clone()],
+        addresses: Vec::new(),
+        geofences: Vec::new(),
+        drives: Vec::new(),
+        positions: Vec::new(),
+        charging_processes: Vec::new(),
+        charges: Vec::new(),
+        states: Vec::new(),
+        updates: Vec::new(),
+    }
+}
+
+fn flush_chunk(
+    writer: &ProjectionPackWriter,
+    binding: &ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    accumulator: &mut PhysicalChunkAccumulator,
+    chunks: &mut Vec<BuiltProjectionPack>,
+    fail_before_ordinal: Option<u32>,
+) -> Result<(), SourceDbPhysicalFragmentError> {
+    let profile_limits = ProtocolLimits::hub_sync_v1_1_3_schema_2_2();
+    if chunks.len() >= profile_limits.max_chunks {
+        return Err(SourceDbPhysicalFragmentError::TooManyChunks);
+    }
+    let ordinal =
+        u32::try_from(chunks.len()).map_err(|_| SourceDbPhysicalFragmentError::TooManyChunks)?;
+    #[cfg(test)]
+    if fail_before_ordinal == Some(ordinal) {
+        return Err(SourceDbPhysicalFragmentError::InjectedTestFailure(ordinal));
+    }
+    #[cfg(not(test))]
+    let _ = fail_before_ordinal;
+    let snapshot = accumulator.take_snapshot()?;
+    let pack_id = Uuid::new_v5(
+        &snapshot_id,
+        format!("teslatlas-hub/schema-2.2/chunk/{ordinal}").as_bytes(),
+    );
+    let request = ProjectionPackRequestV2_2 {
+        pack_id,
+        snapshot_id,
+        ordinal,
+        binding: binding.clone(),
+        sequence,
+        snapshot: &snapshot,
+    };
+    let built = writer.write_physical_snapshot_2_2_for_hub_sync_v1_1_3(&request)?;
+    #[cfg(test)]
+    eprintln!(
+        "physical candidate chunk: ordinal={ordinal}, compressed_bytes={}, profile_limit_bytes={}",
+        built.metadata.compressed_bytes, profile_limits.max_compressed_pack_bytes
+    );
+    if built.metadata.compressed_bytes > profile_limits.max_compressed_pack_bytes {
+        let mut rejected = vec![built];
+        cleanup_chunks(&mut rejected);
+        return Err(SourceDbPhysicalFragmentError::PackExceedsProfileLimit);
+    }
+    if let Err(error) = built.verify_with_limits(profile_limits) {
+        let mut rejected = vec![built];
+        cleanup_chunks(&mut rejected);
+        return Err(error.into());
+    }
+    chunks.push(built);
+    Ok(())
+}
+
+fn exactly_one<T: DeserializeOwned>(
+    stage: &SourceDbStage,
+    table: SourceDbStageTable,
+) -> Result<crate::source_db_stage::SourceDbStageRow<T>, SourceDbPhysicalFragmentError> {
+    let mut page = stage.page::<T>(table, 0, 2)?;
+    if page.rows.len() != 1 || page.next_after_id.is_some() {
+        return Err(SourceDbPhysicalFragmentError::RootCardinality {
+            table: table.as_str(),
+        });
+    }
+    Ok(page.rows.remove(0))
+}
+
+fn for_each_page<T, F>(
+    stage: &SourceDbStage,
+    table: SourceDbStageTable,
+    mut visit: F,
+) -> Result<(), SourceDbPhysicalFragmentError>
+where
+    T: DeserializeOwned,
+    F: FnMut(
+        crate::source_db_stage::SourceDbStageRow<T>,
+    ) -> Result<(), SourceDbPhysicalFragmentError>,
+{
+    let mut after_id = 0_i64;
+    loop {
+        let page = stage.page::<T>(table, after_id, STAGE_PAGE_ROWS)?;
+        for row in page.rows {
+            visit(row)?;
+        }
+        match page.next_after_id {
+            Some(next) => after_id = next,
+            None => return Ok(()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct RelationPreflight {
+    address_count: usize,
+    geofence_count: usize,
+}
+
+fn preflight_relations(
+    stage: &SourceDbStage,
+    selected_car_id: i64,
+) -> Result<RelationPreflight, SourceDbPhysicalFragmentError> {
+    let mut referenced_address_ids = HashSet::new();
+    let mut referenced_geofence_ids = HashSet::new();
+    for_each_page::<SourceDbDrivePhysicalV2_2, _>(stage, SourceDbStageTable::Drives, |row| {
+        require_source_id(row.source_id, i64::from(row.value.id), "drives")?;
+        if i64::from(row.value.car_id) != selected_car_id {
+            return Err(SourceDbPhysicalFragmentError::SelectedCarMismatch);
+        }
+        referenced_address_ids.extend(
+            [row.value.start_address_id, row.value.end_address_id]
+                .into_iter()
+                .flatten()
+                .map(i64::from),
+        );
+        referenced_geofence_ids.extend(
+            [row.value.start_geofence_id, row.value.end_geofence_id]
+                .into_iter()
+                .flatten()
+                .map(i64::from),
+        );
+        Ok(())
+    })?;
+    for_each_page::<SourceDbChargingProcessPhysicalV2_2, _>(
+        stage,
+        SourceDbStageTable::ChargingProcesses,
+        |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "charging_processes")?;
+            if i64::from(row.value.car_id) != selected_car_id {
+                return Err(SourceDbPhysicalFragmentError::SelectedCarMismatch);
+            }
+            referenced_address_ids.extend(row.value.address_id.map(i64::from));
+            referenced_geofence_ids.extend(row.value.geofence_id.map(i64::from));
+            Ok(())
+        },
+    )?;
+
+    let mut address_count = 0_usize;
+    for_each_page::<SourceDbAddressPhysicalV2_2, _>(stage, SourceDbStageTable::Addresses, |row| {
+        require_source_id(row.source_id, i64::from(row.value.id), "addresses")?;
+        if !referenced_address_ids.contains(&row.source_id) {
+            return Err(SourceDbPhysicalFragmentError::UnreferencedRelation {
+                table: "addresses",
+                source_id: row.source_id,
+            });
+        }
+        address_count = address_count
+            .checked_add(1)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        Ok(())
+    })?;
+    let mut geofence_count = 0_usize;
+    for_each_page::<SourceDbGeofencePhysicalV2_2, _>(
+        stage,
+        SourceDbStageTable::Geofences,
+        |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "geofences")?;
+            if !referenced_geofence_ids.contains(&row.source_id) {
+                return Err(SourceDbPhysicalFragmentError::UnreferencedRelation {
+                    table: "geofences",
+                    source_id: row.source_id,
+                });
+            }
+            geofence_count = geofence_count
+                .checked_add(1)
+                .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+            Ok(())
+        },
+    )?;
+    Ok(RelationPreflight {
+        address_count,
+        geofence_count,
+    })
+}
+
+#[derive(Debug, Default)]
+struct OwnedRelations {
+    addresses: Vec<ProjectionAddressV2_2>,
+    geofences: Vec<ProjectionGeofenceV2_2>,
+    serialized_bytes: u64,
+}
+
+impl OwnedRelations {
+    fn row_count(&self) -> Result<u64, SourceDbPhysicalFragmentError> {
+        self.addresses
+            .len()
+            .checked_add(self.geofences.len())
+            .and_then(|rows| u64::try_from(rows).ok())
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.addresses.is_empty() && self.geofences.is_empty()
+    }
+}
+
+fn collect_owned_relations(
+    stage: &SourceDbStage,
+    address_ids: impl IntoIterator<Item = i32>,
+    geofence_ids: impl IntoIterator<Item = i32>,
+    emitted_address_ids: &mut HashSet<i32>,
+    emitted_geofence_ids: &mut HashSet<i32>,
+) -> Result<OwnedRelations, SourceDbPhysicalFragmentError> {
+    let mut owned = OwnedRelations::default();
+    for id in address_ids {
+        if id <= 0 || emitted_address_ids.contains(&id) {
+            continue;
+        }
+        let Some(value) = stage
+            .get::<SourceDbAddressPhysicalV2_2>(SourceDbStageTable::Addresses, i64::from(id))?
+        else {
+            continue;
+        };
+        require_source_id(i64::from(id), i64::from(value.id), "addresses")?;
+        let projected: ProjectionAddressV2_2 = value.into();
+        owned.serialized_bytes = owned
+            .serialized_bytes
+            .checked_add(serialized_bytes(&projected)?)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        emitted_address_ids.insert(id);
+        owned.addresses.push(projected);
+    }
+    for id in geofence_ids {
+        if id <= 0 || emitted_geofence_ids.contains(&id) {
+            continue;
+        }
+        let Some(value) = stage
+            .get::<SourceDbGeofencePhysicalV2_2>(SourceDbStageTable::Geofences, i64::from(id))?
+        else {
+            continue;
+        };
+        require_source_id(i64::from(id), i64::from(value.id), "geofences")?;
+        let projected: ProjectionGeofenceV2_2 = value.into();
+        owned.serialized_bytes = owned
+            .serialized_bytes
+            .checked_add(serialized_bytes(&projected)?)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        emitted_geofence_ids.insert(id);
+        owned.geofences.push(projected);
+    }
+    Ok(owned)
+}
+
+fn append_parent_relations(
+    accumulator: &mut PhysicalChunkAccumulator,
+    relations: OwnedRelations,
+) -> Result<(), SourceDbPhysicalFragmentError> {
+    let rows = relations.row_count()?;
+    accumulator.snapshot.addresses.extend(relations.addresses);
+    accumulator.snapshot.geofences.extend(relations.geofences);
+    accumulator.add_payload_group(rows, relations.serialized_bytes)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stream_drives(
+    stage: &SourceDbStage,
+    writer: &ProjectionPackWriter,
+    binding: &ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    limits: SourceDbPhysicalFragmentLimits,
+    accumulator: &mut PhysicalChunkAccumulator,
+    chunks: &mut Vec<BuiltProjectionPack>,
+    emitted_address_ids: &mut HashSet<i32>,
+    emitted_geofence_ids: &mut HashSet<i32>,
+    fail_before_ordinal: Option<u32>,
+) -> Result<(), SourceDbPhysicalFragmentError> {
+    for_each_page::<SourceDbDrivePhysicalV2_2, _>(stage, SourceDbStageTable::Drives, |row| {
+        require_source_id(row.source_id, i64::from(row.value.id), "drives")?;
+        if i64::from(row.value.car_id) != binding.selected_car_id {
+            return Err(SourceDbPhysicalFragmentError::SelectedCarMismatch);
+        }
+        let address_ids = [row.value.start_address_id, row.value.end_address_id]
+            .into_iter()
+            .flatten();
+        let geofence_ids = [row.value.start_geofence_id, row.value.end_geofence_id]
+            .into_iter()
+            .flatten();
+        let relations = collect_owned_relations(
+            stage,
+            address_ids,
+            geofence_ids,
+            emitted_address_ids,
+            emitted_geofence_ids,
+        )?;
+        let projected = row.value.into();
+        let projected_bytes = serialized_bytes(&projected)?;
+        let group_rows = 1_u64
+            .checked_add(relations.row_count()?)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        let group_bytes = projected_bytes
+            .checked_add(relations.serialized_bytes)
+            .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+        let needs_flush = if relations.is_empty() {
+            accumulator.needs_flush(projected_bytes, limits)?
+        } else {
+            accumulator.group_needs_flush(group_rows, group_bytes, limits)?
+        };
+        if needs_flush {
+            flush_chunk(
+                writer,
+                binding,
+                snapshot_id,
+                sequence,
+                accumulator,
+                chunks,
+                fail_before_ordinal,
+            )?;
+            if !relations.is_empty() {
+                accumulator.group_needs_flush(group_rows, group_bytes, limits)?;
+            }
+        }
+        accumulator.snapshot.drives.push(projected);
+        accumulator.add_payload(projected_bytes)?;
+        append_parent_relations(accumulator, relations)
+    })
+}
+
+fn preflight_charges(
+    stage: &SourceDbStage,
+    selected_car_id: i64,
+) -> Result<(), SourceDbPhysicalFragmentError> {
+    for_each_page::<SourceDbChargePhysicalV2_2, _>(stage, SourceDbStageTable::Charges, |row| {
+        require_source_id(row.source_id, i64::from(row.value.id), "charges")?;
+        let parent_source_id = i64::from(row.value.charging_process_id);
+        let parent = stage
+            .get::<SourceDbChargingProcessPhysicalV2_2>(
+                SourceDbStageTable::ChargingProcesses,
+                parent_source_id,
+            )?
+            .ok_or(SourceDbPhysicalFragmentError::MissingChargingProcess {
+                charge_id: row.value.id,
+                charging_process_id: row.value.charging_process_id,
+            })?;
+        require_source_id(parent_source_id, i64::from(parent.id), "charging_processes")?;
+        if i64::from(parent.car_id) != selected_car_id {
+            return Err(SourceDbPhysicalFragmentError::SelectedCarMismatch);
+        }
+        Ok(())
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn stream_charging_processes(
+    stage: &SourceDbStage,
+    writer: &ProjectionPackWriter,
+    binding: &ProjectionBinding,
+    snapshot_id: Uuid,
+    sequence: SequenceRange,
+    limits: SourceDbPhysicalFragmentLimits,
+    accumulator: &mut PhysicalChunkAccumulator,
+    chunks: &mut Vec<BuiltProjectionPack>,
+    emitted_address_ids: &mut HashSet<i32>,
+    emitted_geofence_ids: &mut HashSet<i32>,
+    fail_before_ordinal: Option<u32>,
+) -> Result<(), SourceDbPhysicalFragmentError> {
+    for_each_page::<SourceDbChargingProcessPhysicalV2_2, _>(
+        stage,
+        SourceDbStageTable::ChargingProcesses,
+        |row| {
+            require_source_id(row.source_id, i64::from(row.value.id), "charging_processes")?;
+            if i64::from(row.value.car_id) != binding.selected_car_id {
+                return Err(SourceDbPhysicalFragmentError::SelectedCarMismatch);
+            }
+            let process_id = row.value.id;
+            let mut relations = Some(collect_owned_relations(
+                stage,
+                row.value.address_id,
+                row.value.geofence_id,
+                emitted_address_ids,
+                emitted_geofence_ids,
+            )?);
+            let projected_process: ProjectionChargingProcessV2_2 = row.value.into();
+            let process_bytes = serialized_bytes(&projected_process)?;
+            let mut saw_charge = false;
+            for_each_charge_for_process(stage, process_id, |charge_row| {
+                require_source_id(
+                    charge_row.source_id,
+                    i64::from(charge_row.value.id),
+                    "charges",
+                )?;
+                if charge_row.value.charging_process_id != process_id {
+                    return Err(SourceDbPhysicalFragmentError::ChargeParentMismatch {
+                        charge_id: charge_row.value.id,
+                        expected: process_id,
+                        actual: charge_row.value.charging_process_id,
+                    });
+                }
+                let projected_charge: ProjectionChargeV2_2 = charge_row.value.into();
+                let charge_bytes = serialized_bytes(&projected_charge)?;
+                if !saw_charge {
+                    let owned = relations
+                        .take()
+                        .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+                    let group_rows = 2_u64
+                        .checked_add(owned.row_count()?)
+                        .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+                    let group_bytes = process_bytes
+                        .checked_add(owned.serialized_bytes)
+                        .and_then(|bytes| bytes.checked_add(charge_bytes))
+                        .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+                    let needs_flush = if owned.is_empty() {
+                        accumulator.parent_child_needs_flush(process_bytes, charge_bytes, limits)?
+                    } else {
+                        match accumulator.group_needs_flush(group_rows, group_bytes, limits) {
+                            Ok(needs_flush) => needs_flush,
+                            Err(SourceDbPhysicalFragmentError::ParentRelationsExceedTarget) => {
+                                false
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    };
+                    if needs_flush {
+                        flush_chunk(
+                            writer,
+                            binding,
+                            snapshot_id,
+                            sequence,
+                            accumulator,
+                            chunks,
+                            fail_before_ordinal,
+                        )?;
+                    }
+                    let relations_and_charge_fit = if owned.is_empty() {
+                        accumulator.parent_child_needs_flush(
+                            process_bytes,
+                            charge_bytes,
+                            limits,
+                        )?;
+                        true
+                    } else {
+                        match accumulator.group_needs_flush(group_rows, group_bytes, limits) {
+                            Ok(false) => true,
+                            Ok(true) => {
+                                return Err(SourceDbPhysicalFragmentError::AccountingOverflow);
+                            }
+                            Err(SourceDbPhysicalFragmentError::ParentRelationsExceedTarget) => {
+                                false
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    };
+                    if !relations_and_charge_fit {
+                        let relation_rows = group_rows - 1;
+                        let relation_bytes = group_bytes - charge_bytes;
+                        if accumulator.group_needs_flush(relation_rows, relation_bytes, limits)? {
+                            flush_chunk(
+                                writer,
+                                binding,
+                                snapshot_id,
+                                sequence,
+                                accumulator,
+                                chunks,
+                                fail_before_ordinal,
+                            )?;
+                            accumulator.group_needs_flush(relation_rows, relation_bytes, limits)?;
+                        }
+                    }
+                    accumulator
+                        .snapshot
+                        .charging_processes
+                        .push(projected_process.clone());
+                    accumulator.add_payload(process_bytes)?;
+                    append_parent_relations(accumulator, owned)?;
+                    if !relations_and_charge_fit {
+                        flush_chunk(
+                            writer,
+                            binding,
+                            snapshot_id,
+                            sequence,
+                            accumulator,
+                            chunks,
+                            fail_before_ordinal,
+                        )?;
+                        accumulator.parent_child_needs_flush(
+                            process_bytes,
+                            charge_bytes,
+                            limits,
+                        )?;
+                        accumulator
+                            .snapshot
+                            .charging_processes
+                            .push(projected_process.clone());
+                        accumulator.add_payload(process_bytes)?;
+                    }
+                } else if accumulator.needs_flush(charge_bytes, limits)? {
+                    flush_chunk(
+                        writer,
+                        binding,
+                        snapshot_id,
+                        sequence,
+                        accumulator,
+                        chunks,
+                        fail_before_ordinal,
+                    )?;
+                    accumulator.parent_child_needs_flush(process_bytes, charge_bytes, limits)?;
+                    accumulator
+                        .snapshot
+                        .charging_processes
+                        .push(projected_process.clone());
+                    accumulator.add_payload(process_bytes)?;
+                }
+                accumulator.snapshot.charges.push(projected_charge);
+                accumulator.add_payload(charge_bytes)?;
+                saw_charge = true;
+                Ok(())
+            })?;
+            if !saw_charge {
+                let owned = relations
+                    .take()
+                    .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+                let group_rows = 1_u64
+                    .checked_add(owned.row_count()?)
+                    .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+                let group_bytes = process_bytes
+                    .checked_add(owned.serialized_bytes)
+                    .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)?;
+                let needs_flush = if owned.is_empty() {
+                    accumulator.needs_flush(process_bytes, limits)?
+                } else {
+                    accumulator.group_needs_flush(group_rows, group_bytes, limits)?
+                };
+                if needs_flush {
+                    flush_chunk(
+                        writer,
+                        binding,
+                        snapshot_id,
+                        sequence,
+                        accumulator,
+                        chunks,
+                        fail_before_ordinal,
+                    )?;
+                    if !owned.is_empty() {
+                        accumulator.group_needs_flush(group_rows, group_bytes, limits)?;
+                    }
+                }
+                accumulator
+                    .snapshot
+                    .charging_processes
+                    .push(projected_process);
+                accumulator.add_payload(process_bytes)?;
+                append_parent_relations(accumulator, owned)?;
+            }
+            Ok(())
+        },
+    )
+}
+
+fn for_each_charge_for_process<F>(
+    stage: &SourceDbStage,
+    charging_process_id: i32,
+    mut visit: F,
+) -> Result<(), SourceDbPhysicalFragmentError>
+where
+    F: FnMut(
+        crate::source_db_stage::SourceDbStageRow<SourceDbChargePhysicalV2_2>,
+    ) -> Result<(), SourceDbPhysicalFragmentError>,
+{
+    let mut after_id = 0_i64;
+    loop {
+        let page = stage.charge_samples_for_process::<SourceDbChargePhysicalV2_2>(
+            i64::from(charging_process_id),
+            after_id,
+            CHARGE_STAGE_PAGE_ROWS,
+        )?;
+        for row in page.rows {
+            visit(row)?;
+        }
+        match page.next_after_id {
+            Some(next) => after_id = next,
+            None => return Ok(()),
+        }
+    }
+}
+
+fn require_source_id(
+    stored: i64,
+    decoded: i64,
+    table: &'static str,
+) -> Result<(), SourceDbPhysicalFragmentError> {
+    if stored != decoded {
+        return Err(SourceDbPhysicalFragmentError::SourceIdMismatch {
+            table,
+            stored,
+            decoded,
+        });
+    }
+    Ok(())
+}
+
+fn serialized_bytes<T: Serialize>(value: &T) -> Result<u64, SourceDbPhysicalFragmentError> {
+    u64::try_from(serde_json::to_vec(value)?.len())
+        .map_err(|_| SourceDbPhysicalFragmentError::AccountingOverflow)
+}
+
+fn root_serialized_bytes(roots: &PhysicalRoots) -> Result<u64, SourceDbPhysicalFragmentError> {
+    let settings = serialized_bytes(&roots.global_settings)?;
+    let car = serialized_bytes(&roots.car)?;
+    let car_settings = serialized_bytes(&roots.car_settings)?;
+    settings
+        .checked_add(car)
+        .and_then(|value| value.checked_add(car_settings))
+        .ok_or(SourceDbPhysicalFragmentError::AccountingOverflow)
+}
+
+fn cleanup_chunks(chunks: &mut Vec<BuiltProjectionPack>) {
+    for chunk in chunks.drain(..) {
+        if chunk.may_remove_unpublished_file() {
+            let _ = fs::remove_file(chunk.path);
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum SourceDbPhysicalFragmentError {
+    #[error("physical V3 snapshot ID must not be nil")]
+    NilSnapshotId,
+    #[error("physical V3 snapshot sequence is unordered")]
+    UnorderedSequence,
+    #[error("physical V3 row target is invalid")]
+    InvalidRowTarget,
+    #[error("physical V3 projected-byte target is invalid")]
+    InvalidByteTarget,
+    #[error("physical V3 writer requires a sealed stage")]
+    StageNotSealed,
+    #[error("physical V3 writer requires a physical-v3 stage")]
+    WrongStageFormat,
+    #[error("physical V3 stage must contain exactly one {table} root row")]
+    RootCardinality { table: &'static str },
+    #[error("physical V3 selected car does not match the binding")]
+    SelectedCarMismatch,
+    #[error("physical V3 car settings do not match the selected car")]
+    CarSettingsMismatch,
+    #[error("physical V3 root rows exceed the configured chunk target")]
+    RootRowsExceedTarget,
+    #[error("one physical V3 source row exceeds the configured chunk target")]
+    SingleRowExceedsTarget,
+    #[error("one physical V3 charging parent and child exceed the configured chunk target")]
+    ParentChildExceedsTarget,
+    #[error("one physical V3 parent and its owned relations exceed the configured chunk target")]
+    ParentRelationsExceedTarget,
+    #[error("physical V3 candidate exceeds the Hub chunk ceiling")]
+    TooManyChunks,
+    #[error("physical V3 pack exceeds the 16 MiB Hub sync profile bound")]
+    PackExceedsProfileLimit,
+    #[error("physical V3 row or byte accounting overflowed")]
+    AccountingOverflow,
+    #[cfg(test)]
+    #[error("injected physical V3 failure before chunk {0}")]
+    InjectedTestFailure(u32),
+    #[error("physical V3 {table} staged source id {stored} does not match decoded id {decoded}")]
+    SourceIdMismatch {
+        table: &'static str,
+        stored: i64,
+        decoded: i64,
+    },
+    #[error("physical V3 {table} row {source_id} is not referenced by the selected car")]
+    UnreferencedRelation { table: &'static str, source_id: i64 },
+    #[error("physical V3 relation preflight did not emit every staged relation row")]
+    UnemittedRelationRows,
+    #[error("physical V3 charge {charge_id} is missing charging process {charging_process_id}")]
+    MissingChargingProcess {
+        charge_id: i32,
+        charging_process_id: i32,
+    },
+    #[error("physical V3 charge {charge_id} expected process {expected}, decoded process {actual}")]
+    ChargeParentMismatch {
+        charge_id: i32,
+        expected: i32,
+        actual: i32,
+    },
+    #[error("cannot encode physical V3 row: {0}")]
+    Serialize(#[from] serde_json::Error),
+    #[error(transparent)]
+    Stage(#[from] SourceDbStageError),
+    #[error(transparent)]
+    Pack(#[from] ProjectionPackError),
+}
+
+#[cfg(test)]
+#[path = "physical_fragments/tests.rs"]
+pub(crate) mod tests;
+
+#[cfg(test)]
+mod n1_src_sync_physical_fragments_rs_display_tests {
+    use super::*;
+    use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
+
+    impl ErrorExample for SourceDbPhysicalFragmentError {
+        fn error_example() -> Self {
+            SourceDbPhysicalFragmentError::NilSnapshotId
+        }
+    }
+
+    #[test]
+    fn every_reachable_error_display_omits_the_source_project_name() {
+        fn check_source_db_physical_fragment_error(error: SourceDbPhysicalFragmentError) {
+            match &error {
+                SourceDbPhysicalFragmentError::NilSnapshotId => (),
+                SourceDbPhysicalFragmentError::UnorderedSequence => (),
+                SourceDbPhysicalFragmentError::InvalidRowTarget => (),
+                SourceDbPhysicalFragmentError::InvalidByteTarget => (),
+                SourceDbPhysicalFragmentError::StageNotSealed => (),
+                SourceDbPhysicalFragmentError::WrongStageFormat => (),
+                SourceDbPhysicalFragmentError::RootCardinality { .. } => (),
+                SourceDbPhysicalFragmentError::SelectedCarMismatch => (),
+                SourceDbPhysicalFragmentError::CarSettingsMismatch => (),
+                SourceDbPhysicalFragmentError::RootRowsExceedTarget => (),
+                SourceDbPhysicalFragmentError::SingleRowExceedsTarget => (),
+                SourceDbPhysicalFragmentError::ParentChildExceedsTarget => (),
+                SourceDbPhysicalFragmentError::ParentRelationsExceedTarget => (),
+                SourceDbPhysicalFragmentError::TooManyChunks => (),
+                SourceDbPhysicalFragmentError::PackExceedsProfileLimit => (),
+                SourceDbPhysicalFragmentError::AccountingOverflow => (),
+                #[cfg(test)]
+                SourceDbPhysicalFragmentError::InjectedTestFailure(..) => (),
+                SourceDbPhysicalFragmentError::SourceIdMismatch { .. } => (),
+                SourceDbPhysicalFragmentError::UnreferencedRelation { .. } => (),
+                SourceDbPhysicalFragmentError::UnemittedRelationRows => (),
+                SourceDbPhysicalFragmentError::MissingChargingProcess { .. } => (),
+                SourceDbPhysicalFragmentError::ChargeParentMismatch { .. } => (),
+                SourceDbPhysicalFragmentError::Serialize(..) => (),
+                SourceDbPhysicalFragmentError::Stage(..) => (),
+                SourceDbPhysicalFragmentError::Pack(..) => (),
+            }
+            assert_name_free(&error);
+        }
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::NilSnapshotId);
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::UnorderedSequence);
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::InvalidRowTarget);
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::InvalidByteTarget);
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::StageNotSealed);
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::WrongStageFormat);
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::RootCardinality {
+            table: example(),
+        });
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::SelectedCarMismatch);
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::CarSettingsMismatch);
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::RootRowsExceedTarget,
+        );
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::SingleRowExceedsTarget,
+        );
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::ParentChildExceedsTarget,
+        );
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::ParentRelationsExceedTarget,
+        );
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::TooManyChunks);
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::PackExceedsProfileLimit,
+        );
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::AccountingOverflow);
+        #[cfg(test)]
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::InjectedTestFailure(example()),
+        );
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::SourceIdMismatch {
+            table: example(),
+            stored: example(),
+            decoded: example(),
+        });
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::UnreferencedRelation {
+                table: example(),
+                source_id: example(),
+            },
+        );
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::UnemittedRelationRows,
+        );
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::MissingChargingProcess {
+                charge_id: example(),
+                charging_process_id: example(),
+            },
+        );
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::ChargeParentMismatch {
+                charge_id: example(),
+                expected: example(),
+                actual: example(),
+            },
+        );
+        check_source_db_physical_fragment_error(
+            SourceDbPhysicalFragmentError::Serialize(example()),
+        );
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::Stage(example()));
+        check_source_db_physical_fragment_error(SourceDbPhysicalFragmentError::Pack(example()));
+    }
+}

@@ -112,8 +112,8 @@ extension HubServiceLifecycleTests {
         let rig = try OwnerRig(.init(installed: false, loaded: .loaded))
         defer { rig.tearDown() }
         // A prepared (idle) migration session, a deferred reconcile and a background owner.
-        var connected: Result<TeslaMateServerImportSession, Error>?
-        _ = rig.controller.connectMigrationServer(host: "teslamate.local", user: "user", port: 22,
+        var connected: Result<SourceServerImportSession, Error>?
+        _ = rig.controller.connectMigrationServer(host: "server.local", user: "user", port: 22,
                                                   authentication: .key(identityFile: nil),
                                                   usePasswordlessSudo: false) { connected = $0 }
         spinUntil { connected != nil }
@@ -278,8 +278,8 @@ extension HubServiceLifecycleTests {
         // lifecycle) closes no prepared migration session and drops no queued work.
         let rig = try OwnerRig(.init(installed: false, loaded: .loaded, change: .replaced))
         defer { rig.tearDown() }
-        var connected: Result<TeslaMateServerImportSession, Error>?
-        _ = rig.controller.connectMigrationServer(host: "teslamate.local", user: "user", port: 22,
+        var connected: Result<SourceServerImportSession, Error>?
+        _ = rig.controller.connectMigrationServer(host: "server.local", user: "user", port: 22,
                                                   authentication: .key(identityFile: nil),
                                                   usePasswordlessSudo: false) { connected = $0 }
         spinUntil { connected != nil }

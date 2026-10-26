@@ -112,7 +112,7 @@ extension OnboardingWindowControllerTests {
         toggle.state = .on
         press(toggle)
         try field(placeholder: "Password-free local PostgreSQL URL", in: onboarding).stringValue
-            = "postgresql://reader@127.0.0.1:55438/teslamate_snapshot"
+            = "postgresql://reader@127.0.0.1:55438/source_snapshot"
         try field(placeholder: "Car ID", in: onboarding).stringValue = "1"
         try field(placeholder: "Owner-only PostgreSQL password file", in: onboarding).stringValue = "/private/password"
         let acknowledgement = try XCTUnwrap(descendantViews(of: onboarding.window?.contentView).compactMap { $0 as? NSButton }
@@ -437,8 +437,8 @@ extension OnboardingWindowControllerTests {
 
     func testEntryAccountMigrateUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "AccountMigrate", family: .migration, options: connectedOptions(),
-                              effect: { $0.runner.count("teslamate-check:history") >= 1 }) { test, h, _ in
-            try test.chooseMenuItem("Migrate from TeslaMate…", h)
+                              effect: { $0.runner.count("source-check:history") >= 1 }) { test, h, _ in
+            try test.chooseMenuItem("Import History…", h)
             let onboarding = try XCTUnwrap(test.currentOnboarding(h))
             XCTAssertEqual(onboarding.currentRoute, .migration)
             XCTAssertEqual(h.rig.acquisitions(.migration), 0)
@@ -511,12 +511,12 @@ extension OnboardingWindowControllerTests {
 
     func testEntryFileImportUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "FileImport", family: .migration, options: .init(installed: false),
-                              effect: { $0.runner.count("teslamate-check:history") >= 1 }) { test, h, _ in
-            // File > Import TeslaMate Data… is the application delegate's selector.
+                              effect: { $0.runner.count("source-check:history") >= 1 }) { test, h, _ in
+            // File > Import History… is the application delegate's selector.
             let menu = AppDelegate.makeMainMenu(actionTarget: nil)
             let item = try XCTUnwrap(menu.items.compactMap(\.submenu).flatMap(\.items)
                 .first { $0.action == #selector(AppDelegate.importData(_:)) }, "the File menu's import item")
-            XCTAssertEqual(item.title, "Import TeslaMate Data…")
+            XCTAssertEqual(item.title, "Import History…")
             h.window.showImport()
             let onboarding = try XCTUnwrap(test.currentOnboarding(h), "Import opened onboarding")
             XCTAssertEqual(h.rig.acquisitions(.migration), 0)
@@ -526,10 +526,10 @@ extension OnboardingWindowControllerTests {
 
     func testEntrySettingsImportUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "SettingsImport", family: .migration, options: .init(installed: false),
-                              effect: { $0.runner.count("teslamate-check:history") >= 1 }) { test, h, _ in
+                              effect: { $0.runner.count("source-check:history") >= 1 }) { test, h, _ in
             h.window.selectMainSection(.settings)
             let row = try XCTUnwrap(test.descendantViews(of: h.window.settingsPage)
-                .first { $0.identifier?.rawValue == "hub.settings.import-teslamate" }, "the Settings import row")
+                .first { $0.identifier?.rawValue == "hub.settings.import-history" }, "the Settings import row")
             if let control = row as? NSControl, let action = control.action {
                 _ = NSApp.sendAction(action, to: control.target, from: control)
             } else if let button = test.descendantViews(of: row).compactMap({ $0 as? NSButton }).first {
@@ -545,8 +545,8 @@ extension OnboardingWindowControllerTests {
 
     func testEntryAccountImportUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "AccountImport", family: .migration, options: .init(installed: false),
-                              effect: { $0.runner.count("teslamate-check:history") >= 1 }) { test, h, _ in
-            try test.chooseMenuItem("Migrate from TeslaMate…", h)
+                              effect: { $0.runner.count("source-check:history") >= 1 }) { test, h, _ in
+            try test.chooseMenuItem("Import History…", h)
             let onboarding = try XCTUnwrap(test.currentOnboarding(h))
             XCTAssertEqual(h.rig.acquisitions(.migration), 0)
             try test.submitLocalCompatibility(onboarding)
@@ -557,7 +557,7 @@ extension OnboardingWindowControllerTests {
 
     func testEntryLocalCompatibilityUsesLifecycleOwner() throws {
         try assertEntry(.init(name: "LocalCompatibility", family: .migration, options: .init(installed: false),
-                              effect: { $0.runner.count("teslamate-check:history") >= 1 }) { test, h, _ in
+                              effect: { $0.runner.count("source-check:history") >= 1 }) { test, h, _ in
             let onboarding = try test.openOnboarding(h, route: .migration)
             try test.submitLocalCompatibility(onboarding)
         })

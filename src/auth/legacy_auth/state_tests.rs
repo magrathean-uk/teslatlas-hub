@@ -17,7 +17,7 @@ use uuid::Uuid;
 use super::super::http_date::parse_http_date;
 use super::super::state::*;
 use super::{AuthMode, ConfigurationReason, RefusalReason, RetryReason, SignOutReason, T0};
-use crate::db::{CollectorAuthRow, HubStore, StoreError, TeslaMateLegacyTokenStore};
+use crate::db::{CollectorAuthRow, HubStore, LegacyOwnerTokenStore, StoreError};
 
 /// A synthetic generation: sixteen equal bytes, never derived from a token.
 fn gen_id(n: u8) -> Uuid {
@@ -33,18 +33,18 @@ fn test_store() -> (tempfile::TempDir, HubStore) {
 /// Store a pair row whose ciphertext is a placeholder and whose generation is
 /// `generation`, through the path every external writer uses (K4).
 fn put_pair(store: &HubStore, generation: Uuid) {
-    let stored = TeslaMateLegacyTokenStore::imported(vec![generation.as_bytes()[0]; 8], vec![7; 8])
+    let stored = LegacyOwnerTokenStore::imported(vec![generation.as_bytes()[0]; 8], vec![7; 8])
         .expect("placeholder pair")
         .with_credential_generation(generation)
         .expect("generation");
     store
-        .replace_teslamate_legacy_tokens(&stored)
+        .replace_legacy_owner_tokens(&stored)
         .expect("store pair");
 }
 
 /// A refreshed-form pair for the output of a refresh (K2).
-fn refreshed_pair(generation: Uuid) -> TeslaMateLegacyTokenStore {
-    TeslaMateLegacyTokenStore::refreshed(
+fn refreshed_pair(generation: Uuid) -> LegacyOwnerTokenStore {
+    LegacyOwnerTokenStore::refreshed(
         vec![generation.as_bytes()[0]; 8],
         vec![8; 8],
         T0 + 28_800,
@@ -1320,8 +1320,8 @@ fn t87_an_external_write_is_told_from_this_units_own_refresh() {
         StoredPairRelation::Current
     );
     // A row with no generation was not written by this unit's refresh.
-    let unbound = TeslaMateLegacyTokenStore::imported(vec![3; 8], vec![4; 8]).unwrap();
-    store.replace_teslamate_legacy_tokens(&unbound).unwrap();
+    let unbound = LegacyOwnerTokenStore::imported(vec![3; 8], vec![4; 8]).unwrap();
+    store.replace_legacy_owner_tokens(&unbound).unwrap();
     assert_eq!(
         stored_pair_relation(&store, g9).unwrap(),
         StoredPairRelation::External
@@ -1428,12 +1428,12 @@ fn t87_an_external_write_during_an_exchange_discards_the_successor_and_signs_not
     let restored = restore_at_start(&store, &inputs(T0 + 3, g9)).unwrap();
     assert_eq!(restored.status, ready());
     // The consumed input stays fenced, so g0 cannot come back (K4).
-    let old = TeslaMateLegacyTokenStore::imported(vec![9; 8], vec![9; 8])
+    let old = LegacyOwnerTokenStore::imported(vec![9; 8], vec![9; 8])
         .unwrap()
         .with_credential_generation(g0)
         .unwrap();
     assert!(matches!(
-        store.replace_teslamate_legacy_tokens(&old),
+        store.replace_legacy_owner_tokens(&old),
         Err(StoreError::LegacyRefreshOutcomeUnknown)
     ));
 }
@@ -1469,8 +1469,8 @@ fn an_ambiguous_write_is_recognised_by_the_successors_generation_and_not_written
         Err(StoreError::LegacyRefreshOutcomeUnknown)
     ));
     // The pure rule: a generation that is neither is an external write.
-    let unbound = TeslaMateLegacyTokenStore::imported(vec![3; 8], vec![4; 8]).unwrap();
-    store.replace_teslamate_legacy_tokens(&unbound).unwrap();
+    let unbound = LegacyOwnerTokenStore::imported(vec![3; 8], vec![4; 8]).unwrap();
+    store.replace_legacy_owner_tokens(&unbound).unwrap();
     assert_eq!(
         persist_reread(&store, g0, g1, None).unwrap(),
         PersistReread::External
@@ -1718,18 +1718,19 @@ mod effective_view {
         )
         .expect("tokens");
         let (access, refresh) =
-            crate::teslamate_token::encrypt_legacy_owner_tokens(key, &tokens).expect("encrypt");
+            crate::source_token_envelope::encrypt_legacy_owner_tokens(key, &tokens)
+                .expect("encrypt");
         let stored = match schedule {
             Some((expires_at, next_refresh_at)) => {
-                TeslaMateLegacyTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
+                LegacyOwnerTokenStore::refreshed(access, refresh, expires_at, next_refresh_at)
             }
-            None => TeslaMateLegacyTokenStore::imported(access, refresh),
+            None => LegacyOwnerTokenStore::imported(access, refresh),
         }
         .expect("pair");
-        crate::teslamate_credentials::replace_key_and_tokens(directory, store, key, &stored)
+        crate::legacy_owner_credentials::replace_key_and_tokens(directory, store, key, &stored)
             .expect("persist");
         store
-            .load_teslamate_legacy_tokens()
+            .load_legacy_owner_tokens()
             .expect("load")
             .expect("row")
             .credential_generation()
@@ -1917,7 +1918,7 @@ mod effective_view {
         // The previous key generation is read when an interrupted replacement left
         // the current one behind, without settling the replacement.
         let secrets = temporary.path().join("secrets");
-        let current = crate::teslamate_credentials::key_path(temporary.path());
+        let current = crate::legacy_owner_credentials::key_path(temporary.path());
         let previous = secrets.join(".teslamate-encryption.previous.key");
         std::fs::rename(&current, &previous).expect("previous generation");
         std::fs::write(&current, b"a newer key that does not open the pair").expect("current");
@@ -2243,12 +2244,11 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
             (T0 + 30_000, T0 + 25_000),
         ),
     ] {
-        let replaced =
-            TeslaMateLegacyTokenStore::refreshed(access, vec![8; 8], schedule.0, schedule.1)
-                .unwrap()
-                .with_credential_generation(g0)
-                .unwrap();
-        store.replace_teslamate_legacy_tokens(&replaced).unwrap();
+        let replaced = LegacyOwnerTokenStore::refreshed(access, vec![8; 8], schedule.0, schedule.1)
+            .unwrap()
+            .with_credential_generation(g0)
+            .unwrap();
+        store.replace_legacy_owner_tokens(&replaced).unwrap();
         assert_eq!(
             persist_reread(&store, g0, g0, own(receipt)).unwrap(),
             PersistReread::External,
@@ -2256,8 +2256,8 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
         );
     }
     // Unbound, and a different generation.
-    let unbound = TeslaMateLegacyTokenStore::imported(vec![3; 8], vec![4; 8]).unwrap();
-    store.replace_teslamate_legacy_tokens(&unbound).unwrap();
+    let unbound = LegacyOwnerTokenStore::imported(vec![3; 8], vec![4; 8]).unwrap();
+    store.replace_legacy_owner_tokens(&unbound).unwrap();
     assert_eq!(
         persist_reread(&store, g0, g0, own(receipt)).unwrap(),
         PersistReread::External
@@ -2268,7 +2268,7 @@ fn nc_receipt_proof_is_exact_and_preserves_row_precedence() {
         PersistReread::External
     );
     // Removed: missing, whatever the receipt says.
-    store.clear_teslamate_legacy_tokens().unwrap();
+    store.clear_source_db_legacy_tokens().unwrap();
     assert_eq!(
         persist_reread(&store, g0, g0, own(receipt)).unwrap(),
         PersistReread::Missing

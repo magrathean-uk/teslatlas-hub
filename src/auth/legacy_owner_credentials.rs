@@ -1,0 +1,978 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! Minimal on-disk ownership for the exact source database `ENCRYPTION_KEY` bytes.
+
+use std::{
+    fs::{self, File, OpenOptions},
+    io::{Read, Write},
+    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+    path::{Path, PathBuf},
+};
+
+use rustix::{
+    fs::{FileType, Mode, OFlags, fcntl_getfl, fcntl_setfl, fstat, open},
+    io::Errno,
+    process::getuid,
+};
+use thiserror::Error;
+use uuid::Uuid;
+use zeroize::Zeroizing;
+
+use crate::platform::file_attempts::note as attempt;
+
+const SECRETS_DIRECTORY_MODE: u32 = 0o700;
+const KEY_FILE_MODE: u32 = 0o600;
+const MAX_KEY_BYTES: usize = 16 * 1024;
+const CURSOR_KEY_BYTES: usize = 32;
+const PREVIOUS_KEY_FILE_NAME: &str = ".teslamate-encryption.previous.key";
+
+/// Generate a new local key for a user-supplied legacy token pair.
+pub fn random_encryption_key() -> Result<Zeroizing<Vec<u8>>, SourceDbCredentialError> {
+    let mut key = Zeroizing::new(vec![0_u8; 32]);
+    getrandom::fill(key.as_mut_slice()).map_err(|_| SourceDbCredentialError::EntropyUnavailable)?;
+    Ok(key)
+}
+
+/// Exact, non-text-normalized TeslaMate encryption-key bytes.
+pub struct SourceTokenKey(Zeroizing<Vec<u8>>);
+
+impl SourceTokenKey {
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
+
+impl std::fmt::Debug for SourceTokenKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("SourceTokenKey([redacted])")
+    }
+}
+
+pub fn key_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("secrets/teslamate-encryption.key")
+}
+
+fn previous_key_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("secrets").join(PREVIOUS_KEY_FILE_NAME)
+}
+
+pub fn cursor_key_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("secrets/hub-cursor.key")
+}
+
+/// Load the durable Hub cursor-signing key, creating it exactly once when the
+/// Hub data directory is first initialized.
+pub fn load_or_create_cursor_key(
+    data_dir: &Path,
+) -> Result<crate::protocol::CursorKey, SourceDbCredentialError> {
+    let secrets_dir = data_dir.join("secrets");
+    ensure_secrets_directory(&secrets_dir)?;
+    let destination = cursor_key_path(data_dir);
+    match fs::symlink_metadata(&destination) {
+        Ok(_) => load_cursor_key_file(&destination),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            create_cursor_key_once(&secrets_dir, &destination)
+        }
+        Err(error) => Err(SourceDbCredentialError::InspectCursorKey(error)),
+    }
+}
+
+/// Test only: leave a previous key generation next to the current one, as an interrupted
+/// replacement does after its commit (B2 fix round, P3b fix 4, R-P3bF4-4).
+#[cfg(test)]
+pub(crate) fn leave_previous_key_for_test(
+    data_dir: &Path,
+    previous: &[u8],
+) -> Result<(), SourceDbCredentialError> {
+    write_private_key_file(&previous_key_path(data_dir), previous)
+}
+
+/// Test only: begin a key replacement and never commit it, as a crash before the commit
+/// leaves it: `key` is the current generation, the old one the previous.
+#[cfg(test)]
+pub(crate) fn begin_key_replacement_for_test(
+    data_dir: &Path,
+    key: &[u8],
+) -> Result<(), SourceDbCredentialError> {
+    begin_key_replacement(data_dir, key).map(drop)
+}
+
+/// Test helper for constructing an already-persisted key fixture. Production
+/// replacements must use `replace_key_and_tokens`.
+#[cfg(test)]
+pub(crate) fn replace_key(data_dir: &Path, key: &[u8]) -> Result<(), SourceDbCredentialError> {
+    validate_key(key)?;
+    let secrets_dir = data_dir.join("secrets");
+    ensure_secrets_directory(&secrets_dir)?;
+    let destination = key_path(data_dir);
+    validate_existing_key_file(&destination)?;
+
+    let temporary = secrets_dir.join(format!(".teslamate-encryption-{}.tmp", Uuid::new_v4()));
+    let write_result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(KEY_FILE_MODE)
+            .open(&temporary)
+            .map_err(SourceDbCredentialError::CreateTemporaryKey)?;
+        file.set_permissions(fs::Permissions::from_mode(KEY_FILE_MODE))
+            .map_err(SourceDbCredentialError::ProtectTemporaryKey)?;
+        file.write_all(key)
+            .map_err(SourceDbCredentialError::WriteTemporaryKey)?;
+        file.sync_all()
+            .map_err(SourceDbCredentialError::SyncTemporaryKey)?;
+        fs::rename(&temporary, &destination).map_err(SourceDbCredentialError::ReplaceKey)?;
+        sync_directory(&secrets_dir)
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    write_result
+}
+
+/// Replace the key file and its ciphertext pair as one recoverable operation.
+///
+/// SQLite and the filesystem cannot share one transaction. The old key is
+/// therefore retained until the SQLite replacement commits. On interruption,
+/// startup tests both private key generations against the committed pair and
+/// deterministically keeps the matching generation.
+pub fn replace_key_and_tokens(
+    data_dir: &Path,
+    store: &crate::db::HubStore,
+    key: &[u8],
+    tokens: &crate::db::LegacyOwnerTokenStore,
+) -> Result<(), SourceDbCredentialImportError> {
+    recover_pending_key_replacement(data_dir, store)?;
+    let plaintext = crate::source_token_envelope::decrypt_legacy_owner_tokens(
+        key,
+        tokens.access(),
+        tokens.refresh(),
+    )
+    .map_err(SourceDbCredentialImportError::TokenCipher)?;
+    let generation = crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext);
+    let tokens = tokens
+        .with_credential_generation(generation)
+        .map_err(SourceDbCredentialImportError::TokenStore)?;
+    let replacement = begin_key_replacement(data_dir, key)?;
+    if let Err(store_error) = store.replace_legacy_owner_tokens(&tokens) {
+        return match replacement.rollback() {
+            Ok(()) => Err(SourceDbCredentialImportError::TokenStore(store_error)),
+            Err(rollback) => Err(SourceDbCredentialImportError::Rollback {
+                store: store_error.to_string(),
+                rollback,
+            }),
+        };
+    }
+    replacement.commit()?;
+    Ok(())
+}
+
+/// Remove source database collector authority after its process has been stopped.
+///
+/// The token row is deleted first. A leftover key by itself grants no access,
+/// while deleting the key first could leave a usable ciphertext pair with an
+/// already-loaded key generation after an interrupted operation.
+pub fn remove_key_and_tokens(
+    data_dir: &Path,
+    store: &crate::db::HubStore,
+) -> Result<(), SourceDbCredentialRemovalError> {
+    store
+        .clear_source_db_legacy_tokens()
+        .map_err(SourceDbCredentialRemovalError::TokenStore)?;
+
+    let secrets_dir = data_dir.join("secrets");
+    let current = key_path(data_dir);
+    let previous = previous_key_path(data_dir);
+    let current_exists = path_exists(&current)?;
+    let previous_exists = path_exists(&previous)?;
+    if current_exists {
+        remove_checked_key_file(&current)?;
+    }
+    if previous_exists {
+        remove_checked_key_file(&previous)?;
+    }
+    if current_exists || previous_exists {
+        sync_directory(&secrets_dir)?;
+    }
+    Ok(())
+}
+
+/// Load the key generation that decrypts the committed ciphertext pair.
+/// This also settles an interrupted cross-filesystem replacement.
+pub fn load_key_for_tokens(
+    data_dir: &Path,
+    tokens: &crate::db::LegacyOwnerTokenStore,
+) -> Result<SourceTokenKey, SourceDbCredentialError> {
+    load_key_for_tokens_with(data_dir, tokens, &|| true)
+}
+
+/// [`load_key_for_tokens`] for a supervised run (B2 fix round, P3b fix 4, R-P3bF4-4):
+/// `may_settle` is the run's guard, consulted immediately before every key-file mutation
+/// of the settlement (removing the previous generation, deleting the current one,
+/// restoring the previous over it), with nothing awaited in between. The key is selected
+/// without writing first; a refusal ends the call with
+/// [`SourceDbCredentialError::SettlementRefused`] and leaves both key files as they
+/// were, to be settled by the next admitted start.
+pub(crate) fn load_key_for_tokens_with(
+    data_dir: &Path,
+    tokens: &crate::db::LegacyOwnerTokenStore,
+    may_settle: &dyn Fn() -> bool,
+) -> Result<SourceTokenKey, SourceDbCredentialError> {
+    let previous = previous_key_path(data_dir);
+    let previous_exists = path_exists(&previous)?;
+    match load_key(data_dir) {
+        Ok(current) if key_matches_tokens(&current, tokens) => {
+            if previous_exists {
+                if !may_settle() {
+                    return Err(SourceDbCredentialError::SettlementRefused);
+                }
+                remove_checked_key_file(&previous)?;
+                sync_directory(&data_dir.join("secrets"))?;
+            }
+            Ok(current)
+        }
+        Ok(_) | Err(_) if previous_exists => {
+            let prior = load_key_file(&previous)?;
+            if !key_matches_tokens(&prior, tokens) {
+                return Err(SourceDbCredentialError::NoMatchingKeyGeneration);
+            }
+            restore_previous_key(data_dir, may_settle)?;
+            load_key(data_dir)
+        }
+        Ok(_) => Err(SourceDbCredentialError::NoMatchingKeyGeneration),
+        Err(error) => Err(error),
+    }
+}
+
+/// Prove that one admitted local key generation decrypts the committed legacy
+/// token pair without settling or deleting an interrupted replacement.
+pub fn validate_stored_legacy_credentials_read_only(
+    data_dir: &Path,
+    tokens: &crate::db::LegacyOwnerTokenStore,
+) -> Result<(), SourceDbCredentialError> {
+    select_stored_legacy_key_read_only(data_dir, tokens).map(drop)
+}
+
+/// Select, without writing, the existing current or previous key generation
+/// that opens the committed legacy pair, exactly as
+/// [`validate_stored_legacy_credentials_read_only`] proves it. An interrupted
+/// replacement is neither settled nor deleted; real key faults stay errors.
+pub(crate) fn select_stored_legacy_key_read_only(
+    data_dir: &Path,
+    tokens: &crate::db::LegacyOwnerTokenStore,
+) -> Result<SourceTokenKey, SourceDbCredentialError> {
+    let current_exists = path_exists(&key_path(data_dir))?;
+    let current = load_key(data_dir);
+    if current
+        .as_ref()
+        .is_ok_and(|key| key_matches_tokens(key, tokens))
+    {
+        return current;
+    }
+    let previous = previous_key_path(data_dir);
+    if path_exists(&previous)? {
+        let previous = load_key_file(&previous)?;
+        if key_matches_tokens(&previous, tokens) {
+            if current_exists && current.is_err() {
+                return current;
+            }
+            return Ok(previous);
+        }
+        return Err(SourceDbCredentialError::NoMatchingKeyGeneration);
+    }
+    match current {
+        Ok(_) => Err(SourceDbCredentialError::NoMatchingKeyGeneration),
+        Err(error) => Err(error),
+    }
+}
+
+fn recover_pending_key_replacement(
+    data_dir: &Path,
+    store: &crate::db::HubStore,
+) -> Result<(), SourceDbCredentialImportError> {
+    if !path_exists(&previous_key_path(data_dir))? {
+        return Ok(());
+    }
+    let stored = store
+        .load_legacy_owner_tokens()
+        .map_err(SourceDbCredentialImportError::TokenStore)?
+        .ok_or(SourceDbCredentialError::PendingKeyReplacementWithoutTokens)?;
+    load_key_for_tokens(data_dir, &stored)?;
+    Ok(())
+}
+
+fn key_matches_tokens(key: &SourceTokenKey, tokens: &crate::db::LegacyOwnerTokenStore) -> bool {
+    let Ok(plaintext) = crate::source_token_envelope::decrypt_legacy_owner_tokens(
+        key.as_bytes(),
+        tokens.access(),
+        tokens.refresh(),
+    ) else {
+        return false;
+    };
+    tokens.credential_generation().is_none_or(|expected| {
+        crate::source_token_envelope::legacy_refresh_credential_generation(&plaintext) == expected
+    })
+}
+
+struct KeyReplacement {
+    data_dir: PathBuf,
+    had_previous: bool,
+}
+
+impl KeyReplacement {
+    fn commit(self) -> Result<(), SourceDbCredentialError> {
+        if self.had_previous {
+            remove_checked_key_file(&previous_key_path(&self.data_dir))?;
+            sync_directory(&self.data_dir.join("secrets"))?;
+        }
+        Ok(())
+    }
+
+    fn rollback(self) -> Result<(), SourceDbCredentialError> {
+        let current = key_path(&self.data_dir);
+        if path_exists(&current)? {
+            remove_checked_key_file(&current)?;
+        }
+        if self.had_previous {
+            attempt(&previous_key_path(&self.data_dir));
+            attempt(&current);
+            fs::rename(previous_key_path(&self.data_dir), &current)
+                .map_err(SourceDbCredentialError::RestoreKey)?;
+        }
+        sync_directory(&self.data_dir.join("secrets"))
+    }
+}
+
+fn begin_key_replacement(
+    data_dir: &Path,
+    key: &[u8],
+) -> Result<KeyReplacement, SourceDbCredentialError> {
+    validate_key(key)?;
+    let secrets_dir = data_dir.join("secrets");
+    ensure_secrets_directory(&secrets_dir)?;
+    let current = key_path(data_dir);
+    let previous = previous_key_path(data_dir);
+    if path_exists(&previous)? {
+        return Err(SourceDbCredentialError::PendingKeyReplacement);
+    }
+    let had_previous = path_exists(&current)?;
+    if had_previous {
+        validate_key_file(&current)?;
+    }
+
+    let temporary = secrets_dir.join(format!(".teslamate-encryption-{}.tmp", Uuid::new_v4()));
+    write_private_key_file(&temporary, key)?;
+    if had_previous {
+        attempt(&current);
+        attempt(&previous);
+        if let Err(error) = fs::rename(&current, &previous) {
+            attempt(&temporary);
+            let _ = fs::remove_file(&temporary);
+            return Err(SourceDbCredentialError::ReplaceKey(error));
+        }
+        sync_directory(&secrets_dir)?;
+    }
+    attempt(&temporary);
+    attempt(&current);
+    if let Err(error) = fs::rename(&temporary, &current) {
+        if had_previous {
+            attempt(&previous);
+            attempt(&current);
+            let _ = fs::rename(&previous, &current);
+            let _ = sync_directory(&secrets_dir);
+        }
+        attempt(&temporary);
+        let _ = fs::remove_file(&temporary);
+        return Err(SourceDbCredentialError::ReplaceKey(error));
+    }
+    sync_directory(&secrets_dir)?;
+    Ok(KeyReplacement {
+        data_dir: data_dir.to_path_buf(),
+        had_previous,
+    })
+}
+
+fn write_private_key_file(path: &Path, key: &[u8]) -> Result<(), SourceDbCredentialError> {
+    attempt(path);
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(KEY_FILE_MODE)
+        .open(path)
+        .map_err(SourceDbCredentialError::CreateTemporaryKey)?;
+    file.set_permissions(fs::Permissions::from_mode(KEY_FILE_MODE))
+        .map_err(SourceDbCredentialError::ProtectTemporaryKey)?;
+    attempt(path);
+    file.write_all(key)
+        .map_err(SourceDbCredentialError::WriteTemporaryKey)?;
+    attempt(path);
+    file.sync_all()
+        .map_err(SourceDbCredentialError::SyncTemporaryKey)
+}
+
+fn path_exists(path: &Path) -> Result<bool, SourceDbCredentialError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(SourceDbCredentialError::InspectKey(error)),
+    }
+}
+
+fn remove_checked_key_file(path: &Path) -> Result<(), SourceDbCredentialError> {
+    validate_key_file(path)?;
+    attempt(path);
+    fs::remove_file(path).map_err(SourceDbCredentialError::RemoveKey)
+}
+
+fn restore_previous_key(
+    data_dir: &Path,
+    may_settle: &dyn Fn() -> bool,
+) -> Result<(), SourceDbCredentialError> {
+    let current = key_path(data_dir);
+    let previous = previous_key_path(data_dir);
+    validate_key_file(&previous)?;
+    if path_exists(&current)? {
+        if !may_settle() {
+            return Err(SourceDbCredentialError::SettlementRefused);
+        }
+        remove_checked_key_file(&current)?;
+    }
+    if !may_settle() {
+        return Err(SourceDbCredentialError::SettlementRefused);
+    }
+    attempt(&previous);
+    attempt(&current);
+    fs::rename(&previous, &current).map_err(SourceDbCredentialError::RestoreKey)?;
+    sync_directory(&data_dir.join("secrets"))
+}
+
+/// Load the exact stored bytes without trimming, parsing, logging, or copying
+/// them into a string.
+pub(crate) fn load_key(data_dir: &Path) -> Result<SourceTokenKey, SourceDbCredentialError> {
+    let secrets_dir = data_dir.join("secrets");
+    validate_secrets_directory(&secrets_dir)?;
+    let path = key_path(data_dir);
+    load_key_file(&path)
+}
+
+fn load_key_file(path: &Path) -> Result<SourceTokenKey, SourceDbCredentialError> {
+    let key = read_checked_key_file(path, MAX_KEY_BYTES)?;
+    validate_key(&key)?;
+    Ok(SourceTokenKey(key))
+}
+
+fn create_cursor_key_once(
+    secrets_dir: &Path,
+    destination: &Path,
+) -> Result<crate::protocol::CursorKey, SourceDbCredentialError> {
+    let temporary = secrets_dir.join(format!(".hub-cursor-{}.tmp", Uuid::new_v4()));
+    let mut bytes = [0_u8; CURSOR_KEY_BYTES];
+    getrandom::fill(&mut bytes).map_err(|_| SourceDbCredentialError::EntropyUnavailable)?;
+    let created = (|| {
+        attempt(&temporary);
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(KEY_FILE_MODE)
+            .open(&temporary)
+            .map_err(SourceDbCredentialError::CreateTemporaryCursorKey)?;
+        file.set_permissions(fs::Permissions::from_mode(KEY_FILE_MODE))
+            .map_err(SourceDbCredentialError::ProtectTemporaryCursorKey)?;
+        attempt(&temporary);
+        file.write_all(&bytes)
+            .map_err(SourceDbCredentialError::WriteTemporaryCursorKey)?;
+        attempt(&temporary);
+        file.sync_all()
+            .map_err(SourceDbCredentialError::SyncTemporaryCursorKey)?;
+        attempt(destination);
+        match fs::hard_link(&temporary, destination) {
+            Ok(()) => {
+                attempt(&temporary);
+                fs::remove_file(&temporary)
+                    .map_err(SourceDbCredentialError::RemoveTemporaryCursorKey)?;
+                sync_directory(secrets_dir)?;
+                Ok(crate::protocol::CursorKey::from_bytes(bytes))
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                attempt(&temporary);
+                let _ = fs::remove_file(&temporary);
+                load_cursor_key_file(destination)
+            }
+            Err(error) => Err(SourceDbCredentialError::PublishCursorKey(error)),
+        }
+    })();
+    if created.is_err() {
+        attempt(&temporary);
+        let _ = fs::remove_file(&temporary);
+    }
+    created
+}
+
+fn load_cursor_key_file(
+    path: &Path,
+) -> Result<crate::protocol::CursorKey, SourceDbCredentialError> {
+    let bytes = read_checked_cursor_key_file(path)?;
+    let bytes: [u8; CURSOR_KEY_BYTES] = bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| SourceDbCredentialError::InvalidCursorKeyLength)?;
+    Ok(crate::protocol::CursorKey::from_bytes(bytes))
+}
+
+fn ensure_secrets_directory(path: &Path) -> Result<(), SourceDbCredentialError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => validate_secrets_directory(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let mut builder = fs::DirBuilder::new();
+            builder.mode(SECRETS_DIRECTORY_MODE);
+            attempt(path);
+            match builder.create(path) {
+                Ok(()) => validate_secrets_directory(path),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    validate_secrets_directory(path)
+                }
+                Err(error) => Err(SourceDbCredentialError::CreateSecretsDirectory(error)),
+            }
+        }
+        Err(error) => Err(SourceDbCredentialError::InspectSecretsDirectory(error)),
+    }
+}
+
+fn validate_secrets_directory(path: &Path) -> Result<(), SourceDbCredentialError> {
+    let metadata =
+        fs::symlink_metadata(path).map_err(SourceDbCredentialError::InspectSecretsDirectory)?;
+    if metadata.file_type().is_symlink()
+        || !metadata.is_dir()
+        || metadata.permissions().mode() & 0o777 != SECRETS_DIRECTORY_MODE
+    {
+        return Err(SourceDbCredentialError::UnsafeSecretsDirectory);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_existing_key_file(path: &Path) -> Result<(), SourceDbCredentialError> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => validate_key_file(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(SourceDbCredentialError::InspectKey(error)),
+    }
+}
+
+fn validate_key_file(path: &Path) -> Result<(), SourceDbCredentialError> {
+    let metadata = fs::symlink_metadata(path).map_err(SourceDbCredentialError::InspectKey)?;
+    if metadata.file_type().is_symlink()
+        || !metadata.file_type().is_file()
+        || metadata.permissions().mode() & 0o777 != KEY_FILE_MODE
+        || metadata.uid() != getuid().as_raw()
+    {
+        return Err(SourceDbCredentialError::UnsafeKeyFile);
+    }
+    Ok(())
+}
+
+fn read_checked_key_file(
+    path: &Path,
+    maximum: usize,
+) -> Result<Zeroizing<Vec<u8>>, SourceDbCredentialError> {
+    read_checked_secret_file(path, maximum, false)
+}
+
+fn read_checked_cursor_key_file(
+    path: &Path,
+) -> Result<Zeroizing<Vec<u8>>, SourceDbCredentialError> {
+    read_checked_secret_file(path, CURSOR_KEY_BYTES, true)
+}
+
+pub(crate) fn load_existing_cursor_key_bytes(
+    data_dir: &Path,
+) -> Result<Option<Zeroizing<Vec<u8>>>, SourceDbCredentialError> {
+    let path = cursor_key_path(data_dir);
+    match fs::symlink_metadata(&path) {
+        Ok(_) => read_checked_cursor_key_file(&path).map(Some),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(SourceDbCredentialError::InspectCursorKey(error)),
+    }
+}
+
+fn read_checked_secret_file(
+    path: &Path,
+    maximum: usize,
+    cursor: bool,
+) -> Result<Zeroizing<Vec<u8>>, SourceDbCredentialError> {
+    read_checked_secret_file_after_open(path, maximum, cursor, || {})
+}
+
+fn read_checked_secret_file_after_open(
+    path: &Path,
+    maximum: usize,
+    cursor: bool,
+    after_open: impl FnOnce(),
+) -> Result<Zeroizing<Vec<u8>>, SourceDbCredentialError> {
+    let descriptor = open(
+        path,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC | OFlags::NONBLOCK,
+        Mode::empty(),
+    )
+    .map_err(|error| match error {
+        Errno::LOOP => {
+            if cursor {
+                SourceDbCredentialError::UnsafeCursorKeyFile
+            } else {
+                SourceDbCredentialError::UnsafeKeyFile
+            }
+        }
+        _ => {
+            if cursor {
+                SourceDbCredentialError::ReadCursorKey
+            } else {
+                SourceDbCredentialError::ReadKey
+            }
+        }
+    })?;
+    let held = fstat(&descriptor).map_err(|_| {
+        if cursor {
+            SourceDbCredentialError::ReadCursorKey
+        } else {
+            SourceDbCredentialError::ReadKey
+        }
+    })?;
+    if !FileType::from_raw_mode(held.st_mode).is_file()
+        || (held.st_mode as u32 & 0o777) != KEY_FILE_MODE
+        || held.st_uid != getuid().as_raw()
+    {
+        return Err(if cursor {
+            SourceDbCredentialError::UnsafeCursorKeyFile
+        } else {
+            SourceDbCredentialError::UnsafeKeyFile
+        });
+    }
+    let flags = fcntl_getfl(&descriptor).map_err(|_| {
+        if cursor {
+            SourceDbCredentialError::ReadCursorKey
+        } else {
+            SourceDbCredentialError::ReadKey
+        }
+    })?;
+    fcntl_setfl(&descriptor, flags & !OFlags::NONBLOCK).map_err(|_| {
+        if cursor {
+            SourceDbCredentialError::ReadCursorKey
+        } else {
+            SourceDbCredentialError::ReadKey
+        }
+    })?;
+
+    after_open();
+
+    let file: File = descriptor.into();
+    let mut bytes = Zeroizing::new(Vec::with_capacity(maximum.min(8 * 1024)));
+    file.take(u64::try_from(maximum + 1).expect("key cap fits u64"))
+        .read_to_end(&mut bytes)
+        .map_err(|_| {
+            if cursor {
+                SourceDbCredentialError::ReadCursorKey
+            } else {
+                SourceDbCredentialError::ReadKey
+            }
+        })?;
+    if bytes.len() > maximum {
+        return Err(if cursor {
+            SourceDbCredentialError::InvalidCursorKeyLength
+        } else {
+            SourceDbCredentialError::KeyTooLarge
+        });
+    }
+
+    let current = fs::symlink_metadata(path).map_err(|_| {
+        if cursor {
+            SourceDbCredentialError::CursorKeyIdentityChanged
+        } else {
+            SourceDbCredentialError::KeyIdentityChanged
+        }
+    })?;
+    if current.file_type().is_symlink()
+        || !current.file_type().is_file()
+        || current.uid() != held.st_uid
+        || current.dev() != held.st_dev as u64
+        || current.ino() != held.st_ino
+        || current.permissions().mode() & 0o777 != KEY_FILE_MODE
+    {
+        return Err(if cursor {
+            SourceDbCredentialError::CursorKeyIdentityChanged
+        } else {
+            SourceDbCredentialError::KeyIdentityChanged
+        });
+    }
+    Ok(bytes)
+}
+
+fn validate_key(key: &[u8]) -> Result<(), SourceDbCredentialError> {
+    if key.is_empty() {
+        return Err(SourceDbCredentialError::EmptyKey);
+    }
+    if key.len() > MAX_KEY_BYTES {
+        return Err(SourceDbCredentialError::KeyTooLarge);
+    }
+    Ok(())
+}
+
+fn sync_directory(path: &Path) -> Result<(), SourceDbCredentialError> {
+    attempt(path);
+    File::open(path)
+        .map_err(SourceDbCredentialError::OpenSecretsDirectory)?
+        .sync_all()
+        .map_err(SourceDbCredentialError::SyncSecretsDirectory)
+}
+
+#[derive(Debug, Error)]
+pub enum SourceDbCredentialError {
+    #[error("operating-system entropy is unavailable for credential creation")]
+    EntropyUnavailable,
+    #[error("source token key is empty")]
+    EmptyKey,
+    #[error("source token key exceeds the fixed size limit")]
+    KeyTooLarge,
+    #[error("cannot create source database secrets directory: {0}")]
+    CreateSecretsDirectory(std::io::Error),
+    #[error("cannot inspect source database secrets directory: {0}")]
+    InspectSecretsDirectory(std::io::Error),
+    #[error("Source database secrets directory has unsafe type or mode")]
+    UnsafeSecretsDirectory,
+    #[error("cannot inspect source token key file: {0}")]
+    InspectKey(std::io::Error),
+    #[error("source token key file has unsafe type or mode")]
+    UnsafeKeyFile,
+    #[error("cannot create temporary source token key: {0}")]
+    CreateTemporaryKey(std::io::Error),
+    #[error("cannot protect temporary source token key: {0}")]
+    ProtectTemporaryKey(std::io::Error),
+    #[error("cannot write temporary source token key: {0}")]
+    WriteTemporaryKey(std::io::Error),
+    #[error("cannot sync temporary source token key: {0}")]
+    SyncTemporaryKey(std::io::Error),
+    #[error("cannot replace source token key: {0}")]
+    ReplaceKey(std::io::Error),
+    #[error("cannot remove superseded source token key: {0}")]
+    RemoveKey(std::io::Error),
+    #[error("cannot restore previous source token key: {0}")]
+    RestoreKey(std::io::Error),
+    #[error("an interrupted source database key replacement must be recovered first")]
+    PendingKeyReplacement,
+    #[error("an interrupted source database key replacement has no committed token pair")]
+    PendingKeyReplacementWithoutTokens,
+    #[error("neither private source database key generation decrypts the committed token pair")]
+    NoMatchingKeyGeneration,
+    #[error(
+        "the run's guard refused the settlement of an interrupted source database key replacement"
+    )]
+    SettlementRefused,
+    #[error("cannot open source database secrets directory: {0}")]
+    OpenSecretsDirectory(std::io::Error),
+    #[error("cannot sync source database secrets directory: {0}")]
+    SyncSecretsDirectory(std::io::Error),
+    #[error("cannot read source token key")]
+    ReadKey,
+    #[error("source token key identity changed while reading")]
+    KeyIdentityChanged,
+    #[error("cannot inspect Hub cursor key: {0}")]
+    InspectCursorKey(std::io::Error),
+    #[error("Hub cursor key has unsafe type or mode")]
+    UnsafeCursorKeyFile,
+    #[error("Hub cursor key must be exactly 32 bytes")]
+    InvalidCursorKeyLength,
+    #[error("cannot create temporary Hub cursor key: {0}")]
+    CreateTemporaryCursorKey(std::io::Error),
+    #[error("cannot protect temporary Hub cursor key: {0}")]
+    ProtectTemporaryCursorKey(std::io::Error),
+    #[error("cannot write temporary Hub cursor key: {0}")]
+    WriteTemporaryCursorKey(std::io::Error),
+    #[error("cannot sync temporary Hub cursor key: {0}")]
+    SyncTemporaryCursorKey(std::io::Error),
+    #[error("cannot publish Hub cursor key: {0}")]
+    PublishCursorKey(std::io::Error),
+    #[error("cannot remove temporary Hub cursor key: {0}")]
+    RemoveTemporaryCursorKey(std::io::Error),
+    #[error("cannot read Hub cursor key")]
+    ReadCursorKey,
+    #[error("Hub cursor key identity changed while reading")]
+    CursorKeyIdentityChanged,
+}
+
+#[derive(Debug, Error)]
+pub enum SourceDbCredentialImportError {
+    #[error(transparent)]
+    Credential(#[from] SourceDbCredentialError),
+    #[error("cannot store legacy owner token pair: {0}")]
+    TokenStore(#[source] crate::db::StoreError),
+    #[error("cannot authenticate legacy owner token pair: {0}")]
+    TokenCipher(#[source] crate::source_token_envelope::SourceDbTokenError),
+    #[error("cannot store legacy owner token pair ({store}); key rollback also failed: {rollback}")]
+    Rollback {
+        store: String,
+        rollback: SourceDbCredentialError,
+    },
+}
+
+#[derive(Debug, Error)]
+pub enum SourceDbCredentialRemovalError {
+    #[error("cannot remove legacy owner token pair: {0}")]
+    TokenStore(#[source] crate::db::StoreError),
+    #[error(transparent)]
+    Credential(#[from] SourceDbCredentialError),
+}
+
+#[cfg(test)]
+#[path = "legacy_owner_credentials/tests.rs"]
+mod tests;
+
+#[cfg(test)]
+mod n1_src_auth_legacy_owner_credentials_rs_display_tests {
+    use super::*;
+    use crate::runtime::name_test_support::{ErrorExample, assert_name_free, example};
+
+    impl ErrorExample for SourceDbCredentialError {
+        fn error_example() -> Self {
+            SourceDbCredentialError::EntropyUnavailable
+        }
+    }
+
+    impl ErrorExample for SourceDbCredentialImportError {
+        fn error_example() -> Self {
+            SourceDbCredentialImportError::Credential(example())
+        }
+    }
+
+    impl ErrorExample for SourceDbCredentialRemovalError {
+        fn error_example() -> Self {
+            SourceDbCredentialRemovalError::TokenStore(example())
+        }
+    }
+
+    #[test]
+    fn every_reachable_error_display_omits_the_source_project_name() {
+        fn check_source_db_credential_error(error: SourceDbCredentialError) {
+            match &error {
+                SourceDbCredentialError::EntropyUnavailable => (),
+                SourceDbCredentialError::EmptyKey => (),
+                SourceDbCredentialError::KeyTooLarge => (),
+                SourceDbCredentialError::CreateSecretsDirectory(..) => (),
+                SourceDbCredentialError::InspectSecretsDirectory(..) => (),
+                SourceDbCredentialError::UnsafeSecretsDirectory => (),
+                SourceDbCredentialError::InspectKey(..) => (),
+                SourceDbCredentialError::UnsafeKeyFile => (),
+                SourceDbCredentialError::CreateTemporaryKey(..) => (),
+                SourceDbCredentialError::ProtectTemporaryKey(..) => (),
+                SourceDbCredentialError::WriteTemporaryKey(..) => (),
+                SourceDbCredentialError::SyncTemporaryKey(..) => (),
+                SourceDbCredentialError::ReplaceKey(..) => (),
+                SourceDbCredentialError::RemoveKey(..) => (),
+                SourceDbCredentialError::RestoreKey(..) => (),
+                SourceDbCredentialError::PendingKeyReplacement => (),
+                SourceDbCredentialError::PendingKeyReplacementWithoutTokens => (),
+                SourceDbCredentialError::NoMatchingKeyGeneration => (),
+                SourceDbCredentialError::SettlementRefused => (),
+                SourceDbCredentialError::OpenSecretsDirectory(..) => (),
+                SourceDbCredentialError::SyncSecretsDirectory(..) => (),
+                SourceDbCredentialError::ReadKey => (),
+                SourceDbCredentialError::KeyIdentityChanged => (),
+                SourceDbCredentialError::InspectCursorKey(..) => (),
+                SourceDbCredentialError::UnsafeCursorKeyFile => (),
+                SourceDbCredentialError::InvalidCursorKeyLength => (),
+                SourceDbCredentialError::CreateTemporaryCursorKey(..) => (),
+                SourceDbCredentialError::ProtectTemporaryCursorKey(..) => (),
+                SourceDbCredentialError::WriteTemporaryCursorKey(..) => (),
+                SourceDbCredentialError::SyncTemporaryCursorKey(..) => (),
+                SourceDbCredentialError::PublishCursorKey(..) => (),
+                SourceDbCredentialError::RemoveTemporaryCursorKey(..) => (),
+                SourceDbCredentialError::ReadCursorKey => (),
+                SourceDbCredentialError::CursorKeyIdentityChanged => (),
+            }
+            assert_name_free(&error);
+        }
+        check_source_db_credential_error(SourceDbCredentialError::EntropyUnavailable);
+        check_source_db_credential_error(SourceDbCredentialError::EmptyKey);
+        check_source_db_credential_error(SourceDbCredentialError::KeyTooLarge);
+        check_source_db_credential_error(
+            SourceDbCredentialError::CreateSecretsDirectory(example()),
+        );
+        check_source_db_credential_error(SourceDbCredentialError::InspectSecretsDirectory(
+            example(),
+        ));
+        check_source_db_credential_error(SourceDbCredentialError::UnsafeSecretsDirectory);
+        check_source_db_credential_error(SourceDbCredentialError::InspectKey(example()));
+        check_source_db_credential_error(SourceDbCredentialError::UnsafeKeyFile);
+        check_source_db_credential_error(SourceDbCredentialError::CreateTemporaryKey(example()));
+        check_source_db_credential_error(SourceDbCredentialError::ProtectTemporaryKey(example()));
+        check_source_db_credential_error(SourceDbCredentialError::WriteTemporaryKey(example()));
+        check_source_db_credential_error(SourceDbCredentialError::SyncTemporaryKey(example()));
+        check_source_db_credential_error(SourceDbCredentialError::ReplaceKey(example()));
+        check_source_db_credential_error(SourceDbCredentialError::RemoveKey(example()));
+        check_source_db_credential_error(SourceDbCredentialError::RestoreKey(example()));
+        check_source_db_credential_error(SourceDbCredentialError::PendingKeyReplacement);
+        check_source_db_credential_error(
+            SourceDbCredentialError::PendingKeyReplacementWithoutTokens,
+        );
+        check_source_db_credential_error(SourceDbCredentialError::NoMatchingKeyGeneration);
+        check_source_db_credential_error(SourceDbCredentialError::SettlementRefused);
+        check_source_db_credential_error(SourceDbCredentialError::OpenSecretsDirectory(example()));
+        check_source_db_credential_error(SourceDbCredentialError::SyncSecretsDirectory(example()));
+        check_source_db_credential_error(SourceDbCredentialError::ReadKey);
+        check_source_db_credential_error(SourceDbCredentialError::KeyIdentityChanged);
+        check_source_db_credential_error(SourceDbCredentialError::InspectCursorKey(example()));
+        check_source_db_credential_error(SourceDbCredentialError::UnsafeCursorKeyFile);
+        check_source_db_credential_error(SourceDbCredentialError::InvalidCursorKeyLength);
+        check_source_db_credential_error(SourceDbCredentialError::CreateTemporaryCursorKey(
+            example(),
+        ));
+        check_source_db_credential_error(SourceDbCredentialError::ProtectTemporaryCursorKey(
+            example(),
+        ));
+        check_source_db_credential_error(SourceDbCredentialError::WriteTemporaryCursorKey(
+            example(),
+        ));
+        check_source_db_credential_error(
+            SourceDbCredentialError::SyncTemporaryCursorKey(example()),
+        );
+        check_source_db_credential_error(SourceDbCredentialError::PublishCursorKey(example()));
+        check_source_db_credential_error(SourceDbCredentialError::RemoveTemporaryCursorKey(
+            example(),
+        ));
+        check_source_db_credential_error(SourceDbCredentialError::ReadCursorKey);
+        check_source_db_credential_error(SourceDbCredentialError::CursorKeyIdentityChanged);
+        fn check_source_db_credential_import_error(error: SourceDbCredentialImportError) {
+            match &error {
+                SourceDbCredentialImportError::Credential(..) => (),
+                SourceDbCredentialImportError::TokenStore(..) => (),
+                SourceDbCredentialImportError::TokenCipher(..) => (),
+                SourceDbCredentialImportError::Rollback { .. } => (),
+            }
+            assert_name_free(&error);
+        }
+        check_source_db_credential_import_error(SourceDbCredentialImportError::Credential(
+            example(),
+        ));
+        check_source_db_credential_import_error(SourceDbCredentialImportError::TokenStore(
+            example(),
+        ));
+        check_source_db_credential_import_error(SourceDbCredentialImportError::TokenCipher(
+            example(),
+        ));
+        check_source_db_credential_import_error(SourceDbCredentialImportError::Rollback {
+            store: example(),
+            rollback: example(),
+        });
+        fn check_source_db_credential_removal_error(error: SourceDbCredentialRemovalError) {
+            match &error {
+                SourceDbCredentialRemovalError::TokenStore(..) => (),
+                SourceDbCredentialRemovalError::Credential(..) => (),
+            }
+            assert_name_free(&error);
+        }
+        check_source_db_credential_removal_error(SourceDbCredentialRemovalError::TokenStore(
+            example(),
+        ));
+        check_source_db_credential_removal_error(SourceDbCredentialRemovalError::Credential(
+            example(),
+        ));
+    }
+}

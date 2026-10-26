@@ -8,7 +8,7 @@ fn snapshot_v2_2() -> ProjectionSnapshotV2_2 {
             unit_of_temperature: ProjectionUnitOfTemperatureV2_2::Celsius,
             unit_of_pressure: ProjectionUnitOfPressureV2_2::Bar,
             preferred_range: ProjectionPreferredRangeV2_2::Rated,
-            base_url: Some("https://teslamate.example".into()),
+            base_url: Some("https://sourcedb.example".into()),
             grafana_url: None,
             language: String::new(),
             theme_mode: "system".into(),
@@ -88,7 +88,7 @@ fn snapshot_v2_2() -> ProjectionSnapshotV2_2 {
             },
         ],
         geofences: vec![
-            TeslaMateGeofencePhysicalV2_2 {
+            SourceDbGeofencePhysicalV2_2 {
                 id: 200,
                 name: "Home".into(),
                 latitude_e6: ProjectionFixedNumericV2_2::Finite(0),
@@ -101,7 +101,7 @@ fn snapshot_v2_2() -> ProjectionSnapshotV2_2 {
                 updated_at_pg_us: 1_700_000_100_000_000,
             }
             .into(),
-            TeslaMateGeofencePhysicalV2_2 {
+            SourceDbGeofencePhysicalV2_2 {
                 id: 201,
                 name: "Work".into(),
                 latitude_e6: ProjectionFixedNumericV2_2::NaN,
@@ -889,7 +889,7 @@ fn schema_2_2_full_snapshot_has_exact_physical_rows_and_full_only_metadata() {
             "C".into(),
             "bar".into(),
             "rated".into(),
-            Some("https://teslamate.example".into()),
+            Some("https://sourcedb.example".into()),
             None,
             String::new(),
             "system".into(),
@@ -1102,7 +1102,7 @@ fn schema_2_2_full_snapshot_has_exact_physical_rows_and_full_only_metadata() {
             ("mapped_fields".into(), "168".into()),
             (
                 "migration_set_sha256".into(),
-                TESLAMATE_V4_MIGRATION_SET_SHA256.into(),
+                SOURCE_DB_V4_MIGRATION_SET_SHA256.into(),
             ),
             (
                 "positions_odometer_encoding".into(),
@@ -1129,7 +1129,7 @@ fn schema_2_2_full_snapshot_has_exact_physical_rows_and_full_only_metadata() {
             ("schema_support".into(), "full_snapshot_only".into()),
             (
                 "source_revision".into(),
-                TESLAMATE_V4_SOURCE_REVISION.into()
+                SOURCE_DB_V4_SOURCE_REVISION.into()
             ),
             ("states_slice_sha256".into(), thp2_2_states_slice_sha256()),
             ("unreconciled_fields".into(), "1".into()),
@@ -1774,7 +1774,7 @@ fn compare_physical_fixtures(
     root: &Path,
     old: &ProjectionSnapshotV2_2,
     new: &ProjectionSnapshotV2_2,
-) -> crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison {
+) -> crate::import::source_db::physical_delta_compare::PhysicalDeltaComparison {
     try_compare_physical_fixtures(root, old, new, 64 * 1024 * 1024)
         .expect("bounded exact comparison")
 }
@@ -1785,10 +1785,10 @@ fn try_compare_physical_fixtures(
     new: &ProjectionSnapshotV2_2,
     scratch_limit: u64,
 ) -> Result<
-    crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison,
-    crate::import::teslamate::physical_delta_compare::PhysicalCompareError,
+    crate::import::source_db::physical_delta_compare::PhysicalDeltaComparison,
+    crate::import::source_db::physical_delta_compare::PhysicalCompareError,
 > {
-    use crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison;
+    use crate::import::source_db::physical_delta_compare::PhysicalDeltaComparison;
 
     let packs = root.join("packs");
     let writer =
@@ -1827,7 +1827,7 @@ fn try_compare_physical_fixtures(
 }
 
 fn raw_changes(
-    comparison: &crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison,
+    comparison: &crate::import::source_db::physical_delta_compare::PhysicalDeltaComparison,
 ) -> Vec<(String, i64, bool)> {
     let mut changes = Vec::new();
     comparison
@@ -1840,7 +1840,7 @@ fn raw_changes(
 }
 
 fn projected_scope(
-    comparison: &crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison,
+    comparison: &crate::import::source_db::physical_delta_compare::PhysicalDeltaComparison,
 ) -> Vec<(String, i64, bool)> {
     let mut scope = Vec::new();
     comparison
@@ -1943,7 +1943,7 @@ fn physical_compare_reads_all_eleven_exact_typed_tables_and_ignores_pack_metadat
 
 #[test]
 fn physical_compare_rejects_corrupt_pack_and_wrong_car_identity_with_scratch_cleanup() {
-    use crate::import::teslamate::physical_delta_compare::PhysicalDeltaComparison;
+    use crate::import::source_db::physical_delta_compare::PhysicalDeltaComparison;
 
     for corrupt in [false, true] {
         let temporary = crate::private_tempdir().unwrap();
@@ -1987,7 +1987,7 @@ fn physical_compare_rejects_corrupt_pack_and_wrong_car_identity_with_scratch_cle
         );
         assert!(matches!(
             failed,
-            Err(crate::import::teslamate::physical_delta_compare::PhysicalCompareError::Pack(_))
+            Err(crate::import::source_db::physical_delta_compare::PhysicalCompareError::Pack(_))
         ));
         assert_eq!(
             packs.join(".staging").read_dir().unwrap().count(),
@@ -2094,7 +2094,7 @@ fn physical_delta_pack_preserves_surviving_soft_child_of_deleted_drive() {
         .expect("old admission");
     let next = crate::db::physical_v3_admission_from_manifest(&next_manifest, 10)
         .expect("target admission");
-    let delta = crate::import::teslamate::physical_delta_pack::prepare_changed_set(
+    let delta = crate::import::source_db::physical_delta_pack::prepare_changed_set(
         &old,
         &next,
         &binding(),
@@ -2199,17 +2199,18 @@ fn physical_delta_pack_splits_a_root_from_its_children_without_duplicate_rows() 
         .expect("old admission");
     let next = crate::db::physical_v3_admission_from_manifest(&next_manifest, 10)
         .expect("target admission");
-    let delta = crate::import::teslamate::physical_delta_pack::prepare_changed_set_with_chunk_target(
-        &old,
-        &next,
-        &binding(),
-        &key,
-        Sha256Digest::of_bytes(b"synthetic target raw"),
-        &packs,
-        0,
-        4096,
-    )
-    .expect("bounded multi-pack changed set");
+    let delta =
+        crate::import::source_db::physical_delta_pack::prepare_changed_set_with_chunk_target(
+            &old,
+            &next,
+            &binding(),
+            &key,
+            Sha256Digest::of_bytes(b"synthetic target raw"),
+            &packs,
+            0,
+            4096,
+        )
+        .expect("bounded multi-pack changed set");
     assert!(delta.packs.len() > 1);
     assert!(delta.packs.len() <= 64);
     let receipt: serde_json::Value =
@@ -2243,7 +2244,9 @@ fn physical_delta_pack_splits_a_root_from_its_children_without_duplicate_rows() 
         let metadata = connection
             .prepare("SELECT key,value FROM delta_metadata ORDER BY key")
             .expect("binding metadata")
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
             .expect("binding rows")
             .collect::<Result<Vec<_>, _>>()
             .expect("binding values");
@@ -2256,7 +2259,9 @@ fn physical_delta_pack_splits_a_root_from_its_children_without_duplicate_rows() 
             .prepare("SELECT table_name,entity_id FROM row_roles")
             .expect("typed rows");
         for entry in statement
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
             .expect("typed row query")
         {
             assert!(rows.insert(entry.expect("typed row")), "duplicate typed ID across packs");
@@ -2264,20 +2269,54 @@ fn physical_delta_pack_splits_a_root_from_its_children_without_duplicate_rows() 
         let mut statement = connection
             .prepare("SELECT table_name,entity_id FROM tombstones")
             .expect("tombstone rows");
-        for entry in statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))).expect("tombstone query") {
-            assert!(tombstones.insert(entry.expect("tombstone")), "duplicate tombstone across packs");
+        for entry in statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .expect("tombstone query")
+        {
+            assert!(
+                tombstones.insert(entry.expect("tombstone")),
+                "duplicate tombstone across packs"
+            );
         }
-        let mut statement = connection.prepare(
-            "SELECT table_name,entity_id,effect FROM affected_projected_ids"
-        ).expect("affected rows");
-        for entry in statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?))).expect("affected query") {
-            assert!(affected.insert(entry.expect("affected row")), "duplicate affected ID across packs");
+        let mut statement = connection
+            .prepare("SELECT table_name,entity_id,effect FROM affected_projected_ids")
+            .expect("affected rows");
+        for entry in statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .expect("affected query")
+        {
+            assert!(
+                affected.insert(entry.expect("affected row")),
+                "duplicate affected ID across packs"
+            );
         }
         let mut statement = connection.prepare(
             "SELECT root_type,root_id,base_state,target_state,target_child_count FROM impacted_roots"
         ).expect("root rows");
-        for entry in statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?, row.get::<_, i64>(4)?))).expect("root query") {
-            assert!(roots.insert(entry.expect("root witness")), "duplicate root across packs");
+        for entry in statement
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })
+            .expect("root query")
+        {
+            assert!(
+                roots.insert(entry.expect("root witness")),
+                "duplicate root across packs"
+            );
         }
         let root_count: i64 = connection
             .query_row("SELECT COUNT(*) FROM impacted_roots WHERE root_type='drive' AND root_id=20", [], |row| row.get(0))

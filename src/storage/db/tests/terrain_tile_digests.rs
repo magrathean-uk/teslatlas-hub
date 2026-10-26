@@ -161,6 +161,7 @@ fn a_v68_store_migrates_to_an_empty_tile_digest_table_without_backfill() {
         !table_exists(&connection),
         "a v68 catalogue has no digest table"
     );
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
 

@@ -3,7 +3,6 @@
 //! The pairing scope flags of `pair` and `control pair`, the scope in the
 //! presentation, and `control pair` beside a running Hub.
 
-use clap::Parser;
 use teslatlas_hub::{
     config::TlsListenerConfig,
     db::{HubStore, PairingScope, PublishedVehicle, SourceDescriptor, VehicleDescriptor},
@@ -44,7 +43,10 @@ fn fixture() -> Fixture {
     let temporary = tempfile::tempdir().expect("temporary root");
     let store = HubStore::initialize(temporary.path().join("hub")).expect("Hub store");
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", "pairing-scope"), 1_000)
+        .register_source(
+            &SourceDescriptor::new(teslatlas_hub::db::IMPORT_SOURCE_KIND, "pairing-scope"),
+            1_000,
+        )
         .expect("source");
     let register = |key: &str, name: Option<&str>| {
         let mut descriptor = VehicleDescriptor::new(source.source_id, key);

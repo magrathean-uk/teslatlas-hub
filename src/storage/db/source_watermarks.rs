@@ -72,8 +72,8 @@ impl WatermarkDomain {
 }
 
 // The importer's snapshot types, named once here.
-type ImportedWatermark = crate::teslamate_projection::TeslaMateSourceWatermark;
-type ImportedWatermarks = crate::teslamate_projection::TeslaMateSourceWatermarks;
+type ImportedWatermark = crate::source_db_projection::SourceDbWatermark;
+type ImportedWatermarks = crate::source_db_projection::SourceDbWatermarks;
 
 /// One domain's pair: the largest source row id and the largest time, each
 /// absent when the source supplied none.

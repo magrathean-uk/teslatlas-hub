@@ -104,6 +104,8 @@ hub_test_volume=$volume
 }
 TEST_RUNNER_TESLATLAS_HUB_TEST_VOLUME=$hub_test_volume
 export TEST_RUNNER_TESLATLAS_HUB_TEST_VOLUME
+TEST_RUNNER_TESLATLAS_HUB_ADDITIONAL_TERMS="$root/docs/legal/additional-terms.md"
+export TEST_RUNNER_TESLATLAS_HUB_ADDITIONAL_TERMS
 
 set -- "$@"
 only_testing=

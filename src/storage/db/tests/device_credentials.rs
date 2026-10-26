@@ -1810,7 +1810,10 @@ fn the_v68_check_constraints_reject_violating_rows() {
     // Claimed before the vehicle exists, so the claim granted nothing.
     let access = credential_claim(&store, 10_000, PAIRED_DEVICE_MAX_LIFETIME_MS);
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", "v68-checks"), 1)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "v68-checks"),
+            1,
+        )
         .expect("source");
     let vehicle = store
         .register_vehicle(&VehicleDescriptor::new(source.source_id, "eid:1"), 2)

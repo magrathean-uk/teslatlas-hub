@@ -51,7 +51,7 @@ release or observable source behaviour, not an intended future state.
 - Keep editable project-owned source beside generated raster output.
 - Provide useful alternative text and make diagrams readable without colour
   alone.
-- Do not copy Tesla, TeslaMate or another third party's logo or trade dress.
+- Do not copy vehicle manufacturers' or other third parties' logos or trade dress.
 - Use diagrams only where they reduce explanation; decorative clutter is not
   documentation.
 

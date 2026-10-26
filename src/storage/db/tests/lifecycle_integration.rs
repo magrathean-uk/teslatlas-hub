@@ -72,7 +72,10 @@ fn watermark_store(label: &str) -> (tempfile::TempDir, HubStore, SourceRecord, V
     let directory = crate::private_tempdir().expect("tempdir");
     let store = HubStore::initialize(directory.path()).expect("store");
     let source = store
-        .register_source(&SourceDescriptor::new("teslamate", label), 1_000)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, label),
+            1_000,
+        )
         .expect("source");
     let vehicle = store
         .register_vehicle(
@@ -86,7 +89,7 @@ fn watermark_store(label: &str) -> (tempfile::TempDir, HubStore, SourceRecord, V
 /// An imported open charge (id 7, samples 1 and 2) carrying the watermarks of
 /// ST93: drives 40, positions 500, charging processes 50, charges 900, states
 /// 30 and updates 12.
-fn st93_session(start: i64) -> crate::teslamate_projection::TeslaMateOpenSession {
+fn st93_session(start: i64) -> crate::source_db_projection::SourceDbOpenSession {
     let mut session = imported_open_session(start);
     let watermarks = &mut session.watermarks;
     watermarks.drives.max_id = Some(40);
@@ -240,7 +243,10 @@ fn st93_the_watermarks_of_every_source_bound_the_cursors() {
         .expect("seed");
     // Another source holds larger ids of this vehicle, and a row without one.
     let other = store
-        .register_source(&SourceDescriptor::new("teslamate", "st93-other"), 1_002)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "st93-other"),
+            1_002,
+        )
         .expect("other source")
         .source_id;
     put_watermark(&store, other, v, "positions", Some(2_000));
@@ -379,7 +385,7 @@ fn seed_by(
     store: &HubStore,
     source: &SourceRecord,
     vehicle: &VehicleRecord,
-    session: &crate::teslamate_projection::TeslaMateOpenSession,
+    session: &crate::source_db_projection::SourceDbOpenSession,
     at_ms: i64,
 ) {
     match path {
@@ -448,7 +454,7 @@ fn live_version(
     )
 }
 
-fn st104_session(updates_time: Option<i64>) -> crate::teslamate_projection::TeslaMateOpenSession {
+fn st104_session(updates_time: Option<i64>) -> crate::source_db_projection::SourceDbOpenSession {
     let mut session = st93_session(COST_T0 - COST_HOUR);
     session.watermarks.updates.max_timestamp_ms = updates_time;
     session
@@ -494,7 +500,10 @@ fn st104_the_greatest_updates_watermark_time_of_any_source_is_the_bound() {
             let (_directory, store, source, vehicle) =
                 st104_store("st104-c", Some(COST_T0 - R89_DAY));
             let other = store
-                .register_source(&SourceDescriptor::new("teslamate", "st104-other"), 1_002)
+                .register_source(
+                    &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "st104-other"),
+                    1_002,
+                )
                 .expect("other source")
                 .source_id;
             put_watermark_time(&store, other, vehicle.vehicle_id, "updates", other_time);
@@ -615,7 +624,10 @@ fn st105_a_promotion_raises_the_cursors_above_every_sources_watermarks() {
     let (_directory, store, source, vehicle) = watermark_store("st105-a");
     let v = vehicle.vehicle_id;
     let second = store
-        .register_source(&SourceDescriptor::new("teslamate", "st105-a-second"), 1_002)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "st105-a-second"),
+            1_002,
+        )
         .expect("second source")
         .source_id;
     put_watermark(&store, second, v, "positions", Some(2_000));
@@ -635,7 +647,10 @@ fn st105_a_promotion_raises_the_cursors_of_a_state_seeded_before_and_never_lower
         .expect("seed");
     assert_eq!(id_cursors(&store, v), [41, 501, 51, 901, 31, 13]);
     let second = store
-        .register_source(&SourceDescriptor::new("teslamate", "st105-b-second"), 1_002)
+        .register_source(
+            &SourceDescriptor::new(crate::db::IMPORT_SOURCE_KIND, "st105-b-second"),
+            1_002,
+        )
         .expect("second source")
         .source_id;
     put_watermark(&store, second, v, "positions", Some(2_000));

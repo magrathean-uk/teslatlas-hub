@@ -503,6 +503,7 @@ fn a_v68_store_migrates_and_its_old_lookup_rows_stay_readable_but_are_never_matc
         .unwrap()
         .collect::<Result<_, _>>()
         .unwrap();
+    crate::db::import_names_test_support::prepare_historical_import_names(&connection);
     drop(connection);
     drop(store);
 
