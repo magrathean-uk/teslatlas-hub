@@ -1044,6 +1044,7 @@ trait InheritedLogIo {
     fn read_tail(&mut self, kept: &mut [u8], offset: u64) -> io::Result<()>;
     fn prepare_write(&mut self) -> io::Result<()>;
     fn truncate(&mut self) -> io::Result<()>;
+    fn reposition_after_failed_truncate(&mut self);
     fn write_kept(&mut self, kept: &[u8]) -> io::Result<()>;
     fn sync(&mut self) -> io::Result<()>;
 }
@@ -1051,10 +1052,13 @@ trait InheritedLogIo {
 fn compact_in_place(len: u64, file: &mut impl InheritedLogIo) -> InheritedLogCompaction {
     use InheritedLogCompaction::*;
     let mut kept = vec![0; INHERITED_LOG_KEEP as usize];
-    if file.read_tail(&mut kept, len - INHERITED_LOG_KEEP).is_err()
-        || file.prepare_write().is_err()
-        || file.truncate().is_err()
+    if file.read_tail(&mut kept, len - INHERITED_LOG_KEEP).is_err() || file.prepare_write().is_err()
     {
+        return FailedBeforeChange;
+    }
+    if file.truncate().is_err() {
+        // Undo prepare_write so later writes do not overwrite the unchanged head.
+        file.reposition_after_failed_truncate();
         return FailedBeforeChange;
     }
     if file.write_kept(&kept).is_err() || file.sync().is_err() {
@@ -1082,6 +1086,11 @@ impl InheritedLogIo for InheritedLogFile {
     }
     fn truncate(&mut self) -> io::Result<()> {
         self.log.set_len(0)
+    }
+    fn reposition_after_failed_truncate(&mut self) {
+        if !self.append {
+            let _ = self.log.seek(SeekFrom::End(0));
+        }
     }
     fn write_kept(&mut self, kept: &[u8]) -> io::Result<()> {
         self.log.write_all(kept)

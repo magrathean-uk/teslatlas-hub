@@ -247,7 +247,14 @@ impl InheritedLogIo for FaultingFile<'_> {
     }
     fn truncate(&mut self) -> io::Result<()> {
         self.calls.push("truncate");
+        if self.fail == "truncate" {
+            return Err(io::Error::other("truncate failed"));
+        }
         self.file.truncate()
+    }
+    fn reposition_after_failed_truncate(&mut self) {
+        self.calls.push("reposition");
+        self.file.reposition_after_failed_truncate();
     }
     fn write_kept(&mut self, kept: &[u8]) -> io::Result<()> {
         self.calls.push("write");
@@ -356,11 +363,77 @@ fn fifo_at_agent_log_path_does_not_block() {
     assert!(logs.bytes() == logs.original, "exact log contents differ");
 }
 #[test]
+fn truncate_failure_after_seek_returns_to_end() {
+    let logs = Logs::new(2 * 1024 * 1024);
+    let mut original = logs.open(false, false);
+    let mut file = InheritedLogFile {
+        log: original.try_clone().unwrap(),
+        reader: File::open(&logs.paths[0]).unwrap(),
+        append: false,
+        position_for_write: |file| file.seek(SeekFrom::Start(0)).map(|_| ()),
+    };
+    let mut fault = FaultingFile {
+        file: &mut file,
+        fail: "truncate",
+        calls: vec![],
+    };
+    assert_eq!(
+        compact_in_place(2 * 1024 * 1024, &mut fault),
+        FailedBeforeChange
+    );
+    assert_eq!(fault.calls, ["read", "prepare", "truncate", "reposition"]);
+    assert!(logs.bytes() == logs.original, "exact log contents differ");
+    assert_eq!(original.stream_position().unwrap(), 2 * 1024 * 1024);
+    original.write_all(b"after\n").unwrap();
+    assert!(
+        logs.bytes() == [&logs.original[..], b"after\n"].concat(),
+        "exact log contents differ"
+    );
+}
+#[test]
+fn shared_log_truncate_failure_restores_duplicated_offsets() {
+    let logs = Logs::new(2 * 1024 * 1024);
+    let mut stdout = logs.open(false, false);
+    let mut stderr = stdout.try_clone().unwrap();
+    let mut calls = Vec::new();
+    let result = compact_inherited_log_descriptors_with(
+        stdout.as_fd(),
+        stderr.as_fd(),
+        logs.refs(),
+        &mut |len, file| {
+            let mut fault = FaultingFile {
+                file,
+                fail: "truncate",
+                calls: vec![],
+            };
+            let result = compact_in_place(len, &mut fault);
+            calls.push(fault.calls);
+            result
+        },
+        &mut align_shared_log_stderr,
+    );
+    assert_eq!(result, [FailedBeforeChange, SameFileAsStdout]);
+    assert_eq!(calls, [vec!["read", "prepare", "truncate", "reposition"]]);
+    assert_eq!(stdout.stream_position().unwrap(), 2 * 1024 * 1024);
+    assert_eq!(stderr.stream_position().unwrap(), 2 * 1024 * 1024);
+    assert!(logs.bytes() == logs.original, "exact log contents differ");
+    stdout.write_all(b"OUT!\n").unwrap();
+    stderr.write_all(b"ERR!\n").unwrap();
+    let bytes = logs.bytes();
+    assert!(
+        bytes == [&logs.original[..], b"OUT!\n", b"ERR!\n"].concat(),
+        "exact log contents differ"
+    );
+    assert!(!bytes.contains(&0), "zero-filled hole");
+}
+#[test]
 fn read_only_descriptor_leaves_log_unchanged() {
     let logs = Logs::new(2 * 1024 * 1024);
-    let file = File::open(&logs.paths[0]).unwrap();
+    let mut file = File::open(&logs.paths[0]).unwrap();
+    file.seek(SeekFrom::End(0)).unwrap();
     assert_eq!(compact_stdout(&file, logs.refs()), FailedBeforeChange);
     assert!(logs.bytes() == logs.original, "exact log contents differ");
+    assert_eq!(file.stream_position().unwrap(), 2 * 1024 * 1024);
 }
 
 struct RecordingIo {
@@ -403,6 +476,9 @@ impl InheritedLogIo for RecordingIo {
         self.contents.clear();
         Ok(())
     }
+    fn reposition_after_failed_truncate(&mut self) {
+        self.calls.push("Reposition");
+    }
     fn write_kept(&mut self, kept: &[u8]) -> io::Result<()> {
         if self.fail == Some("WriteKept") {
             self.contents.extend_from_slice(&kept[..257]);
@@ -421,7 +497,8 @@ fn compaction_steps_run_in_order() {
     assert_eq!(compact_in_place(2 * 1024 * 1024, &mut file), Compacted);
     assert_eq!(
         file.calls,
-        ["ReadTail", "PrepareWrite", "Truncate", "WriteKept", "Sync"]
+        ["ReadTail", "PrepareWrite", "Truncate", "WriteKept", "Sync"],
+        "successful compaction must not reposition"
     );
     assert_eq!(file.offset, Some(1536 * 1024));
     assert!(
@@ -436,7 +513,7 @@ fn compaction_read_failure_changes_nothing() {
         compact_in_place(2 * 1024 * 1024, &mut file),
         FailedBeforeChange
     );
-    assert_eq!(file.calls, ["ReadTail"]);
+    assert_eq!(file.calls, ["ReadTail"], "failed read must not reposition");
     assert!(
         file.contents == vec![b'x'; 2 * 1024 * 1024],
         "exact file state differs"
@@ -465,7 +542,11 @@ fn compaction_non_append_seek_failure_precedes_truncation() {
         compact_in_place(2 * 1024 * 1024, &mut fault),
         FailedBeforeChange
     );
-    assert_eq!(fault.calls, ["read", "prepare"]);
+    assert_eq!(
+        fault.calls,
+        ["read", "prepare"],
+        "failed seek must not reposition"
+    );
     assert!(logs.bytes() == logs.original, "exact log contents differ");
     assert_eq!(io.log.stream_position().unwrap(), 2 * 1024 * 1024);
 }
@@ -476,7 +557,10 @@ fn compaction_truncate_failure_changes_nothing() {
         compact_in_place(2 * 1024 * 1024, &mut file),
         FailedBeforeChange
     );
-    assert_eq!(file.calls, ["ReadTail", "PrepareWrite", "Truncate"]);
+    assert_eq!(
+        file.calls,
+        ["ReadTail", "PrepareWrite", "Truncate", "Reposition"]
+    );
     assert!(
         file.contents == vec![b'x'; 2 * 1024 * 1024],
         "exact file state differs"
