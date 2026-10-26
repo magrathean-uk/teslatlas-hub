@@ -4,6 +4,14 @@ This file records material changes to licensing, attribution, provenance, privac
 Historical entries describe what the documents asserted at that time; they are
 not evidence that a private instrument exists or remains sufficient.
 
+## 2026-10-26 — Go toolchain pin moved to 1.27.3
+
+- The Fleet Telemetry bridge and the command-proxy overlay are built with Go
+  1.27.3 exactly (previously 1.27.1); the provenance statement and the
+  manifest origin text now name that version. The tracked module graph and
+  its lock were regenerated from a real build at the new pin; no licence or
+  attribution changes.
+
 ## 2026-10-08 — One repository: Compute, Protocol and TypeScript client imported
 
 - Teslatlas Compute, Teslatlas Protocol and the Teslatlas TypeScript client

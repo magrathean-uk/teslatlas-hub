@@ -204,7 +204,7 @@
         "packaging/fleet-telemetry-bridge/module-graph/go.sum"
       ],
       "exception": {
-        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, go.mod and go.sum, with the go directive and module requirements updated for the Teslatlas Go 1.27.1 build. packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json records the SHA-256 of each file.",
+        "origin": "Tesla Fleet Telemetry v0.9.4, revision d64c73ab65e7c5fb5fc12b35fe507e2c6054227b, go.mod and go.sum, with the go directive and module requirements updated for the Teslatlas Go 1.27.3 build. packaging/fleet-telemetry-bridge/fleet-telemetry-bridge-lock.json records the SHA-256 of each file.",
         "licensing": "Apache-2.0 for the upstream files and the distributed modified receiver. The go.sum lines are checksum facts about the named modules.",
         "release_treatment": "Ship both files with the patch, pinned upstream identity, Apache-2.0 text, notices and source evidence. Add a prominent change notice to the modified go.mod before a modified receiver is distributed."
       }
