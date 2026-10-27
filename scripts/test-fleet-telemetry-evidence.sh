@@ -1,6 +1,27 @@
 #!/bin/sh
 # SPDX-License-Identifier: AGPL-3.0-only
+# Builds the fleet-telemetry receiver for darwin-arm64 in scratch from the pinned,
+# cached upstream archive under TESLATLAS_LAB, offline, then checks its evidence.
+# TESLATLAS_FLEET_RECEIVER (a regular file built for darwin-arm64) skips the build;
+# the cached archive is still required. The build steps copy those of
+# scripts/build-fleet-telemetry-bridge.sh and must stay in step with it.
 set -eu
+
+# Keep toolchain selection, receiver compilation and evidence generation offline.
+GOENV=off
+GOWORK=off
+GOTOOLCHAIN=local
+GOFLAGS=-mod=readonly
+GOPROXY=off
+GOSUMDB=off
+GONOPROXY=none
+PYTHONDONTWRITEBYTECODE=1
+export GOENV GOWORK GOTOOLCHAIN GOFLAGS GOPROXY GOSUMDB GONOPROXY PYTHONDONTWRITEBYTECODE
+
+die() {
+  printf '%s\n' "test-fleet-telemetry-evidence: $*" >&2
+  exit 1
+}
 
 REPO=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P)
 SCRIPT="$REPO/scripts/fleet-telemetry-evidence.py"
@@ -48,44 +69,85 @@ print(
 )
 PY
 )
-MODULE_CACHE=$(go env GOMODCACHE)
-RECEIVER=$(python3 - "$REPO" "${TESLATLAS_LAB:?TESLATLAS_LAB is required}" <<'PY'
+GO=$(python3 "$REPO/scripts/go_toolchain.py" --expected-version go1.27.3) \
+  || die 'Go 1.27.3 is required for offline Fleet Telemetry evidence'
+TESLATLAS_GO=$GO
+export TESLATLAS_GO
+MODULE_CACHE=$("$GO" env GOMODCACHE) || die 'cannot locate the offline Go module cache'
+if [ -n "${TESLATLAS_FLEET_RECEIVER:-}" ]; then
+  [ -f "$TESLATLAS_FLEET_RECEIVER" ] && [ ! -L "$TESLATLAS_FLEET_RECEIVER" ] \
+    || die 'TESLATLAS_FLEET_RECEIVER must name a regular receiver binary, not a symlink'
+  cp "$TESLATLAS_FLEET_RECEIVER" "$TMP/receiver"
+else
+  # Use the builder's pinned archive, patch and module graph without its downloads.
+  SOURCE_DIRECTORY=$(python3 - "$REPO" "$SOURCE" "$TMP" <<'PY'
 import hashlib
 import json
 import pathlib
+import shutil
+import subprocess
 import sys
+import tarfile
 
-lab = pathlib.Path(sys.argv[2])
-receipt = lab / "verification/workspace-dependency-maintenance-20260928T063059Z/fleet-bridge-build-receipt.json"
-if not receipt.is_file():
-    raise SystemExit("the current Fleet Telemetry build receipt is required")
-value = json.loads(receipt.read_text())
-candidate = pathlib.Path(value.get("artifact", {}).get("path", ""))
-if not candidate.is_file() or candidate.is_symlink():
-    raise SystemExit("the receipt-bound Fleet Telemetry receiver binary is missing or unsafe")
-actual = hashlib.sha256(candidate.read_bytes()).hexdigest()
-if actual != value.get("artifact", {}).get("sha256"):
-    raise SystemExit("the receipt-bound Fleet Telemetry receiver binary changed")
-print(candidate)
+repo, archive, scratch = map(pathlib.Path, sys.argv[1:])
+packaging = repo / "packaging/fleet-telemetry-bridge"
+lock = json.loads((packaging / "fleet-telemetry-bridge-lock.json").read_text())
+upstream, overlay = lock["upstream"], lock["overlay"]
+graph = overlay["module_graph"]
+patch = packaging / overlay["patch"]
+go_mod, go_sum = (packaging / graph[key] for key in ("go_mod", "go_sum"))
+for path, digest in (
+    (archive, upstream["archive_sha256"]),
+    (patch, overlay["patch_sha256"]),
+    (go_mod, graph["go_mod_sha256"]),
+    (go_sum, graph["go_sum_sha256"]),
+):
+    if not path.is_file() or path.is_symlink():
+        raise SystemExit(f"required offline build input is missing or unsafe: {path}")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+        raise SystemExit(f"offline build input checksum mismatch: {path}")
+root = "fleet-telemetry-" + upstream["commit"]
+with tarfile.open(archive, "r:gz") as source:
+    for member in source.getmembers():
+        name = pathlib.PurePosixPath(member.name)
+        if (name.is_absolute() or ".." in name.parts or not name.parts
+                or name.parts[0] != root or not (member.isdir() or member.isreg())):
+            raise SystemExit("pinned source archive has an unsafe member")
+    source.extractall(scratch)
+directory = scratch / root
+with patch.open("rb") as patch_input:
+    subprocess.run(["patch", "-p1", "--batch", "--forward"], cwd=directory,
+                   stdin=patch_input, stdout=sys.stderr, check=True)
+shutil.copyfile(go_mod, directory / "go.mod")
+shutil.copyfile(go_sum, directory / "go.sum")
+print(directory)
 PY
-)
+  ) || die 'cannot prepare the offline receiver build; populate the pinned source cache or set TESLATLAS_FLEET_RECEIVER'
+  (
+    cd "$SOURCE_DIRECTORY" || exit 1
+    GOCACHE="$TMP/go-build-cache" CGO_ENABLED=0 "$GO" test ./datastore/teslatlas &&
+    # Match the reviewed Darwin dependency closure in the evidence lock.
+    GOCACHE="$TMP/go-build-cache" CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 GOARM64=v8.0 \
+      "$GO" build -trimpath -buildvcs=false -ldflags='-s -w' -o "$TMP/receiver" ./cmd
+  ) || die 'cannot build the receiver offline; populate the pinned Go module cache or set TESLATLAS_FLEET_RECEIVER'
+fi
+RECEIVER="$TMP/receiver"
 [ -n "$RECEIVER" ] && [ -f "$RECEIVER" ] && [ ! -L "$RECEIVER" ] || {
-  printf '%s\n' 'test-fleet-telemetry-evidence: current Fleet receiver binary is required' >&2
-  exit 1
+  die 'a Fleet Telemetry receiver binary is required'
 }
 
 python3 "$SCRIPT" \
   --repo "$REPO" \
   --receiver-binary "$RECEIVER" \
   --module-cache "$MODULE_CACHE" \
-  --target linux-amd64 \
+  --target darwin-arm64 \
   --output-dir "$TMP/evidence-a" >/dev/null
 python3 "$SCRIPT" \
   --repo "$REPO" \
   --receiver-binary "$RECEIVER" \
   --source-archive "$SOURCE" \
   --module-cache "$MODULE_CACHE" \
-  --target linux-amd64 \
+  --target darwin-arm64 \
   --output-dir "$TMP/evidence-b" >/dev/null
 
 GOPROXY=off GOSUMDB=off GOMODCACHE="$TMP/unavailable-cache" \
@@ -162,7 +224,8 @@ spec = importlib.util.spec_from_file_location("fleet_evidence", script)
 module = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = module
 spec.loader.exec_module(module)
-go = subprocess.check_output(["go", "version", "-m", "-json", str(evidence / "fleet-telemetry.unsigned")], text=True)
+import os
+go = subprocess.check_output([os.environ["TESLATLAS_GO"], "version", "-m", "-json", str(evidence / "fleet-telemetry.unsigned")], text=True)
 info = json.loads(go)
 module.validate_binary_modules(info, legal)
 changed = json.loads(json.dumps(info))
@@ -205,7 +268,7 @@ expect_failure python3 "$SCRIPT" \
   --receiver-binary "$RECEIVER" \
   --source-archive "$SOURCE" \
   --module-cache "$TMP/empty-cache" \
-  --target linux-amd64 \
+  --target darwin-arm64 \
   --output-dir "$TMP/missing-modules"
 
 ln -s "$SOURCE" "$TMP/source-link"
@@ -214,7 +277,7 @@ expect_failure python3 "$SCRIPT" \
   --receiver-binary "$TMP/receiver" \
   --source-archive "$TMP/source-link" \
   --module-cache "$MODULE_CACHE" \
-  --target linux-amd64 \
+  --target darwin-arm64 \
   --output-dir "$TMP/source-symlink-output"
 
 ln -s "$TMP/receiver" "$TMP/receiver-link"
@@ -223,7 +286,7 @@ expect_failure python3 "$SCRIPT" \
   --receiver-binary "$TMP/receiver-link" \
   --source-archive "$SOURCE" \
   --module-cache "$MODULE_CACHE" \
-  --target linux-amd64 \
+  --target darwin-arm64 \
   --output-dir "$TMP/receiver-symlink-output"
 
 ln -s "$MODULE_CACHE" "$TMP/cache-link"
@@ -232,7 +295,7 @@ expect_failure python3 "$SCRIPT" \
   --receiver-binary "$TMP/receiver" \
   --source-archive "$SOURCE" \
   --module-cache "$TMP/cache-link" \
-  --target linux-amd64 \
+  --target darwin-arm64 \
   --output-dir "$TMP/cache-symlink-output"
 
 printf '%s\n' 'fleet-telemetry evidence tests passed'
