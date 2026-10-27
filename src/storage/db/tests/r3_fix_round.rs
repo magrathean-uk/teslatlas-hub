@@ -36,7 +36,9 @@ fn c5_r3_03_the_credential_commit_connections_ask_for_a_full_flush_on_macos() {
         )
         .expect("Fleet tokens")
     };
-    store.replace_fleet_tokens(&pair(f0, 2_000)).expect("input pair");
+    store
+        .replace_fleet_tokens(&pair(f0, 2_000))
+        .expect("input pair");
     let _ = r3_take_credential_commit_pragmas();
     let receipt = store.begin_fleet_refresh(f0).expect("begin");
     store
@@ -57,11 +59,15 @@ fn c5_r3_03_the_credential_commit_connections_ask_for_a_full_flush_on_macos() {
     let checkpoint: i64 = ordinary
         .query_row("PRAGMA checkpoint_fullfsync", [], |row| row.get(0))
         .expect("pragma");
-    assert_eq!(checkpoint, 1, "an ordinary writable connection flushes at checkpoint");
+    assert_eq!(
+        checkpoint, 1,
+        "an ordinary writable connection flushes at checkpoint"
+    );
 }
 
 #[test]
-fn sec_r3_n2_the_debug_text_of_an_auth_row_shows_whether_a_generation_is_present_not_the_generation() {
+fn sec_r3_n2_the_debug_text_of_an_auth_row_shows_whether_a_generation_is_present_not_the_generation()
+ {
     // A generation is a digest that identifies a refresh token (R53): it is never
     // formatted, in the row or in the effective status that wraps it.
     let stopped = Uuid::from_u128(0x5ec0_0000_0000_0000_0000_0000_0000_0001);
@@ -136,7 +142,10 @@ fn f3_the_rejected_access_digest_is_stored_and_no_refresh_rewrites_it() {
     );
     // The debug text of the row shows whether the digest is present, never the digest.
     let shown = format!("{counted:?}");
-    assert!(shown.contains("has_fuse_rejected_access_digest: true"), "{shown}");
+    assert!(
+        shown.contains("has_fuse_rejected_access_digest: true"),
+        "{shown}"
+    );
     assert!(!shown.contains(&as_gen(77).to_string()), "{shown}");
 
     // The decision is derived from the stored pair, so no refresh writes the status row:
@@ -161,7 +170,10 @@ fn f3_the_rejected_access_digest_is_stored_and_no_refresh_rewrites_it() {
     store
         .complete_unrotated_legacy_refresh(receipt, lc_gen(1), &lc_unrotated(lc_gen(1)))
         .expect("complete");
-    assert_eq!(store.load_collector_auth_row().unwrap(), Some(counted.clone()));
+    assert_eq!(
+        store.load_collector_auth_row().unwrap(),
+        Some(counted.clone())
+    );
     as_refresh(&store, lc_gen(1), as_gen(7));
     assert_eq!(store.load_collector_auth_row().unwrap(), Some(counted));
 
@@ -202,7 +214,9 @@ fn f3_the_v72_step_adds_the_digest_column_and_a_v71_row_keeps_its_count() {
         as_row("ready", None, true),
     ] {
         let store = HubStore::initialize(temporary.path()).expect("current store");
-        store.write_collector_auth_row(&row, AS_T0 * 1_000 + 5).unwrap();
+        store
+            .write_collector_auth_row(&row, AS_T0 * 1_000 + 5)
+            .unwrap();
         let connection = store.open().unwrap();
         connection
             .execute_batch(&format!(
@@ -252,7 +266,11 @@ fn f4_the_fill_of_a_missing_digest_is_conditional_on_the_row_the_fuse_and_the_pa
         fuse_rejected_access_digest: None,
         ..f3_counted_row()
     };
-    assert!(store.write_collector_auth_row(&missing, AS_T0 * 1_000).unwrap());
+    assert!(
+        store
+            .write_collector_auth_row(&missing, AS_T0 * 1_000)
+            .unwrap()
+    );
     let pair = store
         .load_legacy_owner_tokens()
         .unwrap()
@@ -279,10 +297,15 @@ fn f4_the_fill_of_a_missing_digest_is_conditional_on_the_row_the_fuse_and_the_pa
         .unwrap()
         .with_credential_generation(lc_gen(1))
         .unwrap();
-    assert!(store
-        .fill_collector_auth_rejected_access_digest(&other_pair, 1, Some(lc_gen(1)), digest)
-        .is_err());
-    assert_eq!(store.load_collector_auth_row().unwrap(), Some(missing.clone()));
+    assert!(
+        store
+            .fill_collector_auth_rejected_access_digest(&other_pair, 1, Some(lc_gen(1)), digest)
+            .is_err()
+    );
+    assert_eq!(
+        store.load_collector_auth_row().unwrap(),
+        Some(missing.clone())
+    );
 
     // The matching call fills the digest and nothing else.
     store
@@ -296,9 +319,11 @@ fn f4_the_fill_of_a_missing_digest_is_conditional_on_the_row_the_fuse_and_the_pa
         })
     );
     // A digest that is present is never replaced by a fill.
-    assert!(store
-        .fill_collector_auth_rejected_access_digest(&pair, 1, Some(lc_gen(1)), as_gen(79))
-        .is_err());
+    assert!(
+        store
+            .fill_collector_auth_rejected_access_digest(&pair, 1, Some(lc_gen(1)), as_gen(79))
+            .is_err()
+    );
     assert_eq!(
         store
             .load_collector_auth_row()

@@ -143,7 +143,13 @@ fn rr_store_at_73(pending: &[&str]) -> (tempfile::TempDir, HubStore, Uuid, Uuid)
                 "INSERT INTO edge_lineages(installation_id, lineage, source_id, vehicle_id, vin,
                     car_id, first_spool_seq, ack_frontier, created_at_ms, updated_at_ms)
                  VALUES (?1, ?2, ?3, ?4, '5YJ3E1EA7KF000001', ?5, 1, 3, 10, 20)",
-                rusqlite::params![RR_INSTALLATION, lineage, source, vehicle.to_string(), car_id],
+                rusqlite::params![
+                    RR_INSTALLATION,
+                    lineage,
+                    source,
+                    vehicle.to_string(),
+                    car_id
+                ],
             )
             .unwrap();
     }
@@ -244,7 +250,10 @@ fn accumulator_state_table_enforces_version_bounds_and_cascade() {
         .unwrap();
     assert_eq!(insert(2, 2).unwrap(), 1);
     // The store accessors round-trip the bytes and only upsert version two.
-    assert_eq!(store.load_receiver_state(vehicle).unwrap(), Some(vec![b'x'; 2]));
+    assert_eq!(
+        store.load_receiver_state(vehicle).unwrap(),
+        Some(vec![b'x'; 2])
+    );
     let mut other = store.open().unwrap();
     let transaction = other.transaction().unwrap();
     HubStore::put_receiver_state_in_transaction(&transaction, vehicle, b"{\"a\":1}", 9).unwrap();
@@ -255,7 +264,10 @@ fn accumulator_state_table_enforces_version_bounds_and_cascade() {
     );
     // Deleting the vehicle removes its state.
     connection
-        .execute("DELETE FROM vehicles WHERE vehicle_id = ?1", [vehicle.to_string()])
+        .execute(
+            "DELETE FROM vehicles WHERE vehicle_id = ?1",
+            [vehicle.to_string()],
+        )
         .unwrap();
     assert_eq!(
         connection
@@ -279,9 +291,17 @@ fn retirement_copies_gaps_and_drops_edge_objects() {
         assert!(!rr_rows(&before, table).is_empty(), "{table} is seeded");
     }
     let observations_before = rr_rows(&before, "raw_observations");
-    assert_eq!(observations_before.len(), 2, "sparse observations are seeded");
+    assert_eq!(
+        observations_before.len(),
+        2,
+        "sparse observations are seeded"
+    );
     let mutations_before = rr_rows(&before, "sync_mutations");
-    assert_eq!(mutations_before.len(), 1, "an unpublished mutation is seeded");
+    assert_eq!(
+        mutations_before.len(),
+        1,
+        "an unpublished mutation is seeded"
+    );
     let dispositions: Vec<Vec<String>> = rr_rows(&before, "edge_sequence_dispositions");
     assert_eq!(dispositions.len(), 4);
     drop(before);
@@ -315,7 +335,17 @@ fn retirement_copies_gaps_and_drops_edge_objects() {
                FROM retired_delivery_gaps ORDER BY lineage, spool_seq",
         )
         .unwrap();
-    let rows: Vec<(String, String, i64, String, String, i64, String, i64, Option<String>)> = statement
+    let rows: Vec<(
+        String,
+        String,
+        i64,
+        String,
+        String,
+        i64,
+        String,
+        i64,
+        Option<String>,
+    )> = statement
         .query_map([], |row| {
             Ok((
                 row.get(0)?,
@@ -333,8 +363,22 @@ fn retirement_copies_gaps_and_drops_edge_objects() {
         .collect::<Result<_, _>>()
         .unwrap();
     let expected = [
-        ("l1", 1, 0xa1_u8, "lost_envelope", 100, Some(with_state.to_string())),
-        ("l1", 2, 0xa2, "lost_stable_record_id", 200, Some(with_state.to_string())),
+        (
+            "l1",
+            1,
+            0xa1_u8,
+            "lost_envelope",
+            100,
+            Some(with_state.to_string()),
+        ),
+        (
+            "l1",
+            2,
+            0xa2,
+            "lost_stable_record_id",
+            200,
+            Some(with_state.to_string()),
+        ),
         ("l2", 1, 0xa3, "lost_envelope", 300, None),
     ];
     for (row, (lineage, seq, seed, reason, occurred, vehicle)) in rows.iter().zip(expected) {
@@ -346,7 +390,10 @@ fn retirement_copies_gaps_and_drops_edge_objects() {
         assert_eq!(row.5, occurred);
         assert_eq!(row.6, rr_hex(seed + 0x10));
         assert_eq!(row.7, 400);
-        assert_eq!(row.8, vehicle, "the lineage's accumulator state assigns the vehicle");
+        assert_eq!(
+            row.8, vehicle,
+            "the lineage's accumulator state assigns the vehicle"
+        );
     }
     drop(statement);
     for table in RR_EDGE_TABLES {
@@ -367,7 +414,10 @@ fn retirement_copies_gaps_and_drops_edge_objects() {
             .unwrap();
         assert!(!present, "{object} is dropped");
     }
-    assert_eq!(rr_rows(&connection, "raw_observations"), observations_before);
+    assert_eq!(
+        rr_rows(&connection, "raw_observations"),
+        observations_before
+    );
     assert_eq!(rr_rows(&connection, "sync_mutations"), mutations_before);
     // The pending publication marked its vehicle for derived-work replay.
     assert_eq!(
@@ -468,8 +518,15 @@ fn retirement_failure_rolls_back_every_change() {
 
         let read = rr_read_only(temporary.path());
         assert_eq!(rr_user_version(&read), 73, "{fault:?}: version unchanged");
-        assert_eq!(rr_schema(&read), schema_before, "{fault:?}: schema unchanged");
-        assert!(!rr_table_exists(&read, "retired_delivery_gaps"), "{fault:?}");
+        assert_eq!(
+            rr_schema(&read),
+            schema_before,
+            "{fault:?}: schema unchanged"
+        );
+        assert!(
+            !rr_table_exists(&read, "retired_delivery_gaps"),
+            "{fault:?}"
+        );
         for table in RR_EDGE_TABLES {
             assert!(rr_table_exists(&read, table), "{fault:?}: {table}");
         }
@@ -500,16 +557,21 @@ fn retirement_marking_failures_are_migration_errors_and_roll_back() {
                 )
                 .unwrap();
         }),
-        ("a pending publication names no valid vehicle", |connection| {
-            connection.execute_batch("PRAGMA foreign_keys = OFF").unwrap();
-            connection
-                .execute(
-                    "UPDATE edge_pending_publications SET vehicle_id = 'not-a-uuid'
+        (
+            "a pending publication names no valid vehicle",
+            |connection| {
+                connection
+                    .execute_batch("PRAGMA foreign_keys = OFF")
+                    .unwrap();
+                connection
+                    .execute(
+                        "UPDATE edge_pending_publications SET vehicle_id = 'not-a-uuid'
                       WHERE status != 'complete'",
-                    [],
-                )
-                .unwrap();
-        }),
+                        [],
+                    )
+                    .unwrap();
+            },
+        ),
     ];
     for (name, break_it) in breaks {
         let (temporary, store, _, _) = rr_store_at_73(&["pending"]);
@@ -600,7 +662,11 @@ fn each_step_writes_its_own_schema_version() {
     ));
 
     migrate_receiver_state_table(&connection).unwrap();
-    assert_eq!(rr_user_version(&connection), 73, "the receiver step writes 73");
+    assert_eq!(
+        rr_user_version(&connection),
+        73,
+        "the receiver step writes 73"
+    );
     assert!(rr_table_exists(
         &connection,
         "fleet_telemetry_accumulator_states"
@@ -611,12 +677,19 @@ fn each_step_writes_its_own_schema_version() {
     }
 
     migrate_retire_delivery_tables(&connection).unwrap();
-    assert_eq!(rr_user_version(&connection), 74, "the retirement step writes 74");
+    assert_eq!(
+        rr_user_version(&connection),
+        74,
+        "the retirement step writes 74"
+    );
     // C6 R63 (b) 4: not a ceiling pin, so that every later step leaves it valid.
     const { assert!(SCHEMA_VERSION > 73) };
     assert!(rr_table_exists(&connection, "retired_delivery_gaps"));
     for table in RR_EDGE_TABLES {
-        assert!(!rr_table_exists(&connection, table), "{table} dropped at 74");
+        assert!(
+            !rr_table_exists(&connection, table),
+            "{table} dropped at 74"
+        );
     }
 }
 
@@ -648,10 +721,17 @@ fn a_failed_retirement_after_the_receiver_step_keeps_schema_73_and_retries() {
     );
 
     let read = rr_read_only(temporary.path());
-    assert_eq!(rr_user_version(&read), 73, "the receiver step committed alone");
+    assert_eq!(
+        rr_user_version(&read),
+        73,
+        "the receiver step committed alone"
+    );
     assert!(rr_table_exists(&read, "fleet_telemetry_accumulator_states"));
     for table in RR_EDGE_TABLES {
-        assert!(rr_table_exists(&read, table), "{table} intact after the failure");
+        assert!(
+            rr_table_exists(&read, table),
+            "{table} intact after the failure"
+        );
     }
     assert!(!rr_table_exists(&read, "retired_delivery_gaps"));
     drop(read);
@@ -663,7 +743,10 @@ fn a_failed_retirement_after_the_receiver_step_keeps_schema_73_and_retries() {
     assert_eq!(rr_user_version(&connection), SCHEMA_VERSION);
     assert!(rr_table_exists(&connection, "retired_delivery_gaps"));
     for table in RR_EDGE_TABLES {
-        assert!(!rr_table_exists(&connection, table), "{table} dropped after the retry");
+        assert!(
+            !rr_table_exists(&connection, table),
+            "{table} dropped after the retry"
+        );
     }
 }
 
@@ -881,10 +964,15 @@ fn rr_fleet_descriptor(vin: &str) -> VehicleDescriptor {
 
 /// The sources, vehicles and aliases of the store, to prove a lookup wrote none.
 fn rr_identity_state(connection: &Connection) -> Vec<Vec<Vec<String>>> {
-    ["sources", "source_identities", "vehicles", "vehicle_identity_aliases"]
-        .iter()
-        .map(|table| rr_rows(connection, table))
-        .collect()
+    [
+        "sources",
+        "source_identities",
+        "vehicles",
+        "vehicle_identity_aliases",
+    ]
+    .iter()
+    .map(|table| rr_rows(connection, table))
+    .collect()
 }
 
 #[test]
@@ -987,7 +1075,10 @@ fn registered_vehicle_unchanged_is_none_for_every_difference_registration_would_
     let other = store
         .register_vehicle(
             &VehicleDescriptor::new(
-                store.register_source(&rr_fleet_source(), CS_W0).unwrap().source_id,
+                store
+                    .register_source(&rr_fleet_source(), CS_W0)
+                    .unwrap()
+                    .source_id,
                 "other-key",
             ),
             CS_W0,

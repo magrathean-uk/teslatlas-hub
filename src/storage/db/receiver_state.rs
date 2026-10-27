@@ -353,12 +353,12 @@ fn retire_delivery_tables_in_transaction(
                     Box::new(error),
                 ))
             })?;
-            mark_export_dirty_in_transaction(transaction, vehicle_id).map_err(|error| {
-                match error {
+            mark_export_dirty_in_transaction(transaction, vehicle_id).map_err(
+                |error| match error {
                     StoreError::LifecycleWrite(error) => StoreError::Migrate(error),
                     other => other,
-                }
-            })?;
+                },
+            )?;
         }
     }
     #[cfg(test)]

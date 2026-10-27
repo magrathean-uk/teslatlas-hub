@@ -153,7 +153,10 @@ fn source_db_current_migration_preserves_populated_v66_and_adds_truthful_provena
             .len(),
         2
     );
-    assert_eq!(schema_version(&upgraded.open().unwrap()).unwrap(), SCHEMA_VERSION);
+    assert_eq!(
+        schema_version(&upgraded.open().unwrap()).unwrap(),
+        SCHEMA_VERSION
+    );
 }
 
 #[test]
@@ -1038,7 +1041,10 @@ fn source_db_token_import_loads_and_reopens_as_one_row() {
     let connection = reopened.open().expect("database opens");
     let rows: i64 = connection
         .query_row(
-            concat!("SELECT COUNT(*) FROM ", crate::db::import_table_names::legacy_owner_tokens_table!()),
+            concat!(
+                "SELECT COUNT(*) FROM ",
+                crate::db::import_table_names::legacy_owner_tokens_table!()
+            ),
             [],
             |row| row.get(0),
         )

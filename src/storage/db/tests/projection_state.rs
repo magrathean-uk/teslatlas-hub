@@ -636,21 +636,22 @@ fn direct_successor_rejects_a_new_import_id_owned_by_live_collection_atomically(
     let delta = imported_typed_delta(&store, &binding, &base);
 
     assert!(matches!(
-        store.finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
-            run_id,
-            binding.account_id,
-            vehicle.vehicle_id,
-            binding.selected_car_id,
-            3_000,
-            std::slice::from_ref(&delta),
-            &import_delta_test_cursor_key(),
-            &import_delta_test_cursor(&binding, delta.to_sequence),
-            Sha256Digest::of_bytes(b"direct-materialised-collision"),
-            &[],
-            &state,
-            &successor_car,
-            &[updated, imported_collision],
-        ),
+        store
+            .finalize_import_generation_delta_successors_with_projection_state_and_materialisation(
+                run_id,
+                binding.account_id,
+                vehicle.vehicle_id,
+                binding.selected_car_id,
+                3_000,
+                std::slice::from_ref(&delta),
+                &import_delta_test_cursor_key(),
+                &import_delta_test_cursor(&binding, delta.to_sequence),
+                Sha256Digest::of_bytes(b"direct-materialised-collision"),
+                &[],
+                &state,
+                &successor_car,
+                &[updated, imported_collision],
+            ),
         Err(StoreError::LineageCatalogConflict)
     ));
 
@@ -1208,7 +1209,10 @@ fn legacy_direct_bridge_attaches_state_without_pack_delta_or_sequence_and_logica
         ("sync_bases", 1),
         ("sync_deltas", 0),
         ("sync_packs", 1),
-        (crate::db::import_table_names::import_projection_state_bridges_table!(), 1),
+        (
+            crate::db::import_table_names::import_projection_state_bridges_table!(),
+            1,
+        ),
         ("import_generations", 0),
     ] {
         let count: i64 = connection
@@ -1261,9 +1265,18 @@ fn legacy_direct_bridge_rejects_changed_physical_fingerprint_without_mutation() 
     ));
     let connection = store.open().expect("catalogue after rejection");
     for (table, expected) in [
-        (crate::db::import_table_names::import_projection_state_heads_table!(), 0),
-        (crate::db::import_table_names::import_projection_state_rows_table!(), 0),
-        (crate::db::import_table_names::import_projection_state_bridges_table!(), 0),
+        (
+            crate::db::import_table_names::import_projection_state_heads_table!(),
+            0,
+        ),
+        (
+            crate::db::import_table_names::import_projection_state_rows_table!(),
+            0,
+        ),
+        (
+            crate::db::import_table_names::import_projection_state_bridges_table!(),
+            0,
+        ),
         ("sync_deltas", 0),
         ("sync_packs", 1),
         ("import_generations", 1),
@@ -1319,9 +1332,18 @@ fn legacy_direct_bridge_rolls_back_state_when_inventory_semantics_mismatch() {
     ));
     let connection = store.open().expect("catalogue after rollback");
     for (table, expected) in [
-        (crate::db::import_table_names::import_projection_state_heads_table!(), 0),
-        (crate::db::import_table_names::import_projection_state_rows_table!(), 0),
-        (crate::db::import_table_names::import_projection_state_bridges_table!(), 0),
+        (
+            crate::db::import_table_names::import_projection_state_heads_table!(),
+            0,
+        ),
+        (
+            crate::db::import_table_names::import_projection_state_rows_table!(),
+            0,
+        ),
+        (
+            crate::db::import_table_names::import_projection_state_bridges_table!(),
+            0,
+        ),
         ("snapshot_fingerprints", 1),
         ("import_generations", 1),
     ] {

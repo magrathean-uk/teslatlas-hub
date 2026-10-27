@@ -195,7 +195,9 @@ fn cs_table_rows(connection: &Connection, table: &str) -> Vec<Vec<String>> {
 }
 
 /// The rows of every ordinary table of the catalogue, by table name.
-fn cs_catalogue_rows(connection: &Connection) -> std::collections::BTreeMap<String, Vec<Vec<String>>> {
+fn cs_catalogue_rows(
+    connection: &Connection,
+) -> std::collections::BTreeMap<String, Vec<Vec<String>>> {
     let tables: Vec<String> = connection
         .prepare(
             "SELECT name FROM sqlite_master
@@ -285,7 +287,10 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
     // empty, and the table of completed one-time data steps (C6 R63) holds the one
     // marker that the identity tidy of the first read-write open inserted.
     // C9 R61: the terrain tidy table holds its one pending progress row.
-    let added: Vec<&String> = after.keys().filter(|name| !before.contains_key(*name)).collect();
+    let added: Vec<&String> = after
+        .keys()
+        .filter(|name| !before.contains_key(*name))
+        .collect();
     assert_eq!(
         added,
         [
@@ -350,7 +355,11 @@ fn b2_a_populated_v69_catalogue_migrates_without_changing_existing_rows() {
     let gaps = cs_gaps(&migrated);
     assert_eq!(gaps.len(), 1);
     assert_eq!(
-        (gaps[0].kind.as_str(), gaps[0].started_at_ms, gaps[0].ended_at_ms),
+        (
+            gaps[0].kind.as_str(),
+            gaps[0].started_at_ms,
+            gaps[0].ended_at_ms
+        ),
         ("hub_down", heartbeat_ms, Some(start_ms))
     );
 }
@@ -835,11 +844,17 @@ fn collection_attention_does_not_change_service_readiness() {
         let at = view(now);
         assert_eq!(at.attention, Some(code), "{state}");
         assert_eq!(at.service, Ok(()), "{state} is not a service failure");
-        assert_eq!(code.code(), format!("collector_{}", match state {
-            "owner_api_refused" => "api_refused",
-            "provider_refused" => "provider_refused",
-            other => other,
-        }));
+        assert_eq!(
+            code.code(),
+            format!(
+                "collector_{}",
+                match state {
+                    "owner_api_refused" => "api_refused",
+                    "provider_refused" => "provider_refused",
+                    other => other,
+                }
+            )
+        );
     }
     // Collecting with a rate-limit wait, a paused car and an open outage is
     // healthy detail, in the established order, with no attention.
@@ -851,7 +866,12 @@ fn collection_attention_does_not_change_service_readiness() {
                 rate_limited_until_ms: Some(CS_W0 + 60_000),
                 ..cs_account("collecting", "cap_warning")
             }),
-            vehicles: vec![cs_vehicle_row(vehicle, "unknown", "paused", "paused_legal_privacy")],
+            vehicles: vec![cs_vehicle_row(
+                vehicle,
+                "unknown",
+                "paused",
+                "paused_legal_privacy",
+            )],
             gap_inserts: vec![CollectorGapInsert {
                 vehicle_id: None,
                 kind: "tesla_unreachable".to_owned(),
@@ -876,7 +896,9 @@ fn collection_attention_does_not_change_service_readiness() {
         ]
     );
     assert!(
-        !view(CS_W0 + 60_000).detail.contains(&"collector_rate_limited"),
+        !view(CS_W0 + 60_000)
+            .detail
+            .contains(&"collector_rate_limited"),
         "the wait has ended"
     );
     // The durable audit failure on a collected car, and the live witness alone.
@@ -884,7 +906,12 @@ fn collection_attention_does_not_change_service_readiness() {
         &store,
         &CollectorRowsWrite {
             now_ms: CS_W0,
-            vehicles: vec![cs_vehicle_row(vehicle, "online", "none", "stream_audit_failed")],
+            vehicles: vec![cs_vehicle_row(
+                vehicle,
+                "online",
+                "none",
+                "stream_audit_failed",
+            )],
             ..CollectorRowsWrite::default()
         },
     );
@@ -910,7 +937,12 @@ fn collection_attention_does_not_change_service_readiness() {
         &store,
         &CollectorRowsWrite {
             now_ms: CS_W0,
-            vehicles: vec![cs_vehicle_row(vehicle, "unknown", "disabled", "stream_audit_failed")],
+            vehicles: vec![cs_vehicle_row(
+                vehicle,
+                "unknown",
+                "disabled",
+                "stream_audit_failed",
+            )],
             ..CollectorRowsWrite::default()
         },
     );
@@ -932,7 +964,12 @@ fn attention_is_suppressed_when_collection_is_disabled() {
                 mode: "fleet_polling".to_owned(),
                 ..cs_account("cap_reached", "cap_reached")
             }),
-            vehicles: vec![cs_vehicle_row(vehicle, "online", "paused", "stream_audit_failed")],
+            vehicles: vec![cs_vehicle_row(
+                vehicle,
+                "online",
+                "paused",
+                "stream_audit_failed",
+            )],
             gap_inserts: vec![CollectorGapInsert {
                 vehicle_id: None,
                 kind: "hub_down".to_owned(),
@@ -982,9 +1019,22 @@ fn attention_is_suppressed_when_collection_is_disabled() {
         assert_eq!(view.service, Ok(()));
     }
     // The same store, collection required: everything shows.
-    let required = store.collector_readiness_view(&ReadinessContext::configured(true, CS_W0, FleetPolling, None));
-    assert_eq!(required.service, Err(ReadinessFailure { code: ReadinessReasonCode::CollectorAbsent }));
-    assert_eq!(required.attention, Some(CollectionAttentionCode::CollectorFleetRefreshOutcomeUnknown));
+    let required = store.collector_readiness_view(&ReadinessContext::configured(
+        true,
+        CS_W0,
+        FleetPolling,
+        None,
+    ));
+    assert_eq!(
+        required.service,
+        Err(ReadinessFailure {
+            code: ReadinessReasonCode::CollectorAbsent
+        })
+    );
+    assert_eq!(
+        required.attention,
+        Some(CollectionAttentionCode::CollectorFleetRefreshOutcomeUnknown)
+    );
 }
 
 /// Every collector table the wait must not touch, as text, gaps excluded.
@@ -1021,7 +1071,12 @@ fn cadence_wait_gap_bookkeeping_preserves_collection_state() {
         &CollectorRowsWrite {
             now_ms: CS_W0,
             account: Some(cs_account("owner_api_refused", "owner_api_refused")),
-            vehicles: vec![cs_vehicle_row(vehicle, "online", "paused", "paused_access_refused")],
+            vehicles: vec![cs_vehicle_row(
+                vehicle,
+                "online",
+                "paused",
+                "paused_access_refused",
+            )],
             counters: vec![CollectorCounterRow {
                 month: "2026-10".to_owned(),
                 mode: "legacy".to_owned(),
@@ -1063,23 +1118,59 @@ fn cadence_wait_gap_bookkeeping_preserves_collection_state() {
                 BEGIN SELECT RAISE(ABORT, 'injected commit fault'); END;",
         )
         .unwrap();
-    assert!(store.begin_cadence_wait(&cs_wait_request(CS_W0 + 100_000, Some(CS_W0 + 40_000), 600_000)).is_err());
-    assert_eq!(cs_gap_dump(&store), gaps_before, "nothing of a failed wait start stays");
+    assert!(
+        store
+            .begin_cadence_wait(&cs_wait_request(
+                CS_W0 + 100_000,
+                Some(CS_W0 + 40_000),
+                600_000
+            ))
+            .is_err()
+    );
+    assert_eq!(
+        cs_gap_dump(&store),
+        gaps_before,
+        "nothing of a failed wait start stays"
+    );
     assert_eq!(cs_state_dump(&store), state_before);
-    store.open().unwrap().execute_batch("DROP TRIGGER cs_fail_wait;").unwrap();
+    store
+        .open()
+        .unwrap()
+        .execute_batch("DROP TRIGGER cs_fail_wait;")
+        .unwrap();
 
     // The start itself: the previous stop is closed, the wait's own stop opens,
     // and every other table is exactly as it was. The refusal is not lifted, the
     // hold is not cleared, counts and actions stay, and no `hub_down` is added.
     let started = store
-        .begin_cadence_wait(&cs_wait_request(CS_W0 + 100_000, Some(CS_W0 + 40_000), 600_000))
+        .begin_cadence_wait(&cs_wait_request(
+            CS_W0 + 100_000,
+            Some(CS_W0 + 40_000),
+            600_000,
+        ))
         .unwrap();
-    assert_eq!(started, CadenceWaitStart { stopped_gap_closed: true, hub_down_inserted: false });
+    assert_eq!(
+        started,
+        CadenceWaitStart {
+            stopped_gap_closed: true,
+            hub_down_inserted: false
+        }
+    );
     assert_eq!(cs_state_dump(&store), state_before);
     let gaps = cs_gaps(&store);
     assert_eq!(gaps.len(), 2);
-    assert_eq!((gaps[0].kind.as_str(), gaps[0].ended_at_ms), ("hub_stopped", Some(CS_W0 + 100_000)));
-    assert_eq!((gaps[1].kind.as_str(), gaps[1].started_at_ms, gaps[1].ended_at_ms), ("hub_stopped", CS_W0 + 100_000, None));
+    assert_eq!(
+        (gaps[0].kind.as_str(), gaps[0].ended_at_ms),
+        ("hub_stopped", Some(CS_W0 + 100_000))
+    );
+    assert_eq!(
+        (
+            gaps[1].kind.as_str(),
+            gaps[1].started_at_ms,
+            gaps[1].ended_at_ms
+        ),
+        ("hub_stopped", CS_W0 + 100_000, None)
+    );
     assert!(gaps[1].alert, "a car was awake at the persisted phases");
     assert_eq!(store.pending_collector_owner_actions().unwrap().len(), 1);
 }
@@ -1096,7 +1187,12 @@ fn cadence_wait_gap_closes_only_on_a_later_collection_start() {
             &CollectorRowsWrite {
                 now_ms: CS_W0,
                 account: Some(cs_account("collecting", "collecting")),
-                vehicles: vec![cs_vehicle_row(vehicle, if awake { "online" } else { "asleep" }, "none", "none")],
+                vehicles: vec![cs_vehicle_row(
+                    vehicle,
+                    if awake { "online" } else { "asleep" },
+                    "none",
+                    "none",
+                )],
                 ..CollectorRowsWrite::default()
             },
         );
@@ -1109,10 +1205,18 @@ fn cadence_wait_gap_closes_only_on_a_later_collection_start() {
         assert!(started.hub_down_inserted && !started.stopped_gap_closed);
         let gaps = cs_gaps(&store);
         let kinds: Vec<&str> = gaps.iter().map(|gap| gap.kind.as_str()).collect();
-        assert_eq!(kinds, ["hub_down", "hub_stopped"], "awake {awake} alert {alert_ms}");
+        assert_eq!(
+            kinds,
+            ["hub_down", "hub_stopped"],
+            "awake {awake} alert {alert_ms}"
+        );
         // The downtime alerts when a car was awake or it is at least the alert
         // length; the zero timeout meets the threshold at once.
-        assert_eq!(gaps[0].alert, awake || 300_000 >= alert_ms, "hub_down awake {awake} alert {alert_ms}");
+        assert_eq!(
+            gaps[0].alert,
+            awake || 300_000 >= alert_ms,
+            "hub_down awake {awake} alert {alert_ms}"
+        );
         assert_eq!(gaps[0].ended_at_ms, Some(wait_at));
         // The wait's stop alerts with the persisted awake phase, and is open.
         assert_eq!(gaps[1].alert, awake);
@@ -1121,10 +1225,26 @@ fn cadence_wait_gap_closes_only_on_a_later_collection_start() {
         // second wait start (a restart still in the fault) closes it and opens
         // its own, without a `hub_down`.
         let again = store
-            .begin_cadence_wait(&cs_wait_request(wait_at + 30_000, Some(wait_at + 25_000), alert_ms))
+            .begin_cadence_wait(&cs_wait_request(
+                wait_at + 30_000,
+                Some(wait_at + 25_000),
+                alert_ms,
+            ))
             .unwrap();
-        assert_eq!(again, CadenceWaitStart { stopped_gap_closed: true, hub_down_inserted: false });
-        assert_eq!(cs_gaps(&store).iter().filter(|gap| gap.kind == "hub_stopped").count(), 2);
+        assert_eq!(
+            again,
+            CadenceWaitStart {
+                stopped_gap_closed: true,
+                hub_down_inserted: false
+            }
+        );
+        assert_eq!(
+            cs_gaps(&store)
+                .iter()
+                .filter(|gap| gap.kind == "hub_stopped")
+                .count(),
+            2
+        );
         // The corrected ordinary start closes the open wait gap, with no
         // duplicate `hub_down` and no second stop.
         let ordinary_at = wait_at + 30_000 + 700_000;
@@ -1140,14 +1260,21 @@ fn cadence_wait_gap_closes_only_on_a_later_collection_start() {
             .unwrap();
         assert!(start.stopped_gap_closed && !start.hub_down_inserted);
         let gaps = cs_gaps(&store);
-        assert!(gaps.iter().all(|gap| gap.ended_at_ms.is_some()), "no gap stays open");
+        assert!(
+            gaps.iter().all(|gap| gap.ended_at_ms.is_some()),
+            "no gap stays open"
+        );
         assert_eq!(gaps.iter().filter(|gap| gap.kind == "hub_down").count(), 1);
         let closed = gaps.last().unwrap();
         assert_eq!(closed.kind, "hub_stopped");
         assert_eq!(closed.ended_at_ms, Some(ordinary_at));
         // Closed after 700 s: it alerts when it is at least the alert length
         // (always for the zero timeout), or when it opened awake.
-        assert_eq!(closed.alert, awake || 700_000 >= alert_ms, "closed awake {awake} alert {alert_ms}");
+        assert_eq!(
+            closed.alert,
+            awake || 700_000 >= alert_ms,
+            "closed awake {awake} alert {alert_ms}"
+        );
     }
 }
 
@@ -1352,20 +1479,104 @@ fn cs_p3_refusal_lift_conditions() {
         (bool, bool),
         &str,
     )] = &[
-        (Some(("legacy", CS_FP_A, "owner_api_refused")), None, ("legacy", CS_FP_A), (false, false), "same refusal, same start"),
-        (Some(("legacy", CS_FP_A, "owner_api_refused")), None, ("legacy", CS_FP_B), (true, true), "(i) owner refusal, fingerprint"),
-        (Some(("provider", CS_FP_A, "provider_refused")), None, ("provider", CS_FP_B), (true, true), "(i) provider refusal, fingerprint"),
-        (Some(("legacy", CS_FP_A, "owner_api_refused")), None, ("provider", CS_FP_A), (true, true), "(i)/(ii) refusal, mode"),
-        (Some(("legacy", CS_FP_A, "account_locked")), None, ("legacy", CS_FP_B), (true, false), "same-mode account_locked: account reset only"),
-        (Some(("legacy", CS_FP_A, "account_locked")), None, ("fleet_polling", CS_FP_A), (true, true), "(ii) another state, mode"),
-        (Some(("legacy", CS_FP_A, "collecting")), None, ("provider", CS_FP_A), (false, true), "(ii) collecting row, mode"),
-        (Some(("legacy", CS_FP_A, "collecting")), None, ("legacy", CS_FP_B), (false, false), "collecting row, fingerprint only"),
-        (Some(("fleet_polling", CS_FP_A, "cap_reached")), None, ("fleet_polling", CS_FP_B), (true, false), "fleet cap stop, fingerprint only"),
-        (None, Some("legacy"), ("provider", CS_FP_A), (false, true), "(iii) no C3 row, C5 refusal of another mode"),
-        (None, Some("legacy"), ("fleet_polling", CS_FP_A), (false, true), "(iii) no C3 row, C5 refusal, Fleet"),
-        (None, Some("legacy"), ("legacy", CS_FP_A), (false, false), "no C3 row, C5 refusal of the same mode"),
-        (None, None, ("provider", CS_FP_A), (false, false), "no rows at all"),
-        (Some(("legacy", CS_FP_A, "collecting")), Some("provider"), ("legacy", CS_FP_A), (false, false), "a C3 row exists: (iii) does not apply"),
+        (
+            Some(("legacy", CS_FP_A, "owner_api_refused")),
+            None,
+            ("legacy", CS_FP_A),
+            (false, false),
+            "same refusal, same start",
+        ),
+        (
+            Some(("legacy", CS_FP_A, "owner_api_refused")),
+            None,
+            ("legacy", CS_FP_B),
+            (true, true),
+            "(i) owner refusal, fingerprint",
+        ),
+        (
+            Some(("provider", CS_FP_A, "provider_refused")),
+            None,
+            ("provider", CS_FP_B),
+            (true, true),
+            "(i) provider refusal, fingerprint",
+        ),
+        (
+            Some(("legacy", CS_FP_A, "owner_api_refused")),
+            None,
+            ("provider", CS_FP_A),
+            (true, true),
+            "(i)/(ii) refusal, mode",
+        ),
+        (
+            Some(("legacy", CS_FP_A, "account_locked")),
+            None,
+            ("legacy", CS_FP_B),
+            (true, false),
+            "same-mode account_locked: account reset only",
+        ),
+        (
+            Some(("legacy", CS_FP_A, "account_locked")),
+            None,
+            ("fleet_polling", CS_FP_A),
+            (true, true),
+            "(ii) another state, mode",
+        ),
+        (
+            Some(("legacy", CS_FP_A, "collecting")),
+            None,
+            ("provider", CS_FP_A),
+            (false, true),
+            "(ii) collecting row, mode",
+        ),
+        (
+            Some(("legacy", CS_FP_A, "collecting")),
+            None,
+            ("legacy", CS_FP_B),
+            (false, false),
+            "collecting row, fingerprint only",
+        ),
+        (
+            Some(("fleet_polling", CS_FP_A, "cap_reached")),
+            None,
+            ("fleet_polling", CS_FP_B),
+            (true, false),
+            "fleet cap stop, fingerprint only",
+        ),
+        (
+            None,
+            Some("legacy"),
+            ("provider", CS_FP_A),
+            (false, true),
+            "(iii) no C3 row, C5 refusal of another mode",
+        ),
+        (
+            None,
+            Some("legacy"),
+            ("fleet_polling", CS_FP_A),
+            (false, true),
+            "(iii) no C3 row, C5 refusal, Fleet",
+        ),
+        (
+            None,
+            Some("legacy"),
+            ("legacy", CS_FP_A),
+            (false, false),
+            "no C3 row, C5 refusal of the same mode",
+        ),
+        (
+            None,
+            None,
+            ("provider", CS_FP_A),
+            (false, false),
+            "no rows at all",
+        ),
+        (
+            Some(("legacy", CS_FP_A, "collecting")),
+            Some("provider"),
+            ("legacy", CS_FP_A),
+            (false, false),
+            "a C3 row exists: (iii) does not apply",
+        ),
     ];
     for (c3, c5_refusal, (mode, fingerprint), (account_reset, refusal_reset), label) in matrix {
         let (_temporary, store) = cs_store();
@@ -1443,7 +1654,11 @@ fn cs_p3_lift_row_is_neutral_and_preserves_fuse() {
             clock_skew: true,
         }
     );
-    assert_eq!(cs_p3_auth_written_ms(&store), Some(start_ms), "the start's timestamp");
+    assert_eq!(
+        cs_p3_auth_written_ms(&store),
+        Some(start_ms),
+        "the start's timestamp"
+    );
     // The row decodes as the unit's own ready status, so the next restore reads it.
     let status = crate::legacy_auth::state::AuthStatus::from_row(&lifted).expect("a valid status");
     assert!(status.is_consistent());
@@ -1486,7 +1701,11 @@ fn cs_p3_lift_row_is_neutral_and_preserves_fuse() {
                 .refusal_reset
         );
         assert_eq!(store.load_collector_auth_row().unwrap(), before, "{label}");
-        assert_eq!(cs_p3_auth_written_ms(&store), Some(AS_T0 * 1_000), "{label}");
+        assert_eq!(
+            cs_p3_auth_written_ms(&store),
+            Some(AS_T0 * 1_000),
+            "{label}"
+        );
     }
     let (_temporary, store) = cs_store();
     cs_write(
@@ -1503,7 +1722,11 @@ fn cs_p3_lift_row_is_neutral_and_preserves_fuse() {
             .unwrap()
             .refusal_reset
     );
-    assert_eq!(store.load_collector_auth_row().unwrap(), None, "no row is inserted");
+    assert_eq!(
+        store.load_collector_auth_row().unwrap(),
+        None,
+        "no row is inserted"
+    );
 }
 
 #[test]
@@ -1518,7 +1741,12 @@ fn cs_p3_lift_and_c3_reset_roll_back_together() {
                 rate_limited_until_ms: Some(CS_W0 + 100_000),
                 ..cs_account("provider_refused", "provider_gone")
             }),
-            vehicles: vec![cs_vehicle_row(paused, "unknown", "paused", "paused_access_refused")],
+            vehicles: vec![cs_vehicle_row(
+                paused,
+                "unknown",
+                "paused",
+                "paused_access_refused",
+            )],
             gap_inserts: vec![
                 CollectorGapInsert {
                     vehicle_id: None,
