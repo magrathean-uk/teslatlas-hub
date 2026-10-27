@@ -904,7 +904,8 @@ final class OnboardingHubControllerTests: XCTestCase {
             guard case let .failure(error) = result else {
                 return XCTFail("missing acknowledgement was accepted")
             }
-            XCTAssertTrue(error.localizedDescription.contains("4.2.0 or newer"))
+            XCTAssertEqual(error.localizedDescription,
+                           "Confirm the source application's release is 4.2.0 or later before importing.")
             rejected.fulfill()
         }
 

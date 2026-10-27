@@ -919,7 +919,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
             .first { $0.title == "Back" }).image)
 
         let migration = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
-            .first { $0.title == "Import History" })
+            .first { $0.title == "Import History…" })
         XCTAssertFalse(migration.isHidden)
         XCTAssertTrue(labels(in: onboarding.window?.contentView).contains {
             $0.stringValue == "Bring your existing vehicle history."
@@ -936,7 +936,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         try XCTUnwrap(buttons(in: onboarding.window?.contentView)
             .first { $0.title == "Continue" }).performClick(nil)
         XCTAssertTrue(labels(in: onboarding.window?.contentView)
-            .contains { $0.stringValue == "Import History" })
+            .contains { $0.stringValue == "Import History…" })
         let back = try XCTUnwrap(buttons(in: onboarding.window?.contentView)
             .first { $0.title == "Back" })
         back.performClick(nil)
@@ -1080,7 +1080,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertFalse(text.contains { $0.hasPrefix("Step ") })
 
         let fresh = try XCTUnwrap(buttons(in: root).first { $0.title == "New installation" })
-        let migration = try XCTUnwrap(buttons(in: root).first { $0.title == "Import History" })
+        let migration = try XCTUnwrap(buttons(in: root).first { $0.title == "Import History…" })
         let freshRow = try XCTUnwrap(fresh.superview)
         let migrationRow = try XCTUnwrap(migration.superview)
         XCTAssertEqual(freshRow.frame.width, HubMetrics.onboardingContentWidth, accuracy: 0.5)
@@ -1117,7 +1117,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         root.displayIfNeeded()
         let text = labels(in: root).map(\.stringValue)
 
-        XCTAssertTrue(text.contains("Import History"))
+        XCTAssertTrue(text.contains("Import History…"))
         XCTAssertTrue(text.contains(
             "Connect to your source application server to import its vehicle history."
         ))
@@ -1135,7 +1135,7 @@ final class OnboardingWindowControllerTests: XCTestCase {
         XCTAssertEqual(authentication.font, HubTypography.body)
         let inputFields = labels(in: root).filter { $0.isEditable }
         XCTAssertTrue(inputFields.allSatisfy { $0.controlSize != .large })
-        let heading = try XCTUnwrap(labels(in: root).first { $0.stringValue == "Import History" })
+        let heading = try XCTUnwrap(labels(in: root).first { $0.stringValue == "Import History…" })
         XCTAssertEqual(heading.alignment, .natural)
         let server = try XCTUnwrap(inputFields.first { $0.placeholderString == "server.local" })
         let user = try XCTUnwrap(inputFields.first { $0.stringValue == "user" })

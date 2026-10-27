@@ -399,7 +399,7 @@ final class HubControllerTests: XCTestCase {
             XCTAssertTrue(text.contains("status — vehicles and credential presence"))
             XCTAssertTrue(text.contains("Duration:"))
             XCTAssertTrue(text.contains("Read duration:"))
-            XCTAssertTrue(text.contains("source database is not written"))
+            XCTAssertTrue(text.contains("The source database is not changed. Stored Owner and Fleet tokens are not deleted."))
             XCTAssertTrue(text.contains("tokens are not deleted") || text.contains("Tokens are not deleted") || text.contains("Owner and Fleet tokens"))
             XCTAssertTrue(text.contains("== support metadata =="))
             XCTAssertTrue(text.contains("Expected Hub: \(HubRelease.bundledVersion)"))
@@ -2055,7 +2055,8 @@ final class HubControllerTests: XCTestCase {
             guard case let .failure(error) = result else {
                 return XCTFail("missing acknowledgement was accepted")
             }
-            XCTAssertTrue(error.localizedDescription.contains("4.2.0 or newer"))
+            XCTAssertEqual(error.localizedDescription,
+                           "Confirm the source application's release is 4.2.0 or later before checking compatibility.")
             rejected.fulfill()
         }
 
@@ -2077,7 +2078,8 @@ final class HubControllerTests: XCTestCase {
             guard case let .failure(error) = result else {
                 return XCTFail("missing acknowledgement was accepted")
             }
-            XCTAssertTrue(error.localizedDescription.contains("4.2.0 or newer"))
+            XCTAssertEqual(error.localizedDescription,
+                           "Confirm the source application's release is 4.2.0 or later before importing from a direct PostgreSQL source.")
             rejected.fulfill()
         }
 

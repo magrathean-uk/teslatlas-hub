@@ -304,6 +304,8 @@ extension OnboardingWindowControllerTests {
         let root = try XCTUnwrap(sheet.window?.contentView)
         func allViews(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(allViews) }
         let fields = allViews(root).compactMap { $0 as? NSTextField }.filter { $0.isEditable }
+        let source = try XCTUnwrap(fields.first { $0.placeholderString == "postgresql://reader@host/database" })
+        source.stringValue = "postgresql://reader@localhost/source"
         for field in fields where field.stringValue.isEmpty { field.stringValue = "/private/file" }
         let acknowledgement = try XCTUnwrap(allViews(root).compactMap { $0 as? NSButton }
             .first { $0.title.hasPrefix("I confirm") })
@@ -320,6 +322,7 @@ extension OnboardingWindowControllerTests {
         let before = rig.signature()
         importButton.performClick(nil)
         XCTAssertEqual(presenter.errors.count, 1, "the refusal was presented")
+        XCTAssertTrue(isLifecycleRefusal(try XCTUnwrap(presenter.errors.first)))
         XCTAssertEqual(rig.signature(), before, "the residual sheet started nothing")
         XCTAssertFalse(rig.markerExists)
         rig.controller.lifecycle.settle(foreign) {}

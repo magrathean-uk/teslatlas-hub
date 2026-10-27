@@ -63,7 +63,7 @@ final class DevelopmentHubRuntimeTests: XCTestCase {
         var environment = fixture.environment
         environment.removeValue(forKey: DevelopmentHubConfiguration.controlVariable)
         let configuration = try XCTUnwrap(DevelopmentHubConfiguration.from(environment: environment))
-        XCTAssertEqual(configuration.controlDirectory.path, HubTestScratch.realHomePath + "/dev/runtime")
+        XCTAssertEqual(configuration.controlDirectory.path, HubTestScratch.realHomePath + "/dev/machine/runtime")
         XCTAssertEqual(configuration.plist.deletingLastPathComponent(), configuration.controlDirectory)
         let descriptor = try DevelopmentEventLog.validateDirectoryReadOnly(configuration.controlDirectory, allowOwnedGroupWritableAncestors: false)
         close(descriptor)

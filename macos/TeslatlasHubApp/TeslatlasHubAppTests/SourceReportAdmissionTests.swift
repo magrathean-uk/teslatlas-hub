@@ -75,7 +75,7 @@ extension OnboardingWindowControllerTests {
         try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: home) }
         let controller = HubController(commandRunner: runner, homeDirectory: home, serviceInstalledOverride: false)
-        let onboarding = OnboardingWindowController(controller: controller, previewRoute: "migration", onComplete: { _ in })
+        let onboarding = OnboardingWindowController(controller: controller, initialRoute: .migration, onComplete: { _ in })
         onboarding.configureLocalHistoryForTests(source: "postgresql://reader@127.0.0.1/sourcedb", carID: "42",
             passwordFile: home.appendingPathComponent("password").path)
         func localFiles() -> [String: Data] {
